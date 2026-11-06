@@ -213,12 +213,13 @@ class PythonLspFxTest {
     void basedpyrightGetsItsOwnCommandName() {
         assertEquals(
                 "basedpyright.organizeimports",
-                LspManager.pyrightOrganizeCommand(List.of("basedpyright-langserver", "--stdio")));
-        assertEquals("pyright.organizeimports", LspManager.pyrightOrganizeCommand(List.of("pyright-langserver")));
+                LspOrganizeImports.pyrightOrganizeCommand(List.of("basedpyright-langserver", "--stdio")));
+        assertEquals(
+                "pyright.organizeimports", LspOrganizeImports.pyrightOrganizeCommand(List.of("pyright-langserver")));
         // whichever word names it (Python review 2, D110)
         assertEquals(
                 "basedpyright.organizeimports",
-                LspManager.pyrightOrganizeCommand(List.of("npx", "basedpyright-langserver", "--stdio")));
+                LspOrganizeImports.pyrightOrganizeCommand(List.of("npx", "basedpyright-langserver", "--stdio")));
     }
 
     /** Any other server: its {@code source.organizeImports} code action, when it offers one. */
@@ -388,6 +389,6 @@ class PythonLspFxTest {
         manager.setOpenDocumentDiagnosticsOnly(true);
         analysis = (Map<String, Object>) nextPush(fake, before).get("analysis");
         assertEquals("openFilesOnly", analysis.get("diagnosticMode"));
-        assertEquals(Map.of("disablePullDiagnostics", true), LspManager.initOptionsFor("python", List.of()));
+        assertEquals(Map.of("disablePullDiagnostics", true), ServerInitOptions.initOptionsFor("python", List.of()));
     }
 }

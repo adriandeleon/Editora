@@ -61,7 +61,7 @@ class LspDynamicRegistrationTest {
         assertTrue(provider.getRange().isLeft() && provider.getRange().getLeft(), "range support was dropped");
         assertTrue(provider.getFull().isRight(), "full must keep its options object");
         assertTrue(provider.getFull().getRight().getDelta(), "delta support was dropped");
-        assertNotNull(LspManager.semanticTokensProvider(s.capabilities()), "the manager's gate must see it");
+        assertNotNull(SemanticTokenRequests.semanticTokensProvider(s.capabilities()), "the manager's gate must see it");
     }
 
     /** One unusable registration must not take the rest of the batch (or the response) down with it. */
@@ -95,10 +95,10 @@ class LspDynamicRegistrationTest {
         var rename = s.capabilities().getRenameProvider();
         assertTrue(rename.isRight(), "the options object must be kept");
         assertTrue(rename.getRight().getPrepareProvider());
-        assertTrue(LspManager.renameProvider(s.capabilities()));
+        assertTrue(LspRename.renameProvider(s.capabilities()));
 
         s.unregisterCapability(new UnregistrationParams(List.of(new Unregistration("rn", "textDocument/rename"))));
-        assertFalse(LspManager.renameProvider(s.capabilities()), "unregistering must switch rename off again");
+        assertFalse(LspRename.renameProvider(s.capabilities()), "unregistering must switch rename off again");
     }
 
     /** A registration without options is still a plain "on". */
@@ -106,7 +106,7 @@ class LspDynamicRegistrationTest {
     void renameRegistrationWithoutOptionsIsEnabled() {
         var s = session(new ServerCapabilities());
         s.registerCapability(new RegistrationParams(List.of(registration("rn", "textDocument/rename", null))));
-        assertTrue(LspManager.renameProvider(s.capabilities()));
+        assertTrue(LspRename.renameProvider(s.capabilities()));
     }
 
     @Test
@@ -169,9 +169,9 @@ class LspDynamicRegistrationTest {
     void javaInitializationOptionsCarryTheOnTypePreference() {
         assertEquals(
                 Boolean.TRUE,
-                onTypeEnabled(LspManager.javaInitOptions(List.of(), true).get("settings")));
+                onTypeEnabled(ServerInitOptions.javaInitOptions(List.of(), true).get("settings")));
         assertEquals(
                 Boolean.FALSE,
-                onTypeEnabled(LspManager.javaInitOptions(List.of()).get("settings")));
+                onTypeEnabled(ServerInitOptions.javaInitOptions(List.of()).get("settings")));
     }
 }

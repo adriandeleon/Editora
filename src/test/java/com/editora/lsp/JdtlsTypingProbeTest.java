@@ -45,7 +45,7 @@ class JdtlsTypingProbeTest {
                 (type, message) -> {
                     if ("ServiceReady".equals(type)) ready.countDown();
                 },
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         String uri = file.toUri().toString();
         try {
             assertTrue(session.start());

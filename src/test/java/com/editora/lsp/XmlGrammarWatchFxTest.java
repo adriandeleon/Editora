@@ -94,10 +94,10 @@ class XmlGrammarWatchFxTest {
 
     @Test
     void grammarFilesAreKnownByName() {
-        assertTrue(LspManager.xmlGrammarFile(Path.of("a/b/note.XSD")));
-        assertTrue(LspManager.xmlGrammarFile(Path.of("doc.dtd")));
-        assertTrue(LspManager.xmlGrammarFile(Path.of("s.rnc")));
-        assertFalse(LspManager.xmlGrammarFile(Path.of("note.xml")));
-        assertFalse(LspManager.xmlGrammarFile(Path.of("xsd")));
+        assertTrue(LspFileWatching.xmlGrammarFile(Path.of("a/b/note.XSD")));
+        assertTrue(LspFileWatching.xmlGrammarFile(Path.of("doc.dtd")));
+        assertTrue(LspFileWatching.xmlGrammarFile(Path.of("s.rnc")));
+        assertFalse(LspFileWatching.xmlGrammarFile(Path.of("note.xml")));
+        assertFalse(LspFileWatching.xmlGrammarFile(Path.of("xsd")));
     }
 }

@@ -23,7 +23,7 @@ class RootWatcherTest {
         Path plainBuild = Files.createDirectories(root.resolve("docs/build")); // no build file beside it
         assertTrue(RootWatcher.buildOutput(app.resolve("target")));
         assertFalse(RootWatcher.buildOutput(plainBuild));
-        try (RootWatcher w = RootWatcher.start(root, batch -> {}, LspManager::modelFile)) {
+        try (RootWatcher w = RootWatcher.start(root, batch -> {}, LspFileWatching::modelFile)) {
             assertNotNull(w);
             assertTrue(w.watches(root));
             assertTrue(w.watches(app));
@@ -64,7 +64,7 @@ class RootWatcherTest {
         }
         Path module = Files.createDirectories(root.resolve("z"));
         Files.writeString(module.resolve("pom.xml"), "<project/>");
-        try (RootWatcher w = RootWatcher.start(root, batch -> {}, LspManager::modelFile)) {
+        try (RootWatcher w = RootWatcher.start(root, batch -> {}, LspFileWatching::modelFile)) {
             assertNotNull(w);
             assertTrue(w.watches(module), "the module's folder");
         }

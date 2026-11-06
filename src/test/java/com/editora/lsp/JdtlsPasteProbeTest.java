@@ -193,7 +193,7 @@ class JdtlsPasteProbeTest {
             ip.setRootUri(project.toUri().toString());
             ip.setWorkspaceFolders(List.of(new WorkspaceFolder(project.toUri().toString(), "probe")));
             ip.setCapabilities(new ClientCapabilities());
-            // Mirror production: Editora sends extendedClientCapabilities (see LspManager.initOptionsFor).
+            // Mirror production: Editora sends extendedClientCapabilities (see ServerInitOptions.initOptionsFor).
             ip.setInitializationOptions(Map.of("extendedClientCapabilities", Map.of("classFileContentsSupport", true)));
             InitializeResult init = server.initialize(ip).get(120, TimeUnit.SECONDS);
             server.initialized(new InitializedParams());

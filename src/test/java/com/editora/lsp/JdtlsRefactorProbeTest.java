@@ -139,7 +139,7 @@ class JdtlsRefactorProbeTest {
                 project,
                 d -> {},
                 (type, message) -> {},
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         try {
             assertTrue(s.start());
             s.didOpen(uri, "java", APP);
@@ -149,7 +149,7 @@ class JdtlsRefactorProbeTest {
             get(s.documentSymbol(uri)); // serializes behind the project import
 
             // Code lenses: resolved to "N references" for the lines asked about, and no others.
-            var lenses = LspManager.codeLensSpans(get(s.codeLens(uri, 0, 9)));
+            var lenses = LspInlineHints.codeLensSpans(get(s.codeLens(uri, 0, 9)));
             record("codeLens", lenses);
             assertTrue(
                     lenses.stream().anyMatch(l -> l.line() == 9 && l.title().equals("1 reference")),

@@ -407,14 +407,14 @@ class LspSessionLifecycleFxTest {
         try (var channel = java.nio.channels.FileChannel.open(
                         lockFile, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
                 var ignored = channel.lock()) {
-            String whileLocked = LspManager.claimUsableJdtlsWorkspaceName(base, "abc123");
-            LspManager.releaseJdtlsWorkspaceName(whileLocked);
+            String whileLocked = JdtlsWorkspaces.claimUsableJdtlsWorkspaceName(base, "abc123");
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(whileLocked);
             assertEquals("abc123-2", whileLocked, "a cache someone still holds is bypassed");
             assertTrue(Files.exists(marker));
         }
 
-        String afterRelease = LspManager.claimUsableJdtlsWorkspaceName(base, "abc123");
-        LspManager.releaseJdtlsWorkspaceName(afterRelease);
+        String afterRelease = JdtlsWorkspaces.claimUsableJdtlsWorkspaceName(base, "abc123");
+        JdtlsWorkspaces.releaseJdtlsWorkspaceName(afterRelease);
         assertEquals("abc123", afterRelease, "the canonical name is reused once the lock is free");
         assertFalse(Files.exists(marker), "the marker heals itself");
         assertFalse(Files.exists(workspace), "the failed cache is rebuilt from scratch");

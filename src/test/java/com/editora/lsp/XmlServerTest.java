@@ -79,7 +79,7 @@ class XmlServerTest {
         assertEquals(Boolean.TRUE, caps.get("actionableNotificationSupport"));
         assertEquals(Boolean.FALSE, caps.get("openSettingsCommandSupport"));
         assertEquals(Map.of("codeLensKind", Map.of("valueSet", List.of("references"))), caps.get("codeLens"));
-        Object init = LspManager.initOptionsFor("xml", List.of());
+        Object init = ServerInitOptions.initOptionsFor("xml", List.of());
         assertEquals(Map.of("extendedClientCapabilities", caps), init);
     }
 
@@ -361,7 +361,7 @@ class XmlServerTest {
         Path xml = dir.resolve("note.xml");
         Path closed = dir.resolve("closed.rng");
         var open = java.util.Set.of(LspManager.uri(xsd), LspManager.uri(dtd), LspManager.uri(xml));
-        var picked = LspManager.openGrammarChanges(
+        var picked = LspFileWatching.openGrammarChanges(
                 List.of(
                         new LspManager.WatchedFile(xsd, LspManager.WatchedKind.CHANGED),
                         new LspManager.WatchedFile(dtd, LspManager.WatchedKind.DELETED),

@@ -27,8 +27,8 @@ class LspEditPlanTest {
         return new WorkspaceEditMapper.Mapped(edits, List.of());
     }
 
-    private static LspManager.EditBasis sentAt(long millis) {
-        return new LspManager.EditBasis(Map.of(), millis, WireUris.LOCAL);
+    private static WorkspaceEditDrafts.EditBasis sentAt(long millis) {
+        return new WorkspaceEditDrafts.EditBasis(Map.of(), millis, WireUris.LOCAL);
     }
 
     @Test
@@ -61,8 +61,8 @@ class LspEditPlanTest {
 
     @Test
     void closedTargetsAreMarkedWithTheRequestTimeAndLoseAMeaninglessVersion() {
-        var plan =
-                LspManager.completeWorkspaceEdit(mapped(CLOSED), List.of(CLOSED), sentAt(2_000_001), file -> 1_000_001);
+        var plan = WorkspaceEditDrafts.completeWorkspaceEdit(
+                mapped(CLOSED), List.of(CLOSED), sentAt(2_000_001), file -> 1_000_001);
 
         assertNotNull(plan.mapped());
         var edit = plan.mapped().edits().get(0);
@@ -72,7 +72,7 @@ class LspEditPlanTest {
 
     @Test
     void everyBlockingFileIsReportedAndNothingIsApplied() {
-        var plan = LspManager.completeWorkspaceEdit(
+        var plan = WorkspaceEditDrafts.completeWorkspaceEdit(
                 mapped(CLOSED, OTHER),
                 List.of(CLOSED, OTHER),
                 sentAt(2_000_001),
@@ -84,8 +84,8 @@ class LspEditPlanTest {
 
     @Test
     void anEditWithoutARequestTimeCannotTouchAClosedFile() {
-        var plan = LspManager.completeWorkspaceEdit(
-                mapped(CLOSED), List.of(CLOSED), LspManager.EditBasis.UNKNOWN, file -> 1_000_001);
+        var plan = WorkspaceEditDrafts.completeWorkspaceEdit(
+                mapped(CLOSED), List.of(CLOSED), WorkspaceEditDrafts.EditBasis.UNKNOWN, file -> 1_000_001);
 
         assertNull(plan.mapped());
         assertEquals(List.of(CLOSED), plan.blocked());
@@ -94,7 +94,7 @@ class LspEditPlanTest {
     @Test
     void anEditWithNoClosedTargetsIsPassedThroughUntouched() {
         var original = mapped(CLOSED);
-        var plan = LspManager.completeWorkspaceEdit(original, List.of(), sentAt(0), file -> -1);
+        var plan = WorkspaceEditDrafts.completeWorkspaceEdit(original, List.of(), sentAt(0), file -> -1);
         assertEquals(original, plan.mapped());
         assertTrue(plan.blocked().isEmpty());
     }
@@ -109,9 +109,10 @@ class LspEditPlanTest {
         Path folder = Path.of("/project/misc").toAbsolutePath();
         Path xml = folder.resolve("nogrammar.xml");
         Path dtd = folder.resolve("nogrammar.dtd");
-        var basis = new LspManager.EditBasis(Map.of(xml, LemminxPayloads.NOGRAMMAR_XML), 1_000, WireUris.LOCAL);
+        var basis =
+                new WorkspaceEditDrafts.EditBasis(Map.of(xml, LemminxPayloads.NOGRAMMAR_XML), 1_000, WireUris.LOCAL);
 
-        var draft = LspManager.draftWorkspaceEdit(LemminxPayloads.generateDtdAndBind(folder), basis);
+        var draft = WorkspaceEditDrafts.draftWorkspaceEdit(LemminxPayloads.generateDtdAndBind(folder), basis);
 
         assertNotNull(draft);
         assertTrue(draft.closedTargets().isEmpty(), "the created file is known to be empty, not read from disk");
@@ -150,7 +151,8 @@ class LspEditPlanTest {
     void aVersionZeroOnAnOpenDocumentIsPlannedAsADiskEdit() {
         Path parent = Path.of("/proj/reactor/pom.xml").toAbsolutePath();
         Path core = Path.of("/proj/reactor/core/pom.xml").toAbsolutePath();
-        var basis = new LspManager.EditBasis(Map.of(parent, "<project/>", core, "<project/>"), 1_000, WireUris.LOCAL);
+        var basis = new WorkspaceEditDrafts.EditBasis(
+                Map.of(parent, "<project/>", core, "<project/>"), 1_000, WireUris.LOCAL);
         var edit = new org.eclipse.lsp4j.WorkspaceEdit();
         edit.setDocumentChanges(List.of(
                 org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(new org.eclipse.lsp4j.TextDocumentEdit(
@@ -168,7 +170,7 @@ class LspEditPlanTest {
                                         new org.eclipse.lsp4j.Position(0, 0), new org.eclipse.lsp4j.Position(0, 0)),
                                 "x")))))));
 
-        var draft = LspManager.draftWorkspaceEdit(edit, basis);
+        var draft = WorkspaceEditDrafts.draftWorkspaceEdit(edit, basis);
 
         assertNotNull(draft);
         assertEquals(List.of(parent), draft.closedTargets(), "planned against the disk, not the open text");

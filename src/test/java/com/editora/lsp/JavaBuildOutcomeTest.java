@@ -10,13 +10,13 @@ class JavaBuildOutcomeTest {
 
     @Test
     void theStatusReadsAsANumberANameOrAGsonPrimitive() {
-        assertEquals(LspManager.BuildOutcome.FAILED, LspManager.buildOutcome(0));
-        assertEquals(LspManager.BuildOutcome.SUCCEEDED, LspManager.buildOutcome(1));
-        assertEquals(LspManager.BuildOutcome.SUCCEEDED, LspManager.buildOutcome(1.0));
-        assertEquals(LspManager.BuildOutcome.WITH_ERRORS, LspManager.buildOutcome(new JsonPrimitive(2)));
-        assertEquals(LspManager.BuildOutcome.CANCELLED, LspManager.buildOutcome("CANCELLED"));
-        assertEquals(LspManager.BuildOutcome.WITH_ERRORS, LspManager.buildOutcome(new JsonPrimitive("WITH_ERROR")));
-        assertEquals(LspManager.BuildOutcome.UNAVAILABLE, LspManager.buildOutcome(null));
-        assertEquals(LspManager.BuildOutcome.UNAVAILABLE, LspManager.buildOutcome("7"));
+        assertEquals(LspManager.BuildOutcome.FAILED, JavaBuilds.buildOutcome(0));
+        assertEquals(LspManager.BuildOutcome.SUCCEEDED, JavaBuilds.buildOutcome(1));
+        assertEquals(LspManager.BuildOutcome.SUCCEEDED, JavaBuilds.buildOutcome(1.0));
+        assertEquals(LspManager.BuildOutcome.WITH_ERRORS, JavaBuilds.buildOutcome(new JsonPrimitive(2)));
+        assertEquals(LspManager.BuildOutcome.CANCELLED, JavaBuilds.buildOutcome("CANCELLED"));
+        assertEquals(LspManager.BuildOutcome.WITH_ERRORS, JavaBuilds.buildOutcome(new JsonPrimitive("WITH_ERROR")));
+        assertEquals(LspManager.BuildOutcome.UNAVAILABLE, JavaBuilds.buildOutcome(null));
+        assertEquals(LspManager.BuildOutcome.UNAVAILABLE, JavaBuilds.buildOutcome("7"));
     }
 }

@@ -93,6 +93,17 @@ language id — so js/ts/jsx/tsx in one project share a single `tsserver`. It ow
   request methods, each returning **neutral** results (`Target(file, line, character)` for
   definition/references) marshaled to the FX thread via `Platform.runLater`.
 
+The session lifecycle stays in `LspManager`; each request family lives in a package-private class it holds and
+forwards its public methods to, so callers still see one facade: `LspNavigation` (definition, references,
+hierarchies), `LspAssists` (completion, signature help, highlights, hover), `LspCodeActions` (code actions and every
+server edit on its way to the editor, planned by the pure `WorkspaceEditDrafts`), `LspFormatting`,
+`LspDocumentSymbols` (outline, folding, selection ranges, colours, symbol search), `LspInlineHints` (code lenses,
+inlay hints), `SemanticTokenRequests`, `LspRename` (symbol and file renames), `LspOrganizeImports`, `JdtlsCommands`
+(jdtls's own requests), `JavaBuilds`, `LspDiagnostics` (published and pulled diagnostics) and `LspFileWatching`
+(root watchers and `didChangeWatchedFiles`). What a server starts with is in `ServerInitOptions` (its
+`initializationOptions`), `NodeServerPaths` (tsserver, TypeScript SDK, Node.js) and `JdtlsWorkspaces` (the
+process-wide `-data` claims); `FxClientUi` posts a server's questions to the FX thread.
+
 `LspManager` warms the augmented PATH off-thread in its constructor (`ProcessRunner::augmentedPath`),
 since both detection and the FX-thread session start read it. A remote (SFTP) file is served by a server on
 its host, and debugged there; how documents are named across the connection (`WireUris`, `DapPaths`), where
@@ -396,7 +407,7 @@ folded into that same effective object, so static and post-initialize providers 
 
 Some jdtls code actions answer with a command the **client** must carry out — sending it back as
 `workspace/executeCommand` fails. Which actions do so is decided by `extendedClientCapabilities`
-(`LspManager.javaExtendedClientCapabilities`): a flag is declared only together with the code that
+(`ServerInitOptions.javaExtendedClientCapabilities`): a flag is declared only together with the code that
 drives its command.
 
 - [`lsp/JdtlsGenerate`](../../src/main/java/com/editora/lsp/JdtlsGenerate.java) — the
@@ -473,7 +484,7 @@ vscode-java's `completion.favoriteStaticMembers` and the `compile.nullAnalysis` 
 **A project's own preferences.** `JavaProjectSettings.forRoot(root)` reads IntelliJ's `ij_java_imports_layout`
 and import-on-demand counts from `.editorconfig` (`EditorConfig.rawFor`, which keeps keys Editora does not
 interpret) and the Eclipse formatter profile Spotless names (else `eclipse-formatter.xml` and friends at the root),
-and is merged into `settings.java` at `initialize` (`LspManager.withProjectSettings`) and in every push
+and is merged into `settings.java` at `initialize` (`ServerInitOptions.withProjectSettings`) and in every push
 (`LanguageServerSession.pushConfiguration`). `JdtlsProjectStyleProbeTest` checks the star threshold, the profile
 and chain completion (`completion.chain.enabled`) against a real jdtls.
 
@@ -613,7 +624,7 @@ said with that folder's name ("jdtls (tools)").
 jdtls updates a project's classpath from a build file only when told it changed, lemminx revalidates against a
 grammar only when told it changed, and the Bash server never re-reads a sourced library on its own. The Project panel
 reports changes from its expanded folders alone, so every local server root gets a recursive watcher of its own
-(`LspManager.ensureRootWatcher`, one `RootWatcher` per root, none for a root inside one already watched, at most eight),
+(`LspFileWatching.ensureRootWatcher`, one `RootWatcher` per root, none for a root inside one already watched, at most eight),
 project or not. It skips hidden, dependency and virtual-environment folders and the folders the root's `.gitignore`
 files leave out (nested ones too). A watcher registers at most 2,000 folders (300 when polling), level by level so build files near the top come
 first, and it reports a file only when its own folder is registered (`RootWatcher.watches`), not anything under its root; the panel's own event for a
@@ -651,7 +662,7 @@ fixes against the text the session sent.
 
 jdtls's defaults assume vscode-java, which sends its own `package.json` defaults; several features stay
 off for a client that sends nothing. `LspServerSettings.javaSettings` is the one `java` object, sent at
-`initialize` (inside `LspManager.javaSettings`, with autobuild and the runtimes) and pushed after it:
+`initialize` (inside `ServerInitOptions.javaSettings`, with autobuild and the runtimes) and pushed after it:
 `signatureHelp.enabled` and `signatureHelp.description.enabled` (the Javadoc in signature help; jdtls
 reads dotted keys through the nested maps, so `description: true` resolved to no key at all),
 `completion.filteredTypes` (vscode-java's list; jdtls's own default list is not installed unless one is

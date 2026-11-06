@@ -88,7 +88,7 @@ class JdtlsLombokProbeTest {
                         imported.countDown();
                     }
                 },
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         try {
             assertTrue(s.start());
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);

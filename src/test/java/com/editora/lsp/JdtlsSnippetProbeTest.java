@@ -85,7 +85,7 @@ class JdtlsSnippetProbeTest {
         ip.setRootUri(PROJECT.toUri().toString());
         ip.setWorkspaceFolders(List.of(new WorkspaceFolder(PROJECT.toUri().toString(), "fixture")));
         ip.setCapabilities(editoraCapabilities());
-        ip.setInitializationOptions(LspManager.javaInitOptions(List.of())); // exactly what Editora sends
+        ip.setInitializationOptions(ServerInitOptions.javaInitOptions(List.of())); // exactly what Editora sends
         server.initialize(ip).get(180, TimeUnit.SECONDS);
         server.initialized(new InitializedParams());
 
