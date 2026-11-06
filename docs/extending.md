@@ -298,8 +298,8 @@ When a feature's logic bloats `MainController`, pull it into a coordinator behin
 - a `final class MyCoordinator` in `ui` that owns the feature's service(s) + state and reaches
   the window only through the shared `CoordinatorHost` interface (settings, active/all buffers,
   status, prompts, the overlay host, …);
-- `MainController` constructs it with the shared `Services` adapter and keeps **one-line
-  delegations** at each call site;
+- `MainController` constructs it with the shared `CoordinatorHost` adapter (`WindowServicesHost`) and keeps
+  **one-line delegations** at each call site;
 - a fake `Host` in a test makes the coordinator unit-testable without a real window (see the
   `*CoordinatorFxTest`s).
 

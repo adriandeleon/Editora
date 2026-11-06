@@ -2090,7 +2090,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         gitWindows.listenTo(git);
         gitLogToolWindow = toolWindow("gitLog", ToolWindow.Side.BOTTOM, Icons::gitLog, this::gitLogPanel);
         githubToolWindow = toolWindow("github", ToolWindow.Side.BOTTOM, Icons::github, this::githubPanel);
-        historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
+        historyCoordinator =
+                new HistoryCoordinator(coordinatorHost, diffCoordinator, new HistoryOpsHost(this), config.shared());
         noUndoGuard = new NoUndoGuard(historyCoordinator::recordSafetyCopy, coordinatorHost::setStatus);
         git.attachWindow(diffCoordinator, buffer -> addBuffer(buffer, true)); // stash review, patches, revision tabs
         fileHistoryToolWindow =
@@ -2154,7 +2155,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Mirror a recognized `test` run of any build tool into the Test Results window.
         buildCoordinators.forEach(c -> c.setTestRunHook(testRunCoordinator));
         installCoordinator = new InstallCoordinator(coordinatorHost, new InstallOpsHost(this));
-        remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
+        remoteCoordinator = new RemoteCoordinator(coordinatorHost, new RemoteOpsHost(this));
         containerCoordinator = new ContainerCoordinator(coordinatorHost, new ContainerCoordinator.Ops() {
             @Override
             public @Nullable Path projectRoot() {
@@ -2284,15 +2285,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Effective Local File History gate: the setting, but off in Simple UI mode (saved setting unchanged). */
     private boolean localHistoryEnabled() {
         return config.getSettings().isLocalHistory() && !chrome.simpleModeActive();
-    }
-
-    /** Window hooks for {@link HistoryCoordinator} (config history buckets + tool window + tree + current text). */
-    private RemoteCoordinator.Ops remoteOps() {
-        return new RemoteOpsHost(this);
-    }
-
-    private HistoryCoordinator.Ops historyOps() {
-        return new HistoryOpsHost(this);
     }
 
     /** Local History's index changed in another window: this window's panel shows it as it is now. */
