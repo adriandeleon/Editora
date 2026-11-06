@@ -19,12 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where its row's next column would — past the row's column the way the map flows, hanging from the row, past any
   column or card already there — and the map pans to centre it, keeping its row in sight. With the option off, cards
   keep taking free room in view without panning.
+- **Language servers are on by default.** Settings → LSP was off, so opening a Java, TypeScript, Go or Rust file
+  in a new installation never said code intelligence existed. Each server still waits until it is installed (the
+  install banner offers it).
+- **Language servers no longer run an untrusted folder's build.** Loading some projects runs their code: a Gradle
+  build's scripts, Maven build extensions, Rust build scripts and proc macros, a `Gemfile`, MSBuild projects,
+  Leiningen. In a folder you have not trusted, Java now starts without its Maven or Gradle build (syntax checks and
+  the JDK's types still work), and the Kotlin, Scala, Rust, Ruby, C# and Clojure servers wait. Their files say so
+  and offer **Trust Folder**; trusting restarts them with the build. A folder you trusted before (for example by
+  running its `./mvnw`) is unchanged.
+- **New defaults for three more settings** (an existing installation keeps the values it has):
+  - **Debugging is on.** Settings → Debugging was off, and it is the switch for the Python and JavaScript
+    debuggers as well as Java's. Each debugger still waits for its adapter to be found.
+  - **Hidden files show in the Project tree and the Map.** `.github/`, `.editorconfig`, `.gitignore` and `.env`
+    are project files; the repository's own `.git` folder (or a worktree's `.git` file) is never listed, with the
+    setting on or off.
+  - **The Markdown preview asks before loading remote images.** A README from a cloned repository no longer
+    fetches its `http`/`https` images the moment it is previewed; a bar offers to load them for that document.
+    Settings → Markdown → Remote images → Always restores the old behaviour. A settings file from before 0.22
+    that had remote images on keeps loading them.
 
 ### Fixed
 
 - **Map caller and reference cards no longer pile up.** With Focus new column on, Show Callers or References as
   Cards opened every result card on one spot, at full width, instead of beside the card asked from. Each now opens
   beside that card at the narrower result width, in a place of its own, stacking above or below the ones there.
+- **An open Problems window follows Next / Previous Problem.** The editor's problem-counter arrows (and F2 /
+  Shift+F2) select the problem they step to in the Problems tool window, opening its folded header and scrolling
+  it into view, while the focus stays in the editor — even when the last click was in the Problems window.
 - **Map Print and Export PDF include the open cards.** Preview, note and Overview cards, what is stuck on them
   (sticky notes, Structure columns, link chips) and their connectors are drawn on the pages where they stand on the
   map, as on screen; the pages grow to take in a card standing beyond the columns. Export ▸ SVG still leaves the

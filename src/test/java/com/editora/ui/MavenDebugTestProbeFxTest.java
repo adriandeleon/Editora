@@ -76,6 +76,9 @@ class MavenDebugTestProbeFxTest {
         });
         try {
             Path root = fx.useProject();
+            fx.shared
+                    .getTrustStore()
+                    .trust(root); // the user's own project: jdtls loads its build (lsp.UntrustedBuilds)
             copyTree(sample, root);
             MainController c = fx.controller;
             Path test = root.resolve("src/test/java/com/example/shelf/ShelfTest.java");

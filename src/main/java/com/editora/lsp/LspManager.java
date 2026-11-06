@@ -2496,6 +2496,9 @@ public final class LspManager {
         // lemminx-maven resolves and loads what a pom names (parents, plugins, extensions, its repositories): never
         // on a folder that is not trusted. The coordinator routes such a pom to plain lemminx; this is the backstop.
         boolean pomUntrusted = LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && !folderTrust.test(root);
+        // A server that runs the folder's own code to load its build waits for trust (UntrustedBuilds): jdtls starts
+        // with its imports off, the others not at all on a folder with their build files.
+        boolean folderTrusted = !UntrustedBuilds.gated(serverId) || folderTrust.test(root);
         boolean typeAcquisition = typeScriptTypeAcquisition;
         String nodeSetting = nodePathSetting;
         boolean loose = root.toAbsolutePath().normalize().equals(looseRoot);
@@ -2604,11 +2607,20 @@ public final class LspManager {
                     Platform.runLater(() -> onLombokMissing.accept(root));
                 }
             }
-            if (pomUntrusted) {
+            if (pomUntrusted || UntrustedBuilds.withholds(serverId, root, folderTrusted)) {
                 endHere(session); // deliberate: no crash notice, no restart
                 dropSession(key, session);
                 Platform.runLater(() -> onStartWithheld.accept(serverId, root));
                 return;
+            }
+            boolean importsOff = UntrustedBuilds.importsOff(serverId, folderTrusted);
+            session.setStartTrust(folderTrusted, importsOff, importsOff && UntrustedBuilds.hasBuild(serverId, root));
+            if (session.buildNotLoaded()) {
+                Platform.runLater(() -> {
+                    if (!closed) {
+                        onBuildNotLoaded.accept(serverId, root);
+                    }
+                });
             }
             Path ownTs = ownTypeScriptConfigDir;
             Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
@@ -2681,38 +2693,24 @@ public final class LspManager {
             } else {
                 ensureRemoteScanner(root); // no watcher here can follow it: listed when the window returns (2, B108)
             }
-            session.configureStart(
-                    startCommand,
-                    remoteEnvironment,
-                    () -> TypeScriptServer.SERVER_ID.equals(serverId) && !remote
-                            ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
-                            : TypeScriptServer.SERVER_ID.equals(serverId)
-                                    ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
-                                    : withXmlSettings(
-                                            serverId,
-                                            withProjectSettings(
-                                                    serverId,
-                                                    LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
-                                                            ? JavaLibrarySources.withDownloadSources(
-                                                                    initOptionsFor(
-                                                                            serverId,
-                                                                            startBundles,
-                                                                            astroTsdk,
-                                                                            onTypeFormatting,
-                                                                            jdks,
-                                                                            centralIndex,
-                                                                            javaPreferredHome),
-                                                                    downloadSources)
-                                                            : initOptionsFor(
-                                                                    serverId,
-                                                                    startBundles,
-                                                                    astroTsdk,
-                                                                    onTypeFormatting,
-                                                                    jdks,
-                                                                    centralIndex,
-                                                                    javaPreferredHome),
-                                                    remote ? null : root),
-                                            session.xmlSettings()));
+            session.configureStart(startCommand, remoteEnvironment, () -> {
+                Object options = startOptions(
+                        serverId,
+                        remote,
+                        root,
+                        session,
+                        tsserverPath,
+                        typeAcquisition,
+                        loose,
+                        startBundles,
+                        astroTsdk,
+                        onTypeFormatting,
+                        jdks,
+                        centralIndex,
+                        javaPreferredHome,
+                        downloadSources);
+                return importsOff ? UntrustedBuilds.initOptionsWithImportsOff(options) : options;
+            });
             if (!session.start()) {
                 dropSession(key, session);
                 if (session.startFailed()) {
@@ -6312,6 +6310,56 @@ public final class LspManager {
     }
 
     /**
+     * The {@code initializationOptions} a server starts with: the TypeScript server's own, else the server's defaults
+     * with the project's settings and the XML settings laid over them (jdtls's with its library-sources switch).
+     */
+    private static @Nullable Object startOptions(
+            String serverId,
+            boolean remote,
+            Path root,
+            LanguageServerSession session,
+            @Nullable Path tsserverPath,
+            boolean typeAcquisition,
+            boolean loose,
+            List<String> startBundles,
+            @Nullable Path astroTsdk,
+            boolean onTypeFormatting,
+            @Nullable List<JavaRuntimes.Jdk> jdks,
+            boolean centralIndex,
+            @Nullable String javaPreferredHome,
+            boolean downloadSources) {
+        return TypeScriptServer.SERVER_ID.equals(serverId) && !remote
+                ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
+                : TypeScriptServer.SERVER_ID.equals(serverId)
+                        ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
+                        : withXmlSettings(
+                                serverId,
+                                withProjectSettings(
+                                        serverId,
+                                        LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
+                                                ? JavaLibrarySources.withDownloadSources(
+                                                        initOptionsFor(
+                                                                serverId,
+                                                                startBundles,
+                                                                astroTsdk,
+                                                                onTypeFormatting,
+                                                                jdks,
+                                                                centralIndex,
+                                                                javaPreferredHome),
+                                                        downloadSources)
+                                                : initOptionsFor(
+                                                        serverId,
+                                                        startBundles,
+                                                        astroTsdk,
+                                                        onTypeFormatting,
+                                                        jdks,
+                                                        centralIndex,
+                                                        javaPreferredHome),
+                                        remote ? null : root),
+                                session.xmlSettings());
+    }
+
+    /**
      * {@code options} with lemminx's {@code settings.xml} object ({@code xml}, null = none) for an XML or pom server,
      * so its very first validation already runs with them — no schema download before the first push; anything
      * else unchanged.
@@ -6470,6 +6518,47 @@ public final class LspManager {
 
     public void setFolderTrust(java.util.function.Predicate<Path> trust) {
         this.folderTrust = trust == null ? folder -> false : trust;
+    }
+
+    /**
+     * Told (on the FX thread) when jdtls starts on a folder that is not trusted and has a Maven or Gradle build it
+     * therefore did not load (see {@link UntrustedBuilds}).
+     */
+    private volatile BiConsumer<String, Path> onBuildNotLoaded = (id, root) -> {};
+
+    public void setOnBuildNotLoaded(BiConsumer<String, Path> callback) {
+        this.onBuildNotLoaded = callback == null ? (id, root) -> {} : callback;
+    }
+
+    /** Whether the server serving {@code file} started without the folder's build because it is not trusted. */
+    public boolean buildNotLoaded(@Nullable Path file) {
+        LanguageServerSession s = file == null || !servable(file) ? null : sessionByDocUri.get(uri(file));
+        return s != null && s.buildNotLoaded();
+    }
+
+    /**
+     * After a trust decision (here or in another window): stops each server that loads a project's build
+     * ({@link UntrustedBuilds#gated}) whose folder's trust no longer matches the one it started with — a jdtls that
+     * started without its build on a folder now trusted, and any of them on a folder no longer trusted. True when
+     * one stopped; the caller opens their files again, which starts them as the trust now says. A server that
+     * started untrusted with no build to load (a loose file's) has nothing to gain and keeps running.
+     */
+    public boolean restartForTrust() {
+        List<Map.Entry<String, Path>> stale = new ArrayList<>();
+        sessionsByRoot.forEach((key, session) -> {
+            String id = session.serverId();
+            if (!UntrustedBuilds.gated(id)) {
+                return;
+            }
+            boolean trusted = folderTrust.test(session.root());
+            boolean wasTrusted = session.startedTrusted();
+            boolean restart = wasTrusted ? !trusted : trusted && session.buildImportsOff();
+            if (restart) {
+                stale.add(Map.entry(id, session.root())); // the Path itself: a remote root is not on this disk
+            }
+        });
+        stale.forEach(e -> shutdownServerAt(e.getKey(), e.getValue()));
+        return !stale.isEmpty();
     }
 
     /** Told when a Java server starts on a second workspace for a project another window already serves. */

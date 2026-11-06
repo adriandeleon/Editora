@@ -93,6 +93,7 @@ class JavaCodeChangesProbeFxTest {
             s.setJavaDebugPluginPath(plugin.toString());
         });
         Path root = fx.useProject();
+        fx.shared.getTrustStore().trust(root); // the user's own project: jdtls loads its build (lsp.UntrustedBuilds)
         Path main = root.resolve("Main.java");
         Files.writeString(main, SOURCE);
         MainController c = fx.controller;

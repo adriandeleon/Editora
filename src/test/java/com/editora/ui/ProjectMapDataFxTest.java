@@ -153,6 +153,7 @@ class ProjectMapDataFxTest {
     @Test
     void theMapFollowsTheShowHiddenFilesSetting() throws Exception {
         Path dotGit = Files.createDirectory(root.resolve(".git"));
+        Path dotGithub = Files.createDirectory(root.resolve(".github"));
         Path src = Files.createDirectory(root.resolve("src"));
         ProjectPanel panel = newPanel();
         try {
@@ -162,7 +163,8 @@ class ProjectMapDataFxTest {
             showMap(panel, true);
             waitForFx(() -> contains(surface, src));
             FxTestSupport.runOnFx(() -> {
-                assertFalse(contains(surface, dotGit), "hidden entries are not even loaded while the setting is off");
+                assertFalse(
+                        contains(surface, dotGithub), "hidden entries are not even loaded while the setting is off");
                 assertFalse(hiddenCheckBox(surface, root).isSelected(), "the column starts on the setting");
                 assertEquals(
                         tr("project.map.column.showHidden"),
@@ -170,14 +172,17 @@ class ProjectMapDataFxTest {
             });
 
             FxTestSupport.runOnFx(() -> panel.setShowHidden(true));
-            waitForFx(() -> contains(surface, dotGit));
-            FxTestSupport.runOnFx(() -> assertTrue(hiddenCheckBox(surface, root).isSelected()));
+            waitForFx(() -> contains(surface, dotGithub));
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(hiddenCheckBox(surface, root).isSelected());
+                assertFalse(contains(surface, dotGit), "the repository's own .git is never listed");
+            });
 
             // One column's own choice: off again for this column only, and its folder is listed anew.
             FxTestSupport.runOnFx(() -> hiddenCheckBox(surface, root).fire());
-            waitForFx(() -> !contains(surface, dotGit) && contains(surface, src));
+            waitForFx(() -> !contains(surface, dotGithub) && contains(surface, src));
             FxTestSupport.runOnFx(() -> hiddenCheckBox(surface, root).fire());
-            waitForFx(() -> contains(surface, dotGit));
+            waitForFx(() -> contains(surface, dotGithub));
         } finally {
             FxTestSupport.runOnFx(panel::dispose);
         }

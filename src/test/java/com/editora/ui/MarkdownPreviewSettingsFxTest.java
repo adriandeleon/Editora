@@ -175,9 +175,9 @@ class MarkdownPreviewSettingsFxTest {
             assertFalse(PreviewPrefs.hideFrontMatter());
             assertTrue(PreviewScrollSync.enabled());
 
-            assertEquals(RemotePolicy.ALWAYS, PreviewImageLoader.remotePolicy());
+            assertEquals(RemotePolicy.ASK, PreviewImageLoader.remotePolicy(), "asked by default");
             assertTrue(MarkdownRenderer.wikiLinks());
-            s.setMarkdownRemoteImagePolicy("ask");
+            s.setMarkdownRemoteImagePolicy("always");
             s.setMarkdownWikiLinks(false);
             s.setMarkdownPreviewFontSize(18);
             s.setMarkdownPreviewWidth(700);
@@ -189,7 +189,7 @@ class MarkdownPreviewSettingsFxTest {
                 assertEquals(700, PreviewPrefs.contentWidth());
                 assertTrue(PreviewPrefs.hideFrontMatter());
                 assertFalse(PreviewScrollSync.enabled());
-                assertEquals(RemotePolicy.ASK, PreviewImageLoader.remotePolicy());
+                assertEquals(RemotePolicy.ALWAYS, PreviewImageLoader.remotePolicy());
                 assertFalse(MarkdownRenderer.wikiLinks());
                 s.setMarkdownRemoteImagePolicy("never");
                 previews.applyPreviewSettings();
@@ -199,13 +199,13 @@ class MarkdownPreviewSettingsFxTest {
                 s.setMarkdownPreviewWidth(0);
                 s.setMarkdownHideFrontMatter(false);
                 s.setMarkdownScrollSync(true);
-                s.setMarkdownRemoteImagePolicy("always");
+                s.setMarkdownRemoteImagePolicy(Settings.DEFAULT_REMOTE_IMAGE_POLICY);
                 s.setMarkdownWikiLinks(true);
                 previews.applyPreviewSettings();
             }
             assertEquals(15, PreviewPrefs.baseFont());
             assertTrue(PreviewScrollSync.enabled());
-            assertEquals(RemotePolicy.ALWAYS, PreviewImageLoader.remotePolicy());
+            assertEquals(RemotePolicy.ASK, PreviewImageLoader.remotePolicy());
             assertTrue(MarkdownRenderer.wikiLinks());
         });
     }

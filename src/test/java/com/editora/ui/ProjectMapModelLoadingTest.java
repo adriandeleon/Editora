@@ -228,17 +228,19 @@ class ProjectMapModelLoadingTest {
     @Test
     void hiddenEntriesSpendNoBudgetUnlessTheirColumnAsksForThem() throws Exception {
         Path dotGit = Files.createDirectory(root.resolve(".git"));
+        Path dotGithub = Files.createDirectory(root.resolve(".github"));
         Files.createFile(root.resolve("visible.txt"));
 
-        assertFalse(has(ProjectMapModel.load(new Request(root, Set.of(root), false)), dotGit));
+        assertFalse(has(ProjectMapModel.load(new Request(root, Set.of(root), false)), dotGithub));
 
         Snapshot overridden = ProjectMapModel.load(
                 new Request(root, Set.of(root), false, Map.of(normalize(root), true), Map.of(), List.of(), null, null));
-        assertTrue(has(overridden, dotGit));
+        assertTrue(has(overridden, dotGithub));
+        assertFalse(has(overridden, dotGit), "the repository's own .git is never listed");
 
         Snapshot switchedOff = ProjectMapModel.load(
                 new Request(root, Set.of(root), true, Map.of(normalize(root), false), Map.of(), List.of(), null, null));
-        assertFalse(has(switchedOff, dotGit));
+        assertFalse(has(switchedOff, dotGithub));
     }
 
     @Test

@@ -103,6 +103,8 @@ class JavaDebugRealAdapterProbeFxTest {
             lsp = new LspManager((p, ds) -> {}, (type, message) -> {
                 if ("ServiceReady".equals(type)) ready.countDown();
             });
+            lsp.setFolderTrust(folder ->
+                    true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
             dap = new DapManager(lsp);
             dap.setListener(new DapManager.Listener() {
                 @Override

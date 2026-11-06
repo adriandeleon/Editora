@@ -666,9 +666,10 @@ window's own field filters the tree only). It combines with:
 - a fuzzy free-text filter in every column;
 - a per-column **Show hidden** checkbox.
 
-Hidden (dot) entries follow the Project "show hidden files" setting: it is each column's default, it is
-what the loader lists (so hidden entries spend no row budget while it is off), and changing it puts every
-column back on the setting. Ticking one column's checkbox overrides the setting for that folder only and
+Hidden (dot) entries follow the Project "show hidden files" setting (on by default since 0.27.1): it is each
+column's default, it is what the loader lists (so hidden entries spend no row budget while it is off), and
+changing it puts every column back on the setting. The repository's own `.git` is never listed, as in the
+Project tree and Find in Files. Ticking one column's checkbox overrides the setting for that folder only and
 lists the folder again.
 
 The status chips are alternatives to one another: selecting Open and Bookmarks matches either state.

@@ -682,6 +682,8 @@ class RealSshdProbeFxTest {
             Path py = Files.writeString(app.resolve("bad.py"), "x: int = 'text'\n");
             Map<Path, List<LspDiagnostic>> diags = new ConcurrentHashMap<>();
             LspManager lsp = new LspManager(diags::put, (t, m) -> {});
+            lsp.setFolderTrust(folder ->
+                    true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
             try {
                 lsp.configure(true, Map.of());
                 onFx(() -> lsp.openDocument(py, app, "python", "x: int = 'text'\n"));
@@ -729,6 +731,8 @@ class RealSshdProbeFxTest {
                     seen.add("READY");
                 }
             });
+            lsp.setFolderTrust(folder ->
+                    true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
             lsp.configure(true, Map.of());
             lsp.setDebugBundles(List.of(javaDebug));
             DapManager dap = new DapManager(lsp);

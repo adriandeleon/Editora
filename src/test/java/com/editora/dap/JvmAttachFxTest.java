@@ -63,6 +63,8 @@ class JvmAttachFxTest {
     @BeforeEach
     void setUp() throws Exception {
         lsp = new LspManager((f, d) -> {}, (t, m) -> {});
+        lsp.setFolderTrust(folder ->
+                true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
         dap = new DapManager(lsp);
         onFx(() -> {
             dap.configure(true, dir.resolve("no-plugin-here").toString());

@@ -832,7 +832,10 @@ class ConfigMigrationsTest {
         assertFalse(off.has("markdownRemoteImages"));
 
         JsonNode on = ConfigMigrations.remoteImagesToPolicy(mapper.readTree("{\"markdownRemoteImages\":true}"));
-        assertFalse(on.has("markdownRemoteImagePolicy"), "on is the default: nothing is written");
+        assertEquals(
+                "always",
+                on.get("markdownRemoteImagePolicy").asText(),
+                "on is written out: the default became \"ask\" in 0.27.1, and the user had chosen to load them");
         assertFalse(on.has("markdownRemoteImages"));
 
         JsonNode absent = ConfigMigrations.remoteImagesToPolicy(mapper.readTree("{\"tabSize\":4}"));

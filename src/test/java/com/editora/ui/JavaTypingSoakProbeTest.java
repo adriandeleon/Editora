@@ -171,6 +171,8 @@ class JavaTypingSoakProbeTest {
                 : "package org.fxmisc.richtext.demo;\nimport org.fxmisc.richtext.CodeArea;\nclass EditingTrial {\n";
         Files.writeString(file, baseline + "}\n");
         manager = new LspManager((path, diagnostics) -> {}, (type, message) -> {});
+        manager.setFolderTrust(folder ->
+                true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
         manager.configure(true, Map.of("java", command));
         manager.setJdtlsWorkspaceBase(root.getParent().resolve(kind + "-workspace"));
         if (kind.equals("gradle"))

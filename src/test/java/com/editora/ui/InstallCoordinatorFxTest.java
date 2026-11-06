@@ -618,6 +618,7 @@ class InstallCoordinatorFxTest {
         assumeTrue(onPath("tar"), "tar is not installed");
         try (AsyncTestScope scope = new AsyncTestScope()) {
             Rig rig = new Rig(scope, "java support");
+            rig.host.settings.setDebugSupport(false); // on by default since 0.27.1: the hint below is for it off
             String api = InstallCatalog.steps(Lang.JAVA).get(1).apiUrl();
             String vsix = "https://open-vsx.org/api/vscjava/vscode-java-debug/0.58.2/file/java-debug.vsix";
             rig.web.serve(

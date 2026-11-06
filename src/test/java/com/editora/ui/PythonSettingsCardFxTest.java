@@ -41,6 +41,7 @@ class PythonSettingsCardFxTest {
         FxTestSupport.bootToolkit();
         fx = FxWindowFixture.create();
         settings = fx.shared.getSettings();
+        settings.setDebugSupport(false); // on by default since 0.27.1; this case is about it being off
         window = FxTestSupport.field(fx.controller, "settingsWindow");
         FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
         FxTestSupport.drainFx();
@@ -71,8 +72,8 @@ class PythonSettingsCardFxTest {
 
     @Test
     void theInterpreterIsOnTheLspPageAndEditableWithDebuggingAndLspOff() throws Exception {
-        assertFalse(settings.isDebugSupport(), "debugging is off by default");
-        assertFalse(settings.isLspSupport(), "language servers are off by default");
+        assertFalse(settings.isDebugSupport(), "debugging is off (switched off in boot)");
+        assertFalse(settings.isLspSupport(), "language servers are off (as a test window starts them)");
         Map<String, TextField> fields = FxTestSupport.field(window, "debugCommandFields");
         TextField python = fields.get("python");
         assertTrue(FxTestSupport.callOnFx(() -> inside(python, page(SettingsWindow.Category.LSP))));

@@ -82,9 +82,11 @@ class MarkdownSettingsPageFxTest {
     @Test
     void remoteImagesHaveAPolicyChoiceAndTheOldToggleStillWorks() throws Exception {
         ComboBox<String> policy = row("markdownRemoteImagePolicy");
-        assertEquals("always", FxTestSupport.callOnFx(policy::getValue), "fetched by default");
+        assertEquals("ask", FxTestSupport.callOnFx(policy::getValue), "asked by default");
         assertEquals(
                 Settings.REMOTE_IMAGE_POLICIES, FxTestSupport.callOnFx(() -> java.util.List.copyOf(policy.getItems())));
+        FxTestSupport.runOnFx(() -> policy.setValue("always"));
+        assertEquals("always", settings.getMarkdownRemoteImagePolicy());
         FxTestSupport.runOnFx(() -> policy.setValue("ask"));
         assertEquals("ask", settings.getMarkdownRemoteImagePolicy());
         assertTrue(settings.isMarkdownRemoteImages(), "asking is not refusing");
