@@ -872,7 +872,11 @@ waiting for its row or outline when the trail moves on or closes is withdrawn fr
 (`viewsShowCard` returns the withdrawal) and never opens (A2); × closes the bar and detaches the note, leaving the
 card. When the stop's card closes some other way (its ×, a column closing), the bar's title reads "<stop> (card
 closed)" and a click on it shows the stop again (A7). The note sheet takes the right of its card, else the left, and
-when both have room the side covering less of the map's columns (`ProjectMapTrailNote.viewsSide`, A8).
+when both have room the side covering less of the map's columns (`ProjectMapTrailNote.viewsSide`, A8). A card
+that opens centred (Focus new column) can leave less than a sheet's width on both sides; once it has settled, when
+the map area holds the card and the sheet together, the map pans across as little as frees a side, the one covering
+less of the columns, else the shorter pan (`ProjectMapTrailNote.viewsRoomPan`), rather than putting the sheet over
+the stop's lines. Only a map area too narrow for both leaves the sheet over the card.
 
 *Edit* opens `ProjectMapTrailEditor`, a card over the map (not counted against the card limit): the stops in order
 with title, file:lines and note; Move Up / Move Down (Alt+↑/↓), Remove (Delete), Rename…, Note…, Play from Here

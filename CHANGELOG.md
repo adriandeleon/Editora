@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A trail stop's note no longer covers its card.** Since cards open centred, a wide card could leave too little
+  room for the note on either side, and the note was laid over the stop's lines (on macOS at the default size).
+  The map now pans just far enough for the note to stand beside the card.
 - **An open Problems window follows Next / Previous Problem.** The editor's problem-counter arrows (and F2 /
   Shift+F2) select the problem they step to in the Problems tool window, opening its folded header and scrolling
   it into view, while the focus stays in the editor — even when the last click was in the Problems window.
