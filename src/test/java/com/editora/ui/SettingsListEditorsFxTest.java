@@ -265,12 +265,16 @@ class SettingsListEditorsFxTest {
                 assertEquals(Map.of("omw", "on my way"), fx.shared.abbreviationMap());
                 assertEquals(
                         Map.of("omw", "on my way"),
-                        FxTestSupport.<Map<String, String>>field(buffer, "abbrevTable"),
+                        FxTestSupport.<Map<String, String>>field(
+                                FxTestSupport.field(buffer, "snippetKeys"), "abbrevTable"),
                         "the open buffer expands the new abbreviation without another setting changing");
 
                 answer(w, true);
                 button(pg, tr("settings.abbrev.remove")).fire();
-                assertEquals(Map.of(), FxTestSupport.<Map<String, String>>field(buffer, "abbrevTable"));
+                assertEquals(
+                        Map.of(),
+                        FxTestSupport.<Map<String, String>>field(
+                                FxTestSupport.field(buffer, "snippetKeys"), "abbrevTable"));
                 FxTestSupport.<Stage>field(w, "stage").hide();
             });
         }

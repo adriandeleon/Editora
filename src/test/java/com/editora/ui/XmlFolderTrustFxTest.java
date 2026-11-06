@@ -262,7 +262,7 @@ class XmlFolderTrustFxTest {
         List<String> told = new ArrayList<>();
         trust.broadcast = () -> told.add("broadcast");
         javafx.scene.control.Button action = FxTestSupport.callOnFx(() -> {
-            Object bar = FxTestSupport.field(pom, "fileNotice");
+            Object bar = FxTestSupport.field(FxTestSupport.field(pom, "banners"), "fileNotice");
             return (javafx.scene.control.Button) FxTestSupport.field(bar, "action");
         });
         FxTestSupport.runOnFx(action::fire);

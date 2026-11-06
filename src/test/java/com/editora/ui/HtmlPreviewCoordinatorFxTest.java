@@ -141,7 +141,7 @@ class HtmlPreviewCoordinatorFxTest {
             html.setMinimapVisible(false);
             c.ensureControl(html);
         });
-        Node control = FxTestSupport.field(html, "htmlPreviewControl");
+        Node control = FxTestSupport.field(FxTestSupport.field(html, "viewLayout"), "htmlPreviewControl");
         // The control sits in the code pane's shared corner row; the row is what gets anchored.
         double withoutMinimap = FxTestSupport.callOnFx(() -> AnchorPane.getRightAnchor(control.getParent()));
 

@@ -90,7 +90,7 @@ class TypingLatencyBenchmarkTest {
                     perKeystroke < 0.1,
                     "typing must not leak JavaFX pulse receivers, but leaked " + perKeystroke
                             + " per keystroke — most likely a zero-width getCharacterBoundsOnScreen(x, x)"
-                            + " call was reintroduced (see EditorBuffer.caretBounds)");
+                            + " call was reintroduced (see BufferRuler.caretBounds)");
         } finally {
             Files.deleteIfExists(file);
         }

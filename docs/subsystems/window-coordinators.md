@@ -71,6 +71,19 @@ AI completion and asynchronous completion state. `EditorBuffer` retains the publ
 snapshots, mark ring and indentation decisions. Its host stays in the editor package and has no UI
 controller dependency.
 
+`EditorBuffer`'s other feature parts are package-private classes beside it. Unlike `BufferCompletion` they
+take the buffer itself rather than a host interface — each reads many of its views, flags and its document
+snapshot — and they are created in its field initializers, before anything can call them: `BufferPreview` (the preview pane, its hosts and the rendering
+of every preview format), `BufferLayout` (the view-host composition and the floating corner controls),
+`BufferTyping` (the typing key filters and macro replay), `BufferSnippets` (snippet keys and expansion,
+abbrevs), `BufferContextMenu`, `BufferRunGutter` (the Run glyphs and their scan), `BufferInlays`,
+`BufferRuler`, `BufferHighlighter`, `SelectionBars` (format bar, AI actions bar), `BufferCarets` (multiple
+cursors), `BufferTodos`, `BufferLspAssists`, `BufferNarrowing` and `BufferBanners`. `EditorBuffer` keeps the
+public API as forwarders, the document and its snapshots, dirty tracking, the overlays and their lazy
+attachment, and the constructor that installs every listener and key filter in its fixed order. The parts
+are created right after the buffer's primary view, so a part's constructor may read `area` but nothing the
+buffer initializes later.
+
 Existing JavaFX tests exercise these workflows through real windows and command dispatch. Tests
 that inspect private state must target the owning coordinator. `SourceFileSizeTest` enforces a
 10,000-line upper bound for production Java files; this is a ceiling, not a desired class size.

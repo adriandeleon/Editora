@@ -297,7 +297,7 @@ class HtmlLinksFxTest {
             w.await("the swatches laid out", () -> swatches(b).size() == 3);
             FxTestSupport.runOnFx(() -> b.getArea().insertText(4, "border-top-color: navy; "));
             FxTestSupport.runOnFx(() -> {
-                Object inlays = FxTestSupport.field(b, "swatchInlays");
+                Object inlays = FxTestSupport.field(FxTestSupport.field(b, "inlayDecor"), "swatchInlays");
                 java.util.Map<Integer, List<org.fxmisc.richtext.Inlay>> byLine = FxTestSupport.field(inlays, "byLine");
                 assertEquals(
                         List.of(35, 52),
@@ -309,7 +309,7 @@ class HtmlLinksFxTest {
             });
             FxTestSupport.runOnFx(() -> b.getArea().replaceText(0, 0, "x {}\n"));
             FxTestSupport.runOnFx(() -> {
-                Object inlays = FxTestSupport.field(b, "swatchInlays");
+                Object inlays = FxTestSupport.field(FxTestSupport.field(b, "inlayDecor"), "swatchInlays");
                 java.util.Map<Integer, List<org.fxmisc.richtext.Inlay>> byLine = FxTestSupport.field(inlays, "byLine");
                 assertEquals(java.util.Set.of(1, 2), byLine.keySet(), "a line added above moves them down");
             });

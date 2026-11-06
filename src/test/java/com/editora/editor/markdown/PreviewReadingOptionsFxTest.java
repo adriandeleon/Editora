@@ -210,7 +210,7 @@ class PreviewReadingOptionsFxTest {
             ref[0] = EditorFx.show(b[0], 900, 400);
             PreviewPrefs.set(21, 0, false);
             b[0].setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT);
-            preview[0] = EditorFx.field(b[0], "previewPane");
+            preview[0] = EditorFx.field(EditorFx.field(b[0], "previewPanes"), "previewPane");
         });
         poll(() -> preview[0].getContent() != null
                 && "-fx-font-size: 21.0px;".equals(preview[0].getContent().getStyle()));

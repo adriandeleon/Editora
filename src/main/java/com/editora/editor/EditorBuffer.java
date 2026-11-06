@@ -1,9 +1,7 @@
 package com.editora.editor;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -11,51 +9,29 @@ import java.util.concurrent.Executors;
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
-import javafx.geometry.Bounds;
-import javafx.geometry.Insets;
-import javafx.geometry.Orientation;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.control.Button;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.Label;
-import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.ProgressIndicator;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.control.SeparatorMenuItem;
-import javafx.scene.control.SplitPane;
-import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionProvider;
-import com.editora.config.RulerColumns;
 import com.editora.diagram.DiagramKind;
-import com.editora.editops.AutoClose;
 import com.editora.editops.BraceMatcher;
-import com.editora.editops.CommentContinuation;
 import com.editora.editops.Commenter;
 import com.editora.editops.HtmlLinks;
-import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineEndings;
-import com.editora.editops.LineIndent;
-import com.editora.editops.MultiTab;
 import com.editora.editops.TextFingerprint;
 import com.editora.editops.WholeDocumentEdit;
 import com.editora.editor.completion.BufferCompletion;
 import com.editora.editor.completion.CompletionEditTracker;
-import com.editora.editor.completion.SnippetFieldOverlay;
 import com.editora.editor.completion.SnippetTyping;
 import com.editora.editor.crypto.BufferEncryption;
 import com.editora.editor.debug.BreakpointGutterMenu;
@@ -71,10 +47,8 @@ import com.editora.editor.fold.StickyScroll;
 import com.editora.editor.fold.StickyScrollBar;
 import com.editora.editor.git.BlameInfo;
 import com.editora.editor.git.GitGutterLines;
-import com.editora.editor.highlight.CsvRainbow;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.HighlightDirty;
-import com.editora.editor.highlight.HighlightPass;
 import com.editora.editor.highlight.JsxContext;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.http.HttpGutter;
@@ -93,26 +67,17 @@ import com.editora.editor.lsp.OccurrenceHighlightOverlay;
 import com.editora.editor.markdown.DiagramImages;
 import com.editora.editor.markdown.MarkdownCompletions;
 import com.editora.editor.markdown.MarkdownEditing;
-import com.editora.editor.markdown.MarkdownFormatBar;
 import com.editora.editor.markdown.MarkdownLintHover;
 import com.editora.editor.markdown.MarkdownLintOverlay;
 import com.editora.editor.markdown.MarkdownLintStripe;
-import com.editora.editor.markdown.MarkdownMenus;
-import com.editora.editor.markdown.MarkdownPreview;
-import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.editor.markdown.MermaidImages;
 import com.editora.editor.markdown.MermaidLintHover;
 import com.editora.editor.markdown.MermaidLintOverlay;
-import com.editora.editor.markdown.PreviewButtons;
 import com.editora.editor.markdown.PreviewFind;
-import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.editor.markdown.PreviewLayout;
 import com.editora.editor.markdown.PreviewMenu;
-import com.editora.editor.markdown.PreviewPrefs;
 import com.editora.editor.markdown.PreviewScrollSync;
 import com.editora.editor.markdown.PreviewSurfaces;
-import com.editora.editor.markdown.ScrollAnchor;
-import com.editora.editor.markdown.SvgImages;
 import com.editora.editor.markdown.TypstImages;
 import com.editora.editor.minimap.Minimap;
 import com.editora.editor.notes.NoteDraft;
@@ -122,19 +87,7 @@ import com.editora.editor.notes.NoteManager;
 import com.editora.editor.search.SearchHighlightOverlay;
 import com.editora.editor.spell.BufferSpell;
 import com.editora.editor.spell.SpellCheckOverlay;
-import com.editora.editor.structured.CrontabPreview;
-import com.editora.editor.structured.DockerfilePreview;
-import com.editora.editor.structured.FstabPreview;
-import com.editora.editor.structured.GithubActionsPreview;
-import com.editora.editor.structured.MarkwhenCalendar;
-import com.editora.editor.structured.MarkwhenTimeline;
-import com.editora.editor.structured.OpenApiDoc;
-import com.editora.editor.structured.PomPreview;
 import com.editora.editor.structured.PreviewSnapshots;
-import com.editora.editor.structured.SshConfigPreview;
-import com.editora.editor.structured.StructuredTree;
-import com.editora.editor.structured.SystemdPreview;
-import com.editora.editor.structured.XmlTree;
 import com.editora.editor.todo.TodoHighlightOverlay;
 import com.editora.editor.todo.TodoMark;
 import com.editora.editor.todo.TodoMatcher;
@@ -152,14 +105,12 @@ import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetSessions;
 import com.editora.structured.StructuredParser;
-import com.editora.structured.XmlParser;
 import com.editora.text.FoldRegions;
 import com.editora.text.LanguageRegistry;
 import com.editora.text.LspDiagnostic;
 import com.editora.text.LspTextEdit;
 import com.editora.text.Modeline;
 import com.editora.text.OccurrenceSpan;
-import com.editora.text.SearchMatcher;
 import com.editora.text.SearchMatches;
 import com.editora.text.SemanticToken;
 import com.editora.text.Shebang;
@@ -168,18 +119,15 @@ import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
-import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;
 
-import static com.editora.i18n.Messages.tr;
-
 /** A single open document: a RichTextFX {@link CodeArea} plus its backing file, language, and dirty state. */
 public class EditorBuffer implements TabContent {
 
-    private final BufferCompletion completionActions = new BufferCompletion(new BufferCompletion.Host() {
+    final BufferCompletion completionActions = new BufferCompletion(new BufferCompletion.Host() {
         @Override
         public CodeArea area() {
             return area;
@@ -262,7 +210,7 @@ public class EditorBuffer implements TabContent {
 
         @Override
         public boolean multiCaretActiveOn(CodeArea a) {
-            return EditorBuffer.this.multiCaretActiveOn(a);
+            return EditorBuffer.this.caretOps.multiCaretActiveOn(a);
         }
 
         @Override
@@ -302,27 +250,37 @@ public class EditorBuffer implements TabContent {
 
         @Override
         public void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
-            EditorBuffer.this.startSnippet(a, snippet, from, to, reindent);
+            EditorBuffer.this.snippetKeys.startSnippet(a, snippet, from, to, reindent);
         }
 
         @Override
         public com.editora.snippet.TabExpansion.@Nullable Match snippetTrigger(CodeArea a, boolean tabOnly) {
-            if (tabOnly && !snippetTabExpansion) {
+            if (tabOnly && !snippetKeys.snippetTabExpansion) {
                 return null;
             }
             return SnippetTyping.triggerAtCaret(
-                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider, !tabOnly);
+                    a,
+                    language,
+                    isProse(),
+                    tabOnly ? snippetKeys.snippetProvider : snippetKeys.snippetOfferProvider,
+                    !tabOnly);
         }
 
         @Override
         public com.editora.editops.Abbrev.@Nullable Edit abbrevAtCaret(CodeArea a) {
-            if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
+            if (!snippetKeys.abbrevMode
+                    || snippetKeys.applyingAbbrev
+                    || hugeFile
+                    || !isEditable()
+                    || snippetKeys.abbrevTable.isEmpty()) {
                 return null;
             }
-            if (hasActiveSnippet() || multiCaretActiveOn(a) || a.getSelection().getLength() > 0) {
+            if (hasActiveSnippet()
+                    || caretOps.multiCaretActiveOn(a)
+                    || a.getSelection().getLength() > 0) {
                 return null;
             }
-            return abbrevBefore(a, a.getCaretPosition());
+            return snippetKeys.abbrevBefore(a, a.getCaretPosition());
         }
 
         @Override
@@ -340,10 +298,41 @@ public class EditorBuffer implements TabContent {
     private final TagRenameMirror tagRename = new TagRenameMirror(
             this::getLanguage, () -> !this.largeFile && !this.hugeFile && isEditable() && !hasMultipleCarets());
 
-    private final CodeArea area = tagRename.newArea(null);
-    private final IndentKeys indentKeys = new IndentKeys(area, () -> this.language);
-    private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
-    private final BooleanProperty dirty = new SimpleBooleanProperty(false);
+    final CodeArea area = tagRename.newArea(null);
+    final IndentKeys indentKeys = new IndentKeys(area, () -> this.language);
+    final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
+    /** The preview pane, its hosts and the rendering of every preview format ({@link BufferPreview}). */
+    final BufferPreview previewPanes = new BufferPreview(this);
+    /** The tab's view composition and its floating corner controls ({@link BufferLayout}). */
+    final BufferLayout viewLayout = new BufferLayout(this);
+    /** Auto-indent, auto-close, smart Tab and the other typing assists ({@link BufferTyping}). */
+    final BufferTyping typingAids = new BufferTyping(this);
+    /** Snippet keys and expansion, and abbrevs ({@link BufferSnippets}). */
+    final BufferSnippets snippetKeys = new BufferSnippets(this);
+    /** The right-click menu ({@link BufferContextMenu}). */
+    final BufferContextMenu editorMenu = new BufferContextMenu(this);
+    /** The gutter Run glyphs and their handlers ({@link BufferRunGutter}). */
+    final BufferRunGutter runGutter = new BufferRunGutter(this);
+    /** Inlay hints, colour swatches, code lenses and {@code .http} results drawn inline ({@link BufferInlays}). */
+    final BufferInlays inlayDecor = new BufferInlays(this);
+    /** The column rulers' columns and their deferred placement ({@link BufferRuler}). */
+    final BufferRuler rulerPlacement = new BufferRuler(this);
+    /** Syntax, semantic-token, CSV and bracket highlighting ({@link BufferHighlighter}). */
+    final BufferHighlighter highlighter = new BufferHighlighter(this);
+    /** The format bar and the AI actions bar over a selection ({@link SelectionBars}). */
+    final SelectionBars selectionBars = new SelectionBars(this);
+    /** Multiple cursors and column selection ({@link BufferCarets}). */
+    final BufferCarets caretOps = new BufferCarets(this);
+    /** TODO/FIXME highlights and jumps ({@link BufferTodos}). */
+    final BufferTodos todoMarker = new BufferTodos(this);
+    /** The diagnostic tooltip, document-highlight trigger and paste auto-import ({@link BufferLspAssists}). */
+    final BufferLspAssists lspAssists = new BufferLspAssists(this);
+    /** Emacs narrowing ({@link BufferNarrowing}). */
+    final BufferNarrowing narrowing = new BufferNarrowing(this);
+    /** The notice, install and View Mode bars above the text ({@link BufferBanners}). */
+    final BufferBanners banners = new BufferBanners(this);
+
+    final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /**
      * The last saved/loaded content — its length and fingerprint, and the text itself only while it is still the
      * snapshot ({@link SavedBaseline}); the buffer is dirty only when the text differs from this. Null for a
@@ -354,17 +343,6 @@ public class EditorBuffer implements TabContent {
     private boolean forcedDirty;
     /** The line ending the file had when loaded or last saved; a different one is an unsaved change. */
     private String cleanLineEnding = LineEndings.LF;
-    /**
-     * Emacs narrowing: the document text before/after the accessible region (and its styles, symbols and fold
-     * regions, see {@link NarrowCarry}), held aside while the area itself holds only the region. Null when the
-     * buffer is widened (the normal state).
-     */
-    private NarrowCarry.@Nullable Held narrowHeld;
-    /** Fired whenever narrowing turns on or off, from wherever — the UI reconciles off this, not off the
-     *  command, so a widen forced by a whole-document write cannot leave a stale indicator or a suspended
-     *  language server behind. */
-    private Runnable onNarrowChanged = () -> {};
-
     /** Orientation of an optional second, synced view of this document. */
     public enum Split {
         NONE,
@@ -373,64 +351,29 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Wraps the scroll pane so we can overlay the column-80 ruler line and dock the minimap. */
-    private final AnchorPane root = new AnchorPane();
+    final AnchorPane root = new AnchorPane();
     /** Tab content: shows either {@link #root} alone or a SplitPane of [root, secondary view]. */
-    private final StackPane viewHost = new StackPane(root);
+    final StackPane viewHost = new StackPane(root);
     /** Outermost tab content: a "View Mode" banner (top, read-only only) above {@link #viewHost}. */
-    private final javafx.scene.layout.BorderPane outer = new javafx.scene.layout.BorderPane(viewHost);
-    /** The MS-Word-style read-only banner (lazy); its "Enable Editing" runs {@link #onEnableEditing}. */
-    private @Nullable ViewModeBar viewModeBar;
-
-    private boolean viewModeBarVisible;
-    /** Why this buffer is in View mode when it is not the general reason; cleared when editing is enabled. */
-    private @Nullable String viewModeReason;
-    /** Expert-mode exit control hosted over this buffer's primary code viewport, when it is active. */
-    private @Nullable Node expertExitControl;
-
-    /**
-     * The one row holding every floating control at the top-right of the code pane (view-mode toggle,
-     * open-in-browser, log controls, Expert exit). Sharing a row is what keeps them from overlapping.
-     */
-    private final HBox cornerControls = cornerControlRow();
-
-    /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
-    private boolean adminEditAvailable;
-
-    private @Nullable Boolean
-            writableOnDisk; // null: ask Files.isWritable; else what the window found out (remote files)
-
-    /** IntelliJ-style "install language support?" banner (lazy), stacked above the view-mode bar; driven by
-     *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. */
-    private @Nullable NoticeBar installBar;
-
-    private boolean installBarShown;
-    /** A notice about the file itself (a shell script's CRLF/BOM), above the install banner; null until used. */
-    private @Nullable NoticeBar fileNotice;
-
-    private boolean fileNoticeShown;
+    final javafx.scene.layout.BorderPane outer = new javafx.scene.layout.BorderPane(viewHost);
     /** The file's encryption and the views that stand in for its text ({@link BufferEncryption}). */
-    private final BufferEncryption encryption =
+    final BufferEncryption encryption =
             new BufferEncryption(outer, viewHost, this::applyEditable, this::refreshTopBars);
-    /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
-    private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
-    private @Nullable CodeArea area2;
+    @Nullable
+    CodeArea area2;
 
-    private @Nullable VirtualizedScrollPane<CodeArea> scrollPane2;
+    @Nullable
+    VirtualizedScrollPane<CodeArea> scrollPane2;
     /** The secondary view's container (scroll pane + its own minimap), mounted in the SplitPane. */
-    private @Nullable AnchorPane root2;
+    @Nullable
+    AnchorPane root2;
 
-    private @Nullable SecondaryPane pane2;
+    @Nullable
+    SecondaryPane pane2;
 
     private @Nullable Minimap minimap2;
-    private Split split = Split.NONE;
-
-    /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork add-on). Installed on {@link #area}
-     *  (and {@link #area2} when split) while {@link #multiCaretEnabled}; transparent with one caret. */
-    private boolean multiCaretEnabled;
-
-    private @Nullable MultiCarets multiCaret;
-    private @Nullable MultiCarets multiCaret2;
+    Split split = Split.NONE;
 
     /** IntelliJ-style Markdown preview modes (only meaningful for Markdown files). */
     public enum MarkdownViewMode {
@@ -439,7 +382,7 @@ public class EditorBuffer implements TabContent {
         PREVIEW
     }
 
-    private MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
+    MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
 
     /** Which renderer a Markwhen preview uses (toggled per file, persisted like the view mode). */
     public enum MarkwhenView {
@@ -447,64 +390,24 @@ public class EditorBuffer implements TabContent {
         CALENDAR
     }
 
-    private MarkwhenView markwhenView = MarkwhenView.TIMELINE;
+    MarkwhenView markwhenView = MarkwhenView.TIMELINE;
     /** Fired (FX thread) when the Markwhen view flips, so the controller persists it. */
     private Runnable onMarkwhenViewChanged = () -> {};
     /** Split scroll sync and position keeping between the editor and the preview ({@link PreviewScrollSync}). */
-    private PreviewScrollSync scrollSync;
-    /** The rendered Markdown document shown in {@link #previewPane} (lazy; see {@link MarkdownPreview}). */
-    @Nullable
-    MarkdownPreview markdownPreview;
-    /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
-    private @Nullable ScrollPane previewPane;
-    /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
-    private @Nullable StackPane previewHost;
-    /** Centered spinner + message shown over the preview while content is expected but not yet rendered
-     *  (e.g. an AI explanation streaming in) — otherwise the pane just looks blank. Toggled by
-     *  {@link #setPreviewLoading}; always present in {@link #previewHost()}, hidden by default. */
-    private @Nullable Node previewLoadingOverlay;
-
-    private @Nullable Label previewLoadingLabel;
-    /** The preview's −/+ zoom + light/dark control (overlaid top-left of the preview when previewing). */
-    private @Nullable HBox zoomControl;
-    /** The preview light/dark toggle button (a sun/moon glyph); reflects the current effective theme. */
-    private @Nullable Button previewThemeButton;
-    /** Markdown preview color theme: "" (follow app), "light", or "dark" — set by the controller. */
-    private String previewThemeMode = "";
-    /** Whether the app/editor theme is dark (used to resolve "follow app" + the toggle glyph). */
-    private boolean previewAppDark;
-    /** Runs the controller's global preview-theme toggle (injected, like the snippet/completion providers). */
-    private Runnable previewThemeToggle = () -> {};
-    /** Preview text zoom factor (1.0 = 100%); scales the rendered preview's base font size. */
-    private double previewFontScale = 1.0;
-    /** Where the Split view's divider sits (the editor's share), kept across mode switches and per file. */
-    private double previewDivider = 0.5;
-    /** Told when the zoom or the divider changed by the user's hand (the controller persists them). */
-    private Runnable onPreviewLayoutChanged = () -> {};
-    /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
-    private @Nullable Node viewModeControl;
-    /** The floating "open in browser" control overlaid top-right (injected for HTML buffers). */
-    private @Nullable Node htmlPreviewControl;
-    /** The {@code .http} environment pill, kept beside the Editor/Split/Preview toggle in every mode. */
-    private @Nullable Node httpEnvControl;
-    /** Holds the environment pill and the view toggle side by side over a preview (Split and Preview modes). */
-    private final HBox previewCornerRow = previewCornerRow();
+    PreviewScrollSync scrollSync;
     /** The floating log-viewer control overlaid top-right (Follow / level / regex; injected for log buffers). */
-    private @Nullable Node logControl;
+    @Nullable
+    Node logControl;
     /** The CSV/TSV grid preview node (a ui-layer TableView panel), injected for CSV buffers when the feature
-     *  is on; non-null doubles as the CSV-preview enablement gate (mirrors {@link #htmlPreviewControl}). */
-    private @Nullable Node csvPreviewNode;
-    /** Repopulates the injected CSV grid from the buffer text; run on the debounced preview pulse. */
-    private Runnable csvPreviewRefresh = () -> {};
-    /** Wraps the CSV grid so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
-    private @Nullable StackPane csvPreviewHost;
+     *  is on; non-null doubles as the CSV-preview enablement gate (mirrors {@link BufferLayout#htmlPreviewControl}). */
+    @Nullable
+    Node csvPreviewNode;
     /** The HTTP response panel (a ui-layer {@code HttpClientPanel}), injected for {@code .http} buffers when
      *  the feature is on; non-null doubles as the HTTP-preview enablement gate (mirrors {@link
      *  #csvPreviewNode}). Unlike every other preview it is <b>not</b> derived from the buffer text — it shows
      *  the result of running a request — so the debounced pulse deliberately never re-renders it. */
-    private @Nullable Node httpPreviewNode;
-    /** Wraps the HTTP panel so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
-    private @Nullable StackPane httpPreviewHost;
+    @Nullable
+    Node httpPreviewNode;
     /** Structured-data (JSON/YAML/TOML) preview: on when the feature is enabled (pushed from settings). */
     private boolean structuredPreviewEnabled;
     /** SVG image preview for .svg files: on when the feature is enabled (pushed from settings). */
@@ -513,7 +416,7 @@ public class EditorBuffer implements TabContent {
     private boolean typstPreviewEnabled;
     /** Resolves the typst {@code --root} for a saved .typ file (project root for a multi-file doc); injected
      *  from MainController since the editor package can't reach project state. Null ⇒ use the file's folder. */
-    private java.util.function.@Nullable UnaryOperator<java.nio.file.Path> typstRootResolver;
+    java.util.function.@Nullable UnaryOperator<java.nio.file.Path> typstRootResolver;
     /** Crontab schedule preview for crontab files: on when the feature is enabled (pushed from settings). */
     private boolean crontabPreviewEnabled;
     /** fstab mount preview for /etc/fstab files: on when the feature is enabled (pushed from settings). */
@@ -529,46 +432,24 @@ public class EditorBuffer implements TabContent {
     /** Maven pom.xml summary preview: on when the feature is enabled (pushed from settings). */
     private boolean pomPreviewEnabled;
     /** Per-buffer, session-only: this pom is showing the generic XML tree instead of its summary. */
-    private boolean pomShowXml;
-    /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
-    private @Nullable StackPane structuredContentHolder;
-    /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
-    private @Nullable StackPane structuredPreviewHost;
-    /** Tri-state view for a structured doc: {@code null}=auto (API docs for a spec, else tree), else forced. */
-    private @Nullable Boolean structuredShowApiDocs;
-    /** Whether the last structured render detected an OpenAPI/Swagger spec (drives the view-toggle status). */
-    private boolean lastStructuredOpenApi;
+    boolean pomShowXml;
     /** Forces log-viewer mode on a buffer whose extension isn't {@code .log} ("View as Log"). */
     private boolean logViewForced;
     /** Filter, follow and trim state of the log viewer; a filtered view is read-only (see {@link LogView}). */
-    private final LogView logView = new LogView(area, this::applyEditable);
+    final LogView logView = new LogView(area, this::applyEditable);
     /** Fired from the debounced edit pulse while an HTML preview is served (its site reloads on any file's edit). */
-    private @Nullable Runnable htmlPreviewDirtyListener;
+    @Nullable
+    Runnable htmlPreviewDirtyListener;
     /** One document subscription and timer sequence for all differently-timed settled-edit work. */
     private final SettledEditDispatcher settledEdits = new SettledEditDispatcher();
 
     private @Nullable Subscription settledEditSub;
-    /** Bumped per preview render request; background results discard if stale. */
-    private long previewGen;
-    /**
-     * Off-thread Markdown parsing + syntax tokenizing, shared across <b>all</b> open buffers so the
-     * threads don't accumulate one pair per file (each pool thread is a ~1-2 MB daemon stack — a session
-     * with dozens of tabs previously meant dozens of mostly-idle threads). Sharing is safe because every
-     * background result is re-validated against the per-buffer {@link #previewGen}/{@link #highlightGen}
-     * counters (bumped on the FX thread at submit) before it touches buffer state — overlapping work for
-     * one buffer just means only the latest generation's result is applied. Different buffers already
-     * tokenize concurrently against the shared {@link GrammarRegistry} grammar, so a shared pool adds no
-     * new grammar-concurrency. Daemon, app-lifetime (mirrors {@link PreviewImageLoader}/{@code MermaidImages}).
-     */
-    private static final ExecutorService PREVIEW_POOL =
-            Executors.newFixedThreadPool(2, daemonFactory("markdown-preview"));
-
-    private static final ExecutorService HIGHLIGHT_POOL = Executors.newFixedThreadPool(
+    static final ExecutorService HIGHLIGHT_POOL = Executors.newFixedThreadPool(
             Math.min(4, Math.max(2, Runtime.getRuntime().availableProcessors() / 2)),
             daemonFactory("editor-highlighter"));
 
     /** A daemon {@link java.util.concurrent.ThreadFactory} naming threads {@code <name>-N}. */
-    private static java.util.concurrent.ThreadFactory daemonFactory(String name) {
+    static java.util.concurrent.ThreadFactory daemonFactory(String name) {
         java.util.concurrent.atomic.AtomicInteger n = new java.util.concurrent.atomic.AtomicInteger();
         return r -> {
             Thread t = new Thread(r, name + "-" + n.incrementAndGet());
@@ -577,95 +458,54 @@ public class EditorBuffer implements TabContent {
         };
     }
 
-    private Runnable onViewModeChanged = () -> {};
+    Runnable onViewModeChanged = () -> {};
     /** Files at/above this size skip syntax highlighting and the minimap to stay responsive. */
     public static final long LARGE_FILE_BYTES = 5L * 1024 * 1024;
     /** Files at/above this size are opened read-only (and truncated by the loader). */
     public static final long HUGE_FILE_BYTES = 50L * 1024 * 1024;
     /** Whether the minimap is shown; applied to every split pane's minimap. */
-    private boolean minimapVisible = true;
+    boolean minimapVisible = true;
     /** Whether this buffer is the visible tab (see {@link #setRenderingActive}); starts true because a
      *  freshly built buffer measures itself before the controller marks background tabs inactive. */
-    private boolean renderingActive = true;
-    /**
-     * While set, {@link #applyHighlighting()} records that a pass is owed instead of dispatching it (see
-     * {@link #setHighlightDeferred}). The owed range stays in {@code highlightDirty}, so the pass that runs
-     * when the deferral ends covers everything that changed meanwhile.
-     */
-    private boolean highlightDeferred;
-    /** A highlight pass was requested while {@link #highlightDeferred}; run it when the deferral ends. */
-    private boolean highlightOwed;
+    boolean renderingActive = true;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
-    private boolean largeFile;
+    boolean largeFile;
     /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
      *  disabled — but syntax highlighting and editing stay — so a very long single file (e.g. a
      *  13k-line source) stays responsive. Triggered by line count at load (see {@code setHeavyFile});
      *  toggleable per-buffer. {@code largeFile} implies the same minimap/LSP suppression. */
-    private boolean heavyFile;
+    boolean heavyFile;
     /** Huge-file mode: implies large-file mode plus read-only (no undo, not editable). */
-    private boolean hugeFile;
+    boolean hugeFile;
     /** The loader could only read part of this file (huge-file cap / log tail) — saving would truncate it. */
-    private boolean truncatedLoad;
+    boolean truncatedLoad;
     /** User "View mode": non-editable but keeps all normal editor features (separate from huge-file). */
-    private boolean viewMode;
+    boolean viewMode;
     /** Temporary non-editable shell while file content is loaded; never presented as user View mode. */
-    private boolean loading;
+    boolean loading;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
-    private CodeArea focusedArea = area;
+    CodeArea focusedArea = area;
     /** {@link #focusedArea} as a value to observe, for what shows the caret of the view the user is in. */
-    private final javafx.beans.property.ReadOnlyObjectWrapper<CodeArea> focusedView =
+    final javafx.beans.property.ReadOnlyObjectWrapper<CodeArea> focusedView =
             new javafx.beans.property.ReadOnlyObjectWrapper<>(area);
-    /** Floating Markdown format bar (lazily created), shown on a non-empty selection in a Markdown buffer. */
-    private @Nullable MarkdownFormatBar formatBar;
-
-    private boolean formatBarEnabled = true;
-    private boolean formatBarUpdatePending;
-    /** Floating AI selection-actions bar (Explain/Rewrite), lazily created; shown on any non-empty
-     *  selection while AI Actions is enabled + a cached connectivity probe says the endpoint is reachable
-     *  (see {@code AiCoordinator.applySupport} — never re-probed per selection). */
-    private @Nullable AiActionsBar aiActionsBar;
-
-    private boolean aiActionsEnabled;
-    private boolean aiActionsBarUpdatePending;
-    private Runnable aiExplainHandler = () -> {};
-    private Runnable aiRewriteHandler = () -> {};
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
     java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
-    private @Nullable Runnable insertTypstTableHandler;
+    @Nullable
+    Runnable insertTypstTableHandler;
 
-    private @Nullable Runnable typstImagePasteHandler;
+    @Nullable
+    Runnable typstImagePasteHandler;
     /** The preview's right-click menu: its export/print actions and what the pointer was on ({@link PreviewMenu}). */
-    private final PreviewMenu previewMenu = new PreviewMenu(this, () -> this.markdownPreview);
-    /** Runs the {@code pom.toggleView} command (summary ⇄ XML tree) from the preview's right-click menu. */
-    private Runnable pomViewToggleHandler = () -> {};
-    /** The menu item for that switch — relabelled per show, and hidden for a non-pom tree preview. */
-    private @Nullable MenuItem pomViewItem;
-
-    private javafx.scene.control.@Nullable ContextMenu treePreviewContextMenu;
+    final PreviewMenu previewMenu = new PreviewMenu(this, () -> previewPanes.markdownPreview);
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
-    private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
-    /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
-    private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
-
-    /** As {@link #snippetProvider}, including the triggers a completion offers but Tab alone leaves be. */
-    private java.util.function.BiFunction<String, String, Snippet> snippetOfferProvider = (lang, prefix) -> null;
-
-    private boolean snippetTabExpansion = true;
-    private java.util.function.UnaryOperator<@Nullable Path> snippetWorkspaceRoot = file -> null;
-    private java.util.function.Consumer<int[]> snippetProgress = progress -> {};
-    private @Nullable SnippetFieldOverlay snippetOverlay; // lazily attached when the first session starts
-
-    // Settings: auto-show docs beside the list
-    // per-open session flag (reset on each popup open; Ctrl+Q toggles)
-    // generation guard for the debounced/async doc fetch
-
+    final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /**
      * Monotonic count of text changes to this buffer's document — a cheap "has the document moved under me"
      * stamp for the async/deferred completion paths (a caret offset alone can't tell: an edit can land the
      * caret back on the same offset). Bumped for edits made in either view (they share the document).
      */
-    private long docVersion;
+    long docVersion;
 
     /** Coalesces brace-match recomputes to one per pulse (caret moves rapidly while typing). */
     private boolean braceMatchPending;
@@ -678,9 +518,9 @@ public class EditorBuffer implements TabContent {
     /** True only while {@link #moveLine} is updating the caret, so its own move doesn't reset the goal. */
     private boolean movingByLine;
 
-    private final ColumnRuler columnRuler = new ColumnRuler(area);
-    private final Minimap minimap = new Minimap(area);
-    private final JumpReveal jumps = new JumpReveal(
+    final ColumnRuler columnRuler = new ColumnRuler(area);
+    final Minimap minimap = new Minimap(area);
+    final JumpReveal jumps = new JumpReveal(
             () -> this.stickyScrollEnabled,
             a -> a == focusedArea,
             () -> this.folds.regions(),
@@ -696,7 +536,7 @@ public class EditorBuffer implements TabContent {
     private @Nullable LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
     private @Nullable InlineValuesOverlay inlineValues; // lazily attached when a debug session first suspends here
     /** Git change bars + blame column, kept on the right lines through unsaved edits. */
-    private final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter, minimap);
+    final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter, minimap);
     /** Fixed annotation-column width in px, computed from the widest author+date when blame is set, so
      *  line numbers stay aligned regardless of which row's gutter is (re)built. */
     private double blameColumnWidth;
@@ -714,68 +554,38 @@ public class EditorBuffer implements TabContent {
             () -> this.httpFeatureEnabled && isHttpFile() && !this.hugeFile,
             () -> this.markdownLintEnabled);
 
-    private @Nullable LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
+    @Nullable
+    LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable;
      *  lazily attached when LSP first activates for this buffer — see {@link #diagnosticStripe()}. */
     private @Nullable DiagnosticStripe diagnosticStripe;
+
     /** TODO/highlight overview stripe over the scrollbar (beside the diagnostic stripe); lazily attached with
      *  the first non-empty scan result — see {@link #todoStripe()}. */
-    private @Nullable TodoStripe todoStripe;
+    @Nullable
+    TodoStripe todoStripe;
     /** Markdown-lint overview stripe over the scrollbar (beside the TODO/diagnostic stripes); lazily attached
      *  with the Markdown-lint overlay — see {@link #mdLintStripe()}. */
     private @Nullable MarkdownLintStripe mdLintStripe;
-    /** Files above this size are never scanned for compact-source detection (keeps it off the hot path). */
-    private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
-    /** Whether this buffer can run as a local file (remote buffers cannot). */
-    private boolean runFeatureEnabled = true;
     /** Whether the HTTP Client feature is enabled for this buffer (gated by {@code Settings.httpClientSupport},
      *  Simple UI mode and a local file) — a {@code .http} file then shows a Run glyph on every request line. */
-    private boolean httpFeatureEnabled;
+    boolean httpFeatureEnabled;
     /** A {@code .http} buffer's request ▶s, the running ■ and the injected {@link HttpHooks}. */
-    private final HttpGutter httpGutter = new HttpGutter();
+    final HttpGutter httpGutter = new HttpGutter();
     /** A {@code .http} buffer's last results after its request lines, and the ▶ colours they give (U11). */
-    private final HttpResultMarks httpResults = new HttpResultMarks();
-    /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
-     *  make <target>}); empty for non-Makefile buffers. */
-    private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
-    /** Fired with the clicked target's name when a Makefile Run glyph is clicked (runs {@code make <name>}). */
-    private java.util.function.Consumer<String> makeRunHandler = t -> {};
-    /** JUnit test-gutter gate (Test Runner feature + a detected JVM build tool), pushed by MainController. */
-    private boolean testGutterEnabled;
-    /** 0-based line → JUnit test target (class-decl line + each test method) for the gutter ▶; empty otherwise. */
-    private java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> testLines = java.util.Map.of();
-    /** Fired with a test target when its gutter ▶ is clicked (runs one class/method via the build tool). */
-    private java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testRunHandler = t -> {};
-    /** Fired with a test target from the editor context menu (debugs one class/method via the build tool). */
-    private java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testDebugHandler = t -> {};
-    /** Main-method gutter gate (a Java file in a Maven/Gradle project with run/debug available), pushed by
-     *  MainController. When on, {@code public static void main} lines get a green ▶ to run the project class. */
-    private boolean mainGutterEnabled;
-    /** 0-based line → project {@code main} entry point for the gutter ▶; empty otherwise. */
-    private java.util.Map<Integer, com.editora.run.MainMethodScanner.MainMethod> mainLines = java.util.Map.of();
-    /** Fired with a main method when its gutter ▶ is clicked (runs that project main class). */
-    private java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> mainRunHandler = m -> {};
-    /** Fired with a main method for the editor right-click "Debug Main Class" item. */
-    private java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> mainDebugHandler = m -> {};
-    /** Whether this file is runnable (a Java 25 compact source file, a Python script, or — when the Bash
-     *  LSP is enabled — a shell script) — drives the gutter Run glyph + the Run tool window. */
-    private boolean runnable;
-    /** 0-based line the gutter Run glyph sits on (a compact file's {@code main}, a Python {@code __main__}
-     *  guard, else the first line), or -1 when not runnable. */
-    private int runLine = -1;
-    /** Fired (FX thread) when the runnable status flips, so the controller refreshes the Run button. */
-    private Runnable onRunnableChanged = () -> {};
+    final HttpResultMarks httpResults = new HttpResultMarks();
 
-    private @Nullable SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
+    @Nullable
+    SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
+
     private @Nullable OccurrenceHighlightOverlay occurrenceOverlay; // lazily attached — see occurrenceOverlay() (#675)
+
     /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text; lazily attached
      *  with the first non-empty scan result (TODO highlighting is on by default, but most files have no
      *  marks) — see {@link #todoOverlay()}. */
-    private @Nullable TodoHighlightOverlay todoOverlay;
-    /** Injected matcher (compiled patterns) + on/off gate; null/false = no highlight. */
-    private @Nullable TodoMatcher todoMatcher;
+    @Nullable
+    TodoHighlightOverlay todoOverlay;
 
-    private boolean todoEnabled;
     private @Nullable AceJumpOverlay aceJump; // lazily attached — see aceJump()
     /** Async maid validator (text, callback) injected by the controller; null = no linting. */
     private java.util.function.@Nullable BiConsumer<
@@ -795,9 +605,9 @@ public class EditorBuffer implements TabContent {
     private final ImageDrop imageDrop =
             new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::isMarkdown, this::caretToDrop);
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
-    private boolean lspActive;
+    boolean lspActive;
 
-    private final java.util.List<CompletionEditTracker> completionEditTrackers = new java.util.ArrayList<>();
+    final java.util.List<CompletionEditTracker> completionEditTrackers = new java.util.ArrayList<>();
 
     private java.util.function.@Nullable Consumer<String> lspChangeListener;
     /** {@link #docVersion} of the document text last sent to the server, so a send whose content hasn't changed
@@ -808,17 +618,6 @@ public class EditorBuffer implements TabContent {
     private @Nullable Runnable lspDiagnosticsRequester;
     /** Debounced semantic-tokens request (servers advertising range semantic tokens); null = none. */
     private @Nullable Runnable semanticTokensRequester;
-    /** LSP semantic highlighting active for this buffer (server supports it + the feature is on). */
-    private boolean semanticActive;
-    /** Latest server semantic tokens (absolute positions), overlaid onto the TextMate highlight. */
-    private java.util.List<SemanticToken> semanticTokens = java.util.List.of();
-    /** True once the document changed after {@link #semanticTokens} were captured — suppresses the overlay
-     *  (so we never mis-color shifted text) until a fresh response lands via {@link #setSemanticTokens}. */
-    private boolean semanticStale;
-    /** Bumped on every edit and read when a semantic-tokens request is issued, so a response computed against
-     *  an older document is dropped instead of re-anchoring stale tokens onto the current text (see
-     *  {@link #semanticGen()} / {@link #setSemanticTokens(java.util.List, long)}). */
-    private long semanticGen;
     /** Debounces a viewport semantic-tokens re-request after scrolling settles (so a new region gets
      *  tokens without firing a server request per scroll frame). */
     private final javafx.animation.PauseTransition semanticScrollDebounce =
@@ -830,27 +629,23 @@ public class EditorBuffer implements TabContent {
     /** Fired (deferred a pulse) when a signature trigger char is typed; null = disabled. */
     private java.util.function.@Nullable Consumer<Character> signatureHelpRequester;
 
-    private javafx.scene.control.@Nullable Tooltip lspTooltip;
-    /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
-    private @Nullable String lspTooltipText;
-
-    private final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
+    final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
 
     /** The gutter numbers, {@code narrowed} style and banner of a narrowed buffer (see {@link NarrowPresentation}). */
-    private final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
+    final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
 
     /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
-    private final StickyScrollBar stickyScroll = new StickyScrollBar();
+    final StickyScrollBar stickyScroll = new StickyScrollBar();
 
     private boolean stickyScrollEnabled;
     private boolean stickyScrollPending;
-    private final BookmarkManager bookmarks = new BookmarkManager(area);
+    final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a bookmark add/remove request for a line (from the right-click menu): the controller adds,
      *  or confirms a removal. Default: toggle. */
-    private java.util.function.BiConsumer<EditorBuffer, Integer> bookmarkToggleRequest =
+    java.util.function.BiConsumer<EditorBuffer, Integer> bookmarkToggleRequest =
             (buffer, line) -> buffer.toggleBookmark(line);
     /** Breakpoints for this buffer (gutter strip + persistence + sent to a live DAP session). */
-    private final BreakpointManager breakpoints = new BreakpointManager(area);
+    final BreakpointManager breakpoints = new BreakpointManager(area);
     /** When true, the leftmost breakpoint strip is reserved + clickable (debugging is enabled). */
     private boolean debugEnabled = false;
     /** Handles a breakpoint-strip click; default toggles. The controller overrides to persist + re-send. */
@@ -859,11 +654,11 @@ public class EditorBuffer implements TabContent {
     /** A right-click on a breakpoint's gutter glyph (the controller shows Edit / Disable / Remove). */
     private BreakpointGutterMenu gutterBreakpointMenu = (buffer, line, e) -> {};
     /** Personal Notes for this buffer (inline marker + highlight + hover). */
-    private final NoteManager notes = new NoteManager(area);
+    final NoteManager notes = new NoteManager(area);
 
     private final NoteHighlightOverlay noteOverlay = new NoteHighlightOverlay(area);
     /** When false, the Personal Notes feature is disabled for this buffer (no "Add Note" menu items). */
-    private boolean notesEnabled = false;
+    boolean notesEnabled = false;
     /** When false, the note inline marker + highlight are hidden (the {@code showNoteIndicators} setting). */
     private boolean noteIndicators = true;
     /** Invoked when the user clicks a note's inline start marker — the controller opens the note editor. */
@@ -880,28 +675,13 @@ public class EditorBuffer implements TabContent {
     /** Handles a click on a line's blame annotation (the controller shows that line's commit). Default: no-op. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBlameClick = (buffer, line) -> {};
     /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
-    private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
-    /** "Run File" context-menu handler (compact source files); null hides the item. */
-    private @Nullable Runnable runHandler;
-    /** "Debug File" beside "Run File" (null: none); shown while {@link #debugFileShown} says it can debug. */
-    private @Nullable Runnable debugFileHandler;
-
-    private java.util.function.BooleanSupplier debugFileShown = () -> false;
+    java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
     /** LSP navigation actions (controller-supplied); shown in the context menu only while LSP is active. */
-    private Runnable lspGotoDefinitionAction = () -> {};
+    Runnable lspGotoDefinitionAction = () -> {};
 
-    private Runnable lspFindReferencesAction = () -> {};
-    private Runnable lspHoverAction = () -> {};
-    private Runnable lspFormatAction = () -> {};
-    private Runnable lspCodeActionsAction = () -> {};
-    private java.util.function.Consumer<String> lspCommand = id -> {}; // runs a command id (Refactor, Generate)
-    private Runnable lspRenameAction = () -> {};
-    private Runnable lspGotoImplementationAction = () -> {};
-    private Runnable lspGotoTypeDefinitionAction = () -> {};
-    /** Whether this buffer's server advertises whole-document formatting (refreshed when it reports ready). */
-    private boolean lspFormatAvailable;
+    Runnable lspCodeActionsAction = () -> {};
     /** Whether this buffer's server advertises code actions (quick fixes) — gates the menu item (#670). */
-    private boolean lspCodeActionsAvailable;
+    boolean lspCodeActionsAvailable;
 
     /** The code-action lightbulb on the caret line (the coordinator gives it its probe). */
     private final CodeActionBulb bulb = new CodeActionBulb(
@@ -911,33 +691,17 @@ public class EditorBuffer implements TabContent {
             this::refreshGutterLine);
 
     /** The file's problem counts at the top right of the editor. */
-    private final ProblemCounterSlot problemCounter =
-            new ProblemCounterSlot(() -> lspActive && !largeFile, this::placeCornerControl, this::removeCornerControl);
-    /** Whether this buffer's server advertises rename — gates the menu item (#676). */
-    private boolean lspRenameAvailable;
-    /** Whether this buffer's server advertises {@code textDocument/implementation} — gates the item (#735). */
-    private boolean lspImplementationAvailable;
-    /** Whether this buffer's server advertises {@code textDocument/typeDefinition} — gates the item (#736). */
-    private boolean lspTypeDefinitionAvailable;
-    /** Whether this buffer's server advertises range formatting — enables Tab to re-indent the line. */
-    private boolean lspRangeFormatAvailable;
-    /** Injected range-formatter (the controller wires it to the LSP manager); null = none. */
-    private @Nullable LspRangeFormatter lspRangeFormatter;
-    /** Injected on-type formatter (#740); null = none. */
-    private @Nullable LspOnTypeFormatter lspOnTypeFormatter;
-    /** The characters this buffer's server formats on ({@code ;}, {@code }}, {@code \n} for jdtls) — #740. */
-    private java.util.Set<Character> lspOnTypeTriggers = java.util.Set.of();
-    /** {@code Settings.lspOnTypeFormatting} — the master gate for on-type formatting (#740). */
-    private boolean onTypeFormattingEnabled;
-    /** Generation guard so a stale async re-indent result can't clobber a later edit. */
-    private long reindentGen;
+    private final ProblemCounterSlot problemCounter = new ProblemCounterSlot(
+            () -> lspActive && !largeFile, viewLayout::placeCornerControl, viewLayout::removeCornerControl);
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
 
-    private @Nullable Path path;
+    @Nullable
+    Path path;
     /** Suggested name for a still-unsaved buffer (e.g. from {@code --new-file=foo.txt}); drives the tab
      *  title and extension-based highlighting while {@link #path} stays null (so Save prompts Save-As). */
-    private @Nullable String displayName;
+    @Nullable
+    String displayName;
     /** Last-known on-disk identity used to detect external changes; modified time -1 means unknown. */
     private long diskModifiedMillis = -1;
 
@@ -945,39 +709,27 @@ public class EditorBuffer implements TabContent {
     /** SHA-256 of the exact bytes last loaded/saved; used for remote save conflict detection. */
     private @Nullable String diskFingerprint;
     /** Language name for the current file (drives fold strategy); see {@link LanguageRegistry}. */
-    private String language = LanguageRegistry.plaintext();
+    String language = LanguageRegistry.plaintext();
     /** TextMate grammar for the current file, or {@code null} when no grammar is bundled. */
-    private @Nullable IGrammar grammar;
+    @Nullable
+    IGrammar grammar;
     /** {@code --source N} version from a Java compact-source shebang (for the run command), else null. */
-    private @Nullable Integer shebangJavaSource;
+    @Nullable
+    Integer shebangJavaSource;
     /** True once the user explicitly picked a language (status bar), so shebang detection won't fight it. */
     private boolean languageUserOverride;
     /** Spell checking (Lucene Hunspell, drawn by {@link #spellOverlay}); off until the controller enables it. */
-    private final BufferSpell spell = new BufferSpell(
+    final BufferSpell spell = new BufferSpell(
             area, spellOverlay, this::getFocusedArea, () -> language, this::isEditable, () -> largeFile);
-    /** Bumped on every highlight request (FX thread only); lets background results discard if stale. Volatile:
-     *  read per line by the background tokenize's cancel check. */
-    private volatile long highlightGen;
     /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
     private long languageGen;
-    /** Per-line grammar end-states and bracket depths of the last applied pass (see {@link HighlightPass});
-     *  null = none, so the next pass tokenizes the whole document. Replaced, never modified. */
-    private HighlightPass.@Nullable Lines highlightLines;
-    /** The range the next highlight pass owes: every edit since a pass last applied. */
-    private final HighlightDirty highlightDirty = new HighlightDirty();
-    /** Where {@link #semanticTokens} are no longer painted (edits, lexical restyles) since they were anchored. */
-    private final HighlightDirty semanticDirty = new HighlightDirty();
-    /** Line count of the text {@link #semanticTokens} were anchored to. */
-    private int semanticLines;
-    /** A grammar or CSV pass may have styled the document, so losing the grammar leaves styles to clear. */
-    private boolean styled;
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
-    private List<TextMateHighlighter.Symbol> symbols = List.of();
+    List<TextMateHighlighter.Symbol> symbols = List.of();
     /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
-    private Runnable onSymbolsChanged = () -> {};
+    Runnable onSymbolsChanged = () -> {};
 
-    private String fontFamily = "monospace";
-    private int fontSize = 14;
+    String fontFamily = "monospace";
+    int fontSize = 14;
     /** Whether {@link #setFont} has run at least once. The fields above are only *assumed* defaults — the
      *  area's inline style and the overlays' fonts are set by that call, so the first one must always
      *  apply even when it happens to match them. */
@@ -989,7 +741,7 @@ public class EditorBuffer implements TabContent {
 
     private Color minimapViewport = Color.web("#0969da", 0.14);
     /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
-    private int tabSize = 4;
+    int tabSize = 4;
     // EditorConfig overrides (null = no override → fall back to detection/global). See com.editora.editorconfig.
     /** One full-text materialization shared by every consumer of the current {@link #docVersion}. */
     private final DocumentSnapshots documentSnapshots = new DocumentSnapshots();
@@ -1003,12 +755,6 @@ public class EditorBuffer implements TabContent {
     /** The file's own line ending: detected on load or chosen by a conversion. The document holds bare LF. */
     private String lineEnding = LineEndings.LF;
 
-    private @Nullable Integer
-            rulerColumnOverride; // .editorconfig max_line_length: null = none; EditorConfigProperties.OFF = hide
-    /** The ruler columns from Settings (see {@link RulerColumns#resolve}): the global list and per-language lists. */
-    private List<Integer> rulerColumns = List.of(80);
-
-    private java.util.Map<String, List<Integer>> languageRulers = java.util.Map.of();
     private String detectedCharset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
     private @Nullable String charsetOverride; // EditorConfig charset to write; null = keep detected
     /** The declared charset could not decode the file, so {@link #detectedCharset} is a lossless stand-in. */
@@ -1018,25 +764,10 @@ public class EditorBuffer implements TabContent {
 
     private com.editora.editorconfig.EditorConfigProperties editorConfigProps =
             com.editora.editorconfig.EditorConfigProperties.EMPTY;
-    /** Whether the user enabled the 80-column ruler. The line is only actually shown when a visible
-     *  line reaches column 80 (see {@link #measureAndPlaceRuler}). */
-    private boolean rulerVisible;
-
     private boolean lineNumbersVisible = true;
     /** When false (Simple UI mode), the entire gutter is removed (null paragraph-graphic factory) — no
      *  line numbers, fold chevrons, bookmark/note/run/breakpoint slots, or git change bars. */
     private boolean gutterVisible = true;
-    /** Coalesces ruler re-measurement onto a later pulse (see {@link #scheduleRulerMeasure}). */
-    private boolean rulerMeasurePending;
-    /** Viewport width at the last scheduled ruler measure, so a viewport-dirty event that did not
-     *  resize the area (a vertical scroll, an edit) doesn't pay for a re-measure. */
-    private double lastRulerViewportWidth = -1;
-    /** Set when something the ruler's x depends on changed other than the viewport width or the
-     *  horizontal scroll — the gutter, the font, wrap, the ruler column. Cleared by the measure. */
-    private boolean rulerInputsDirty = true;
-
-    private final ColumnAdvance columnAdvance = new ColumnAdvance();
-
     /** Max undo entries kept per view; caps undo memory (RichTextFX defaults to unlimited). */
     private static final int UNDO_HISTORY = 300;
 
@@ -1138,15 +869,15 @@ public class EditorBuffer implements TabContent {
         // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
         // request for a .http file.
         folds.setRunHooks(
-                () -> runnable || !mainLines.isEmpty(),
-                this::isRunGlyphLine,
-                this::onRunGlyph,
-                line -> testLines.containsKey(line)
+                () -> runGutter.runnable || !runGutter.mainLines.isEmpty(),
+                runGutter::isRunGlyphLine,
+                runGutter::onRunGlyph,
+                line -> runGutter.testLines.containsKey(line)
                         ? "test-run-marker"
                         : line == httpGutter.runningGlyphLine(this::isFoldedLine)
                                 ? FoldManager.HTTP_RUNNING_CLASS
                                 : httpResults.glyphClass(line), // the ▶ of a request that ran: its outcome
-                this::runGlyphTooltip);
+                runGutter::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
                 () -> debugEnabled,
@@ -1164,17 +895,18 @@ public class EditorBuffer implements TabContent {
                 () -> blameColumnWidth,
                 line -> gutterBlameClick.accept(this, line));
         breakpoints.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
-        addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
+        typingAids.addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         completionActions.addCompletionKeys(area); // popup owns Enter/Tab before snippet and indentation filters
         completionActions.installCommitCharacters(area);
-        addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
-        snippetSession.setOnChanged(this::snippetSessionChanged);
+        snippetKeys.addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
+        snippetSession.setOnChanged(snippetKeys::snippetSessionChanged);
         focusedView.addListener((o, was, now) -> snippetSession.focusMovedTo(now)); // the other split view
-        addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
-        addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
+        // Auto-close ()[]{} and quotes: before auto-indent, so it sees the keystroke first.
+        typingAids.addAutoClose(area);
+        typingAids.addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
-        installOccurrenceTrigger(area); // LSP document highlight (#675)
-        installCodeLensClick(area);
+        lspAssists.installOccurrenceTrigger(area); // LSP document highlight (#675)
+        inlayDecor.installCodeLensClick(area);
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -1223,17 +955,17 @@ public class EditorBuffer implements TabContent {
         // order HighlightDirty maps its range through them.
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
-            shiftCodeLenses(changes);
+            inlayDecor.shiftCodeLenses(changes);
             if (httpResults.shift(changes, area)) {
-                refreshInlayAreas(); // a request's result follows it when lines are added above
+                inlayDecor.refreshInlayAreas(); // a request's result follows it when lines are added above
             }
             gitLines.edited(changes, this::refreshGutterLine, area2); // bars + blame follow inserted/removed lines
             for (var change : changes) {
                 int removed = change.getRemoved().length();
                 int inserted = change.getInserted().length();
-                highlightDirty.edited(change.getPosition(), removed, inserted);
-                if (semanticActive) {
-                    semanticDirty.edited(change.getPosition(), removed, inserted);
+                highlighter.highlightDirty.edited(change.getPosition(), removed, inserted);
+                if (highlighter.semanticActive) {
+                    highlighter.semanticDirty.edited(change.getPosition(), removed, inserted);
                 }
                 // The matched pair moves with the text, so the next re-match clears it where it now is: a
                 // pass no longer restyles everything below an edit, which used to hide a stale position.
@@ -1246,9 +978,9 @@ public class EditorBuffer implements TabContent {
             // The cached semantic tokens now point at shifted offsets; suppress the overlay until the
             // next response re-anchors them (one boolean write — off the per-char path's cost budget). The
             // generation bump invalidates any in-flight request so its (now-stale) response is dropped.
-            if (semanticActive) {
-                semanticGen++;
-                semanticStale = true;
+            if (highlighter.semanticActive) {
+                highlighter.semanticGen++;
+                highlighter.semanticStale = true;
             }
             // LSP diagnostics are anchored to absolute line/col and only replaced when the server re-pushes
             // (a debounced didChange + round-trip, ~300 ms+). Until then every keystroke would repaint the OLD
@@ -1263,7 +995,7 @@ public class EditorBuffer implements TabContent {
         // After scrolling settles, re-request semantic tokens for the now-visible region (debounced so a
         // drag-scroll doesn't fire a request per frame). Inert unless semantic highlighting is active.
         semanticScrollDebounce.setOnFinished(e -> {
-            if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
+            if ((highlighter.semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
                 semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
             }
         });
@@ -1280,9 +1012,9 @@ public class EditorBuffer implements TabContent {
         area.plainTextChanges().subscribe(c -> wrap.inserted(c.getInserted())); // a giant token holds wrap off
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
-        area.plainTextChanges().subscribe(this::maybeAutoFill);
+        area.plainTextChanges().subscribe(typingAids::maybeAutoFill);
         // Abbrev auto-expand: when abbrev-mode is on, typing a word terminator expands the word before it.
-        area.plainTextChanges().subscribe(this::maybeExpandAbbrev);
+        area.plainTextChanges().subscribe(snippetKeys::maybeExpandAbbrev);
         area.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
@@ -1294,9 +1026,10 @@ public class EditorBuffer implements TabContent {
                 focusedView.set(area);
             }
         });
-        installContextMenu(area);
+        editorMenu.installContextMenu(area);
         installFormatBarListeners(area);
-        scrollSync = new PreviewScrollSync(area, () -> markdownViewMode, () -> previewPane, () -> markdownPreview);
+        scrollSync = new PreviewScrollSync(
+                area, () -> markdownViewMode, () -> previewPanes.previewPane, () -> previewPanes.markdownPreview);
         installOverlays();
     }
 
@@ -1309,8 +1042,8 @@ public class EditorBuffer implements TabContent {
         settledEdits.at(Duration.ofMillis(150), () -> true, () -> {
             resolveDirty();
             sealBaselineIfDirty();
-            applyHighlighting();
-            recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
+            highlighter.applyHighlighting();
+            runGutter.recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
         });
         settledEdits.at(
                 Duration.ofMillis(250),
@@ -1321,7 +1054,7 @@ public class EditorBuffer implements TabContent {
                         htmlPreviewDirtyListener.run();
                     }
                     if (previewLive() && markdownViewMode != MarkdownViewMode.EDITOR) {
-                        scheduleRenderPreview();
+                        previewPanes.scheduleRenderPreview();
                     }
                 });
         settledEdits.at(
@@ -1339,9 +1072,11 @@ public class EditorBuffer implements TabContent {
                         && focusedArea.isFocused(),
                 () -> completionActions.updateCompletion(focusedArea, false));
         settledEdits.at(
-                Duration.ofMillis(300), () -> todoEnabled || lspActive || semanticActive || inlayHintsActive, () -> {
-                    if (todoEnabled) {
-                        refreshTodoMarks();
+                Duration.ofMillis(300),
+                () -> todoMarker.todoEnabled || lspActive || highlighter.semanticActive || inlayHintsActive,
+                () -> {
+                    if (todoMarker.todoEnabled) {
+                        todoMarker.refreshTodoMarks();
                     }
                     if (lspActive) {
                         sendLspChange();
@@ -1349,7 +1084,7 @@ public class EditorBuffer implements TabContent {
                     if (lspActive && lspDiagnosticsRequester != null) {
                         lspDiagnosticsRequester.run();
                     }
-                    if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
+                    if ((highlighter.semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
                         semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
                     }
                 });
@@ -1379,48 +1114,48 @@ public class EditorBuffer implements TabContent {
      * is "large" only for one very long line (a pasted {@code data:} image passes the 64K-character line
      * limit at once): its preview used to render once and then silently stay as it was.
      */
-    private boolean previewLive() {
+    boolean previewLive() {
         return !largeFile || (isMarkdown() && area.getLength() <= PREVIEW_LIVE_MAX_CHARS);
     }
 
     /** Show/reposition the Markdown format bar + the AI selection-actions bar as the selection or scroll
-     *  changes (each coalesced per pulse; {@link #updateFormatBar()} always runs first so the AI bar can
+     *  changes (each coalesced per pulse; {@link SelectionBars#updateFormatBar()} always runs first so the AI bar can
      *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
-        markdownEditing.attach(a, this::scheduleFormatBar);
+        markdownEditing.attach(a, selectionBars::scheduleFormatBar);
         a.selectionProperty().addListener((obs, old, now) -> {
-            scheduleFormatBar();
-            scheduleAiActionsBar();
+            selectionBars.scheduleFormatBar();
+            selectionBars.scheduleAiActionsBar();
             selectionChanged.run();
         });
         // One vertical-scroll listener for the four per-scroll features (each gated on its own flag and
         // coalesced per pulse), in the order the former separate listeners ran: RichTextFX notifies every
         // listener on every scroll step, so three of them cost three dispatches for one boolean each.
         a.estimatedScrollYProperty().addListener((obs, old, now) -> {
-            scheduleFormatBar();
-            scheduleAiActionsBar();
+            selectionBars.scheduleFormatBar();
+            selectionBars.scheduleAiActionsBar();
             scheduleStickyScroll();
-            if (semanticActive) {
+            if (highlighter.semanticActive) {
                 semanticScrollDebounce.playFromStart(); // re-request tokens for the scrolled-to region
             }
         });
         a.estimatedScrollXProperty().addListener((obs, old, now) -> {
-            scheduleFormatBar();
-            scheduleAiActionsBar();
+            selectionBars.scheduleFormatBar();
+            selectionBars.scheduleAiActionsBar();
         });
         a.focusedProperty().addListener((obs, was, now) -> {
             if (!now) {
-                hideFormatBar();
-                hideAiActionsBar();
+                selectionBars.hideFormatBar();
+                selectionBars.hideAiActionsBar();
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (e.getCode() == KeyCode.ESCAPE) {
-                hideFormatBar(); // don't consume — let other Escape behavior run
-                hideAiActionsBar();
+                selectionBars.hideFormatBar(); // don't consume — let other Escape behavior run
+                selectionBars.hideAiActionsBar();
             }
         });
         // Ctrl/Cmd-click: open a Markdown link in the browser, or (in a code buffer with a live language
@@ -1474,22 +1209,8 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    /** Enables/disables the floating Markdown format bar (driven from Settings). */
     public void setFormatBarEnabled(boolean enabled) {
-        this.formatBarEnabled = enabled;
-        if (!enabled) {
-            hideFormatBar();
-        } else {
-            scheduleFormatBar();
-        }
-    }
-
-    private void scheduleFormatBar() {
-        if (formatBarUpdatePending || !MarkdownFormatBar.updateNeeded(formatBar, formatBarEnabled, focusedArea)) {
-            return;
-        }
-        formatBarUpdatePending = true;
-        Platform.runLater(this::updateFormatBar);
+        selectionBars.setFormatBarEnabled(enabled);
     }
 
     private void scheduleStickyScroll() {
@@ -1574,129 +1295,25 @@ public class EditorBuffer implements TabContent {
         // initializer, so a plain buffer that never changes mode (i.e. every ordinary code file) never
         // called it and the bar was never in the scene graph at all. This is the one place that is
         // guaranteed to run right before the bar is needed, and placeStickyScroll is idempotent.
-        placeStickyScroll();
+        viewLayout.placeStickyScroll();
         stickyLines = stickyScroll.pinnedLines(folds.regions(), firstVisible);
         stickyScroll.update(focusedArea, stickyLines, getTabSize(), this::jumpToLine);
     }
 
-    private void hideFormatBar() {
-        if (formatBar != null) {
-            formatBar.node().setVisible(false);
-        }
-    }
-
-    private void updateFormatBar() {
-        formatBarUpdatePending = false;
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        boolean show = formatBarEnabled
-                && (isMarkdown() || isTypst())
-                && isEditable()
-                && !hugeFile
-                && markdownViewMode != MarkdownViewMode.PREVIEW
-                && MarkdownFormatBar.wanted(a);
-        if (!show) {
-            hideFormatBar();
-            return;
-        }
-        if (formatBar == null) {
-            formatBar = new MarkdownFormatBar(this);
-        }
-        formatBar.showFor(a, (a == area2 && root2 != null) ? root2 : root);
-    }
-
-    /** Injects the Explain/Rewrite callbacks (wired once from the controller, like {@link #setOpenUrlHandler}) —
-     *  each is a no-arg action reading the current selection off {@link #getFocusedArea()} itself. */
     public void setAiActionHandlers(Runnable onExplainSelection, Runnable onRewriteSelection) {
-        this.aiExplainHandler = onExplainSelection == null ? () -> {} : onExplainSelection;
-        this.aiRewriteHandler = onRewriteSelection == null ? () -> {} : onRewriteSelection;
+        selectionBars.setAiActionHandlers(onExplainSelection, onRewriteSelection);
     }
 
-    /** {@link AiActionsBar}'s Explain button. */
     void requestExplainSelection() {
-        aiExplainHandler.run();
+        selectionBars.requestExplainSelection();
     }
 
-    /** {@link AiActionsBar}'s Rewrite button. */
     void requestRewriteSelection() {
-        aiRewriteHandler.run();
+        selectionBars.requestRewriteSelection();
     }
 
-    /** Enables/disables the floating AI selection-actions bar — the effective gate (setting + a cached
-     *  connectivity probe), pushed from the controller; never toggled per-selection/keystroke. */
     public void setAiActionsEnabled(boolean enabled) {
-        this.aiActionsEnabled = enabled;
-        if (!enabled) {
-            hideAiActionsBar();
-        } else {
-            scheduleAiActionsBar();
-        }
-    }
-
-    private void scheduleAiActionsBar() {
-        if (aiActionsBarUpdatePending || !AiActionsBar.updateNeeded(aiActionsBar, aiActionsEnabled, focusedArea)) {
-            return;
-        }
-        aiActionsBarUpdatePending = true;
-        Platform.runLater(this::updateAiActionsBar);
-    }
-
-    private void hideAiActionsBar() {
-        if (aiActionsBar != null) {
-            aiActionsBar.node().setVisible(false);
-        }
-    }
-
-    private void updateAiActionsBar() {
-        aiActionsBarUpdatePending = false;
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        boolean show = aiActionsEnabled
-                && !hugeFile
-                && markdownViewMode != MarkdownViewMode.PREVIEW
-                && a.getSelection().getLength() > 0;
-        if (!show) {
-            hideAiActionsBar();
-            return;
-        }
-        int selStart = a.getSelection().getStart();
-        Bounds screen = a.getCharacterBoundsOnScreen(selStart, Math.min(a.getLength(), selStart + 1))
-                .orElse(null);
-        if (screen == null) {
-            hideAiActionsBar();
-            return;
-        }
-        javafx.scene.layout.AnchorPane targetPane = (a == area2 && root2 != null) ? root2 : root;
-        Bounds local = targetPane.screenToLocal(screen);
-        if (local == null) {
-            hideAiActionsBar();
-            return;
-        }
-        if (aiActionsBar == null) {
-            aiActionsBar = new AiActionsBar(this);
-        }
-        aiActionsBar.setEditable(isEditable());
-        javafx.scene.Node bar = aiActionsBar.node();
-        if (bar.getParent() != targetPane) {
-            if (bar.getParent() instanceof javafx.scene.layout.AnchorPane ap) {
-                ap.getChildren().remove(bar);
-            }
-            targetPane.getChildren().add(bar);
-        }
-        bar.setVisible(true);
-        bar.applyCss();
-        double w = bar.prefWidth(-1);
-        double h = bar.prefHeight(-1);
-        double x = Math.max(0, Math.min(local.getMinX(), Math.max(0, targetPane.getWidth() - w)));
-        // The Markdown format bar anchors at the same point — updateFormatBar() runs first (see
-        // installFormatBarListeners), so stack above it when both apply to the same selection.
-        double stackAbove = (formatBar != null && formatBar.node().isVisible())
-                ? formatBar.node().getLayoutBounds().getHeight() + 4
-                : 0;
-        double y = local.getMinY() - h - 4 - stackAbove;
-        if (y < 0) {
-            y = local.getMaxY() + 4 + stackAbove;
-        }
-        bar.resizeRelocate(x, y, w, h);
-        bar.toFront();
+        selectionBars.setAiActionsEnabled(enabled);
     }
 
     /** True when this buffer can show Markdown formatting actions (markdown + editable). */
@@ -1740,7 +1357,10 @@ public class EditorBuffer implements TabContent {
         int line = a.offsetToPosition(span[0], org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                 .getMajor();
         Commenter.Edit edit = JsxContext.lineInChildren(
-                        grammar, highlightLines, line, a.getParagraph(line).getText())
+                        grammar,
+                        highlighter.highlightLines,
+                        line,
+                        a.getParagraph(line).getText())
                 ? Commenter.toggle(a.getText(), span[0], span[1], JsxContext.COMMENT) // {/* */} in markup (A103)
                 : Commenter.toggle(a.getText(), span[0], span[1], language, getPath());
         if (edit == null) {
@@ -1752,7 +1372,7 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    private final MarkdownEditing markdownEditing = new MarkdownEditing(this);
+    final MarkdownEditing markdownEditing = new MarkdownEditing(this);
 
     /** The markup editing commands of this buffer (inline markers, headings, lists, tables, TOC). */
     public MarkdownEditing markdown() {
@@ -1915,7 +1535,7 @@ public class EditorBuffer implements TabContent {
         // change (first paint, resize, vertical scroll, gutter widening). Always deferred via
         // runLater so we never query character bounds synchronously inside the layout pass — doing
         // that re-enters layout and blanks the editor.
-        area.estimatedScrollXProperty().addListener((obs, old, now) -> scheduleRulerMeasure());
+        area.estimatedScrollXProperty().addListener((obs, old, now) -> rulerPlacement.scheduleRulerMeasure());
         // viewportDirtyEvents fires for a vertical scroll and for every edit, neither of which can move the
         // ruler: its x is (glyph advance, gutter width, horizontal scroll), and the visibility test needs the
         // viewport width. Each measure costs TWO forced VirtualFlow layouts plus character-bounds queries, so
@@ -1924,9 +1544,9 @@ public class EditorBuffer implements TabContent {
         // markRulerInputsDirty().
         area.viewportDirtyEvents().subscribe(ignore -> {
             double w = area.getWidth();
-            if (rulerInputsDirty || w != lastRulerViewportWidth) {
-                lastRulerViewportWidth = w;
-                scheduleRulerMeasure();
+            if (rulerPlacement.rulerInputsDirty || w != rulerPlacement.lastRulerViewportWidth) {
+                rulerPlacement.lastRulerViewportWidth = w;
+                rulerPlacement.scheduleRulerMeasure();
             }
         });
 
@@ -1972,406 +1592,24 @@ public class EditorBuffer implements TabContent {
         area.requestFocus();
     }
 
-    /** The editor's right-click menu, built on the first request: a {@code ContextMenu} is a popup window
-     *  with a scene of its own, which most buffers never open. */
-    private @Nullable ContextMenu contextMenu;
-    /** The view the context menu was last asked for: its items act where the user clicked, in either pane. */
-    private CodeArea menuView = area;
-    /** Supplies extra right-click items (plugin contributions), injected by the controller; null = none. */
-    private java.util.function.@Nullable Supplier<List<MenuItem>> menuContributor;
-    /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
-    private java.util.function.@Nullable Supplier<List<MenuItem>> buildMenuContributor;
-    /** Debugger actions at the click (breakpoint, Run to Cursor, Show Value…); null = none (review C10). */
-    private java.util.function.@Nullable Supplier<List<MenuItem>> debugMenuContributor;
-
-    /** Simple UI mode: the right-click menu keeps the editing actions only — see {@link #setSimpleMenu}. */
-    private boolean simpleMenu;
-
-    private ContextMenu contextMenu() {
-        if (contextMenu == null) {
-            contextMenu = new ContextMenu();
-            contextMenu.getStyleClass().setAll("context-menu", "editor-context-menu");
-        }
-        return contextMenu;
-    }
-
-    private void installContextMenu(CodeArea a) {
-        a.setOnContextMenuRequested(e -> {
-            ContextMenu contextMenu = contextMenu();
-            menuView = a;
-            a.requestFocus(); // "at the caret" items read the focused view
-            List<MenuItem> items = new java.util.ArrayList<>();
-            // First, and for every item below: one position the menu is about (and the caret moved to a
-            // right-click outside the selection), so Paste, Run Test, the LSP items and Add Bookmark agree.
-            ContextMenuTarget at = ContextMenuTarget.resolve(a, e, this::collapseCarets);
-            // A JUnit test file runs/debugs the method there (or the class from its declaration)
-            // rather than offering generic "Run File"; anything else runnable keeps that generic action.
-            // Simple UI mode keeps the editing actions only: no Run/Debug, language-server, build, AI, markup,
-            // bookmark or note items, as the Simple menu bar keeps none of them.
-            com.editora.test.JavaTestScanner.TestTarget testTarget = simpleMenu ? null : testTargetAt(at.line(), false);
-            if (testTarget != null) {
-                boolean method = testTarget.methodName() != null;
-                MenuItem runTests = new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests"));
-                runTests.setGraphic(FoldManager.runGlyph("test-run-marker")); // blue, matching the test gutter ▶
-                runTests.setOnAction(ev -> testRunHandler.accept(testTarget));
-                MenuItem debugTest =
-                        new MenuItem(tr(method ? "testrunner.menu.debugTest" : "testrunner.menu.debugClass"));
-                debugTest.setGraphic(MenuIcons.debug());
-                debugTest.setOnAction(ev -> testDebugHandler.accept(testTarget));
-                items.addAll(java.util.List.of(runTests, debugTest));
-                items.add(new SeparatorMenuItem());
-            } else if (!simpleMenu && httpFeatureEnabled && isHttpFile() && runnable) {
-                // A .http file runs requests, never "Run File" (which launched `java requests.http`).
-                MenuItem runRequest = new MenuItem(tr("editmenu.runHttpRequest"));
-                runRequest.setGraphic(FoldManager.runGlyph());
-                runRequest.setOnAction(ev -> httpGutter.hooks().run().accept(at.line()));
-                MenuItem runAll = new MenuItem(tr("editmenu.runHttpFile"));
-                runAll.setOnAction(ev -> httpGutter.hooks().runAll().run());
-                items.addAll(java.util.List.of(runRequest, runAll));
-                if (httpDebugHandler != null
-                        && com.editora.http.HttpScriptLines.requestHasScripts(getContent(), at.line())) {
-                    MenuItem debugRequest = new MenuItem(tr("editmenu.debugHttpRequest"));
-                    debugRequest.setGraphic(MenuIcons.debug());
-                    debugRequest.setOnAction(ev -> {
-                        java.util.function.IntConsumer handler = httpDebugHandler;
-                        if (handler != null) {
-                            handler.accept(at.line());
-                        }
-                    });
-                    items.add(debugRequest);
-                }
-                items.addAll(HttpVariableFixes.menuItems(httpVariableFixesAt(a, at.offset()))); // "Use environment dev"
-                items.add(new SeparatorMenuItem());
-            } else if (!simpleMenu && runnable && runHandler != null && !isHttpFile()) {
-                MenuItem run = new MenuItem(tr("command.file.run"));
-                run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
-                run.setOnAction(ev -> {
-                    Runnable handler = runHandler;
-                    if (handler != null) {
-                        handler.run();
-                    }
-                });
-                items.add(run);
-                if (debugFileHandler != null && debugFileShown.getAsBoolean()) {
-                    MenuItem debugFile = new MenuItem(tr("editmenu.debugFile"));
-                    debugFile.setGraphic(MenuIcons.debug());
-                    debugFile.setOnAction(ev -> {
-                        Runnable handler = debugFileHandler;
-                        if (handler != null) {
-                            handler.run();
-                        }
-                    });
-                    items.add(debugFile);
-                }
-                items.add(new SeparatorMenuItem());
-            } else if (!simpleMenu) {
-                // A Java class with a project main() gets Run/Debug Main Class items (green ▶ + bug icon).
-                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAt(at.line());
-                if (mainTarget != null) {
-                    String simple = com.editora.test.TestSourceLocator.simpleName(mainTarget.fqn());
-                    MenuItem runMain = new MenuItem(tr("editmenu.runMainClass", simple));
-                    runMain.setGraphic(FoldManager.runGlyph());
-                    runMain.setOnAction(ev -> mainRunHandler.accept(mainTarget));
-                    MenuItem debugMain = new MenuItem(tr("editmenu.debugMainClass", simple));
-                    debugMain.setGraphic(MenuIcons.debug());
-                    debugMain.setOnAction(ev -> mainDebugHandler.accept(mainTarget));
-                    items.add(runMain);
-                    items.add(debugMain);
-                    items.add(new SeparatorMenuItem());
-                }
-            }
-            List<MenuItem> debugItems = debugMenuContributor == null || simpleMenu ? null : debugMenuContributor.get();
-            if (debugItems != null && !debugItems.isEmpty()) {
-                items.addAll(debugItems);
-                items.add(new SeparatorMenuItem());
-            }
-            // LSP navigation (only when this buffer is served by a language server), for the symbol there.
-            if (lspActive && !simpleMenu) {
-                items.add(lspMenu(at.offset()));
-                items.add(new SeparatorMenuItem());
-            }
-            // Beside the LSP submenu, not with the plugin-contributed items at the foot of the menu: both
-            // are "what this file's toolchain can do", and reading them together is the point.
-            if (buildMenuContributor != null && !simpleMenu) {
-                List<MenuItem> build = buildMenuContributor.get();
-                if (build != null && !build.isEmpty()) {
-                    items.addAll(build);
-                    items.add(new SeparatorMenuItem());
-                }
-            }
-            // Use the same effective gate as the floating selection bar: the master + feature settings
-            // are on and the provider's latest connectivity check succeeded. Keep the submenu available
-            // even without a selection so the menu remains a stable map of enabled features; its
-            // selection-scoped actions are disabled until there is text to act on.
-            if (aiActionsEnabled && !simpleMenu) {
-                items.add(aiActionsMenu());
-                items.add(new SeparatorMenuItem());
-            }
-            items.addAll(spell.menuItems(at.offset(), contextMenu.getItems()));
-            // One submenu per markup language, the way the LSP and build-tool actions are already grouped:
-            // eight flat "Typst: …" entries pushed cut/copy/paste and the spelling suggestions down the menu
-            // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
-            // top level above — they are the actions you reach for without reading the menu.
-            if (!simpleMenu && canFormatMarkdown()) {
-                items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(this, typstImagePasteHandler)));
-                items.add(new SeparatorMenuItem());
-            } else if (!simpleMenu && isTypst() && isEditable()) {
-                items.add(markupMenu(tr("editmenu.typst"), typstMenuItems()));
-                items.add(new SeparatorMenuItem());
-            }
-            if (supportsComments()) {
-                MenuItem comment = new MenuItem(tr("editmenu.toggleComment"));
-                comment.setGraphic(MenuIcons.comment());
-                comment.setOnAction(ev -> toggleComment());
-                items.add(comment);
-                items.add(new SeparatorMenuItem());
-            }
-            items.addAll(standardMenuItems());
-            // Print / Export to PDF stay in Simple mode, as on its File menu; the controller already leaves out the
-            // External Tools and plugin items there.
-            if (menuContributor != null) { // plugin-contributed items
-                List<MenuItem> extra = menuContributor.get();
-                if (extra != null && !extra.isEmpty()) {
-                    items.add(new SeparatorMenuItem());
-                    items.addAll(extra);
-                }
-            }
-            // Bookmarks: the gutter marker is display-only, so add/remove lives here (and in the palette).
-            if (path != null && !simpleMenu) {
-                items.add(new SeparatorMenuItem());
-                int clickedLine = at.line();
-                boolean marked = bookmarks.isBookmarked(clickedLine);
-                MenuItem bookmark = new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark"));
-                bookmark.setGraphic(MenuIcons.bookmark());
-                bookmark.setOnAction(ev -> bookmarkToggleRequest.accept(this, clickedLine));
-                items.add(bookmark);
-            }
-            if (path != null && notesEnabled && !simpleMenu) {
-                items.add(new SeparatorMenuItem());
-                boolean hasSelection = a.getSelection().getLength() > 0;
-                MenuItem addNote = new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote"));
-                addNote.setGraphic(MenuIcons.note());
-                addNote.setOnAction(ev -> addNoteHandler.accept(this));
-                items.add(addNote);
-            }
-            contextMenu.getItems().setAll(items);
-            contextMenu.show(a, at.screenX(), at.screenY());
-            e.consume();
-        });
-    }
-
-    /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
     public void setMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
-        this.menuContributor = contributor;
+        editorMenu.setMenuContributor(contributor);
     }
 
-    /** The debugger's right-click items, placed above the LSP submenu (built per showing; null clears it). */
     public void setDebugMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
-        this.debugMenuContributor = contributor;
+        editorMenu.setDebugMenuContributor(contributor);
     }
 
-    /**
-     * Simple UI mode trims the right-click menu, as it trims the menu bar, to Toggle Comment, the spelling
-     * suggestions, Cut/Copy/Paste, Undo/Redo, Select All and Print / Export to PDF; the preview menu loses
-     * its extra export formats (see {@link PreviewMenu}). Read on each right-click,
-     * so a toggle applies to the next one.
-     */
     public void setSimpleMenu(boolean simple) {
-        this.simpleMenu = simple;
+        editorMenu.setSimpleMenu(simple);
     }
 
-    /** Whether the right-click menus are trimmed for Simple UI mode (the preview menus read it too). */
     public boolean isSimpleMenu() {
-        return simpleMenu;
+        return editorMenu.isSimpleMenu();
     }
 
-    /** Items placed immediately after the LSP submenu — see {@code installContextMenu}. */
     public void setBuildMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
-        this.buildMenuContributor = contributor;
-    }
-
-    /**
-     * Wraps a markup language's formatting actions in one titled submenu — the {@link #lspMenu} shape.
-     *
-     * <p>The items keep their palette titles ("Markdown: Bold"), matching the Maven submenu rather than the
-     * LSP one: those titles are the command titles, shared with the palette and the keybinding editor, and
-     * duplicating them purely to drop a prefix inside the submenu would mean a second set of strings in six
-     * catalogs that could then drift from the commands they name.
-     */
-    private Menu markupMenu(String title, List<MenuItem> actions) {
-        Menu menu = new Menu(title, MenuIcons.textFormat());
-        menu.getItems().addAll(actions);
-        return menu;
-    }
-
-    /** AI selection actions, grouped under one row while the effective enabled-and-connected gate is on. */
-    private Menu aiActionsMenu() {
-        boolean hasSelection = menuView.getSelection().getLength() > 0;
-        MenuItem explain = new MenuItem(tr("command.ai.explainSelection"), MenuIcons.explain());
-        explain.setDisable(!hasSelection);
-        explain.setOnAction(e -> requestExplainSelection());
-        MenuItem rewrite = new MenuItem(tr("command.ai.rewriteSelection"), MenuIcons.rewrite());
-        rewrite.setDisable(!hasSelection || !isEditable());
-        rewrite.setOnAction(e -> requestRewriteSelection());
-        Menu menu = new Menu(tr("editmenu.aiActions"), MenuIcons.ai());
-        menu.getItems().addAll(explain, rewrite);
-        return menu;
-    }
-
-    /**
-     * The language-server actions, gathered under one <b>LSP</b> submenu.
-     *
-     * <p>A submenu rather than the flat list they used to be: a served buffer contributes up to seven items,
-     * which pushed the editing actions everyone uses — cut/copy/paste, the spelling suggestions — far enough
-     * down the menu to hunt for. Grouping them also names what they are, which a bare "Go to Definition"
-     * sitting between "Paste" and a spelling suggestion does not.
-     */
-    private Menu lspMenu(int offset) {
-        Menu menu = new Menu(tr("editmenu.lsp"), MenuIcons.code());
-        menu.getItems().addAll(lspMenuItems(offset));
-        return menu;
-    }
-
-    /** Go to Definition / Find References / Show Documentation — each moves the caret to {@code offset}
-     *  first so it targets the right-clicked symbol, then runs the controller-supplied action. */
-    private List<MenuItem> lspMenuItems(int offset) {
-        List<MenuItem> items = new java.util.ArrayList<>();
-        items.add(lspItem("command.lsp.gotoDefinition", MenuIcons.gotoDefinition(), offset, lspGotoDefinitionAction));
-        if (lspImplementationAvailable) {
-            items.add(lspItem(
-                    "command.lsp.gotoImplementation",
-                    MenuIcons.gotoImplementation(),
-                    offset,
-                    lspGotoImplementationAction));
-        }
-        if (lspTypeDefinitionAvailable) {
-            items.add(lspItem(
-                    "command.lsp.gotoTypeDefinition",
-                    MenuIcons.gotoTypeDefinition(),
-                    offset,
-                    lspGotoTypeDefinitionAction));
-        }
-        items.add(lspItem("command.lsp.findReferences", MenuIcons.find(), offset, lspFindReferencesAction));
-        items.add(lspItem("command.lsp.hover", MenuIcons.about(), offset, lspHoverAction));
-        if (lspCodeActionsAvailable) { // quick fixes target the right-clicked spot
-            items.add(lspItem("command.lsp.codeActions", MenuIcons.codeAction(), offset, lspCodeActionsAction));
-        }
-        if (lspRenameAvailable) { // rename the right-clicked symbol
-            items.add(lspItem("command.lsp.rename", MenuIcons.rename(), offset, lspRenameAction));
-        }
-        items.add(1, lspCommandItem("lsp.peekDefinition", MenuIcons.find(), offset));
-        if (lspCodeActionsAvailable) { // Refactor, Generate, the hierarchies had no right-click entry (Java review B14)
-            items.add(lspCommandItem("lsp.refactorThis", MenuIcons.codeAction(), offset));
-            if ("java".equals(language)) {
-                items.add(lspCommandItem("lsp.generate", MenuIcons.add(), offset));
-                items.add(lspCommandItem("lsp.callHierarchy", MenuIcons.find(), offset));
-                items.add(lspCommandItem("lsp.typeHierarchy", MenuIcons.find(), offset));
-                items.add(lspCommandItem("lsp.gotoSuperMethod", MenuIcons.gotoImplementation(), offset)); // ER3
-            }
-        }
-        if (lspFormatAvailable) {
-            MenuItem format = new MenuItem(MenuTitles.of(tr("command.lsp.formatDocument")));
-            format.setGraphic(MenuIcons.code());
-            format.setOnAction(e -> lspFormatAction.run()); // whole-document — no caret positioning needed
-            items.add(format);
-        }
-        return items;
-    }
-
-    /** A row that runs command {@code id} through the coordinator, at the right-clicked spot. */
-    private MenuItem lspCommandItem(String id, Node icon, int offset) {
-        return lspItem("command." + id, icon, offset, () -> lspCommand.accept(id));
-    }
-
-    private MenuItem lspItem(String titleKey, Node icon, int offset, Runnable action) {
-        MenuItem item = new MenuItem(MenuTitles.of(tr(titleKey)));
-        item.setGraphic(icon);
-        item.setOnAction(e -> {
-            menuView.moveTo(offset); // in the view that was right-clicked
-            action.run();
-        });
-        return item;
-    }
-
-    /** Typst inline-format actions for the right-click menu (Typst buffers only). Typst has no native
-     *  strikethrough/task/pipe-table, so the set is bold/emphasis/raw/link/bullet. */
-    private List<MenuItem> typstMenuItems() {
-        MenuItem bold = new MenuItem(tr("command.typst.bold"));
-        bold.setGraphic(MenuIcons.bold());
-        bold.setOnAction(e -> formatInline("*"));
-        MenuItem emph = new MenuItem(tr("command.typst.emph"));
-        emph.setGraphic(MenuIcons.italic());
-        emph.setOnAction(e -> formatInline("_"));
-        MenuItem raw = new MenuItem(tr("command.typst.raw"));
-        raw.setGraphic(MenuIcons.code());
-        raw.setOnAction(e -> formatInline("`"));
-        MenuItem link = new MenuItem(tr("command.typst.link"));
-        link.setGraphic(MenuIcons.link());
-        link.setOnAction(e -> formatLinkFromClipboard());
-        MenuItem bullet = new MenuItem(tr("command.typst.bulletList"));
-        bullet.setGraphic(MenuIcons.bulletList());
-        bullet.setOnAction(e -> formatBulletList());
-        MenuItem table = new MenuItem(tr("command.typst.insertTable"));
-        table.setGraphic(MenuIcons.table());
-        table.setOnAction(e -> insertTypstTableInteractive());
-        MenuItem outline = new MenuItem(tr("command.typst.outline"));
-        outline.setGraphic(MenuIcons.bulletList());
-        outline.setOnAction(e -> insertTypstOutline());
-        MenuItem image = new MenuItem(tr("command.typst.insertImage"));
-        image.setGraphic(MenuIcons.download());
-        image.setOnAction(e -> {
-            if (typstImagePasteHandler != null) {
-                typstImagePasteHandler.run();
-            }
-        });
-        return List.of(bold, emph, raw, link, bullet, table, outline, image);
-    }
-
-    private static MenuItem tableItem(String key, Node icon, Runnable action) {
-        MenuItem mi = new MenuItem(tr(key));
-        mi.setGraphic(icon);
-        mi.setOnAction(e -> action.run());
-        return mi;
-    }
-
-    /** The Cut/Copy/Paste/Undo/Redo/Select All items, with state for the current selection/clipboard. */
-    private List<MenuItem> standardMenuItems() {
-        // Cut/Copy/Paste route through the multi-caret-aware path first (falling back to the native single-
-        // caret op), so a box/column selection copies *every* caret's selection — matching the edit.cut/
-        // copy/paste commands. Without this, copy() only grabs the primary caret's row. Like one caret,
-        // several carets with nothing selected at any of them have nothing to cut or copy here: the fork's
-        // multi-caret cut/copy would otherwise take their whole lines, whatever the "copy the line when
-        // nothing is selected" setting says (this menu never did that for a single caret either).
-        CodeArea view = menuView;
-        MultiCarets carets = view == area2 ? multiCaret2 : multiCaret;
-        boolean canCopy =
-                carets != null ? carets.anySelection() : view.getSelection().getLength() > 0;
-        boolean editable = isEditable();
-        boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
-        MenuItem cut = tableItem("editmenu.cut", MenuIcons.cut(), () -> {
-            if (!multiCaretCut()) {
-                view.cut();
-            }
-        });
-        cut.setDisable(!canCopy || !editable);
-        MenuItem copy = tableItem("editmenu.copy", MenuIcons.copy(), () -> {
-            if (!multiCaretCopy()) {
-                view.copy();
-            }
-        });
-        copy.setDisable(!canCopy);
-        MenuItem paste = tableItem("editmenu.paste", MenuIcons.paste(), () -> {
-            if (!multiCaretPaste()) {
-                view.paste();
-            }
-        });
-        paste.setDisable(!hasClipboardText || !editable);
-        MenuItem undo = tableItem("editmenu.undo", MenuIcons.undo(), () -> undoOrRedo(view, false));
-        undo.setDisable(!view.isUndoAvailable());
-        MenuItem redo = tableItem("editmenu.redo", MenuIcons.redo(), () -> undoOrRedo(view, true));
-        redo.setDisable(!view.isRedoAvailable());
-        MenuItem selectAll = tableItem("editmenu.selectAll", MenuIcons.selectAll(), view::selectAll);
-        return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
+        editorMenu.setBuildMenuContributor(contributor);
     }
 
     /** This buffer's spell checking: its settings, the word at the caret, and what can be done with it. */
@@ -2439,7 +1677,7 @@ public class EditorBuffer implements TabContent {
      * text-rect anchors. The split's second view, if there is one, gets its twin at once; a split opened
      * later finds it with the rest (see {@link SecondaryPane#follow}).
      */
-    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, int layer) {
+    <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, int layer) {
         anchorOverText(overlay);
         return attachLazy(overlay, layer);
     }
@@ -2486,7 +1724,7 @@ public class EditorBuffer implements TabContent {
         return occurrenceOverlay;
     }
 
-    private TodoHighlightOverlay todoOverlay() {
+    TodoHighlightOverlay todoOverlay() {
         if (todoOverlay == null) {
             todoOverlay = attachLazyOverlay(new TodoHighlightOverlay(area), OverlayLayer.TODO);
         }
@@ -2563,7 +1801,7 @@ public class EditorBuffer implements TabContent {
         return mdLintStripe;
     }
 
-    private TodoStripe todoStripe() {
+    TodoStripe todoStripe() {
         if (todoStripe == null) {
             todoStripe = attachLazyStripe(new TodoStripe(area), OverlayLayer.TODO_STRIPE);
             todoStripe.setOnActivateIn(jumps::revealLine);
@@ -2598,7 +1836,7 @@ public class EditorBuffer implements TabContent {
         return lintOverlay;
     }
 
-    private LspDiagnosticOverlay lspOverlay() {
+    LspDiagnosticOverlay lspOverlay() {
         if (lspOverlay == null) {
             lspOverlay = attachLazyOverlay(new LspDiagnosticOverlay(area), OverlayLayer.LSP);
         }
@@ -2662,324 +1900,51 @@ public class EditorBuffer implements TabContent {
     /** One LSP inlay hint, positioned: 0-based line + column, and the label to render there. */
     public record InlayHint(int line, int col, String label) {}
 
-    /** 0-based line → the hints on it. Read live by the areas' inlay factory. */
-    private java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> inlayHintsByLine = java.util.Map.of();
-
-    private boolean inlayFactoryInstalled;
-    private final ColorSwatchInlays swatchInlays = new ColorSwatchInlays(); // colour literals' swatches (D9)
-
-    /**
-     * Sets the LSP inlay hints, rendered <b>inline at their own column</b> — each hint displaces the glyphs
-     * after it instead of being parked at the end of the line (#824).
-     *
-     * <p>Hints are <em>decorations, not text</em>: they never enter the document, never shift an offset, and
-     * never appear in a selection or a copy. See {@code org.fxmisc.richtext.Inlay}.
-     */
     public void setInlayHints(java.util.@Nullable List<InlayHint> hints) {
-        if (largeFile || hints == null || hints.isEmpty()) {
-            if (!inlayHintsByLine.isEmpty()) {
-                inlayHintsByLine = java.util.Map.of();
-                refreshInlayAreas();
-            }
-            return;
-        }
-        java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> byLine = new java.util.HashMap<>();
-        for (InlayHint h : hints) {
-            byLine.computeIfAbsent(h.line(), k -> new java.util.ArrayList<>())
-                    .add(new org.fxmisc.richtext.Inlay(h.col(), h.label(), "inlay-hint"));
-        }
-        inlayHintsByLine = byLine;
-        ensureInlayFactory();
-        refreshInlayAreas();
+        inlayDecor.setInlayHints(hints);
     }
 
-    /**
-     * Installs the inlay factory on both views, once. The factory closes over the field rather than the
-     * value, so pushing new hints is a map swap plus a refresh — no rebinding, and the split view stays in
-     * step for free.
-     */
-    private void ensureInlayFactory() {
-        if (inlayFactoryInstalled) {
-            return;
-        }
-        inlayFactoryInstalled = true;
-        java.util.function.IntFunction<java.util.List<org.fxmisc.richtext.Inlay>> factory = this::inlaysOn;
-        area.setInlayFactory(factory);
-        if (area2 != null) {
-            area2.setInlayFactory(factory);
-        }
-    }
-
-    /** The inlays of one line: its hints, its code lens, then a {@code .http} request's last result. */
-    private java.util.@Nullable List<org.fxmisc.richtext.Inlay> inlaysOn(int line) {
-        java.util.List<org.fxmisc.richtext.Inlay> lsp = lspInlaysOn(line);
-        return httpResults.isEmpty() || line < 0 || line >= area.getParagraphs().size()
-                ? lsp
-                : httpResults.inlays(line, lsp, area.getParagraphLength(line));
-    }
-
-    /** The LSP inlays of one line: its colour swatches and hints, then — after the last character — its code lens. */
-    private java.util.@Nullable List<org.fxmisc.richtext.Inlay> lspInlaysOn(int line) {
-        java.util.List<org.fxmisc.richtext.Inlay> hints = swatchInlays.merged(line, inlayHintsByLine.get(line));
-        java.util.List<CodeLens> lenses = codeLensByLine.get(line);
-        return lenses == null || line < 0 || line >= area.getParagraphs().size()
-                ? hints
-                : CodeLensShift.withLens(
-                        hints, lenses, CodeLens::label, area.getParagraphLength(line), CODE_LENS_STYLE);
-    }
-
-    /** Draws the server's colour swatches (HTML review D9) before their literals; null or empty clears them. */
     public void setColorSwatches(java.util.@Nullable List<com.editora.text.ColorSwatch> swatches) {
-        if (swatchInlays.set(largeFile ? null : swatches, root)) {
-            ensureInlayFactory();
-            refreshInlayAreas();
-        }
+        inlayDecor.setColorSwatches(swatches);
     }
 
     /** One code lens: its 0-based line, its text ({@code 3 references}) and the click handler's own token. */
     public record CodeLens(int line, String label, Object token) {}
 
-    private static final String CODE_LENS_STYLE = "code-lens";
-
-    /** 0-based line → the lenses drawn after it, joined. Read live by the areas' inlay factory. */
-    private java.util.Map<Integer, java.util.List<CodeLens>> codeLensByLine = java.util.Map.of();
-
-    private java.util.function.BiConsumer<Integer, java.util.List<CodeLens>> codeLensHandler = (line, lenses) -> {};
-
-    /**
-     * Sets the code lenses, each drawn after the end of its line through the same inlay mechanism as the
-     * hints (so it is not part of the document either). Several lenses on one line are joined. Null or
-     * empty clears them.
-     */
     public void setCodeLenses(java.util.@Nullable List<CodeLens> lenses) {
-        java.util.Map<Integer, java.util.List<CodeLens>> byLine = CodeLensShift.byLine(lenses, CodeLens::line);
-        if (byLine.equals(codeLensByLine)) {
-            return;
-        }
-        codeLensByLine = byLine.isEmpty() ? java.util.Map.of() : byLine;
-        ensureInlayFactory();
-        refreshInlayAreas();
+        inlayDecor.setCodeLenses(lenses);
     }
 
-    /** What a click on a line's code lens does: gets the line as it is now, and the lenses on it. */
     public void setCodeLensHandler(java.util.function.BiConsumer<Integer, java.util.List<CodeLens>> handler) {
-        this.codeLensHandler = handler == null ? (line, lenses) -> {} : handler;
+        inlayDecor.setCodeLensHandler(handler);
     }
 
-    /** The lenses on {@code line} (0-based) — empty when it has none. */
     public java.util.List<CodeLens> codeLensesOn(int line) {
-        return codeLensByLine.getOrDefault(line, java.util.List.of());
+        return inlayDecor.codeLensesOn(line);
     }
 
-    /** Runs the click action of the lenses on {@code line}, as a click on them does. */
     public void activateCodeLens(int line) {
-        java.util.List<CodeLens> lenses = codeLensByLine.get(line);
-        if (lenses != null) {
-            codeLensHandler.accept(line, lenses);
-        }
+        inlayDecor.activateCodeLens(line);
     }
 
-    /** Keeps the lenses on their declarations until the next answer arrives ({@link CodeLensShift}). */
-    private void shiftCodeLenses(java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes) {
-        var moved = CodeLensShift.afterChanges(codeLensByLine, changes, area);
-        if (moved != null) {
-            codeLensByLine = moved;
-            refreshInlayAreas();
-        }
-    }
-
-    private static final javafx.css.PseudoClass LENS_HOVER = javafx.css.PseudoClass.getPseudoClass("lens-hover");
-
-    /** The lens label under the pointer, lit and given the hand cursor; null when there is none. */
-    private @Nullable Node hoveredLens;
-
-    private javafx.scene.@Nullable Cursor cursorBeforeLens;
-
-    /**
-     * A click on a code lens runs its action instead of placing the caret. The area's inlay labels are
-     * mouse-transparent, so the pointer never picks one: the lens is found by its bounds, and the hover
-     * look and hand cursor a pick would have given it are set here.
-     */
-    private void installCodeLensClick(CodeArea a) {
-        httpResults.install(a); // and on a .http request's result
-        a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
-            if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress() || lensAt(a, e) == null) {
-                return;
-            }
-            e.consume();
-            activateCodeLens(lensLineAt(a, e));
-        });
-        a.addEventFilter(MouseEvent.MOUSE_MOVED, e -> hoverLens(a, lensAt(a, e)));
-        a.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hoverLens(a, null));
-    }
-
-    /**
-     * The line whose lens is under the pointer. The character under it, not the insertion point beside
-     * it: a lens follows the end of its line, and the insertion point nearest its right half is the start
-     * of the next line — that half of the label ran the lenses of the line below, or nothing.
-     */
-    private static int lensLineAt(CodeArea a, MouseEvent e) {
-        var hit = a.hit(e.getX(), e.getY());
-        int offset = hit.getCharacterIndex().orElse(hit.getInsertionIndex());
-        return a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
-                .getMajor();
-    }
-
-    /** The lens label the pointer is over, or null. Looks for one only on a line that has lenses. */
-    private @Nullable Node lensAt(CodeArea a, MouseEvent e) {
-        if (codeLensByLine.isEmpty() || !codeLensByLine.containsKey(lensLineAt(a, e))) {
-            return null;
-        }
-        for (Node n : a.lookupAll("." + CODE_LENS_STYLE)) {
-            // Not the gap that sets the lens apart from the code: a click there places the caret.
-            javafx.geometry.Point2D at = n.sceneToLocal(e.getSceneX(), e.getSceneY());
-            double gap = n instanceof Region r ? r.snappedLeftInset() : 0;
-            if (at.getX() >= gap && n.contains(at)) {
-                return n;
-            }
-        }
-        return null;
-    }
-
-    private void hoverLens(CodeArea a, @Nullable Node lens) {
-        if (lens == hoveredLens) {
-            return;
-        }
-        if (hoveredLens != null) {
-            hoveredLens.pseudoClassStateChanged(LENS_HOVER, false);
-            a.setCursor(cursorBeforeLens);
-        }
-        if (lens != null) {
-            lens.pseudoClassStateChanged(LENS_HOVER, true);
-            cursorBeforeLens = a.getCursor();
-            a.setCursor(javafx.scene.Cursor.HAND);
-        }
-        hoveredLens = lens;
-    }
-
-    private void refreshInlayAreas() {
-        if (!inlayFactoryInstalled) {
-            return;
-        }
-        area.refreshInlays();
-        if (area2 != null) {
-            area2.refreshInlays();
-        }
-    }
-
-    /** Injects the document-highlight request (the coordinator asks the server and pushes spans back);
-     *  null disables the caret-idle trigger entirely. */
     public void setOccurrenceRequester(Runnable requester) {
-        this.occurrenceRequester = requester;
+        lspAssists.setOccurrenceRequester(requester);
     }
 
-    /** Fired ~300 ms after the caret comes to rest while LSP-active; null = feature off. */
-    private @Nullable Runnable occurrenceRequester;
-
-    /** Debounces the caret-rest trigger for document highlight (#675) — one per buffer, both views. */
-    private final javafx.animation.PauseTransition occurrenceIdle =
-            new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
-
-    /**
-     * Caret-idle trigger for document highlight: any caret move clears the wash at once (the old spans
-     * are for the old symbol — leaving them paints the wrong word) and re-arms the 300 ms idle timer;
-     * on rest, the injected requester asks the server. Three field checks per caret move when off.
-     */
-    private void installOccurrenceTrigger(CodeArea a) {
-        a.caretPositionProperty().addListener((o, ov, nv) -> {
-            if (occurrenceRequester == null || !lspActive || largeFile) {
-                return;
-            }
-            clearOccurrenceSpans();
-            occurrenceIdle.setOnFinished(ev -> {
-                if (occurrenceRequester != null && lspActive && a.isFocused()) {
-                    occurrenceRequester.run();
-                }
-            });
-            occurrenceIdle.playFromStart();
-        });
-    }
-
-    /** Enables/disables the TODO-pattern highlight for this buffer and re-scans (the controller pushes the
-     *  effective {@code Settings.todoHighlight}). */
     public void setTodoHighlightEnabled(boolean enabled) {
-        this.todoEnabled = enabled;
-        minimap.setTodoEnabled(enabled && !largeFile);
-        updateTodoStripe(); // (de)activate + position the scrollbar overview stripe
-        refreshTodoMarks();
+        todoMarker.setTodoHighlightEnabled(enabled);
     }
 
-    /** Injects the compiled-pattern matcher (decoupled from the {@code todo}/{@code config} packages) and
-     *  re-scans. */
     public void setTodoMatcher(TodoMatcher matcher) {
-        this.todoMatcher = matcher;
-        refreshTodoMarks();
+        todoMarker.setTodoMatcher(matcher);
     }
 
-    /** Discards an in-flight background TODO scan whose result would be stale (mirrors {@link #highlightGen}). */
-    private long todoGen;
-
-    /** Re-scans the buffer text and updates the highlight overlay + the scrollbar/minimap overview stripes;
-     *  inert when off / no matcher / huge file. The multi-pattern scan runs off the FX thread (a generation
-     *  counter discards a superseded result), so a large-but-under-cap file doesn't spend tens of ms scanning
-     *  on the FX thread per debounced edit pulse — mirroring how {@link #applyHighlighting} tokenizes. */
-    private void refreshTodoMarks() {
-        if (disposed) {
-            return; // see the disposed field
-        }
-        long gen = ++todoGen; // any newer pulse (or dispose) supersedes an in-flight scan
-        if (!todoEnabled || todoMatcher == null || largeFile) {
-            applyTodoMarks(java.util.List.of());
-            return;
-        }
-        TodoMatcher matcher = todoMatcher; // may be reassigned on the FX thread; capture the current one
-        String text = documentTextSnapshot();
-        HIGHLIGHT_POOL.execute(() -> {
-            java.util.List<TodoMark> marks;
-            try {
-                marks = matcher.match(text);
-            } catch (RuntimeException e) {
-                return; // never let a pathological user pattern kill the scan thread
-            }
-            Platform.runLater(() -> {
-                if (gen != todoGen) {
-                    return; // a newer edit/scan superseded this pass
-                }
-                applyTodoMarks(marks);
-            });
-        });
-    }
-
-    /** Pushes a scan result to the overlay, the stripe and the minimap; the first non-empty one attaches the
-     *  overlay and the stripe (an empty result for a buffer that never had them leaves them unbuilt). */
-    private void applyTodoMarks(java.util.List<TodoMark> marks) {
-        if (!marks.isEmpty() || todoOverlay != null) {
-            todoOverlay().setMarks(marks);
-        }
-        if (!marks.isEmpty() || todoStripe != null) {
-            todoStripe().setMarks(marks);
-        }
-        minimap.setTodoMarks(marks);
-        todoMarks = java.util.Collections.unmodifiableList(marks);
-        if (onTodoMarksChanged != null) {
-            onTodoMarksChanged.run();
-        }
-    }
-
-    /** The last applied TODO/highlight marks (empty when off, unscanned, or a huge file). */
-    private java.util.List<TodoMark> todoMarks = java.util.List.of();
-
-    private @Nullable Runnable onTodoMarksChanged;
-
-    /** The TODO/highlight marks currently shown in this buffer (read-only; empty when the highlight is off). */
     public java.util.List<TodoMark> todoMarks() {
-        return todoMarks;
+        return todoMarker.todoMarks();
     }
 
-    /** Called on the FX thread after every TODO re-scan of this buffer is applied (on load, after debounced
-     *  edits, and when the patterns or the on/off setting change), whether or not the marks changed. */
     public void setOnTodoMarksChanged(Runnable callback) {
-        this.onTodoMarksChanged = callback;
+        todoMarker.setOnTodoMarksChanged(callback);
     }
 
     /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
@@ -3026,7 +1991,7 @@ public class EditorBuffer implements TabContent {
             this.markdownViewMode = MarkdownViewMode.EDITOR; // a code split supersedes the Markdown preview
             ensureSecondaryView();
         }
-        rebuildViewHost();
+        viewLayout.rebuildViewHost();
     }
 
     // --- Markdown preview (IntelliJ-style 3-mode view) -----------------------------------------
@@ -3068,7 +2033,7 @@ public class EditorBuffer implements TabContent {
         if (view != null && view != markwhenView) {
             markwhenView = view;
             if (markdownViewMode != MarkdownViewMode.EDITOR) {
-                scheduleRenderPreview();
+                previewPanes.scheduleRenderPreview();
             }
         }
     }
@@ -3077,7 +2042,7 @@ public class EditorBuffer implements TabContent {
     public void toggleMarkwhenView() {
         markwhenView = markwhenView == MarkwhenView.TIMELINE ? MarkwhenView.CALENDAR : MarkwhenView.TIMELINE;
         if (markdownViewMode != MarkdownViewMode.EDITOR) {
-            scheduleRenderPreview();
+            previewPanes.scheduleRenderPreview();
         }
         onMarkwhenViewChanged.run();
     }
@@ -3104,7 +2069,7 @@ public class EditorBuffer implements TabContent {
      * <p>Each setter used to ask "is this file my format?" instead, which is wrong both ways. One setting can
      * back several formats (an XML file's DOM tree rides {@code structuredPreview}, but {@code isStructured()}
      * is false for XML) — so the buffer was left stranded in a preview whose feature is off: every branch of
-     * {@link #scheduleRenderPreview} then misses and falls through to the Markdown tail, rendering the source
+     * {@link BufferPreview#scheduleRenderPreview} then misses and falls through to the Markdown tail, rendering the source
      * as Markdown, while {@code hasPreview()} being false takes away the toggle needed to escape. And one file
      * can have two previews (a workflow is also YAML) — so turning off the unrelated one clobbered a
      * per-file view mode that is persisted in {@code WorkspaceState.markdownViewModes}.
@@ -3139,7 +2104,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** A CSV buffer whose grid preview node has been injected (i.e. the CSV preview feature is on). The
-     *  injected node doubles as the enablement gate, mirroring {@link #htmlPreviewControl}. */
+     *  injected node doubles as the enablement gate, mirroring {@link BufferLayout#htmlPreviewControl}. */
     public boolean hasCsvPreview() {
         return isCsv() && csvPreviewNode != null;
     }
@@ -3156,11 +2121,8 @@ public class EditorBuffer implements TabContent {
         return hasPreview() && !hasHttpPreview();
     }
 
-    /** Whether the tree preview on screen is an error message (as last rendered: nothing is parsed here). */
     public boolean previewShowsError() {
-        return markdownViewMode != MarkdownViewMode.EDITOR
-                && structuredContentHolder != null
-                && structuredContentHolder.lookup(".structured-error") != null;
+        return previewPanes.previewShowsError();
     }
 
     /** A standalone SVG file (by {@code .svg} extension — the buffer stays XML text, so it also gets XML
@@ -3409,13 +2371,13 @@ public class EditorBuffer implements TabContent {
         }
         pomShowXml = !pomShowXml;
         if (markdownViewMode != MarkdownViewMode.EDITOR) {
-            scheduleRenderPreview();
+            previewPanes.scheduleRenderPreview();
         }
         return true;
     }
 
     /** Whether this buffer uses the self-scrolling tree host (structured, XML, crontab, or fstab) — shared surface. */
-    private boolean hasTreePreview() {
+    boolean hasTreePreview() {
         return hasStructuredPreview()
                 || hasPomPreview()
                 || hasXmlPreview()
@@ -3436,21 +2398,13 @@ public class EditorBuffer implements TabContent {
         reconcilePreviewMode();
     }
 
-    /** Whether the last render of this structured buffer detected an OpenAPI/Swagger spec. */
     public boolean isStructuredOpenApi() {
-        return lastStructuredOpenApi;
+        return previewPanes.isStructuredOpenApi();
     }
 
-    /** Flips a structured doc between the tree and the OpenAPI-docs view, then re-renders the preview. */
     public void toggleStructuredView() {
-        boolean currentDocs = structuredShowApiDocs == null || structuredShowApiDocs;
-        structuredShowApiDocs = !currentDocs;
-        if (markdownViewMode != MarkdownViewMode.EDITOR) {
-            scheduleRenderPreview();
-        }
+        previewPanes.toggleStructuredView();
     }
-
-    // --- Live Mermaid linting (maid) ----------------------------------------------------------------
 
     /** Injects the async maid validator: {@code accept(text, diagnostics->…)}; null disables linting. */
     public void setMermaidValidator(
@@ -3647,19 +2601,16 @@ public class EditorBuffer implements TabContent {
         void format(int line, int character, char ch, java.util.function.Consumer<java.util.List<LspTextEdit>> cb);
     }
 
-    /** Injects the on-type formatting request (#740); null disables it. */
     public void setLspOnTypeFormatter(LspOnTypeFormatter formatter) {
-        this.lspOnTypeFormatter = formatter;
+        typingAids.setLspOnTypeFormatter(formatter);
     }
 
-    /** The characters the server formats on (empty = none / not yet known), refreshed when it reports ready. */
     public void setLspOnTypeTriggers(java.util.Set<Character> chars) {
-        this.lspOnTypeTriggers = chars == null ? java.util.Set.of() : chars;
+        typingAids.setLspOnTypeTriggers(chars);
     }
 
-    /** The {@code Settings.lspOnTypeFormatting} master gate (#740), pushed by {@code applyViewSettings}. */
     public void setOnTypeFormattingEnabled(boolean enabled) {
-        this.onTypeFormattingEnabled = enabled;
+        typingAids.setOnTypeFormattingEnabled(enabled);
     }
 
     /** Sets the completion trigger characters the server advertised (empty = none / not yet known). */
@@ -3682,15 +2633,12 @@ public class EditorBuffer implements TabContent {
         this.signatureHelpRequester = requester;
     }
 
-    /** True if this file can be run (a Java 25 compact source file, a Python script, or a shell script
-     *  when the Bash LSP is enabled). */
     public boolean isRunnable() {
-        return runnable;
+        return runGutter.isRunnable();
     }
 
-    /** True when the single-file Run entry is a compact Java source method (rather than a test glyph). */
     public boolean isCompactSource() {
-        return "java".equals(language) && runLine >= 0;
+        return runGutter.isCompactSource();
     }
 
     /** True specifically for Python (the controller picks {@code python}, vs {@code java}, as the runner). */
@@ -3704,18 +2652,13 @@ public class EditorBuffer implements TabContent {
     }
 
     private final List<Runnable> languageListeners = new java.util.ArrayList<>(2); // see addLanguageListener
-    /** Sets the callback fired when {@link #isRunnable()} flips (so the controller refreshes the Run button). */
+
     public void setOnRunnableChanged(Runnable callback) {
-        this.onRunnableChanged = callback == null ? () -> {} : callback;
+        runGutter.setOnRunnableChanged(callback);
     }
 
-    /** Enables/disables the local-file Run affordance. When off, the gutter Run glyph,
-     *  the right-click Run item, and the Run tool window all disappear. */
     public void setRunEnabled(boolean enabled) {
-        if (enabled != runFeatureEnabled) {
-            runFeatureEnabled = enabled;
-            recomputeRun();
-        }
+        runGutter.setRunEnabled(enabled);
     }
 
     /** True for a {@code .http}/{@code .rest} buffer (drives the HTTP Client run glyphs + tool window). */
@@ -3733,17 +2676,13 @@ public class EditorBuffer implements TabContent {
     public void setHttpEnabled(boolean enabled) {
         if (enabled != httpFeatureEnabled) {
             httpFeatureEnabled = enabled;
-            recomputeRun();
+            runGutter.recomputeRun();
         }
         httpVariableMarks.update();
     }
 
-    /** Debug Request for the request at a 0-based line (the editor menu); null when there is none to offer. */
-    private java.util.function.@Nullable IntConsumer httpDebugHandler;
-
-    /** Sets what the editor menu's Debug Request does with the request at a line (null removes the item). */
     public void setHttpDebugHandler(java.util.function.IntConsumer handler) {
-        this.httpDebugHandler = handler;
+        runGutter.setHttpDebugHandler(handler);
     }
 
     /**
@@ -3825,20 +2764,21 @@ public class EditorBuffer implements TabContent {
         return httpResults.activate(line);
     }
 
-    private void repaintHttpResults(java.util.@Nullable Set<Integer> lines) {
+    void repaintHttpResults(java.util.@Nullable Set<Integer> lines) {
         if (lines != null) {
-            ensureInlayFactory();
-            refreshInlayAreas();
+            inlayDecor.ensureInlayFactory();
+            inlayDecor.refreshInlayAreas();
             lines.forEach(this::refreshGutterLine);
         }
     }
 
     /** Whether {@code line} is folded away; false for a line that no longer exists (stale request lines). */
-    private boolean isFoldedLine(int line) {
+    boolean isFoldedLine(int line) {
         return line >= 0 && line < area.getParagraphs().size() && area.isFolded(line);
     }
 
-    private @Nullable String paragraphTextOrNull(int line) {
+    @Nullable
+    String paragraphTextOrNull(int line) {
         return line >= 0 && line < area.getParagraphs().size()
                 ? area.getParagraph(line).getText()
                 : null;
@@ -3855,256 +2795,48 @@ public class EditorBuffer implements TabContent {
         return "makefile".equals(language);
     }
 
-    /** Injects the handler run with a target's name when its Makefile gutter ▶ is clicked. */
     public void setMakeRunHandler(java.util.function.Consumer<String> handler) {
-        this.makeRunHandler = handler == null ? t -> {} : handler;
+        runGutter.setMakeRunHandler(handler);
     }
 
-    /** Enables/disables the JUnit test gutter ▶ (gated by the Test Runner feature + a detected JVM build
-     *  tool). When on, a Java buffer's test class + each test method get a Run glyph. */
     public void setTestGutterEnabled(boolean enabled) {
-        if (enabled != testGutterEnabled) {
-            testGutterEnabled = enabled;
-            recomputeRun();
-        }
+        runGutter.setTestGutterEnabled(enabled);
     }
 
-    /** Injects the handler run with the clicked test target (class ▶ has {@code methodName == null}). */
     public void setTestRunHandler(java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> handler) {
-        this.testRunHandler = handler == null ? t -> {} : handler;
+        runGutter.setTestRunHandler(handler);
     }
 
-    /** Injects the handler that debugs the test class/method selected by the editor context menu. */
     public void setTestDebugHandler(java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> handler) {
-        this.testDebugHandler = handler == null ? t -> {} : handler;
+        runGutter.setTestDebugHandler(handler);
     }
 
-    /** Gate for the project {@code main}-method gutter ▶ (a Java file in a Maven/Gradle project with run/debug
-     *  available); pushed by MainController. */
     public void setMainGutterEnabled(boolean enabled) {
-        if (enabled != mainGutterEnabled) {
-            mainGutterEnabled = enabled;
-            recomputeRun();
-        }
+        runGutter.setMainGutterEnabled(enabled);
     }
 
-    /** Injects the handler run with a clicked {@code main}-method gutter ▶ (runs that project main class). */
     public void setMainRunHandler(java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> handler) {
-        this.mainRunHandler = handler == null ? m -> {} : handler;
+        runGutter.setMainRunHandler(handler);
     }
 
-    /** Injects the handler for the editor "Debug Main Class" item on a {@code main} method. */
     public void setMainDebugHandler(java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> handler) {
-        this.mainDebugHandler = handler == null ? m -> {} : handler;
+        runGutter.setMainDebugHandler(handler);
     }
 
-    /** The project {@code main} entry point at (or nearest above) the caret, else the file's first main, else
-     *  {@code null} — backs the editor right-click Run/Debug Main Class items. */
     public com.editora.run.MainMethodScanner.@Nullable MainMethod mainTargetAtCaret() {
-        return mainTargetAt(focusedArea.getCurrentParagraph());
+        return runGutter.mainTargetAtCaret();
     }
 
-    private com.editora.run.MainMethodScanner.@Nullable MainMethod mainTargetAt(int caret) {
-        if (mainLines.isEmpty()) {
-            return null;
-        }
-        com.editora.run.MainMethodScanner.MainMethod best = null;
-        for (var e : mainLines.entrySet()) {
-            if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
-                best = e.getValue();
-            }
-        }
-        return best != null ? best : mainLines.values().iterator().next();
-    }
-
-    /**
-     * The whole-class JUnit target for this buffer (the "Run Tests" context-menu item), or {@code null} when
-     * this isn't a test file / the test gutter is off.
-     */
     public com.editora.test.JavaTestScanner.@Nullable TestTarget testClassTarget() {
-        for (var t : testLines.values()) {
-            if (t.methodName() == null) {
-                return t; // the class-declaration target the scanner emits first
-            }
-        }
-        return null;
+        return runGutter.testClassTarget();
     }
 
-    /**
-     * The JUnit test target at or nearest above the caret, for {@code test.runAtCaret}/{@code runClassAtCaret}.
-     * {@code classLevel} forces the whole-class target (methodName null). Returns null when the caret isn't in
-     * a test class.
-     */
     public com.editora.test.JavaTestScanner.@Nullable TestTarget testTargetAtCaret(boolean classLevel) {
-        return testTargetAt(focusedArea.getCurrentParagraph(), classLevel);
+        return runGutter.testTargetAtCaret(classLevel);
     }
 
-    private com.editora.test.JavaTestScanner.@Nullable TestTarget testTargetAt(int caret, boolean classLevel) {
-        var best = com.editora.test.JavaTestScanner.targetAt(getContent(), testLines, caret); // review 3, A205
-        if (best == null) {
-            return classLevel ? testClassTarget() : null; // above the class line: the class's (sixth review BS3)
-        }
-        return classLevel
-                ? new com.editora.test.JavaTestScanner.TestTarget(best.line(), best.className(), null, false)
-                : best;
-    }
-
-    /** Whether {@code line} draws a Run glyph: every request line for an enabled {@code .http} buffer,
-     *  else the single script entry line. */
-    private boolean isRunGlyphLine(int line) {
-        if (mainLines.containsKey(line)) {
-            return true; // a project main ▶ draws independently of `runnable` (see recomputeRun)
-        }
-        if (!runnable) {
-            return false;
-        }
-        if (testLines.containsKey(line)) {
-            return true;
-        }
-        if (httpFeatureEnabled && isHttpFile()) {
-            return httpGutter.isGlyphLine(line, this::isFoldedLine); // a folded request's ▶ shows on its ### line
-        }
-        if (isMakefile()) {
-            return makeTargets.containsKey(line);
-        }
-        return line == runLine;
-    }
-
-    /** Hover text for a gutter Run glyph: explains what the blue JUnit ▶ runs (class vs method). */
-    private @Nullable String runGlyphTooltip(int line) {
-        com.editora.run.MainMethodScanner.MainMethod m = mainLines.get(line);
-        if (m != null) {
-            return tr("editmenu.runMainTooltip", com.editora.test.TestSourceLocator.simpleName(m.fqn()));
-        }
-        com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
-        if (t == null) {
-            if (httpFeatureEnabled && isHttpFile()) {
-                return httpGutter.tooltip(line, this::isFoldedLine); // ■ cancels, ▶ runs its request (names the chord)
-            }
-            return null; // the plain script/Makefile ▶ keeps its untooltipped look
-        }
-        return t.methodName() == null
-                ? t.className().isEmpty() // a Python test file's whole-file ▶
-                        ? tr("testrunner.gutter.runFile")
-                        : tr(
-                                "testrunner.gutter.runClass",
-                                com.editora.test.TestSourceLocator.displayName(t.className()))
-                : tr("testrunner.gutter.runMethod", t.methodName());
-    }
-
-    /** Dispatches a Run-glyph click: a JUnit or main ▶, a {@code .http} request (the clicked line), a Makefile
-     *  target (the clicked target's name), else the script run handler. */
-    private void onRunGlyph(int line) {
-        com.editora.test.JavaTestScanner.TestTarget testTarget = testLines.get(line);
-        com.editora.run.MainMethodScanner.MainMethod mainTarget = mainLines.get(line);
-        if (testTarget != null) {
-            testRunHandler.accept(testTarget); // a JUnit class/method ▶ (never coincides with a compact-source main)
-        } else if (mainTarget != null) {
-            mainRunHandler.accept(mainTarget); // a project main class ▶ (disjoint from test/compact-source lines)
-        } else if (httpFeatureEnabled && isHttpFile()) {
-            httpGutter.click(line, this::isFoldedLine); // the ■ in flight cancels it; a ▶ runs its request
-        } else if (isMakefile()) {
-            String target = makeTargets.get(line);
-            if (target != null) {
-                makeRunHandler.accept(target);
-            }
-        } else if (runHandler != null) {
-            runHandler.run();
-        }
-    }
-
-    /** Discards an in-flight background run scan whose result would be stale (mirrors {@link #todoGen}). */
-    private long runScanGen;
-    /** True while the load's (or a settle's) text scan is on the pool and its result has not landed. */
-    private boolean runScanInFlight;
-
-    /**
-     * Lands a background Run scan now when one is still in flight. The load's scan runs off the FX thread, so
-     * a Run or Debug command issued right after a file opens asks for the answer here before deciding how to
-     * launch; nothing happens when the result has already landed.
-     */
     public void settleRunScan() {
-        if (runScanInFlight) {
-            recomputeRun(false);
-        }
-    }
-
-    /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
-    private void recomputeRun() {
-        recomputeRun(false);
-    }
-
-    /**
-     * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles — or after a load — whose
-     * scan of the text ({@link RunScan}) runs off the FX thread: a generation counter drops a superseded
-     * result, as for {@link #refreshTodoMarks}. The load's pass lands a few milliseconds after the document
-     * does rather than scanning up to 256 KiB on the FX thread inside the open. Every other caller (Save As,
-     * a feature toggle) needs the answer now.
-     */
-    private void recomputeRun(boolean settled) {
-        maybeApplyShebang(); // an interpreter shebang can set the language before we gate the Run glyph
-        long gen = ++runScanGen; // any newer pass (or dispose) supersedes an in-flight scan
-        boolean small = !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
-        // Test gutter: independent of the LSP-gated run feature, so it has its own eligibility (a Java buffer
-        // in a JVM project with the Test Runner on). Additive — a test file also keeps any compact-source ▶.
-        // Project main-method gutter: a Java file in a Maven/Gradle project (gated by MainController).
-        RunScan.Inputs in = new RunScan.Inputs(
-                runFeatureEnabled && small,
-                httpFeatureEnabled && small && isHttpFile(),
-                testGutterEnabled && small && "java".equals(language),
-                mainGutterEnabled && small && "java".equals(language),
-                language,
-                path != null ? path.getFileName().toString() : displayName,
-                shebangJavaSource != null);
-        // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
-        // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on
-        // every 150 ms edit pulse just to discard it as run-ineligible.
-        String text = in.needsText() ? documentTextSnapshot() : "";
-        if (!settled || !in.needsText()) {
-            runScanInFlight = false;
-            applyRunScan(RunScan.scan(in, text));
-            return;
-        }
-        runScanInFlight = true;
-        HIGHLIGHT_POOL.execute(() -> {
-            RunScan.Result found = RunScan.scan(in, text);
-            Platform.runLater(() -> {
-                if (gen == runScanGen) {
-                    runScanInFlight = false;
-                    applyRunScan(found);
-                }
-            });
-        });
-    }
-
-    private void applyRunScan(RunScan.Result now) {
-        boolean changed = now.runnable() != runnable;
-        boolean linesChanged = !now.httpLines().equals(httpGutter.requestLines())
-                || !now.makeTargets().equals(makeTargets)
-                || !now.testLines().equals(testLines)
-                || !now.mainLines().equals(mainLines);
-        int oldLine = runLine;
-        runnable = now.runnable();
-        runLine = now.line();
-        httpGutter.setRequestLines(now.httpLines(), this::paragraphTextOrNull); // the ■ follows its request
-        repaintHttpResults(httpResults.reanchor(now.httpLines(), this::paragraphTextOrNull)); // edited: it goes
-        makeTargets = now.makeTargets();
-        testLines = now.testLines();
-        mainLines = now.mainLines();
-        if (changed) {
-            onRunnableChanged.run();
-            refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
-        } else if (linesChanged) {
-            refreshGutter(); // requests/targets/test/main methods added/removed — relight the glyphs
-        } else if (runLine != oldLine) {
-            // The entry line moved (edits above it) — repaint just the old and new gutter rows.
-            if (oldLine >= 0) {
-                refreshGutterLine(oldLine);
-            }
-            if (runLine >= 0) {
-                refreshGutterLine(runLine);
-            }
-        }
+        runGutter.settleRunScan();
     }
 
     /** A language whose server copes with this file despite the large-source tier (Python, review B10). */
@@ -4190,82 +2922,24 @@ public class EditorBuffer implements TabContent {
 
     private boolean inlayHintsActive;
 
-    /** Turns LSP semantic highlighting on/off for this buffer (server supports it + feature enabled). Off in
-     *  large-file mode, like the diagnostics overlay. Re-applies the highlight so the overlay appears/clears. */
     public void setSemanticActive(boolean on) {
-        boolean next = on && !largeFile;
-        if (next == semanticActive) {
-            return;
-        }
-        semanticActive = next;
-        if (!semanticActive) {
-            semanticTokens = java.util.List.of();
-            semanticStale = false;
-        }
-        semanticDirty.applied();
-        invalidateHighlighting(); // force a full re-tokenize so the overlay is added/removed everywhere
-        applyHighlighting();
+        highlighter.setSemanticActive(on);
     }
 
     public boolean isSemanticActive() {
-        return semanticActive;
+        return highlighter.isSemanticActive();
     }
 
-    /** The generation to capture when issuing a semantic-tokens request; pass it back to
-     *  {@link #setSemanticTokens(java.util.List, long)} so a response for an older document is dropped. */
     public long semanticGen() {
-        return semanticGen;
+        return highlighter.semanticGen();
     }
 
-    /** Pushes fresh server semantic tokens (absolute positions) and re-applies so they overlay the
-     *  TextMate highlight immediately. No-op when semantic highlighting is off for this buffer. */
     public void setSemanticTokens(java.util.List<SemanticToken> tokens) {
-        setSemanticTokens(tokens, semanticGen);
+        highlighter.setSemanticTokens(tokens);
     }
 
-    /**
-     * Applies a semantic-tokens response only if the document hasn't changed since the request was issued
-     * ({@code requestGen == } the current {@link #semanticGen()}). A stale response — the server computed it
-     * against an older version, or an older request's reply arrives after a newer one — is <b>dropped</b>,
-     * leaving {@link #semanticStale} set so the overlay stays suppressed rather than re-anchoring the old
-     * tokens onto the shifted text (which mis-colored characters/lines until the next response). A response
-     * identical to the tokens already shown restyles nothing; a different one restyles the lines that differ.
-     */
     public void setSemanticTokens(java.util.List<SemanticToken> tokens, long requestGen) {
-        if (!semanticActive || requestGen != semanticGen) {
-            return;
-        }
-        java.util.List<SemanticToken> next = tokens == null ? java.util.List.of() : tokens;
-        int lines = area.getParagraphs().size();
-        int erasedFirst = semanticStale ? lineOfOffset(semanticDirty.start()) : -1;
-        int[] range = SemanticToken.changedLines(
-                semanticTokens, next, erasedFirst, lineOfOffset(semanticDirty.end()), lines - semanticLines);
-        if (range != null || semanticStale) {
-            semanticTokens = next;
-        }
-        semanticStale = false; // anchored to the current (unchanged since request) text → safe to overlay
-        semanticDirty.applied();
-        semanticLines = lines;
-        if (range != null) { // else the same tokens over the same text: nothing to restyle
-            // Style-only: the pass re-tokenizes just these lines, from the stored end-state above them.
-            int last = Math.min(range[1], lines - 1);
-            highlightDirty.include(
-                    area.getAbsolutePosition(Math.min(range[0], last), 0),
-                    area.getAbsolutePosition(last, area.getParagraphLength(last)));
-            applyHighlighting();
-        }
-    }
-
-    private int lineOfOffset(int offset) {
-        return area.offsetToPosition(
-                        Math.max(0, Math.min(offset, area.getLength())),
-                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
-                .getMajor();
-    }
-
-    /** The semantic tokens a pass dispatched now should overlay, or null (off, stale, or none). */
-    private java.util.@Nullable List<SemanticToken> semanticOverlay() {
-        return semanticActive && !semanticStale && !semanticTokens.isEmpty() ? semanticTokens : null;
+        highlighter.setSemanticTokens(tokens, requestGen);
     }
 
     /** The inclusive 0-based line range currently visible in the editor (for a viewport semantic-tokens
@@ -4313,19 +2987,19 @@ public class EditorBuffer implements TabContent {
 
     /** Positions the TODO overview stripe over the scrollbar: at the edge (inside the minimap when shown),
      *  shifted left by the diagnostic + lint stripes' widths when those are active, so they sit side by side. */
-    private void updateTodoStripe() {
+    void updateTodoStripe() {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
         double offset = (lspActive ? DiagnosticStripe.WIDTH : 0d)
                 + (markdownLintEnabled && !largeFile && !minimapShown ? MarkdownLintStripe.WIDTH : 0d);
         if (todoStripe != null) { // attached with the first marks (todoStripe()), positioned from then on
             AnchorPane.setRightAnchor(todoStripe, base + offset);
-            todoStripe.setActive(todoEnabled && !largeFile);
+            todoStripe.setActive(todoMarker.todoEnabled && !largeFile);
         }
     }
 
     /** Injects the LSP actions surfaced in the right-click menu while {@link #isLspActive()} (Format and
-     *  Code Actions are shown only when the server advertises them — see {@link #setLspFormatAvailable}/
+     *  Code Actions are shown only when the server advertises them — see {@link BufferContextMenu#setLspFormatAvailable}/
      *  {@link #setLspCodeActionsAvailable}). */
     public void setLspNavActions(
             Runnable gotoDefinition,
@@ -4337,33 +3011,29 @@ public class EditorBuffer implements TabContent {
             Runnable gotoImplementation,
             Runnable gotoTypeDefinition) {
         this.lspGotoDefinitionAction = gotoDefinition == null ? () -> {} : gotoDefinition;
-        this.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
-        this.lspHoverAction = hover == null ? () -> {} : hover;
-        this.lspFormatAction = format == null ? () -> {} : format;
+        editorMenu.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
+        editorMenu.lspHoverAction = hover == null ? () -> {} : hover;
+        editorMenu.lspFormatAction = format == null ? () -> {} : format;
         this.lspCodeActionsAction = codeActions == null ? () -> {} : codeActions;
-        this.lspRenameAction = rename == null ? () -> {} : rename;
-        this.lspGotoImplementationAction = gotoImplementation == null ? () -> {} : gotoImplementation;
-        this.lspGotoTypeDefinitionAction = gotoTypeDefinition == null ? () -> {} : gotoTypeDefinition;
+        editorMenu.lspRenameAction = rename == null ? () -> {} : rename;
+        editorMenu.lspGotoImplementationAction = gotoImplementation == null ? () -> {} : gotoImplementation;
+        editorMenu.lspGotoTypeDefinitionAction = gotoTypeDefinition == null ? () -> {} : gotoTypeDefinition;
     }
 
-    /** Runs a command by id from the right-click LSP menu: Peek Definition, Refactor This…, Generate…. */
     public void setLspCommandRunner(java.util.function.Consumer<String> run) {
-        this.lspCommand = run;
+        editorMenu.setLspCommandRunner(run);
     }
 
-    /** Whether to offer "Go to Implementation" in the right-click menu (the server's capability, #735). */
     public void setLspImplementationAvailable(boolean available) {
-        this.lspImplementationAvailable = available;
+        editorMenu.setLspImplementationAvailable(available);
     }
 
-    /** Whether to offer "Go to Type Definition" in the right-click menu (the server's capability, #736). */
     public void setLspTypeDefinitionAvailable(boolean available) {
-        this.lspTypeDefinitionAvailable = available;
+        editorMenu.setLspTypeDefinitionAvailable(available);
     }
 
-    /** Whether to offer "Format Document" in the right-click menu (the server's formatting capability). */
     public void setLspFormatAvailable(boolean available) {
-        this.lspFormatAvailable = available;
+        editorMenu.setLspFormatAvailable(available);
     }
 
     /** Whether to offer "Code Actions" in the right-click menu (the server's codeAction capability, #670). */
@@ -4382,9 +3052,8 @@ public class EditorBuffer implements TabContent {
         return problemCounter;
     }
 
-    /** Whether to offer "Rename" in the right-click menu (the server's rename capability, #676). */
     public void setLspRenameAvailable(boolean available) {
-        this.lspRenameAvailable = available;
+        editorMenu.setLspRenameAvailable(available);
     }
 
     /** Requests jdtls's paste auto-import for the freshly pasted range (#742); controller-wired. The
@@ -4400,65 +3069,16 @@ public class EditorBuffer implements TabContent {
                 java.util.function.BooleanSupplier stillValid);
     }
 
-    private @Nullable LspPasteImportsRequester lspPasteImportsRequester;
-    /** Master gate for paste auto-import ({@code Settings.lspPasteImports}), pushed from the controller. */
-    private boolean lspPasteImportsEnabled = true;
-
     public void setLspPasteImportsRequester(LspPasteImportsRequester requester) {
-        this.lspPasteImportsRequester = requester;
+        lspAssists.setLspPasteImportsRequester(requester);
     }
 
     public void setLspPasteImportsEnabled(boolean enabled) {
-        this.lspPasteImportsEnabled = enabled;
+        lspAssists.setLspPasteImportsEnabled(enabled);
     }
 
-    /**
-     * After a paste inserted {@code [start..end)} (absolute offsets), asks the language server for the
-     * imports the pasted code needs (#742). No-op unless the feature is on, a requester is wired, the
-     * buffer is an editable, non-narrowed LSP buffer (a narrowed buffer's coordinates are region-relative
-     * — the same reason LSP sync is suspended there), and the span is non-empty.
-     *
-     * <p>The pending didChange is flushed FIRST ({@link #sendLspChange}) so the server computes against
-     * the post-paste document — JSON-RPC preserves order, the {@code requestLspCompletion} idiom. The
-     * {@code stillValid} supplier the requester must consult before applying: an edit before or inside the pasted
-     * text since drops the answer, never applied to text it wasn't computed for, while typing after it does not,
-     * so a paste followed by Enter keeps its imports (twelfth review AL2). The answer's edit then lands above the
-     * paste, in text that has not changed.
-     */
     public void requestLspPasteImports(int start, int end) {
-        if (!lspPasteImportsEnabled
-                || lspPasteImportsRequester == null
-                || !lspActive
-                || isNarrowed()
-                || !isEditable()
-                || end <= start
-                || end > area.getLength()) {
-            return;
-        }
-        sendLspChange();
-        long version = docVersion;
-        String pasted = area.getText(start, end);
-        boolean[] touched = {false};
-        var watch = area.plainTextChanges().subscribe(c -> {
-            if (c.getPosition() < end) {
-                touched[0] = true; // before or inside the pasted text: its lines moved, or it changed
-            }
-        });
-        var stop = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(30));
-        stop.setOnFinished(e -> {
-            watch.unsubscribe();
-            touched[0] = true; // no longer watched: only an unchanged document still takes the answer
-        });
-        stop.play();
-        var s = area.offsetToPosition(start, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-        var e = area.offsetToPosition(end, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
-        lspPasteImportsRequester.request(
-                s.getMajor(),
-                s.getMinor(),
-                e.getMajor(),
-                e.getMinor(),
-                pasted,
-                () -> docVersion == version || !touched[0]);
+        lspAssists.requestLspPasteImports(start, end);
     }
 
     /** Async range-formatter for Tab line re-indent: requests the edits the server would apply to a line
@@ -4472,80 +3092,18 @@ public class EditorBuffer implements TabContent {
                 java.util.function.Consumer<java.util.List<LspTextEdit>> callback);
     }
 
-    /** Injects the range-formatter used by Tab to re-indent the current line (controller-wired; null off). */
     public void setLspRangeFormatter(LspRangeFormatter formatter) {
-        this.lspRangeFormatter = formatter;
+        typingAids.setLspRangeFormatter(formatter);
     }
 
-    /** Whether the server advertises range formatting — gates Tab's LSP line re-indent (else plain Tab). */
     public void setLspRangeFormatAvailable(boolean available) {
-        this.lspRangeFormatAvailable = available;
+        typingAids.setLspRangeFormatAvailable(available);
     }
 
     /** Current document text (for an initial didOpen). */
     public String text() {
         return documentTextSnapshot();
     }
-
-    /** Shows the LSP diagnostic message(s) in a tooltip when hovering a squiggled span. */
-    private void installLspHover(CodeArea a) {
-        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!lspActive || lspOverlay == null || lspOverlay.diagnostics().isEmpty()) {
-                if (lspTooltip != null) {
-                    lspTooltip.hide();
-                }
-                return;
-            }
-            try {
-                var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(
-                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-                var hits = lspOverlay.at(pos.getMajor(), pos.getMinor());
-                if (hits.isEmpty()) {
-                    if (lspTooltip != null) {
-                        lspTooltip.hide();
-                    }
-                    lspTooltipText = null;
-                    return;
-                }
-                StringBuilder sb = new StringBuilder();
-                for (var d : hits) {
-                    if (sb.length() > 0) {
-                        sb.append('\n');
-                    }
-                    String origin = d.origin();
-                    sb.append(d.message());
-                    if (!origin.isEmpty()) {
-                        sb.append("  (").append(origin).append(')');
-                    }
-                }
-                String text = sb.toString();
-                // Already showing this exact message → don't re-show; re-showing on every MOUSE_MOVED
-                // re-positions the popup to the cursor each pixel, which reads as flicker.
-                if (lspTooltip != null && lspTooltip.isShowing() && text.equals(lspTooltipText)) {
-                    return;
-                }
-                if (lspTooltip == null) {
-                    lspTooltip = new javafx.scene.control.Tooltip();
-                    lspTooltip.getStyleClass().add("lsp-diagnostic-tooltip");
-                    lspTooltip.setWrapText(true);
-                    lspTooltip.setMaxWidth(480);
-                }
-                lspTooltip.setText(text);
-                lspTooltipText = text;
-                lspTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
-            } catch (RuntimeException ignored) {
-                // viewport mid-layout / hit miss — ignore
-            }
-        });
-        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
-            if (lspTooltip != null) {
-                lspTooltip.hide();
-            }
-        });
-    }
-
-    // --- Debugger editor surfaces: inline values + hover value tooltip --------------------------
 
     /** While suspended: the frame's variable name → value map painted as grey end-of-line annotations on the
      *  visible lines of the function stopped at {@code frameLine}; null/empty clears (resume/terminate). */
@@ -4640,87 +3198,40 @@ public class EditorBuffer implements TabContent {
         this.onViewModeChanged = callback == null ? () -> {} : callback;
     }
 
-    /** Overlays the Editor/Split/Preview control top-right of this buffer's view; {@code null} removes it. */
     public void setViewModeControl(@Nullable Node control) {
-        this.viewModeControl = control;
-        rebuildViewHost();
+        viewLayout.setViewModeControl(control);
     }
 
-    /** Whether the floating Editor/Split/Preview control is currently attached. */
     public boolean hasViewModeControl() {
-        return viewModeControl != null;
+        return viewLayout.hasViewModeControl();
     }
 
-    /** Overlays the HTML "open in browser" control top-right of the code pane; {@code null} removes it. */
     public void setHtmlPreviewControl(@Nullable Node control) {
-        if (htmlPreviewControl != null && htmlPreviewControl != control) {
-            removeCornerControl(htmlPreviewControl);
-        }
-        this.htmlPreviewControl = control;
-        rebuildViewHost();
+        viewLayout.setHtmlPreviewControl(control);
     }
 
-    /** Whether the floating HTML "open in browser" control is currently attached. */
     public boolean hasHtmlPreviewControl() {
-        return htmlPreviewControl != null;
+        return viewLayout.hasHtmlPreviewControl();
     }
 
-    /**
-     * Overlays a {@code .http} file's environment pill beside the Editor/Split/Preview toggle — on the code pane in
-     * Editor mode, over the response view in Split and Preview, so it is there in every mode; {@code null} removes it.
-     */
     public void setHttpEnvControl(@Nullable Node control) {
-        if (httpEnvControl == control) {
-            return;
-        }
-        if (httpEnvControl != null) {
-            removeCornerControl(httpEnvControl);
-            previewCornerRow.getChildren().remove(httpEnvControl);
-        }
-        this.httpEnvControl = control;
-        rebuildViewHost();
+        viewLayout.setHttpEnvControl(control);
     }
 
-    /** Whether the {@code .http} environment pill is attached. */
     public boolean hasHttpEnvControl() {
-        return httpEnvControl != null;
+        return viewLayout.hasHttpEnvControl();
     }
 
-    /** Injects the CSV grid preview node (a ui-layer {@code CsvGridPanel}); {@code null} removes it. Non-null
-     *  makes the buffer previewable ({@link #hasPreview()}), so the Editor/Split/Preview toggle attaches. */
     public void setCsvPreviewNode(@Nullable Node node) {
-        if (this.csvPreviewNode == node) {
-            return;
-        }
-        this.csvPreviewNode = node;
-        if (node == null) {
-            csvPreviewHost = null;
-            if (markdownViewMode != MarkdownViewMode.EDITOR) {
-                markdownViewMode = MarkdownViewMode.EDITOR; // the grid is gone — fall back to source
-            }
-        }
-        rebuildViewHost();
+        previewPanes.setCsvPreviewNode(node);
     }
 
-    /** Injects the callback that repopulates the CSV grid from the buffer text (run on the debounced pulse). */
     public void setCsvPreviewRefresh(Runnable refresh) {
-        this.csvPreviewRefresh = refresh == null ? () -> {} : refresh;
+        previewPanes.setCsvPreviewRefresh(refresh);
     }
 
-    /** Injects the HTTP response panel (a ui-layer {@code HttpClientPanel}); {@code null} removes it. Non-null
-     *  makes the buffer previewable ({@link #hasPreview()}), so the Editor/Split/Preview toggle attaches. */
     public void setHttpPreviewNode(@Nullable Node node) {
-        if (this.httpPreviewNode == node) {
-            return;
-        }
-        this.httpPreviewNode = node;
-        if (node == null) {
-            httpPreviewHost = null;
-            if (markdownViewMode != MarkdownViewMode.EDITOR) {
-                markdownViewMode = MarkdownViewMode.EDITOR; // the panel is gone — fall back to source
-            }
-        }
-        rebuildViewHost();
+        previewPanes.setHttpPreviewNode(node);
     }
 
     /**
@@ -4752,7 +3263,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.logViewForced = forced;
-        rebuildViewHost();
+        viewLayout.rebuildViewHost();
     }
 
     /**
@@ -4778,14 +3289,8 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Auto-close tags: typing the {@code >} of an HTML/XML open tag inserts the matching closer. */
-    private boolean autoCloseTags;
-
-    private final TagTyping tagTyping = new TagTyping(); // the closer typed after '>', a hand-typed one joined
-
-    /** Enables/disables tag auto-closing (pushed from the controller's view settings). */
     public void setAutoCloseTags(boolean on) {
-        autoCloseTags = on;
+        typingAids.setAutoCloseTags(on);
     }
 
     /** Enables/disables the paired-tag auto-rename (pushed from the controller's view settings). */
@@ -4793,200 +3298,31 @@ public class EditorBuffer implements TabContent {
         tagRename.setEnabled(on);
     }
 
-    /**
-     * After each document change, mirrors a tag-name edit onto the paired open/close tag (the VS
-     * Code Auto Rename Tag behavior) via the pure {@link com.editora.editops.TagRename}. Runs only
-     * for editable html/xml buffers below the large-file tier, never during undo/redo (undoing the
-     * user's edit and the mirror separately must not re-mirror), and never re-entrantly. Cost when
-     * it doesn't apply is one boolean/language check; the document lex runs only when the change
-     * sits inside a tag name.
-     */
-    private boolean autoFill;
-
-    private int fillColumn = com.editora.editops.Filler.DEFAULT_FILL_COLUMN;
-    private boolean applyingAutoFill;
-
-    /** Enables/disables auto-fill (break-as-you-type) for this buffer; pushed from Settings by the controller. */
     public void setAutoFillEnabled(boolean on) {
-        this.autoFill = on;
+        typingAids.setAutoFillEnabled(on);
     }
 
     public void setFillColumn(int column) {
-        this.fillColumn = column > 0 ? column : com.editora.editops.Filler.DEFAULT_FILL_COLUMN;
+        typingAids.setFillColumn(column);
     }
 
-    /**
-     * Emacs {@code auto-fill-mode}: after an insertion, break the current line at a word boundary if it has
-     * grown past the fill column. Prose only ({@link #isProse()}), so it never wraps code. Runs on the
-     * post-edit {@code plainTextChanges} (the tag-rename pattern) — the first field check short-circuits when
-     * off, keeping the per-keystroke cost at one boolean for every buffer that hasn't enabled it.
-     */
-    private java.util.Map<String, String> abbrevTable = java.util.Map.of();
-
-    private boolean abbrevMode;
-    private boolean applyingAbbrev;
-
-    /** Pushes the abbreviation dictionary (lower-cased keys) and the auto-expand mode from Settings. */
     public void setAbbrevs(java.util.Map<String, String> table, boolean autoExpand) {
-        this.abbrevTable = table == null ? java.util.Map.of() : table;
-        this.abbrevMode = autoExpand;
+        snippetKeys.setAbbrevs(table, autoExpand);
     }
 
-    /**
-     * Emacs {@code expand-abbrev} ({@code C-x a e}): expand the abbreviation immediately before the caret,
-     * regardless of abbrev-mode. Returns whether anything expanded.
-     */
     public boolean expandAbbrevAtCaret() {
-        if (!isEditable() || abbrevTable.isEmpty()) {
-            return false;
-        }
-        CodeArea a = getFocusedArea();
-        com.editora.editops.Abbrev.Edit edit =
-                com.editora.editops.Abbrev.expand(a.getText(), a.getCaretPosition(), abbrevTable);
-        if (edit == null) {
-            return false;
-        }
-        a.replaceText(edit.from(), edit.to(), edit.replacement());
-        return true;
+        return snippetKeys.expandAbbrevAtCaret();
     }
 
-    /** Longest word an abbreviation lookup will scan back over — bounds the per-keystroke text slice below. */
-    private static final int MAX_ABBREV_LOOKBACK = 256;
-
-    /**
-     * Abbrev-mode auto-expand: when the just-typed single character is a word terminator (anything but a
-     * letter/digit), expand the word that ended just before it. The terminator stays. Same guarded
-     * {@code plainTextChanges} shape as {@link #maybeAutoFill}; the first field check short-circuits when off.
-     */
-    private void maybeExpandAbbrev(org.fxmisc.richtext.model.PlainTextChange c) {
-        if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
-            return;
-        }
-        if (!c.getRemoved().isEmpty() || !com.editora.editops.Abbrev.terminates(c.getInserted())) {
-            return; // not a typed terminator (still inside a word, or a paste)
-        }
-        if (hasActiveSnippet() || area.getUndoManager().isPerformingAction()) {
-            return;
-        }
-        CodeArea a = getFocusedArea();
-        if (multiCaretActiveOn(a)) {
-            return;
-        }
-        // The terminator sits at c.getPosition(), so the word ends there.
-        com.editora.editops.Abbrev.Edit edit = abbrevBefore(a, Math.min(c.getPosition(), a.getLength()));
-        if (edit == null) {
-            return;
-        }
-        int from = edit.from();
-        int to = edit.to();
-        int caret = caretPast(a, c);
-        int delta = edit.replacement().length() - (to - from);
-        applyingAbbrev = true;
-        try {
-            a.replaceText(from, to, edit.replacement());
-        } finally {
-            applyingAbbrev = false;
-        }
-        // The edit lies before the caret (the terminator we just typed), so shift the caret by the length
-        // change. Deferred for the same reason as auto-fill: RichTextFX re-applies the triggering
-        // insertion's caret after this subscriber returns, which would otherwise mis-place it.
-        // Enter-with-indent and an auto-closed pair place their own caret once this returns (after the
-        // indent, between the pair), so for those it is read back then rather than predicted now.
-        boolean oneChar = c.getInserted().length() == 1;
-        caretFixes.defer(
-                () -> a.moveTo(Math.clamp((oneChar ? caret : a.getCaretPosition()) + delta, 0, a.getLength())));
-    }
-
-    /**
-     * The abbreviation ending at {@code point} of {@code a}, in document offsets, or null. The word fits in a
-     * bounded window before it, so just that window is sliced instead of the whole document — this runs per
-     * word-terminator keystroke and per typing pause.
-     */
-    private com.editora.editops.Abbrev.@Nullable Edit abbrevBefore(CodeArea a, int point) {
-        int windowStart = Math.max(0, point - MAX_ABBREV_LOOKBACK);
-        String window = a.getText(windowStart, point);
-        com.editora.editops.Abbrev.Edit edit = com.editora.editops.Abbrev.expand(window, window.length(), abbrevTable);
-        return edit == null
-                ? null
-                : new com.editora.editops.Abbrev.Edit(
-                        windowStart + edit.from(), windowStart + edit.to(), edit.replacement());
-    }
-
-    /**
-     * {@code a}'s caret once it is past the just-typed {@code c}. The split's second view moves its caret
-     * only after this buffer's change listeners have run, so there it is still in front of the character.
-     */
-    private static int caretPast(CodeArea a, org.fxmisc.richtext.model.PlainTextChange c) {
-        return a.getCaretPosition() == c.getPosition() ? c.getInsertionEnd() : a.getCaretPosition();
-    }
-
-    private void maybeAutoFill(org.fxmisc.richtext.model.PlainTextChange c) {
-        if (!autoFill || applyingAutoFill || hugeFile || !isEditable() || !isProse()) {
-            return;
-        }
-        // Only a single typed character (Emacs self-insert): no deletion, exactly one char, not a newline
-        // (which starts a fresh line). This excludes pastes, file loads/reloads and programmatic reflows —
-        // auto-fill breaks as you *type*, it never rewraps a block that arrived some other way.
-        if (!c.getRemoved().isEmpty()
-                || c.getInserted().length() != 1
-                || c.getInserted().charAt(0) == '\n') {
-            return;
-        }
-        if (hasActiveSnippet() || area.getUndoManager().isPerformingAction()) {
-            return;
-        }
-        CodeArea a = getFocusedArea();
-        if (multiCaretActiveOn(a)) {
-            return;
-        }
-        int par = a.getCurrentParagraph();
-        String line = a.getParagraph(par).getText();
-        if (line.length() <= fillColumn) {
-            return;
-        }
-        com.editora.editops.AutoFill.Break brk = com.editora.editops.AutoFill.computeProse(
-                line,
-                fillColumn,
-                com.editora.editops.Commenter.styleFor(getLanguage()).line());
-        if (brk == null) {
-            return;
-        }
-        int lineStart = a.getAbsolutePosition(par, 0);
-        int caret = caretPast(a, c);
-        int delta = brk.insert().length() - brk.removeLen();
-        int end = lineStart + brk.at() + brk.removeLen();
-        int restored = caret >= end ? caret + delta : caret; // the user's caret, shifted past the inserted prefix
-        applyingAutoFill = true;
-        try {
-            a.replaceText(lineStart + brk.at(), end, brk.insert());
-        } finally {
-            applyingAutoFill = false;
-        }
-        // Restore the caret AFTER the change settles: we ran inside the triggering insertion's
-        // plainTextChanges, and RichTextFX re-applies that insertion's own caret position once our
-        // subscriber returns — which would strand the caret inside the inserted prefix (delta > 0) and send
-        // the next characters to the wrong place. Deferring makes our position the last one to win.
-        caretFixes.defer(() -> a.moveTo(Math.min(restored, a.getLength())));
-    }
-
-    private final DeferredFixes caretFixes = new DeferredFixes();
+    final DeferredFixes caretFixes = new DeferredFixes();
 
     /** Applies pending caret fix-ups now (see {@link DeferredFixes}); a macro replay calls it after each key. */
     public void flushDeferredCaretFixes() {
         caretFixes.flush();
     }
 
-    /** Per-column "rainbow" coloring for CSV/TSV buffers (replaces the source.csv grammar highlighting). */
-    private boolean csvRainbow;
-
-    /** Enables/disables rainbow per-column CSV coloring; re-highlights the whole buffer on a change. */
     public void setCsvRainbowEnabled(boolean on) {
-        boolean want = on && isCsv();
-        if (want != csvRainbow) {
-            csvRainbow = want;
-            invalidateHighlighting();
-            applyHighlighting();
-        }
+        highlighter.setCsvRainbowEnabled(on);
     }
 
     /**
@@ -5019,19 +3355,8 @@ public class EditorBuffer implements TabContent {
         return folds.removeManualFolds();
     }
 
-    /** Tint each bracket by nesting depth (see {@code BracketColors}). */
-    private boolean bracketColors;
-
-    /**
-     * Enables/disables bracket-pair colorization. Re-highlights the whole buffer on a change: the colours
-     * ride the token spans, so an incremental pass would leave the untouched prefix coloured as it was.
-     */
     public void setBracketColorsEnabled(boolean on) {
-        if (on != bracketColors) {
-            bracketColors = on;
-            invalidateHighlighting();
-            applyHighlighting();
-        }
+        highlighter.setBracketColorsEnabled(on);
     }
 
     /** Whether a level/pattern filter is currently narrowing the visible lines. */
@@ -5132,77 +3457,8 @@ public class EditorBuffer implements TabContent {
         this.htmlPreviewDirtyListener = listener;
     }
 
-    /** Switches the Markdown view mode and rebuilds the view host. */
     public void setMarkdownViewMode(MarkdownViewMode mode) {
-        MarkdownViewMode target = mode == null ? MarkdownViewMode.EDITOR : mode;
-        boolean changed = this.markdownViewMode != target;
-        MarkdownViewMode from = this.markdownViewMode;
-        if (changed) {
-            scrollSync.leaving(from); // the view that comes on screen takes over this one's place
-        }
-        this.markdownViewMode = target;
-        scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
-        scheduleAiActionsBar(); // same, for the AI selection-actions bar
-        if (target != MarkdownViewMode.EDITOR) {
-            this.split = Split.NONE; // preview supersedes any code split
-            scheduleRenderPreview();
-        } else if (markdownPreview != null) {
-            markdownPreview.clear(); // nothing shows it: give its nodes back
-        }
-        rebuildViewHost();
-        setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
-        // The paging-focus + scroll-sync tail is Markdown-preview-specific (the CSV grid, the HTTP response
-        // panel and the structured tree/docs scroll themselves and have no ScrollPane host), so skip those.
-        if (!hasCsvPreview() && !hasHttpPreview() && !hasTreePreview()) {
-            if (target == MarkdownViewMode.PREVIEW) {
-                // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
-                Platform.runLater(previewPane()::requestFocus);
-            }
-            scrollSync.entered(from, target); // same source line in the view that is now showing
-        }
-        if (changed) {
-            onViewModeChanged.run();
-        }
-    }
-
-    private ScrollPane previewPane() {
-        if (previewPane == null) {
-            previewPane = new ScrollPane();
-            previewPane.setFitToWidth(true);
-            previewPane.getStyleClass().add("markdown-preview-pane");
-            // Apply the independent preview theme picked before the pane existed.
-            if ("light".equals(previewThemeMode)) {
-                previewPane.getStyleClass().add("md-light");
-            } else if ("dark".equals(previewThemeMode)) {
-                previewPane.getStyleClass().add("md-dark");
-            }
-            // Keyboard scrolling in the preview: Space / PageDown page down, Backspace / PageUp page up
-            // (C-v / M-v go through nav.pageDown/Up → pagePreview). Focus it on click so the keys land.
-            previewPane.setFocusTraversable(true);
-            previewPane.addEventFilter(
-                    javafx.scene.input.MouseEvent.MOUSE_PRESSED,
-                    e -> previewPane().requestFocus());
-            // Right-click menu: Copy (rendered text), the link or code block under the pointer, exports, Print.
-            previewPane.setOnContextMenuRequested(e -> {
-                Node hit = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
-                previewMenu.show(previewPane(), hit, e.getSceneY(), e.getScreenX(), e.getScreenY());
-                e.consume();
-            });
-            previewPane.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-                if (e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShortcutDown()) {
-                    return; // leave modifier combos to the global keymap (e.g. C-v / M-v / zoom)
-                }
-                if (e.getCode() == KeyCode.SPACE || e.getCode() == KeyCode.PAGE_DOWN) {
-                    scrollPreviewPage(0.9);
-                    e.consume();
-                } else if (e.getCode() == KeyCode.BACK_SPACE || e.getCode() == KeyCode.PAGE_UP) {
-                    scrollPreviewPage(-0.9);
-                    e.consume();
-                }
-            });
-            scrollSync.install(previewPane); // SPLIT-mode scroll sync, preview → editor half
-        }
-        return previewPane;
+        previewPanes.setMarkdownViewMode(mode);
     }
 
     /** The preview's right-click menu, where the window injects its export and print actions. */
@@ -5210,10 +3466,8 @@ public class EditorBuffer implements TabContent {
         return previewMenu;
     }
 
-    /** Injects the pom preview's "Show as XML" / "Show POM Summary" action (the controller command, so the
-     *  menu route and the palette route report the same status and share the refusal guard). */
     public void setPomViewToggleHandler(Runnable handler) {
-        this.pomViewToggleHandler = handler == null ? () -> {} : handler;
+        previewPanes.setPomViewToggleHandler(handler);
     }
 
     /** Copies the preview's selection when it has one, else all of it ({@link PreviewMenu#copy}). */
@@ -5226,29 +3480,8 @@ public class EditorBuffer implements TabContent {
         return previewMenu.copyHtmlSource();
     }
 
-    /** Copy / Select All aimed at the rendered preview when that is where the user is
-     *  ({@link PreviewMenu#editCommand}); false: the editor's own command applies. */
     public boolean previewEditCommand(boolean selectAll) {
-        return previewMenu.editCommand(previewPane, selectAll);
-    }
-
-    /** Scrolls the preview by {@code pages} viewport heights (negative: up; infinite: to that end); no-op if
-     *  there's nothing to scroll. A "page" of 0.9 leaves a little overlap. */
-    private void scrollPreviewPage(double pages) {
-        if (previewPane == null || previewPane.getContent() == null) {
-            return;
-        }
-        double viewport = previewPane.getViewportBounds().getHeight();
-        double contentH = previewPane.getContent().getLayoutBounds().getHeight();
-        double scrollable = contentH - viewport;
-        if (scrollable <= 0) {
-            return; // content fits — nothing to page
-        }
-        double range = previewPane.getVmax() - previewPane.getVmin();
-        double next = Double.isInfinite(pages)
-                ? (pages > 0 ? previewPane.getVmax() : previewPane.getVmin())
-                : previewPane.getVvalue() + (viewport * pages) / scrollable * range;
-        previewPane.setVvalue(Math.max(previewPane.getVmin(), Math.min(previewPane.getVmax(), next)));
+        return previewPanes.previewEditCommand(selectAll);
     }
 
     /**
@@ -5260,24 +3493,15 @@ public class EditorBuffer implements TabContent {
         return scrollPreview(down ? 0.9 : -0.9);
     }
 
-    /** As {@link #pagePreview}, by {@code pages} viewport heights: a small fraction for a line, an infinite
-     *  one for the start or end of the document. */
     public boolean scrollPreview(double pages) {
-        // (Split only: a pane taken off the scene on the way back to Editor can still report focus.)
-        boolean previewActive = markdownViewMode == MarkdownViewMode.PREVIEW
-                || (markdownViewMode == MarkdownViewMode.SPLIT && previewPane != null && previewPane.isFocusWithin());
-        if (!previewActive || previewPane == null) {
-            return false;
-        }
-        scrollPreviewPage(pages);
-        return true;
+        return previewPanes.scrollPreview(pages);
     }
 
     /**
      * Releases this buffer's resources. Must be called by the controller when the tab is
      * <em>actually closed</em> (not on a plain tab switch). The preview/highlight executors are now
-     * shared, app-lifetime pools ({@link #PREVIEW_POOL}/{@link #HIGHLIGHT_POOL}), so disposal does not
-     * shut them down — it instead bumps {@link #previewGen}/{@link #highlightGen} so any in-flight task
+     * shared, app-lifetime pools ({@link BufferPreview#PREVIEW_POOL}/{@link #HIGHLIGHT_POOL}), so disposal does not
+     * shut them down — it instead bumps {@link BufferPreview#previewGen}/{@link BufferHighlighter#highlightGen} so any in-flight task
      * submitted by this buffer discards its result (the gen guard) instead of touching the now-dead
      * buffer. The reactfx subscriptions are on the buffer's own {@code area}/{@code area2} and die with
      * it on GC; the shared settled-edit subscription is dropped eagerly too. Idempotent. Once disposed the
@@ -5307,11 +3531,11 @@ public class EditorBuffer implements TabContent {
             settledEditSub = null;
         }
         settledEdits.dispose();
-        disposeMultiCaret();
-        previewGen++; // discard any in-flight preview result for this (now closed) buffer
-        highlightGen++; // discard any in-flight highlight result
-        todoGen++; // discard any in-flight TODO scan result
-        runScanGen++; // discard any in-flight run scan result
+        caretOps.disposeMultiCaret();
+        previewPanes.previewGen++; // discard any in-flight preview result for this (now closed) buffer
+        highlighter.highlightGen++; // discard any in-flight highlight result
+        todoMarker.todoGen++; // discard any in-flight TODO scan result
+        runGutter.runScanGen++; // discard any in-flight run scan result
         languageGen++; // discard any in-flight deferred grammar load
         // RichTextFX's own teardown, last: it stops the caret blink timer — a running timer is a GC root, so a
         // buffer closed while its editor had focus stayed reachable, with its whole window — and closes the
@@ -5323,7 +3547,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Set on {@link #dispose()}; {@link #applyHighlighting()} and the TODO scan refuse to dispatch once
+     * Set on {@link #dispose()}; {@link BufferHighlighter#applyHighlighting()} and the TODO scan refuse to dispatch once
      * true. The gen bumps above only invalidate work already in flight — the still-subscribed debounced
      * edit pulse fires once more ~300 ms after the last change, and before this flag it would re-dispatch
      * a fresh full tokenize of the closed buffer whose generation was then CURRENT, so nothing cancelled
@@ -5332,186 +3556,51 @@ public class EditorBuffer implements TabContent {
      * as a CI-only suite wedge, but it is an app defect too: closing a big tab right after an edit did
      * exactly this.
      */
-    private volatile boolean disposed;
+    volatile boolean disposed;
 
     // --- Multiple cursors + column/box selection (RichTextFX fork) -------------------------------
 
-    /**
-     * Enables/disables the multi-caret add-on. When on, installs {@link MultiCarets} on the
-     * primary area (and the secondary split view if present); when off, removes it (collapsing to one
-     * caret). Skipped for huge files (editing is already inert there). Idempotent.
-     */
     public void setMultiCaretEnabled(boolean enabled) {
-        this.multiCaretEnabled = enabled;
-        if (enabled && !hugeFile) {
-            if (multiCaret == null) {
-                multiCaret = MultiCarets.install(area, this::tabEdit);
-            }
-            if (area2 != null && multiCaret2 == null) {
-                multiCaret2 = MultiCarets.install(area2, this::tabEdit);
-            }
-        } else {
-            disposeMultiCaret();
-        }
+        caretOps.setMultiCaretEnabled(enabled);
     }
 
-    private void disposeMultiCaret() {
-        if (multiCaret != null) {
-            multiCaret.dispose();
-            multiCaret = null;
-        }
-        if (multiCaret2 != null) {
-            multiCaret2.dispose();
-            multiCaret2 = null;
-        }
-    }
-
-    /** The multi-caret add-on of the area that has focus (secondary split view, else primary), or null. */
-    private @Nullable MultiCarets activeCarets() {
-        return multiCaret2 != null && area2 != null && area2.isFocused() ? multiCaret2 : multiCaret;
-    }
-
-    /** Runs {@code op} on {@link #activeCarets()} when it has extra carets; false → the single-caret path. */
-    private boolean withExtras(java.util.function.Consumer<MultiCarets> op) {
-        MultiCarets m = activeCarets();
-        if (m == null || !m.hasExtras()) {
-            return false;
-        }
-        op.accept(m);
-        return true;
-    }
-
-    /** True while any area of this buffer has more than the primary caret (extra carets / box selection). */
     public boolean hasMultipleCarets() {
-        return (multiCaret != null && multiCaret.hasExtras()) || (multiCaret2 != null && multiCaret2.hasExtras());
+        return caretOps.hasMultipleCarets();
     }
 
-    /** Whether any caret of the focused area, primary or extra, has text selected. */
     public boolean anyCaretSelection() {
-        MultiCarets m = activeCarets();
-        return m != null ? m.anySelection() : getFocusedArea().getSelection().getLength() > 0;
+        return caretOps.anyCaretSelection();
     }
 
-    /** Undo ({@code redo == false}) or Redo on {@code a}; extra carets keep their places and stay usable. */
     public void undoOrRedo(CodeArea a, boolean redo) {
-        MultiCarets m = a == area2 ? multiCaret2 : multiCaret;
-        Runnable op = redo ? a::redo : a::undo;
-        if (m == null) {
-            op.run();
-        } else {
-            m.keepingPrimary(op);
-        }
+        caretOps.undoOrRedo(a, redo);
     }
 
-    /** Selects the next occurrence of the current selection as an additional caret (VS Code Cmd/Ctrl+D). */
     public void addCaretNextOccurrence() {
-        MultiCarets m = activeCarets();
-        if (m != null) {
-            m.addNextOccurrence();
-        }
+        caretOps.addCaretNextOccurrence();
     }
 
     /** Cap on carets a single "select all" places, so a common word can't create hundreds of thousands. */
     public static final int MAX_OCCURRENCE_CARETS = 10_000;
 
-    /**
-     * Places a caret with selection at each of {@code ranges} (the one containing {@code anchorStart} stays
-     * primary), for "select all occurrences" / "select all matches". Capped at
-     * {@link #MAX_OCCURRENCE_CARETS}. Returns the number of carets placed; 0 when {@code ranges} is empty.
-     */
     public int placeOccurrenceCarets(List<int[]> ranges, int anchorStart) {
-        if (ranges == null || ranges.isEmpty()) {
-            return 0;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int primaryIdx = com.editora.editops.SelectOccurrences.primaryIndex(ranges, anchorStart);
-        int[] primary = ranges.get(primaryIdx);
-        MultiCarets carets = activeCarets();
-        if (carets == null) { // multi-caret unavailable → just select the primary occurrence
-            a.selectRange(primary[0], primary[1]);
-            a.requestFollowCaret();
-            return 1;
-        }
-        carets.collapse();
-        a.selectRange(primary[0], primary[1]);
-        int placed = 1;
-        for (int i = 0; i < ranges.size() && placed < MAX_OCCURRENCE_CARETS; i++) {
-            if (i == primaryIdx) {
-                continue;
-            }
-            int[] r = ranges.get(i);
-            carets.getManager().addCaretWithSelection(r[0], r[1]);
-            placed++;
-        }
-        a.requestFollowCaret();
-        return placed;
+        return caretOps.placeOccurrenceCarets(ranges, anchorStart);
     }
 
-    /**
-     * Selects every occurrence of the current selection (or, with none, the word under the caret) as a
-     * multi-caret selection — VS Code's {@code selectHighlights} (Ctrl+Shift+L). Case-sensitive literal
-     * matching (whole-word when seeded from the caret's word). Returns the number of carets placed (0 when there's nothing to match).
-     */
     public int selectAllOccurrences() {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        String text = a.getText();
-        String query;
-        int anchor;
-        String sel = a.getSelectedText();
-        if (!sel.isEmpty()) {
-            query = sel;
-            anchor = a.getSelection().getStart();
-        } else {
-            int[] w = com.editora.editops.SelectOccurrences.wordAt(text, a.getCaretPosition(), language);
-            if (w == null) {
-                return 0;
-            }
-            query = text.substring(w[0], w[1]);
-            anchor = w[0];
-        }
-        // A query seeded from the word under a bare caret matches whole words only (id, not valid / width).
-        List<int[]> matches = SearchMatcher.matches(text, query, true, false, sel.isEmpty());
-        return placeOccurrenceCarets(matches, anchor);
+        return caretOps.selectAllOccurrences();
     }
 
-    /**
-     * Sublime's Split into Lines ({@code atLineEnds} false: each line's selected part becomes a selection) or
-     * VS Code's Add Cursors to Line Ends (true: a bare caret at the end of each selected line), for every
-     * selection there is. Returns the number of carets placed; 0 when nothing is selected.
-     */
     public int splitSelectionIntoLines(boolean atLineEnds) {
-        MultiCarets carets = activeCarets();
-        CodeArea a = getFocusedArea();
-        if (carets == null) {
-            return 0;
-        }
-        String text = a.getText();
-        java.util.TreeMap<Long, int[]> ranges = new java.util.TreeMap<>(); // in document order, none twice
-        for (int[] sel : carets.selections()) {
-            List<int[]> parts = atLineEnds
-                    ? com.editora.editops.CaretPlans.caretsAtLineEnds(text, sel[0], sel[1])
-                    : com.editora.editops.CaretPlans.splitIntoLines(text, sel[0], sel[1]);
-            for (int[] r : parts) {
-                ranges.put(((long) r[0] << 32) | r[1], r);
-            }
-        }
-        return ranges.isEmpty()
-                ? 0
-                : placeOccurrenceCarets(
-                        new java.util.ArrayList<>(ranges.values()),
-                        a.getSelection().getStart());
+        return caretOps.splitSelectionIntoLines(atLineEnds);
     }
 
-    /** Moves the newest selection to the next occurrence (VS Code Ctrl+K Ctrl+D); false when it cannot. */
     public boolean skipOccurrence() {
-        MultiCarets carets = activeCarets();
-        return carets != null && carets.skipOccurrence();
+        return caretOps.skipOccurrence();
     }
 
-    /** Removes the extra caret added last (VS Code Ctrl+U); false when there is only one caret. */
     public boolean undoLastCaret() {
-        MultiCarets carets = activeCarets();
-        return carets != null && carets.undoLastCaret();
+        return caretOps.undoLastCaret();
     }
 
     /** The VS Code line commands ({@link com.editora.editops.LineCommands}). */
@@ -5524,53 +3613,12 @@ public class EditorBuffer implements TabContent {
         OUTDENT
     }
 
-    /**
-     * Runs a line command at every caret of the focused area — the primary and the extras — as one undoable
-     * edit. Collapsed folds on the lines it changes are opened first, so no hidden line is edited unseen.
-     * False when the area cannot take it (read-only, a huge file for the indent commands).
-     */
     public boolean lineCommand(LineCommand command) {
-        CodeArea a = getFocusedArea();
-        if (command != LineCommand.SELECT && !a.isEditable()) {
-            return false;
-        }
-        MultiCarets carets = activeCarets();
-        if (command != LineCommand.SELECT && a == area) {
-            for (int[] sel :
-                    carets != null ? carets.selections() : List.of(new int[] {a.getAnchor(), a.getCaretPosition()})) {
-                folds.expandHeaderAt(Math.min(sel[0], sel[1]));
-                folds.expandHeaderAt(Math.max(sel[0], sel[1]));
-            }
-        }
-        return atEachCaret((text, s, e) -> switch (command) {
-            case INSERT_BELOW ->
-                com.editora.editops.LineCommands.insertBelow(
-                        text, s, e, at -> IndentWindow.enterEdit(IndentKeys.doc(a), at, language, indentUnit()));
-            case INSERT_ABOVE -> com.editora.editops.LineCommands.insertAbove(text, s, e);
-            case DELETE -> com.editora.editops.LineCommands.deleteLines(text, s, e);
-            case SELECT -> com.editora.editops.LineCommands.selectLine(text, s, e);
-            case INDENT, OUTDENT ->
-                com.editora.editops.LineCommands.indentLines(
-                        text, s, e, command == LineCommand.OUTDENT, (from, to, back) -> tabEdit(from, to, back));
-        });
+        return caretOps.lineCommand(command);
     }
 
-    /**
-     * Complete Current Statement ({@link com.editora.editops.CompleteStatement}) at every caret, as one undoable
-     * edit; in a language it does not know, Insert Line Below. False when the area is read-only.
-     */
     public boolean completeStatement() {
-        CodeArea a = getFocusedArea();
-        if (!a.isEditable()) {
-            return false;
-        }
-        com.editora.editops.CompleteStatement.Style style = com.editora.editops.CompleteStatement.styleFor(language);
-        if (style == null) {
-            return lineCommand(LineCommand.INSERT_BELOW);
-        }
-        String unit = indentUnit();
-        return atEachCaret((text, s, e) -> com.editora.editops.CompleteStatement.edit(
-                text, s, e, style, unit, at -> IndentWindow.enterEdit(IndentKeys.doc(a), at, language, unit)));
+        return caretOps.completeStatement();
     }
 
     /** One caret's edit: its change and its selection afterwards, given the text and the caret's selection. */
@@ -5579,135 +3627,56 @@ public class EditorBuffer implements TabContent {
         Indenter.@Nullable TabEdit edit(String text, int selStart, int selEnd);
     }
 
-    /**
-     * Runs {@code edit} at every caret of the focused area — the primary and the extras, or the one caret when
-     * multiple cursors are off — as one undoable edit. False when {@code edit} declines a caret (returns null);
-     * an exception it throws propagates before anything changes.
-     */
     public boolean atEachCaret(CaretEdit edit) {
-        CodeArea a = getFocusedArea();
-        MultiCarets carets = activeCarets();
-        String text = a.getText();
-        MultiTab.CaretEdits edits = (s, e, ignored) -> edit.edit(text, s, e);
-        boolean done;
-        if (carets != null) {
-            done = carets.applyAtEachCaret(edits, false);
-        } else { // multiple cursors off: the same plan for the one caret
-            MultiTab.Plan plan = MultiTab.plan(List.of(new int[] {a.getAnchor(), a.getCaretPosition()}), false, edits);
-            done = plan != null;
-            if (plan != null) {
-                for (MultiTab.Change c : plan.changes()) {
-                    a.replaceText(c.from(), c.to(), c.replacement()); // at most one: a single caret
-                }
-                a.selectRange(
-                        plan.ranges().get(0).anchor(), plan.ranges().get(0).caret());
-            }
-        }
-        if (done) {
-            a.requestFollowCaret();
-        }
-        return done;
+        return caretOps.atEachCaret(edit);
     }
 
-    /** Adds a caret on the line above the topmost caret. */
     public void addCaretAbove() {
-        addCaretOnNextLine(false);
+        caretOps.addCaretAbove();
     }
 
-    /** Adds a caret on the line below the bottommost caret. */
     public void addCaretBelow() {
-        addCaretOnNextLine(true);
+        caretOps.addCaretBelow();
     }
 
-    private void addCaretOnNextLine(boolean down) {
-        MultiCarets m = activeCarets();
-        if (m != null) {
-            m.addCaretOnNextLine(down);
-        }
-    }
-
-    // --- Multi-caret movement fan-out (#635) ------------------------------------------------------
-    // The fork's multi-caret movement lives in its node-level InputMap, which the scene-level
-    // KeyDispatcher preempts for the Emacs chords. These expose that movement so MainController's
-    // nav.* commands can fan out to every caret when extras exist; each returns whether it handled the
-    // move (false → no extra carets, so the caller runs the normal single-caret motion). {@code select}
-    // extends the selection (= Emacs mark active), mirroring {@code selPolicy()}.
-
-    /** Moves every caret horizontally by {@code amount} chars (or words); see {@link #addCaretBelow}. */
     public boolean multiMoveHorizontal(int amount, boolean byWord, boolean select) {
-        return withExtras(m -> m.moveHorizontal(amount, byWord, select));
+        return caretOps.multiMoveHorizontal(amount, byWord, select);
     }
 
-    /** Moves every caret one line up ({@code down=false}) or down. */
     public boolean multiMoveVertical(boolean down, boolean select) {
-        return withExtras(m -> m.moveVertical(down, select));
+        return caretOps.multiMoveVertical(down, select);
     }
 
-    /** Moves every caret to its line start ({@code toEnd=false}) or line end. */
     public boolean multiMoveLineBoundary(boolean toEnd, boolean select) {
-        return withExtras(m -> m.moveLineBoundary(toEnd, select));
+        return caretOps.multiMoveLineBoundary(toEnd, select);
     }
 
-    /** True when {@code a} currently has extra carets, so this buffer's single-caret KEY filters
-     *  (auto-indent/close, snippets, completion, view paging) should stand down and let the fork's
-     *  multi-caret input map handle the key for every caret. */
-    private boolean multiCaretActiveOn(@Nullable CodeArea a) {
-        if (a == area) {
-            return multiCaret != null && multiCaret.hasExtras();
-        }
-        if (a == area2) {
-            return multiCaret2 != null && multiCaret2.hasExtras();
-        }
-        return false;
-    }
-
-    /** Copies every caret's selection to the clipboard (VS Code one-line-per-caret) when extra carets
-     *  exist; returns whether it handled it (so the caller can fall back to the single-caret copy). */
     public boolean multiCaretCopy() {
-        return withExtras(m -> m.copy());
+        return caretOps.multiCaretCopy();
     }
 
-    /** Cuts every caret's selection (multi-caret aware); returns whether it handled it. */
     public boolean multiCaretCut() {
-        return withExtras(m -> m.cut());
+        return caretOps.multiCaretCut();
     }
 
-    /** Pastes at every caret (distributing clipboard lines one per caret); returns whether it handled it. */
     public boolean multiCaretPaste() {
-        return withExtras(m -> m.paste());
+        return caretOps.multiCaretPaste();
     }
 
-    /** Puts the whole current line (including a trailing newline) on the clipboard — the empty-selection
-     *  Copy of VS Code's {@code editor.emptySelectionClipboard}. Leaves the document untouched. */
     public void copyCurrentLine() {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int p = a.getCurrentParagraph();
-        LineClipboard.copy(a, p, folds.hiddenRunEnd(p)); // a collapsed fold's header takes its body along
+        caretOps.copyCurrentLine();
     }
 
-    /** Cuts the whole current line — copies it then deletes the line as one undoable edit. */
     public void cutCurrentLine() {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int p = a.getCurrentParagraph();
-        LineClipboard.cut(a, p, folds.hiddenRunEnd(p));
+        caretOps.cutCurrentLine();
     }
 
-    /** Collapses any extra carets / box selection back to a single caret. */
     public void collapseCarets() {
-        if (multiCaret != null) {
-            multiCaret.collapse();
-        }
-        if (multiCaret2 != null) {
-            multiCaret2.collapse();
-        }
+        caretOps.collapseCarets();
     }
 
-    /**
-     * Forces a preview re-render (e.g. after the Mermaid feature/theme toggles so {@code ```mermaid}
-     * blocks switch between diagram and code). No-op in Editor mode.
-     */
     public void refreshPreview() {
-        scheduleRenderPreview();
+        previewPanes.refreshPreview();
     }
 
     /**
@@ -5718,599 +3687,13 @@ public class EditorBuffer implements TabContent {
         return markdownViewMode == MarkdownViewMode.PREVIEW && !hasCsvPreview();
     }
 
-    /** The search over the rendered Markdown preview (the Find bar uses it while {@link #isPreviewOnly()}),
-     *  or null when this buffer has rendered none. */
     public @Nullable PreviewFind previewFind() {
-        return markdownPreview == null ? null : markdownPreview.find();
+        return previewPanes.previewFind();
     }
 
     public boolean scrollPreviewToAnchor(String slug) {
-        return markdownViewMode != MarkdownViewMode.EDITOR
-                && markdownPreview != null
-                && markdownPreview.scrollToAnchor(slug);
+        return previewPanes.scrollPreviewToAnchor(slug);
     }
-
-    private void scheduleRenderPreview() {
-        if (markdownViewMode == MarkdownViewMode.EDITOR) {
-            return;
-        }
-        if (hasCsvPreview()) {
-            csvPreviewRefresh.run(); // the coordinator re-parses the buffer text into its per-buffer grid
-            return;
-        }
-        if (hasHttpPreview()) {
-            // The HTTP panel shows the result of *running* a request, not a rendering of the buffer text —
-            // re-rendering on the debounced edit pulse would be meaningless (and firing requests would be
-            // catastrophic). It is repopulated only by HttpClientCoordinator when a run completes. This
-            // branch exists so the buffer never falls through to the Markdown tail below.
-            return;
-        }
-        if (hasGithubActionsPreview()) {
-            // A workflow is also YAML, so this must precede the structured (YAML tree) branch to win. Parse
-            // off-thread, build the specialized workflow digest on the FX thread into the shared host.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.ghactions.Workflow parsed = com.editora.ghactions.Workflow.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(GithubActionsPreview.build(parsed));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasStructuredPreview()) {
-            // Whole file is one JSON/YAML/TOML doc: parse off-thread (pure, cheap), build the tree / OpenAPI
-            // docs on the FX thread into the self-scrolling structured host. The previewGen guard drops a
-            // superseded render (mirrors the Markwhen branch).
-            StructuredParser.Format sfmt = structuredFormat();
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    StructuredParser.Parsed parsed = StructuredParser.parse(src, sfmt);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            renderStructured(parsed);
-                        }
-                    });
-                } catch (Throwable t) {
-                    // submit() would swallow a Throwable (e.g. a NoClassDefFoundError while loading a Jackson
-                    // format factory on this pool thread) into its Future — a silent blank preview. Surface it.
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasPomPreview()) {
-            // Whole file is a Maven pom: parse off-thread into the display summary (coordinates, properties,
-            // dependencies, plugins, profiles), build the section list on the FX thread into the shared
-            // self-scrolling host. Must precede the XML branch — a pom is XML, and its summary wins unless
-            // the user switched this buffer to the generic tree.
-            String src = documentTextSnapshot();
-            Path pomPath = path; // a local pom's parent chain and BOMs are read beside it (Maven review C6)
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.maven.PomSummary parsed = com.editora.maven.PomSummary.parse(src, pomPath);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder()
-                                    .getChildren()
-                                    .setAll(PomPreview.build(parsed, line -> jumpToLine(line - 1)));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasXmlPreview()) {
-            // Whole file is one XML doc: parse off-thread (JDK DOM), build the DOM tree on the FX thread into
-            // the same self-scrolling host as the JSON/YAML/TOML tree. The previewGen guard drops a stale render.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    XmlParser.Parsed parsed = XmlParser.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            renderXml(parsed);
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasCrontabPreview()) {
-            // Whole file is a crontab: parse off-thread (pure, cheap), decode each schedule + compute the next
-            // fire times, build the preview node on the FX thread into the shared self-scrolling host. The
-            // "now" is captured here on the FX thread so the render is deterministic (mirrors the tree branch).
-            String src = documentTextSnapshot();
-            java.time.LocalDateTime now = java.time.LocalDateTime.now();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.cron.Crontab parsed = com.editora.cron.Crontab.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(CrontabPreview.build(parsed, now));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasFstabPreview()) {
-            // Whole file is an /etc/fstab: parse off-thread (pure, cheap), decode each mount line into English,
-            // build the preview node on the FX thread into the shared self-scrolling host. previewGen-guarded.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    java.util.List<com.editora.fstab.FstabEntry> parsed = com.editora.fstab.Fstab.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(FstabPreview.build(parsed));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasSystemdPreview()) {
-            // Whole file is a systemd unit: parse off-thread, decode directives (+ OnCalendar next runs) into
-            // English, build the preview node on the FX thread into the shared self-scrolling host.
-            String src = documentTextSnapshot();
-            java.time.LocalDateTime now = java.time.LocalDateTime.now();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.systemd.SystemdUnit parsed = com.editora.systemd.SystemdUnit.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(SystemdPreview.build(parsed, now));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasSshConfigPreview()) {
-            // Whole file is an SSH client config: parse off-thread into Host/Match blocks, decode into English.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    java.util.List<com.editora.sshconfig.SshConfig.Block> parsed =
-                            com.editora.sshconfig.SshConfig.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(SshConfigPreview.build(parsed));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasDockerfilePreview()) {
-            // Whole file is a Dockerfile: parse off-thread into build stages, distill each into a digest.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.dockerfile.Dockerfile parsed = com.editora.dockerfile.Dockerfile.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(DockerfilePreview.build(parsed));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (isDiagram()) {
-            // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
-            // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
-            // content-hash cache makes a zoom re-render a cheap re-fit of the same image. Don't call
-            // applyPreviewScale() here — it re-enters this branch for diagrams (would recurse).
-            double v = previewPane().getVvalue();
-            double scale = previewFontScale;
-            // A stable per-buffer surface key so live-editing pulses coalesce (only the latest render spawns
-            // mmdc) instead of piling up ~4 s Chromium renders on every 250 ms pause (#458).
-            String surfaceKey = PreviewSurfaces.mermaid(path, this);
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    MermaidImages.node(documentTextSnapshot(), lw -> lw * scale, surfaceKey));
-            box.getStyleClass().add("markdown-preview");
-            StackPane wrap = new StackPane(box);
-            wrap.getStyleClass().add("markdown-preview-wrap");
-            previewPane().setContent(wrap);
-            Platform.runLater(() -> previewPane().setVvalue(v));
-            return;
-        }
-        if (hasSvgPreview()) {
-            // Whole file is one SVG: rasterize off-thread via JSVG (in-process, no CLI), same async-image
-            // model as Mermaid/diagrams. Zoom scales the fit width; the content-hash cache makes a zoom
-            // re-render a cheap re-fit.
-            double v = previewPane().getVvalue();
-            double scale = previewFontScale;
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    SvgImages.node(documentTextSnapshot(), lw -> lw * scale, this::jumpToSource));
-            box.getStyleClass().add("markdown-preview");
-            StackPane wrap = new StackPane(box);
-            wrap.getStyleClass().add("markdown-preview-wrap");
-            previewPane().setContent(wrap);
-            Platform.runLater(() -> previewPane().setVvalue(v));
-            return;
-        }
-        DiagramKind dk = diagramKind();
-        if (dk != null) {
-            // Whole file is one DOT/PlantUML diagram — same async-image model as Mermaid (see above), via
-            // the generic DiagramImages façade. Zoom scales the fit width; the content-hash cache makes a
-            // zoom re-render a cheap re-fit. Don't call applyPreviewScale() here (it re-enters this branch).
-            double v = previewPane().getVvalue();
-            double scale = previewFontScale;
-            String surfaceKey = "diagram@" + System.identityHashCode(this);
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    DiagramImages.node(dk, documentTextSnapshot(), lw -> lw * scale, surfaceKey));
-            box.getStyleClass().add("markdown-preview");
-            StackPane wrap = new StackPane(box);
-            wrap.getStyleClass().add("markdown-preview-wrap");
-            previewPane().setContent(wrap);
-            Platform.runLater(() -> previewPane().setVvalue(v));
-            return;
-        }
-        if (hasTypstPreview()) {
-            // Whole file is one Typst document rendered to stacked page images via the typst CLI — the same
-            // async-image model as Mermaid/diagrams, but multi-page. Zoom scales the fit width; the
-            // content-hash cache + retain-last-image (in TypstImages) make live editing update in place
-            // without flicker.
-            double v = previewPane().getVvalue();
-            double scale = previewFontScale;
-            // The throwaway input is written in the file's own folder so relative #image/#import resolve as
-            // on disk; --root is that folder or a higher project root (via the injected resolver) so a
-            // multi-file project's up-references resolve too. Local saved files only — a remote (SFTP) path
-            // can't be a working dir for the local typst process, so both fall back to an isolated temp root.
-            java.nio.file.Path localPath =
-                    path != null && path.getFileSystem() == java.nio.file.FileSystems.getDefault() ? path : null;
-            java.nio.file.Path fileDir = localPath != null ? localPath.getParent() : null;
-            java.nio.file.Path root =
-                    localPath != null && typstRootResolver != null ? typstRootResolver.apply(localPath) : fileDir;
-            String retainKey = PreviewSurfaces.typstRetain(path, this);
-            String surfaceKey = PreviewSurfaces.typst(this);
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(TypstImages.node(
-                    documentTextSnapshot(), lw -> lw * scale, retainKey, surfaceKey, fileDir, root, getDisplayName()));
-            box.getStyleClass().add("markdown-preview");
-            StackPane wrap = new StackPane(box);
-            wrap.getStyleClass().add("markdown-preview-wrap");
-            previewPane().setContent(wrap);
-            Platform.runLater(() -> previewPane().setVvalue(v));
-            return;
-        }
-        if (isMarkwhen()) {
-            // Whole file is one timeline. Parse off-thread (pure, cheap), build the node on the FX thread.
-            // Horizontal zoom scales the axis width; preserve both scroll positions (the axis scrolls
-            // horizontally). The previewGen guard drops a superseded render.
-            String src = documentTextSnapshot();
-            double vw = previewPane().getViewportBounds().getWidth();
-            double scale = previewFontScale;
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                com.editora.markwhen.Timeline model = com.editora.markwhen.MarkwhenParser.parse(src);
-                Platform.runLater(() -> {
-                    if (gen != previewGen) {
-                        return;
-                    }
-                    double v = previewPane().getVvalue();
-                    double h = previewPane().getHvalue();
-                    Node timeline = markwhenView == MarkwhenView.CALENDAR
-                            ? MarkwhenCalendar.build(model, scale, vw)
-                            : MarkwhenTimeline.build(model, scale, vw);
-                    javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(timeline);
-                    box.getStyleClass().add("markdown-preview");
-                    StackPane wrap = new StackPane(box);
-                    wrap.getStyleClass().add("markdown-preview-wrap");
-                    previewPane().setContent(wrap);
-                    previewPane().setVvalue(v);
-                    previewPane().setHvalue(h);
-                });
-            });
-            return;
-        }
-        String md = documentTextSnapshot();
-        Path baseDir = path == null ? null : path.getParent();
-        long gen = ++previewGen;
-        PREVIEW_POOL.submit(() -> {
-            // Guarded like every other preview branch. commonmark 0.30.0 added input limits that *throw*
-            // rather than degrade — a table over a million cells is the reachable one (the nesting limits
-            // fall back to plain text instead). Unguarded, submit() parks that in a Future nobody reads, so
-            // the preview would sit blank with nothing logged and no way to tell it apart from a slow render.
-            try {
-                MarkdownPreview.Plan plan = MarkdownPreview.plan(md, baseDir); // parse + per-block keys
-                Platform.runLater(() -> {
-                    if (gen != previewGen) {
-                        return; // a newer render superseded this one
-                    }
-                    if (markdownPreview == null) {
-                        markdownPreview = new MarkdownPreview();
-                        markdownPreview.attach(previewPane());
-                        markdownPreview.onRerender(this::scheduleRenderPreview);
-                        markdownPreview.onTaskToggle(l -> isEditable() && MarkdownPreview.toggleTask(area, l));
-                        markdownPreview.onJumpToSource(
-                                l -> scrollSync.jumpToSource(l, () -> setMarkdownViewMode(MarkdownViewMode.SPLIT)));
-                    }
-                    // Only the blocks that changed are rebuilt; the reader's source line stays at the top.
-                    Boolean dark = previewThemeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(previewThemeMode));
-                    markdownPreview.setDiagrams(!encryption.isEncrypted()); // mmdc reads its source from a file
-                    markdownPreview.show(plan, openUrlHandler, dark, scrollSync.anchorLine());
-                    applyPreviewScale(); // keep the current zoom on the freshly rendered content
-                });
-            } catch (Throwable t) {
-                surfaceMarkdownPreviewError(gen, t);
-            }
-        });
-    }
-
-    /**
-     * Rebuilds {@link #viewHost} for the current modes. The floating control is parented to the editor
-     * pane ({@link #root}) in Editor mode, at the right edge of the code area; in Split and Preview it
-     * overlays the preview — on a split's half-width code pane it sat over the first line of text, and
-     * this way it also stays in the tab's top-right corner in all three modes.
-     */
-    private void rebuildViewHost() {
-        detachViewModeControl();
-        Node content;
-        if (markdownViewMode != MarkdownViewMode.EDITOR) {
-            StackPane host = previewModeHost();
-            Node corner = previewCorner();
-            if (corner != null) {
-                StackPane.setAlignment(corner, Pos.TOP_RIGHT);
-                StackPane.setMargin(corner, new Insets(6, 10, 0, 0));
-                host.getChildren().add(corner);
-            }
-            content = host;
-            if (markdownViewMode == MarkdownViewMode.SPLIT) {
-                SplitPane pane = new SplitPane(root, host);
-                pane.setOrientation(Orientation.HORIZONTAL);
-                pane.setDividerPositions(previewDivider); // where it was left, not back to the middle
-                pane.getDividers().get(0).positionProperty().addListener((o, was, now) -> {
-                    if (pane.isPressed() && Math.abs(now.doubleValue() - previewDivider) > 0.002) { // a drag
-                        previewDivider = now.doubleValue();
-                        onPreviewLayoutChanged.run();
-                    }
-                });
-                attachControlToCodePane();
-                content = pane;
-            }
-        } else if (split != Split.NONE) {
-            ensureSecondaryView();
-            SplitPane pane = new SplitPane(root, root2);
-            pane.setOrientation(split == Split.SIDE_BY_SIDE ? Orientation.HORIZONTAL : Orientation.VERTICAL);
-            pane.setDividerPositions(0.5);
-            attachControlToCodePane();
-            content = pane;
-        } else {
-            attachControlToCodePane();
-            content = root;
-        }
-        boolean hadFocus = area2 != null && area2.isFocused(); // leaving a split takes that view off the scene
-        int top2 = hadFocus ? ScrollAnchor.firstVisibleLine(area2) : -1;
-        viewHost.getChildren().setAll(content);
-        if (area2 != null && (split == Split.NONE || markdownViewMode != MarkdownViewMode.EDITOR)) {
-            focusedArea = area;
-            focusedView.set(area);
-            if (hadFocus) {
-                // The user was looking at the second view: the one that stays takes over its caret, its
-                // selection and its place in the file, and the keyboard (or JavaFX hands that to the first
-                // control in the window).
-                ScrollAnchor.adopt(area, area2, top2);
-                area.requestFocus();
-            }
-        }
-    }
-
-    /**
-     * The PREVIEW-mode wrapper for whichever preview this buffer has. Each self-scrolling preview (CSV grid,
-     * HTTP responses, the structured/tree family) brings its own {@code StackPane} so the floating mode toggle
-     * can be overlaid on it; everything else falls through to the Markdown-style {@link #previewHost()}.
-     */
-    private StackPane previewModeHost() {
-        if (hasCsvPreview()) {
-            return csvPreviewHost();
-        }
-        if (hasHttpPreview()) {
-            return httpPreviewHost();
-        }
-        if (hasTreePreview()) {
-            return structuredPreviewHost();
-        }
-        return previewHost(); // preview (+ zoom for markdown)
-    }
-
-    private StackPane previewHost() {
-        if (previewHost == null) {
-            previewHost = new StackPane();
-        }
-        // preview content + the −/+ zoom control (top-left, clear of the mode toggle at top-right) + the
-        // (normally hidden) centered loading overlay.
-        previewHost.getChildren().setAll(previewPane(), zoomControl(), previewLoadingOverlay());
-        StackPane.setAlignment(zoomControl(), Pos.TOP_LEFT);
-        StackPane.setMargin(zoomControl(), new Insets(6, 0, 0, 6));
-        StackPane.setAlignment(previewLoadingOverlay(), Pos.CENTER);
-        if (isMarkdown() && !previewLive()) {
-            // Too large to follow every edit: say so, and offer the render the pulse no longer does.
-            previewHost.getChildren().add(PreviewButtons.pausedStrip(this::refreshPreview));
-        }
-        return previewHost;
-    }
-
-    /** Wraps the injected CSV grid in a StackPane so the floating Editor/Split/Preview toggle can overlay it
-     *  in PREVIEW mode (the grid has no scroll-pane host like Markdown; it manages its own scrolling). */
-    private StackPane csvPreviewHost() {
-        if (csvPreviewHost == null) {
-            csvPreviewHost = new StackPane();
-        }
-        csvPreviewHost.getChildren().setAll(csvPreviewNode); // the toggle is added by rebuildViewHost()
-        belowModeToggle(csvPreviewNode);
-        return csvPreviewHost;
-    }
-
-    /** Wraps the injected HTTP response panel so the mode toggle can overlay it in PREVIEW mode (the panel
-     *  scrolls its own response body, so it needs no ScrollPane host — mirrors {@link #csvPreviewHost()}). */
-    private StackPane httpPreviewHost() {
-        if (httpPreviewHost == null) {
-            httpPreviewHost = new StackPane();
-        }
-        httpPreviewHost.getChildren().setAll(httpPreviewNode); // the toggle is added by rebuildViewHost()
-        belowModeToggle(httpPreviewNode);
-        return httpPreviewHost;
-    }
-
-    /**
-     * Height of the band the floating Editor/Split/Preview toggle takes at the top of a preview — the same
-     * 34px the Markdown preview leaves above its document ({@code .markdown-preview-pane} in app.css).
-     */
-    private static final double MODE_TOGGLE_BAND = 34;
-
-    /**
-     * Starts a self-scrolling preview (CSV grid, HTTP responses, structured tree) below the mode toggle.
-     * Each opens with a toolbar or a first row reaching the right edge, and the toggle — on top — hid its
-     * rightmost buttons and swallowed their clicks.
-     */
-    private static void belowModeToggle(@Nullable Node content) {
-        StackPane.setMargin(content, new Insets(MODE_TOGGLE_BAND, 0, 0, 0));
-    }
-
-    /** Sets the freshly parsed structured node (tree / OpenAPI docs / error) into the self-scrolling holder. */
-    private void renderStructured(StructuredParser.Parsed parsed) {
-        lastStructuredOpenApi = parsed.isOpenApi();
-        Node node;
-        if (!parsed.ok()) {
-            Label err = new Label(parsed.error());
-            err.getStyleClass().add("structured-error");
-            err.setWrapText(true);
-            node = err;
-        } else {
-            boolean showDocs = parsed.isOpenApi() && showsApiDocs();
-            node = showDocs ? OpenApiDoc.build(parsed.openApi()) : StructuredTree.build(parsed.root());
-        }
-        structuredContentHolder().getChildren().setAll(node);
-    }
-
-    /** Sets the freshly parsed XML DOM tree (or an error label) into the shared self-scrolling holder. */
-    private void renderXml(XmlParser.Parsed parsed) {
-        Node node = parsed.ok()
-                ? XmlTree.build(parsed.root())
-                : com.editora.editor.structured.ParseErrorView.of(
-                        String.valueOf(parsed.error()),
-                        parsed.line(),
-                        parsed.column(),
-                        this::jumpToSource,
-                        "structured-error");
-        structuredContentHolder().getChildren().setAll(node);
-    }
-
-    /** A preview's parse-error link: the caret to that 1-based line and column (XML review C15). */
-    private void jumpToSource(int line, int column) {
-        com.editora.editor.structured.ParseErrorView.jump(this, line, column);
-    }
-
-    /** The {@link #surfaceTreePreviewError} counterpart for the Markdown preview, which has its own pane. */
-    private void surfaceMarkdownPreviewError(long gen, Throwable t) {
-        java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
-                .log(java.util.logging.Level.WARNING, "markdown preview render failed", t);
-        String msg = t.getMessage() != null ? t.getMessage() : t.toString();
-        Platform.runLater(() -> {
-            if (gen != previewGen) {
-                return;
-            }
-            Label err = new Label(msg);
-            err.getStyleClass().add("structured-error");
-            err.setWrapText(true);
-            previewPane().setContent(err);
-        });
-    }
-
-    /**
-     * Surfaces a Throwable from a {@code PREVIEW_POOL.submit(...)} tree-preview task (structured/XML) that the
-     * task's {@code Future} would otherwise swallow into a silent blank — the {@code exec.submit}
-     * Error-swallowing trap the project conventions warn about — as a logged warning + a visible error label
-     * in the shared holder, so a failed render is diagnosable rather than a blank pane.
-     */
-    private void surfaceTreePreviewError(long gen, Throwable t) {
-        java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
-                .log(java.util.logging.Level.WARNING, "tree preview render failed", t);
-        String msg = t.getMessage() != null ? t.getMessage() : t.toString();
-        Platform.runLater(() -> {
-            if (gen != previewGen) {
-                return;
-            }
-            Label err = new Label(msg);
-            err.getStyleClass().add("structured-error");
-            err.setWrapText(true);
-            structuredContentHolder().getChildren().setAll(err);
-        });
-    }
-
-    /** The self-scrolling structured preview node holder — used directly as the Split preview side. */
-    private StackPane structuredContentHolder() {
-        if (structuredContentHolder == null) {
-            structuredContentHolder = new StackPane();
-            // The JSON/YAML/TOML + XML trees host their own TreeView (not previewPane), so they need their
-            // own right-click menu — an Export to PDF (a full snapshot of the tree), like every other preview.
-            structuredContentHolder.setOnContextMenuRequested(
-                    e -> showTreePreviewContextMenu(e.getScreenX(), e.getScreenY()));
-        }
-        return structuredContentHolder;
-    }
-
-    private void showTreePreviewContextMenu(double screenX, double screenY) {
-        if (treePreviewContextMenu == null) {
-            MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
-            pdf.setGraphic(MenuIcons.download());
-            pdf.setOnAction(ev -> previewMenu.exportPdf());
-            MenuItem print = new MenuItem(tr("command.preview.print"));
-            print.setGraphic(MenuIcons.print());
-            print.setOnAction(ev -> previewMenu.print());
-            pomViewItem = new MenuItem();
-            pomViewItem.setGraphic(MenuIcons.code());
-            pomViewItem.setOnAction(ev -> pomViewToggleHandler.run());
-            treePreviewContextMenu = new javafx.scene.control.ContextMenu(pomViewItem, pdf, print);
-            treePreviewContextMenu.getStyleClass().add("editor-context-menu");
-        }
-        // The pom summary is the only tree-hosted preview with a second rendering of the same file, so its
-        // switch is the only item here that isn't shown for every one of them. Relabelled per show (it names
-        // the view it switches *to*), since the buffer can be flipped from the palette between two shows.
-        boolean pom = isPom();
-        MenuItem pomItem = pomViewItem; // built with the menu above
-        if (pomItem != null) {
-            pomItem.setVisible(pom);
-            if (pom) {
-                pomItem.setText(tr(pomShowXml ? "pom.menu.showSummary" : "pom.menu.showXml"));
-            }
-        }
-        treePreviewContextMenu.show(structuredContentHolder(), screenX, screenY);
-    }
-
-    // ---- Preview → PDF snapshot (Markwhen / JSON-YAML-TOML / XML / summaries) — see PreviewSnapshots ----
 
     /**
      * Renders the current image/tree preview to PNG images for print and PDF export (a full snapshot of the
@@ -6326,312 +3709,48 @@ public class EditorBuffer implements TabContent {
         PreviewSnapshots.capture(this, lightUaStylesheet, progress, done);
     }
 
-    /** Whether an OpenAPI document shows its docs view (the default) rather than the tree behind it. */
     public boolean showsApiDocs() {
-        return structuredShowApiDocs == null || structuredShowApiDocs;
+        return previewPanes.showsApiDocs();
     }
 
-    /** Wraps the structured holder so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
-    private StackPane structuredPreviewHost() {
-        if (structuredPreviewHost == null) {
-            structuredPreviewHost = new StackPane();
-        }
-        structuredPreviewHost
-                .getChildren()
-                .setAll(structuredContentHolder()); // the toggle is added by rebuildViewHost()
-        belowModeToggle(structuredContentHolder());
-        return structuredPreviewHost;
-    }
-
-    /**
-     * Centered spinner + message overlaid on the preview while it's expected to render soon but hasn't
-     * yet — e.g. an AI-generated explanation streams into the buffer, but the debounced preview re-render
-     * only fires ~250ms after the text stops changing, so a fast continuous stream can leave the preview
-     * blank for its whole duration with no feedback otherwise. Toggled by {@link #setPreviewLoading}.
-     */
-    private Node previewLoadingOverlay() {
-        if (previewLoadingOverlay == null) {
-            ProgressIndicator spinner = new ProgressIndicator();
-            spinner.setMaxSize(32, 32);
-            previewLoadingLabel = new Label();
-            previewLoadingLabel.getStyleClass().add("markdown-preview-loading-label");
-            VBox box = new VBox(10, spinner, previewLoadingLabel);
-            box.setAlignment(Pos.CENTER);
-            box.getStyleClass().add("markdown-preview-loading");
-            box.setVisible(false);
-            box.setManaged(false);
-            box.setMouseTransparent(true); // never intercepts clicks meant for the preview underneath
-            previewLoadingOverlay = box;
-        }
-        return previewLoadingOverlay;
-    }
-
-    /**
-     * Shows or hides the preview's centered loading spinner (see {@link #previewLoadingOverlay()}).
-     * {@code message} replaces the label text when non-null; pass {@code false} once real content is
-     * ready (or generation fails) to hide it again.
-     */
     public void setPreviewLoading(boolean loading, @Nullable String message) {
-        Node overlay = previewLoadingOverlay();
-        Label label = previewLoadingLabel; // built with the overlay
-        if (message != null && label != null) {
-            label.setText(message);
-        }
-        overlay.setVisible(loading);
-        overlay.setManaged(loading);
+        previewPanes.setPreviewLoading(loading, message);
     }
 
-    private HBox zoomControl() {
-        if (zoomControl == null) {
-            Button out = PreviewButtons.named("−", tr("project.map.preview.zoomOut"), this::zoomPreviewOut);
-            Button in = PreviewButtons.named("+", tr("project.map.preview.zoomIn"), this::zoomPreviewIn);
-            // Light/dark preview-theme toggle (independent of the app theme). Glyph shows what a click
-            // switches TO: a moon while the preview is light, a sun while it's dark.
-            previewThemeButton = PreviewButtons.named("", "", () -> previewThemeToggle.run());
-            updateThemeButtonGlyph();
-            zoomControl = new HBox(out, in, previewThemeButton);
-            zoomControl.getStyleClass().add("md-zoom");
-            zoomControl.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-            zoomControl.setPickOnBounds(false);
-        }
-        return zoomControl;
-    }
-
-    /** Injects the controller's global preview light/dark toggle (run by the floating sun/moon button). */
     public void setPreviewThemeToggle(Runnable toggle) {
-        if (toggle != null) {
-            this.previewThemeToggle = toggle;
-        }
+        previewPanes.setPreviewThemeToggle(toggle);
     }
 
-    /**
-     * Applies the Markdown preview color theme, independent of the app theme. {@code mode} is "" (follow
-     * the app theme), "light", or "dark"; {@code appDark} is the app theme's brightness (for "follow" +
-     * the toggle glyph). Adds {@code md-light}/{@code md-dark} to the preview pane (which redefine the
-     * looked-up colors for the preview subtree) and refreshes the toggle glyph.
-     */
     public void applyPreviewTheme(String mode, boolean appDark) {
-        boolean changed = !previewThemeMode.equals(mode == null ? "" : mode);
-        this.previewThemeMode = mode == null ? "" : mode;
-        this.previewAppDark = appDark;
-        if (changed && isMarkdown()) {
-            scheduleRenderPreview(); // formulas and diagrams are bitmaps: draw them for the new theme
-        }
-        if (previewPane != null) {
-            previewPane.getStyleClass().removeAll("md-light", "md-dark");
-            if ("light".equals(previewThemeMode)) {
-                previewPane.getStyleClass().add("md-light");
-            } else if ("dark".equals(previewThemeMode)) {
-                previewPane.getStyleClass().add("md-dark");
-            }
-        }
-        updateThemeButtonGlyph();
+        previewPanes.applyPreviewTheme(mode, appDark);
     }
 
-    private void updateThemeButtonGlyph() {
-        if (previewThemeButton == null) {
-            return;
-        }
-        // The glyph and name say what a click switches TO: ☀ light, ☾ dark, ◐ back to following the app.
-        String next = PreviewButtons.nextTheme(previewThemeMode, previewAppDark);
-        previewThemeButton.setText(next.isEmpty() ? "◐" : next.equals("light") ? "☀" : "☾");
-        PreviewButtons.name(previewThemeButton, tr(PreviewButtons.themeActionKey(next)));
-    }
-
-    /** Zooms the preview text in/out (multiplicative steps, clamped) or resets to 100%. */
     public void zoomPreviewIn() {
-        setPreviewFontScale(previewFontScale * 1.1);
+        previewPanes.zoomPreviewIn();
     }
 
     public void zoomPreviewOut() {
-        setPreviewFontScale(previewFontScale / 1.1);
+        previewPanes.zoomPreviewOut();
     }
 
     public void resetPreviewZoom() {
-        setPreviewFontScale(1.0);
+        previewPanes.resetPreviewZoom();
     }
 
-    private void setPreviewFontScale(double scale) {
-        previewFontScale = Math.max(PreviewLayout.MIN_ZOOM, Math.min(PreviewLayout.MAX_ZOOM, scale));
-        applyPreviewScale();
-        onPreviewLayoutChanged.run();
-    }
-
-    /** The preview's zoom and Split divider as they are now. */
     public PreviewLayout getPreviewLayout() {
-        return new PreviewLayout(previewFontScale, previewDivider);
+        return previewPanes.getPreviewLayout();
     }
 
-    /** Restores a remembered zoom and divider (no change notification); {@code onChange} hears later ones. */
     public void restorePreviewLayout(@Nullable PreviewLayout layout, Runnable onChange) {
-        this.onPreviewLayoutChanged = onChange == null ? () -> {} : onChange;
-        if (layout != null) {
-            previewFontScale = layout.zoom();
-            previewDivider = layout.divider();
-            applyPreviewScale();
-        }
+        previewPanes.restorePreviewLayout(layout, onChange);
     }
 
-    /** Applies the current zoom: re-fits a diagram to the scaled width, else overrides the preview's base
-     *  font size (headings use em). */
-    private void applyPreviewScale() {
-        if (previewPane == null || previewPane.getContent() == null) {
-            return;
-        }
-        if (isDiagram() || isRenderedDiagram() || hasSvgPreview() || hasTypstPreview()) {
-            scheduleRenderPreview(); // re-fit the diagram/SVG/Typst image to the new zoom (cache hit — cheap)
-            return;
-        }
-        if (isMarkwhen()) {
-            scheduleRenderPreview(); // re-render the timeline at the new axis scale (parse is cheap + off-thread)
-            return;
-        }
-        previewPane.getContent().setStyle(PreviewPrefs.fontStyle(previewFontScale));
-        if (markdownPreview != null) {
-            markdownPreview.setZoom(previewFontScale); // formulas, images and diagrams are not text: sized too
-        }
-    }
-
-    /** Removes the floating corner control(s) from whichever pane currently hosts them. */
-    private void detachViewModeControl() {
-        removeCornerControl(viewModeControl);
-        removeCornerControl(htmlPreviewControl);
-        removeCornerControl(httpEnvControl);
-        removeCornerControl(previewCornerRow);
-        previewCornerRow.getChildren().clear();
-    }
-
-    /**
-     * What sits at the top-right of a preview: the view toggle, with the {@code .http} environment pill to its left
-     * when the buffer has one (both in one row, so they never overlap).
-     */
-    private @Nullable Node previewCorner() {
-        if (httpEnvControl == null) {
-            return viewModeControl;
-        }
-        previewCornerRow.getChildren().setAll(httpEnvControl);
-        if (viewModeControl != null) {
-            previewCornerRow.getChildren().add(viewModeControl);
-        }
-        return previewCornerRow;
-    }
-
-    private static HBox previewCornerRow() {
-        HBox row = cornerControlRow();
-        row.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE); // a StackPane overlay keeps its own size
-        return row;
-    }
-
-    private void removeCornerControl(@Nullable Node control) {
-        if (control == null) {
-            return;
-        }
-        cornerControls.getChildren().remove(control);
-        if (cornerControls.getChildren().isEmpty()) {
-            root.getChildren().remove(cornerControls);
-        }
-        if (previewHost != null) {
-            previewHost.getChildren().remove(control);
-        }
-        if (csvPreviewHost != null) {
-            csvPreviewHost.getChildren().remove(control);
-        }
-        if (httpPreviewHost != null) {
-            httpPreviewHost.getChildren().remove(control);
-        }
-    }
-
-    /** Overlays the corner control(s) at the top-right of the code pane ({@link #root}), clear of its minimap.
-     *  They share one row ({@link #cornerControls}), so however many are present they sit side by side. */
-    private void attachControlToCodePane() {
-        placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? httpEnvControl : null);
-        placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? viewModeControl : null);
-        placeCornerControl(htmlPreviewControl);
-        placeStickyScroll();
-    }
-
-    /**
-     * Anchors the sticky-scroll bar across the top of the code pane. Unlike the corner controls it spans
-     * the width, so it clears the scrollbar gutter on the right and the minimap beyond it — a pinned line
-     * running under either would be clipped mid-token.
-     */
-    private void placeStickyScroll() {
-        Node bar = stickyScroll.node();
-        StickyScrollBar.anchor(bar, codePaneControlInset()); // writes only a changed constraint
-        if (bar.getParent() != root) {
-            root.getChildren().add(bar);
-            // The bar is attached lazily when scrolling first produces pinned lines, while file-specific
-            // controls may already be present. AnchorPane paints later children on top, so without an
-            // explicit order that timing lets the full-width bar cover Markdown's view-mode toggle or
-            // HTML's browser button. A control row attached after the bar is added last and so is above it.
-            if (cornerControls.getParent() == root) {
-                cornerControls.toFront();
-            }
-        }
-    }
-
-    /**
-     * Adds {@code control} to the shared top-right row, mounting the row on first use. The Expert exit
-     * control stays outermost so it does not move when a file-specific control comes and goes.
-     */
-    private void placeCornerControl(@Nullable Node control) {
-        if (control == null) {
-            return;
-        }
-        List<Node> row = cornerControls.getChildren();
-        if (!row.contains(control)) {
-            int expert = control == expertExitControl ? -1 : row.indexOf(expertExitControl);
-            row.add(expert < 0 ? row.size() : expert, control);
-        }
-        if (cornerControls.getParent() != root) {
-            root.getChildren().add(cornerControls);
-            AnchorPane.setTopAnchor(cornerControls, 6d);
-        }
-        AnchorPane.setRightAnchor(cornerControls, codePaneControlInset());
-    }
-
-    /**
-     * Width the editor's own vertical scrollbar takes on the right edge of the code pane. The floating
-     * controls clear it: sitting on the thumb both looks wrong and swallows the drag, since the control is
-     * on top.
-     */
-    private static final double SCROLLBAR_GUTTER = 14;
-
-    private double codePaneControlInset() {
-        return SCROLLBAR_GUTTER + ((minimapVisible && !largeFile && !heavyFile) ? Minimap.WIDTH + 6 : 10);
-    }
-
-    /** Keeps every floating editor control clear of the minimap when it toggles (no full view rebuild). */
-    private void positionCornerControls() {
-        if (cornerControls.getParent() == root) {
-            AnchorPane.setRightAnchor(cornerControls, codePaneControlInset());
-        }
-    }
-
-    /**
-     * Mounts the Expert-mode exit control inside the primary code pane, clear of its scrollbar and minimap,
-     * beside any file-specific corner control. Passing {@code null} detaches the current control. A
-     * controller moves the one shared button as the active tab changes, so inactive buffers retain no
-     * overlay node.
-     */
     public void setExpertExitControl(@Nullable Node control) {
-        if (expertExitControl != control) {
-            removeCornerControl(expertExitControl);
-        }
-        expertExitControl = control;
-        placeCornerControl(control);
-    }
-
-    private static HBox cornerControlRow() {
-        HBox row = new HBox(6);
-        row.setAlignment(Pos.CENTER_RIGHT);
-        row.setFillHeight(false); // each control keeps its own height
-        row.setPickOnBounds(false); // clicks between controls fall through to the editor
-        return row;
+        viewLayout.setExpertExitControl(control);
     }
 
     /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
-    private void ensureSecondaryView() {
+    void ensureSecondaryView() {
         if (area2 != null) {
             refreshGutter(); // marks and folds changed while it was off screen
             return;
@@ -6642,21 +3761,22 @@ public class EditorBuffer implements TabContent {
         area2.setLineHighlighterOn(area.isLineHighlighterOn());
         area2.setUndoManager(area.getUndoManager()); // one history for the shared document
         area2.setEditable(area.isEditable());
-        addViewModePaging(area2); // same pager keys in the secondary split view
+        typingAids.addViewModePaging(area2); // same pager keys in the secondary split view
         completionActions.addCompletionKeys(area2);
         completionActions.installCommitCharacters(area2);
-        addSnippetKeys(area2);
-        addAutoClose(area2);
-        addAutoIndent(area2);
+        snippetKeys.addSnippetKeys(area2);
+        typingAids.addAutoClose(area2);
+        typingAids.addAutoIndent(area2);
         completionActions.installCompletionTrigger(area2);
-        installOccurrenceTrigger(area2); // LSP document highlight (#675)
-        installCodeLensClick(area2);
-        if (inlayFactoryInstalled) {
-            area2.setInlayFactory(this::inlaysOn); // hints, lenses and results set before the split opened
+        lspAssists.installOccurrenceTrigger(area2); // LSP document highlight (#675)
+        inlayDecor.installCodeLensClick(area2);
+        if (inlayDecor.inlayFactoryInstalled) {
+            area2.setInlayFactory(inlayDecor::inlaysOn); // hints, lenses and results set before the split opened
         }
         imageDrop.install(area2);
-        if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
-            multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
+        if (caretOps.multiCaretEnabled && !hugeFile && caretOps.multiCaret2 == null) {
+            caretOps.multiCaret2 =
+                    MultiCarets.install(area2, typingAids::tabEdit); // same multi-caret add-on in the split view
         }
         area2.setLineHighlighterFill(lineHighlightColor);
         refreshGutter();
@@ -6674,7 +3794,7 @@ public class EditorBuffer implements TabContent {
             }
         });
         installFormatBarListeners(area2);
-        installContextMenu(area2);
+        editorMenu.installContextMenu(area2);
         scrollPane2 = new VirtualizedScrollPane<>(area2);
         // Give the secondary view its own minimap (tracks this pane's viewport), docked like the primary.
         minimap2 = minimap.follower(area2);
@@ -6721,42 +3841,23 @@ public class EditorBuffer implements TabContent {
             blameColumnWidth = measureBlameColumnWidth(gitLines.blame());
             refreshGutter();
         }
-        markRulerInputsDirty(); // the glyph advance changed
+        rulerPlacement.markRulerInputsDirty(); // the glyph advance changed
     }
 
-    /** Show/hide the column-80 ruler overlay. */
     public void setColumnRulerVisible(boolean visible) {
-        if (visible == rulerVisible) {
-            return; // unchanged: measuring the ruler forces a VirtualFlow layout, so don't re-do it for nothing
-        }
-        this.rulerVisible = visible;
-        if (visible) {
-            markRulerInputsDirty();
-        } else {
-            columnRuler.hide();
-        }
+        rulerPlacement.setColumnRulerVisible(visible);
     }
 
-    /**
-     * The ruler columns Settings asks for: {@code global}, or the list {@code perLanguage} has for this buffer's
-     * language. An {@code .editorconfig} {@code max_line_length} still replaces the first (see
-     * {@link RulerColumns#resolve}). Re-measures only when they changed.
-     */
     public void setRulerColumns(List<Integer> global, java.util.Map<String, List<Integer>> perLanguage) {
-        List<Integer> g = global == null ? List.of() : List.copyOf(global);
-        java.util.Map<String, List<Integer>> l =
-                perLanguage == null ? java.util.Map.of() : java.util.Map.copyOf(perLanguage);
-        if (g.equals(rulerColumns) && l.equals(languageRulers)) {
-            return; // runs for every buffer on every settings apply
-        }
-        rulerColumns = g;
-        languageRulers = l;
-        markRulerInputsDirty();
+        rulerPlacement.setRulerColumns(global, perLanguage);
     }
 
-    /** The columns the rulers stand at now (see {@link RulerColumns#resolve}). */
     List<Integer> rulerColumnsInForce() {
-        return RulerColumns.resolve(rulerColumns, languageRulers, language, rulerColumnOverride);
+        return rulerPlacement.rulerColumnsInForce();
+    }
+
+    boolean rulerMeasurePending() {
+        return rulerPlacement.rulerMeasurePending();
     }
 
     /** The document's fixed-size undo history (bounded, so it can't grow without limit), shared by both views. */
@@ -6778,7 +3879,7 @@ public class EditorBuffer implements TabContent {
     /** Above this document size the Undo History is disabled (full-text snapshots would cost too much). */
     private static final int UNDO_HISTORY_MAX_BYTES = 1_000_000;
 
-    private final UndoHistory undoHistory = new UndoHistory();
+    final UndoHistory undoHistory = new UndoHistory();
     private @Nullable Runnable onUndoHistoryChanged;
 
     public UndoHistory getUndoHistory() {
@@ -6856,7 +3957,7 @@ public class EditorBuffer implements TabContent {
         renderingActive = active;
         if (!active) snippetSession.cancel(); // a background tab: Tab must not come back to its fields
         if (active && wasInactive) {
-            scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
+            rulerPlacement.scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
         }
         minimap.setRenderingActive(active);
         // A full-viewport overlay keeps a Canvas + RTTexture alive for a tab the user cannot see. The
@@ -6897,33 +3998,12 @@ public class EditorBuffer implements TabContent {
         spellOverlay.releaseHiddenCaches();
     }
 
-    /**
-     * Holds the syntax highlighter back while this buffer's editor is not in the scene.
-     *
-     * <p>A restored background tab is filled while its editor is detached ({@code DeferredTabContent}); the
-     * load marks the whole document dirty, and without this the tab would be tokenised on the highlight
-     * pool and restyled on the FX thread a pause later — for every restored tab, shortly after its fill,
-     * while the user is looking at a different file. Deferred, the first pass runs when the tab is first
-     * shown instead, which is when its styles are first visible. Every other document consumer (folds, the
-     * caret, LSP sync, the snapshot) is unaffected: only the style pass waits.
-     *
-     * <p>Ending the deferral runs the owed pass at once, if one was requested; a buffer that was never asked
-     * to highlight while deferred dispatches nothing.
-     */
     public void setHighlightDeferred(boolean deferred) {
-        if (highlightDeferred == deferred) {
-            return;
-        }
-        highlightDeferred = deferred;
-        if (!deferred && highlightOwed) {
-            highlightOwed = false;
-            applyHighlighting();
-        }
+        highlighter.setHighlightDeferred(deferred);
     }
 
-    /** True while {@link #setHighlightDeferred} is holding the highlighter back. */
     public boolean isHighlightDeferred() {
-        return highlightDeferred;
+        return highlighter.isHighlightDeferred();
     }
 
     /**
@@ -6972,7 +4052,7 @@ public class EditorBuffer implements TabContent {
     /** Rebuilds the gutter graphic factory (line numbers + fold chevrons + markers) from current state, or
      *  removes the gutter entirely (null factory) when {@link #gutterVisible} is off. */
     public void refreshGutter() {
-        markRulerInputsDirty(); // the gutter's width is where column 0 starts
+        rulerPlacement.markRulerInputsDirty(); // the gutter's width is where column 0 starts
         noteOverlay.refresh();
         if (indentGuides != null) {
             indentGuides.refresh(); // and where the guides start: the new gutter is laid out in the next pulse
@@ -7177,15 +4257,12 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Sets the "Run File" context-menu handler (controller runs the compact source file); null disables it. */
     public void setRunHandler(Runnable handler) {
-        this.runHandler = handler;
+        runGutter.setRunHandler(handler);
     }
 
-    /** Sets the "Debug File" context-menu entry: shown beside "Run File" while {@code shown} holds. */
     public void setDebugFileHandler(Runnable handler, java.util.function.BooleanSupplier shown) {
-        this.debugFileHandler = handler;
-        this.debugFileShown = shown == null ? () -> false : shown;
+        runGutter.setDebugFileHandler(handler, shown);
     }
 
     /** Callback fired after any note change (for persistence + the Notes panel). */
@@ -7273,7 +4350,7 @@ public class EditorBuffer implements TabContent {
                 a,
                 () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null,
                 hits -> HttpVariableFixes.hint(httpVariableMarks, httpGutter.hooks(), hits));
-        installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
+        lspAssists.installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         debugHover.install(a);
         noteHover.install(a);
     }
@@ -7286,53 +4363,12 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Moves the caret to the next TODO/highlight match after the caret (wrapping); false if none exist. */
     public boolean jumpToNextTodo() {
-        return jumpTodoMark(true);
+        return todoMarker.jumpToNextTodo();
     }
 
-    /** Moves the caret to the previous TODO/highlight match before the caret (wrapping); false if none. */
     public boolean jumpToPreviousTodo() {
-        return jumpTodoMark(false);
-    }
-
-    private boolean jumpTodoMark(boolean forward) {
-        // Same gates as refreshTodoMarks: without them a huge file (where the highlight is deliberately off
-        // and no marks are drawn) still ran the full multi-pattern scan over the whole document on the FX
-        // thread, and jumped to a match the user cannot see.
-        if (todoMatcher == null || !todoEnabled || largeFile) {
-            return false;
-        }
-        java.util.List<TodoMark> marks = todoMatcher.match(documentTextSnapshot());
-        if (marks.isEmpty()) {
-            return false;
-        }
-        int caret = area.getCaretPosition();
-        TodoMark target = null;
-        if (forward) {
-            for (TodoMark m : marks) {
-                if (m.start() > caret) {
-                    target = m;
-                    break;
-                }
-            }
-            if (target == null) {
-                target = marks.get(0);
-            }
-        } else {
-            for (int i = marks.size() - 1; i >= 0; i--) {
-                if (marks.get(i).start() < caret) {
-                    target = marks.get(i);
-                    break;
-                }
-            }
-            if (target == null) {
-                target = marks.get(marks.size() - 1);
-            }
-        }
-        area.moveTo(Math.min(target.start(), area.getLength()));
-        area.requestFollowCaret();
-        return true;
+        return todoMarker.jumpToPreviousTodo();
     }
 
     /** Removes all bookmarks in this buffer and repaints the gutter. */
@@ -7371,7 +4407,7 @@ public class EditorBuffer implements TabContent {
     public void setWordWrap(boolean wrap) {
         boolean changed = wrap != area.isWrapText();
         if (changed) {
-            markRulerInputsDirty(); // wrapping re-flows the text and removes the horizontal scroll
+            rulerPlacement.markRulerInputsDirty(); // wrapping re-flows the text and removes the horizontal scroll
         }
         area.setWrapText(wrap); // the split's second view is bound to this
         if (!changed) {
@@ -7453,7 +4489,7 @@ public class EditorBuffer implements TabContent {
             applyMinimap(scrollPane2, minimap2, effective);
         }
         updateDiagnosticStripe(); // show the scrollbar stripe when the minimap no longer carries marks
-        positionCornerControls(); // keep floating editor controls clear of the minimap
+        viewLayout.positionCornerControls(); // keep floating editor controls clear of the minimap
     }
 
     /** Show/hide the "hidden characters" markers (spaces, tabs, line ends). */
@@ -7461,169 +4497,6 @@ public class EditorBuffer implements TabContent {
         if (visible || whitespace != null) { // turning it off on a buffer that never had it builds nothing
             whitespace().setActive(visible);
         }
-    }
-
-    /**
-     * Records that an input to the ruler's position changed other than the viewport width or the horizontal
-     * scroll (the gutter, the font, wrap, the ruler column), and schedules the re-measure. The flag survives
-     * until a measure actually runs, so a change made before the area has been laid out is not lost.
-     */
-    private void markRulerInputsDirty() {
-        rulerInputsDirty = true;
-        scheduleRulerMeasure();
-    }
-
-    /**
-     * Coalesces a ruler re-measurement onto the next pulse. Measuring queries character bounds, which
-     * must not happen synchronously inside a layout/viewport event (it re-enters layout and blanks the
-     * editor), so we always defer it via {@link Platform#runLater}.
-     */
-    private void scheduleRulerMeasure() {
-        // Measuring queries the viewport (a forced VirtualFlow layout) + character bounds. A background tab
-        // is not on screen, so doing that for it is pure cost — and a settings apply dirties every open
-        // buffer's viewport at once, which is what made a Simple-mode toggle scale with the number of tabs.
-        // setRenderingActive re-schedules when the tab is shown again, so nothing is left stale.
-        if (!rulerVisible || rulerMeasurePending || !renderingActive) {
-            return;
-        }
-        rulerMeasurePending = true;
-        Platform.runLater(() -> {
-            rulerMeasurePending = false;
-            measureAndPlaceRuler();
-        });
-    }
-
-    /**
-     * How many times the ruler has been measured, app-wide. A test seam, not state the editor reads: how
-     * often this runs is a measured property (each measure is two forced {@code VirtualFlow} layouts plus
-     * character-bounds queries), and without a counter a regression to the old measure-on-every-viewport-event
-     * subscription would be invisible — the ruler would still land in the right place, just far more often.
-     * See {@code ColumnRulerFxTest}.
-     */
-    static final java.util.concurrent.atomic.AtomicInteger RULER_MEASURES_FOR_TEST =
-            new java.util.concurrent.atomic.AtomicInteger();
-
-    /**
-     * Positions the rulers at their columns (80 unless Settings or {@code .editorconfig} say otherwise), drawn
-     * whether or not any text reaches them. Each is column 0's on-screen x plus that many advances of the
-     * editor font (see {@link #columnZeroX}), so it is exact regardless of which glyphs are present; one
-     * measure serves them all. A ruler is hidden when its column falls outside the visible text width (the
-     * window is too narrow, or the text is scrolled past it).
-     */
-    private void measureAndPlaceRuler() {
-        RULER_MEASURES_FOR_TEST.incrementAndGet();
-        lastRulerViewportWidth = area.getWidth();
-        List<Integer> columns = rulerColumnsInForce();
-        if (!rulerVisible || columns.isEmpty()) {
-            columnRuler.hide();
-            rulerInputsDirty = false; // nothing to place; a later show() re-marks via setColumnRulerVisible
-            return;
-        }
-        boolean inputsChanged = rulerInputsDirty;
-        Double x = columnZeroX();
-        // Clear the pending flag only on a measure that actually produced a position. Before the area's
-        // first layout the geometry is unmeasurable and columnZeroX returns null; clearing the flag there
-        // would leave the gate waiting for a viewport WIDTH change that may never come, and the ruler would
-        // stay hidden for the life of the buffer.
-        if (x != null) {
-            rulerInputsDirty = false;
-            if (inputsChanged) {
-                confirmRulerAfterLayout();
-            }
-        }
-        columnRuler.place(x, columnAdvance.of(fontFamily, fontSize), columns, scrollPane.getWidth());
-    }
-
-    /**
-     * Measures once more two frames after a measure that followed a changed input (gutter, font, wrap). That
-     * first measure runs from {@code runLater}, which can land before the pulse that lays the new gutter out;
-     * it then reads column 0 at its old x and nothing else would ever correct it. One-shot, and the second
-     * measure does not re-arm it. A changed input while one is waiting starts the two frames again: the
-     * confirm that was about to fire would otherwise also run before the new layout, and be the last word.
-     */
-    private void confirmRulerAfterLayout() {
-        rulerConfirmFrames = 0;
-        if (rulerConfirm != null) {
-            return;
-        }
-        rulerConfirm = new javafx.animation.AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                if (++rulerConfirmFrames < 2) {
-                    return;
-                }
-                stop();
-                rulerConfirm = null;
-                if (rulerVisible && renderingActive) {
-                    measureAndPlaceRuler();
-                }
-            }
-        };
-        rulerConfirm.start();
-    }
-
-    private javafx.animation.@Nullable AnimationTimer rulerConfirm;
-    private int rulerConfirmFrames;
-
-    /** Whether a ruler measure is still to come (the deferred one or its confirmation); for tests to wait on. */
-    boolean rulerMeasurePending() {
-        return rulerMeasurePending || rulerConfirm != null;
-    }
-
-    /**
-     * Root-local x of column 0: the left edge of the first character of any visible line — a property of the
-     * gutter and the horizontal scroll, not of the text. A ruler column is this plus that many advances of the
-     * editor font (see {@link ColumnAdvance}; never derived from the visible text, which a short line, a tab or
-     * a wide glyph skewed). Returns {@code null} when no visible line has a character.
-     */
-    private @Nullable Double columnZeroX() {
-        try {
-            int first = Math.max(0, area.firstVisibleParToAllParIndex());
-            int last = Math.min(area.getParagraphs().size() - 1, area.lastVisibleParToAllParIndex());
-            for (int p = first; p <= last; p++) {
-                if (area.isFolded(p) || area.getParagraphLength(p) == 0) {
-                    continue; // collapsed or empty: no character to take column 0 from
-                }
-                Bounds start = caretBounds(p, 0);
-                if (start != null) {
-                    return start.getMinX();
-                }
-            }
-        } catch (RuntimeException ignored) {
-            // Viewport mid-layout; a later event will re-measure.
-        }
-        return null;
-    }
-
-    /**
-     * Root-local bounds of the caret at {@code column} in paragraph {@code p}, or {@code null}.
-     *
-     * <p><b>Never query the zero-width {@code getCharacterBoundsOnScreen(abs, abs)} form here.</b> For an
-     * empty range {@code GenericStyledArea} allocates a throwaway {@link org.fxmisc.richtext.CaretNode} to
-     * measure with, and a {@code CaretNode} starts a 500 ms {@code restartableTicks} blink timer that
-     * nothing ever stops — so every call permanently registers a running JavaFX {@code Timeline} as a pulse
-     * receiver. This method runs 2–3 times per ruler measurement and the ruler re-measures on
-     * {@code viewportDirtyEvents}, i.e. on every edit: measured at <b>+2 leaked timers per keystroke</b>,
-     * with typing latency degrading 5.6 ms → 28 ms over 2000 keystrokes and never recovering (the leak
-     * outlives the window). Measuring a <em>one-character</em> range takes a different path in RichTextFX
-     * and allocates nothing; at end-of-paragraph there is no character to the right, so we measure the last
-     * character and take its right edge, which is the same x the caret would sit at.
-     */
-    private @Nullable Bounds caretBounds(int p, int column) {
-        int abs = area.getAbsolutePosition(p, column);
-        int len = area.getParagraphLength(p);
-        Bounds screen;
-        if (column < len) {
-            screen = area.getCharacterBoundsOnScreen(abs, abs + 1).orElse(null);
-        } else if (len > 0) {
-            Bounds last = area.getCharacterBoundsOnScreen(abs - 1, abs).orElse(null);
-            screen = last == null
-                    ? null
-                    : new javafx.geometry.BoundingBox(last.getMaxX(), last.getMinY(), 0, last.getHeight());
-        } else {
-            return null; // empty paragraph: nothing to measure an advance from
-        }
-        return screen == null ? null : root.screenToLocal(screen);
     }
 
     public @Nullable Path getPath() {
@@ -7670,14 +4543,15 @@ public class EditorBuffer implements TabContent {
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */
     public void setPath(@Nullable Path path) {
         this.path = path;
-        writableOnDisk =
-                path == null || path.getFileSystem() != java.nio.file.FileSystems.getDefault() ? writableOnDisk : null;
+        banners.writableOnDisk = path == null || path.getFileSystem() != java.nio.file.FileSystems.getDefault()
+                ? banners.writableOnDisk
+                : null;
         // The full path (not just the basename) so location-based rules resolve — e.g. ~/.ssh/config,
         // /etc/hosts, .git/config (see ConfigFileType). The registries reduce it to the basename for
         // ordinary extension lookups.
         String lookup = path == null ? null : path.toString();
         applyLanguageFor(lookup == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(lookup), lookup);
-        recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph
+        runGutter.recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph
     }
 
     /** Applies language {@code name} with the grammar {@code lookup} (a file name or path, or null) maps to. */
@@ -7713,8 +4587,8 @@ public class EditorBuffer implements TabContent {
                     return; // a newer language change superseded this load
                 }
                 this.grammar = g;
-                invalidateHighlighting();
-                applyHighlighting();
+                highlighter.invalidateHighlighting();
+                highlighter.applyHighlighting();
             });
         });
     }
@@ -7749,7 +4623,7 @@ public class EditorBuffer implements TabContent {
         String resolved = name == null ? LanguageRegistry.plaintext() : name;
         languageUserOverride = true; // the user's pick wins; don't re-detect a shebang over it
         applyLanguage(resolved, GrammarRegistry.shared().forLanguageName(resolved));
-        recomputeRun(); // a script picked as Shell (or Python) gets its Run glyph now, not on the next edit
+        runGutter.recomputeRun(); // a script picked as Shell (or Python) gets its Run glyph now, not on the next edit
     }
 
     /** Runs {@code listener} on the FX thread each time the language changes after it is added (a picked
@@ -7763,7 +4637,7 @@ public class EditorBuffer implements TabContent {
      * or {@code java --source N} for a compact source), via a synthetic {@code "shebang.<ext>"} name so it
      * behaves exactly like a file of that type. Never overrides a real extension or the user's pick.
      */
-    private void maybeApplyShebang() {
+    void maybeApplyShebang() {
         int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
         String sniffed = languageUserOverride || path == null // a .mod/.sch/… is XML only if it reads so (C13)
                 ? null
@@ -7806,8 +4680,8 @@ public class EditorBuffer implements TabContent {
         this.grammar = g;
         folds.setLanguage(language);
         wrap.languageChanged(language); // prose wraps by one preference, code by another
-        if (!languageRulers.isEmpty()) {
-            markRulerInputsDirty(); // the language may have rulers of its own
+        if (!rulerPlacement.languageRulers.isEmpty()) {
+            rulerPlacement.markRulerInputsDirty(); // the language may have rulers of its own
         }
         // Which words are checked, which lines are code, and whether this language is checked at all all
         // follow the language. Must be pushed here, not only at construction: the constructor runs before
@@ -7817,8 +4691,8 @@ public class EditorBuffer implements TabContent {
         // share follows the new language — the {{variable}} marks stop, Markdown lint starts, or the reverse.
         setMarkdownLintEnabled(markdownLintWanted);
         httpVariableMarks.update();
-        invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
-        applyHighlighting();
+        highlighter.invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
+        highlighter.applyHighlighting();
         if (changed) {
             languageListeners.forEach(Runnable::run);
         }
@@ -7880,14 +4754,8 @@ public class EditorBuffer implements TabContent {
         this.eolOverride = LineEndings.isLabel(eol) ? eol : null;
     }
 
-    /** The ruler column (EditorConfig {@code max_line_length}); null = default, OFF = hide; re-measures. */
     public void setRulerColumn(@Nullable Integer column) {
-        if (java.util.Objects.equals(column, rulerColumnOverride)) {
-            return; // unchanged: this runs for every buffer on every settings apply (applyEditorConfig)
-        }
-        this.rulerColumnOverride = column;
-        markRulerInputsDirty(); // deferred, not a synchronous measure: character bounds must never be
-        // queried inside a layout pass, and the caller may be mid-apply
+        rulerPlacement.setRulerColumn(column);
     }
 
     public void setDetectedCharset(String charset) {
@@ -7985,7 +4853,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.largeFile = large;
-        highlightGen++; // discard any in-flight highlight result
+        highlighter.highlightGen++; // discard any in-flight highlight result
         folds.setHeuristicEnabled(!large); // never schedule a whole-document fold scan for a large file
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
         spell.applyActive(); // spell checking is off in large-file mode (like highlighting)
@@ -7998,7 +4866,7 @@ public class EditorBuffer implements TabContent {
         setLineHighlightOn(LineHighlighter.wanted(area)); // and the current-line highlight
         applyUndoMode(); // nor undo history: a large file shouldn't pay its memory
         if (!large) {
-            applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
+            highlighter.applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
         }
     }
 
@@ -8083,13 +4951,13 @@ public class EditorBuffer implements TabContent {
      */
     public void setViewMode(boolean viewMode) {
         this.viewMode = viewMode;
-        viewModeReason = viewMode ? viewModeReason : null;
+        banners.viewModeReason = viewMode ? banners.viewModeReason : null;
         applyEditable();
     }
 
     /** View mode, with the banner saying why ({@code reason}) instead of the general sentence. */
     public void setViewMode(boolean viewMode, @Nullable String reason) {
-        viewModeReason = reason;
+        banners.viewModeReason = reason;
         setViewMode(viewMode);
     }
 
@@ -8129,176 +4997,59 @@ public class EditorBuffer implements TabContent {
         if (area2 != null) {
             toggleStyleClass(area2, "read-only", !editable);
         }
-        updateViewModeBar();
+        banners.updateViewModeBar();
     }
 
-    /** Lets the controller wire the banner's "Enable Editing" action (persist + refresh indicators). */
     public void setOnEnableEditing(Runnable onEnableEditing) {
-        this.onEnableEditing = onEnableEditing == null ? () -> setViewMode(false) : onEnableEditing;
+        banners.setOnEnableEditing(onEnableEditing);
     }
 
-    /**
-     * When true, a file that isn't writable on disk shows "Edit as Administrator" in the View-mode banner
-     * (Save then routes through an elevated write) rather than a dead-end "read-only on disk" note. The
-     * controller pushes this = admin-save enabled + the OS elevation tool is available + the file is local.
-     */
     public void setAdminEditAvailable(boolean available) {
-        if (available != adminEditAvailable) {
-            adminEditAvailable = available;
-            updateViewModeBar();
-        }
+        banners.setAdminEditAvailable(available);
     }
 
-    /**
-     * Whether the file's permissions allow writing it, from the layer that can tell: {@code Files.isWritable}
-     * answers yes for any existing SFTP file. {@code null} (the default) asks the file system directly.
-     */
     public void setWritableOnDisk(@Nullable Boolean writable) {
-        writableOnDisk = writable;
-        updateViewModeBar();
+        banners.setWritableOnDisk(writable);
     }
 
-    /**
-     * Shows/hides the MS-Word-style "View Mode" banner above the editor: visible only in user View mode
-     * (not huge-file mode, which can't be made editable). The "Enable Editing" button appears only when
-     * the file is writable; otherwise a "read-only on disk" note replaces it.
-     */
-    private void updateViewModeBar() {
-        boolean show = viewMode && !hugeFile;
-        if (show) {
-            ViewModeBar bar = viewModeBar != null ? viewModeBar : new ViewModeBar(() -> onEnableEditing.run());
-            viewModeBar = bar;
-            bar.setReason(viewModeReason);
-            Button editButton = bar.enableEditing();
-            Label note = bar.note();
-            boolean canEdit = path == null || (writableOnDisk != null ? writableOnDisk : Files.isWritable(path));
-            // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
-            // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save
-            // through the elevated write.
-            boolean adminOffer = !canEdit && adminEditAvailable;
-            editButton.setText(tr(adminOffer ? "viewmode.editAsAdmin" : "viewmode.enableEditing"));
-            // A filtered log is a read-only subset whatever the mode: offering to edit it would do nothing.
-            boolean offer = (canEdit || adminOffer) && !logView.filtered();
-            editButton.setVisible(offer);
-            editButton.setManaged(offer);
-            note.setVisible(!canEdit && !adminOffer);
-            note.setManaged(!canEdit && !adminOffer);
-        }
-        viewModeBarVisible = show;
-        refreshTopBars();
-    }
-
-    /** Puts the active top bars into {@code outer.setTop}: the install banner above the view-mode banner
-     *  (a {@code VBox} when both show), or {@code null} when neither does. */
     public void refreshTopBars() {
-        java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
-        if (encryption.notice() != null) {
-            bars.add(encryption.notice());
-        }
-        if (fileNoticeShown && fileNotice != null) {
-            bars.add(fileNotice.node());
-        }
-        if (installBarShown && installBar != null) {
-            bars.add(installBar.node());
-        }
-        if (viewModeBarVisible && viewModeBar != null) {
-            bars.add(viewModeBar.node());
-        }
-        bars.addAll(narrowView.bars()); // the narrowing banner, nearest the text: it describes the text
-        if (logControl != null) {
-            bars.add(logControl);
-        }
-        if (bars.isEmpty()) {
-            outer.setTop(null);
-        } else if (bars.size() == 1) {
-            outer.setTop(bars.get(0));
-        } else {
-            outer.setTop(new javafx.scene.layout.VBox(bars.toArray(new javafx.scene.Node[0])));
-        }
+        banners.refreshTopBars();
     }
 
-    /**
-     * Sets the install banner's content + actions (built lazily). Shown/hidden via {@link #showInstallBar}.
-     * {@code onInstall}/{@code onDismiss} are wired by MainController; the banner stays toolkit-only.
-     */
     public void setInstallPrompt(String message, String actionLabel, Runnable onInstall, Runnable onDismiss) {
-        if (installBar == null) {
-            installBar = new NoticeBar(tr("install.banner.dismiss"), "lsp-install-bar");
-        }
-        installBar.set(message, actionLabel, onInstall, onDismiss);
+        banners.setInstallPrompt(message, actionLabel, onInstall, onDismiss);
     }
 
-    /** Shows or hides the install banner (no-op visual until {@link #setInstallPrompt} has set content). */
     public void showInstallBar(boolean show) {
-        installBarShown = show && installBar != null;
-        refreshTopBars();
+        banners.showInstallBar(show);
     }
 
     public boolean isInstallBarShown() {
-        return installBarShown;
+        return banners.isInstallBarShown();
     }
 
-    /** Reflects an in-progress install: spins the indicator + disables the buttons. */
     public void setInstallBarBusy(boolean busy) {
-        if (installBar != null) {
-            installBar.setBusy(busy);
-        }
+        banners.setInstallBarBusy(busy);
     }
 
-    /** Shows a notice about the file above the editor, with one action; dismissing it only hides it. */
     public void showFileNotice(String message, String actionLabel, String dismissLabel, Runnable onAction) {
-        fileNotice = new NoticeBar(dismissLabel, "lsp-install-bar", "file-notice-bar");
-        fileNotice.set(message, actionLabel, onAction, this::hideFileNotice);
-        fileNoticeShown = true;
-        refreshTopBars();
+        banners.showFileNotice(message, actionLabel, dismissLabel, onAction);
     }
 
     public void hideFileNotice() {
-        fileNoticeShown = false;
-        refreshTopBars();
+        banners.hideFileNotice();
     }
 
-    /** The file notice's message while it is shown, else null. */
     public @Nullable String fileNoticeText() {
-        return fileNoticeShown && fileNotice != null ? fileNotice.text() : null;
+        return banners.fileNoticeText();
     }
 
-    /**
-     * Pager-style navigation while in read-only View mode: an unmodified Space pages down and Backspace
-     * pages up (like {@code less}/man). Installed as a key <em>filter</em> so it runs before RichTextFX's
-     * own (no-op, since non-editable) handling, and only acts while {@link #viewMode} is on — normal
-     * editing keeps Space/Backspace untouched. Modifier combos (Ctrl/Alt/Meta) are left for the keymap.
-     */
-    private void addViewModePaging(CodeArea a) {
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (!viewMode || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
-                return;
-            }
-            if (e.getCode() == KeyCode.SPACE) {
-                a.nextPage(SelectionPolicy.CLEAR);
-                e.consume();
-            } else if (e.getCode() == KeyCode.BACK_SPACE) {
-                a.prevPage(SelectionPolicy.CLEAR);
-                e.consume();
-            }
-        });
-    }
-
-    /** Injects the snippet lookup used by Tab-expand (set by the controller). */
     public void setSnippetProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
-        if (provider != null) {
-            this.snippetProvider = provider;
-        }
+        snippetKeys.setSnippetProvider(provider);
     }
 
-    /** Injects the lookup for every snippet a completion may offer for a typed trigger, list-only ones too. */
     public void setSnippetOfferProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
-        if (provider != null) {
-            this.snippetOfferProvider = provider;
-        }
+        snippetKeys.setSnippetOfferProvider(provider);
     }
 
     /** True while a snippet's tab stops are being navigated (Tab cycles fields). */
@@ -8306,16 +5057,13 @@ public class EditorBuffer implements TabContent {
         return snippetSession.isActive();
     }
 
-    /** {@code Settings.snippetTabExpansion}: whether Tab expands a trigger (the popup and picker always do). */
     public void setSnippetTabExpansion(boolean on) {
-        this.snippetTabExpansion = on;
+        snippetKeys.setSnippetTabExpansion(on);
     }
 
-    /** A file's project root ({@code WORKSPACE_*}), and who hears the active field's {position, count} (null = ended). */
     public void setSnippetHooks(
             java.util.function.UnaryOperator<@Nullable Path> root, java.util.function.Consumer<int[]> progress) {
-        this.snippetWorkspaceRoot = root == null ? file -> null : root;
-        this.snippetProgress = progress == null ? p -> {} : progress;
+        snippetKeys.setSnippetHooks(root, progress);
     }
 
     /** Leaves the running snippet session where the caret is (what Escape does). */
@@ -8323,326 +5071,9 @@ public class EditorBuffer implements TabContent {
         snippetSession.cancel();
     }
 
-    private void snippetSessionChanged() {
-        if (snippetOverlay == null && snippetSession.isActive()) {
-            snippetOverlay = attachLazyOverlay(new SnippetFieldOverlay(area, snippetSession), OverlayLayer.SNIPPET);
-        }
-        if (snippetOverlay != null) snippetOverlay.refresh();
-        snippetProgress.accept(snippetSession.progress());
-    }
-
-    /**
-     * Tab/Shift-Tab/Escape handling for snippets, as a key filter (runs before RichTextFX's own Tab
-     * indent). With an active snippet, Tab/Shift-Tab cycle fields and Escape cancels; otherwise Tab
-     * tries to expand the identifier before the caret and only consumes the event when one matched —
-     * so a plain Tab still indents.
-     */
-    private void addSnippetKeys(CodeArea a) {
-        // Typing a printable char into a MIRRORED snippet field is applied atomically (the char + its mirror
-        // update as one undo unit) so a single Ctrl-Z reverts them together instead of leaving the document
-        // half-reverted (#415). Only mirrored fields are intercepted; everything else (single-occurrence fields,
-        // newlines, control keys, paste) falls through to the normal insert + reactive mirror, which is already
-        // one undo unit when there's nothing to mirror.
-        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (e.isConsumed()) return;
-            if (!hasActiveSnippet() || multiCaretActiveOn(a) || !isEditable()) {
-                return;
-            }
-            String ch = e.getCharacter();
-            if (ch == null || ch.length() != 1 || e.isControlDown() || e.isMetaDown()) {
-                return;
-            }
-            char c = ch.charAt(0);
-            if (c < 0x20 || c == 0x7F) {
-                return; // control / non-printable (Enter, Tab, Backspace handled elsewhere)
-            }
-            // A bracket or quote is paired first (its mirrors follow reactively, as one undo step); the
-            // atomic path below would swallow the key before the auto-close filter saw it.
-            if (TypedText.isText(e) && applyAutoCloseTyped(a, c)
-                    || snippetSession.replaceInActiveField(
-                            a.getSelection().getStart(), a.getSelection().getEnd(), ch)) {
-                e.consume(); // handled atomically; don't let the area also insert the char
-            }
-        });
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.isConsumed()) return;
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            // ownsKeys applies the "caret has left the fields" rule first, so a session the caret walked
-            // away from never takes this Tab — it indents like any other.
-            if ((e.getCode() == KeyCode.TAB || e.getCode() == KeyCode.ESCAPE) && snippetSession.ownsKeys(a)) {
-                if (e.getCode() == KeyCode.TAB) {
-                    if (e.isShiftDown()) {
-                        snippetSession.previous();
-                    } else {
-                        snippetSession.next();
-                    }
-                    e.consume();
-                } else if (e.getCode() == KeyCode.ESCAPE) {
-                    snippetSession.cancel();
-                    e.consume();
-                }
-                return;
-            }
-            if (e.getCode() == KeyCode.TAB
-                    && !e.isControlDown()
-                    && !e.isAltDown()
-                    && !e.isMetaDown()
-                    && !completionActions.completionShowing()) {
-                // Plain Tab first tries to expand a snippet prefix; otherwise smart-indent (Shift-Tab
-                // always dedents). Skipped while a completion popup/ghost is showing, so Tab accepts
-                // the completion instead.
-                if (isMarkdown() && isEditable() && !hugeFile && markdownEditing.tab(a, !e.isShiftDown())) {
-                    e.consume(); // Tab/Shift-Tab: between table cells, or a list item in/out one level
-                } else if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
-                    e.consume();
-                } else if (!e.isShiftDown() && tryLspReindentLine(a)) {
-                    e.consume(); // LSP re-indents the current line (async); see tryLspReindentLine
-                } else if (applySmartTab(a, e.isShiftDown())) {
-                    e.consume();
-                }
-            }
-        });
-    }
-
-    /**
-     * Smart Tab / Shift-Tab via the pure {@link Indenter#smartTab}: block-indent a selection, indent the
-     * current line in leading whitespace, insert one indent unit mid-line, and Shift-Tab dedents — using
-     * the file's indent unit. Prose and unstyled languages get the same minus the context re-indent
-     * ({@link com.editora.editops.PlainTab}). Returns false (leaving the default Tab) only in
-     * read-only/large-file mode.
-     */
-    private boolean applySmartTab(CodeArea a, boolean shift) {
-        Indenter.TabEdit edit =
-                tabEdit(a.getSelection().getStart(), a.getSelection().getEnd(), shift);
-        if (edit == null) {
-            return false;
-        }
-        if (edit.from() != edit.to() || !edit.replacement().isEmpty()) {
-            a.replaceText(edit.from(), edit.to(), edit.replacement());
-        }
-        a.selectRange(edit.selStart(), edit.selEnd());
-        return true;
-    }
-
-    /** The Tab edit for one selection (every caret's, with several); null = leave the key. Smart Tab, or
-     *  for PLAIN (prose/plaintext) no context re-indent but still the file's indent unit — both computed
-     *  from the lines around the selection, not from the whole document. */
-    private Indenter.@Nullable TabEdit tabEdit(int selStart, int selEnd, boolean shift) {
-        if (!isEditable() || hugeFile) {
-            return null;
-        }
-        return IndentWindow.tabEdit(IndentKeys.doc(area), selStart, selEnd, language, tabSize, shift, indentUnit());
-    }
-
     /** The indent unit for this buffer: the EditorConfig override, else the document's own (cached). */
     public String indentUnit() {
         return indentKeys.unit(tabSize, indentInsertSpacesOverride, indentSizeOverride);
-    }
-
-    /**
-     * Plain Tab re-indents the current line to the language server's convention (the chosen behavior:
-     * indentation only, not a full line reformat). Returns {@code true} when it takes over the keystroke
-     * (LSP active + the server supports range formatting + a single caret on a non-blank line) and kicks
-     * off an async request; the result adjusts only the line's leading whitespace. Returns {@code false}
-     * to fall back to the normal smart-Tab indent (no server, unsupported, blank line, or a selection).
-     */
-    private boolean tryLspReindentLine(CodeArea a) {
-        if (!lspActive || !lspRangeFormatAvailable || lspRangeFormatter == null) {
-            return false;
-        }
-        if (!isEditable() || hugeFile || largeFile || a.getSelection().getLength() > 0) {
-            return false;
-        }
-        int par = a.getCurrentParagraph();
-        String line = a.getParagraph(par).getText();
-        // Formatters strip a blank line's whitespace, so they can't indent a fresh line you're about to type on, and
-        // an HTML page's <pre> or <script> line is not theirs to indent (B102): leave those to the local smart Tab.
-        if (line.isBlank() || !IndentWindow.serverReindents(IndentKeys.doc(a), a.getCaretPosition(), language)) {
-            return false;
-        }
-        int caret = a.getCaretPosition();
-        long gen = ++reindentGen;
-        int from = Math.max(0, par - 1); // from the line break: lemminx indents by editing it (XML review B4)
-        lspRangeFormatter.format(from, par == 0 ? 0 : a.getParagraphLength(from), par, line.length(), edits -> {
-            if (gen != reindentGen
-                    || a.getScene() == null
-                    || a.getCurrentParagraph() != par
-                    || !a.getParagraph(par).getText().equals(line)) {
-                return; // stale, detached, or the line changed under us
-            }
-            if (!applyLspLineIndent(a, par, line, caret, edits, true) && a.getCaretPosition() == caret) {
-                applySmartTab(a, false); // no usable indent: Tab still does what it does without a server
-            }
-        });
-        return true;
-    }
-
-    /**
-     * Adopts the formatter's leading whitespace for the current line, leaving the rest of the line as-is.
-     *
-     * <p>{@code fromTab} distinguishes the two callers, and only matters when the indent is already right:
-     * a Tab pressed from inside the leading whitespace must still put the caret where typing starts (the
-     * same rule the re-indent below applies), whereas on-type formatting fires while the user is typing and
-     * must never move the caret out from under them. False when the answer gives no usable indent.
-     */
-    private boolean applyLspLineIndent(
-            CodeArea a, int par, String line, int caret, java.util.List<LspTextEdit> edits, boolean fromTab) {
-        String newIndent = LineIndent.formattedIndent(line, edits, par);
-        if (newIndent == null) {
-            return false; // unusable (multi-line) result → leave the line untouched
-        }
-        String oldIndent = LineIndent.leadingWhitespace(line);
-        if (newIndent.equals(oldIndent)) {
-            // Already correctly indented: no edit, but Tab from within the indent still moves the caret to
-            // its end — otherwise Tab looks like it did nothing at all.
-            int indentEnd = a.getAbsolutePosition(par, 0) + oldIndent.length();
-            if (fromTab && caret < indentEnd && indentEnd <= a.getLength()) {
-                a.moveTo(indentEnd);
-            }
-            return true;
-        }
-        int lineStart = a.getAbsolutePosition(par, 0);
-        int oldEnd = lineStart + oldIndent.length();
-        a.replaceText(lineStart, oldEnd, newIndent);
-        int delta = newIndent.length() - oldIndent.length();
-        int newCaret = caret <= oldEnd ? lineStart + newIndent.length() : caret + delta;
-        newCaret = Math.max(lineStart, Math.min(newCaret, a.getLength()));
-        a.moveTo(newCaret);
-        // Re-indenting isn't the user typing a word — don't let the edit we just made pop the completion.
-        completionActions.suppressCompletionAt(docVersion);
-        return true;
-    }
-
-    /**
-     * Auto/smart indentation (installed on {@code area}/{@code area2}). On <b>Enter</b>, inserts a
-     * newline indented per {@link Indenter} (inherit + block-opener +1 + matching-pair split). When a
-     * <b>closing token</b> is typed — a {@code )]}} bracket alone on the line, or a closer keyword like
-     * {@code end}/{@code fi} completed — the line is re-aligned to its opener's indent. Inert in
-     * read-only mode. Inside a snippet field these assists work as anywhere else: the session's range
-     * tracking absorbs their edits.
-     */
-    private void addAutoIndent(CodeArea a) {
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.isConsumed()) return;
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (e.getCode() != KeyCode.ENTER
-                    || e.isShiftDown()
-                    || e.isControlDown()
-                    || e.isAltDown()
-                    || e.isMetaDown()) {
-                return;
-            }
-            if (!isEditable()) {
-                return;
-            }
-            applyEnter(a);
-            e.consume(); // we inserted the newline+indent ourselves
-        });
-        // Smart backspace: when the caret is in a line's leading whitespace, one Backspace clears the
-        // whole indent — and on an otherwise-blank (auto-indented) line it also removes the newline, so
-        // a single press jumps back to the end of the previous line ("back to where you hit Enter").
-        // Only consumes when it removes more than one char, so a normal single-char Backspace still runs
-        // everywhere else. The auto-close empty-pair handler is registered earlier and gets first dibs: it
-        // consumes when it deletes a pair, but JavaFX runs *every* filter on a node regardless of consume()
-        // (consume only stops propagation to other nodes), so we must re-check isConsumed() here ourselves —
-        // otherwise Backspace on an empty pair inside leading whitespace deletes the pair AND the indent.
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.isConsumed()) { // the empty-pair handler already consumed this Backspace
-                return;
-            }
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (e.getCode() != KeyCode.BACK_SPACE
-                    || viewMode
-                    || !isEditable()
-                    || e.isControlDown()
-                    || e.isAltDown()
-                    || e.isMetaDown()
-                    || e.isShiftDown()
-                    || a.getSelection().getLength() > 0) {
-                return;
-            }
-            int par = a.getCurrentParagraph();
-            int lineStart = a.getAbsolutePosition(par, 0);
-            int caret = a.getCaretPosition();
-            int col = caret - lineStart;
-            if (col <= 0) {
-                return; // at column 0 — let normal Backspace join the previous line
-            }
-            String line = a.getParagraph(par).getText();
-            // Markdown: Backspace at the end of an empty list/quote item ("- ", "1. ", "> ", "- [ ] ")
-            // steps out one level (a nested item moves to its parent's level, a top-level one is cleared).
-            if (isMarkdown() && markdownEditing.backspace(a)) {
-                e.consume();
-                return;
-            }
-            int marker = isTypst() ? TypstMarkup.emptyMarkerDeleteLength(line, col) : 0;
-            if (marker > 0) {
-                a.deleteText(caret - marker, caret);
-                e.consume();
-                return;
-            }
-            int del = Indenter.smartBackspaceCount(
-                    line.substring(0, col), line.substring(col), par > 0, language, indentUnit(), tabSize);
-            if (del > 1) {
-                a.deleteText(caret - del, caret);
-                e.consume();
-            }
-        });
-        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (e.isConsumed()) { // the auto-close KEY_TYPED handler (registered earlier) already acted
-                return;
-            }
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (!isEditable()
-                    || e.getCharacter().length() != 1
-                    || !TypedText.isText(e)
-                    || a.getSelection().getLength() > 0) {
-                return;
-            }
-            char typed = e.getCharacter().charAt(0);
-            if (typed == '*' && closeJavadocOpening(a)) {
-                e.consume();
-                return;
-            }
-            // Fires while the caret is still where the user typed and the document has no ';' yet — the
-            // state the server's answer is expressed in. Never consumes, so the char inserts as normal.
-            maybeSmartSemicolon(a, typed); // #746
-            applyCloserDedent(a, typed);
-            // #740. Deferred: this filter runs BEFORE the character is inserted, and both the request's
-            // position and its staleness baseline must describe the line with the character in it.
-            Platform.runLater(() -> maybeOnTypeFormat(a, typed));
-        });
-    }
-
-    /**
-     * In Java with the language server on, the {@code *} that makes a line {@code /**} also closes it —
-     * {@code /**|*}{@code /} — and asks for completion there, where jdtls offers the declaration's Javadoc
-     * template ({@link CommentContinuation#closesDocOpening}). Enter instead still splits the comment.
-     */
-    private boolean closeJavadocOpening(CodeArea a) {
-        if (!lspActive || !"java".equals(language) || hugeFile) {
-            return false;
-        }
-        int caret = a.getCaretPosition();
-        String line = a.getParagraph(a.getCurrentParagraph()).getText();
-        int col = a.getCaretColumn();
-        String before = line.substring(0, col);
-        if (!before.strip().equals("/*") // cheap first: the whole text only on a "/*" line
-                || !CommentContinuation.closesDocOpening(a.getText(), caret, before, line.substring(col))) {
-            return false;
-        }
-        a.insertText(caret, "* */");
-        a.moveTo(caret + 1);
-        triggerCompletion();
-        return true;
     }
 
     /** Async smart-semicolon lookup; delivers the target {@code {line, character}} or null on the FX thread. */
@@ -8650,247 +5081,12 @@ public class EditorBuffer implements TabContent {
         void request(int line, int character, java.util.function.Consumer<int[]> callback);
     }
 
-    private @Nullable LspSmartSemicolonRequester smartSemicolonRequester;
-    /** {@code Settings.lspSmartSemicolon} — OFF by default, as in VS Code. */
-    private boolean smartSemicolonEnabled;
-
-    private long smartSemicolonGen;
-
     public void setLspSmartSemicolonRequester(LspSmartSemicolonRequester requester) {
-        this.smartSemicolonRequester = requester;
+        typingAids.setLspSmartSemicolonRequester(requester);
     }
 
     public void setSmartSemicolonEnabled(boolean enabled) {
-        this.smartSemicolonEnabled = enabled;
-    }
-
-    /**
-     * Smart-semicolon detection (#746): a {@code ;} typed part-way through an expression belongs at the end
-     * of the statement — {@code compute(1, 2|)} should become {@code compute(1, 2);|}.
-     *
-     * <p><b>Type first, correct after</b> — the semicolon is never held back waiting for the server. Making
-     * a keystroke wait on a round trip is exactly the latency the performance rules forbid, and a slow or
-     * cold server would let the character land after whatever was typed next. So the {@code ;} inserts
-     * normally and the answer, if it disagrees, moves it — as a single ranged {@code replaceText}, hence one
-     * undo step rather than a delete plus an insert.
-     *
-     * <p>The consequence, stated rather than hidden: if the user types straight through (a very common
-     * {@code ;}-then-Enter), {@link #docVersion} has moved by more than the semicolon and the correction is
-     * <b>dropped</b>. That is deliberate — the alternative is rewriting text the user has already moved past
-     * — and it leaves the semicolon exactly where it would have been with the feature off, never worse.
-     */
-    private void maybeSmartSemicolon(CodeArea a, char typed) {
-        if (typed != ';' || !smartSemicolonEnabled || !lspActive || smartSemicolonRequester == null) {
-            return;
-        }
-        if (!isEditable() || hugeFile || largeFile || isNarrowed()) {
-            return;
-        }
-        int typedAt = a.getCaretPosition();
-        int line = a.getCurrentParagraph();
-        int column = a.getCaretColumn();
-        long version = docVersion;
-        long gen = ++smartSemicolonGen;
-        sendLspChange(); // the position refers to the pre-';' text, so the server must have exactly that
-        smartSemicolonRequester.request(line, column, target -> {
-            // docVersion bumps once per change, so "+1" is precisely "only the semicolon landed since".
-            if (gen != smartSemicolonGen || target == null || a.getScene() == null || docVersion != version + 1) {
-                return;
-            }
-            moveTypedSemicolon(a, typedAt, line, column, target);
-        });
-    }
-
-    /**
-     * Moves the just-typed semicolon from {@code typedAt} to the server's target, which is expressed in
-     * <b>pre-insert</b> coordinates — so a target on the same line has to be shifted past the semicolon
-     * that now sits before it, while a target on a later line needs no adjustment (its columns are
-     * untouched and its absolute offset already includes the inserted character).
-     */
-    private void moveTypedSemicolon(CodeArea a, int typedAt, int typedLine, int typedColumn, int[] target) {
-        int targetPost;
-        try {
-            targetPost = target[0] == typedLine && target[1] >= typedColumn
-                    ? a.getAbsolutePosition(target[0], target[1] + 1)
-                    : a.getAbsolutePosition(target[0], target[1]);
-        } catch (RuntimeException outOfRange) {
-            return; // a target the document can no longer address
-        }
-        if (targetPost <= typedAt + 1 || targetPost > a.getLength()) {
-            return; // already where it was typed (the ordinary answer), or past the end
-        }
-        // Rewrite [typedAt, targetPost) as "the text after the semicolon, then the semicolon" — one edit,
-        // so one Ctrl-Z puts it back where it was typed.
-        a.replaceText(typedAt, targetPost, a.getText(typedAt + 1, targetPost) + ";");
-    }
-
-    /**
-     * On-type formatting (#740): after a character the server named as a trigger ({@code ;}, {@code }},
-     * {@code \n} for jdtls), ask it how the line should be indented and adopt only that.
-     *
-     * <p><b>The local assist runs first and the server refines it.</b> That is the resolution of the
-     * conflict between this and {@link #applyCloserDedent}/{@link #applyEnter}, which already act on
-     * {@code }} and Enter: making a very common keystroke wait on a round-trip would be felt, and the local
-     * result is usually already right — in which case {@link #applyLspLineIndent} finds the indent unchanged
-     * and does nothing at all. So the two never fight; the server only corrects a disagreement.
-     *
-     * <p>Indentation only, never a full reformat — the user is mid-edit, and rewriting the line under them
-     * is the behaviour that makes on-type formatting infuriating in other editors.
-     *
-     * <p>Inert unless the setting is on, the server advertises a trigger set containing this character, and
-     * the buffer is an editable, normal-sized, single-caret LSP buffer. A trigger
-     * consumed by auto-close (typing {@code }} to skip over an inserted one) doesn't reach here — that path
-     * leaves the line already correct.
-     */
-    private void maybeOnTypeFormat(CodeArea a, char typed) {
-        if (disposed || !onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
-            return;
-        }
-        if (!lspOnTypeTriggers.contains(typed)) {
-            return;
-        }
-        if (!isEditable() || hugeFile || largeFile || a.getSelection().getLength() > 0) {
-            return;
-        }
-        int par = a.getCurrentParagraph();
-        String line = a.getParagraph(par).getText();
-        int caret = a.getCaretPosition();
-        if (a.getCaretColumn() == 0 || line.charAt(a.getCaretColumn() - 1) != typed) {
-            return; // the keystroke did not insert its character after all
-        }
-        long gen = ++reindentGen; // shares the Tab re-indent's generation: both adjust the same line's indent
-        lspOnTypeFormatter.format(par, a.getCaretColumn(), typed, edits -> {
-            if (gen != reindentGen
-                    || a.getScene() == null
-                    || a.getCurrentParagraph() != par
-                    || !a.getParagraph(par).getText().equals(line)) {
-                return; // stale, detached, or the user kept typing and the line moved on
-            }
-            applyLspLineIndent(a, par, line, caret, edits, false);
-        });
-    }
-
-    /**
-     * The body of the Enter auto-indent (Markdown list/blockquote continuation, else {@link Indenter}):
-     * clears any selection, inserts the indented newline, and moves the caret. Shared by the {@code ENTER}
-     * key filter and macro replay ({@link #typeChar} for {@code '\n'}).
-     */
-    private void applyEnter(CodeArea a) {
-        if (a.getSelection().getLength() > 0) {
-            a.replaceSelection("");
-        }
-        int caret = a.getCaretPosition();
-        // Markdown: Enter inside a table or a list/quote item (continue it, or step out of an empty one).
-        if (isMarkdown() && markdownEditing.enter(a)) {
-            return;
-        }
-        // Typst list continuation, with its own markers (-, +, N. — never *, which is bold).
-        if (isTypst()) {
-            int par = a.getCurrentParagraph();
-            int lineStart = a.getAbsolutePosition(par, 0);
-            String line = a.getParagraph(par).getText();
-            int markerLen = TypstMarkup.markerLength(line);
-            if (markerLen > 0 && caret - lineStart >= markerLen) {
-                if (TypstMarkup.isEmptyItem(line)) {
-                    a.replaceText(lineStart, lineStart + line.length(), ""); // exit list (clear marker)
-                    a.requestFollowCaret();
-                    return;
-                }
-                String cont = TypstMarkup.continuation(line);
-                if (cont != null) {
-                    a.replaceText(caret, caret, "\n" + cont);
-                    a.moveTo(caret + 1 + cont.length());
-                    a.requestFollowCaret();
-                    return;
-                }
-            }
-        }
-        applyCloserDedent(a, '\n'); // Enter finishes a closer keyword (fi, end, done): align it first
-        caret = a.getCaretPosition();
-        int par = a.getCurrentParagraph(); // Enter between JSX tags goes a level in (A104), else the usual rules
-        Indenter.EnterEdit jsx = JsxContext.enter(
-                grammar, highlightLines, par, a.getParagraph(par).getText(), a.getCaretColumn(), indentUnit());
-        Indenter.EnterEdit edit =
-                jsx != null ? jsx : IndentWindow.enterEdit(IndentKeys.doc(a), caret, language, indentUnit());
-        a.replaceText(caret, caret, edit.insert());
-        a.moveTo(caret + edit.caretOffset());
-        a.requestFollowCaret();
-    }
-
-    /**
-     * Auto-close decision for a typed character (see {@link AutoClose}): insert a pair / type over a
-     * closer / wrap the selection. Returns {@code true} when it acted (so the caller consumes the event and
-     * skips normal insertion), {@code false} for ordinary typing. Shared by the auto-close key filter and
-     * macro replay ({@link #typeChar}).
-     */
-    private boolean applyAutoCloseTyped(CodeArea a, char c) {
-        if (autoCloseTags && tagTyping.typed(a, c, language)) {
-            return true; // html/xml: the > completed an open tag, or a hand-typed closer joined the one there
-        }
-        if (isMarkdown() && markdownEditing.typed(a, c)) {
-            return true; // emphasis wrap / pair, smart typography — before the generic bracket and quote pairs
-        }
-        if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
-            return false; // not a bracket or quote
-        }
-        int caret = a.getCaretPosition();
-        char next = caret < a.getLength() ? a.getText(caret, caret + 1).charAt(0) : 0;
-        boolean hasSel = a.getSelection().getLength() > 0;
-        int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
-        AutoClose.Decision d = AutoClose.decide(
-                c, a.getText(lineStart, caret), next, hasSel, language, TypingContext.inLiteral(a, caret, language));
-        switch (d.action()) {
-            case INSERT_PAIR -> {
-                a.replaceText(caret, caret, "" + c + d.closer());
-                a.moveTo(caret + 1);
-                return true;
-            }
-            case INSERT_TRIPLE -> { // the third quote of a Python triple quote: close it too
-                a.replaceText(caret, caret, String.valueOf(c).repeat(4));
-                a.moveTo(caret + 1);
-                return true;
-            }
-            case SKIP_OVER -> {
-                a.moveTo(caret + 1);
-                return true;
-            }
-            case WRAP_SELECTION -> {
-                int s = a.getSelection().getStart();
-                String sel = a.getSelectedText();
-                a.replaceText(s, a.getSelection().getEnd(), "" + c + sel + d.closer());
-                a.selectRange(s + 1, s + 1 + sel.length());
-                return true;
-            }
-            case NONE -> {
-                return false; // normal typing (and the auto-indent closer-dedent may run)
-            }
-        }
-        return false;
-    }
-
-    /**
-     * When a closing token is typed alone on a line (a {@code )]}} bracket, or the character/Enter that
-     * finishes a closer keyword like {@code end}/{@code fi}), re-aligns the line's indent to its opener. Does
-     * <em>not</em> insert {@code c} (the caller does). Shared by the key filters and macro replay.
-     */
-    private void applyCloserDedent(CodeArea a, char c) {
-        Indenter.Style style = IndentWindow.styleAt(IndentKeys.doc(a), a.getCaretPosition(), language, c);
-        int caret = a.getCaretPosition();
-        int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
-        String beforeCaret = a.getText(lineStart, caret);
-        boolean bracket = Indenter.isCloserChar(style, c) && !beforeCaret.isEmpty() && beforeCaret.isBlank();
-        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c, language);
-        if (!bracket && !keyword) {
-            return;
-        }
-        // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
-        String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = IndentWindow.closerAlignIndent(
-                style, IndentKeys.doc(a), caret, tabSize, currentIndent, c, indentUnit(), language);
-        if (!aligned.equals(currentIndent)) {
-            a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
-            a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
-        }
+        typingAids.setSmartSemicolonEnabled(enabled);
     }
 
     /**
@@ -8926,120 +5122,16 @@ public class EditorBuffer implements TabContent {
         return false;
     }
 
-    /**
-     * Replays a bare editing/navigation key press from a recorded macro — Backspace, Delete, an arrow,
-     * Home/End, Page Up/Down — by {@code KeyCode} name.
-     *
-     * <p>The token carries the modifiers ({@code BACK_SPACE}, {@code S-DOWN}, {@code C-LEFT}), because the
-     * area acts on modified variants too — Shift-Down extends the selection, Ctrl-Left goes a word left —
-     * and replaying those as a bare arrow would move the caret instead.
-     *
-     * <p>Unlike {@link #typeString}, there is no "apply" method to reuse here: the behavior of these keys
-     * lives in the area's own input map (and in the Backspace filters — smart-backspace, the auto-close
-     * empty-pair delete, the Markdown empty-marker delete). So this fires a real {@code KEY_PRESSED} at the
-     * focused area, which runs exactly the handlers a hand-pressed key runs. Recording only ever captures
-     * keys bound to no command, so the re-dispatch can't also fire a chord; the macro recorder is inert
-     * during replay in any case.
-     */
     public void pressKey(String macroKeyToken) {
-        com.editora.macro.MacroKey.Decoded k = com.editora.macro.MacroKey.decode(macroKeyToken);
-        if (k == null || !isEditable() || hugeFile) {
-            return;
-        }
-        KeyCode code;
-        try {
-            code = KeyCode.valueOf(k.keyCodeName());
-        } catch (IllegalArgumentException e) {
-            return; // a hand-edited macros.json / a step typed into the Settings editor
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        a.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, k.shift(), k.ctrl(), k.alt(), k.meta()));
+        typingAids.pressKey(macroKeyToken);
     }
 
-    /** Types a single character through the editor's typing assists. See {@link #typeString}. */
     public void typeChar(char c) {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        if (!isEditable() || hugeFile) {
-            return;
-        }
-        if (c == '\n' || c == '\r') {
-            applyEnter(a);
-            return;
-        }
-        if (c == '\t') {
-            if (!applySmartTab(a, false)) {
-                a.replaceSelection("\t");
-            }
-            a.requestFollowCaret();
-            return;
-        }
-        // Mirror the live KEY_TYPED order: auto-close first; if it didn't act, closer-dedent then insert.
-        if (applyAutoCloseTyped(a, c)) {
-            a.requestFollowCaret();
-            return;
-        }
-        if (a.getSelection().getLength() == 0) {
-            applyCloserDedent(a, c);
-        }
-        a.replaceSelection(String.valueOf(c));
-        a.requestFollowCaret();
-    }
-
-    /**
-     * Auto-closes brackets/quotes (installed on {@code area}/{@code area2}). A {@code KEY_TYPED} filter
-     * inserts the matching closer / types over an existing one / wraps a selection (see {@link AutoClose});
-     * a {@code KEY_PRESSED} filter removes both halves of an empty pair on Backspace. Added before
-     * {@link #addAutoIndent} so it sees the keystroke first; when it does nothing it leaves the event
-     * for normal typing (and the indent closer-dedent).
-     */
-    private void addAutoClose(CodeArea a) {
-        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (e.isConsumed()) return;
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (!isEditable() || e.getCharacter().length() != 1 || !TypedText.isText(e)) {
-                return;
-            }
-            char c = e.getCharacter().charAt(0);
-            if (applyAutoCloseTyped(a, c)) {
-                e.consume();
-            }
-        });
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.isConsumed()) return;
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (e.getCode() != KeyCode.BACK_SPACE
-                    || viewMode
-                    || !isEditable()
-                    || e.isControlDown()
-                    || e.isAltDown()
-                    || e.isMetaDown()
-                    || e.isShiftDown()
-                    || a.getSelection().getLength() > 0) {
-                return;
-            }
-            int caret = a.getCaretPosition();
-            if (caret <= 0 || caret >= a.getLength()) {
-                return;
-            }
-            if (autoCloseTags && tagTyping.backspace(a, language)) {
-                e.consume(); // a pending close-tag join takes back the last typed character (C22)
-                return;
-            }
-            char prev = a.getText(caret - 1, caret).charAt(0);
-            char next = a.getText(caret, caret + 1).charAt(0);
-            if (AutoClose.isEmptyPair(prev, next)) {
-                a.deleteText(caret - 1, caret + 1); // remove both halves of the empty pair
-                e.consume();
-            }
-        });
+        typingAids.typeChar(c);
     }
 
     /** Coalesces a matching-bracket recompute to the next pulse (caret moves rapidly while typing). */
-    private void scheduleBraceMatch() {
+    void scheduleBraceMatch() {
         if (braceMatchPending) {
             return;
         }
@@ -9075,7 +5167,7 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    private void clearBraceMatch() {
+    void clearBraceMatch() {
         if (completionActions.braceMatch() != null) {
             removeBraceClass(completionActions.braceMatch()[0]);
             removeBraceClass(completionActions.braceMatch()[1]);
@@ -9106,64 +5198,13 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Inserts a snippet from the picker, replacing the selection (if any), and starts its session. */
     public void insertSnippet(Snippet snippet) {
-        if (snippet == null || !isEditable()) {
-            return;
-        }
-        CodeArea a = focusedArea;
-        int from = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
-        int to = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : from;
-        int[] range = to > from ? SnippetTyping.wrappedRange(a.getText(), from, to) : new int[] {from, to};
-        startSnippet(a, snippet, range[0], range[1]);
-        a.requestFocus();
+        snippetKeys.insertSnippet(snippet);
     }
 
-    /** Expands the trigger before the caret if Tab may ({@link SnippetTyping#triggerAtCaret}); returns whether it did. */
-    private boolean expandPrefixAtCaret(CodeArea a) {
-        if (!isEditable() || !snippetTabExpansion || a.getSelection().getLength() > 0) {
-            return false;
-        }
-        com.editora.snippet.TabExpansion.Match m =
-                SnippetTyping.triggerAtCaret(a, language, isProse(), snippetProvider);
-        if (m != null) {
-            startSnippet(a, m.snippet(), m.start(), a.getCaretPosition());
-        }
-        return m != null;
-    }
-
-    /** Parses {@code snippet}, replaces {@code [from,to)} with the expansion, and begins a session. */
-    private void startSnippet(CodeArea a, Snippet snippet, int from, int to) {
-        startSnippet(a, snippet, from, to, true);
-    }
-
-    private void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
-        Path root = path == null ? null : snippetWorkspaceRoot.apply(path);
-        ParsedSnippet parsed = SnippetTyping.parse(snippet, a, from, to, path, language, root);
-        String currentLine = a.getParagraph(SnippetTyping.lineOf(a, from)).getText();
-        String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
-        // asIs (no reindent) keeps the text untouched; otherwise the body's indentation becomes the buffer's unit.
-        String unit = reindent ? indentUnit() : null;
-        snippetSession.start(a, parsed, from, to, indent, unit);
-    }
-
-    /**
-     * Inserts an already-parsed file template into this (typically empty, untitled) buffer over its full
-     * content, honoring the template's {@code ${cursor}} ({@code $0}) final caret and any {@code $1…} tab
-     * stops via a snippet session. No-op when not editable.
-     */
     public void applyTemplate(ParsedSnippet parsed) {
-        if (parsed == null || !isEditable()) {
-            return;
-        }
-        snippetSession.cancel();
-        snippetSession.start(area, parsed, 0, area.getLength(), "");
-        area.requestFocus();
+        snippetKeys.applyTemplate(parsed);
     }
-
-    // ---- Autocomplete (snippet + dictionary completions; see com.editora.completion) ----
-
-    // ---- AI inline completion (ghost text from an AI provider; see ui.AiCoordinator) ----
 
     /** Requests a short AI continuation of the text around the caret; the result must be delivered on
      *  the FX thread (null/empty = nothing to show). Kept editor-neutral so {@code editor} stays free
@@ -9188,7 +5229,7 @@ public class EditorBuffer implements TabContent {
      * Immutable whole-document text for the current version. Must be called on the FX thread, like
      * RichTextFX's {@code getText()}; repeated consumers of the same version receive the same String.
      */
-    private String documentTextSnapshot() {
+    String documentTextSnapshot() {
         return documentSnapshots.get(docVersion, area::getText).text();
     }
 
@@ -9401,7 +5442,8 @@ public class EditorBuffer implements TabContent {
         refilter.run();
         dirty.set(false);
         gitLines.reset(); // freshly loaded: buffer lines are the disk's lines again
-        recomputeRun(true); // detect a runnable file on load (drives the Run glyph), scanning off the FX thread
+        runGutter.recomputeRun(
+                true); // detect a runnable file on load (drives the Run glyph), scanning off the FX thread
     }
 
     /**
@@ -9426,7 +5468,7 @@ public class EditorBuffer implements TabContent {
         captureUndoCheckpoint();
         refilter.run();
         gitLines.reset(); // the disk's lines again
-        recomputeRun(true);
+        runGutter.recomputeRun(true);
     }
 
     /**
@@ -9486,143 +5528,46 @@ public class EditorBuffer implements TabContent {
         if (logView.filtered()) {
             return logView.fullText(); // the area shows only the matching lines
         }
-        return NarrowCarry.wholeText(narrowHeld, documentTextSnapshot());
+        return NarrowCarry.wholeText(narrowing.narrowHeld, documentTextSnapshot());
     }
 
     // --- Narrowing -------------------------------------------------------------------------------
 
     public boolean isNarrowed() {
-        return narrowHeld != null;
+        return narrowing.isNarrowed();
     }
 
-    /** Offset of the accessible region within the whole document (0 when widened). */
     public int narrowStart() {
-        return NarrowCarry.regionStart(narrowHeld);
+        return narrowing.narrowStart();
     }
 
-    /**
-     * Emacs {@code narrow-to-region}: makes only {@code [start, end)} accessible, holding the rest aside.
-     * Returns false when the request is not narrowable (an empty region, or a file large enough that
-     * swapping the text is not worth it).
-     *
-     * <p>The document text really is replaced, so anything reading {@code area.getText()} directly sees
-     * only the region — which is the point, and is why {@link #getContent()} exists to keep whole-file
-     * callers correct.
-     *
-     * <p><b>Undo history is dropped at the boundary.</b> The swap is itself an edit, and undoing across it
-     * would restore the whole document <em>into</em> the narrowed area while the hidden text is still held
-     * aside — duplicating the file. Rather than let that be reachable, both narrowing and widening clear
-     * the history of both split views and the Undo History checkpoints; edits made while narrowed undo
-     * normally.
-     */
     public boolean narrowTo(int start, int end) {
-        if (largeFile || hugeFile || logView.filtered()) {
-            return false;
-        }
-        // Offsets arrive in *area* coordinates (callers read them from the selection), which while
-        // already narrowed are relative to the region — so rebase them onto the document before widening,
-        // or re-narrowing would silently measure the new region from the top of the file instead.
-        int base = narrowStart();
-        NarrowCarry.Held narrowed = narrowHeld;
-        // Re-narrow from the whole document (narrowing does not nest, as in Emacs), without showing it widened.
-        List<FoldRegions.Region> regions = narrowed != null ? widenInternal(narrowed, false) : folds.regions();
-        String full = documentTextSnapshot(); // widened just above, so this is the whole document
-        int s = Math.max(0, Math.min(start + base, full.length()));
-        int e = Math.max(0, Math.min(end + base, full.length()));
-        if (s >= e) {
-            return false;
-        }
-        int caret = area.getCaretPosition();
-        int caret2 = area2 == null ? 0 : area2.getCaretPosition();
-        boolean hadHistory = hasUndoHistory();
-        clearBraceMatch(); // its offsets are the area's, which the swap changes
-        NarrowCarry.Held held = NarrowCarry.hold(area, full, s, e, symbols, regions);
-        narrowHeld = held; // set first: the swap fires the dirty listener, which reads getContent()
-        LineMarks.narrow(s, e, () -> NarrowCarry.narrow(area, s, e), bookmarks, breakpoints, notes, gitLines);
-        symbols = NarrowCarry.narrowSymbols(held); // before the regions: their listeners read the symbols
-        folds.carryRegions(NarrowCarry.narrowRegions(held));
-        forgetHistoryAtNarrowBoundary(hadHistory);
-        area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
-        area.requestFollowCaret();
-        moveSplitCaret(caret2 - s);
-        narrowView.narrowed(full, s, e, area2);
-        onNarrowChanged.run();
-        return true;
+        return narrowing.narrowTo(start, end);
     }
 
     public void setOnNarrowChanged(Runnable callback) {
-        this.onNarrowChanged = callback == null ? () -> {} : callback;
+        narrowing.setOnNarrowChanged(callback);
     }
 
-    /** The 0-based file line the region starts on (0 when widened): a narrowed buffer keeps the file's numbering. */
     public int narrowFirstLine() {
-        return narrowView.firstLine();
+        return narrowing.narrowFirstLine();
     }
 
-    /** Whether {@link #narrowTo} can take effect here: not a large, huge or filtered view, and editable or view-only. */
     public boolean canNarrow() {
-        return !largeFile && !hugeFile && !logView.filtered() && (isEditable() || isViewMode());
+        return narrowing.canNarrow();
     }
 
-    /** Emacs {@code widen}: restores access to the whole document. No-op when not narrowed. */
     public void widen() {
-        NarrowCarry.Held held = narrowHeld;
-        if (held == null) { // not narrowed
-            return;
-        }
-        widenInternal(held, true);
-        onNarrowChanged.run();
+        narrowing.widen();
     }
 
-    /** {@code held}: {@link #narrowHeld}. Returns the whole file's regions; a re-narrow (!shown) shows none of it. */
-    private List<FoldRegions.Region> widenInternal(NarrowCarry.Held held, boolean shown) {
-        int prefix = held.prefixText().length();
-        int caret = area.getCaretPosition();
-        int caret2 = area2 == null ? 0 : area2.getCaretPosition();
-        narrowHeld = null; // cleared first: the swap fires the dirty listener, which reads getContent()
-        boolean hadHistory = hasUndoHistory();
-        String region = documentTextSnapshot();
-        clearBraceMatch(); // its offsets are the area's, which the swap changes
-        int top = ScrollAnchor.firstVisibleLine(area); // the region's lines stay put on screen, as in Emacs
-        LineMarks.widen(() -> NarrowCarry.widen(area, held), bookmarks, breakpoints, notes, gitLines);
-        symbols = NarrowCarry.widenSymbols(held, region, symbols); // before the regions, as narrowTo
-        List<FoldRegions.Region> regions = NarrowCarry.widenRegions(held, region, folds.regions());
-        forgetHistoryAtNarrowBoundary(hadHistory);
-        area.moveTo(Math.min(prefix + caret, area.getLength()));
-        if (shown) { // a re-narrow's listeners (the Structure outline) must not see the whole file in between
-            folds.carryRegions(regions);
-            jumps.keepAtTop(area, held.firstLine() + Math.max(0, top), top < 0);
-        }
-        moveSplitCaret(prefix + caret2);
-        narrowView.widened(area2);
-        return regions;
-    }
-
-    /** Puts the split's second caret back after the document was replaced under it (narrowing, widening). */
-    private void moveSplitCaret(int to) {
-        if (area2 != null) {
-            area2.moveTo(Math.clamp(to, 0, area2.getLength()));
-            area2.requestFollowCaret();
-        }
-    }
-
-    /** Something an undo or an Undo History restore could bring back (more than the load's own baseline). */
-    private boolean hasUndoHistory() {
-        return area.isUndoAvailable() || area.isRedoAvailable() || undoHistory.size() > 1;
-    }
-
-    /** Whether a narrow/widen swap cleared a non-empty undo history since the last call: the UI says so. */
     public boolean takeHistoryDropped() {
-        boolean dropped = historyDropped;
-        historyDropped = false;
-        return dropped;
+        return narrowing.takeHistoryDropped();
     }
-
-    private boolean historyDropped;
 
     /** The undo stack and the Undo History checkpoints: neither may be replayed across the boundary. */
-    private void forgetHistoryAtNarrowBoundary(boolean hadHistory) {
-        historyDropped |= hadHistory;
+    void forgetHistoryAtNarrowBoundary(boolean hadHistory) {
+        narrowing.historyDropped |= hadHistory;
         area.getUndoManager().forgetHistory();
         undoHistory.clear();
         if (onUndoHistoryChanged != null) {
@@ -9681,7 +5626,7 @@ public class EditorBuffer implements TabContent {
         if (logView.filtered()) {
             return logView.fullLength();
         }
-        return area.getLength() + NarrowCarry.heldLength(narrowHeld);
+        return area.getLength() + NarrowCarry.heldLength(narrowing.narrowHeld);
     }
 
     public BooleanProperty dirtyProperty() {
@@ -9783,7 +5728,7 @@ public class EditorBuffer implements TabContent {
     public void acknowledgeSavedContent(
             long savedVersion, int savedLength, String savedTextFingerprint, String savedLineEnding) {
         SavedBaseline saved = savedVersion == docVersion
-                        && narrowHeld == null
+                        && narrowing.narrowHeld == null
                         && !logView.filtered()
                         && area.getLength() == savedLength
                 ? SavedBaseline.of(documentTextSnapshot(), savedTextFingerprint)
@@ -9830,146 +5775,5 @@ public class EditorBuffer implements TabContent {
     /** Sets a callback invoked (on the FX thread) whenever {@link #symbols()} changes. */
     public void setOnSymbolsChanged(Runnable callback) {
         this.onSymbolsChanged = callback == null ? () -> {} : callback;
-    }
-
-    /** Forces the next {@link #applyHighlighting()} to re-tokenize the whole document (e.g. after a
-     *  language/grammar change, where no text change occurred). */
-    private void invalidateHighlighting() {
-        highlightDirty.invalidate();
-        highlightLines = null;
-    }
-
-    /** Forgets the per-line tokenizer state and the structure symbols: no grammar pass owns the document. */
-    private void dropHighlightState() {
-        highlightLines = null;
-        if (!symbols.isEmpty()) {
-            symbols = List.of();
-            onSymbolsChanged.run();
-        }
-    }
-
-    /** Applies per-column rainbow CSV coloring over the whole document. The scan and span construction run
-     *  off the FX thread; only the guarded style application returns to it. */
-    private void applyCsvRainbow() {
-        dropHighlightState();
-        String text = documentTextSnapshot();
-        int len = text.length();
-        if (len == 0) {
-            return;
-        }
-        styled = true;
-        long version = docVersion;
-        long gen = ++highlightGen;
-        HIGHLIGHT_POOL.execute(() -> {
-            char delim = com.editora.csv.CsvParser.detectDelimiter(text);
-            StyleSpans<Collection<String>> spans = CsvRainbow.buildSpans(text, delim, CsvRainbow.COLORS);
-            Platform.runLater(() -> {
-                if (gen != highlightGen || version != docVersion || spans.length() != area.getLength()) {
-                    return;
-                }
-                ScrollAnchor.setStyleSpans(area, 0, spans);
-                scheduleBraceMatch();
-            });
-        });
-    }
-
-    private void applyHighlighting() {
-        if (disposed) {
-            return; // a closed buffer must not dispatch new passes (see the disposed field)
-        }
-        if (largeFile) {
-            dropHighlightState(); // large-file mode: leave the document as plain text
-            return;
-        }
-        if (highlightDeferred) {
-            highlightOwed = true; // the dirty range is kept; setHighlightDeferred(false) dispatches the pass
-            return;
-        }
-        if (csvRainbow && isCsv() && !heavyFile) {
-            applyCsvRainbow();
-            return;
-        }
-        if (grammar == null) {
-            // No grammar for this file type, so nothing to compute — and nothing to clear either, except
-            // once when a grammar or CSV pass had styled the document, and otherwise in the text typed
-            // since the last pause where it took on the style of its neighbour (a matched brace). Clearing
-            // the whole document at every pause restyled it for nothing and wiped the brace match.
-            dropHighlightState();
-            int length = area.getLength();
-            int from = styled ? 0 : highlightDirty.isClean() ? length : Math.min(highlightDirty.start(), length);
-            int to = styled ? length : Math.min(highlightDirty.end(), length);
-            int[] matched = styled ? null : completionActions.braceMatch(); // the live pair is not a leftover
-            if (styled) {
-                styled = false;
-                highlightGen++; // a pass still in flight must not style the document after this
-            }
-            highlightDirty.applied();
-            if (from < to && HighlightPass.anyStyled(area.getStyleSpans(from, to), from, matched)) {
-                area.clearStyle(from, to);
-                scheduleBraceMatch();
-            }
-            return;
-        }
-        // Tokenizing is O(lines), so a pass covers only the range edited since the last one applied and
-        // stops where the grammar state re-converges (see HighlightPass). The work runs on a background
-        // thread — tokenizing, the semantic and bracket overlays, the spliced per-line state — and the
-        // result is applied only if no newer pass was dispatched and the text is still the snapshot's.
-        styled = true;
-        java.util.List<SemanticToken> overlay = semanticOverlay();
-        long version = docVersion;
-        long gen = ++highlightGen;
-        HighlightPass.Request request = new HighlightPass.Request(
-                        documentTextSnapshot(),
-                        grammar,
-                        highlightLines,
-                        symbols,
-                        highlightDirty.isClean() ? -1 : highlightDirty.start(),
-                        highlightDirty.end(),
-                        bracketColors,
-                        overlay)
-                .withPreview( // a long file's screen is coloured before the rest is tokenized (review 2 E105)
-                        Math.max(ScrollAnchor.firstVisibleLine(area), area.getCurrentParagraph()) + 150,
-                        spans -> Platform.runLater(() -> {
-                            if (gen == highlightGen && version == docVersion) {
-                                ScrollAnchor.setStyleSpans(area, 0, spans);
-                            }
-                        }));
-        HighlightPass.submit(HIGHLIGHT_POOL, grammar, () -> {
-            HighlightPass.Result r;
-            try {
-                // The cancel check lets a superseded pass stop at the next line instead of finishing a
-                // doomed multi-MB tokenize while holding the shared grammar monitor (see analyzeFrom).
-                r = HighlightPass.run(request, () -> gen != highlightGen);
-            } catch (Exception | LinkageError e) {
-                return; // never let a grammar/engine fault kill the highlighter thread
-            }
-            if (r == null) {
-                return;
-            }
-            Platform.runLater(() -> {
-                // Superseded, or the text changed since the snapshot: what this pass owed stays in
-                // highlightDirty, so the next one covers it.
-                if (gen != highlightGen || version != docVersion) {
-                    return;
-                }
-                highlightDirty.applied();
-                highlightLines = r.lines();
-                if (r.spans() != null) {
-                    ScrollAnchor.setStyleSpans(area, r.fromOffset(), r.spans());
-                    scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
-                }
-                if (r.symbolsChanged()) {
-                    symbols = r.symbols();
-                    onSymbolsChanged.run();
-                }
-                if (semanticActive && semanticStale) {
-                    semanticDirty.include(r.fromOffset(), r.fromOffset() + r.length()); // overlay gone here
-                } else if (overlay != semanticOverlay() && r.spans() != null) {
-                    // Tokens arrived while this pass ran without them: restyle its range with the overlay.
-                    highlightDirty.include(r.fromOffset(), r.fromOffset() + r.length());
-                    applyHighlighting();
-                }
-            });
-        });
     }
 }

@@ -53,7 +53,8 @@ class JUnitEditorDebugFxTest {
         // The load's scan for test methods runs off the FX thread; the menu offers Debug once it has landed.
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
         while (FxTestSupport.callOnFx(
-                () -> ((java.util.Map<?, ?>) FxTestSupport.field(buffer, "testLines")).isEmpty())) {
+                () -> ((java.util.Map<?, ?>) FxTestSupport.field(FxTestSupport.field(buffer, "runGutter"), "testLines"))
+                        .isEmpty())) {
             assertTrue(System.nanoTime() < deadline, "the load's test scan never landed");
             Thread.sleep(10);
         }
@@ -66,7 +67,7 @@ class JUnitEditorDebugFxTest {
             stage.show();
             Event.fireEvent(
                     area, new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 50, 60, 50, 60, false, null));
-            ContextMenu menu = FxTestSupport.field(buffer, "contextMenu");
+            ContextMenu menu = FxTestSupport.field(FxTestSupport.field(buffer, "editorMenu"), "contextMenu");
             List<MenuItem> items = List.copyOf(menu.getItems());
             MenuItem debug = items.stream()
                     .filter(i -> tr("testrunner.menu.debugTest").equals(i.getText()))

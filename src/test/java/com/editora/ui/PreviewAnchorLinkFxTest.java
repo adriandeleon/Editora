@@ -55,7 +55,7 @@ class PreviewAnchorLinkFxTest {
 
     private static double topLine(EditorBuffer b) throws Exception {
         return FxTestSupport.callOnFx(() -> {
-            Object preview = FxTestSupport.field(b, "markdownPreview");
+            Object preview = FxTestSupport.field(FxTestSupport.field(b, "previewPanes"), "markdownPreview");
             return preview == null ? -1.0 : (Double) FxTestSupport.call(preview, "topLine", new Class<?>[] {});
         });
     }

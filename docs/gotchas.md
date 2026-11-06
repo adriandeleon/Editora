@@ -220,7 +220,7 @@ that **nothing ever stops**. Each call therefore registers a running `Timeline` 
 **permanently**. Measuring a *one-character* range takes a different path and allocates nothing.
 
 Measure a **one-character** range instead: `(abs, abs + 1)`, and at end-of-paragraph measure the last
-character and take its right edge — the same x the caret sits at. See `EditorBuffer.caretBounds` (root-local,
+character and take its right edge — the same x the caret sits at. See `BufferRuler.caretBounds` (root-local,
 for overlays) and `EditorBuffer.caretAnchorBounds` (screen, for caret-following popups).
 
 **Anchoring a popup needs a fallback chain, and this is the part that bites.** The leaking form measured

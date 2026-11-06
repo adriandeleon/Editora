@@ -78,7 +78,7 @@ class EditorInteractionFxTest {
                 screen.getCenterY(),
                 false,
                 null));
-        ContextMenu menu = EditorFx.field(buffer, "contextMenu");
+        ContextMenu menu = EditorFx.field(EditorFx.field(buffer, "editorMenu"), "contextMenu");
         assertTrue(menu.isShowing(), "the editor menu opened");
         return menu;
     }
@@ -142,14 +142,21 @@ class EditorInteractionFxTest {
 
             int methodLine = area.offsetToPosition(second, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                     .getMajor();
-            EditorFx.call(buffer, "onRunGlyph", new Class<?>[] {int.class}, methodLine);
+            EditorFx.call(EditorFx.field(buffer, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, methodLine);
             assertEquals(List.of("run:" + classTarget.className() + "#emptyOrderIsFree"), ran);
             assertEquals(
                     tr("testrunner.gutter.runMethod", "emptyOrderIsFree"),
-                    EditorFx.<String>call(buffer, "runGlyphTooltip", new Class<?>[] {int.class}, methodLine));
-            assertTrue(EditorFx.<Boolean>call(buffer, "isRunGlyphLine", new Class<?>[] {int.class}, methodLine));
-            assertFalse(EditorFx.<Boolean>call(buffer, "isRunGlyphLine", new Class<?>[] {int.class}, 0));
-            assertNull(EditorFx.<String>call(buffer, "runGlyphTooltip", new Class<?>[] {int.class}, 0));
+                    EditorFx.<String>call(
+                            EditorFx.field(buffer, "runGutter"),
+                            "runGlyphTooltip",
+                            new Class<?>[] {int.class},
+                            methodLine));
+            assertTrue(EditorFx.<Boolean>call(
+                    EditorFx.field(buffer, "runGutter"), "isRunGlyphLine", new Class<?>[] {int.class}, methodLine));
+            assertFalse(EditorFx.<Boolean>call(
+                    EditorFx.field(buffer, "runGutter"), "isRunGlyphLine", new Class<?>[] {int.class}, 0));
+            assertNull(EditorFx.<String>call(
+                    EditorFx.field(buffer, "runGutter"), "runGlyphTooltip", new Class<?>[] {int.class}, 0));
 
             Stage stage = EditorFx.show(buffer, 700, 420);
             ContextMenu menu = rightClick(buffer, second);
@@ -169,7 +176,7 @@ class EditorInteractionFxTest {
             onClass.hide();
 
             buffer.setTestRunHandler(null);
-            EditorFx.call(buffer, "onRunGlyph", new Class<?>[] {int.class}, methodLine);
+            EditorFx.call(EditorFx.field(buffer, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, methodLine);
             assertEquals(3, ran.size(), "with no handler the glyph does nothing");
             buffer.setTestGutterEnabled(false);
             assertNull(buffer.testClassTarget());
@@ -207,12 +214,17 @@ class EditorInteractionFxTest {
             buffer.getArea().moveTo(MAIN_CLASS.length());
             assertEquals(main, buffer.mainTargetAtCaret(), "caret below it: the nearest one above");
 
-            EditorFx.call(buffer, "onRunGlyph", new Class<?>[] {int.class}, main.line());
+            EditorFx.call(EditorFx.field(buffer, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, main.line());
             assertEquals(List.of("run:demo.Launcher"), ran);
             assertEquals(
                     tr("editmenu.runMainTooltip", "Launcher"),
-                    EditorFx.<String>call(buffer, "runGlyphTooltip", new Class<?>[] {int.class}, main.line()));
-            assertTrue(EditorFx.<Boolean>call(buffer, "isRunGlyphLine", new Class<?>[] {int.class}, main.line()));
+                    EditorFx.<String>call(
+                            EditorFx.field(buffer, "runGutter"),
+                            "runGlyphTooltip",
+                            new Class<?>[] {int.class},
+                            main.line()));
+            assertTrue(EditorFx.<Boolean>call(
+                    EditorFx.field(buffer, "runGutter"), "isRunGlyphLine", new Class<?>[] {int.class}, main.line()));
 
             Stage stage = EditorFx.show(buffer, 700, 420);
             ContextMenu menu = rightClick(buffer, MAIN_CLASS.indexOf("unrelated"));
@@ -225,7 +237,7 @@ class EditorInteractionFxTest {
 
             buffer.setMainRunHandler(null);
             buffer.setMainDebugHandler(null);
-            EditorFx.call(buffer, "onRunGlyph", new Class<?>[] {int.class}, main.line());
+            EditorFx.call(EditorFx.field(buffer, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, main.line());
             assertEquals(3, ran.size());
             stage.close();
             buffer.dispose();
@@ -247,12 +259,14 @@ class EditorInteractionFxTest {
             http.setHttpEnabled(true);
             assertTrue(http.isRunnable());
             assertEquals(1, runnableChanges.get());
-            assertTrue(EditorFx.<Boolean>call(http, "isRunGlyphLine", new Class<?>[] {int.class}, 0));
-            assertFalse(EditorFx.<Boolean>call(http, "isRunGlyphLine", new Class<?>[] {int.class}, 1));
-            EditorFx.call(http, "onRunGlyph", new Class<?>[] {int.class}, 3);
+            assertTrue(EditorFx.<Boolean>call(
+                    EditorFx.field(http, "runGutter"), "isRunGlyphLine", new Class<?>[] {int.class}, 0));
+            assertFalse(EditorFx.<Boolean>call(
+                    EditorFx.field(http, "runGutter"), "isRunGlyphLine", new Class<?>[] {int.class}, 1));
+            EditorFx.call(EditorFx.field(http, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, 3);
             assertEquals(List.of(3), requests);
             http.setHttpHooks(null);
-            EditorFx.call(http, "onRunGlyph", new Class<?>[] {int.class}, 0);
+            EditorFx.call(EditorFx.field(http, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, 0);
             assertEquals(1, requests.size());
             http.setOnRunnableChanged(null);
             http.setHttpEnabled(false);
@@ -268,7 +282,7 @@ class EditorInteractionFxTest {
             make.setRunEnabled(true);
             assertTrue(make.isMakefile());
             assertTrue(make.isRunnable());
-            java.util.Map<Integer, String> byLine = EditorFx.field(make, "makeTargets");
+            java.util.Map<Integer, String> byLine = EditorFx.field(EditorFx.field(make, "runGutter"), "makeTargets");
             assertEquals(java.util.Set.of("build", "test"), new java.util.HashSet<>(byLine.values()));
             int testLine = byLine.entrySet().stream()
                     .filter(e -> e.getValue().equals("test"))
@@ -279,13 +293,15 @@ class EditorInteractionFxTest {
             assertEquals("\t./a.out", make.lineText(recipeLine), "the line after the target is its recipe");
             assertEquals("", make.lineText(-1));
             assertEquals("", make.lineText(999));
-            assertTrue(EditorFx.<Boolean>call(make, "isRunGlyphLine", new Class<?>[] {int.class}, testLine));
-            assertFalse(EditorFx.<Boolean>call(make, "isRunGlyphLine", new Class<?>[] {int.class}, recipeLine));
-            EditorFx.call(make, "onRunGlyph", new Class<?>[] {int.class}, testLine);
-            EditorFx.call(make, "onRunGlyph", new Class<?>[] {int.class}, recipeLine);
+            assertTrue(EditorFx.<Boolean>call(
+                    EditorFx.field(make, "runGutter"), "isRunGlyphLine", new Class<?>[] {int.class}, testLine));
+            assertFalse(EditorFx.<Boolean>call(
+                    EditorFx.field(make, "runGutter"), "isRunGlyphLine", new Class<?>[] {int.class}, recipeLine));
+            EditorFx.call(EditorFx.field(make, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, testLine);
+            EditorFx.call(EditorFx.field(make, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, recipeLine);
             assertEquals(List.of("test"), targets);
             make.setMakeRunHandler(null);
-            EditorFx.call(make, "onRunGlyph", new Class<?>[] {int.class}, testLine);
+            EditorFx.call(EditorFx.field(make, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, testLine);
             assertEquals(1, targets.size());
 
             // A script: one entry glyph, the generic run handler.
@@ -294,12 +310,16 @@ class EditorInteractionFxTest {
             assertTrue(python.isPython());
             assertFalse(python.isShell());
             assertFalse(python.isCompactSource());
-            EditorFx.call(python, "onRunGlyph", new Class<?>[] {int.class}, 0); // nothing wired: no-op
+            EditorFx.call(
+                    EditorFx.field(python, "runGutter"),
+                    "onRunGlyph",
+                    new Class<?>[] {int.class},
+                    0); // nothing wired: no-op
             python.setRunHandler(runs::incrementAndGet);
             python.setRunEnabled(false);
             python.setRunEnabled(true);
             assertTrue(python.isRunnable());
-            EditorFx.call(python, "onRunGlyph", new Class<?>[] {int.class}, 0);
+            EditorFx.call(EditorFx.field(python, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, 0);
             assertEquals(1, runs.get());
 
             Stage stage = EditorFx.show(python, 600, 300);

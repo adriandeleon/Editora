@@ -57,7 +57,8 @@ class MultiCaretForeignEditFxTest {
     }
 
     private static Object manager(EditorBuffer b) {
-        return FxTestSupport.call(FxTestSupport.field(b, "multiCaret"), "getManager", new Class<?>[] {});
+        return FxTestSupport.call(
+                FxTestSupport.field(FxTestSupport.field(b, "caretOps"), "multiCaret"), "getManager", new Class<?>[] {});
     }
 
     /** A buffer in the window with the primary caret at {@code caret} and an extra one at each of {@code extras}. */
@@ -281,7 +282,7 @@ class MultiCaretForeignEditFxTest {
                 .getOnContextMenuRequested()
                 .handle(new javafx.scene.input.ContextMenuEvent(
                         javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null)));
-        return FxTestSupport.field(b, "contextMenu"); // built by the first request
+        return FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "contextMenu"); // built by the first request
     }
 
     private static javafx.scene.control.MenuItem item(javafx.scene.control.ContextMenu menu, String key) {

@@ -149,9 +149,9 @@ class ColumnRulerFxTest {
         return counter.get();
     }
 
-    /** The package-private test seam on {@code EditorBuffer} (classpath tests, so access is unrestricted). */
+    /** The package-private test seam on {@code BufferRuler} (classpath tests, so access is unrestricted). */
     private static AtomicInteger counter() throws Exception {
-        var f = EditorBuffer.class.getDeclaredField("RULER_MEASURES_FOR_TEST");
+        var f = Class.forName("com.editora.editor.BufferRuler").getDeclaredField("RULER_MEASURES_FOR_TEST");
         f.setAccessible(true);
         return (AtomicInteger) f.get(null);
     }

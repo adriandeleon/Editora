@@ -154,7 +154,7 @@ class MultiCaretEditingFxTest {
     private static void addCaret(EditorBuffer buffer, int primary, int extra) {
         CodeArea area = buffer.getArea();
         area.moveTo(primary);
-        Object controller = FxTestSupport.field(buffer, "multiCaret");
+        Object controller = FxTestSupport.field(FxTestSupport.field(buffer, "caretOps"), "multiCaret");
         Object manager = FxTestSupport.call(controller, "getManager", new Class<?>[] {});
         FxTestSupport.call(manager, "addCaretAt", new Class<?>[] {int.class}, extra);
     }

@@ -9,7 +9,7 @@ public final class EditorFxBridge {
 
     /** Every text run of {@code buffer}'s rendered preview, joined without separators inside a block. */
     public static String previewText(EditorBuffer buffer) {
-        MarkdownPreview preview = EditorFx.field(buffer, "markdownPreview");
+        MarkdownPreview preview = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "markdownPreview");
         StringBuilder sb = new StringBuilder();
         collect(preview.column(), sb);
         return sb.toString();

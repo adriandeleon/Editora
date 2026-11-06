@@ -154,9 +154,9 @@ class LineCommandFxTest {
 
     private static MultiCarets carets(EditorBuffer buffer) {
         try {
-            var f = EditorBuffer.class.getDeclaredField("multiCaret");
+            var f = BufferCarets.class.getDeclaredField("multiCaret");
             f.setAccessible(true);
-            return (MultiCarets) f.get(buffer);
+            return (MultiCarets) f.get(buffer.caretOps);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }

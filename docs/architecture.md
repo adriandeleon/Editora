@@ -125,6 +125,8 @@ completion, snippets). Anything with behaviour, state or I/O is injected rather 
 — e.g. `setSnippetProvider`, `setCompletionProvider`, `setMarkdownLintValidator`,
 `setLspCompletionProvider` — which is what keeps the `editor` package free of `ui`, `lsp`,
 `dap`, `git` and `process`. When you add an editor feature, follow that injection pattern. The
+buffer's larger feature parts (preview, typing assists, context menu, highlighting, …) live in
+package-private classes beside it; see [window coordinators](subsystems/window-coordinators.md). The
 `editor` package does import `config` and a set of pure parsers directly; the exact list is
 pinned by a test — see the [package map](#package-map) below. Sub-packages of `editor` (`editor.lsp`,
 `editor.markdown`, …) count as `editor` for that test: the ratchet keys on the first package segment.

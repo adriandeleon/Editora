@@ -535,16 +535,18 @@ class LspCoordinatorSyncFxTest {
     void navigationGatesAreRefreshedWhenACapabilityArrivesLater() throws Exception {
         EditorBuffer b = javaBuffer("A.java");
         sync(b);
-        assertFalse((Boolean) FxTestSupport.field(b, "lspImplementationAvailable"), "precondition: not advertised");
-        assertFalse((Boolean) FxTestSupport.field(b, "lspTypeDefinitionAvailable"));
+        assertFalse(
+                (Boolean) FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "lspImplementationAvailable"),
+                "precondition: not advertised");
+        assertFalse((Boolean) FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "lspTypeDefinitionAvailable"));
 
         LspTestHooks.registerCapability(manager, b.getPath(), "textDocument/implementation");
         LspTestHooks.registerCapability(manager, b.getPath(), "textDocument/typeDefinition");
         FxTestSupport.runOnFx(() -> {}); // the refresh hop to the FX thread
         FxTestSupport.runOnFx(coordinator::flushRefreshes); // capability refreshes are coalesced: end the window
 
-        assertTrue((Boolean) FxTestSupport.field(b, "lspImplementationAvailable"));
-        assertTrue((Boolean) FxTestSupport.field(b, "lspTypeDefinitionAvailable"));
+        assertTrue((Boolean) FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "lspImplementationAvailable"));
+        assertTrue((Boolean) FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "lspTypeDefinitionAvailable"));
     }
     // --- the Bash server and zsh startup files -------------------------------------------------------------
 

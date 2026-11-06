@@ -98,7 +98,7 @@ class AiContextMenuFxTest {
             CodeArea area = buffer.getArea();
             Event.fireEvent(
                     area, new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null));
-            ContextMenu menu = FxTestSupport.field(buffer, "contextMenu");
+            ContextMenu menu = FxTestSupport.field(FxTestSupport.field(buffer, "editorMenu"), "contextMenu");
             List<MenuItem> items = List.copyOf(menu.getItems());
             menu.hide();
             return items;

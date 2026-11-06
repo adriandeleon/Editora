@@ -71,11 +71,13 @@ class LargeFileOpenPerfFxTest {
             b.dispose();
             return b;
         });
-        long genAfterDispose = FxTestSupport.callOnFx(() -> FxTestSupport.<Long>field(buf, "highlightGen"));
+        long genAfterDispose = FxTestSupport.callOnFx(
+                () -> FxTestSupport.<Long>field(FxTestSupport.field(buf, "highlighter"), "highlightGen"));
         // Outlive the ~300 ms debounce with margin; applyHighlighting bumps highlightGen at dispatch, so
         // an unchanged gen is exactly "no new pass was dispatched".
         Thread.sleep(900);
-        long genLater = FxTestSupport.callOnFx(() -> FxTestSupport.<Long>field(buf, "highlightGen"));
+        long genLater = FxTestSupport.callOnFx(
+                () -> FxTestSupport.<Long>field(FxTestSupport.field(buf, "highlighter"), "highlightGen"));
         org.junit.jupiter.api.Assertions.assertEquals(
                 genAfterDispose, genLater, "the debounce pulse re-dispatched highlighting on a disposed buffer");
     }
