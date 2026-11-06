@@ -148,7 +148,22 @@ final class XmlFolderTrust {
 
     /** {@code serverId}'s start on {@code root} was withheld because the folder is not trusted (see LspManager). */
     void buildWithheld(String serverId, Path root) {
-        withheldBuilds.add(buildKey(serverId, root));
+        if (UntrustedBuilds.gated(serverId)) {
+            withheldBuilds.add(buildKey(serverId, root));
+        }
+    }
+
+    /**
+     * jdtls started on a folder that is not trusted, without the Maven or Gradle build there ({@link
+     * LspManager#setOnBuildNotLoaded}): its files say so and offer Trust Folder, which restarts it with the build.
+     */
+    void buildNotLoaded(String serverId, Path root) {
+        host.forEachBuffer(b -> {
+            if (serverId.equals(lsp.serverIdForBuffer(b))
+                    && LspCoordinator.sameLspRoot(lsp.lspRootFor(b, serverId), root)) {
+                afterSync(b);
+            }
+        });
     }
 
     private static String buildKey(String serverId, @Nullable Path root) {
@@ -248,8 +263,14 @@ final class XmlFolderTrust {
         }
     }
 
-    /** The status line when a server's start was withheld for trust: an untrusted pom's, else astro-ls's SDK. */
-    static String withheldStatus(String serverId) {
+    /**
+     * The status line when a server's start was withheld for trust: one that would run the folder's build, an
+     * untrusted pom's, else astro-ls's SDK.
+     */
+    String withheldStatus(String serverId) {
+        if (UntrustedBuilds.gated(serverId)) {
+            return buildNotice(serverId);
+        }
         return LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
                 ? tr("xml.trust.pomNotice")
                 : tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings"));

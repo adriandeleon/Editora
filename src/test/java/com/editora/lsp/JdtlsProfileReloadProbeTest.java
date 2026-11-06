@@ -87,6 +87,8 @@ class JdtlsProfileReloadProbeTest {
                 </plugin></plugins></build></project>
                 """.formatted(project.relativize(style)));
         LspManager m = new LspManager((f, d) -> {}, (t, msg) -> {});
+        m.setFolderTrust(folder ->
+                true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
         m.setJdtlsWorkspaceBase(Files.createDirectories(scratch.resolve("workspaces")));
         m.configure(true, Map.of("java", jdtls));
         try {

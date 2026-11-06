@@ -113,21 +113,24 @@ final class FxWindowFixture implements AutoCloseable {
         shared.getSettings().setRemoteExecution(false);
     }
 
-    /**
-     * Language servers start off in a fresh test window, as they did before they became the default: with them on,
-     * every code file a test opens would start whatever server this machine has installed. A test about them switches
-     * them on itself. A window on a config folder whose settings already say (a test that starts again on it) keeps
-     * what was saved there.
-     */
     /** Whether {@code dir}'s settings file already says whether language servers are on. */
     private static boolean savesLanguageServers(Path dir) throws IOException {
         Path file = dir.resolve("settings.json");
         return Files.exists(file) && Files.readString(file).contains("\"lspSupport\"");
     }
 
+    /**
+     * Language servers and debugging start off in a fresh test window, as before they became the default: with them on,
+     * every code file a test opens would start whatever server this machine has installed. A test about them switches
+     * them on itself. A window on a config folder whose settings already say (a test that starts again on it) keeps
+     * what was saved there.
+     */
     private static void quietLanguageServers(SharedConfig shared, boolean fresh) {
         if (fresh) {
             shared.getSettings().setLspSupport(false);
+            // Debugging too: on, a window detects the debug adapters in the background, and that detection could
+            // overwrite what a test set up by hand.
+            shared.getSettings().setDebugSupport(false);
         }
     }
 

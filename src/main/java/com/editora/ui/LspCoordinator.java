@@ -517,7 +517,7 @@ final class LspCoordinator {
         pythonInterpreters.setServerRoots(b -> lspRootFor(b, "python")); // the item shows what Pyright is told
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
-        lspManager.setOnBuildNotLoaded(this::onBuildNotLoaded);
+        lspManager.setOnBuildNotLoaded(xmlTrust::buildNotLoaded);
         lspManager.setOnSecondServer((serverId, root) -> host.setStatus(tr(
                 "status.lsp.secondServer",
                 serverLabel(serverId),
@@ -1013,10 +1013,7 @@ final class LspCoordinator {
      * inactive and the status line says why and names the command that trusts the folder.
      */
     private void onStartWithheld(String serverId, Path root) {
-        boolean build = com.editora.lsp.UntrustedBuilds.gated(serverId);
-        if (build) {
-            xmlTrust.buildWithheld(serverId, root); // its files offer Trust Folder
-        }
+        xmlTrust.buildWithheld(serverId, root); // a server that would run the folder's build: Trust Folder
         host.forEachBuffer(b -> {
             Path p = lspPath(b);
             if (p != null
@@ -1024,26 +1021,11 @@ final class LspCoordinator {
                     && sameLspRoot(lspRootFor(b, serverId), root)
                     && !lspManager.isManaged(p)) {
                 b.setLspActive(false);
-                if (build) {
-                    xmlTrust.afterSync(b);
-                }
-            }
-        });
-        // astro-ls's SDK, an untrusted pom (E1), or a server that would run the folder's build
-        host.setStatus(build ? xmlTrust.buildNotice(serverId) : XmlFolderTrust.withheldStatus(serverId));
-        updateStatusBar();
-    }
-
-    /**
-     * jdtls started on a folder that is not trusted, without the Maven or Gradle build there (see {@code
-     * UntrustedBuilds}): its files say so and offer Trust Folder, which restarts it with the build.
-     */
-    private void onBuildNotLoaded(String serverId, Path root) {
-        host.forEachBuffer(b -> {
-            if (serverId.equals(serverIdForBuffer(b)) && sameLspRoot(lspRootFor(b, serverId), root)) {
                 xmlTrust.afterSync(b);
             }
         });
+        host.setStatus(xmlTrust.withheldStatus(serverId)); // astro-ls's SDK, an untrusted pom (E1), or a build
+        updateStatusBar();
     }
 
     /**
