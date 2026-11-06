@@ -79,9 +79,9 @@ class SettingsTemplateRemoveFxTest {
     }
 
     private static void answer(SettingsWindow w, Predicate<Template> answer) throws Exception {
-        Field field = SettingsWindow.class.getDeclaredField("confirmTemplateRemoval");
+        Field field = SettingsSnippetPages.class.getDeclaredField("confirmTemplateRemoval");
         field.setAccessible(true);
-        field.set(w, answer);
+        field.set(FxTestSupport.field(w, "snippetPages"), answer);
     }
 
     @Test

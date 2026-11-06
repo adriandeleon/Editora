@@ -74,7 +74,7 @@ class PythonSettingsCardFxTest {
     void theInterpreterIsOnTheLspPageAndEditableWithDebuggingAndLspOff() throws Exception {
         assertFalse(settings.isDebugSupport(), "debugging is off (switched off in boot)");
         assertFalse(settings.isLspSupport(), "language servers are off (as a test window starts them)");
-        Map<String, TextField> fields = FxTestSupport.field(window, "debugCommandFields");
+        Map<String, TextField> fields = SettingsRig.control(window, "debugCommandFields");
         TextField python = fields.get("python");
         assertTrue(FxTestSupport.callOnFx(() -> inside(python, page(SettingsWindow.Category.LSP))));
         assertFalse(FxTestSupport.callOnFx(() -> inside(python, page(SettingsWindow.Category.DEBUG))));

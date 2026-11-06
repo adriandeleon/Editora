@@ -153,13 +153,13 @@ class SettingsFollowUpsFxTest {
                 SettingsWindow w = shown(fx.controller);
                 Settings s = fx.shared.getSettings();
                 Path file = fx.configDir.resolve("settings.json");
-                ComboBox<String> provider = FxTestSupport.field(w, "aiProviderCombo");
+                ComboBox<String> provider = SettingsRig.control(w, "aiProviderCombo");
                 var ai = com.editora.ai.AiProvider.from(provider.getValue());
                 Map<BuildTool, TextField> buildTools = FxTestSupport.field(w, "buildToolCommandFields");
 
                 Map<String, Supplier<String>> stored = new LinkedHashMap<>();
                 Map<String, TextField> fields = new LinkedHashMap<>();
-                fields.put("typst", FxTestSupport.field(w, "typstPathField"));
+                fields.put("typst", SettingsRig.control(w, "typstPathField"));
                 stored.put("typst", s::getTypstPath);
                 fields.put("ripgrep", FxTestSupport.field(w, "ripgrepCommandField"));
                 stored.put("ripgrep", s::getRipgrepCommand);
@@ -167,19 +167,19 @@ class SettingsFollowUpsFxTest {
                 stored.put("maven command", () -> BuildTool.MAVEN.commandIn(s));
                 fields.put("maven catalog", FxTestSupport.field(w, "mavenArchetypeCatalogField"));
                 stored.put("maven catalog", s::getMavenArchetypeCatalogUrlRaw);
-                fields.put("plugin registry", FxTestSupport.field(w, "pluginRegistryField"));
+                fields.put("plugin registry", SettingsRig.control(w, "pluginRegistryField"));
                 stored.put("plugin registry", s::getPluginRegistryUrlRaw);
-                fields.put("ai endpoint", FxTestSupport.field(w, "aiEndpointField"));
+                fields.put("ai endpoint", SettingsRig.control(w, "aiEndpointField"));
                 stored.put("ai endpoint", () -> s.getAiEndpointFor(ai));
-                fields.put("ai model", FxTestSupport.field(w, "aiModelField"));
+                fields.put("ai model", SettingsRig.control(w, "aiModelField"));
                 stored.put("ai model", () -> s.getAiModelFor(ai));
-                fields.put("ai key", FxTestSupport.field(w, "aiApiKeyField"));
+                fields.put("ai key", SettingsRig.control(w, "aiApiKeyField"));
                 stored.put("ai key", () -> s.getApiKeyFor(ai));
-                fields.put("ai completion model", FxTestSupport.field(w, "aiCompletionModelField"));
+                fields.put("ai completion model", SettingsRig.control(w, "aiCompletionModelField"));
                 stored.put("ai completion model", () -> s.getAiCompletionModelFor(ai));
-                fields.put("author", FxTestSupport.field(w, "templateAuthorField"));
+                fields.put("author", SettingsRig.control(w, "templateAuthorField"));
                 stored.put("author", s::getAuthorNameRaw);
-                fields.put("git", FxTestSupport.field(w, "gitPathField"));
+                fields.put("git", SettingsRig.control(w, "gitPathField"));
                 stored.put("git", s::getGitPath);
 
                 fields.forEach((name, field) -> {
@@ -401,7 +401,7 @@ class SettingsFollowUpsFxTest {
                     TextField language = tfs.get(3);
 
                     // A bundled template (not in the user set) whose description spans two lines.
-                    ObservableList<Template> items = FxTestSupport.field(w, "templateItems");
+                    ObservableList<Template> items = SettingsRig.control(w, "templateItems");
                     Template bundled = new Template(
                             "two-line",
                             "Two Line",
@@ -420,13 +420,13 @@ class SettingsFollowUpsFxTest {
                     language.setText(" java");
                     language.fireEvent(new ActionEvent()); // Enter applies it (there is no Save button)
                     assertEquals(List.of(), names(dir), "whitespace the save trims away is not an edit");
-                    java.util.Set<String> userIds = FxTestSupport.field(w, "templateUserIds");
+                    java.util.Set<String> userIds = SettingsRig.control(w, "templateUserIds");
                     assertFalse(userIds.contains("two-line"), "still a bundled template");
 
                     name.setText("Two Lines");
                     name.fireEvent(new ActionEvent());
                     assertEquals(List.of("two-line.json"), names(dir), "a real edit makes the user override");
-                    Template saved = FxTestSupport.<com.editora.template.TemplateRegistry>field(w, "templateRegistry")
+                    Template saved = SettingsRig.<com.editora.template.TemplateRegistry>control(w, "templateRegistry")
                             .userTemplates()
                             .stream()
                             .filter(t -> t.id().equals("two-line"))
@@ -462,7 +462,7 @@ class SettingsFollowUpsFxTest {
     }
 
     private static String listedChord(SettingsWindow window, String commandId) {
-        Map<String, HBox> rows = FxTestSupport.field(window, "shortcutRowsById");
+        Map<String, HBox> rows = SettingsRig.control(window, "shortcutRowsById");
         return all(rows.get(commandId), Label.class, new ArrayList<>()).get(1).getText();
     }
 
@@ -472,7 +472,7 @@ class SettingsFollowUpsFxTest {
     }
 
     private static javafx.scene.layout.Pane macroKeybindingRow(SettingsWindow w) {
-        MacroSettingsPane pane = FxTestSupport.field(w, "macroPane");
+        MacroSettingsPane pane = SettingsRig.control(w, "macroPane");
         return pane.keybindingRow();
     }
 
@@ -486,8 +486,8 @@ class SettingsFollowUpsFxTest {
             FxTestSupport.runOnFx(() -> {
                 SettingsWindow w = shown(fx.controller);
                 try {
-                    Label note = FxTestSupport.field(w, "macroNote");
-                    ComboBox<String> keymap = FxTestSupport.field(w, "keymapCombo");
+                    Label note = SettingsRig.control(w, "macroNote");
+                    ComboBox<String> keymap = SettingsRig.control(w, "keymapCombo");
                     keymap.setValue("emacs");
                     String start = tr("command.macro.startRecording");
                     assertTrue(note.getText().contains(chordOf(w, "macro.startRecording")), note.getText());
@@ -523,7 +523,11 @@ class SettingsFollowUpsFxTest {
 
                     // Bound from the Keymaps page (or by a keymap switch) while this macro stays selected.
                     FxTestSupport.call(
-                            w, "commitRecording", new Class<?>[] {String.class, String.class}, id, "C-M-S-F9");
+                            FxTestSupport.field(w, "keymapsPage"),
+                            "commitRecording",
+                            new Class<?>[] {String.class, String.class},
+                            id,
+                            "C-M-S-F9");
                     String chord = chordOf(w, id);
                     assertNotNull(chord);
                     assertEquals(chord, macroChordLabel(w).getText(), "the row shows the binding made elsewhere");
@@ -542,7 +546,7 @@ class SettingsFollowUpsFxTest {
                     javafx.scene.layout.Pane row = macroKeybindingRow(w);
                     Node capture = row.getChildren().get(0);
                     assertTrue(capture instanceof TextField);
-                    ComboBox<String> keymap = FxTestSupport.field(w, "keymapCombo");
+                    ComboBox<String> keymap = SettingsRig.control(w, "keymapCombo");
                     keymap.setValue("cua".equals(keymap.getValue()) ? "emacs" : "cua");
                     assertEquals(capture, row.getChildren().get(0), "a recording in progress is left alone");
                 } finally {
@@ -560,8 +564,8 @@ class SettingsFollowUpsFxTest {
                 SettingsWindow a = shown(fx.controller);
                 SettingsWindow b = shown(other);
                 try {
-                    ComboBox<String> keymapA = FxTestSupport.field(a, "keymapCombo");
-                    ComboBox<String> keymapB = FxTestSupport.field(b, "keymapCombo");
+                    ComboBox<String> keymapA = SettingsRig.control(a, "keymapCombo");
+                    ComboBox<String> keymapB = SettingsRig.control(b, "keymapCombo");
                     keymapA.setValue("emacs");
                     String emacsSave = chordOf(a, "file.save");
                     keymapA.setValue("cua");
@@ -570,7 +574,7 @@ class SettingsFollowUpsFxTest {
 
                     assertEquals("cua", keymapB.getValue(), "the other window's combo follows at once");
                     assertEquals(cuaSave, listedChord(b, "file.save"), "and so does its shortcut list");
-                    Map<String, Label> chipsB = FxTestSupport.field(b, "chordChips");
+                    Map<String, Label> chipsB = SettingsRig.control(b, "chordChips");
                     String blame = chordOf(b, "git.toggleBlame");
                     assertEquals(
                             blame == null ? "" : blame,
@@ -578,7 +582,11 @@ class SettingsFollowUpsFxTest {
 
                     // A single rebind made in A reaches B's list too.
                     FxTestSupport.call(
-                            a, "commitRecording", new Class<?>[] {String.class, String.class}, "file.save", "C-M-S-F7");
+                            FxTestSupport.field(a, "keymapsPage"),
+                            "commitRecording",
+                            new Class<?>[] {String.class, String.class},
+                            "file.save",
+                            "C-M-S-F7");
                     assertEquals(chordOf(a, "file.save"), listedChord(b, "file.save"));
                 } finally {
                     hide(a);
@@ -623,7 +631,7 @@ class SettingsFollowUpsFxTest {
                     SettingSwitch aiSwitch =
                             all(ai, SettingSwitch.class, new ArrayList<>()).get(0);
                     assertEquals(tr("settings.ai.enable"), aiSwitch.getAccessibleText());
-                    CheckBox master = FxTestSupport.field(w, "aiMasterCheck");
+                    CheckBox master = SettingsRig.control(w, "aiMasterCheck");
                     master.setSelected(true);
                     assertFalse(aiSwitch.isDisabled());
                     boolean aiWas = s.isAiSupport();

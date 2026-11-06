@@ -52,7 +52,7 @@ class MarkdownSettingsPageFxTest {
     }
 
     private static <T> T control(String name) {
-        return FxTestSupport.field(window, name);
+        return SettingsRig.control(window, name);
     }
 
     @Test

@@ -196,7 +196,7 @@ class SettingsLangsPagesFxTest {
         java.util.List<String> argv =
                 com.editora.lsp.LspServerRegistry.tokenize(com.editora.install.InstallCatalog.jvmClasspathCommand(
                         maven, com.editora.install.InstallCatalog.LEMMINX_MAIN_CLASS));
-        assertTrue(SettingsWindow.mavenInstallIncomplete(argv), "an empty folder is incomplete");
+        assertTrue(SettingsLspPage.mavenInstallIncomplete(argv), "an empty folder is incomplete");
         for (String name : java.util.List.of(
                 "org.eclipse.lemminx-0.30.1.jar",
                 "lemminx-maven-0.12.0.jar",
@@ -205,14 +205,14 @@ class SettingsLangsPagesFxTest {
                 "jsoup-1.14.3.jar")) {
             java.nio.file.Files.writeString(maven.resolve(name), "");
         }
-        assertFalse(SettingsWindow.mavenInstallIncomplete(argv), "complete");
+        assertFalse(SettingsLspPage.mavenInstallIncomplete(argv), "complete");
         java.util.List<String> gone =
                 com.editora.lsp.LspServerRegistry.tokenize(com.editora.install.InstallCatalog.jvmClasspathCommand(
                         dir.resolve("never-installed"), com.editora.install.InstallCatalog.LEMMINX_MAIN_CLASS));
         assertFalse(
-                SettingsWindow.mavenInstallIncomplete(gone), "no folder at all is \"not found\", not \"incomplete\"");
+                SettingsLspPage.mavenInstallIncomplete(gone), "no folder at all is \"not found\", not \"incomplete\"");
         assertFalse(
-                SettingsWindow.mavenInstallIncomplete(java.util.List.of("/home/me/lemminx-maven.sh")),
+                SettingsLspPage.mavenInstallIncomplete(java.util.List.of("/home/me/lemminx-maven.sh")),
                 "a launcher script has no folder");
     }
 

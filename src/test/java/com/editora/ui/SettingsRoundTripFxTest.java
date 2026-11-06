@@ -40,18 +40,20 @@ class SettingsRoundTripFxTest {
         FxTestSupport.bootToolkit();
     }
 
-    /** The window's switch, number and choice fields, by name. */
+    /** The window's switch, number and choice fields (its own and its page classes'), by name. */
     private static Map<String, Object> controls(SettingsWindow window) throws IllegalAccessException {
         Map<String, Object> out = new LinkedHashMap<>();
-        for (Field f : SettingsWindow.class.getDeclaredFields()) {
-            Class<?> t = f.getType();
-            if ((t == CheckBox.class || t == Spinner.class || t == ComboBox.class)
-                    && !NOT_ROUND_TRIPPED.contains(f.getName())
-                    && !java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
-                f.setAccessible(true);
-                Object c = f.get(window);
-                if (c != null) {
-                    out.put(f.getName(), c);
+        for (Object owner : window.controlOwners()) {
+            for (Field f : owner.getClass().getDeclaredFields()) {
+                Class<?> t = f.getType();
+                if ((t == CheckBox.class || t == Spinner.class || t == ComboBox.class)
+                        && !NOT_ROUND_TRIPPED.contains(f.getName())
+                        && !java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                    f.setAccessible(true);
+                    Object c = f.get(owner);
+                    if (c != null) {
+                        out.put(f.getName(), c);
+                    }
                 }
             }
         }

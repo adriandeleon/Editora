@@ -32,7 +32,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  * Which Settings rows show a value other than the default, and putting one row back to its default.
  *
  * <p>Each control of the window edits one {@code settings.json} key; the table {@code settings-controls.properties}
- * names it, by the control's field (or {@code mapField[key]} for a control kept in a map). A row's keys are those
+ * names it, by the control's field (or {@code mapField[key]} for a control kept in a map) in the window or the page
+ * class that holds it; the names are unique across them. A row's keys are those
  * of the controls inside it, and the row is modified when any of them differs from a fresh {@link Settings}.
  * {@code SettingsModifiedFxTest} changes every control and checks the table against the key the change wrote, so
  * a control added without an entry fails there.
@@ -51,16 +52,25 @@ final class SettingsModified {
     private final Map<Node, String> controlKeys = new IdentityHashMap<>();
     private final Map<Node, Set<String>> rowKeys = new IdentityHashMap<>();
 
-    /** Reads the controls of {@code window} (a {@link SettingsWindow}) and the keys the table gives them. */
-    SettingsModified(Object window) {
-        for (Field f : window.getClass().getDeclaredFields()) {
+    /**
+     * Reads the controls of {@code owners} (a {@link SettingsWindow} and its page classes, see {@link
+     * SettingsWindow#controlOwners}) and the keys the table gives them.
+     */
+    SettingsModified(List<Object> owners) {
+        for (Object owner : owners) {
+            read(owner);
+        }
+    }
+
+    private void read(Object owner) {
+        for (Field f : owner.getClass().getDeclaredFields()) {
             if (Modifier.isStatic(f.getModifiers())) {
                 continue;
             }
             Object value;
             try {
                 f.setAccessible(true);
-                value = f.get(window);
+                value = f.get(owner);
             } catch (ReflectiveOperationException | RuntimeException e) {
                 continue;
             }

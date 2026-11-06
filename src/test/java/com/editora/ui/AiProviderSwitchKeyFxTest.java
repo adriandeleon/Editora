@@ -80,8 +80,8 @@ class AiProviderSwitchKeyFxTest {
                 fx.controller.settingsWindow.show((Stage) FxTestSupport.field(fx.controller, "stage"));
             });
             SettingsWindow sw = fx.controller.settingsWindow;
-            ComboBox<String> provider = FxTestSupport.field(sw, "aiProviderCombo");
-            TextField endpoint = FxTestSupport.field(sw, "aiEndpointField");
+            ComboBox<String> provider = SettingsRig.control(sw, "aiProviderCombo");
+            TextField endpoint = SettingsRig.control(sw, "aiEndpointField");
 
             FxTestSupport.runOnFx(() -> provider.setValue("anthropic"));
             assertEquals(anthropicUrl, FxTestSupport.callOnFx(endpoint::getText), "Anthropic's own endpoint shows");

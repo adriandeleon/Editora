@@ -62,7 +62,7 @@ class SettingsPluginsFxTest {
     }
 
     static List<CheckBox> pluginRows(SettingsWindow w) {
-        VBox list = FxTestSupport.field(w, "pluginListBox");
+        VBox list = SettingsRig.control(w, "pluginListBox");
         return SettingsRemoteSitesFxTest.all(list, CheckBox.class, new ArrayList<>());
     }
 
@@ -71,7 +71,7 @@ class SettingsPluginsFxTest {
     void switchingPluginsOnMakesTheInstalledPluginsTickable() throws Exception {
         SettingsWindow w = showPlugins();
         FxTestSupport.runOnFx(() -> {
-            CheckBox master = FxTestSupport.field(w, "pluginCheck");
+            CheckBox master = SettingsRig.control(w, "pluginCheck");
             List<CheckBox> rows = pluginRows(w);
             assertEquals(2, rows.size());
             assertFalse(master.isSelected());
@@ -97,7 +97,7 @@ class SettingsPluginsFxTest {
     void aRegistryThatIsNotAnHttpsAddressIsRefusedWithTheReason() throws Exception {
         SettingsWindow w = showPlugins();
         FxTestSupport.runOnFx(() -> {
-            javafx.scene.control.TextField reg = FxTestSupport.field(w, "pluginRegistryField");
+            javafx.scene.control.TextField reg = SettingsRig.control(w, "pluginRegistryField");
             reg.setText("http://registry.example.invalid/index.json");
             reg.fireEvent(new javafx.event.ActionEvent());
             assertEquals("", fx.shared.getSettings().getPluginRegistryUrlRaw(), "the built-in registry stays");
@@ -125,7 +125,7 @@ class SettingsPluginsFxTest {
             shared.getPluginStore().setEnabled("hello-fake", true);
         });
         FxTestSupport.runOnFx(() -> {
-            VBox list = FxTestSupport.field(w, "pluginListBox");
+            VBox list = SettingsRig.control(w, "pluginListBox");
             assertTrue(
                     SettingsRemoteSitesFxTest.all(list, javafx.scene.control.Label.class, new ArrayList<>()).stream()
                             .noneMatch(l ->
@@ -139,7 +139,7 @@ class SettingsPluginsFxTest {
             assertFalse(fx.shared.getPluginStore().isEnabled("hello-fake"));
         });
         FxTestSupport.runOnFx(() -> {
-            VBox list = FxTestSupport.field(w, "pluginListBox");
+            VBox list = SettingsRig.control(w, "pluginListBox");
             // E12: the row is compared with what this session runs (the launch set), so it says so.
             assertTrue(SettingsRemoteSitesFxTest.all(list, javafx.scene.control.Label.class, new ArrayList<>()).stream()
                     .anyMatch(l -> l.isVisible()

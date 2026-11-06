@@ -17,18 +17,18 @@ class ShortcutFilterTest {
 
     @Test
     void everyWordMustMatchInAnyOrder() {
-        assertTrue(SettingsWindow.shortcutMatches(SAVE, "file save", null));
-        assertTrue(SettingsWindow.shortcutMatches(SAVE, "Save File", null));
-        assertTrue(SettingsWindow.shortcutMatches(SAVE, "", null));
-        assertFalse(SettingsWindow.shortcutMatches(SAVE, "file open", null));
+        assertTrue(SettingsKeymapsPage.shortcutMatches(SAVE, "file save", null));
+        assertTrue(SettingsKeymapsPage.shortcutMatches(SAVE, "Save File", null));
+        assertTrue(SettingsKeymapsPage.shortcutMatches(SAVE, "", null));
+        assertFalse(SettingsKeymapsPage.shortcutMatches(SAVE, "file open", null));
     }
 
     @Test
     void aTypedChordFindsItsCommandExactlyOrAsTheStartOfASequence() {
         // "C-s" or "Ctrl+S" typed under CUA: shown as Ctrl+S. It used to match Ctrl+Shift+S as text too.
-        assertTrue(SettingsWindow.shortcutMatches(SAVE, "C-s", "Ctrl+S"));
-        assertFalse(SettingsWindow.shortcutMatches(SAVE_AS, "C-s", "Ctrl+S"));
-        assertTrue(SettingsWindow.shortcutMatches(CLOSE, "Ctrl+K", "Ctrl+K"));
-        assertFalse(SettingsWindow.shortcutMatches(CLOSE, "Ctrl+W", "Ctrl+W"));
+        assertTrue(SettingsKeymapsPage.shortcutMatches(SAVE, "C-s", "Ctrl+S"));
+        assertFalse(SettingsKeymapsPage.shortcutMatches(SAVE_AS, "C-s", "Ctrl+S"));
+        assertTrue(SettingsKeymapsPage.shortcutMatches(CLOSE, "Ctrl+K", "Ctrl+K"));
+        assertFalse(SettingsKeymapsPage.shortcutMatches(CLOSE, "Ctrl+W", "Ctrl+W"));
     }
 }
