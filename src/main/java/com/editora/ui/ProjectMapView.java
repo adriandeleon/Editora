@@ -426,6 +426,25 @@ final class ProjectMapView extends VBox {
         options.getStyleClass().add("project-map-options");
         options.setMinWidth(Region.USE_PREF_SIZE);
         Icons.name(options, tr("project.map.options"));
+        // Each entry carries a glyph, the check marks of the options sitting in their own column beside it.
+        keepZoomOnOpen.setGraphic(Icons.keepZoom());
+        focusNewColumn.setGraphic(Icons.focusNewColumn());
+        singleClickOpens.setGraphic(Icons.pointer());
+        compactChainsOption.setGraphic(Icons.compactChains());
+        layoutCompactRowsOption.setGraphic(Icons.compactRows());
+        layoutHideIgnoredOption.setGraphic(Icons.hidden());
+        activityRecentChangesOption.setGraphic(Icons.recent());
+        hideOpenNotes.setGraphic(Icons.notesHidden());
+        followActiveFile.setGraphic(Icons.fileSelected());
+        canvasFlowMenu.setGraphic(Icons.flow());
+        layoutOverviewItem.setGraphic(Icons.overview());
+        openCardsMenu.setGraphic(Icons.cards());
+        canvasCollapseAllItem.setGraphic(Icons.collapseAll());
+        workingSets.menu().setGraphic(Icons.layers());
+        trails.menu().setGraphic(Icons.trail());
+        printButton.setGraphic(Icons.print());
+        exportPdfButton.setGraphic(Icons.exportDocument());
+        canvasExportMenu.setGraphic(Icons.image());
         options.getItems()
                 .addAll(
                         keepZoomOnOpen,
