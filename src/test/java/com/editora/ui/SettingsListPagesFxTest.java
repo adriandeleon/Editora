@@ -212,7 +212,7 @@ class SettingsListPagesFxTest {
                         .put(new Macro("m1", "Wrap Line", new ArrayList<>(List.of(MacroStep.text("a")))));
                 fx.shared.getMacroStore().put(new Macro("m2", "Other", new ArrayList<>(List.of(MacroStep.text("b")))));
                 w.refreshMacrosList();
-                MacroSettingsPane pane = FxTestSupport.field(w, "macroPane");
+                MacroSettingsPane pane = SettingsRig.control(w, "macroPane");
                 pane.macroList()
                         .getSelectionModel()
                         .select(pane.macroList().getItems().stream()
@@ -316,7 +316,7 @@ class SettingsListPagesFxTest {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "KEYMAPS"));
             FxTestSupport.runOnFx(() -> {
-                ScrollPane scroll = FxTestSupport.field(w, "shortcutScroll");
+                ScrollPane scroll = SettingsRig.control(w, "shortcutScroll");
                 stage(w).setHeight(760);
                 double small = scroll.getPrefHeight();
                 stage(w).setHeight(1000);

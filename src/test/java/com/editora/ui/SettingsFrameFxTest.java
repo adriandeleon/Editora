@@ -207,7 +207,7 @@ class SettingsFrameFxTest {
             }
             // A command name is found through the Keymaps list, and carried into its filter.
             search(search, "Duplicate Line");
-            TextField shortcutFilter = FxTestSupport.field(window, "shortcutFilter");
+            TextField shortcutFilter = SettingsRig.control(window, "shortcutFilter");
             FxTestSupport.runOnFx(() -> assertEquals("Duplicate Line", shortcutFilter.getText()));
             search(search, "");
             FxTestSupport.runOnFx(() -> assertEquals("", shortcutFilter.getText(), "clearing the search clears it"));

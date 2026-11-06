@@ -462,7 +462,7 @@ class SettingsFollowUpsFxTest {
     }
 
     private static String listedChord(SettingsWindow window, String commandId) {
-        Map<String, HBox> rows = FxTestSupport.field(window, "shortcutRowsById");
+        Map<String, HBox> rows = SettingsRig.control(window, "shortcutRowsById");
         return all(rows.get(commandId), Label.class, new ArrayList<>()).get(1).getText();
     }
 
@@ -472,7 +472,7 @@ class SettingsFollowUpsFxTest {
     }
 
     private static javafx.scene.layout.Pane macroKeybindingRow(SettingsWindow w) {
-        MacroSettingsPane pane = FxTestSupport.field(w, "macroPane");
+        MacroSettingsPane pane = SettingsRig.control(w, "macroPane");
         return pane.keybindingRow();
     }
 
@@ -486,8 +486,8 @@ class SettingsFollowUpsFxTest {
             FxTestSupport.runOnFx(() -> {
                 SettingsWindow w = shown(fx.controller);
                 try {
-                    Label note = FxTestSupport.field(w, "macroNote");
-                    ComboBox<String> keymap = FxTestSupport.field(w, "keymapCombo");
+                    Label note = SettingsRig.control(w, "macroNote");
+                    ComboBox<String> keymap = SettingsRig.control(w, "keymapCombo");
                     keymap.setValue("emacs");
                     String start = tr("command.macro.startRecording");
                     assertTrue(note.getText().contains(chordOf(w, "macro.startRecording")), note.getText());
@@ -523,7 +523,11 @@ class SettingsFollowUpsFxTest {
 
                     // Bound from the Keymaps page (or by a keymap switch) while this macro stays selected.
                     FxTestSupport.call(
-                            w, "commitRecording", new Class<?>[] {String.class, String.class}, id, "C-M-S-F9");
+                            FxTestSupport.field(w, "keymapsPage"),
+                            "commitRecording",
+                            new Class<?>[] {String.class, String.class},
+                            id,
+                            "C-M-S-F9");
                     String chord = chordOf(w, id);
                     assertNotNull(chord);
                     assertEquals(chord, macroChordLabel(w).getText(), "the row shows the binding made elsewhere");
@@ -542,7 +546,7 @@ class SettingsFollowUpsFxTest {
                     javafx.scene.layout.Pane row = macroKeybindingRow(w);
                     Node capture = row.getChildren().get(0);
                     assertTrue(capture instanceof TextField);
-                    ComboBox<String> keymap = FxTestSupport.field(w, "keymapCombo");
+                    ComboBox<String> keymap = SettingsRig.control(w, "keymapCombo");
                     keymap.setValue("cua".equals(keymap.getValue()) ? "emacs" : "cua");
                     assertEquals(capture, row.getChildren().get(0), "a recording in progress is left alone");
                 } finally {
@@ -560,8 +564,8 @@ class SettingsFollowUpsFxTest {
                 SettingsWindow a = shown(fx.controller);
                 SettingsWindow b = shown(other);
                 try {
-                    ComboBox<String> keymapA = FxTestSupport.field(a, "keymapCombo");
-                    ComboBox<String> keymapB = FxTestSupport.field(b, "keymapCombo");
+                    ComboBox<String> keymapA = SettingsRig.control(a, "keymapCombo");
+                    ComboBox<String> keymapB = SettingsRig.control(b, "keymapCombo");
                     keymapA.setValue("emacs");
                     String emacsSave = chordOf(a, "file.save");
                     keymapA.setValue("cua");
@@ -570,7 +574,7 @@ class SettingsFollowUpsFxTest {
 
                     assertEquals("cua", keymapB.getValue(), "the other window's combo follows at once");
                     assertEquals(cuaSave, listedChord(b, "file.save"), "and so does its shortcut list");
-                    Map<String, Label> chipsB = FxTestSupport.field(b, "chordChips");
+                    Map<String, Label> chipsB = SettingsRig.control(b, "chordChips");
                     String blame = chordOf(b, "git.toggleBlame");
                     assertEquals(
                             blame == null ? "" : blame,
@@ -578,7 +582,11 @@ class SettingsFollowUpsFxTest {
 
                     // A single rebind made in A reaches B's list too.
                     FxTestSupport.call(
-                            a, "commitRecording", new Class<?>[] {String.class, String.class}, "file.save", "C-M-S-F7");
+                            FxTestSupport.field(a, "keymapsPage"),
+                            "commitRecording",
+                            new Class<?>[] {String.class, String.class},
+                            "file.save",
+                            "C-M-S-F7");
                     assertEquals(chordOf(a, "file.save"), listedChord(b, "file.save"));
                 } finally {
                     hide(a);
