@@ -364,7 +364,7 @@ final class ProjectMapView extends VBox {
         VBox.setVgrow(getChildren().get(2), Priority.ALWAYS);
         surface.setOnActivate(this::activate);
         surface.setOnCloseColumn(this::closeColumn);
-        surface.setOnPreview(this::previewSelection);
+        surface.setOnPreview(this::toggleFileCard);
         surface.setOnStructure(this::toggleStructure);
         surface.setOnNotesPreview(this::cardsShowNotes);
         surface.onTogglePreview = this::togglePreview;
@@ -2440,6 +2440,26 @@ final class ProjectMapView extends VBox {
         } else if (entry.isFile()) {
             previewFileEntry(entry);
         }
+    }
+
+    /** The eye on a file row: its card opens, or closes when it is open already. */
+    private void toggleFileCard(Path path) {
+        ProjectMapPreview open = fileCard(path);
+        if (open != null) {
+            closePreview(open);
+        } else {
+            previewSelection(path);
+        }
+    }
+
+    /** The open card of the file at {@code path}, or null. */
+    private @Nullable ProjectMapPreview fileCard(Path path) {
+        return previews.get(path.toAbsolutePath().normalize());
+    }
+
+    /** Whether the file at {@code path} has its card open, so its eye closes it. */
+    boolean hasFileCard(Path path) {
+        return fileCard(path) != null;
     }
 
     /** The eye's action for {@code entry}, from a key or the row menu: the row is selected first. */

@@ -33,9 +33,9 @@ class ProjectMapCardStructureTest {
         assertEquals(
                 ProjectMapCardStructure.MIN_WIDTH, ProjectMapCardStructure.fit(0, 40, 30), "short rows: the floor");
         assertEquals(ProjectMapCardStructure.MAX_WIDTH, ProjectMapCardStructure.fit(0, 900, 30), "and a ceiling");
-        double shallow = ProjectMapCardStructure.fit(0, 300, 30);
-        assertTrue(shallow > 300 + 30, "room for the whole label and its line: " + shallow);
-        assertTrue(ProjectMapCardStructure.fit(2, 300, 30) > shallow, "a member sits deeper");
+        double shallow = ProjectMapCardStructure.fit(0, 200, 30);
+        assertTrue(shallow > 200 + 30, "room for the whole label and its line: " + shallow);
+        assertTrue(ProjectMapCardStructure.fit(2, 200, 30) > shallow, "a member sits deeper");
     }
 
     @Test

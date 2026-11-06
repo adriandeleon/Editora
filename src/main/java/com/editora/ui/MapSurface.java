@@ -4003,7 +4003,7 @@ final class MapSurface extends Region {
         g.stroke();
     }
 
-    /** The eye at the trailing end of a file row: it opens the floating preview, and says so on hover. */
+    /** The eye at the trailing end of a file row: it opens the floating preview, or closes it, and says so on hover. */
     private void drawPreviewAffordance(GraphicsContext g, NodeBox box, boolean onAccentFill, boolean rowHovered) {
         boolean hot = rowHovered && hoveredAffordance == Affordance.PREVIEW;
         double cx = box.x() + box.width() - PREVIEW_ZONE * zoom / 2;
@@ -4307,7 +4307,14 @@ final class MapSurface extends Region {
     /** What a click does on the part of the row under the pointer, or null where it is the row itself. */
     private @Nullable String affordanceHint(ProjectMapModel.Entry entry) {
         return switch (hoveredAffordance) {
-            case PREVIEW -> entry.isFile() ? tr("project.map.node.preview", entry.name()) : null;
+            case PREVIEW ->
+                !entry.isFile()
+                        ? null
+                        : tr(
+                                view.hasFileCard(entry.path())
+                                        ? "project.map.node.closePreview"
+                                        : "project.map.node.preview",
+                                entry.name());
             case STRUCTURE ->
                 tr(
                         view.structure.isOpen(entry.path())

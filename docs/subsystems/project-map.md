@@ -499,7 +499,7 @@ A file card whose file can be outlined has a **Structure** button in its title b
 **Structure column** beside the card (`ProjectMapCardStructure`): the same outline as the Map's Structure column,
 as an indented list in the same violet tint, with a lone top-level type opened. Each label is coloured as the
 card colours its declaration line (`StructurePanel.labelRuns` over the card's own `CodeArea`, again whenever the
-card's text or colours change), and the column is as wide as its longest row needs, between 240 and 560 px
+card's text or colours change), and the column is as wide as its longest row needs, between 200 and 360 px, counting only the rows it shows (it refits as a row opens or closes)
 (`ProjectMapCardStructure.fit`, measured in the rows' font). It works wherever the file's row
 is — filtered, scrolled off or in a closed column — because it belongs to the card: it moves, resizes, zooms,
 hides, rises and closes with it, and does not count against the open-card limit. It always goes on the card's
