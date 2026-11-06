@@ -365,7 +365,7 @@ class SettingsListEditorsFxTest {
                     list.requestFocus();
                     assertEquals(List.of(), names(dir), "no user override without an edit");
 
-                    TemplateRegistry registry = FxTestSupport.field(w, "templateRegistry");
+                    TemplateRegistry registry = SettingsRig.control(w, "templateRegistry");
                     button(pg, tr("settings.template.add")).fire();
                     id.setText("mine-a");
                     body.replaceText("BODY A");
@@ -419,7 +419,7 @@ class SettingsListEditorsFxTest {
                 try {
                     SettingsWindow w = shown(fx);
                     Region pg = page(w, "SNIPPETS");
-                    SnippetManager manager = FxTestSupport.field(w, "snippetManager");
+                    SnippetManager manager = SettingsRig.control(w, "snippetManager");
                     ListView<?> list =
                             all(pg, ListView.class, new ArrayList<>()).get(0);
                     @SuppressWarnings("unchecked")
@@ -504,7 +504,7 @@ class SettingsListEditorsFxTest {
                 try {
                     SettingsWindow w = shown(fx);
                     Region pg = page(w, "SNIPPETS");
-                    SnippetManager manager = FxTestSupport.field(w, "snippetManager");
+                    SnippetManager manager = SettingsRig.control(w, "snippetManager");
                     @SuppressWarnings("unchecked")
                     ListView<Snippet> list = (ListView<Snippet>)
                             all(pg, ListView.class, new ArrayList<>()).get(0);

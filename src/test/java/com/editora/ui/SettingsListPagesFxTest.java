@@ -95,7 +95,7 @@ class SettingsListPagesFxTest {
                 body.requestFocus(); // the user is typing in the body
                 body.replaceText("TYPED BODY"); // no Enter, no focus change
             });
-            SnippetManager manager = FxTestSupport.field(w, "snippetManager");
+            SnippetManager manager = SettingsRig.control(w, "snippetManager");
             waitFor(
                     () -> manager.userSnippets("global").stream()
                             .anyMatch(s -> s.body().equals("TYPED BODY")),
@@ -110,7 +110,7 @@ class SettingsListPagesFxTest {
     void removingASnippetOrAnAbbreviationAsksFirst() throws Exception {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "SNIPPETS"));
-            SnippetManager manager = FxTestSupport.field(w, "snippetManager");
+            SnippetManager manager = SettingsRig.control(w, "snippetManager");
             FxTestSupport.runOnFx(() -> {
                 Region pg = page(w, "SNIPPETS");
                 button(pg, tr("settings.snippet.add")).fire();
@@ -188,7 +188,7 @@ class SettingsListPagesFxTest {
                 body.replaceText("IMPORTANT TEXT");
                 tfs.get(1).fireEvent(new ActionEvent()); // Enter in Name
                 assertEquals(created, id.getText(), "the id is put back");
-                TemplateRegistry registry = FxTestSupport.field(w, "templateRegistry");
+                TemplateRegistry registry = SettingsRig.control(w, "templateRegistry");
                 Template saved = registry.userTemplates().stream()
                         .filter(t -> t.id().equals(created))
                         .findFirst()
@@ -240,7 +240,7 @@ class SettingsListPagesFxTest {
     void aSnippetCanBeAddedForALanguageWithNoneYetAndASpacedTriggerIsRefused() throws Exception {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "SNIPPETS"));
-            SnippetManager manager = FxTestSupport.field(w, "snippetManager");
+            SnippetManager manager = SettingsRig.control(w, "snippetManager");
             FxTestSupport.runOnFx(() -> {
                 Region pg = page(w, "SNIPPETS");
                 @SuppressWarnings("unchecked")

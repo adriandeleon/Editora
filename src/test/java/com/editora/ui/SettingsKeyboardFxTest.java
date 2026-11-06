@@ -314,11 +314,12 @@ class SettingsKeyboardFxTest {
                             page + ": " + (shift ? "Shift+Tab" : "Ctrl+Tab") + " leaves the body");
                 }
             }
-            assertNull(SettingsWindow.focusEscape(KeyCode.TAB, false, false, false), "plain Tab still types a tab");
-            assertNull(SettingsWindow.focusEscape(KeyCode.A, true, false, false));
+            assertNull(
+                    SettingsSnippetPages.focusEscape(KeyCode.TAB, false, false, false), "plain Tab still types a tab");
+            assertNull(SettingsSnippetPages.focusEscape(KeyCode.A, true, false, false));
             assertEquals(
                     javafx.scene.TraversalDirection.PREVIOUS,
-                    SettingsWindow.focusEscape(KeyCode.TAB, true, true, false));
+                    SettingsSnippetPages.focusEscape(KeyCode.TAB, true, true, false));
         });
     }
 

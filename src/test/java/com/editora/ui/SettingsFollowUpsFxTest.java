@@ -177,7 +177,7 @@ class SettingsFollowUpsFxTest {
                 stored.put("ai key", () -> s.getApiKeyFor(ai));
                 fields.put("ai completion model", SettingsRig.control(w, "aiCompletionModelField"));
                 stored.put("ai completion model", () -> s.getAiCompletionModelFor(ai));
-                fields.put("author", FxTestSupport.field(w, "templateAuthorField"));
+                fields.put("author", SettingsRig.control(w, "templateAuthorField"));
                 stored.put("author", s::getAuthorNameRaw);
                 fields.put("git", FxTestSupport.field(w, "gitPathField"));
                 stored.put("git", s::getGitPath);
@@ -401,7 +401,7 @@ class SettingsFollowUpsFxTest {
                     TextField language = tfs.get(3);
 
                     // A bundled template (not in the user set) whose description spans two lines.
-                    ObservableList<Template> items = FxTestSupport.field(w, "templateItems");
+                    ObservableList<Template> items = SettingsRig.control(w, "templateItems");
                     Template bundled = new Template(
                             "two-line",
                             "Two Line",
@@ -420,13 +420,13 @@ class SettingsFollowUpsFxTest {
                     language.setText(" java");
                     language.fireEvent(new ActionEvent()); // Enter applies it (there is no Save button)
                     assertEquals(List.of(), names(dir), "whitespace the save trims away is not an edit");
-                    java.util.Set<String> userIds = FxTestSupport.field(w, "templateUserIds");
+                    java.util.Set<String> userIds = SettingsRig.control(w, "templateUserIds");
                     assertFalse(userIds.contains("two-line"), "still a bundled template");
 
                     name.setText("Two Lines");
                     name.fireEvent(new ActionEvent());
                     assertEquals(List.of("two-line.json"), names(dir), "a real edit makes the user override");
-                    Template saved = FxTestSupport.<com.editora.template.TemplateRegistry>field(w, "templateRegistry")
+                    Template saved = SettingsRig.<com.editora.template.TemplateRegistry>control(w, "templateRegistry")
                             .userTemplates()
                             .stream()
                             .filter(t -> t.id().equals("two-line"))
