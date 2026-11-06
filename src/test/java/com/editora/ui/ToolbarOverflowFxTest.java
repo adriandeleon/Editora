@@ -98,7 +98,7 @@ class ToolbarOverflowFxTest {
     void theProjectSwitcherSitsInThePinnedRegion() throws Exception {
         double[] probe = FxTestSupport.callOnFx(() -> {
             ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
-            ProjectCombo combo = FxTestSupport.field(fx.controller, "toolbarProjectCombo");
+            ProjectCombo combo = FxTestSupport.field(fx.controller.toolbar, "toolbarProjectCombo");
             return new double[] {
                 bar.localToScene(bar.getBoundsInLocal()).getMaxX(),
                 combo.localToScene(combo.getBoundsInLocal()).getMinX(),

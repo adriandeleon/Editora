@@ -85,7 +85,7 @@ class RunConfigToolbarPlacementFxTest {
     @Test
     void theGroupIsInOrderAndAheadOfTheProjectSwitcher() throws Exception {
         HBox tail = FxTestSupport.field(fx.controller, "toolbarTail");
-        Node combo = FxTestSupport.field(fx.controller, "toolbarProjectCombo");
+        Node combo = FxTestSupport.field(fx.controller.toolbar, "toolbarProjectCombo");
 
         List<Integer> positions = FxTestSupport.callOnFx(() ->
                 GROUP.stream().map(f -> tail.getChildren().indexOf(widget(f))).toList());

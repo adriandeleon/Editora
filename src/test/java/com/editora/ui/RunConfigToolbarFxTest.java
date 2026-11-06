@@ -137,7 +137,7 @@ class RunConfigToolbarFxTest {
     @SuppressWarnings("unchecked")
     private java.util.Map<String, javafx.scene.Node> widgetPool() throws Exception {
         return FxTestSupport.callOnFx(() -> (java.util.Map<String, javafx.scene.Node>)
-                FxTestSupport.call(fx.controller, "toolbarBaseWidgets", new Class[] {}));
+                FxTestSupport.call(fx.controller.toolbar, "toolbarBaseWidgets", new Class[] {}));
     }
 
     /**
