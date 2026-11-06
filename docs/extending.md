@@ -45,7 +45,7 @@ A setting is a `Settings` field **plus** a Settings-window control **plus** a pa
 1. **Field** in `config/Settings.java` with getter/setter; bump `Settings.SCHEMA_VERSION` and
    add an additive-identity step in `ConfigSchema` (see
    [conventions.md](conventions.md#config-and-schema)).
-2. **Settings UI** — a control on the relevant page in `SettingsWindow`, wired through the
+2. **Settings UI** — a control on the relevant page (in `SettingsWindow` or the page's own `Settings*Page` class), wired through the
    live-apply path (each control writes the field then `apply()`). A text field goes through
    `commitOnEnterOrBlur` (Enter, focus loss or closing the window), never a `textProperty` listener: a
    save, a re-apply in every window and a probe per keystroke act on half-typed values. An on/off
@@ -67,7 +67,7 @@ not new logic:
 3. The served language id(s) in `EditorBuffer.LSP_LANGUAGES` (kept in sync with the registry;
    `isLspLanguage()` reads it).
 4. A `Settings.lspSupport`-style per-server `…LspCommand` + `…LspEnabled` pair, and an entry in
-   `SettingsWindow.lspServerUis()` (the LSP page is data-driven over that descriptor list), plus the
+   `SettingsLspPage.lspServerUis()` (the LSP page is data-driven over that descriptor list), plus the
    `settings-controls.properties` rows, a schema bump with an additive migration, and the i18n keys in
    all six catalogs.
 5. An installer, if it has one: `InstallCatalog.serverInstall` (`ARCHIVE` for a per-OS binary,
@@ -95,7 +95,7 @@ Mirrors the LSP recipe. The language→adapter spec is
 [`dap/DapServerRegistry.java`](../src/main/java/com/editora/dap/DapServerRegistry.java)
 (`Kind` = `JDTLS` / `STDIO` / `SOCKET` / `JVM` / `LANGUAGE_SERVER`), `languageIdsForDebug()` gates the breakpoint gutter +
 debug commands, and the Settings → Debugging page is data-driven over
-`SettingsWindow.debugAdapterUis()`. Java rides the jdtls session; Python (debugpy) is stdio;
+`SettingsDebugPage.debugAdapterUis()`. Java rides the jdtls session; Python (debugpy) is stdio;
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
 

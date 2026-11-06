@@ -139,7 +139,7 @@ final class SettingsGitPages {
     private CheckBox gitAutoFetchCheck;
     private Spinner<Integer> gitAutoFetchSpinner;
 
-    /** Reference implementation of the UI Kit card page — see {@link #card}/{@link #settingRow}. The
+    /** Reference implementation of the UI Kit card page — see {@link SettingsWindow#card}/{@link SettingsWindow#settingRow}. The
      *  cards are untitled (the kit's are too): the page heading already says "Git", and each row names
      *  itself. */
     VBox gitPage() {

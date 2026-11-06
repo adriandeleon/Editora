@@ -435,7 +435,7 @@ final class SettingsAiPages {
                         s::getLmstudioAgentCommand));
     }
 
-    /** Re-probes each ACP agent client's PATH availability (mirrors {@link #refreshLspStatus()}). */
+    /** Re-probes each ACP agent client's PATH availability (mirrors {@link SettingsLspPage#refreshLspStatus()}). */
     void refreshAgentClientStatus() {
         if (agentCoordinator == null || agentStatusLabels.isEmpty()) {
             return;

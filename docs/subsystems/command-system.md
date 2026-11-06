@@ -402,7 +402,7 @@ lets the user rebind, reset, or reset-all. The mutation logic is the pure, toolk
 The **recorder** turns a row into a live capture field that calls `KeyDispatcher.chord(e)`
 (space-joining a multi-key sequence; Esc cancels) — it runs in the Settings window's own scene, so
 there's no global dispatcher to interfere. The **conflict check** lives in
-`SettingsWindow.rebindWithConflictCheck`: before binding, `ShortcutActions.commandUsing(seq)` (→
+`SettingsKeymapsPage.rebindWithConflictCheck`: before binding, `ShortcutActions.commandUsing(seq)` (→
 `KeymapManager.commandFor`) reports whether the chord is already taken, and a confirmation dialog
 warns before stealing it. The same path serves the inline Macros keybinding row.
 

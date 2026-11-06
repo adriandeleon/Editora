@@ -75,7 +75,7 @@ final class SettingsPluginsPage {
     /**
      * Injects the shared {@link com.editora.plugin.PluginManager} (set after construction by
      * {@code MainController}). The Plugins page lists its discovered descriptors; safe to call before
-     * {@link #build} (the page is built lazily on first {@link #show}).
+     * {@link SettingsWindow#show} builds the page lazily on first show.
      */
     public void setPluginManager(com.editora.plugin.@Nullable PluginManager pluginManager) {
         this.pluginManager = pluginManager;
