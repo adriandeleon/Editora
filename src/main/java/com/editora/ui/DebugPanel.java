@@ -501,13 +501,29 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         javafx.scene.control.ContextMenu stackMenu = new javafx.scene.control.ContextMenu();
         stack.setOnContextMenuRequested(e -> {
             DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
-            List<javafx.scene.control.MenuItem> items =
-                    f == null || StackFolding.isFold(f) ? List.of() : actions.stackMenuItems(f, allFrames);
+            List<javafx.scene.control.MenuItem> items = new java.util.ArrayList<>(
+                    f == null || StackFolding.isFold(f) ? List.of() : actions.stackMenuItems(f, allFrames));
+            if (!allFrames.isEmpty()) {
+                if (!items.isEmpty()) {
+                    items.add(new javafx.scene.control.SeparatorMenuItem());
+                }
+                javafx.scene.control.MenuItem copy = new javafx.scene.control.MenuItem(tr("debugpanel.copyCallStack"));
+                copy.setGraphic(Icons.copy());
+                copy.setOnAction(ev -> copyCallStack());
+                items.add(copy);
+            }
             stackMenu.getItems().setAll(items);
             if (!items.isEmpty()) {
                 stackMenu.show(stack, e.getScreenX(), e.getScreenY());
             }
             e.consume();
+        });
+
+        stack.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.C && e.isShortcutDown() && !allFrames.isEmpty()) {
+                copyCallStack();
+                e.consume();
+            }
         });
 
         // Variables: rich cells — name, muted " = ", type-colored value, muted type suffix.
@@ -519,7 +535,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             protected void updateItem(VarRow row, boolean empty) {
                 super.updateItem(row, empty);
                 setText(null);
-                setGraphic(empty || row == null ? null : renderRow(row));
+                setGraphic(empty || row == null ? null : renderRow(row, changed(getTreeItem(), row)));
             }
         });
         // Watches interactions: double-click "+ Add watch…" adds, double-click a watch edits; the
@@ -707,6 +723,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             return; // the frames of the previous stop: the program has moved on, there is nothing to show
         }
         selectedFrameId = frame.id();
+        int index = allFrames.indexOf(frame);
+        valueChanges.setFrame(DebugValueChanges.frameKey(
+                selectedThreadId(),
+                frame.name(),
+                frame.file() == null ? null : frame.file().toString(),
+                index < 0 ? -1 : allFrames.size() - index));
         actions.selectFrame(frame);
     }
 
@@ -740,7 +762,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** Builds the styled TextFlow for one variables-tree row. */
     static TextFlow renderRow(VarRow row) {
+        return renderRow(row, false);
+    }
+
+    /** {@link #renderRow(VarRow)}, highlighted when {@code changed}: its value differs from the previous stop's. */
+    static TextFlow renderRow(VarRow row, boolean changed) {
         TextFlow flow = new TextFlow();
+        if (changed) {
+            flow.getStyleClass().add("debug-row-changed");
+            flow.setAccessibleHelp(tr("debugpanel.valueChanged"));
+        }
         switch (row.kind()) {
             case SCOPE -> {
                 Text name = new Text(row.name());
@@ -786,6 +817,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 } else {
                     for (DebugValues.Run run : DebugValues.runs(DebugValues.display(row.value()))) {
                         Text value = new Text(run.text());
+                        value.getStyleClass().add("debug-val");
                         if (run.token() != null) {
                             value.getStyleClass().addAll("text", run.token(), TOKEN);
                         } else {
@@ -932,6 +964,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Updates the toolbar/status to reflect the session state and enables the right controls. */
     public void setState(DapManager.State state) {
         boolean wasRunning = lastState == DapManager.State.RUNNING;
+        if (state == DapManager.State.SUSPENDED && lastState != DapManager.State.SUSPENDED) {
+            valueChanges.newStop(); // this stop's values are compared with the ones shown before it
+        } else if (state == DapManager.State.STARTING || state == DapManager.State.INACTIVE) {
+            valueChanges.reset();
+        }
         lastState = state;
         outputTrailing = false;
         if (state == DapManager.State.STARTING) {
@@ -1474,6 +1511,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                                 r.indexedVariables(),
                                 r.failed()));
                         node.getChildren().set(idx, evaluated);
+                        noteValue(evaluated);
                         if (wasSelected) {
                             variables.getSelectionModel().select(evaluated);
                         }
@@ -1648,6 +1686,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     /** Puts {@code text} on the system clipboard. */
+    /** Copies the whole call stack shown — folded runtime frames included — to the clipboard. */
+    public void copyCallStack() {
+        if (allFrames.isEmpty()) {
+            return;
+        }
+        DapModels.ThreadInfo thread = threads.getValue();
+        copyToClipboard(DebugPanelText.callStackText(thread == null ? null : thread.name(), allFrames));
+    }
+
     static void copyToClipboard(String text) {
         javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
         content.putString(text == null ? "" : text);
@@ -1815,6 +1862,46 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /** Values shown at earlier stops, to highlight the ones that changed. */
+    private final DebugValueChanges valueChanges = new DebugValueChanges();
+
+    /** Whether {@code row} has a real value to compare: not a placeholder, a failed watch or a row not loaded. */
+    private static boolean comparable(@Nullable VarRow row) {
+        return row != null
+                && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH)
+                && !row.failed()
+                && row.note() == null
+                && !row.value().isEmpty()
+                && !"…".equals(row.value());
+    }
+
+    /**
+     * Remembers the value {@code item} shows at this stop — only a row of the tree shown: an answer to the previous
+     * stop's request that arrives after this stop began belongs to a tree already replaced, and holds old values.
+     */
+    private void noteValue(TreeItem<VarRow> item) {
+        VarRow row = item.getValue();
+        if (comparable(row) && lastState == DapManager.State.SUSPENDED && inShownTree(item)) {
+            valueChanges.record(pathOf(item), row.value());
+        }
+    }
+
+    private boolean inShownTree(TreeItem<VarRow> item) {
+        TreeItem<VarRow> top = item;
+        while (top.getParent() != null) {
+            top = top.getParent();
+        }
+        return top == variables.getRoot();
+    }
+
+    /** Whether {@code item}'s value differs from what it showed at an earlier stop in the same frame. */
+    boolean changed(@Nullable TreeItem<VarRow> item, VarRow row) {
+        return item != null
+                && comparable(row)
+                && lastState == DapManager.State.SUSPENDED
+                && valueChanges.changed(pathOf(item), row.value());
+    }
+
     /** A tree item whose children are loaded on first expand (when {@code ref > 0}). */
     private TreeItem<VarRow> lazyItem(VarRow row) {
         TreeItem<VarRow> item = new TreeItem<>(row) {
@@ -1897,6 +1984,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Adds one page of rows; {@code select} keeps the selection where the "show more" row just was. */
     private void append(TreeItem<VarRow> item, List<TreeItem<VarRow>> children, boolean select) {
         item.getChildren().addAll(children); // one change event, however many rows
+        children.forEach(this::noteValue);
         children.forEach(this::restoreState);
         if (select && !children.isEmpty()) {
             variables.getSelectionModel().select(children.get(0));
@@ -1962,6 +2050,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             boolean selected = variables.getSelectionModel().getSelectedItem() == item;
             TreeItem<VarRow> loaded = lazyItem(variableRow(v, row.parentRef()));
             parent.getChildren().set(idx, loaded);
+            noteValue(loaded);
             if (selected) {
                 variables.getSelectionModel().select(loaded);
             }

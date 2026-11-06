@@ -1072,7 +1072,15 @@ adapter's message. `isStepping()` is true from the request to the next stop; `de
 the paused session it is (Continue), never as a running one to retarget. The manager also tracks *which*
 threads are stopped (`stopped.allThreadsStopped`, `continue`'s `allThreadsContinued`, `continued`
 events): java-debug suspends and resumes per thread, so after Continue on one of several stopped threads
-the next still-stopped thread is brought forward instead of reporting a running session. Restart goes
+the next still-stopped thread is brought forward instead of reporting a running session. Pause in a Java session
+sends java-debug's own `pauseAll` (`DapClient.pauseAll`), which suspends the whole program and reports the stop with
+`allThreadsStopped`; until the program resumes, Continue then sends `continueAll` (`DapManager.allSuspended`), because
+a plain `continue` naming one thread would leave every other thread suspended — steps in between resume only the
+stepped thread. The "Suspend all threads when one stops" setting is java-debug's `suspendAllThreads`
+(`JavaDebugSettings`, read when a session starts): breakpoints suspend with `SUSPEND_ALL`, and java-debug's own
+`continue` then resumes the whole program. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
+installed adapters in a real window (a worker thread's output stops while paused), along with temporary breakpoints
+and changed-value marks: `./mvnw test -Dtest=DebugQuickWinsProbeFxTest -Dgroups=probe -Dlsp.probe=true`. Restart goes
 through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
 build, closed-file breakpoints) rather than only the adapter launch. `debug.start` in a JUnit test file that
 has no `main` of its own debugs the test at the caret, or the class when the caret is outside a test, through
@@ -1195,7 +1203,11 @@ error answer to the whole request, or an evaluation failure flags a breakpoint a
 (`DebugFeedback.live`). java-debug reports a condition or logpoint message it cannot evaluate in a
 non-standard `usernotification` event at the first hit, naming only the quoted expression; the breakpoints
 carrying that expression are flagged until it is edited. A verified answer naming another line (debugpy's
-`translated_line`) moves the breakpoint there. A root session that only starts child sessions (js-debug)
+`translated_line`) moves the breakpoint there.
+
+A *temporary* breakpoint (`Breakpoint.temporary`, "Remove once hit") reaches the adapter as an ordinary one;
+`DebugCoordinator.removeTemporaryBreakpointHit` removes it at a stop whose reason is `breakpoint` on its line, which
+re-sends that file's breakpoints without it. A logpoint is never removed (it never stops). A root session that only starts child sessions (js-debug)
 never reports: its "unbound" answers would overwrite the child's.
 
 ### DebugCoordinator
@@ -1209,6 +1221,15 @@ gutter. `debugEffectiveFor(language)` gates start (java = the jdtls server enabl
 found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable + detected adapter).
 `DapManager` stays a `MainController` field (built on `lspManager`) and is passed in, mirroring the
 `lspManager`/`LspCoordinator` split.
+
+The Variables tree marks a value that changed since the previous stop
+([`ui/DebugValueChanges`](../../src/main/java/com/editora/ui/DebugValueChanges.java)). Values are recorded as rows
+reach the tree (`DebugPanel.noteValue`: loaded children, evaluated watches, rows loaded on a click — only rows of the tree
+shown, so a late answer to the previous stop's request records nothing), keyed by their
+path of row names and by frame (thread, method, file, depth from the bottom of the stack), and a new stop moves this
+stop's values into the set the next one is compared with — so re-selecting a frame or reloading after Set Value
+within a stop keeps the marks. Placeholders, failed watches and rows not loaded yet are never compared; each frame
+keeps at most 5,000 rows and 32 frames are remembered.
 
 ---
 

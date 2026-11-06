@@ -333,6 +333,7 @@ final class MenuBarModel {
                                                 "debug.addWatch",
                                                 SEPARATOR,
                                                 "debug.toggleBreakpointEnabled",
+                                                "debug.toggleTemporaryBreakpoint",
                                                 "debug.editBreakpoint",
                                                 "debug.breakpoints",
                                                 "debug.muteBreakpoints",

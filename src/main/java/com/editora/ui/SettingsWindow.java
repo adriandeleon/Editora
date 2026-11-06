@@ -457,6 +457,7 @@ public class SettingsWindow {
     private CheckBox debugStepFiltersCheck;
     private CheckBox debugShowStaticsCheck;
     private CheckBox debugShowToStringCheck;
+    private CheckBox debugSuspendAllThreadsCheck;
     private TextField debugExceptionTypesField;
     /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
     private TextField nodePathField;
@@ -2052,6 +2053,11 @@ public class SettingsWindow {
         debugShowToStringCheck = new CheckBox(tr("settings.debug.showToString"));
         debugShowToStringCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugShowToString(now);
+            apply();
+        });
+        debugSuspendAllThreadsCheck = new CheckBox(tr("settings.debug.suspendAllThreads"));
+        debugSuspendAllThreadsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugSuspendAllThreads(now);
             apply();
         });
         debugExceptionTypesField = new TextField();
@@ -7091,6 +7097,12 @@ public class SettingsWindow {
                         debugShowToStringCheck,
                         tr("settings.debug.showToString.hint"),
                         "debug java tostring object view values variables slow");
+                checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugSuspendAllThreadsCheck,
+                        tr("settings.debug.suspendAllThreads.hint"),
+                        "debug java suspend all threads policy breakpoint stop every thread");
                 debugExceptionTypesField.setPrefWidth(PATH_FIELD_WIDTH);
                 controlRow(
                         c,
@@ -9181,6 +9193,7 @@ public class SettingsWindow {
             debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
             debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
             debugShowToStringCheck.setSelected(settings.isDebugShowToString());
+            debugSuspendAllThreadsCheck.setSelected(settings.isDebugSuspendAllThreads());
             debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
             nodePathField.setText(settings.getNodePath());
             for (DebugAdapterUi dbg : debugAdapterUis()) {

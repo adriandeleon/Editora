@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Changed values are highlighted after a step.** In the Debug window's Variables tree, a value that differs from
+  what the same frame showed at the previous stop is tinted and bold, as in VS Code, Visual Studio, Eclipse, NetBeans
+  and IntelliJ. A new variable is not marked, and a new session starts with nothing to compare.
+- **Temporary breakpoints.** *Debug: Toggle Temporary Breakpoint* (IntelliJ keymap Ctrl+Alt+Shift+F8, Emacs
+  `C-c C-d 1`, the Run ▸ Debugger menu and the editor menu) sets a breakpoint that is removed once the program stops
+  on it; the Edit Breakpoint form has **Remove once hit**. Its gutter dot carries a "1".
+- **Copy Call Stack.** The Call Stack's context menu (and Ctrl+C in the list) copies the stopped thread's whole
+  stack, folded runtime frames included, as `at name(File.java:12)` lines.
+- **Suspend all threads when one stops** (Settings → Debugging, Java, off by default): a breakpoint, exception or
+  step stops every thread of the program, and Continue resumes them all — IntelliJ's "Suspend: All".
+
 ### Changed
+
+- **Pause stops the whole Java program.** It suspended only the thread on screen, and the program's other threads
+  kept running. Continue after a Pause resumes every thread.
 
 - **Refactor:** Go to Implementation's picker-row text (`implementationLabel`, `implementationDetail`,
   `libraryPackage`) moved from `LspCoordinator` to a new `ImplementationTargets`, which brings `LspCoordinator` back

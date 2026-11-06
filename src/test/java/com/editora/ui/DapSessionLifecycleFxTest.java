@@ -231,7 +231,10 @@ class DapSessionLifecycleFxTest {
         }
     }
 
-    /** An adapter that stops every thread at once is resumed with one Continue, as before. */
+    /**
+     * An adapter that stops every thread at once is resumed with one Continue — for java-debug its own {@code
+     * continueAll}: a plain {@code continue} naming one thread would leave the others suspended.
+     */
     @Test
     void continuingAfterAnAllThreadsStopLeavesTheSessionRunning() throws Exception {
         try (var adapter = new com.editora.dap.FakeDebugAdapter(false)) {
@@ -245,11 +248,12 @@ class DapSessionLifecycleFxTest {
             listener.awaitStop();
 
             FxTestSupport.runOnFx(manager::resume);
-            session.awaitRequest("continue");
+            session.awaitRequest("continueAll");
             session.awaitDelivered();
             FxTestSupport.runOnFx(() -> {});
             assertEquals(DapManager.State.RUNNING, FxTestSupport.callOnFx(manager::state));
             assertTrue(listener.stops.isEmpty(), "no thread is left to bring forward");
+            assertFalse(session.requests.contains("continue"), "one continueAll, no plain continue");
             FxTestSupport.runOnFx(manager::shutdown);
         }
     }

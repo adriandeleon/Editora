@@ -225,6 +225,7 @@
   "C-c C-d l": "debug.breakpoints",
   "C-c C-d m": "debug.muteBreakpoints",
   "C-c C-d t": "debug.toggleBreakpointEnabled",
+  "C-c C-d 1": "debug.toggleTemporaryBreakpoint",
   "C-c C-d s": "debug.smartStepInto",
   "C-c C-d h": "debug.applyCodeChanges",
   "C-c C-d f": "debug.restartFrame",
