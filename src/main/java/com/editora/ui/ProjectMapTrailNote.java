@@ -28,6 +28,10 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
 
     private final ProjectMapPreview card;
     private final Pane host;
+    private final java.util.function.@Nullable DoubleConsumer panX;
+    /** Inside its own pan: the card moving under it does not choose a side again. */
+    private boolean panning;
+
     private final Runnable onMoved;
     /** The 0-based file line the connector is pinned to; -1 for the card's header. */
     private final int anchorLine;
@@ -55,10 +59,13 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
 
     ProjectMapTrailNote(
             ProjectMapPreview card, Pane host, String header, String note, int anchorLine, Runnable onMoved) {
-        this(card, host, header, note, anchorLine, onMoved, java.util.List::of);
+        this(card, host, header, note, anchorLine, onMoved, java.util.List::of, null);
     }
 
-    /** {@code columns}: the map's columns on screen, which the sheet keeps off when a side has room (review 4 A8). */
+    /**
+     * {@code columns}: the map's columns on screen, which the sheet keeps off when a side has room (review 4 A8).
+     * {@code panX}: pans the map across by so many pixels, for room beside a card that fills the middle of the map area.
+     */
     ProjectMapTrailNote(
             ProjectMapPreview card,
             Pane host,
@@ -66,9 +73,11 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
             String note,
             int anchorLine,
             Runnable onMoved,
-            java.util.function.@Nullable Supplier<java.util.List<double[]>> columns) {
+            java.util.function.@Nullable Supplier<java.util.List<double[]>> columns,
+            java.util.function.@Nullable DoubleConsumer panX) {
         this.card = card;
         this.host = host;
+        this.panX = panX;
         this.anchorLine = anchorLine;
         this.onMoved = onMoved == null ? () -> {} : onMoved;
         this.columns = columns == null ? java.util.List::of : columns;
@@ -192,6 +201,31 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
                 sheetHeight,
                 WIDTH * scale,
                 columns.get());
+        java.util.function.DoubleConsumer pan = panX;
+        if (side == Side.OVER && pan != null && !panning) {
+            // A card centred in the map area (as a new card is) can leave neither side room for the sheet: when the
+            // card and the sheet fit together, the map moves across just enough to make room beside the card.
+            double shift = roomBeside(left, right, width, host.getWidth(), ProjectMapPreview.EDGE_MARGIN);
+            if (shift != 0) {
+                panning = true;
+                try {
+                    pan.accept(shift);
+                } finally {
+                    panning = false;
+                }
+                left = card.getLayoutX();
+                right = left + card.getWidth() * scale;
+                side = viewsSide(
+                        left,
+                        right,
+                        width,
+                        host.getWidth(),
+                        card.getLayoutY() + dy * scale,
+                        sheetHeight,
+                        WIDTH * scale,
+                        columns.get());
+            }
+        }
         fromLeft = side == Side.LEFT;
         dx = side == Side.OVER ? -(WIDTH + ProjectMapStickyNotes.GAP) : ProjectMapStickyNotes.OFFSET;
     }
@@ -218,6 +252,18 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         double onRight = covered(right + gap, y, sheetWidth, height, columns);
         double onLeft = covered(left - room, y, sheetWidth, height, columns);
         return onLeft < onRight ? Side.LEFT : Side.RIGHT;
+    }
+
+    /**
+     * How far across to move a card from {@code left} to {@code right} so that {@code room} is free on its right inside
+     * a panel {@code panelWidth} wide with {@code margin} at its edges: the least move left that does it, which keeps
+     * the card inside the panel whenever the two fit together; 0 when they do not, or the room is free already. Pure.
+     */
+    static double roomBeside(double left, double right, double room, double panelWidth, double margin) {
+        if (right - left + room + margin * 2 > panelWidth) {
+            return 0;
+        }
+        return Math.min(0, panelWidth - margin - room - right);
     }
 
     /** The area of {@code columns} a rectangle covers. Pure. */
@@ -247,7 +293,7 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         }
         double scale = card.mapScale();
         double x = sheetX(scale);
-        if (placed && !dragged && host.getWidth() > 0 && (x < 0 || x + WIDTH * scale > host.getWidth())) {
+        if (placed && !dragged && !panning && host.getWidth() > 0 && (x < 0 || x + WIDTH * scale > host.getWidth())) {
             placeSide(); // the card moved: the side it was given is now past the map area's edge
             x = sheetX(scale);
         }

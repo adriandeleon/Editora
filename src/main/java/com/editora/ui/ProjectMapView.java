@@ -1418,6 +1418,11 @@ final class ProjectMapView extends VBox {
         return canvasHost;
     }
 
+    /** Views (trails): pans the map, and the cards on it, across by {@code dx} pixels (room for a stop's note). */
+    void viewsPanAcross(double dx) {
+        surface.panBy(dx, 0);
+    }
+
     /** The workspace's working sets, and where a change to them is written (see {@link ProjectMapWorkingSets}). */
     void setRememberedWorkingSets(
             List<com.editora.config.ProjectMapWorkingSet> stored,

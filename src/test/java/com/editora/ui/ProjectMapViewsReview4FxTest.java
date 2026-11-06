@@ -526,6 +526,34 @@ class ProjectMapViewsReview4FxTest {
                 "the column ends above the sheet: nothing covered");
     }
 
+    @Test
+    void aNoteMakesRoomBesideACardCentredInTheMapAreaWhenTheyFitTogether() throws Exception {
+        assertEquals(-38, ProjectMapTrailNote.roomBeside(230, 870, 256, 1100, 12), 0.001, "the card steps left");
+        assertEquals(-168, ProjectMapTrailNote.roomBeside(300, 1000, 256, 1100, 12), 0.001, "as far as it takes");
+        assertEquals(0, ProjectMapTrailNote.roomBeside(20, 700, 256, 1100, 12), "room on its right already");
+        assertEquals(0, ProjectMapTrailNote.roomBeside(130, 770, 256, 900, 12), "they do not fit: it stays over");
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.layout.Pane host = new javafx.scene.layout.Pane();
+            new Scene(host, 1100, 780);
+            host.resize(1100, 780);
+            ProjectMapPreview card = new ProjectMapPreview(path -> {});
+            host.getChildren().add(card);
+            card.resize(640, 400);
+            card.relocate(230, 60); // centred, as a new card opens: 230 px each side, too little for the sheet
+            double[] panned = {0};
+            ProjectMapTrailNote note =
+                    new ProjectMapTrailNote(card, host, "Stop 1 of 1", "a note", -1, () -> {}, List::of, dx -> {
+                        panned[0] += dx;
+                        card.relocate(card.getLayoutX() + dx, card.getLayoutY()); // the cards move with the map
+                    });
+            assertTrue(panned[0] < 0, "the map moved the card left: " + panned[0]);
+            double right = card.getLayoutX() + card.getWidth() * card.mapScale();
+            assertTrue(note.getLayoutX() >= right - 1, "and the note stands beside it: " + note.getLayoutX());
+            assertTrue(note.getLayoutX() + ProjectMapTrailNote.WIDTH <= 1100, "inside the map area");
+            note.dispose();
+        });
+    }
+
     // --- A9 -----------------------------------------------------------------------------------------------------
 
     @Test
