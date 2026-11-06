@@ -267,6 +267,10 @@ final class ProjectMapStickyNotes implements CardAttachment {
     private Runnable onMore = () -> {};
     /** What else stands beside the card on each side, in unzoomed units: the sheets go past it. */
     private java.util.function.ToDoubleFunction<Side> reserved = which -> 0;
+    /** Pans the map across by so many pixels, for room beside a card that fills the middle of the map area. */
+    private java.util.function.@Nullable DoubleConsumer panX;
+    /** While {@link #panX} runs: the card moving with the map does not ask for room again. */
+    private boolean panning;
 
     private final List<Sticky> stickies = new ArrayList<>();
     /** The "+K more notes" sheet, when the notes outnumber what two stacks hold. */
@@ -317,6 +321,14 @@ final class ProjectMapStickyNotes implements CardAttachment {
             place();
             layout();
         }
+    }
+
+    /**
+     * How the sheets make room beside a card centred in the map area (as a new card opens): when neither side has
+     * room for them but the card and the sheets fit together, the map pans across by the shift given to {@code pan}.
+     */
+    void setPanX(java.util.function.@Nullable DoubleConsumer pan) {
+        panX = pan;
     }
 
     /** Called when the user has closed every sheet: the owner turns the card's notes off. */
@@ -759,7 +771,6 @@ final class ProjectMapStickyNotes implements CardAttachment {
      */
     private void place() {
         double scale = card.mapScale();
-        double left = card.getLayoutX();
         List<Double> wanted = new ArrayList<>(
                 wantedTops(stickies.stream().map(sticky -> sticky.note).toList()));
         if (more != null) {
@@ -774,12 +785,9 @@ final class ProjectMapStickyNotes implements CardAttachment {
         double stackWidth = (columns * WIDTH + (columns - 1) * GAP) * scale;
         double besideLeft = reserved.applyAsDouble(Side.LEFT);
         double besideRight = reserved.applyAsDouble(Side.RIGHT);
-        // What stands beside the card widens it, as far as the sheets' room goes.
-        double outerLeft = left - besideLeft * scale;
-        double right = left + (card.getWidth() + besideRight) * scale;
-        Side side = side(outerLeft, right, stackWidth, host.getWidth());
+        Side side = sideMakingRoom(stackWidth, besideLeft, besideRight);
         if (side == Side.OVER && columns > 1) {
-            side = side(outerLeft, right, WIDTH * scale, host.getWidth());
+            side = sideMakingRoom(WIDTH * scale, besideLeft, besideRight);
         }
         List<Sheet> sheets = sheets();
         for (int i = 0; i < sheets.size(); i++) {
@@ -800,6 +808,44 @@ final class ProjectMapStickyNotes implements CardAttachment {
                 case OVER -> -(WIDTH + GAP) - column;
             };
         }
+    }
+
+    /**
+     * The side for a stack {@code width} wide (zoomed) beside the card and what stands beside it ({@code besideLeft},
+     * {@code besideRight}, unzoomed). When only over the card would do, but the card and the stack fit in the map area
+     * together, the map pans across to make room on the card's right first, as a trail note's does.
+     */
+    private Side sideMakingRoom(double width, double besideLeft, double besideRight) {
+        Side side = side(outerLeft(besideLeft), outerRight(besideRight), width, host.getWidth());
+        java.util.function.DoubleConsumer pan = panX;
+        if (side != Side.OVER || pan == null || panning) {
+            return side;
+        }
+        double shift = ProjectMapTrailNote.roomBeside(
+                outerLeft(besideLeft),
+                outerRight(besideRight),
+                width + OFFSET + GAP,
+                host.getWidth(),
+                ProjectMapPreview.EDGE_MARGIN);
+        if (shift == 0) {
+            return side;
+        }
+        panning = true;
+        try {
+            pan.accept(shift);
+        } finally {
+            panning = false;
+        }
+        return side(outerLeft(besideLeft), outerRight(besideRight), width, host.getWidth());
+    }
+
+    /** The card's left edge widened by what stands on its left, as far as the sheets' room goes. */
+    private double outerLeft(double besideLeft) {
+        return card.getLayoutX() - besideLeft * card.mapScale();
+    }
+
+    private double outerRight(double besideRight) {
+        return card.getLayoutX() + (card.getWidth() + besideRight) * card.mapScale();
     }
 
     /** Follows the card: each sheet keeps its place relative to the card's edge, at the card's zoom. */

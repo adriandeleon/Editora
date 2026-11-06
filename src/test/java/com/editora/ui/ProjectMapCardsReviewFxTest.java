@@ -682,6 +682,37 @@ class ProjectMapCardsReviewFxTest {
         });
     }
 
+    // ---- A card's sticky notes make room beside a centred card, as a trail note does ----
+
+    @Test
+    void stickyNotesMakeRoomBesideACardCentredInTheMapAreaWhenTheyFitTogether() throws Exception {
+        try (Rig r = new Rig()) {
+            FxTestSupport.runOnFx(() -> {
+                r.card.showFile(Path.of("centred.txt"), new Content("one\ntwo\n", false), null);
+                r.host.layout();
+                r.card.resize(560, 400);
+                r.card.relocate(220, 40); // centred, as a new card opens: 220 px each side, too little for a sheet
+                double[] panned = {0};
+                ProjectMapStickyNotes stuck =
+                        new ProjectMapStickyNotes(r.card, r.host, (n, b) -> {}, () -> {}, () -> {}, () -> {});
+                stuck.setPanX(dx -> {
+                    panned[0] += dx;
+                    r.card.relocate(r.card.getLayoutX() + dx, r.card.getLayoutY()); // the cards move with the map
+                });
+                stuck.show(List.of(note(com.editora.config.NoteScope.LINE, 0, 0, 0, "", "")));
+                assertEquals(-60, panned[0], 0.001, "the map moved the card left just enough");
+                javafx.scene.Node sheet = r.host.getChildren().stream()
+                        .filter(node -> node.getStyleClass().contains("project-map-sticky-note"))
+                        .findFirst()
+                        .orElseThrow();
+                double right = r.card.getLayoutX() + r.card.getWidth() * r.card.mapScale();
+                assertTrue(sheet.getLayoutX() >= right, "the sheet stands beside the card: " + sheet.getLayoutX());
+                assertTrue(sheet.getLayoutX() + ProjectMapStickyNotes.WIDTH <= HOST_W, "inside the map area");
+                stuck.dispose();
+            });
+        }
+    }
+
     // ---- Map notes: a sticky note and a note card take the keymap's caret moves, as the Notes box does ----
 
     @Test

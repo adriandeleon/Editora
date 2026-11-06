@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Map cards open the way columns do.** With Focus new column on (the default), a new code or note card opens
   where its row's next column would — past the row's column the way the map flows, hanging from the row, past any
   column or card already there — and the map pans to centre it, keeping its row in sight. With the option off, cards
-  keep taking free room in view without panning.
+  keep taking free room in view without panning. A trail note or a card's sticky notes that would otherwise cover
+  a centred card move the map across to stand beside it, when the two fit in the map area together.
 
 ## [0.27.0] - 2026-11-05
 

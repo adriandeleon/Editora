@@ -1456,6 +1456,7 @@ final class MapCards {
             }
         });
         stuck.setHidden(host.hideOpenNotes());
+        stuck.setPanX(dx -> host.panBy(dx, 0)); // room beside a centred card: the cards move with the map
         stuck.setReserved(which -> besideCard(card, which));
         stuck.show(cardNotes(card));
         touchCard(card, true);

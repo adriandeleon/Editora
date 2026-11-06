@@ -388,7 +388,9 @@ note-coloured connector from a dot on the card's edge at its line (the text's to
 to the sheet. While the sheets are in sight, each note's text in the card is marked as an editor tab marks it —
 the editor's `NoteHighlightOverlay` over the card's text, an amber wash with a marker at the note's start, the whole
 line for a line note (`ProjectMapPreview.noteSpans`). The sheets stand outside the card's right edge, else its left, else on the card against its right
-edge (`side`, by the room the whole stack needs), each as near its line as the sheets above allow, a further
+edge (`side`, by the room the whole stack needs). When only the card itself would do but the card and the stack fit
+in the map area together (a new card opens centred), the map pans across just enough to free the card's right
+(`sideMakingRoom`, with `ProjectMapTrailNote.roomBeside`, as a trail note does). Each sheet stands as near its line as the sheets above allow, a further
 column when they run past the card's foot (`stack`). Notes past what two such stacks hold (`sheetsShown`, at
 most 24 sheets) go into one "+K more notes" sheet that opens the file's note card. They hold their place relative to the card's edge as it moves, resizes and zooms; one the user
 drags keeps its new spot until the card closes. They save like a note card (focus loss, Shortcut+Enter, a blanked
