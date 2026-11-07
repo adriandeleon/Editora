@@ -99,6 +99,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings help links open the right section.** The **?** on Code Completion and Spell Check opened the
+  Editing page and Mermaid's the Diagrams page, none of which covers them; they now open Autocomplete and Spell
+  checking on the Languages page and Mermaid diagrams on the Markdown page. The Sync page's subtitle and *Sync Now*
+  name shortcuts among what is synced.
 - **The Map's cards keep their places.** Where the open preview cards stand (with the open folders, selection, zoom
   and pan) is now saved to disk moments after it changes, not only when the session ends cleanly, so a card moved
   before a crash or a kill comes back where it was; and a card brought back with its Structure column out is no
