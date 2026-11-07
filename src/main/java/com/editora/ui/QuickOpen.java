@@ -61,6 +61,9 @@ public class QuickOpen<T> {
 
     private int minRows = 1;
 
+    /** A fixed list height (px) with natural row heights, instead of hugging the rows; 0 = hug (the default). */
+    private double fixedListHeight;
+
     private final TextField input = new TextField();
     private final ListView<T> list = new ListView<>();
     /** The key legend under the list; rebuilt from the live keymap each time the picker is shown. */
@@ -210,6 +213,17 @@ public class QuickOpen<T> {
         }
     }
 
+    /**
+     * Gives the list a fixed {@code height} and lets each row take its natural height, instead of hugging the
+     * row count with {@link #CELL_HEIGHT} rows — so a picker can match the file finder's card ({@code C-x b}
+     * beside {@code C-x C-f}).
+     */
+    public void setFixedListHeight(double height) {
+        this.fixedListHeight = height;
+        list.setFixedCellSize(Region.USE_COMPUTED_SIZE);
+        resizeList();
+    }
+
     private void build(String title, String prompt) {
         input.setPromptText(prompt);
         list.setItems(items);
@@ -243,6 +257,12 @@ public class QuickOpen<T> {
     /** Sizes the result list to its (filtered) item count, capped at {@link #MAX_VISIBLE} rows, so the
      *  popup hugs the matches instead of reserving a fixed-tall area. */
     private void resizeList() {
+        if (fixedListHeight > 0) {
+            list.setMinHeight(Region.USE_COMPUTED_SIZE);
+            list.setPrefHeight(fixedListHeight);
+            list.setMaxHeight(Region.USE_COMPUTED_SIZE);
+            return;
+        }
         int rows = Math.max(minRows, Math.min(Math.max(items.size(), minRows), MAX_VISIBLE));
         double h = rows * CELL_HEIGHT + 2; // +2 for the list's border/insets
         list.setMinHeight(h);

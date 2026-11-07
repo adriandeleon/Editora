@@ -44,6 +44,9 @@ public class FileFinder {
 
     private static final String SEP = File.separator;
 
+    /** Height of the listing; the buffer switcher ({@code C-x b}) uses it too so the two cards match. */
+    static final double LIST_HEIGHT = 280;
+
     private final Supplier<Path> startDir;
     private final Consumer<Path> onChoose;
     /** When true, only directories are listed and Enter chooses a folder (instead of opening a file). */
@@ -105,7 +108,7 @@ public class FileFinder {
     private void build() {
         input.setPromptText(tr("filefinder.prompt"));
         list.setItems(items);
-        list.setPrefHeight(280);
+        list.setPrefHeight(LIST_HEIGHT);
         list.setCellFactory(v -> new EntryCell());
 
         input.textProperty().addListener((obs, old, now) -> refresh(now));
