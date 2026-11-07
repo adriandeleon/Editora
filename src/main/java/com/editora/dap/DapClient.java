@@ -129,6 +129,9 @@ public final class DapClient implements IDebugProtocolClient {
         /** The debuggee exited with {@code exitCode} (the adapter's {@code exited} event). */
         default void onExited(int exitCode) {}
 
+        /** A thread of the program started or ended (the adapter's {@code thread} event). */
+        default void onThreadsChanged() {}
+
         /** The process id of the program the adapter launched (java-debug's {@code processid} event). */
         default void onProcessId(long pid) {}
 
@@ -749,6 +752,14 @@ public final class DapClient implements IDebugProtocolClient {
         host.onStopped(threadId, args.getReason(), Boolean.TRUE.equals(args.getAllThreadsStopped()));
     }
 
+    /** A thread started or exited: the Threads view lists them again. */
+    @Override
+    public void thread(org.eclipse.lsp4j.debug.ThreadEventArguments args) {
+        if (!disposed) {
+            host.onThreadsChanged();
+        }
+    }
+
     /**
      * The adapter changed its mind about a breakpoint after answering {@code setBreakpoints} — how java-debug
      * reports that a breakpoint was bound once its class loaded. The event names the breakpoint by id only.
@@ -1019,6 +1030,11 @@ public final class DapClient implements IDebugProtocolClient {
             @Override
             public void onNotice(String message, boolean error) {
                 host.onNotice(message, error);
+            }
+
+            @Override
+            public void onThreadsChanged() {
+                host.onThreadsChanged();
             }
         };
     }

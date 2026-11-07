@@ -771,6 +771,90 @@ class DapManagerSessionFxTest {
         assertEquals(List.of(7, 7), session.continuedThreads);
     }
 
+    /** The Threads view's rows as {@code "id name running"} / {@code "id name paused:reason [shown]"}. */
+    private List<String> threadRows() throws Exception {
+        java.util.concurrent.CompletableFuture<List<DapModels.ThreadStatus>> got =
+                new java.util.concurrent.CompletableFuture<>();
+        onFx(() -> dap.threadStatuses(got::complete));
+        return got.get(10, TimeUnit.SECONDS).stream()
+                .map(t -> t.id() + " " + t.name() + " "
+                        + (t.paused() ? "paused:" + t.reason() : "running")
+                        + (t.shown() ? " shown" : ""))
+                .toList();
+    }
+
+    @Test
+    void threadsArePausedAndResumedOneAtATimeAndTheViewSaysWhichAreSuspended() throws Exception {
+        project();
+        FakeDebugAdapter.Session session = launch();
+        session.runningThreads.add(9); // a worker beside main (7)
+        assertEquals(List.of("7 main running", "9 worker-9 running"), threadRows());
+
+        // Pause Thread on the worker: that thread alone (no pauseAll), and its stop is shown.
+        onFx(() -> dap.pauseThread(9));
+        session.awaitRequest("pause");
+        assertEquals(List.of(9), session.pausedThreads);
+        int paused = count("stopped:9:pause");
+        session.stop(9, "pause");
+        awaitEvents("stopped:9:pause", paused + 1);
+        assertEquals(List.of("7 main running", "9 worker-9 paused:pause shown"), threadRows());
+
+        // main stops at a breakpoint: it is shown now, and the worker is still suspended.
+        stop(session, 7);
+        assertEquals(List.of("7 main paused:breakpoint shown", "9 worker-9 paused:pause"), threadRows());
+
+        // Resume Thread on the worker: one continue for it; main's stop stays on screen.
+        session.allThreadsContinued = false;
+        onFx(() -> dap.resumeThread(9));
+        session.awaitRequests("continue", 1);
+        assertEquals(List.of(9), session.continuedThreads);
+        drainFx();
+        onFx(() -> {
+            assertEquals(DapManager.State.SUSPENDED, dap.state());
+            assertEquals(7, dap.currentThreadId());
+        });
+        assertEquals(List.of("7 main paused:breakpoint shown", "9 worker-9 running"), threadRows());
+
+        // The whole program suspended, then the shown thread resumed alone: the worker is still suspended, and
+        // Show Frames brings it forward.
+        int whole = count("stopped:7:pause");
+        session.stop(7, "pause", true);
+        awaitEvents("stopped:7:pause", whole + 1);
+        assertEquals(List.of("7 main paused:pause shown", "9 worker-9 paused:pause"), threadRows());
+        int running = count("RUNNING");
+        onFx(() -> dap.resumeThread(7));
+        awaitEvents("RUNNING", running + 1);
+        session.awaitRequests("continue", 2);
+        assertEquals(List.of(9, 7), session.continuedThreads, "a plain continue, not continueAll");
+        drainFx();
+        assertEquals(List.of("7 main running", "9 worker-9 paused:pause"), threadRows());
+        int shown = count("stopped:9:pause");
+        onFx(() -> assertTrue(dap.showSuspendedThread(9, "pause")));
+        awaitEvents("stopped:9:pause", shown + 1);
+        onFx(() -> assertEquals(9, dap.currentThreadId()));
+    }
+
+    @Test
+    void whichThreadsAreSuspended() {
+        List<DapModels.ThreadInfo> threads = List.of(
+                new DapModels.ThreadInfo(1, "main"),
+                new DapModels.ThreadInfo(2, "worker"),
+                new DapModels.ThreadInfo(3, "pool"));
+        assertEquals(
+                List.of(
+                        new DapModels.ThreadStatus(1, "main", true, "", true),
+                        new DapModels.ThreadStatus(2, "worker", true, "breakpoint", false),
+                        new DapModels.ThreadStatus(3, "pool", false, "", false)),
+                DapManager.threadStatuses(threads, Map.of(2, "breakpoint"), false, java.util.Set.of(), 1));
+        assertEquals(
+                List.of(
+                        new DapModels.ThreadStatus(1, "main", true, "pause", false),
+                        new DapModels.ThreadStatus(2, "worker", false, "", false),
+                        new DapModels.ThreadStatus(3, "pool", true, "pause", false)),
+                DapManager.threadStatuses(threads, Map.of(), true, java.util.Set.of(2), -1),
+                "the whole program suspended: all but the one resumed on its own");
+    }
+
     @Test
     void pauseDoesNothingWhenTheAdapterCannotListItsThreads() throws Exception {
         project();

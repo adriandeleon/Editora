@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Threads view.** The Debug window's Call Stack area has a **Threads** switch (and *Debug: Threads* opens it):
+  every thread of the program, which are suspended and why, and which is shown. Right-click a thread to **Pause
+  Thread** or **Resume Thread** — that thread alone, the others staying as they are — or **Show Frames** of a
+  suspended one (also Enter or a double-click). Threads starting and ending update the list.
 - **Show numbers as hexadecimal while debugging.** *Debug: Show Numbers as Hexadecimal* (also in the Variables
   context menu) shows integer values in hexadecimal in Variables, watches, hover and inline values, through the debug
   protocol's `format.hex` (Java and Python honour it).

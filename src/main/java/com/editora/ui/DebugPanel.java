@@ -125,6 +125,22 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** The user picked another thread in the dropdown: load its call stack. */
         void selectThread(int threadId);
 
+        /** The program's threads, with which are suspended, for the Threads view (to {@code cb}, FX thread). */
+        default void threadStatuses(Consumer<List<DapModels.ThreadStatus>> cb) {
+            cb.accept(List.of());
+        }
+
+        /** Threads view → Pause Thread: suspends {@code threadId} alone. */
+        default void pauseThread(int threadId) {}
+
+        /** Threads view → Resume Thread: resumes {@code threadId} alone. */
+        default void resumeThread(int threadId) {}
+
+        /** Threads view → Show Frames: shows suspended thread {@code thread}'s call stack and variables. */
+        default void showThread(DapModels.ThreadStatus thread) {
+            selectThread(thread.id());
+        }
+
         /** A call-stack frame was selected: jump the editor and load its variables. */
         void selectFrame(DapModels.StackFrameInfo frame);
 
@@ -226,6 +242,24 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final Button stepOut = new Button();
     private final Button runToCursor = new Button();
     private final ComboBox<DapModels.ThreadInfo> threads = new ComboBox<>();
+
+    /**
+     * The Threads view: every thread of the program, suspended or running (IntelliJ's Threads tab, VS Code's threads
+     * in its Call Stack), shown in place of the frames while {@link #threadsToggle} is on.
+     */
+    private final ListView<DapModels.ThreadStatus> threadList = new ListView<>();
+
+    /** Switches the Call Stack area between the frames and the Threads view. */
+    private final javafx.scene.control.ToggleButton threadsToggle =
+            new javafx.scene.control.ToggleButton(tr("debugpanel.threadsView"));
+
+    /** The Call Stack area's title: "Call Stack", or "Threads" while the Threads view is shown. */
+    private @Nullable Label stackTitle;
+
+    /** Coalesces the thread start/exit events of a busy program into one listing. */
+    private final javafx.animation.PauseTransition threadsRefresh =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
+
     private final ListView<DapModels.StackFrameInfo> stack = new ListView<>();
     private final TreeView<VarRow> variables = new TreeView<>();
     private final CodeArea console = AreaUndo.none(new CodeArea());
@@ -448,6 +482,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 actions.selectThread(t.id());
             }
         });
+        buildThreadsView();
 
         // Call stack: rich cells — frame name + muted ":line, File" location.
         stack.getStyleClass().add("debug-stack"); // dense, borderless (Structure/Git panel idiom)
@@ -683,11 +718,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // The thread selector shares the header's row: on its own row it took a third of the default strip.
         Label stackLabel = sectionLabel("debugpanel.callStack");
         stackLabel.setMinWidth(Region.USE_PREF_SIZE); // the thread selector shrinks first ("Call St…", review C16)
-        HBox stackHeader = new HBox(6, stackLabel, threads);
+        stackTitle = stackLabel;
+        threadsToggle.setMinWidth(Region.USE_PREF_SIZE);
+        Region threadsGap = spacer();
+        threadsGap.visibleProperty().bind(threadsToggle.selectedProperty());
+        threadsGap.managedProperty().bind(threadsToggle.selectedProperty());
+        HBox stackHeader = new HBox(6, stackLabel, threads, threadsGap, threadsToggle);
         stackHeader.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(threads, Priority.ALWAYS);
-        VBox stackBox = new VBox(2, stackHeader, stack);
-        VBox.setVgrow(stack, Priority.ALWAYS);
+        javafx.scene.layout.StackPane stackArea = new javafx.scene.layout.StackPane(stack, threadList);
+        VBox stackBox = new VBox(2, stackHeader, stackArea);
+        VBox.setVgrow(stackArea, Priority.ALWAYS);
         Label varsHeader = sectionLabel("debugpanel.variables");
         varsFilter.setPromptText(tr("debugpanel.filterPrompt"));
         varsFilter.setPrefColumnCount(12);
@@ -1057,6 +1098,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         refreshInputPrompt();
         threads.setDisable(!suspended);
+        if (threadsShown()) {
+            refreshThreads(); // which threads are suspended changed with the session's state
+        }
         if (!active) {
             sessionFile = "";
             setRuntime(null);
@@ -1264,6 +1308,148 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         } finally {
             settingThreads = false;
         }
+    }
+
+    // --- Threads view -------------------------------------------------------------------------------------
+
+    private void buildThreadsView() {
+        threadsToggle.getStyleClass().addAll("debug-threads-toggle", "small");
+        threadsToggle.setFocusTraversable(false);
+        threadsToggle.setTooltip(new javafx.scene.control.Tooltip(tr("debugpanel.threadsViewTip")));
+        threadsToggle.selectedProperty().addListener((o, was, on) -> showThreadsView(on));
+        threadList.getStyleClass().add("debug-stack");
+        threadList.setVisible(false);
+        Label empty = new Label(tr("debugpanel.noThreads"));
+        empty.getStyleClass().add("debug-empty-hint");
+        empty.setWrapText(true);
+        threadList.setPlaceholder(empty);
+        threadList.setCellFactory(v -> new ListCell<>() {
+            @Override
+            protected void updateItem(DapModels.ThreadStatus t, boolean empty) {
+                super.updateItem(t, empty);
+                setText(null);
+                if (empty || t == null) {
+                    setGraphic(null);
+                    return;
+                }
+                Text name = new Text((t.shown() ? "▶ " : "") + DebugPanelText.threadName(t.name()));
+                name.getStyleClass().add("debug-frame-name");
+                if (t.shown()) {
+                    name.getStyleClass().add("debug-thread-shown");
+                }
+                Text state = new Text("  " + tr(DebugPanelText.threadStateKey(t)));
+                state.getStyleClass().add(t.paused() ? "debug-thread-paused" : "debug-frame-loc");
+                setGraphic(new TextFlow(name, state));
+            }
+        });
+        threadList.setOnMouseClicked(e -> {
+            if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY && e.getClickCount() == 2) {
+                showSelectedThread();
+            }
+        });
+        threadList.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                showSelectedThread();
+                e.consume();
+            }
+        });
+        javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+        menu.setOnShowing(e -> rebuildThreadMenu(menu));
+        threadList.setContextMenu(menu);
+        threadsRefresh.setOnFinished(e -> refreshThreads());
+    }
+
+    /** The thread menu for the selected row: Show Frames and Resume Thread when it is suspended, else Pause Thread. */
+    private void rebuildThreadMenu(javafx.scene.control.ContextMenu menu) {
+        menu.getItems().clear();
+        DapModels.ThreadStatus t = threadList.getSelectionModel().getSelectedItem();
+        if (t == null) {
+            return;
+        }
+        if (t.paused()) {
+            javafx.scene.control.MenuItem show = new javafx.scene.control.MenuItem(tr("debugpanel.showFrames"));
+            show.setOnAction(e -> showSelectedThread());
+            javafx.scene.control.MenuItem resume = new javafx.scene.control.MenuItem(tr("debugpanel.resumeThread"));
+            resume.setGraphic(Icons.run());
+            resume.setOnAction(e -> actions.resumeThread(t.id()));
+            menu.getItems().addAll(show, resume);
+        } else {
+            javafx.scene.control.MenuItem pause = new javafx.scene.control.MenuItem(tr("debugpanel.pauseThread"));
+            pause.setGraphic(Icons.debugPause());
+            pause.setOnAction(e -> actions.pauseThread(t.id()));
+            menu.getItems().add(pause);
+        }
+    }
+
+    /** Shows the frames of the selected thread when it is suspended (Enter, a double-click, Show Frames). */
+    private void showSelectedThread() {
+        DapModels.ThreadStatus t = threadList.getSelectionModel().getSelectedItem();
+        if (t == null || !t.paused()) {
+            return;
+        }
+        threadsToggle.setSelected(false);
+        if (!t.shown()) {
+            actions.showThread(t);
+        }
+    }
+
+    /** Whether the Threads view is shown in place of the frames. */
+    boolean threadsShown() {
+        return threadsToggle.isSelected();
+    }
+
+    /** Shows the Threads view ({@code true}) or the frames. */
+    void showThreadsView(boolean on) {
+        if (threadsToggle.isSelected() != on) {
+            threadsToggle.setSelected(on); // comes back here through its listener
+            return;
+        }
+        threadList.setVisible(on);
+        stack.setVisible(!on);
+        threads.setVisible(!on);
+        threads.setManaged(!on);
+        if (stackTitle != null) {
+            stackTitle.setText(tr(on ? "debugpanel.threadsTitle" : "debugpanel.callStack"));
+        }
+        if (on) {
+            refreshThreads();
+            threadList.requestFocus();
+        } else {
+            threadsRefresh.stop();
+        }
+    }
+
+    /** A thread started or ended: the Threads view, when shown, lists them again (at most every 250 ms). */
+    public void threadsChanged() {
+        if (threadsShown()) {
+            threadsRefresh.playFromStart();
+        }
+    }
+
+    /** Lists the threads again, keeping the selected one selected. */
+    void refreshThreads() {
+        if (lastState == DapManager.State.INACTIVE) {
+            threadList.getItems().clear();
+            return;
+        }
+        actions.threadStatuses(list -> {
+            DapModels.ThreadStatus selected = threadList.getSelectionModel().getSelectedItem();
+            List<DapModels.ThreadStatus> shown = DebugPanelText.visibleThreadStatuses(list);
+            threadList.getItems().setAll(shown);
+            if (selected != null) {
+                for (DapModels.ThreadStatus t : shown) {
+                    if (t.id() == selected.id()) {
+                        threadList.getSelectionModel().select(t);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    /** The Threads view's list (test read). */
+    ListView<DapModels.ThreadStatus> threadList() {
+        return threadList;
     }
 
     /** Fills the thread dropdown and selects {@code currentThreadId} without re-fetching its stack. */

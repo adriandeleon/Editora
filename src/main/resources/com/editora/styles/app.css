@@ -4749,6 +4749,10 @@
     -fx-font-size: 12px;
     -fx-padding: 0;
 }
+/* Threads view: the shown thread bold, a suspended thread's state in the accent colour. */
+.debug-panel .debug-threads-toggle { -fx-font-size: 11px; -fx-padding: 1 6 1 6; }
+.debug-panel .debug-thread-shown { -fx-font-weight: bold; }
+.debug-panel .debug-thread-paused { -fx-fill: -color-accent-fg; }
 /* Rich frame cells: frame name + muted ":line, File" location (IntelliJ-style). */
 .debug-panel .debug-frame-name { -fx-fill: -color-fg-default; }
 .debug-panel .debug-frame-loc { -fx-fill: -color-fg-muted; }

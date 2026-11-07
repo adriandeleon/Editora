@@ -155,4 +155,29 @@ class DebugPanelTextTest {
         assertNull(DebugPanelText.parseIndex("99999999999", 100_000));
         assertNull(DebugPanelText.parseIndex(null, 100_000));
     }
+
+    @Test
+    void aThreadsStateSaysWhyItIsSuspended() {
+        java.util.function.Function<String, String> key = reason ->
+                DebugPanelText.threadStateKey(new com.editora.dap.DapModels.ThreadStatus(1, "t", true, reason, false));
+        assertEquals("debugpanel.thread.breakpoint", key.apply("breakpoint"));
+        assertEquals("debugpanel.thread.method", key.apply("function breakpoint"));
+        assertEquals("debugpanel.thread.field", key.apply("data breakpoint"));
+        assertEquals("debugpanel.thread.suspended", key.apply(""));
+        assertEquals("debugpanel.thread.suspended", key.apply("goto"));
+        assertEquals(
+                "debugpanel.thread.running",
+                DebugPanelText.threadStateKey(new com.editora.dap.DapModels.ThreadStatus(1, "t", false, "", false)));
+    }
+
+    @Test
+    void aSuspendedJvmThreadIsListedAndARunningOneIsNot() {
+        var rows = DebugPanelText.visibleThreadStatuses(List.of(
+                new com.editora.dap.DapModels.ThreadStatus(1, "main", false, "", false),
+                new com.editora.dap.DapModels.ThreadStatus(2, "Finalizer", false, "", false),
+                new com.editora.dap.DapModels.ThreadStatus(3, "Signal Dispatcher", true, "pause", false)));
+        assertEquals(
+                List.of(1, 3),
+                rows.stream().map(com.editora.dap.DapModels.ThreadStatus::id).toList());
+    }
 }

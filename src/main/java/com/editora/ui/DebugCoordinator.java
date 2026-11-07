@@ -1445,6 +1445,13 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void onThreadsChanged() {
+                if (debugPanel != null) {
+                    debugPanel.threadsChanged();
+                }
+            }
+
+            @Override
             public void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {
                 // Which exception: the one thing an exception stop has to say, and the stop event does not.
                 panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
@@ -1506,6 +1513,31 @@ final class DebugCoordinator {
             @Override
             public void runToCursor() {
                 debugRunToCursor();
+            }
+
+            @Override
+            public void threadStatuses(Consumer<List<DapModels.ThreadStatus>> cb) {
+                dapManager.threadStatuses(cb);
+            }
+
+            @Override
+            public void pauseThread(int threadId) {
+                dapManager.pauseThread(threadId);
+            }
+
+            @Override
+            public void resumeThread(int threadId) {
+                dapManager.resumeThread(threadId);
+            }
+
+            @Override
+            public void showThread(DapModels.ThreadStatus thread) {
+                if (dapManager.state() == DapManager.State.SUSPENDED) {
+                    panel().showThread(thread.id()); // as if picked in the dropdown
+                    selectThread(thread.id());
+                } else {
+                    dapManager.showSuspendedThread(thread.id(), thread.reason());
+                }
             }
 
             @Override
@@ -4042,6 +4074,15 @@ final class DebugCoordinator {
         buffer.setDebugFileHandler(() -> debugFile(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
         buffer.setGutterBreakpointMenu(this::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
         buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
+    }
+
+    /**
+     * Debug: Threads — opens the Debug window on its Threads view: every thread of the program, which are suspended,
+     * and Pause / Resume / Show Frames for each.
+     */
+    void showThreads() {
+        ops.openToolWindow();
+        panel().showThreadsView(true);
     }
 
     /** Focuses the Debug console's evaluate field ({@code debug.evaluate} command). */

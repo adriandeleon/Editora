@@ -2166,6 +2166,9 @@ final class WindowCommandRegistrar {
         // Debugger data inspection (parity with the Debug panel's own controls).
         host.registry()
                 .register(Command.of(
+                        "debug.threads", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showThreads)));
+        host.registry()
+                .register(Command.of(
                         "debug.evaluate",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::focusEvaluate)));
         host.registry()

@@ -1120,7 +1120,18 @@ Java server's document outline (`memberAt`; the package from the source's `packa
 `Class#member` when there is none. While paused, Variables → **Break When Value Changes** asks the adapter
 (`dataBreakpointInfo`) which field a row is; a local variable has no `dataId` and cannot be watched. The stop's
 reason (`function breakpoint` / `data breakpoint`) is named on the state line. The opt-in
-`MemberBreakpointsProbeFxTest` sets both from the caret against the installed jdtls and java-debug. Restart goes
+`MemberBreakpointsProbeFxTest` sets both from the caret against the installed jdtls and java-debug.
+The **Threads view** (the Call Stack area's Threads switch, `debug.threads`) lists `DapManager.threadStatuses`: the
+adapter's `threads`, each marked suspended when it is in `stoppedThreads` (with its stop reason), is the thread shown,
+or — after a whole-program suspend (`allSuspended`) — was not resumed on its own since (`resumedSinceSuspendAll`).
+**Pause Thread** sends a plain `pause` for that thread (java-debug suspends it alone; debugpy suspends everything) and
+its `stopped` event shows it like any stop. **Resume Thread** sends a plain `continue` for it; when it is the thread
+shown, the next still-stopped thread is brought forward as after Continue, and an answer of `allThreadsContinued`
+(debugpy) runs the whole session. **Show Frames** on a suspended thread selects it as the dropdown does, or — no thread
+shown because the shown one was resumed alone — brings it forward (`showSuspendedThread`). The adapter's `thread`
+events (start/exit) reach the panel as `onThreadsChanged`, coalesced into one listing per 250 ms while the view is
+shown. The opt-in `ThreadsViewProbeFxTest` checks Pause Thread and Resume Thread act on one thread against java-debug.
+Restart goes
 through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
 build, closed-file breakpoints) rather than only the adapter launch. `debug.start` in a JUnit test file that
 has no `main` of its own debugs the test at the caret, or the class when the caret is outside a test, through
