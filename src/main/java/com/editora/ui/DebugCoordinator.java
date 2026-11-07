@@ -158,6 +158,14 @@ final class DebugCoordinator {
         /** Persists the exception-breakpoint choices (workspace state + save). */
         default void persistDebugExceptionFilters(Map<String, List<String>> filters) {}
 
+        /** The addresses Attach reached in this project, most recent first (workspace state). */
+        default List<String> debugAttachTargets() {
+            return List.of();
+        }
+
+        /** Persists the attach addresses (workspace state + save). */
+        default void persistDebugAttachTargets(List<String> targets) {}
+
         /** Whether Mute Breakpoints was left on for this project (workspace state). */
         default boolean debugBreakpointsMuted() {
             return false;
@@ -1589,6 +1597,18 @@ final class DebugCoordinator {
             }
 
             @Override
+            public boolean hexValues() {
+                return dapManager.hexValues();
+            }
+
+            @Override
+            public void setHexValues(boolean on) {
+                dapManager.setHexValues(on);
+                host.setStatus(tr(on ? "status.debug.hexOn" : "status.debug.hexOff"));
+                refreshValues();
+            }
+
+            @Override
             public boolean refreshValues() {
                 DapModels.StackFrameInfo frame = shownFrame;
                 if (frame == null || dapManager.state() != DapManager.State.SUSPENDED) {
@@ -2642,9 +2662,11 @@ final class DebugCoordinator {
             if (planned.problem() instanceof com.editora.run.JavaLaunchPlan.Problem problem) {
                 String quote = String.valueOf(problem.quote());
                 host.setStatus(
-                        problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
-                                ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
-                                : tr("status.run.argsUnclosedQuote", quote));
+                        !problem.envFile().isEmpty()
+                                ? tr("status.run.envFileUnreadable", cfg.name(), problem.envFile())
+                                : problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
+                                        ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
+                                        : tr("status.run.argsUnclosedQuote", quote));
             }
             ops.editConfiguration(cfg.name());
             return;
@@ -2788,9 +2810,14 @@ final class DebugCoordinator {
         }
         java.util.Map<String, String> env;
         try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false));
+            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false), cwd);
         } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
             host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        } catch (com.editora.run.EnvVars.EnvFileException e) {
+            host.setStatus(
+                    tr("status.run.envFileUnreadable", cfg.name(), e.file().toString()));
             ops.editConfiguration(cfg.name());
             return;
         }
@@ -3096,6 +3123,25 @@ final class DebugCoordinator {
         dapManager.runToCursor(b.getPath(), line);
     }
 
+    /** Debug: Show Numbers as Hexadecimal — on or off, in Variables, watches, hover and inline values. */
+    void toggleHex() {
+        panel().toggleHexValues();
+    }
+
+    /** Debug: Force Run to Cursor — Run to Cursor with every breakpoint on the way ignored. */
+    void debugForceRunToCursor() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || b.getPath() == null || dapManager.state() != DapManager.State.SUSPENDED) {
+            return;
+        }
+        int line = lineMap(b).toLaunched(fileLineAtCaret(b));
+        if (line < 0) {
+            host.setStatus(tr("status.debug.lineAddedSinceLaunch"));
+            return;
+        }
+        dapManager.forceRunToCursor(b.getPath(), line);
+    }
+
     /** Jump to Line: move the execution pointer to the caret line without executing in-between code.
      *  Capability-gated — debugpy supports it; java-debug/js-debug report "not supported". */
     void debugJumpToLine() {
@@ -3232,58 +3278,150 @@ final class DebugCoordinator {
         return sameProject != null ? sameProject : anyManaged != null ? anyManaged : anchor;
     }
 
-    /** What Attach offers: the address last attached to from this window, else the JDWP default. */
-    private String lastAttachAddress = "localhost:5005";
+    /** What Attach offers when this project has attached nowhere yet: the JDWP default. */
+    private static final String DEFAULT_ATTACH_ADDRESS = "localhost:5005";
 
+    /** The most addresses Attach remembers per project. */
+    static final int MAX_ATTACH_TARGETS = 8;
+
+    /** Pure: {@code address} first, then the earlier ones without it, at most {@link #MAX_ATTACH_TARGETS}. */
+    static List<String> rememberAttachTarget(List<String> earlier, String address) {
+        List<String> out = new ArrayList<>();
+        out.add(address);
+        for (String a : earlier) {
+            if (out.size() >= MAX_ATTACH_TARGETS) {
+                break;
+            }
+            if (a != null && !a.isBlank() && !a.equalsIgnoreCase(address)) {
+                out.add(a);
+            }
+        }
+        return out;
+    }
+
+    /** The JVM adapter language of the active file Attach starts from, or null when it cannot (it says why). */
+    private @Nullable String attachLanguage(@Nullable EditorBuffer b) {
+        if (b == null || b.getPath() == null) {
+            host.setStatus(tr("status.debug.saveFirst"));
+            return null;
+        }
+        String jvmLanguage = jvmAdapterLanguage(b.getPath());
+        if (jvmLanguage == null && !"java".equals(b.getLanguage())) {
+            host.setStatus(tr("status.debug.attachLanguages"));
+            return null;
+        }
+        String adapterLanguage = jvmLanguage != null ? jvmLanguage : "java";
+        if (!debugEffectiveFor(adapterLanguage, b.getPath())) { // a remote file attaches from its host (review A9)
+            host.setStatus(unavailableMessage(adapterLanguage, b.getPath()));
+            return null;
+        }
+        return adapterLanguage;
+    }
+
+    /**
+     * Debug ▸ Attach: picks an address this project attached to before (most recent first), or asks for another,
+     * pre-filled with the most recent one.
+     */
     void debugAttach() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && "javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))) {
             attachToNode(b); // review D7: a Node.js inspector, not a JVM
             return;
         }
-        if (b == null || b.getPath() == null) {
-            host.setStatus(tr("status.debug.saveFirst"));
+        String language = attachLanguage(b);
+        if (b == null || language == null) {
             return;
         }
-        String jvmLanguage = jvmAdapterLanguage(b.getPath());
-        if (jvmLanguage == null && !"java".equals(b.getLanguage())) {
-            host.setStatus(tr("status.debug.attachLanguages"));
+        List<String> earlier = ops.debugAttachTargets();
+        if (earlier.isEmpty()) {
+            promptAttachAddress(b, language, DEFAULT_ATTACH_ADDRESS);
             return;
         }
-        String adapterLanguage = jvmLanguage != null ? jvmLanguage : "java";
-        if (!debugEffectiveFor(adapterLanguage, b.getPath())) { // a remote file attaches from its host (review A9)
-            host.setStatus(unavailableMessage(adapterLanguage, b.getPath()));
+        List<String> rows = new ArrayList<>(earlier);
+        rows.add(""); // "Another address…"
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("dialog.debug.attachTitle"),
+                tr("debug.attach.pickPrompt"),
+                () -> rows,
+                a -> a.isEmpty() ? tr("debug.attach.another") : a,
+                a -> "",
+                a -> {
+                    if (a == null) {
+                        return;
+                    }
+                    if (a.isEmpty()) {
+                        promptAttachAddress(b, language, earlier.get(0));
+                    } else {
+                        attachTo(b, language, a);
+                    }
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /**
+     * Debug: Reattach — attaches again to the address this project attached to last (Visual Studio's Reattach to
+     * Process), without asking.
+     */
+    void debugReattach() {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && "javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))) {
+            attachToNode(b);
             return;
         }
-        host.promptText(tr("dialog.debug.attachTitle"), tr("dialog.debug.attachContent"), lastAttachAddress, input -> {
-            String text = input == null ? "" : input.trim();
-            String hostName = "localhost";
-            String portStr = text;
-            int colon = text.lastIndexOf(':');
-            if (colon >= 0) {
-                hostName = text.substring(0, colon);
-                portStr = text.substring(colon + 1);
-            }
-            try {
-                int port = Integer.parseInt(portStr.trim());
-                lastAttachAddress = text; // offered again next time, in this window (review 2, A109)
-                Path file = b.getPath(); // checked above; a saved buffer keeps a path
-                if (file == null) {
-                    return;
-                }
-                ops.openToolWindow();
-                nameSession(file.getFileName().toString());
-                String attachHost = hostName;
-                relaunch = null; // an attach is re-attached as it was
-                if (jvmLanguage != null) {
-                    withClosedBreakpoints(() -> dapManager.startJvmAttach(file, jvmLanguage, attachHost, port));
-                } else {
-                    withClosedBreakpoints(() -> dapManager.startAttach(file, attachHost, port));
-                }
-            } catch (NumberFormatException e) {
-                host.setStatus(tr("status.debug.badAddress", text));
-            }
-        });
+        String language = attachLanguage(b);
+        if (b == null || language == null) {
+            return;
+        }
+        List<String> earlier = ops.debugAttachTargets();
+        if (earlier.isEmpty()) {
+            host.setStatus(tr("status.debug.noEarlierAttach"));
+            return;
+        }
+        attachTo(b, language, earlier.get(0));
+    }
+
+    private void promptAttachAddress(EditorBuffer b, String language, String initial) {
+        host.promptText(
+                tr("dialog.debug.attachTitle"),
+                tr("dialog.debug.attachContent"),
+                initial,
+                input -> attachTo(b, language, input == null ? "" : input));
+    }
+
+    /** Attaches the {@code language} adapter to {@code address} ({@code host:port}, or a port on localhost). */
+    private void attachTo(EditorBuffer b, String language, String address) {
+        String jvmLanguage = "java".equals(language) ? null : language;
+        String text = address.trim();
+        String hostName = "localhost";
+        String portStr = text;
+        int colon = text.lastIndexOf(':');
+        if (colon >= 0) {
+            hostName = text.substring(0, colon);
+            portStr = text.substring(colon + 1);
+        }
+        int port;
+        try {
+            port = Integer.parseInt(portStr.trim());
+        } catch (NumberFormatException e) {
+            host.setStatus(tr("status.debug.badAddress", text));
+            return;
+        }
+        Path file = b.getPath(); // checked by attachLanguage; a saved buffer keeps a path
+        if (file == null) {
+            return;
+        }
+        // Offered first next time, in this project (review 2, A109: it was only kept for the window).
+        ops.persistDebugAttachTargets(rememberAttachTarget(ops.debugAttachTargets(), text));
+        ops.openToolWindow();
+        nameSession(file.getFileName().toString());
+        String attachHost = hostName;
+        relaunch = null; // an attach is re-attached as it was
+        if (jvmLanguage != null) {
+            withClosedBreakpoints(() -> dapManager.startJvmAttach(file, jvmLanguage, attachHost, port));
+        } else {
+            withClosedBreakpoints(() -> dapManager.startAttach(file, attachHost, port));
+        }
     }
 
     /**
@@ -3361,9 +3499,13 @@ final class DebugCoordinator {
         }
         Map<String, String> env;
         try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false));
+            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false), cwd);
         } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
             host.setStatus(tr("status.run.envUnclosedQuote", name, String.valueOf(e.quote())));
+            ops.editConfiguration(name);
+            return;
+        } catch (com.editora.run.EnvVars.EnvFileException e) {
+            host.setStatus(tr("status.run.envFileUnreadable", name, e.file().toString()));
             ops.editConfiguration(name);
             return;
         }
@@ -4453,6 +4595,7 @@ final class DebugCoordinator {
                 menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
         if (dapManager.state() == DapManager.State.SUSPENDED) {
             items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
+            items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));
             items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));
             var area = b.getFocusedArea();
             String selected = area.getSelectedText();
