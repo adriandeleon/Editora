@@ -2496,11 +2496,23 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Restores what the workspace remembers of this panel — Tree or Map, the Map's flow, its ⋯ options and
-     * "Hide unmatched" — and writes later changes back through {@code state} and {@code save}.
+     * {@link #setRememberedMapState(java.util.function.Supplier, Runnable, Runnable)} with the Map's exploration
+     * left to the session's own write, as before it was saved as it changed.
      */
     public void setRememberedMapState(
             java.util.function.Supplier<com.editora.config.WorkspaceState> state, Runnable save) {
+        setRememberedMapState(state, save, () -> {});
+    }
+
+    /**
+     * Restores what the workspace remembers of this panel — Tree or Map, the Map's flow, its ⋯ options and
+     * "Hide unmatched" — and writes later changes back through {@code state} and {@code save}. The Map's exploration
+     * (its folders, selection, zoom and the open cards with their places) changes as often as the map is panned, so
+     * it goes through {@code saveLater}: a coalesced write off the FX thread, at most every 0.6 s, so a card moved is
+     * on disk moments later and not only when the session ends.
+     */
+    public void setRememberedMapState(
+            java.util.function.Supplier<com.editora.config.WorkspaceState> state, Runnable save, Runnable saveLater) {
         com.editora.config.WorkspaceState stored = state.get();
         setRememberedMapFlow(stored.getProjectMapFlow(), flow -> {
             state.get().setProjectMapFlow(flow);
@@ -2512,9 +2524,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     state.get().setProjectMapFocusNewColumn(focusColumn);
                     save.run();
                 });
-        // The exploration itself — folders, selection, places, zoom, cards — kept with the session (review 3 B6).
-        mapView.setRememberedPlace(
-                stored.getProjectMapState(), place -> state.get().setProjectMapState(place));
+        // The exploration itself — folders, selection, places, zoom, cards — saved as it changes (review 3 B6).
+        mapView.setRememberedPlace(stored.getProjectMapState(), place -> {
+            state.get().setProjectMapState(place);
+            saveLater.run();
+        });
         mapView.setRememberedWorkingSets(stored.getProjectMapWorkingSets(), sets -> {
             state.get().setProjectMapWorkingSets(sets);
             save.run();
@@ -2550,16 +2564,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             state.get().setProjectMapHideIgnored(hide);
             save.run();
         });
-        mapView.setOnOverviewSeen(() -> {
-            state.get().setProjectMapOverviewSeen(true);
-            save.run();
-        });
         mapView.setShowRecentChanges(stored.isProjectMapShowRecentChanges());
         mapView.setOnShowRecentChangesChanged(show -> {
             state.get().setProjectMapShowRecentChanges(show);
             save.run();
         });
-        mapView.setOverviewSeen(stored.isProjectMapOverviewSeen()); // false opens the card on the first Map open
+        mapView.setOverviewOnFirstShow(true); // the Overview card opens on each session's first Map open
         mapWindow.setBoundsMemory(
                 () -> state.get().getProjectMapWindowBounds(),
                 bounds -> state.get().setProjectMapWindowBounds(bounds));

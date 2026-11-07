@@ -107,7 +107,6 @@ class ProjectPanelMapWindowFxTest {
     void theMapWindowClosesWithTheEditorWindowAndWithTheProjectButStaysRemembered(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
-            state.setProjectMapOverviewSeen(true); // its first open would be a change to store
             AtomicInteger saves = new AtomicInteger();
             FxTestSupport.runOnFx(() -> r.panel.setRememberedMapState(() -> state, saves::incrementAndGet));
             openMap(r);
@@ -142,7 +141,6 @@ class ProjectPanelMapWindowFxTest {
     void theWorkspaceRemembersTheWindowTheFlowAndTheNavigationOptions(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
-            state.setProjectMapOverviewSeen(true); // its first open would be a change to store
             state.setProjectViewMode(WorkspaceState.PROJECT_VIEW_MAP);
             state.setProjectMapFlow("TOP_TO_BOTTOM");
             state.setProjectMapKeepZoom(true);
@@ -185,7 +183,6 @@ class ProjectPanelMapWindowFxTest {
     void aWorkspaceThatRemembersNothingOpensNoMapWindowAndHasTheDefaultFlow(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
-            state.setProjectMapOverviewSeen(true); // its first open would be a change to store
             state.setProjectMapFlow("a flow this build has never heard of");
             FxTestSupport.runOnFx(() -> {
                 r.panel.setRememberedMapState(() -> state, () -> {});
@@ -205,7 +202,6 @@ class ProjectPanelMapWindowFxTest {
     void theNewerMapOptionsAreRestoredAndRememberedPerWorkspace(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
-            state.setProjectMapOverviewSeen(true); // its first open would be a change to store
             state.setProjectMapSingleClickOpens(false);
             state.setProjectMapCompactChains(false);
             state.setProjectMapFollowActiveFile(true);

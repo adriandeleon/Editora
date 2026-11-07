@@ -2150,6 +2150,17 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugRunToCursor)));
         host.registry()
                 .register(Command.of(
+                        "debug.forceRunToCursor",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugForceRunToCursor)));
+        host.registry()
+                .register(Command.of(
+                        "debug.reattach",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugReattach)));
+        host.registry()
+                .register(Command.of(
+                        "debug.toggleHex", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleHex)));
+        host.registry()
+                .register(Command.of(
                         "debug.jumpToLine",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugJumpToLine)));
         // Debugger data inspection (parity with the Debug panel's own controls).

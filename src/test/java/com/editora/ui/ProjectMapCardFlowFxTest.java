@@ -23,6 +23,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,7 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * — as the row's next column would. With "Focus new column" on the map then pans to centre it, as it does a new
  * column; off, with no room there it takes the side of the column, and the map never pans; a
  * declaration card opened from a file
- * card's Structure column opens right of the file card, past the column, level with its row.
+ * card's Structure column opens right of the file card, past the column, level with its row. Cards opened from one
+ * column stand level with each other (Map cards, same level): in a column of their own across the flow, in a row
+ * along it.
  */
 @Tag("fx")
 class ProjectMapCardFlowFxTest {
@@ -107,6 +110,99 @@ class ProjectMapCardFlowFxTest {
         assertEquals(900 + MapCards.CARD_COLUMN_GAP, past[0], 0.001);
         double[] zoomed = MapCards.cardColumnSpot(row, column, 500, 400, true, false, 0.5, List.of());
         assertEquals(310 + MapCards.CARD_COLUMN_GAP / 2, zoomed[0], 0.001, "the gap is drawn at the map's zoom");
+    }
+
+    @Test
+    void aCardOpensLevelWithTheCardsOfItsColumnBelowTheLowestOrRightOfTheRightmost() {
+        List<double[]> siblings = List.of(new double[] {500, 100, 400, 300}, new double[] {520, 420, 400, 300});
+        double[] across = MapCards.cardLevelSpot(siblings, siblings, 400, 300, true, false, 18);
+        assertArrayEquals(new double[] {520, 738, 400, 300}, across, 0.001, "under the lowest, at its left edge");
+        double[] along = MapCards.cardLevelSpot(siblings, siblings, 400, 300, false, false, 18);
+        assertArrayEquals(new double[] {938, 420, 400, 300}, along, 0.001, "right of the rightmost, at its top");
+        List<double[]> taken = List.of(siblings.get(0), siblings.get(1), new double[] {300, 700, 600, 100});
+        double[] past = MapCards.cardLevelSpot(siblings, taken, 400, 300, true, false, 18);
+        assertEquals(818, past[1], 0.001, "on past what is there");
+        double[] above = MapCards.cardLevelSpot(siblings, siblings, 400, 300, true, true, 18);
+        assertArrayEquals(new double[] {500, 100 - 318, 400, 300}, above, 0.001, "back: above the topmost");
+        double[] left = MapCards.cardLevelSpot(siblings, siblings, 400, 300, false, true, 18);
+        assertArrayEquals(new double[] {500 - 418, 100, 400, 300}, left, 0.001, "back: left of the leftmost");
+        assertNull(
+                MapCards.cardLevelSpot(List.of(), taken, 400, 300, true, false, 18),
+                "a column's first card: as a column");
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProjectMapView.FlowDirection.class)
+    void cardsOpenedFromOneColumnStandInAColumnAcrossTheFlowAndInARowAlongIt(ProjectMapView.FlowDirection flow)
+            throws Exception {
+        Path root = Files.createDirectories(temp.resolve("project"));
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Path more = Files.writeString(root.resolve("More.java"), "class More {}\n");
+        Path util = Files.writeString(root.resolve("Util.java"), "class Util {}\n");
+        Fixture map = openMap(root, flow, true);
+        try {
+            waitFor(() -> nodeBox(map, app) != null && nodeBox(map, util) != null, "the rows");
+            ProjectMapPreview first = openCard(map, app);
+            ProjectMapPreview second = openCard(map, more);
+            ProjectMapPreview third = openCard(map, util);
+            FxTestSupport.runOnFx(() -> assertLevel(flow, first, second, third));
+        } finally {
+            FxTestSupport.runOnFx(map.view()::dispose);
+        }
+    }
+
+    @Test
+    void withFocusNewColumnOffTheCardsOfAColumnStillStandInAColumnWhenTheyFitInView() throws Exception {
+        Path root = Files.createDirectories(temp.resolve("project"));
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Path more = Files.writeString(root.resolve("More.java"), "class More {}\n");
+        Fixture map = openMap(root, ProjectMapView.FlowDirection.LEFT_TO_RIGHT);
+        try {
+            waitFor(() -> nodeBox(map, app) != null && nodeBox(map, more) != null, "the rows");
+            ProjectMapPreview first = openCard(map, app);
+            ProjectMapPreview second = openCard(map, more);
+            FxTestSupport.runOnFx(() -> {
+                double[] a = MapCards.drawnBounds(first);
+                double[] b = MapCards.drawnBounds(second);
+                String where = List.of(a[0], a[1], a[2], a[3]) + " then " + List.of(b[0], b[1], b[2], b[3]);
+                assertEquals(a[0], b[0], 0.5, "one left edge: " + where);
+                // Below it when there is room in view, else above it: the map is never panned for a card.
+                assertTrue(b[1] >= a[1] + a[3] - 0.5 || b[1] + b[3] <= a[1] + 0.5, "clear of it: " + where);
+            });
+        } finally {
+            FxTestSupport.runOnFx(map.view()::dispose);
+        }
+    }
+
+    /** Opens {@code file}'s card with its row's preview toggle and waits for it to be drawn. */
+    private static ProjectMapPreview openCard(Fixture map, Path file) throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                map.view(), "togglePreview", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, file)));
+        ProjectMapPreview card = waitForCard(map, file);
+        FxTestSupport.drainFx();
+        return card;
+    }
+
+    /**
+     * Asserts the cards, opened from one column in this order, stand level: flowing across the panel, at one left
+     * edge, each below the one before; flowing down or up it, at one top, each right of the one before.
+     */
+    private static void assertLevel(ProjectMapView.FlowDirection flow, ProjectMapPreview... cards) {
+        boolean across = flow == ProjectMapView.FlowDirection.LEFT_TO_RIGHT
+                || flow == ProjectMapView.FlowDirection.RIGHT_TO_LEFT;
+        for (int i = 1; i < cards.length; i++) {
+            double[] before = MapCards.drawnBounds(cards[i - 1]);
+            double[] card = MapCards.drawnBounds(cards[i]);
+            String where = "card " + i + " " + List.of(card[0], card[1], card[2], card[3]) + " after "
+                    + List.of(before[0], before[1], before[2], before[3]) + " in " + flow;
+            if (across) {
+                assertEquals(before[0], card[0], 0.5, "one left edge: " + where);
+                assertTrue(card[1] >= before[1] + before[3] - 0.5, "below the one before: " + where);
+            } else {
+                assertEquals(before[1], card[1], 0.5, "one top: " + where);
+                assertTrue(card[0] >= before[0] + before[2] - 0.5, "right of the one before: " + where);
+            }
+        }
     }
 
     @Test

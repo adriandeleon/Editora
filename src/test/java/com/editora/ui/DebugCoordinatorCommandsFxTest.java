@@ -212,6 +212,19 @@ class DebugCoordinatorCommandsFxTest {
         }
 
         @Override
+        public List<String> debugAttachTargets() {
+            return attachTargets == null ? List.of() : List.copyOf(attachTargets);
+        }
+
+        @Override
+        public void persistDebugAttachTargets(List<String> targets) {
+            if (attachTargets != null) {
+                attachTargets.clear();
+                attachTargets.addAll(targets);
+            }
+        }
+
+        @Override
         public void persistDebugWatches(List<String> watches) {}
 
         @Override
@@ -1066,6 +1079,55 @@ class DebugCoordinatorCommandsFxTest {
         promptAnswer = "5005"; // a bare port: this machine
         FxTestSupport.runOnFx(() -> debug.debugAttach());
         assertEquals("localhost", session("attach").launchArgs.get("hostName"));
+    }
+
+    /** The project's remembered attach addresses; null: not kept (every Attach asks). */
+    private @org.jspecify.annotations.Nullable List<String> attachTargets;
+
+    @Test
+    void attachRemembersItsAddressesAndReattachUsesTheLastOne() throws Exception {
+        attachTargets = new ArrayList<>();
+        Path file = open("src/main/java/demo/Args.java");
+        FxTestSupport.runOnFx(() -> debug.debugReattach());
+        assertEquals(List.of(tr("status.debug.noEarlierAttach")), statuses());
+
+        promptAnswer = "build.example.test:8000"; // nothing remembered yet: Attach asks
+        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        session("attach");
+        awaitState("debug.state.running");
+        assertEquals(List.of("build.example.test:8000"), attachTargets);
+
+        FxTestSupport.runOnFx(() -> debug.debugReattach());
+        assertEquals("build.example.test", session("attach").launchArgs.get("hostName"));
+        awaitState("debug.state.running");
+
+        // With an address remembered, Attach offers it first and "Another address…" last.
+        promptAnswer = "localhost:5006";
+        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        answerPicker(1, javafx.scene.input.KeyCode.ENTER);
+        assertEquals(
+                "5006", String.valueOf(session("attach").launchArgs.get("port")).replace(".0", ""));
+        awaitState("debug.state.running");
+        assertEquals(List.of("localhost:5006", "build.example.test:8000"), attachTargets, "most recent first");
+
+        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        answerPicker(1, javafx.scene.input.KeyCode.ENTER); // the earlier one
+        assertEquals("build.example.test", session("attach").launchArgs.get("hostName"));
+        assertEquals(List.of("build.example.test:8000", "localhost:5006"), attachTargets);
+        assertEquals(file, FxTestSupport.callOnFx(dap::debugFile));
+    }
+
+    @Test
+    void anAttachAddressIsRememberedOnceMostRecentFirstAndAtMostEight() {
+        List<String> eight = List.of("a:1", "b:2", "c:3", "d:4", "e:5", "f:6", "g:7", "h:8");
+        assertEquals(
+                List.of("c:3", "a:1", "b:2", "d:4", "e:5", "f:6", "g:7", "h:8"),
+                DebugCoordinator.rememberAttachTarget(eight, "c:3"));
+        List<String> nine = DebugCoordinator.rememberAttachTarget(eight, "i:9");
+        assertEquals(DebugCoordinator.MAX_ATTACH_TARGETS, nine.size());
+        assertEquals("i:9", nine.get(0));
+        assertFalse(nine.contains("h:8"), "the oldest one goes");
+        assertEquals(List.of("x:1"), DebugCoordinator.rememberAttachTarget(List.of("X:1"), "x:1"));
     }
 
     @Test

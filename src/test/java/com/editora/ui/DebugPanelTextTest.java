@@ -140,4 +140,19 @@ class DebugPanelTextTest {
                 DebugPanelText.callStackText("main", frames));
         assertEquals("    at Main.main(Main.java:4)\n", DebugPanelText.callStackText("", frames.subList(2, 3)));
     }
+
+    @Test
+    void goToIndexReadsAnIndexOfTheContainer() {
+        assertEquals(1500, DebugPanelText.parseIndex("1500", 100_000));
+        assertEquals(1500, DebugPanelText.parseIndex(" [1500] ", 100_000));
+        assertEquals(10000, DebugPanelText.parseIndex("10_000", 100_000));
+        assertEquals(10000, DebugPanelText.parseIndex("10,000", 100_000));
+        assertEquals(0, DebugPanelText.parseIndex("0", 1));
+        assertNull(DebugPanelText.parseIndex("100000", 100_000), "past the last element");
+        assertNull(DebugPanelText.parseIndex("-1", 100_000));
+        assertNull(DebugPanelText.parseIndex("x", 100_000));
+        assertNull(DebugPanelText.parseIndex("", 100_000));
+        assertNull(DebugPanelText.parseIndex("99999999999", 100_000));
+        assertNull(DebugPanelText.parseIndex(null, 100_000));
+    }
 }

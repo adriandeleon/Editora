@@ -1402,6 +1402,7 @@ public final class DapClient implements IDebugProtocolClient {
             a.setStart(Math.max(0, start));
             a.setCount(count);
         }
+        a.setFormat(valueFormat());
         return timed(server().variables(a)).thenApply(r -> {
             List<DapModels.VariableInfo> out = new ArrayList<>();
             if (r != null && r.getVariables() != null) {
@@ -1422,6 +1423,32 @@ public final class DapClient implements IDebugProtocolClient {
         });
     }
 
+    /** Numbers in hexadecimal: every variables and evaluate request asks for {@code format.hex} (a child reads its root's). */
+    private volatile boolean hexValues;
+
+    /**
+     * Shows integer values in hexadecimal from the next request on (DAP {@code ValueFormat.hex}; java-debug and debugpy
+     * honour it, an adapter that does not simply ignores it).
+     */
+    public void setHexValues(boolean on) {
+        hexValues = on;
+    }
+
+    private boolean hexValues() {
+        DapClient r = root;
+        return r != null ? r.hexValues : hexValues;
+    }
+
+    /** The {@code format} of a request: hexadecimal numbers when asked for, else none (the adapter's default). */
+    private org.eclipse.lsp4j.debug.@Nullable ValueFormat valueFormat() {
+        if (!hexValues()) {
+            return null;
+        }
+        org.eclipse.lsp4j.debug.ValueFormat f = new org.eclipse.lsp4j.debug.ValueFormat();
+        f.setHex(true);
+        return f;
+    }
+
     private static int count(Integer reported) {
         return reported == null ? 0 : Math.max(0, reported);
     }
@@ -1436,6 +1463,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext(context);
+        a.setFormat(valueFormat());
         return timed(server().evaluate(a)).thenApply(r -> r == null ? null : r.getResult());
     }
 
@@ -1450,6 +1478,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext(context);
+        a.setFormat(valueFormat());
         return timed(server().evaluate(a))
                 .thenApply(r -> r == null
                         ? null

@@ -36,7 +36,6 @@ class ProjectMapExploreWiringFxTest {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
             state.setProjectMapShowRecentChanges(true);
-            state.setProjectMapOverviewSeen(true);
             AtomicInteger saves = new AtomicInteger();
             FxTestSupport.runOnFx(() -> r.panel.setRememberedMapState(() -> state, saves::incrementAndGet));
             ProjectMapView view = FxTestSupport.field(r.panel, "mapView");
@@ -52,7 +51,6 @@ class ProjectMapExploreWiringFxTest {
     void aPinnedCardIsKeptPinnedInTheMapsStateAndComesBackPinned(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
-            state.setProjectMapOverviewSeen(true);
             FxTestSupport.runOnFx(() -> r.panel.setRememberedMapState(() -> state, () -> {}));
             ProjectMapView view = FxTestSupport.field(r.panel, "mapView");
             Region surface = FxTestSupport.field(view, "surface");

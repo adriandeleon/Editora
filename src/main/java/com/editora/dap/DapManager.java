@@ -3189,6 +3189,42 @@ public final class DapManager {
         resume();
     }
 
+    /** Files whose breakpoints Force Run to Cursor took away for the trip; restored at the next stop (FX thread). */
+    private List<Path> forceRunMuted = List.of();
+
+    /** Whether Force Run to Cursor took the method breakpoints and field watchpoints away for the trip (FX thread). */
+    private boolean forceRunMutedMembers;
+
+    /**
+     * Force Run to Cursor (IntelliJ, Visual Studio): runs to {@code line} (0-based) of {@code file} with every
+     * breakpoint set aside, so none on the way stops the program. Exception breakpoints still stop it. The next stop,
+     * wherever it is, puts the breakpoints back. FX thread, while SUSPENDED.
+     */
+    public void forceRunToCursor(Path file, int line) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED || file == null) {
+            return;
+        }
+        List<Path> muted = new ArrayList<>();
+        for (DapModels.FileBreakpoints fb : breakpointsSupplier.get()) {
+            if (fb.file() != null
+                    && !fb.breakpoints().isEmpty()
+                    && !com.editora.config.PathKeys.samePath(fb.file(), file)) {
+                muted.add(fb.file());
+                c.sendSetBreakpoints(adapterBreakpoint(new DapModels.FileBreakpoints(fb.file(), List.of())));
+            }
+        }
+        forceRunMuted = List.copyOf(muted);
+        if (!memberBreakpoints.isEmpty()) {
+            forceRunMutedMembers = true; // method entries and field writes on the way must not stop it either
+            c.setMemberBreakpoints(List.of());
+        }
+        tempBreakpointFile = file;
+        c.sendSetBreakpoints(adapterBreakpoint(
+                new DapModels.FileBreakpoints(file, List.of(new DapModels.LineBreakpoint(line, null, null)))));
+        resume();
+    }
+
     /** Whether the connected adapter supports Jump to Line ({@code gotoTargets}/{@code goto}) —
      *  debugpy does; java-debug and vscode-js-debug currently do not. */
     public boolean supportsJumpToLine() {
@@ -3257,7 +3293,24 @@ public final class DapManager {
     private void clearTempBreakpoint() {
         Path f = tempBreakpointFile;
         tempBreakpointFile = null;
+        List<Path> muted = forceRunMuted;
+        forceRunMuted = List.of();
         DapClient c = client;
+        if (c != null && forceRunMutedMembers) {
+            c.setMemberBreakpoints(memberBreakpoints);
+        }
+        forceRunMutedMembers = false;
+        if (c != null && !muted.isEmpty()) {
+            for (Path file : muted) {
+                List<DapModels.LineBreakpoint> real = new ArrayList<>();
+                for (DapModels.FileBreakpoints fb : breakpointsSupplier.get()) {
+                    if (com.editora.config.PathKeys.samePath(fb.file(), file)) {
+                        real.addAll(fb.breakpoints());
+                    }
+                }
+                c.sendSetBreakpoints(adapterBreakpoint(new DapModels.FileBreakpoints(file, real)));
+            }
+        }
         if (f == null || c == null) {
             return;
         }
@@ -3515,6 +3568,26 @@ public final class DapManager {
      */
     public void forgetValues() {
         lazyValues.clear();
+    }
+
+    /** Numbers in hexadecimal in Variables, watches, hover and inline values; for this window's sessions. */
+    private volatile boolean hexValues;
+
+    public boolean hexValues() {
+        return hexValues;
+    }
+
+    /**
+     * Shows numbers in hexadecimal (or not) from the next request on, in this session and the next ones; the caller
+     * fetches the values again. FX thread.
+     */
+    public void setHexValues(boolean on) {
+        hexValues = on;
+        DapClient c = client;
+        if (c != null) {
+            c.setHexValues(on);
+        }
+        lazyValues.clear(); // the answers so far are in the other format
     }
 
     /** Lazy rows resolved during the current stop (B101, B201); forgotten whenever the program runs. */
@@ -3998,6 +4071,8 @@ public final class DapManager {
         }
         outputPump.flush(); // the program's last lines arrived before this event — show them first
         tempBreakpointFile = null; // session over — nothing to restore
+        forceRunMuted = List.of();
+        forceRunMutedMembers = false;
         DapClient c;
         synchronized (sessionLock) {
             if (!isCurrent(epoch)) {
@@ -4316,6 +4391,7 @@ public final class DapManager {
                 return false;
             }
             candidate.setMemberBreakpoints(memberBreakpoints); // sent on its initialized event
+            candidate.setHexValues(hexValues);
             client = candidate;
             return true;
         }

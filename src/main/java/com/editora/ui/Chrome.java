@@ -573,6 +573,7 @@ final class Chrome {
             "debug.stepInto",
             "debug.stepOut",
             "debug.runToCursor",
+            "debug.forceRunToCursor",
             "debug.jumpToLine",
             "debug.evaluate",
             // Not debug.addWatch: watches are kept between sessions and the Debug window adds them at any time,

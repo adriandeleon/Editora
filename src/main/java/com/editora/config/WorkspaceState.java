@@ -94,8 +94,11 @@ public class WorkspaceState {
      * <p>v28 → v29 added {@code projectMapWorkingSets} (the Project Map's named views: ⋯ → Working sets),
      * {@code projectMapShowRecentChanges} (the Map's ⋯ "Show recent changes") and a code card's {@code pinned} in
      * {@code projectMapState}. Additive; absent means no sets, no recent-changes tint and unpinned cards.
+     *
+     * <p>v29 → v30 added {@code debugAttachTargets} (the addresses Debug ▸ Attach reached, most recent first).
+     * Additive; absent means none, as before.
      */
-    public static final int SCHEMA_VERSION = 29;
+    public static final int SCHEMA_VERSION = 30;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -246,6 +249,8 @@ public class WorkspaceState {
     private Map<String, List<String>> debugExceptionFilters = new LinkedHashMap<>();
     /** Mute Breakpoints: the debug adapter is told none of this project's breakpoints. Additive in v20. */
     private boolean debugBreakpointsMuted;
+    /** The {@code host:port} addresses Debug ▸ Attach reached in this project, most recent first. Additive in v30. */
+    private List<String> debugAttachTargets = new ArrayList<>();
 
     // --- Zen (distraction-free) mode (per window). zenMode is a per-window effective overlay folded into
     //     the chrome/view-settings application (MainController.zenActive) — it hides chrome WITHOUT mutating
@@ -672,6 +677,10 @@ public class WorkspaceState {
         this.projectMapHideIgnored = projectMapHideIgnored;
     }
 
+    /**
+     * Whether the Map's Overview card was once shown in this workspace. Written up to 0.27; since 0.28 the card opens
+     * on every session's first Map open, so nothing reads this. Kept so a file that has it round-trips.
+     */
     public boolean isProjectMapOverviewSeen() {
         return projectMapOverviewSeen;
     }
@@ -715,6 +724,14 @@ public class WorkspaceState {
 
     public void setDebugWatches(List<String> debugWatches) {
         this.debugWatches = debugWatches == null ? new ArrayList<>() : debugWatches;
+    }
+
+    public List<String> getDebugAttachTargets() {
+        return debugAttachTargets == null ? new ArrayList<>() : debugAttachTargets;
+    }
+
+    public void setDebugAttachTargets(@Nullable List<String> debugAttachTargets) {
+        this.debugAttachTargets = debugAttachTargets == null ? new ArrayList<>() : new ArrayList<>(debugAttachTargets);
     }
 
     public boolean isDebugBreakpointsMuted() {

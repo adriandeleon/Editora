@@ -55,6 +55,7 @@
   "Cmd-f8": "debug.toggleBreakpoint",
   "Cmd-f2": "debug.stop",
   "M-f9": "debug.runToCursor",
+  "M-Cmd-f9": "debug.forceRunToCursor",
   "Cmd-S-f8": "debug.breakpoints",
   "M-Cmd-S-f8": "debug.toggleTemporaryBreakpoint",
   "Cmd-a": "edit.selectAll",

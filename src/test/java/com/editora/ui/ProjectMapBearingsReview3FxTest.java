@@ -632,7 +632,8 @@ class ProjectMapBearingsReview3FxTest {
     void thePanelKeepsTheMapsStateInTheWorkspaceWhenTheWindowCloses(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
-            FxTestSupport.runOnFx(() -> r.panel.setRememberedMapState(() -> state, () -> {}));
+            AtomicInteger later = new AtomicInteger(); // the coalesced save to disk the exploration asks for
+            FxTestSupport.runOnFx(() -> r.panel.setRememberedMapState(() -> state, () -> {}, later::incrementAndGet));
             ProjectMapView view = FxTestSupport.field(r.panel, "mapView");
             Region surface = FxTestSupport.field(view, "surface");
             FxTestSupport.runOnFx(() -> r.panel.openMapWindow(true));
@@ -646,6 +647,7 @@ class ProjectMapBearingsReview3FxTest {
                 ProjectMapState kept = state.getProjectMapState();
                 assertEquals(dir.toString(), kept.getRoot());
                 assertEquals("beta.txt", kept.getSelected());
+                assertTrue(later.get() > 0, "and a save to disk was asked for, not left to the session's end");
             });
         }
     }

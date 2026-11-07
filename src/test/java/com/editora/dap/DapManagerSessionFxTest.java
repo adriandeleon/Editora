@@ -788,6 +788,71 @@ class DapManagerSessionFxTest {
     }
 
     @Test
+    void forceRunToCursorSetsEveryBreakpointAsideUntilTheNextStop() throws Exception {
+        project();
+        Path other = root.resolve("src/main/java/Other.java");
+        breakpoints = List.of(
+                new DapModels.FileBreakpoints(file, List.of(new DapModels.LineBreakpoint(1, null, null))),
+                new DapModels.FileBreakpoints(other, List.of(new DapModels.LineBreakpoint(5, null, null))));
+        adapter.memberBreakpoints = true;
+        onFx(() -> dap.setMemberBreakpoints(
+                List.of(new DapModels.MemberBreakpoint(false, "demo.Other#run", "", null, null))));
+        FakeDebugAdapter.Session session = launch();
+        session.awaitRequests("setBreakpoints", 2);
+        session.awaitRequests("setFunctionBreakpoints", 1);
+        stop(session, 7);
+
+        onFx(() -> dap.forceRunToCursor(file, 3));
+        session.awaitRequests("setBreakpoints", 4);
+        session.awaitRequest("continue");
+        assertEquals(other.toString(), session.breakpoints.get(2).getSource().getPath());
+        assertEquals(List.of(), lines(session.breakpoints.get(2)), "the other file's breakpoints are set aside");
+        assertEquals(file.toString(), session.breakpoints.get(3).getSource().getPath());
+        assertEquals(List.of(4), lines(session.breakpoints.get(3)), "only the cursor line, not line 2's breakpoint");
+        session.awaitRequests("setFunctionBreakpoints", 2);
+        assertEquals(List.of(), session.functionBreakpoints.get(1), "no method breakpoint stops it either");
+
+        stop(session, 7);
+        session.awaitRequests("setBreakpoints", 6);
+        session.awaitRequests("setFunctionBreakpoints", 3);
+        assertEquals(List.of("demo.Other#run"), session.functionBreakpoints.get(2), "and they come back too");
+        assertEquals(other.toString(), session.breakpoints.get(4).getSource().getPath());
+        assertEquals(List.of(6), lines(session.breakpoints.get(4)), "the next stop puts them back");
+        assertEquals(List.of(2), lines(session.breakpoints.get(5)));
+    }
+
+    @Test
+    void hexValuesAskTheAdapterForHexadecimalNumbers() throws Exception {
+        project();
+        FakeDebugAdapter.Session session = launchAndStop();
+        onFx(() -> dap.variables(1000, v -> {}));
+        session.awaitRequest("variables");
+        assertEquals(
+                null,
+                session.variableRequests
+                        .get(session.variableRequests.size() - 1)
+                        .getFormat(),
+                "the adapter's own format by default");
+
+        onFx(() -> {
+            dap.setHexValues(true);
+            dap.variables(1000, v -> {});
+            dap.evaluateFull("x", 1, "watch", r -> {});
+        });
+        session.awaitRequests("variables", 2);
+        session.awaitRequest("evaluate");
+        assertTrue(session.variableRequests
+                .get(session.variableRequests.size() - 1)
+                .getFormat()
+                .getHex());
+        assertTrue(session.evaluateRequests
+                .get(session.evaluateRequests.size() - 1)
+                .getFormat()
+                .getHex());
+        assertTrue(dap.hexValues(), "the window keeps it for its next sessions");
+    }
+
+    @Test
     void runToCursorPlantsATemporaryBreakpointAndRemovesItAtTheNextStop() throws Exception {
         project();
         Path other = root.resolve("src/main/java/Other.java");

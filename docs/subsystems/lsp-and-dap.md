@@ -1098,7 +1098,11 @@ sends java-debug's own `pauseAll` (`DapClient.pauseAll`), which suspends the who
 a plain `continue` naming one thread would leave every other thread suspended — steps in between resume only the
 stepped thread. The "Suspend all threads when one stops" setting is java-debug's `suspendAllThreads`
 (`JavaDebugSettings`, read when a session starts): breakpoints suspend with `SUSPEND_ALL`, and java-debug's own
-`continue` then resumes the whole program. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
+`continue` then resumes the whole program. *Force Run to Cursor* (`DapManager.forceRunToCursor`) sends every
+other file an empty breakpoint set and the caret's file only the cursor line, then resumes; the next stop's
+`clearTempBreakpoint` sends the real sets again (`forceRunMuted`). *Show Numbers as Hexadecimal*
+(`DapManager.setHexValues`) puts `format: {hex: true}` on every `variables` and `evaluate` request of the session and
+the next ones (java-debug and debugpy honour it; js-debug ignores it), and forgets the stop's cached answers. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
 installed adapters in a real window (a worker thread's output stops while paused), along with temporary breakpoints
 and changed-value marks: `./mvnw test -Dtest=DebugQuickWinsProbeFxTest -Dgroups=probe -Dlsp.probe=true`.
 **Method breakpoints and field watchpoints** ([`config/MemberBreakpoint`](../../src/main/java/com/editora/config/MemberBreakpoint.java),
@@ -1266,6 +1270,14 @@ path of row names and by frame (thread, method, file, depth from the bottom of t
 stop's values into the set the next one is compared with — so re-selecting a frame or reloading after Set Value
 within a stop keeps the marks. Placeholders, failed watches and rows not loaded yet are never compared; each frame
 keeps at most 5,000 rows and 32 frames are remembered.
+
+The Variables filter narrows each scope (not Watches) to the rows whose name contains its text: `DebugPanel.append`
+keeps every loaded row of a scope in `scopeRows` and adds only the matching ones, and `applyFilter` rebuilds each
+scope's children from that list when the text changes (a trailing "Show more" row stays). *Go to Index…* on an open
+container with more than one page reloads its children from the typed index through the same paging (`goToIndex`).
+
+Attach keeps the `host:port` addresses it reached per project, most recent first, at most eight
+(`WorkspaceState.debugAttachTargets`, v30); Attach offers them in a picker, *Debug: Reattach* uses the first.
 
 ---
 
