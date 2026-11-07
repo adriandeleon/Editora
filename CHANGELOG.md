@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Mill and sbt builds ask before running a folder's code.** A cloned repository's own `./mill` launcher ran on the
+  first build with no question, unlike `./mvnw` and `./gradlew`. Mill and sbt builds now ask for workspace trust the
+  way Maven and Gradle do, on a repository launcher or your own `mill`/`sbt` alike, since `build.mill`, `build.sc`,
+  `build.sbt` and `project/` are Scala code the build compiles and runs. The question lists the launcher, the build
+  scripts, a `mill-build/` meta-build and the launcher options files (`.mill-jvm-opts`, `.jvmopts`, `.sbtopts`).
+  Running a task, Run on a Scala file of the build, Test Results, Run and Debug's build before a launch and Load all
+  tasks all ask; declining runs nothing. A folder you already trusted is unchanged.
+
 ### Added
 
 - **Threads view.** The Debug window's Call Stack area has a **Threads** switch (and *Debug: Threads* opens it):
