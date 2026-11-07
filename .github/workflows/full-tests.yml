@@ -317,8 +317,9 @@ jobs:
       # breakpoint is removed once hit, and Variables marks the values a step changed.
       # MemberBreakpointsProbeFxTest: a method breakpoint and a field watchpoint set from the caret (jdtls's
       # outline) stop on entering the method and where the field is assigned (java-debug function/data breakpoints).
+      # ThreadsViewProbeFxTest: the Threads view's Pause Thread / Resume Thread act on one thread only.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

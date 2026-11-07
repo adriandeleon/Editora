@@ -341,6 +341,7 @@ final class MenuBarModel {
                                                 "debug.toggleFieldWatchpoint",
                                                 "debug.editBreakpoint",
                                                 "debug.breakpoints",
+                                                "debug.threads",
                                                 "debug.muteBreakpoints",
                                                 SEPARATOR,
                                                 "debug.exceptions.caught",

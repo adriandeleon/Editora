@@ -18,6 +18,13 @@ public final class DapModels {
     public record ThreadInfo(int id, String name) {}
 
     /**
+     * A thread as the Threads view shows it: whether it is suspended, and why ({@code breakpoint}, {@code step},
+     * {@code pause}, {@code exception}… as the adapter said; {@code ""} when it did not). {@code shown} is the thread
+     * whose stack and variables the Debug window shows.
+     */
+    public record ThreadStatus(int id, String name, boolean paused, String reason, boolean shown) {}
+
+    /**
      * One frame of a thread's call stack. {@code file} may be null for frames with no source. {@code sourceUri}
      * is the adapter's own name for a source that is not a file on this machine — java-debug's
      * {@code jdt://contents/…} for a JDK or library class, whose text jdtls can supply

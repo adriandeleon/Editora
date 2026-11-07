@@ -237,6 +237,38 @@ final class DebugPanelText {
         return out;
     }
 
+    /**
+     * The Threads view's rows: {@link #visibleThreads}'s filter (the JVM's own housekeeping threads and a package
+     * manager's left out, unless suspended), in the adapter's order. Pure.
+     */
+    static List<DapModels.ThreadStatus> visibleThreadStatuses(List<DapModels.ThreadStatus> all) {
+        List<DapModels.ThreadStatus> out = new ArrayList<>();
+        for (DapModels.ThreadStatus t : all) {
+            DapModels.ThreadInfo info = new DapModels.ThreadInfo(t.id(), t.name());
+            if (t.paused() || (!isJvmThread(info) && !(all.size() > 1 && isPackageManagerThread(info)))) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /** The message key of a thread's state in the Threads view: running, or suspended and why. Pure. */
+    static String threadStateKey(DapModels.ThreadStatus t) {
+        if (!t.paused()) {
+            return "debugpanel.thread.running";
+        }
+        return switch (t.reason() == null ? "" : t.reason()) {
+            case "breakpoint" -> "debugpanel.thread.breakpoint";
+            case "step" -> "debugpanel.thread.step";
+            case "exception" -> "debugpanel.thread.exception";
+            case "pause" -> "debugpanel.thread.pause";
+            case "entry" -> "debugpanel.thread.entry";
+            case "function breakpoint" -> "debugpanel.thread.method";
+            case "data breakpoint" -> "debugpanel.thread.field";
+            default -> "debugpanel.thread.suspended";
+        };
+    }
+
     private static final java.util.regex.Pattern PACKAGE_MANAGER_THREAD =
             java.util.regex.Pattern.compile("^(?:npm|npx|pnpm|yarn|bun)(?:\\.cmd)? \\[\\d+\\]$");
 

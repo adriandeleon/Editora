@@ -112,6 +112,9 @@ public final class DapManager {
         /** The exception {@code threadId} is stopped on; follows the {@link #onStopped} of an exception stop. */
         default void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {}
 
+        /** A thread of the program started or ended: a Threads view lists them again. */
+        default void onThreadsChanged() {}
+
         /** A message from the adapter for the user that is not program output — java-debug reports a
          *  breakpoint condition or logpoint message it could not evaluate this way. */
         default void onNotice(String message, boolean error) {}
@@ -211,6 +214,11 @@ public final class DapManager {
      * (FX thread).
      */
     private boolean allSuspended;
+    /**
+     * The threads resumed one by one (Threads view → Resume Thread) since the whole program was suspended: while
+     * {@link #allSuspended}, every other thread is still suspended (FX thread).
+     */
+    private final java.util.Set<Integer> resumedSinceSuspendAll = new java.util.HashSet<>();
     /** Counts stops shown, so a late step acknowledgement can tell the step has already ended. */
     private int stopCount;
     /** A step was acknowledged and its stop has not arrived yet (FX thread). */
@@ -3100,6 +3108,7 @@ public final class DapManager {
         stoppedThreads.remove(threadId);
         boolean wholeProgram = allSuspended && javaDebugSession();
         allSuspended = false;
+        resumedSinceSuspendAll.clear();
         (wholeProgram ? c.resumeAll(threadId) : c.resume(threadId))
                 .whenComplete((all, e) -> Platform.runLater(() -> {
                     if (e == null && isCurrent(epoch, c)) {
@@ -3151,6 +3160,110 @@ public final class DapManager {
                 c.pause(id);
             }
         });
+    }
+
+    /**
+     * The session's threads with whether each is suspended (callback on the FX thread): the Threads view. Empty with
+     * no session.
+     */
+    public void threadStatuses(Consumer<List<DapModels.ThreadStatus>> cb) {
+        threads(list -> cb.accept(threadStatuses(
+                list,
+                stoppedThreads,
+                allSuspended,
+                resumedSinceSuspendAll,
+                state == State.SUSPENDED ? currentThreadId : -1)));
+    }
+
+    /**
+     * Which of {@code threads} are suspended: those stopped since the last continue ({@code stopped}, with their
+     * reason), the one shown ({@code shownId}, -1 when none is), and — the whole program suspended — every thread not
+     * resumed on its own since. Pure.
+     */
+    static List<DapModels.ThreadStatus> threadStatuses(
+            List<DapModels.ThreadInfo> threads,
+            Map<Integer, String> stopped,
+            boolean allSuspended,
+            java.util.Set<Integer> resumedSinceSuspendAll,
+            int shownId) {
+        List<DapModels.ThreadStatus> out = new ArrayList<>();
+        for (DapModels.ThreadInfo t : threads) {
+            String stoppedFor = stopped.get(t.id());
+            boolean paused = stoppedFor != null
+                    || t.id() == shownId
+                    || (allSuspended && !resumedSinceSuspendAll.contains(t.id()));
+            String reason = stoppedFor != null ? stoppedFor : paused && t.id() != shownId ? "pause" : "";
+            out.add(new DapModels.ThreadStatus(t.id(), t.name(), paused, reason, t.id() == shownId));
+        }
+        return out;
+    }
+
+    /**
+     * Threads view → Pause Thread: suspends {@code threadId} alone (java-debug; debugpy suspends the whole program).
+     * The adapter's {@code stopped} event then shows it like any stop.
+     */
+    public void pauseThread(int threadId) {
+        DapClient c = client;
+        if (c != null && state != State.INACTIVE && state != State.STARTING) {
+            c.pause(threadId);
+        }
+    }
+
+    /**
+     * Threads view → Resume Thread: resumes {@code threadId} alone, the others staying as they are. When it is the
+     * thread shown, the next still-suspended one is brought forward, as after Continue; when the adapter resumed the
+     * whole program instead (debugpy), the session runs.
+     */
+    public void resumeThread(int threadId) {
+        DapClient c = client;
+        if (c == null || state == State.INACTIVE || state == State.STARTING) {
+            return;
+        }
+        if (state == State.SUSPENDED && threadId == currentThreadId && refuseWhileEvaluating()) {
+            return;
+        }
+        long epoch = sessionEpoch;
+        boolean shown = state == State.SUSPENDED && threadId == currentThreadId;
+        stoppedThreads.remove(threadId);
+        if (allSuspended) {
+            resumedSinceSuspendAll.add(threadId);
+        }
+        if (shown) {
+            stepInFlight = false;
+            setState(State.RUNNING);
+        }
+        c.resume(threadId)
+                .whenComplete((all, e) -> Platform.runLater(() -> {
+                    if (e != null || !isCurrent(epoch, c)) {
+                        return;
+                    }
+                    if (all == null || all) {
+                        stoppedThreads.clear();
+                        allSuspended = false;
+                        resumedSinceSuspendAll.clear();
+                        if (state == State.SUSPENDED) {
+                            setState(State.RUNNING);
+                        }
+                    } else if (shown) {
+                        afterThreadResumed(epoch, c, false);
+                    }
+                    listener.onThreadsChanged();
+                }));
+    }
+
+    /**
+     * Threads view → Show Frames on a suspended thread while no thread is shown (the one on screen was resumed on
+     * its own): shows it as the stopped thread. A thread already shown, or with the session suspended, is selected
+     * as from the thread dropdown instead (the caller's part). False when nothing was done.
+     */
+    public boolean showSuspendedThread(int threadId, String reason) {
+        DapClient c = client;
+        if (c == null || state != State.RUNNING) {
+            return false;
+        }
+        stoppedThreads.put(threadId, reason == null ? "" : reason);
+        presentStop(sessionEpoch, c, threadId, reason == null ? "" : reason, false, false);
+        return true;
     }
 
     /** Lists the session's threads (callback on the FX thread). */
@@ -3852,7 +3965,9 @@ public final class DapManager {
                         if (allThreadsStopped) {
                             stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
                             allSuspended = true;
+                            resumedSinceSuspendAll.clear();
                         }
+                        resumedSinceSuspendAll.remove(threadId);
                         stoppedThreads.put(threadId, reason == null ? "" : reason);
                         clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
                     } else if (state != State.RUNNING || !stoppedThreads.containsKey(threadId)) {
@@ -3914,6 +4029,7 @@ public final class DapManager {
             if (allThreads) {
                 stoppedThreads.clear();
                 allSuspended = false;
+                resumedSinceSuspendAll.clear();
             } else {
                 stoppedThreads.remove(threadId);
                 if (state == State.SUSPENDED && threadId != currentThreadId) {
@@ -4335,6 +4451,7 @@ public final class DapManager {
             consoleEvaluations = 0; // an answer that never comes cannot hold the next session's controls
             stoppedThreads.clear();
             allSuspended = false;
+            resumedSinceSuspendAll.clear();
         }
         this.state = s;
         listener.onState(s);
@@ -4453,6 +4570,15 @@ public final class DapManager {
             @Override
             public void onExited(int exitCode) {
                 DapManager.this.onExited(epoch, exitCode);
+            }
+
+            @Override
+            public void onThreadsChanged() {
+                Platform.runLater(() -> {
+                    if (isCurrent(epoch)) {
+                        listener.onThreadsChanged();
+                    }
+                });
             }
 
             @Override
