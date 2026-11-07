@@ -60,6 +60,7 @@ public final class Modeline {
             Map.entry("js2-jsx", "jsx"),
             Map.entry("rjsx", "jsx"), // emacs rjsx-mode
             Map.entry("json", "json"),
+            Map.entry("jsonl", "jsonl"),
             Map.entry("yaml", "yaml"),
             Map.entry("xml", "xml"),
             Map.entry("html", "html"),

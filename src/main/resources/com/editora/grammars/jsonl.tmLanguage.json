@@ -1,0 +1,10 @@
+{
+  "displayName": "JSON Lines",
+  "name": "jsonl",
+  "scopeName": "source.json.lines",
+  "patterns": [
+    {
+      "include": "source.json"
+    }
+  ]
+}

@@ -278,4 +278,28 @@ class GrammarRegistryTest {
         assertNotNull(GrammarRegistry.shared().forLanguageName("scala"));
         assertNotNull(GrammarRegistry.shared().forLanguageName("clojure"));
     }
+
+    /** JSON Lines: its own grammar, which includes JSON's, so every line is coloured as a JSON value. */
+    @Test
+    void jsonLinesFilesColourEachLineAsJson() {
+        for (String file : java.util.List.of("events.jsonl", "log.ndjson", "data.jsonlines")) {
+            assertNotNull(GrammarRegistry.shared().forFileName(file), file);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "source.json.lines",
+                    GrammarRegistry.shared().forFileName(file).getScopeName(),
+                    file);
+        }
+        var jsonl = GrammarRegistry.shared().forLanguageName("jsonl");
+        assertNotNull(jsonl);
+        var first = jsonl.tokenizeLine("{\"a\": 1}", null, java.time.Duration.ZERO);
+        var second = jsonl.tokenizeLine("[true, \"x\"]", first.getRuleStack(), java.time.Duration.ZERO);
+        assertTrue(
+                java.util.Arrays.stream(first.getTokens())
+                        .anyMatch(t -> t.getScopes().contains("support.type.property-name.json")),
+                java.util.Arrays.toString(first.getTokens()));
+        assertTrue(
+                java.util.Arrays.stream(second.getTokens())
+                        .anyMatch(t -> t.getScopes().contains("constant.language.json")),
+                java.util.Arrays.toString(second.getTokens()));
+    }
 }

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JSON Lines files.** `.jsonl`, `.ndjson` and `.jsonlines` files open as **JSON Lines**: each line is coloured as
+  JSON, a line that is not exactly one JSON value (a trailing comma, two records on one line, a record split over
+  two lines) is underlined with what is wrong, and the preview shows the records as a tree keyed by line number —
+  or, when a line is broken, a link to it. JSON Lines is in **File ▸ New**, spell check skips it like JSON, a
+  `jsonl` Markdown fence is coloured, and an HTTP response sent as `application/x-ndjson` is saved as `.jsonl`.
 - **Threads view.** The Debug window's Call Stack area has a **Threads** switch (and *Debug: Threads* opens it):
   every thread of the program, which are suspended and why, and which is shown. Right-click a thread to **Pause
   Thread** or **Resume Thread** — that thread alone, the others staying as they are — or **Show Frames** of a

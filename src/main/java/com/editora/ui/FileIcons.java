@@ -603,7 +603,7 @@ public final class FileIcons {
             case "css" -> "css";
             case "markdown" -> "markdown";
             case "yaml" -> "yaml";
-            case "json" -> "json";
+            case "json", "jsonl" -> "json";
             case "xml" -> "code";
             case "shell" -> "shell";
             case "powershell", "batchfile" -> "terminal";

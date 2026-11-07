@@ -965,6 +965,25 @@ public final class ConfigMigrations {
         }
     }
 
+    /**
+     * v159→160: {@code "jsonl"} joins a saved {@code spellDisabledLanguages} that holds {@code "json"} — JSON Lines
+     * files were plain text before, and are data like JSON. Safe to repeat: it is added once.
+     */
+    static JsonNode spellSkipJsonLinesLikeJson(JsonNode input) {
+        if (input instanceof ObjectNode o && o.get("spellDisabledLanguages") instanceof ArrayNode list) {
+            boolean json = false;
+            boolean jsonl = false;
+            for (JsonNode n : list) {
+                json |= "json".equals(n.asText());
+                jsonl |= "jsonl".equals(n.asText());
+            }
+            if (json && !jsonl) {
+                list.add("jsonl");
+            }
+        }
+        return input;
+    }
+
     /** v133→134: a terminal scrollback above the new 50,000-line maximum becomes the maximum. */
     static JsonNode clampTerminalScrollback(JsonNode input) {
         if (input instanceof ObjectNode o) {

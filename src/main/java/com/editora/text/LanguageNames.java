@@ -27,6 +27,7 @@ public final class LanguageNames {
             // (XML review 2 C12).
             case "xml" -> "XML";
             case "json" -> "JSON";
+            case "jsonl" -> "JSON Lines";
             case "yaml" -> "YAML";
             case "html" -> "HTML";
             case HtmlElements.TEMPLATE_LANGUAGE -> "HTML Template";

@@ -12,6 +12,8 @@ class HttpResponseFormatTest {
     @Test
     void extensionForKnownContentTypes() {
         assertEquals(".json", HttpResponseFormat.extensionFor("application/json"));
+        assertEquals(".jsonl", HttpResponseFormat.extensionFor("application/x-ndjson"));
+        assertEquals(".jsonl", HttpResponseFormat.extensionFor("application/jsonl; charset=utf-8"));
         assertEquals(".json", HttpResponseFormat.extensionFor("application/vnd.api+json; charset=utf-8"));
         assertEquals(".html", HttpResponseFormat.extensionFor("text/html"));
         assertEquals(".xml", HttpResponseFormat.extensionFor("application/xml"));
