@@ -54,6 +54,28 @@ class BuildTrustTest {
                 s.items());
     }
 
+    /**
+     * The override item names the project file's own command, the one trusting would apply — read even though the
+     * folder is not trusted yet, when the effective command is still the user's own Settings one (which is never
+     * listed as the project's).
+     */
+    @Test
+    void theOverrideItemIsTheProjectFilesCommandNotTheUsers(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("pom.xml"), "<project><artifactId>demo</artifactId></project>");
+        Path file = com.editora.config.ProjectSettings.fileFor(root);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "{\"buildCommands\": {\"maven\": \"  /opt/team/mvn  \"}}");
+        com.editora.config.ProjectSettings project = com.editora.config.ProjectSettings.load(root);
+        assertEquals("/usr/bin/mvn", project.buildCommand("maven", "/usr/bin/mvn", false), "untrusted: not applied");
+
+        BuildTrust.Summary s = BuildTrust.describe(BuildTool.MAVEN, root, null, project.ownBuildCommand("maven"));
+
+        assertEquals("/opt/team/mvn", s.projectOverride());
+        assertEquals(java.util.List.of(tr("trust.item.projectOverride", "/opt/team/mvn", "mvn")), s.items());
+        assertEquals("", project.ownBuildCommand("gradle"), "a tool the file leaves alone has none");
+        assertEquals("", new com.editora.config.ProjectSettings().ownBuildCommand("maven"), "nor does a missing file");
+    }
+
     @Test
     void manyPluginsAreCappedAndABrokenPomIsSaidSo(@TempDir Path root) throws Exception {
         StringBuilder plugins = new StringBuilder();

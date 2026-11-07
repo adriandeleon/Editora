@@ -115,6 +115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The build trust prompt names the project's build command, not yours.** In a folder not yet trusted, the
+  Maven/Gradle trust prompt listed the command set in your own Settings as if the project's `.editora/settings.json`
+  ran it, and never listed a command the project file does set — the one trusting the folder would apply. It now
+  lists the project file's command whenever there is one, and the file's right name.
 - **Settings help links open the right section.** The **?** on Code Completion and Spell Check opened the
   Editing page and Mermaid's the Diagrams page, none of which covers them; they now open Autocomplete and Spell
   checking on the Languages page and Mermaid diagrams on the Markdown page. The Sync page's subtitle and *Sync Now*

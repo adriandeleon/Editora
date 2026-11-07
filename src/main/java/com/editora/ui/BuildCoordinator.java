@@ -62,8 +62,8 @@ final class BuildCoordinator {
 
         /**
          * Asks the user whether to trust {@code root}, whose build would run what {@code summary} lists (the
-         * wrapper if any, the pom's plugins, {@code .mvn/} files, a project.json override). Blocking (a
-         * security decision must not be dismissible by clicking past it). Returns true to grant trust.
+         * wrapper if any, the pom's plugins, {@code .mvn/} files, an {@code .editora/settings.json} build command).
+         * Blocking (a security decision must not be dismissible by clicking past it). Returns true to grant trust.
          */
         boolean confirmTrust(@Nullable Path root, BuildTrust.Summary summary);
 
@@ -793,8 +793,10 @@ final class BuildCoordinator {
         if (ops.isTrusted(trustRoot)) {
             return true;
         }
+        // The project file's own command, not the effective one: untrusted, that is the user's Settings command,
+        // which is no part of what trusting enables — and the project's, which trusting would apply, is hidden.
         BuildTrust.Summary summary =
-                BuildTrust.describe(tool, root, wrapper, host.projectScope().buildCommand(tool, host.settings()));
+                BuildTrust.describe(tool, root, wrapper, host.projectScope().projectBuildCommand(tool));
         if (!ops.confirmTrust(trustRoot, summary)) {
             host.setStatus(tr("status.build.untrusted", tool.displayName()));
             return false;

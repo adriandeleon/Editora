@@ -17,7 +17,7 @@ import static com.editora.i18n.Messages.tr;
  * case the gate used to cover) but the pom's plugins and {@code <extensions>}, the files under
  * {@code .mvn/} ({@code extensions.xml} loads core extensions before the build, {@code maven.config} can
  * add {@code -s evil-settings.xml} or {@code -Dmaven.ext.class.path=…}), every Gradle build script, and a
- * {@code .editora/project.json} that replaces the build command. The prompt lists what it found so the user
+ * {@code .editora/settings.json} that replaces the build command. The prompt lists what it found so the user
  * consents to something concrete; the gate itself (ask once per folder, remembered, inherited by subfolders,
  * revocable) lives in {@code ui.BuildCoordinator}. Pure except for the file probes, so it is unit-tested on
  * a temp folder.
@@ -34,7 +34,8 @@ public final class BuildTrust {
      *
      * @param root the marker directory the build runs in
      * @param wrapper the repo-shipped wrapper the launch would execute, or {@code null}
-     * @param projectOverride a {@code project.json} build-command override, or {@code ""}
+     * @param projectOverride the build command {@code .editora/settings.json} sets for {@code tool}, whether or not
+     *     the folder is trusted yet — never the user's Settings one — or {@code ""}
      * @param items what will run, one line each, localized — never empty
      */
     public record Summary(Path root, @Nullable Path wrapper, String projectOverride, List<String> items) {}
