@@ -110,6 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`.http` results stay on their requests after a line is added above them.** A request's last result after its
+  line could vanish, with the ■ drawn on the old lines for a moment, when a line was added above the requests while
+  the editor was still finding them in the text from before the edit; that out-of-date answer is now dropped and
+  the edit's own scan places them.
 - **Settings help links open the right section.** The **?** on Code Completion and Spell Check opened the
   Editing page and Mermaid's the Diagrams page, none of which covers them; they now open Autocomplete and Spell
   checking on the Languages page and Mermaid diagrams on the Markdown page. The Sync page's subtitle and *Sync Now*
