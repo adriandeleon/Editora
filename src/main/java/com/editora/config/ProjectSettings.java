@@ -245,6 +245,16 @@ public class ProjectSettings {
         return trusted && own != null && !own.isBlank() ? own.strip() : user;
     }
 
+    /**
+     * This file's own command for build tool {@code toolId}, stripped, or {@code ""} when it sets none — whether or
+     * not the folder is trusted. It is what trusting the folder would apply, so the build trust prompt lists it;
+     * {@link #buildCommand} is what applies now, which in an untrusted folder is the user's own.
+     */
+    public String ownBuildCommand(String toolId) {
+        String own = buildCommands.get(toolId);
+        return own == null ? "" : own.strip();
+    }
+
     /** The program or command debug adapter {@code adapterId} uses here; as {@link #buildCommand}. */
     public String debugTool(String adapterId, String user, boolean trusted) {
         String own = debugTools.get(adapterId);

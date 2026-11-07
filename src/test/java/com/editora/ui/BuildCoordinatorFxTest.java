@@ -53,6 +53,14 @@ class BuildCoordinatorFxTest {
             return simpleMode;
         }
 
+        /** The window's project scope; none unless a test opens a project with a settings file. */
+        ProjectScope scope = ProjectScope.NONE;
+
+        @Override
+        public ProjectScope projectScope() {
+            return scope;
+        }
+
         final List<String> statuses = new java.util.ArrayList<>();
 
         @Override
@@ -437,6 +445,46 @@ class BuildCoordinatorFxTest {
 
         FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
         assertEquals(1, ops.promptCount, "trusted now: the second build does not ask again");
+    }
+
+    /**
+     * The prompt's override item is the project file's build command — the one trusting would apply, listed while
+     * the folder is untrusted and it does not apply yet — and never the user's own Settings command.
+     */
+    @Test
+    void theTrustPromptListsTheProjectFilesCommandNotTheUsers(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+        host.scope = new ProjectScope(() -> dir, () -> null); // no trust store: untrusted
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = dir;
+        ops.promptAnswer = false;
+        Files.writeString(dir.resolve("pom.xml"), VALID_POM);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "pom.xml parses");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+        assertEquals(1, ops.promptCount);
+        assertEquals("", ops.promptedSummary.projectOverride(), "the user's command is not the project's");
+        assertFalse(
+                ops.promptedSummary.items().stream()
+                        .anyMatch(i -> i.contains("editora-test-nonexistent-maven-binary-zzz")),
+                "nor is it listed: " + ops.promptedSummary.items());
+
+        Path file = com.editora.config.ProjectSettings.fileFor(dir);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "{\"buildCommands\": {\"maven\": \"/opt/team/mvn\"}}");
+        host.scope.reload();
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(2, ops.promptCount, "declined: asks again");
+        assertEquals("/opt/team/mvn", ops.promptedSummary.projectOverride());
+        assertTrue(
+                ops.promptedSummary.items().contains(tr("trust.item.projectOverride", "/opt/team/mvn", "mvn")),
+                "the project's command is listed although untrusted: " + ops.promptedSummary.items());
+        assertEquals(0, ops.openConsoleCount, "and nothing ran");
     }
 
     /**
