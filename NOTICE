@@ -120,7 +120,8 @@ grammar (http.tmLanguage.json), the Java properties grammar
 (pip-requirements.tmLanguage.json), the CSV, Mermaid, Typst, and log-file
 grammars (csv/mermaid/typst/log .tmLanguage.json), and the HTML derivative that
 the Markdown grammar embeds for raw HTML (html-derivative.tmLanguage.json,
-modelled on VS Code's) — were written for Editora and are covered by Editora's
+modelled on VS Code's), and the JSON Lines grammar (jsonl.tmLanguage.json,
+which includes the JSON grammar) — were written for Editora and are covered by Editora's
 own MIT License (above).
 
 These remain under their original upstream licenses (predominantly MIT). Apart
@@ -156,8 +157,9 @@ information_for_contributors header or Git history has the detail):
         redirections; brace expansion; select/coproc keywords; zsh { cmd }
 
 Languages bundled: Java, XML, shell, PowerShell, DOS batch, Python, Groovy,
-Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL,
-systemd, desktop entries, dotenv, SSH config, Git config, crontab, Caddyfile,
+Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, JSON Lines, CSS, HTML,
+YAML, INI, SQL, systemd, desktop entries, dotenv, SSH config, Git config,
+crontab, Caddyfile,
 fstab, hosts, .properties, deb822 (Debian control / APT sources), APT
 sources.list, network interfaces, Debian changelog, unified diff/patch,
 Makefile, justfile, Protocol Buffers, GraphQL, Astro, .gitattributes, pip

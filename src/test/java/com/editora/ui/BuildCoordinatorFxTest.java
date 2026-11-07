@@ -53,6 +53,14 @@ class BuildCoordinatorFxTest {
             return simpleMode;
         }
 
+        /** The window's project scope; none unless a test opens a project with a settings file. */
+        ProjectScope scope = ProjectScope.NONE;
+
+        @Override
+        public ProjectScope projectScope() {
+            return scope;
+        }
+
         final List<String> statuses = new java.util.ArrayList<>();
 
         @Override
@@ -439,24 +447,171 @@ class BuildCoordinatorFxTest {
         assertEquals(1, ops.promptCount, "trusted now: the second build does not ask again");
     }
 
-    /** A tool whose builds run nothing of the repository's (npm) is never gated. */
+    /**
+     * The prompt's override item is the project file's build command — the one trusting would apply, listed while
+     * the folder is untrusted and it does not apply yet — and never the user's own Settings command.
+     */
     @Test
-    void anNpmRootIsNeverPrompted(@TempDir Path dir) throws Exception {
+    void theTrustPromptListsTheProjectFilesCommandNotTheUsers(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+        host.scope = new ProjectScope(() -> dir, () -> null); // no trust store: untrusted
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = dir;
+        ops.promptAnswer = false;
+        Files.writeString(dir.resolve("pom.xml"), VALID_POM);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "pom.xml parses");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+        assertEquals(1, ops.promptCount);
+        assertEquals("", ops.promptedSummary.projectOverride(), "the user's command is not the project's");
+        assertFalse(
+                ops.promptedSummary.items().stream()
+                        .anyMatch(i -> i.contains("editora-test-nonexistent-maven-binary-zzz")),
+                "nor is it listed: " + ops.promptedSummary.items());
+
+        Path file = com.editora.config.ProjectSettings.fileFor(dir);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "{\"buildCommands\": {\"maven\": \"/opt/team/mvn\"}}");
+        host.scope.reload();
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(2, ops.promptCount, "declined: asks again");
+        assertEquals("/opt/team/mvn", ops.promptedSummary.projectOverride());
+        assertTrue(
+                ops.promptedSummary.items().contains(tr("trust.item.projectOverride", "/opt/team/mvn", "mvn")),
+                "the project's command is listed although untrusted: " + ops.promptedSummary.items());
+        assertEquals(0, ops.openConsoleCount, "and nothing ran");
+    }
+
+    /**
+     * npm used to pass straight through ("the manifest runs nothing itself"), but a script runs with its
+     * {@code pre}/{@code post} scripts, {@code install} runs every dependency's install hooks, and a repository's
+     * {@code .yarnrc.yml} can make its own file the yarn that runs. It now asks like Maven, naming the scripts and
+     * the package-manager files; declining runs nothing, trusting runs the script.
+     */
+    @Test
+    void anNpmRootAsksBeforeItsScriptsRun(@TempDir Path dir) throws Exception {
         FakeHost host = new FakeHost();
         host.settings.setNpmSupport(true);
         host.settings.setNpmCommand("editora-test-nonexistent-npm-binary-zzz");
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("package.json"), "{\"name\": \"demo\", \"scripts\": {\"build\": \"tsc\"}}");
+        Files.writeString(dir.resolve(".npmrc"), "script-shell=./sh\n");
         BuildCoordinator c = coordinator(BuildTool.NPM, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "package.json parses");
         FxTestSupport.runOnFx(() -> c.runTask(List.of("run", "build"), List.of()));
 
-        assertEquals(0, ops.promptCount, "argv[0] is the user's own tool and the manifest runs nothing itself");
+        assertEquals(1, ops.promptCount, "an npm script runs the folder's code: the first build asks");
+        assertEquals(dir, ops.promptedRoot);
+        assertNull(ops.promptedWrapper);
+        assertEquals(
+                List.of(tr("trust.item.npmScripts"), tr("trust.item.packageManagerFiles", ".npmrc")),
+                ops.promptedSummary.items().subList(0, 2),
+                "then the test's own npm command, as an override");
+        assertEquals(0, ops.trustCount, "declining must not record trust");
+        assertEquals(tr("status.build.untrusted", disp(BuildTool.NPM)), host.lastStatus);
+        Thread.sleep(300); // npm picks its Node off the FX thread before it starts: give a launch the time to show
+        assertEquals(0, ops.openConsoleCount, "declining must not run anything");
+
+        ops.promptAnswer = true;
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("run", "build"), List.of()));
+        assertEquals(2, ops.promptCount);
+        assertEquals(1, ops.trustCount, "accepting records the folder");
         // npm picks its Node off the FX thread first (review C101), then starts.
-        waitUntil(() -> ops.openConsoleCount == 1, "and the run proceeds as before");
+        waitUntil(() -> ops.openConsoleCount == 1, "and the trusted run proceeds");
+    }
+
+    /**
+     * Leiningen ({@code project.clj} is evaluated), Babashka ({@code bb.edn} tasks with {@code :init}), the Clojure
+     * CLI (an alias's {@code :jvm-opts}), Cargo ({@code build.rs}, procedural macros) and Scala CLI (macros, compiler
+     * plugins) all run the folder's code beyond the task picked, on the user's own tool: each asks first, and
+     * declining runs nothing.
+     */
+    @Test
+    void theClojureRustAndScalaCliToolsAskAndDecliningRunsNothing(@TempDir Path dir) throws Exception {
+        record Case(BuildTool tool, String marker, String content, List<String> task, String firstItem) {}
+        List<Case> cases = List.of(
+                new Case(
+                        BuildTool.LEIN,
+                        "project.clj",
+                        "(defproject demo \"0.1.0\")\n",
+                        List.of("test"),
+                        tr("trust.item.leinScripts", "project.clj")),
+                new Case(
+                        BuildTool.BABASHKA,
+                        "bb.edn",
+                        "{:tasks {test (shell \"echo\")}}\n",
+                        List.of("run", "test"),
+                        tr("trust.item.bbTasks")),
+                new Case(
+                        BuildTool.CLOJURE,
+                        "deps.edn",
+                        "{:aliases {:test {:main-opts [\"-m\" \"t\"]}}}\n",
+                        List.of("-M:test"),
+                        tr("trust.item.depsAliases")),
+                new Case(
+                        BuildTool.CARGO,
+                        "Cargo.toml",
+                        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+                        List.of("build"),
+                        tr("trust.item.cargoBuild")),
+                new Case(
+                        BuildTool.SCALA_CLI,
+                        "project.scala",
+                        "//> using scala 3\n",
+                        List.of("compile", "."),
+                        tr("trust.item.scalaCli")));
+        for (Case k : cases) {
+            Path root = Files.createDirectories(dir.resolve(k.tool().id()));
+            FakeHost host = new FakeHost();
+            k.tool().setEnabledIn(host.settings, true);
+            k.tool()
+                    .setCommandIn(
+                            host.settings,
+                            "editora-test-nonexistent-" + k.tool().id() + "-zzz");
+            FakeOps ops = new FakeOps(); // declines
+            ops.projectRoot = root;
+            Files.writeString(root.resolve(k.marker()), k.content());
+            BuildCoordinator c = coordinator(k.tool(), host, ops);
+            FxTestSupport.runOnFx(c::refresh);
+            waitUntil(c::isDetected, k.marker() + " is detected");
+
+            FxTestSupport.runOnFx(() -> c.runTask(k.task(), List.of()));
+
+            assertEquals(1, ops.promptCount, k.tool() + " must ask before its first build");
+            assertEquals(root, ops.promptedRoot, k.tool() + ": about the project folder");
+            assertNull(ops.promptedWrapper, k.tool() + " has no repository launcher");
+            assertEquals(k.firstItem(), ops.promptedSummary.items().get(0), k.tool() + "'s prompt says what runs");
+            assertEquals(0, ops.trustCount, k.tool() + ": declining must not record trust");
+            assertEquals(0, ops.openConsoleCount, k.tool() + ": declining must not run anything");
+            assertEquals(tr("status.build.untrusted", disp(k.tool())), host.lastStatus);
+        }
+    }
+
+    /** Go alone stays ungated: {@code go build} never runs the module's code, and run/test/generate are asked for. */
+    @Test
+    void aGoModuleIsNeverPrompted(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setGoSupport(true);
+        host.settings.setGoCommand("editora-test-nonexistent-go-binary-zzz");
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("go.mod"), "module example.com/demo\n\ngo 1.22\n");
+        BuildCoordinator c = coordinator(BuildTool.GO, host, ops);
+
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(c::isDetected, "go.mod is detected");
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("build", "./..."), List.of()));
+
+        assertEquals(0, ops.promptCount, "go build runs nothing of the module's");
+        assertEquals(1, ops.openConsoleCount, "and the run proceeds as before");
     }
 
     @Test
@@ -605,6 +760,116 @@ class BuildCoordinatorFxTest {
 
         assertEquals(2, ops.promptCount, "rerunLast goes through the same gate");
         assertEquals(1, ops.openConsoleCount, "and the declined rerun never ran");
+    }
+
+    // --- Mill and sbt: the build definition is Scala the tool compiles and runs ------------------------
+
+    private static boolean windows() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
+    }
+
+    /**
+     * A Mill project with its own launcher that would leave {@code ran} behind if it were ever executed — the
+     * cloned-repository case: {@code ./mill} is the repository's script, run with the user's privileges.
+     */
+    private static BuildCoordinator untrustedMill(FakeHost host, FakeOps ops, Path dir, Path ran) throws Exception {
+        host.settings.setMillSupport(true);
+        ops.projectRoot = dir;
+        ops.promptAnswer = false; // the user declines
+        Files.writeString(dir.resolve("build.mill"), "package build\nobject app extends ScalaModule\n");
+        if (windows()) {
+            Files.writeString(dir.resolve("mill.bat"), "@echo off\r\ntype nul > \"" + ran + "\"\r\n");
+        } else {
+            Path launcher = Files.writeString(dir.resolve("mill"), "#!/bin/sh\ntouch '" + ran + "'\n");
+            assertTrue(launcher.toFile().setExecutable(true));
+        }
+        BuildCoordinator c = coordinator(BuildTool.MILL, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(c::isDetected, "build.mill is detected");
+        return c;
+    }
+
+    /**
+     * A cloned repository's {@code ./mill} used to run on the first build with no question (only Maven and
+     * Gradle were gated). It now asks like {@code ./mvnw}, naming the launcher and the build script, and
+     * declining runs nothing — not the launcher, not a fallback to {@code mill} on PATH.
+     */
+    @Test
+    void anUntrustedMillLauncherAsksAndDecliningRunsNothing(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        Path ran = dir.resolve("launcher-ran");
+        BuildCoordinator c = untrustedMill(host, ops, dir, ran);
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("__.compile"), List.of()));
+
+        assertEquals(1, ops.promptCount, "the repository's ./mill must ask before it runs");
+        assertEquals(dir, ops.promptedRoot, "about the folder that ships the launcher");
+        assertNotNull(ops.promptedWrapper);
+        assertTrue(ops.promptedWrapper.getFileName().toString().startsWith("mill"), "" + ops.promptedWrapper);
+        String launcher = ops.promptedWrapper.getFileName().toString();
+        assertEquals(
+                List.of(tr("trust.item.wrapper", launcher), tr("trust.item.millScripts", "build.mill")),
+                ops.promptedSummary.items());
+        assertEquals(0, ops.trustCount, "declining must not record trust");
+        assertEquals(0, ops.openConsoleCount, "declining must not run anything");
+        assertEquals(tr("status.build.untrusted", disp(BuildTool.MILL)), host.lastStatus);
+
+        // Every other way in reaches the same gate: Run on a Scala file and Test Results (runTaskAt), Run and
+        // Debug's build before a launch (trustedExecutable), and "Load all tasks…" (`./mill resolve __.compile`).
+        FxTestSupport.runOnFx(() -> c.runTaskAt(dir, List.of("app.runMain", "demo.hello"), List.of()));
+        assertNull(FxTestSupport.callOnFx(() -> c.trustedExecutable(dir)), "no argv for a build before a launch");
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(c, "loadAllTasks", new Class<?>[] {}));
+        assertEquals(4, ops.promptCount, "each asks, since the folder is still not trusted");
+        assertEquals(0, ops.openConsoleCount);
+        Thread.sleep(300); // a launch would be asynchronous: give one the time to leave its mark
+        assertFalse(Files.exists(ran), "the repository's launcher never ran");
+    }
+
+    /** Trusting the folder runs the launcher, and it is not asked about again. */
+    @Test
+    void trustingAMillFolderRunsItsLauncherOnce(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(windows(), "needs a POSIX sh");
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        Path ran = dir.resolve("launcher-ran");
+        BuildCoordinator c = untrustedMill(host, ops, dir, ran);
+        ops.promptAnswer = true;
+
+        runToCompletion(c, "__.compile");
+        runToCompletion(c, "__.test");
+
+        assertEquals(1, ops.promptCount, "asked once, then remembered");
+        assertEquals(1, ops.trustCount);
+        assertTrue(Files.exists(ran), "the trusted launcher ran");
+    }
+
+    /**
+     * A Mill or sbt build on the user's own {@code mill}/{@code sbt} still runs {@code build.mill}/{@code build.sbt}
+     * and its plugins, so it asks too — the rule Maven's {@code mvn} follows — about the project folder.
+     */
+    @Test
+    void anSbtBuildOnThePathSbtAsksAboutTheProject(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setSbtSupport(true);
+        FakeOps ops = new FakeOps(); // declines, so the PATH sbt is never started
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("build.sbt"), "lazy val root = project\n");
+        Files.createDirectories(dir.resolve("project"));
+        Files.writeString(dir.resolve("project").resolve("plugins.sbt"), "");
+        BuildCoordinator c = coordinator(BuildTool.SBT, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(c::isDetected, "build.sbt is detected");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(1, ops.promptCount);
+        assertNull(ops.promptedWrapper, "sbt has no repository launcher: it runs the user's sbt");
+        assertEquals(dir, ops.promptedRoot);
+        assertEquals(List.of(tr("trust.item.sbtScripts", "build.sbt, project/")), ops.promptedSummary.items());
+        assertEquals(0, ops.openConsoleCount);
     }
 
     private static Path script(Path file, String body) throws Exception {

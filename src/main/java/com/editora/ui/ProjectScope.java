@@ -168,6 +168,15 @@ final class ProjectScope {
         return settings().buildCommand(toolId(tool), tool.commandIn(user), trusted());
     }
 
+    /**
+     * The project file's own command for {@code tool}, applied or not ({@code ""} when it sets none): what the
+     * build trust prompt names, since trusting the folder is what would apply it. Never the user's Settings
+     * command, unlike {@link #buildCommand}.
+     */
+    String projectBuildCommand(com.editora.build.BuildTool tool) {
+        return settings().ownBuildCommand(toolId(tool));
+    }
+
     /** The program or command debug adapter {@code adapterId} uses here ({@code java}, {@code python}, …). */
     String debugTool(String adapterId, String user) {
         return settings().debugTool(adapterId, user, trusted());

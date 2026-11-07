@@ -62,8 +62,8 @@ final class BuildCoordinator {
 
         /**
          * Asks the user whether to trust {@code root}, whose build would run what {@code summary} lists (the
-         * wrapper if any, the pom's plugins, {@code .mvn/} files, a project.json override). Blocking (a
-         * security decision must not be dismissible by clicking past it). Returns true to grant trust.
+         * wrapper if any, the pom's plugins, {@code .mvn/} files, an {@code .editora/settings.json} build command).
+         * Blocking (a security decision must not be dismissible by clicking past it). Returns true to grant trust.
          */
         boolean confirmTrust(@Nullable Path root, BuildTrust.Summary summary);
 
@@ -771,18 +771,24 @@ final class BuildCoordinator {
     /**
      * The workspace-trust gate: whether a build may execute from {@code root} right now.
      *
-     * <p>Every build of a Maven or Gradle project runs code the repository supplies — not only a shipped
-     * {@code ./mvnw}/{@code ./gradlew} (the one case this used to gate) but the pom's plugins and
-     * extensions, the files under {@code .mvn/}, every Gradle script — on the user's own {@code mvn} just
-     * the same. So the first build of any kind in an untrusted folder asks once, with a prompt that lists
-     * what it found ({@link BuildTrust}); trust is remembered per folder (the wrapper's, else the open
-     * project — a module must not silently cover a script one level up), inherited by subfolders, shown in
-     * the tasks window's header with a Revoke, and revocable in Settings → Workspace. Tools whose builds
-     * run nothing of the repository's (npm, Cargo, Go, …) pass straight through.
+     * <p>A build of every tool but Go runs code the repository supplies beyond the task the user picked — not only a
+     * shipped {@code ./mvnw}/{@code ./gradlew}/{@code ./mill} (the one case this used to gate, and for Mill not even
+     * that) but the pom's plugins and extensions, the files under {@code .mvn/}, every Gradle script, sbt's
+     * {@code build.sbt} and {@code project/}, Mill's {@code build.mill}/{@code build.sc}, Leiningen's
+     * {@code project.clj}, Babashka's {@code bb.edn} tasks, Cargo's {@code build.rs} and procedural macros, a Scala
+     * CLI compile's macros and compiler plugins, a {@code deps.edn} alias's JVM options, and npm's pre/post and
+     * install scripts or a repository's own {@code yarnPath} yarn — on the user's own tool just the same. So the
+     * first build of any kind in an untrusted folder asks once, with a prompt that lists what it found
+     * ({@link BuildTrust}); trust is remembered per folder (the wrapper's, else the open project — a module must not
+     * silently cover a script one level up), inherited by subfolders, shown in the tasks window's header with a
+     * Revoke, and revocable in Settings → Workspace. Go alone passes straight through: its builds never execute the
+     * module's code, and {@code go run}/{@code test}/{@code generate} run it because the user asked for that by name
+     * ({@link BuildTrust#gates} has the per-tool reasons).
      *
      * <p>Declining does <b>not</b> silently fall back to anything: "no" has to mean no build, not a quieter
      * one. The same gate covers Gradle's "Load all tasks…", the Run/Debug build-before-launch step and the
-     * Maven classpath fallback ({@link #trustedExecutable}).
+     * Maven classpath fallback ({@link #trustedExecutable}); Run on a Scala file of an sbt or Mill build and the
+     * Test Results runs reach it through {@link #runTaskAt}.
      */
     private boolean allowRun(Path root) {
         if (!BuildTrust.gates(tool)) {
@@ -793,8 +799,10 @@ final class BuildCoordinator {
         if (ops.isTrusted(trustRoot)) {
             return true;
         }
+        // The project file's own command, not the effective one: untrusted, that is the user's Settings command,
+        // which is no part of what trusting enables — and the project's, which trusting would apply, is hidden.
         BuildTrust.Summary summary =
-                BuildTrust.describe(tool, root, wrapper, host.projectScope().buildCommand(tool, host.settings()));
+                BuildTrust.describe(tool, root, wrapper, host.projectScope().projectBuildCommand(tool));
         if (!ops.confirmTrust(trustRoot, summary)) {
             host.setStatus(tr("status.build.untrusted", tool.displayName()));
             return false;
@@ -1107,8 +1115,9 @@ final class BuildCoordinator {
             return;
         }
         Path root = markerRoot;
-        // Gated too: this spawns `./gradlew tasks --all` on its own, bypassing launch() entirely — enumerating
-        // tasks runs the repo's wrapper (and its build scripts) exactly like running one does.
+        // Gated too: this spawns `./gradlew tasks --all` (`./mill resolve __.compile`, `sbt projects`) on its own,
+        // bypassing launch() entirely — enumerating tasks runs the repo's wrapper (and its build scripts) exactly
+        // like running one does.
         if (!allowRun(root)) {
             return;
         }

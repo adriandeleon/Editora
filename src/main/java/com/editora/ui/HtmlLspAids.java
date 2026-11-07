@@ -79,7 +79,7 @@ final class HtmlLspAids {
 
     /** A new buffer: the markup check for when no server serves it. */
     void wire(EditorBuffer buffer) {
-        buffer.setHtmlMarkupCheck(new com.editora.editor.http.HttpVariableMarks.MarkupCheck(
+        buffer.addMarkupCheck(new com.editora.editor.http.HttpVariableMarks.MarkupCheck(
                 () -> host.settings().isHtmlMarkupChecks()
                         && HtmlLinks.isHtml(buffer.getLanguage())
                         && !buffer.isLspActive()

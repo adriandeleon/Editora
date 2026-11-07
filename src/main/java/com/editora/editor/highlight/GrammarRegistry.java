@@ -226,6 +226,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.cs", "csharp");
         scopeToResource.put("text.html.markdown", "markdown");
         scopeToResource.put("source.json", "json");
+        scopeToResource.put("source.json.lines", "jsonl"); // JSON Lines: the JSON grammar, a value per line
         scopeToResource.put("source.css", "css");
         scopeToResource.put("text.html.basic", "html");
         // The flavour of HTML other grammars embed: Markdown includes it for raw HTML, and without it every
@@ -341,6 +342,7 @@ public final class GrammarRegistry {
         mapExtensions("text.html.markdown", "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "rmd", "qmd");
         // a Jupyter notebook is JSON; a VS Code workspace file is JSON with comments (JS review A102)
         mapExtensions("source.json", "json", "jsonc", "json5", "ipynb", "code-workspace");
+        mapExtensions("source.json.lines", "jsonl", "ndjson", "jsonlines");
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");
         // HTML templates (HTML review C7): coloured as HTML, the template tags as text.

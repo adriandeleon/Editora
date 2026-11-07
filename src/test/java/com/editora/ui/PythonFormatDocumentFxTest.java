@@ -170,8 +170,12 @@ class PythonFormatDocumentFxTest {
             FxTestSupport.runOnFx(() -> settings[0].setPythonFormatOnSave(true));
             FxTestSupport.runOnFx(() -> c.activeBuffer().getArea().insertText(0, "b=2\n"));
             FxTestSupport.runOnFx(() -> registry.run("file.save"));
+            // The second save writes the file off the FX thread and marks the buffer clean in a later FX step, so
+            // the formatted text on disk alone does not mean the save has finished: wait for both.
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-            while (!Files.readString(app).equals("b = 2\na = 1\nprint(1)\n") && System.nanoTime() < deadline) {
+            while ((!Files.readString(app).equals("b = 2\na = 1\nprint(1)\n")
+                            || FxTestSupport.callOnFx(() -> c.activeBuffer().isDirty()))
+                    && System.nanoTime() < deadline) {
                 FxTestSupport.drainFx();
             }
             assertEquals("b = 2\na = 1\nprint(1)\n", Files.readString(app), "formatted, then saved again");

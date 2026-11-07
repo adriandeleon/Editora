@@ -42,7 +42,7 @@ public final class UntrustedBuilds {
             "kotlin",
             List.of("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"),
             "scala",
-            List.of("build.sbt", "build.sc", "build.mill", "project.scala"),
+            List.of("build.sbt", "build.sc", "build.mill", "build.mill.yaml", "project.scala"),
             "rust",
             List.of("Cargo.toml"),
             "ruby",

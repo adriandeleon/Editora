@@ -1,0 +1,5 @@
+{"level": "info", "msg": "server started", "port": 8080, "ts": "2026-11-06T08:00:00Z"}
+{"level": "debug", "msg": "cache warmed", "entries": 1204, "took_ms": 87.5}
+{"level": "warn", "msg": "slow request", "path": "/api/search", "took_ms": 2310, "query": {"q": "editor", "page": 2}}
+{"level": "error", "msg": "upstream failed", "upstream": "billing", "attempts": [1, 2, 3], "fatal": false}
+{"level": "info", "msg": "server stopped", "uptime_s": 86400, "clean": true}

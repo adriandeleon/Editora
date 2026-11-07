@@ -296,6 +296,7 @@ public final class NewFileCatalog {
                     "data",
                     List.of(
                             NewFileType.named("data.json", "JSON", "data", "json"),
+                            NewFileType.named("data.jsonl", "JSON Lines", "data", "jsonl"),
                             NewFileType.named("data.yaml", "YAML", "config", "yaml"),
                             NewFileType.named("data.toml", "TOML", "config", "toml"),
                             NewFileType.named("data.ini", "INI", "config", "ini"),

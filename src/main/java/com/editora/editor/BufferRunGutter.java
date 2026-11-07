@@ -308,10 +308,14 @@ final class BufferRunGutter {
             return;
         }
         runScanInFlight = true;
+        long version = b.docVersion;
         EditorBuffer.HIGHLIGHT_POOL.execute(() -> {
             RunScan.Result found = RunScan.scan(in, text);
             Platform.runLater(() -> {
-                if (gen == runScanGen) {
+                // An edit since the snapshot moved the lines this scan reports: applying them would put the ■ on
+                // the old lines and drop every .http result the edit had moved (reanchor reads them as edited).
+                // That edit's own settled pass scans the new text; until it lands, settleRunScan still answers.
+                if (gen == runScanGen && version == b.docVersion) {
                     runScanInFlight = false;
                     applyRunScan(found);
                 }

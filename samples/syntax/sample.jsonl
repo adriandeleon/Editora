@@ -1,0 +1,8 @@
+{"id": 1, "event": "signup", "user": {"name": "Ada", "email": "ada@example.com"}, "plan": "free", "ts": "2026-11-06T09:14:03Z"}
+{"id": 2, "event": "upgrade", "user": {"name": "Ada"}, "plan": "pro", "seats": 3, "trial": false, "ts": "2026-11-06T09:20:41Z"}
+{"id": 3, "event": "login", "user": {"name": "Grace"}, "tags": ["web", "2fa"], "latency_ms": 41.7, "ts": "2026-11-06T10:02:11Z"}
+{"id": 4, "event": "error", "message": "timeout after 30s — retrying", "retry": null, "ts": "2026-11-06T10:05:00Z"}
+
+["a line may hold any JSON value, not just an object", 1, 2.5e3, true]
+"a bare string is a record too"
+42

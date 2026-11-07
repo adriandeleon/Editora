@@ -19,8 +19,10 @@ import org.jspecify.annotations.Nullable;
  * Runs on the settled-edit pause, never per keystroke.
  *
  * <p>An HTML page no language server serves shows Editora's markup check here the same way (HTML review D5,
- * {@link #setMarkupCheck}): with a server the check joins the server's diagnostics instead, so its gate is asked
- * again on every check and the marks go off when the page's server starts.
+ * {@link #addMarkupCheck}): with a server the check joins the server's diagnostics instead, so its gate is asked
+ * again on every check and the marks go off when the page's server starts. A JSON Lines buffer's lines that are not
+ * one JSON value show here the same way: each such check is added with {@link #addMarkupCheck}, and the first
+ * whose gate is open runs.
  */
 public final class HttpVariableMarks {
 
@@ -31,10 +33,9 @@ public final class HttpVariableMarks {
     private final BooleanSupplier sharedUse;
 
     private @Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator;
-    /** The HTML markup check and when it applies (an HTML page, the setting on, no server serving it). */
-    private @Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> markup;
+    /** The language checks (HTML markup, JSON Lines) and when each applies; the first that applies runs. */
+    private final List<MarkupCheck> markup = new java.util.ArrayList<>();
 
-    private BooleanSupplier markupEligible = () -> false;
     private boolean enabled;
     /** Bumped on every request and on/off switch: a result for an older one is dropped. */
     private int generation;
@@ -65,25 +66,29 @@ public final class HttpVariableMarks {
     }
 
     /**
-     * An HTML page's markup check: {@code check} runs ({@code accept(text, marks -> …)}) while {@code eligible}
-     * says it applies (an HTML page, the setting on, no server serving it).
+     * A language's own check: {@code check} runs ({@code accept(text, marks -> …)}) while {@code eligible} says it
+     * applies (an HTML page with the setting on and no server serving it; a JSON Lines file).
      */
     public record MarkupCheck(
             BooleanSupplier eligible, BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> check) {}
 
-    /** Injects the HTML markup check and its gate. */
-    public void setMarkupCheck(MarkupCheck check) {
-        this.markupEligible = check.eligible();
-        this.markup = check.check();
+    /** Adds a language's check and its gate. */
+    public void addMarkupCheck(MarkupCheck check) {
+        markup.add(check);
         update();
     }
 
-    /** The check that runs now: the {@code {{variable}}} one for a {@code .http} file, else the markup one, or null. */
+    /** The check that runs now: the {@code {{variable}}} one for a {@code .http} file, else a language's, or null. */
     private @Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> active() {
         if (validator != null && eligible.getAsBoolean()) {
             return validator;
         }
-        return markup != null && markupEligible.getAsBoolean() ? markup : null;
+        for (MarkupCheck c : markup) {
+            if (c.eligible().getAsBoolean()) {
+                return c.check();
+            }
+        }
+        return null;
     }
 
     /** Re-evaluates whether the marks are on (language, feature switch, validator) and checks again if so. */

@@ -57,6 +57,9 @@ public final class HttpResponseFormat {
     /** File extension (with leading dot) to save a response body under, inferred from its content type. */
     public static String extensionFor(String contentType) {
         String ct = contentType == null ? "" : contentType.toLowerCase(java.util.Locale.ROOT);
+        if (ct.contains("ndjson") || ct.contains("jsonl") || ct.contains("json-lines")) {
+            return ".jsonl"; // application/x-ndjson, application/jsonl: a value per line, saved as written
+        }
         if (ct.contains("json")) {
             return ".json";
         }

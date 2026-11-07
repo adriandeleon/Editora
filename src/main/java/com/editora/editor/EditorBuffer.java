@@ -2706,9 +2706,12 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
     }
 
-    /** The HTML markup check on the same squiggle overlay, while no server serves the page (HTML review D5). */
-    public void setHtmlMarkupCheck(HttpVariableMarks.MarkupCheck check) {
-        httpVariableMarks.setMarkupCheck(check);
+    /**
+     * A language's own check on the same squiggle overlay: HTML markup while no server serves the page (HTML review
+     * D5), JSON Lines' one-value-per-line check.
+     */
+    public void addMarkupCheck(HttpVariableMarks.MarkupCheck check) {
+        httpVariableMarks.addMarkupCheck(check);
     }
 
     /** The quick fixes for the unresolved-variable marks at {@code offset} of {@code view} ("Use environment dev"). */

@@ -757,7 +757,14 @@ final class BufferPreview {
     private void renderStructured(StructuredParser.Parsed parsed) {
         lastStructuredOpenApi = parsed.isOpenApi();
         Node node;
-        if (!parsed.ok()) {
+        if (!parsed.ok() && parsed.line() > 0) { // JSON Lines: where the bad line is, as a link
+            node = com.editora.editor.structured.ParseErrorView.of(
+                    String.valueOf(parsed.error()),
+                    parsed.line(),
+                    parsed.column(),
+                    this::jumpToSource,
+                    "structured-error");
+        } else if (!parsed.ok()) {
             Label err = new Label(parsed.error());
             err.getStyleClass().add("structured-error");
             err.setWrapText(true);

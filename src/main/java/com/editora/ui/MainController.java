@@ -3611,6 +3611,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 null));
         buffer.setHttpDebugHandler(line -> httpClient.debugRequest(buffer, line)); // editor menu → Debug Request
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
+        JsonLinesMarks.wire(buffer); // a JSON Lines line that is not one JSON value: squiggled
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
         buffer.setTestRunHandler(t -> testNavigation.runSingleTest(buffer, t)); // JUnit → build tool; Python → pytest
