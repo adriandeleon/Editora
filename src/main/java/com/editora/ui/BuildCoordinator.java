@@ -771,18 +771,20 @@ final class BuildCoordinator {
     /**
      * The workspace-trust gate: whether a build may execute from {@code root} right now.
      *
-     * <p>Every build of a Maven or Gradle project runs code the repository supplies — not only a shipped
-     * {@code ./mvnw}/{@code ./gradlew} (the one case this used to gate) but the pom's plugins and
-     * extensions, the files under {@code .mvn/}, every Gradle script — on the user's own {@code mvn} just
-     * the same. So the first build of any kind in an untrusted folder asks once, with a prompt that lists
+     * <p>Every build of a Maven, Gradle, sbt or Mill project runs code the repository supplies — not only a
+     * shipped {@code ./mvnw}/{@code ./gradlew}/{@code ./mill} (the one case this used to gate, and for Mill not
+     * even that) but the pom's plugins and extensions, the files under {@code .mvn/}, every Gradle script, sbt's
+     * {@code build.sbt} and {@code project/}, Mill's {@code build.mill}/{@code build.sc} — on the user's own
+     * {@code mvn}, {@code sbt} or {@code mill} just the same. So the first build of any kind in an untrusted folder asks once, with a prompt that lists
      * what it found ({@link BuildTrust}); trust is remembered per folder (the wrapper's, else the open
      * project — a module must not silently cover a script one level up), inherited by subfolders, shown in
-     * the tasks window's header with a Revoke, and revocable in Settings → Workspace. Tools whose builds
-     * run nothing of the repository's (npm, Cargo, Go, …) pass straight through.
+     * the tasks window's header with a Revoke, and revocable in Settings → Workspace. The other tools
+     * (npm, Cargo, Go, Scala CLI, the Clojure tools) are not gated yet and pass straight through.
      *
      * <p>Declining does <b>not</b> silently fall back to anything: "no" has to mean no build, not a quieter
      * one. The same gate covers Gradle's "Load all tasks…", the Run/Debug build-before-launch step and the
-     * Maven classpath fallback ({@link #trustedExecutable}).
+     * Maven classpath fallback ({@link #trustedExecutable}); Run on a Scala file of an sbt or Mill build and the
+     * Test Results runs reach it through {@link #runTaskAt}.
      */
     private boolean allowRun(Path root) {
         if (!BuildTrust.gates(tool)) {
@@ -1109,8 +1111,9 @@ final class BuildCoordinator {
             return;
         }
         Path root = markerRoot;
-        // Gated too: this spawns `./gradlew tasks --all` on its own, bypassing launch() entirely — enumerating
-        // tasks runs the repo's wrapper (and its build scripts) exactly like running one does.
+        // Gated too: this spawns `./gradlew tasks --all` (`./mill resolve __.compile`, `sbt projects`) on its own,
+        // bypassing launch() entirely — enumerating tasks runs the repo's wrapper (and its build scripts) exactly
+        // like running one does.
         if (!allowRun(root)) {
             return;
         }

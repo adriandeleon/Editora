@@ -15,9 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BuildTrustTest {
 
     @Test
-    void onlyMavenAndGradleGateRuns() {
+    void theBuildsWhoseDefinitionIsCodeGateRuns() {
         assertTrue(BuildTrust.gates(BuildTool.MAVEN));
         assertTrue(BuildTrust.gates(BuildTool.GRADLE));
+        assertTrue(BuildTrust.gates(BuildTool.SBT), "build.sbt and project/*.scala are compiled and run");
+        assertTrue(BuildTrust.gates(BuildTool.MILL), "build.mill is Scala that Mill compiles and runs");
         assertFalse(BuildTrust.gates(BuildTool.NPM));
         assertFalse(BuildTrust.gates(BuildTool.CARGO));
     }
@@ -120,5 +122,44 @@ class BuildTrustTest {
                         tr("trust.item.wrapper", "gradlew"),
                         tr("trust.item.gradleScripts", "build.gradle.kts, settings.gradle.kts, buildSrc/")),
                 s.items());
+    }
+
+    @Test
+    void aMillFolderListsTheLauncherTheBuildScriptsAndTheLauncherOptions(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("build.mill"), "package build\n");
+        Files.writeString(root.resolve("build.sc"), "");
+        Files.createDirectories(root.resolve("mill-build"));
+        Files.writeString(root.resolve(".mill-jvm-opts"), "-javaagent:evil.jar\n");
+        BuildTrust.Summary s = BuildTrust.describe(BuildTool.MILL, root, root.resolve("mill"), "");
+        assertEquals(
+                java.util.List.of(
+                        tr("trust.item.wrapper", "mill"),
+                        tr("trust.item.millScripts", "build.mill, build.sc, mill-build/"),
+                        tr("trust.item.launcherOptions", ".mill-jvm-opts")),
+                s.items());
+    }
+
+    @Test
+    void aMillFolderOnThePathMillStillNamesItsBuildScript(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("build.mill.yaml"), "");
+        assertEquals(
+                java.util.List.of(tr("trust.item.millScripts", "build.mill.yaml")),
+                BuildTrust.describe(BuildTool.MILL, root, null, "").items());
+    }
+
+    @Test
+    void anSbtFolderListsTheBuildDefinitionAndTheLauncherOptions(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("build.sbt"), "");
+        Files.createDirectories(root.resolve("project"));
+        Files.writeString(root.resolve("project").resolve("plugins.sbt"), "");
+        Files.writeString(root.resolve(".jvmopts"), "");
+        Files.writeString(root.resolve(".sbtopts"), "");
+        assertEquals(
+                java.util.List.of(
+                        tr("trust.item.sbtScripts", "build.sbt, project/"),
+                        tr("trust.item.launcherOptions", ".jvmopts, .sbtopts"),
+                        tr("trust.item.projectOverride", "/opt/sbt/bin/sbt", "sbt")),
+                BuildTrust.describe(BuildTool.SBT, root, null, "/opt/sbt/bin/sbt")
+                        .items());
     }
 }

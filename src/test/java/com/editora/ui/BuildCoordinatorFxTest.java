@@ -655,6 +655,116 @@ class BuildCoordinatorFxTest {
         assertEquals(1, ops.openConsoleCount, "and the declined rerun never ran");
     }
 
+    // --- Mill and sbt: the build definition is Scala the tool compiles and runs ------------------------
+
+    private static boolean windows() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
+    }
+
+    /**
+     * A Mill project with its own launcher that would leave {@code ran} behind if it were ever executed — the
+     * cloned-repository case: {@code ./mill} is the repository's script, run with the user's privileges.
+     */
+    private static BuildCoordinator untrustedMill(FakeHost host, FakeOps ops, Path dir, Path ran) throws Exception {
+        host.settings.setMillSupport(true);
+        ops.projectRoot = dir;
+        ops.promptAnswer = false; // the user declines
+        Files.writeString(dir.resolve("build.mill"), "package build\nobject app extends ScalaModule\n");
+        if (windows()) {
+            Files.writeString(dir.resolve("mill.bat"), "@echo off\r\ntype nul > \"" + ran + "\"\r\n");
+        } else {
+            Path launcher = Files.writeString(dir.resolve("mill"), "#!/bin/sh\ntouch '" + ran + "'\n");
+            assertTrue(launcher.toFile().setExecutable(true));
+        }
+        BuildCoordinator c = coordinator(BuildTool.MILL, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(c::isDetected, "build.mill is detected");
+        return c;
+    }
+
+    /**
+     * A cloned repository's {@code ./mill} used to run on the first build with no question (only Maven and
+     * Gradle were gated). It now asks like {@code ./mvnw}, naming the launcher and the build script, and
+     * declining runs nothing — not the launcher, not a fallback to {@code mill} on PATH.
+     */
+    @Test
+    void anUntrustedMillLauncherAsksAndDecliningRunsNothing(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        Path ran = dir.resolve("launcher-ran");
+        BuildCoordinator c = untrustedMill(host, ops, dir, ran);
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("__.compile"), List.of()));
+
+        assertEquals(1, ops.promptCount, "the repository's ./mill must ask before it runs");
+        assertEquals(dir, ops.promptedRoot, "about the folder that ships the launcher");
+        assertNotNull(ops.promptedWrapper);
+        assertTrue(ops.promptedWrapper.getFileName().toString().startsWith("mill"), "" + ops.promptedWrapper);
+        String launcher = ops.promptedWrapper.getFileName().toString();
+        assertEquals(
+                List.of(tr("trust.item.wrapper", launcher), tr("trust.item.millScripts", "build.mill")),
+                ops.promptedSummary.items());
+        assertEquals(0, ops.trustCount, "declining must not record trust");
+        assertEquals(0, ops.openConsoleCount, "declining must not run anything");
+        assertEquals(tr("status.build.untrusted", disp(BuildTool.MILL)), host.lastStatus);
+
+        // Every other way in reaches the same gate: Run on a Scala file and Test Results (runTaskAt), Run and
+        // Debug's build before a launch (trustedExecutable), and "Load all tasks…" (`./mill resolve __.compile`).
+        FxTestSupport.runOnFx(() -> c.runTaskAt(dir, List.of("app.runMain", "demo.hello"), List.of()));
+        assertNull(FxTestSupport.callOnFx(() -> c.trustedExecutable(dir)), "no argv for a build before a launch");
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(c, "loadAllTasks", new Class<?>[] {}));
+        assertEquals(4, ops.promptCount, "each asks, since the folder is still not trusted");
+        assertEquals(0, ops.openConsoleCount);
+        Thread.sleep(300); // a launch would be asynchronous: give one the time to leave its mark
+        assertFalse(Files.exists(ran), "the repository's launcher never ran");
+    }
+
+    /** Trusting the folder runs the launcher, and it is not asked about again. */
+    @Test
+    void trustingAMillFolderRunsItsLauncherOnce(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(windows(), "needs a POSIX sh");
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        Path ran = dir.resolve("launcher-ran");
+        BuildCoordinator c = untrustedMill(host, ops, dir, ran);
+        ops.promptAnswer = true;
+
+        runToCompletion(c, "__.compile");
+        runToCompletion(c, "__.test");
+
+        assertEquals(1, ops.promptCount, "asked once, then remembered");
+        assertEquals(1, ops.trustCount);
+        assertTrue(Files.exists(ran), "the trusted launcher ran");
+    }
+
+    /**
+     * A Mill or sbt build on the user's own {@code mill}/{@code sbt} still runs {@code build.mill}/{@code build.sbt}
+     * and its plugins, so it asks too — the rule Maven's {@code mvn} follows — about the project folder.
+     */
+    @Test
+    void anSbtBuildOnThePathSbtAsksAboutTheProject(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setSbtSupport(true);
+        FakeOps ops = new FakeOps(); // declines, so the PATH sbt is never started
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("build.sbt"), "lazy val root = project\n");
+        Files.createDirectories(dir.resolve("project"));
+        Files.writeString(dir.resolve("project").resolve("plugins.sbt"), "");
+        BuildCoordinator c = coordinator(BuildTool.SBT, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(c::isDetected, "build.sbt is detected");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(1, ops.promptCount);
+        assertNull(ops.promptedWrapper, "sbt has no repository launcher: it runs the user's sbt");
+        assertEquals(dir, ops.promptedRoot);
+        assertEquals(List.of(tr("trust.item.sbtScripts", "build.sbt, project/")), ops.promptedSummary.items());
+        assertEquals(0, ops.openConsoleCount);
+    }
+
     private static Path script(Path file, String body) throws Exception {
         Files.writeString(file, "#!/bin/sh\n" + body + "\n");
         assertTrue(file.toFile().setExecutable(true));
