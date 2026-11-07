@@ -72,6 +72,22 @@ class StoreMergeSchemasTest {
     }
 
     @Test
+    void methodBreakpointsAndFieldWatchpointsAreToldApartByTheirMember() throws Exception {
+        String total = "{'kind':'METHOD','className':'a.Order','member':'total'}";
+        String count = "{'kind':'FIELD','className':'a.Order','member':'count','access':'write'}";
+        String countRead = "{'kind':'FIELD','className':'a.Order','member':'count','access':'read'}";
+        String size = "{'kind':'METHOD','className':'a.Order','member':'size'}";
+        assertEquals(
+                json("{'memberBreakpoints':{'p':[" + total + "," + countRead + "," + size + "]}}"),
+                merge(
+                        ConfigSchema.BREAKPOINTS,
+                        "{'memberBreakpoints':{'p':[" + total + "," + count + "]}}",
+                        "{'memberBreakpoints':{'p':[" + total + "," + countRead + "]}}",
+                        "{'memberBreakpoints':{'p':[" + total + "," + count + "," + size + "]}}"),
+                "this window's edit to one watchpoint and another window's new method breakpoint both survive");
+    }
+
+    @Test
     void notesAreToldApartByTheirId() throws Exception {
         assertEquals(
                 json("{'byProject':{'p':{'/a.txt':[{'id':'n1','body':'edited here'},{'id':'n3','body':'theirs'}]}}}"),

@@ -20,12 +20,15 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class BreakpointStore {
 
     /** Current on-disk schema version of {@code breakpoints.json}. */
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
 
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Project key ({@code ""} = no project) -> (absolute file path -> breakpoints). */
     private Map<String, Map<String, List<Breakpoint>>> byProject = new LinkedHashMap<>();
+
+    /** Project key -> its method breakpoints and field watchpoints (schema 4), in the order they were added. */
+    private Map<String, List<MemberBreakpoint>> memberBreakpoints = new LinkedHashMap<>();
 
     public int getSchemaVersion() {
         return schemaVersion;
@@ -41,6 +44,19 @@ public class BreakpointStore {
 
     public void setByProject(Map<String, Map<String, List<Breakpoint>>> byProject) {
         this.byProject = byProject == null ? new LinkedHashMap<>() : byProject;
+    }
+
+    public Map<String, List<MemberBreakpoint>> getMemberBreakpoints() {
+        return memberBreakpoints;
+    }
+
+    public void setMemberBreakpoints(Map<String, List<MemberBreakpoint>> memberBreakpoints) {
+        this.memberBreakpoints = memberBreakpoints == null ? new LinkedHashMap<>() : memberBreakpoints;
+    }
+
+    /** One project's method breakpoints and field watchpoints, creating an empty list if absent. */
+    public List<MemberBreakpoint> members(String projectKey) {
+        return memberBreakpoints.computeIfAbsent(projectKey == null ? "" : projectKey, k -> new ArrayList<>());
     }
 
     /** The breakpoint map for one project key, creating an empty bucket if absent. */

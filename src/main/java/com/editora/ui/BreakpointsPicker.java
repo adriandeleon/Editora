@@ -28,19 +28,37 @@ import static com.editora.i18n.Messages.tr;
  */
 final class BreakpointsPicker {
 
-    /** One breakpoint: its file, its whole-file 0-based line, and the tab it is open in (null: closed). */
+    /**
+     * One breakpoint: its file, its whole-file 0-based line, and the tab it is open in (null: closed) — or, with
+     * {@code member} set, a method breakpoint or field watchpoint (the other components then mean nothing but
+     * {@code breakpoint}'s enabled flag).
+     */
     record Entry(
             Path file,
             String key,
             int line,
             Breakpoint breakpoint,
-            @Nullable EditorBuffer buffer) {}
+            @Nullable EditorBuffer buffer,
+            com.editora.config.@Nullable MemberBreakpoint member) {
+
+        Entry(Path file, String key, int line, Breakpoint breakpoint, @Nullable EditorBuffer buffer) {
+            this(file, key, line, breakpoint, buffer, null);
+        }
+
+        /** A method breakpoint or field watchpoint as a row of the list. */
+        static Entry of(com.editora.config.MemberBreakpoint m) {
+            Breakpoint stands =
+                    new Breakpoint(-1, m.condition(), "", m.enabled(), "", m.hitCondition()); // for the glyph
+            return new Entry(Path.of(""), "", -1, stands, null, m);
+        }
+    }
 
     private final CoordinatorHost host;
     private final DebugCoordinator.Ops ops;
     private final DapManager dapManager;
     private final Runnable toggleMute;
     private final java.util.function.BooleanSupplier muted;
+    private final @Nullable MemberBreakpointCommands members;
 
     BreakpointsPicker(
             CoordinatorHost host,
@@ -48,11 +66,22 @@ final class BreakpointsPicker {
             DapManager dapManager,
             Runnable toggleMute,
             java.util.function.BooleanSupplier muted) {
+        this(host, ops, dapManager, toggleMute, muted, null);
+    }
+
+    BreakpointsPicker(
+            CoordinatorHost host,
+            DebugCoordinator.Ops ops,
+            DapManager dapManager,
+            Runnable toggleMute,
+            java.util.function.BooleanSupplier muted,
+            @Nullable MemberBreakpointCommands members) {
         this.host = host;
         this.ops = ops;
         this.dapManager = dapManager;
         this.toggleMute = toggleMute;
         this.muted = muted;
+        this.members = members;
     }
 
     void show() {
@@ -66,7 +95,7 @@ final class BreakpointsPicker {
                 e -> detail(e, root, home),
                 this::jump);
         // The kind in the glyph's shape and colour, as in the gutter: a logpoint is a diamond (review 2 C107).
-        picker.setItemIcon(e -> glyph(e.breakpoint()));
+        picker.setItemIcon(e -> glyph(e));
         // Wider than a file picker: a row carries the line's code and what the breakpoint does, and the key legend
         // has five actions — at 620 px both were cut ("Condition: lengths.size…", "esc / C-g c…", review 3 C107).
         picker.setPreferredSize(WIDTH, 1);
@@ -90,9 +119,20 @@ final class BreakpointsPicker {
         picker.show(host.window());
     }
 
-    /** Every breakpoint: those of open tabs as they are now, then the saved ones of files with no tab. */
+    /**
+     * Every breakpoint: those of open tabs as they are now, then the saved ones of files with no tab, then the
+     * method breakpoints and field watchpoints.
+     */
     List<Entry> entries() {
         List<Entry> out = new ArrayList<>();
+        lineEntries(out);
+        for (com.editora.config.MemberBreakpoint m : ops.memberBreakpoints()) {
+            out.add(Entry.of(m));
+        }
+        return out;
+    }
+
+    private void lineEntries(List<Entry> out) {
         Set<String> open = new HashSet<>();
         host.forEachBuffer(b -> {
             if (b.getPath() == null) {
@@ -123,10 +163,12 @@ final class BreakpointsPicker {
                 out.add(new Entry(p, e.getKey(), bp.line(), bp, null));
             }
         }
-        return out;
     }
 
     static String label(Entry e) {
+        if (e.member() != null) {
+            return e.member().shortName();
+        }
         String name = e.file().getFileName() == null
                 ? e.file().toString()
                 : e.file().getFileName().toString();
@@ -164,10 +206,22 @@ final class BreakpointsPicker {
         return bp.isConditional() ? "breakpoint-conditional" : "breakpoint-plain";
     }
 
-    private static javafx.scene.Node glyph(Breakpoint bp) {
-        javafx.scene.text.Text t = new javafx.scene.text.Text(mark(bp) + " ");
+    private static javafx.scene.Node glyph(Entry e) {
+        Breakpoint bp = e.breakpoint();
+        javafx.scene.text.Text t = new javafx.scene.text.Text(mark(e) + " ");
         t.getStyleClass().addAll("breakpoint-marker", "breakpoint-list-mark", kindClass(bp));
         return t;
+    }
+
+    /** {@link #mark(Breakpoint)}, and for a method breakpoint ◎ (a field watchpoint ◉); hollow when disabled. */
+    static String mark(Entry e) {
+        if (e.member() == null) {
+            return mark(e.breakpoint());
+        }
+        if (!e.member().enabled()) {
+            return "○";
+        }
+        return e.member().kind() == com.editora.config.MemberBreakpoint.Kind.METHOD ? "◎" : "◉";
     }
 
     /**
@@ -176,10 +230,33 @@ final class BreakpointsPicker {
      * condition was cut off (review 2 C107).
      */
     static String detail(Entry e, @Nullable Path projectRoot, @Nullable Path home) {
+        if (e.member() != null) {
+            return memberDetail(e.member());
+        }
         List<String> parts = new ArrayList<>(BreakpointDescription.lines(e.breakpoint()));
         String folder = folder(e.file().getParent(), projectRoot, home);
         if (!folder.isEmpty()) {
             parts.add(folder);
+        }
+        return String.join("  ·  ", parts);
+    }
+
+    /** A method breakpoint's or field watchpoint's second line: what it is, its class, its condition. */
+    static String memberDetail(com.editora.config.MemberBreakpoint m) {
+        List<String> parts = new ArrayList<>();
+        parts.add(
+                m.kind() == com.editora.config.MemberBreakpoint.Kind.METHOD
+                        ? tr("debug.breakpoints.method")
+                        : tr("debug.breakpoints.field", tr("debug.breakpoints.access." + m.accessKey())));
+        parts.add(m.className());
+        if (!m.condition().isEmpty()) {
+            parts.add(tr("debug.breakpoint.condition", m.condition()));
+        }
+        if (!m.hitCondition().isEmpty()) {
+            parts.add(tr("debug.breakpoint.hitCondition", m.hitCondition()));
+        }
+        if (!m.enabled()) {
+            parts.add(tr("debug.breakpoint.disabled"));
         }
         return String.join("  ·  ", parts);
     }
@@ -204,6 +281,12 @@ final class BreakpointsPicker {
     }
 
     private void jump(Entry e) {
+        if (e.member() != null) {
+            if (members != null) {
+                members.jump(e.member());
+            }
+            return;
+        }
         ops.openPath(e.file());
         EditorBuffer b = ops.bufferForPath(e.file());
         if (b != null) {
@@ -213,6 +296,12 @@ final class BreakpointsPicker {
     }
 
     void toggleEnabled(Entry e) {
+        if (e.member() != null) {
+            if (members != null) {
+                members.replace(e.member().withEnabled(!e.member().enabled()));
+            }
+            return;
+        }
         if (e.buffer() != null) {
             int view = e.line() - e.buffer().getBreakpointManager().regionFirstLine();
             e.buffer().getBreakpointManager().setEnabled(view, !e.breakpoint().enabled());
@@ -223,6 +312,12 @@ final class BreakpointsPicker {
     }
 
     void remove(Entry e) {
+        if (e.member() != null) {
+            if (members != null) {
+                members.remove(e.member());
+            }
+            return;
+        }
         if (e.buffer() != null) {
             int view = e.line() - e.buffer().getBreakpointManager().regionFirstLine();
             if (e.buffer().getBreakpointManager().isBreakpoint(view)) {

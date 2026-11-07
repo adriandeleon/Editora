@@ -315,8 +315,10 @@ jobs:
       # PlainFolderDebugProbeFxTest: F5 in a two-package plain folder, an edit, F5, a compile error (review 3, C208).
       # DebugQuickWinsProbeFxTest: Pause suspends every thread (java-debug pauseAll / continueAll), a temporary
       # breakpoint is removed once hit, and Variables marks the values a step changed.
+      # MemberBreakpointsProbeFxTest: a method breakpoint and a field watchpoint set from the caret (jdtls's
+      # outline) stop on entering the method and where the field is assigned (java-debug function/data breakpoints).
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

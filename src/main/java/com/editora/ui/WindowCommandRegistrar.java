@@ -2210,6 +2210,14 @@ final class WindowCommandRegistrar {
                                 .ifDebug(host.debugCoordinator()::toggleTemporaryBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
+                        "debug.toggleMethodBreakpoint",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleMethodBreakpoint)));
+        host.registry()
+                .register(Command.of(
+                        "debug.toggleFieldWatchpoint",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleFieldWatchpoint)));
+        host.registry()
+                .register(Command.of(
                         "debug.editBreakpoint",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editBreakpointAtCaret)));
         host.registry()

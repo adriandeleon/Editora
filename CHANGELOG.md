@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on it; the Edit Breakpoint form has **Remove once hit**. Its gutter dot carries a "1".
 - **Copy Call Stack.** The Call Stack's context menu (and Ctrl+C in the list) copies the stopped thread's whole
   stack, folded runtime frames included, as `at name(File.java:12)` lines.
+- **Method breakpoints and field watchpoints (Java).** *Debug: Toggle Method Breakpoint* stops the program when the
+  method the caret is in is entered; *Debug: Toggle Field Watchpoint* stops it when the field declared on the caret
+  line is assigned (Emacs `C-c C-d S-m` and `C-c C-d S-w`, and the Run ▸ Debugger menu). Away from a method or field
+  they ask for one by name, such as `com.example.Order#total`. While paused, **Break When Value Changes** in the
+  Variables menu watches the field a row shows. They are saved with the project's breakpoints, listed in
+  *Debug: Breakpoints* (enable, disable, remove, jump), muted with the others, and the state line says which stopped
+  the program.
 - **Suspend all threads when one stops** (Settings → Debugging, Java, off by default): a breakpoint, exception or
   step stops every thread of the program, and Continue resumes them all — IntelliJ's "Suspend: All".
 

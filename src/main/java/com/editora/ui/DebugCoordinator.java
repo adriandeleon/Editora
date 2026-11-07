@@ -169,6 +169,14 @@ final class DebugCoordinator {
         /** The per-file breakpoint map ({@code breakpoints.json}); path-string → that file's breakpoints. */
         Map<String, List<Breakpoint>> breakpointMap();
 
+        /** This project's method breakpoints and field watchpoints ({@code breakpoints.json}). */
+        default List<com.editora.config.MemberBreakpoint> memberBreakpoints() {
+            return List.of();
+        }
+
+        /** Replaces this project's method breakpoints and field watchpoints, and writes {@code breakpoints.json}. */
+        default void persistMemberBreakpoints(List<com.editora.config.MemberBreakpoint> breakpoints) {}
+
         /** Writes {@code breakpoints.json}. */
         void saveBreakpoints();
 
@@ -289,6 +297,32 @@ final class DebugCoordinator {
         dapManager.setListener(dapListener());
         dapManager.setCodeReplaceNotices(this::codeReplaceNotice);
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
+        memberBreakpoints = new MemberBreakpointCommands(host, ops, dapManager, lspManager, () -> breakpointsMuted);
+    }
+
+    /** Method breakpoints and field watchpoints. */
+    private final MemberBreakpointCommands memberBreakpoints;
+
+    MemberBreakpointCommands memberBreakpoints() {
+        return memberBreakpoints;
+    }
+
+    /** Debug: Toggle Method Breakpoint — on the method the caret is in (else asks which). */
+    void toggleMethodBreakpoint() {
+        if (debugSupportEnabled()) {
+            memberBreakpoints.toggleMethodAtCaret();
+        } else {
+            host.setStatus(tr("statusbar.tip.debugDisabled"));
+        }
+    }
+
+    /** Debug: Toggle Field Watchpoint — on the field declared on the caret line (else asks which). */
+    void toggleFieldWatchpoint() {
+        if (debugSupportEnabled()) {
+            memberBreakpoints.toggleFieldAtCaret();
+        } else {
+            host.setStatus(tr("statusbar.tip.debugDisabled"));
+        }
     }
 
     /**
@@ -1575,6 +1609,16 @@ final class DebugCoordinator {
             @Override
             public void setVariable(int parentRef, String name, String value, Consumer<String> cb) {
                 dapManager.setVariable(parentRef, name, value, cb);
+            }
+
+            @Override
+            public boolean canWatchField() {
+                return memberBreakpoints.canWatchFields();
+            }
+
+            @Override
+            public void watchField(int parentRef, String name) {
+                memberBreakpoints.watchVariable(parentRef, name);
             }
 
             @Override
@@ -3742,6 +3786,7 @@ final class DebugCoordinator {
             dapManager.setExceptionsMuted(true);
             showBreakpointsMuted();
         }
+        memberBreakpoints.push(); // the method breakpoints and field watchpoints this project keeps
     }
 
     /**
@@ -4252,7 +4297,9 @@ final class DebugCoordinator {
 
     /** Debug: Breakpoints — the palette-style list of every breakpoint (see {@link BreakpointsPicker}). */
     void showBreakpoints() {
-        new BreakpointsPicker(host, ops, dapManager, this::toggleMuteBreakpoints, () -> breakpointsMuted).show();
+        new BreakpointsPicker(
+                        host, ops, dapManager, this::toggleMuteBreakpoints, () -> breakpointsMuted, memberBreakpoints)
+                .show();
     }
 
     /**
@@ -4262,6 +4309,7 @@ final class DebugCoordinator {
     void toggleMuteBreakpoints() {
         breakpointsMuted = !breakpointsMuted;
         dapManager.setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
+        memberBreakpoints.push(); // and method breakpoints and field watchpoints
         if (dapManager.isActive()) {
             Set<String> open = new HashSet<>();
             host.forEachBuffer(b -> {

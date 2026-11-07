@@ -3700,6 +3700,48 @@ public final class DapManager {
                 }));
     }
 
+    /** The method breakpoints and field watchpoints every session starts with (see {@link #setMemberBreakpoints}). */
+    private volatile List<DapModels.MemberBreakpoint> memberBreakpoints = List.of();
+
+    /**
+     * The method breakpoints and field watchpoints in force: the next session starts with them, and a live one is
+     * sent them at once. Empty while breakpoints are muted.
+     */
+    public void setMemberBreakpoints(List<DapModels.MemberBreakpoint> breakpoints) {
+        memberBreakpoints = breakpoints == null ? List.of() : List.copyOf(breakpoints);
+        DapClient c = client;
+        if (c != null && state != State.INACTIVE) {
+            c.setMemberBreakpoints(memberBreakpoints);
+        }
+    }
+
+    /** Whether the live session's adapter can watch a field (a DAP data breakpoint). */
+    public boolean supportsDataBreakpoints() {
+        DapClient c = client;
+        return c != null && state != State.INACTIVE && c.supportsDataBreakpoints();
+    }
+
+    /**
+     * What a field watchpoint on variable {@code name} of container {@code variablesReference} would watch, to
+     * {@code cb} on the FX thread: empty when the adapter can watch nothing there.
+     */
+    public void dataBreakpointInfo(
+            int variablesReference,
+            String name,
+            java.util.function.Consumer<java.util.Optional<DapModels.DataBreakpointTarget>> cb) {
+        DapClient c = client;
+        if (c == null || state == State.INACTIVE || variablesReference <= 0) {
+            cb.accept(java.util.Optional.empty());
+            return;
+        }
+        c.dataBreakpointInfo(variablesReference, name)
+                .whenComplete((r, e) -> Platform.runLater(() -> {
+                    if (client == c) {
+                        cb.accept(e != null || r == null ? java.util.Optional.empty() : r);
+                    }
+                }));
+    }
+
     /** (Re)sends a file's breakpoints to the live adapter (after the user toggled one while running). */
     public void updateBreakpoints(DapModels.FileBreakpoints fb) {
         if (client != null && state != State.INACTIVE) {
@@ -4273,6 +4315,7 @@ public final class DapManager {
             if (!isCurrent(epoch)) {
                 return false;
             }
+            candidate.setMemberBreakpoints(memberBreakpoints); // sent on its initialized event
             client = candidate;
             return true;
         }

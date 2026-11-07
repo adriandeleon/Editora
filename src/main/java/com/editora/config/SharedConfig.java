@@ -1253,8 +1253,15 @@ public class SharedConfig {
         return breakpointStore.bucket(key);
     }
 
+    /** A project's method breakpoints and field watchpoints (live list; persist with {@link #saveBreakpoints}). */
+    public List<MemberBreakpoint> memberBreakpoints(String key) {
+        return breakpointStore.members(key);
+    }
+
     public void deleteBreakpointsForProject(String projectKey) {
-        if (breakpointStore.getByProject().remove(projectKey == null ? "" : projectKey) != null) {
+        String key = projectKey == null ? "" : projectKey;
+        boolean lines = breakpointStore.getByProject().remove(key) != null;
+        if (breakpointStore.getMemberBreakpoints().remove(key) != null || lines) {
             saveBreakpoints();
         }
     }

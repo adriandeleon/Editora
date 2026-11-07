@@ -74,6 +74,9 @@ class DebugCoordinatorCommandsFxTest {
     private final Map<String, Object> replies = new java.util.concurrent.ConcurrentHashMap<>();
     private final List<String> commands = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final Map<String, List<Breakpoint>> store = new LinkedHashMap<>();
+    /** The project's method breakpoints and field watchpoints, as the Ops keeps them. */
+    private final List<com.editora.config.MemberBreakpoint> members = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     private final List<String> edited = new ArrayList<>();
     private final List<String> stored = new ArrayList<>();
     private volatile boolean saveOk = true;
@@ -214,6 +217,17 @@ class DebugCoordinatorCommandsFxTest {
         @Override
         public Map<String, List<Breakpoint>> breakpointMap() {
             return store;
+        }
+
+        @Override
+        public List<com.editora.config.MemberBreakpoint> memberBreakpoints() {
+            return List.copyOf(members);
+        }
+
+        @Override
+        public void persistMemberBreakpoints(List<com.editora.config.MemberBreakpoint> breakpoints) {
+            members.clear();
+            members.addAll(breakpoints);
         }
 
         @Override
@@ -401,6 +415,18 @@ class DebugCoordinatorCommandsFxTest {
         return session;
     }
 
+    /** Waits until {@code list} has {@code size} entries, and returns its last. */
+    private static <T> T awaitNth(List<T> list, int size) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (list.size() < size) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("only " + list.size() + " of " + size + ": " + list);
+            }
+            Thread.sleep(20);
+        }
+        return list.get(size - 1);
+    }
+
     /** Debug on the active file, up to a running session. */
     private FakeDebugAdapter.Session launch() throws Exception {
         FxTestSupport.runOnFx(() -> debug.debugStart());
@@ -514,6 +540,55 @@ class DebugCoordinatorCommandsFxTest {
         assertEquals("demo.Args", session.launchArgs.get("mainClass"));
         assertTrue(commands.indexOf("java/buildWorkspace") < commands.lastIndexOf("vscode.java.resolveMainClass"));
         assertEquals(args, FxTestSupport.callOnFx(dap::debugFile));
+    }
+
+    /**
+     * A method breakpoint set by name and a field watchpoint set from a variable go to the session as function and
+     * data breakpoints: at its start, then on every change — muting, disabling — and a local variable is no field.
+     */
+    @Test
+    void methodBreakpointsAndFieldWatchpointsReachTheSessionAndFollowEveryChange() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        adapter.memberBreakpoints = true;
+        promptAnswer = "demo.Args#run";
+        FxTestSupport.runOnFx(
+                () -> debug.memberBreakpoints().promptByName(com.editora.config.MemberBreakpoint.Kind.METHOD, ""));
+        awaitStatus(tr("status.debug.methodBreakpointAdded", "Args.run()"));
+        assertEquals(List.of(com.editora.config.MemberBreakpoint.method("demo.Args", "run")), members);
+
+        FakeDebugAdapter.Session session = launch();
+        assertEquals(List.of("demo.Args#run"), awaitNth(session.functionBreakpoints, 1), "sent at the start");
+        assertEquals(List.of(), awaitNth(session.dataBreakpoints, 1));
+
+        FxTestSupport.runOnFx(() -> debug.memberBreakpoints().watchVariable(5, "count"));
+        awaitStatus(tr("status.debug.fieldWatchpointAdded", "Args.count"));
+        assertEquals(List.of("demo.Args#count/WRITE"), awaitNth(session.dataBreakpoints, 2));
+        FxTestSupport.runOnFx(() -> debug.memberBreakpoints().watchVariable(5, "local"));
+        awaitStatus(tr("status.debug.notAField", "local"));
+
+        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        assertEquals(List.of(), awaitNth(session.functionBreakpoints, 3), "muted: none");
+        assertEquals(List.of(), awaitNth(session.dataBreakpoints, 3));
+        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        assertEquals(List.of("demo.Args#run"), awaitNth(session.functionBreakpoints, 4));
+        assertEquals(List.of("demo.Args#count/WRITE"), awaitNth(session.dataBreakpoints, 4));
+
+        FxTestSupport.runOnFx(() -> debug.memberBreakpoints()
+                .replace(com.editora.config.MemberBreakpoint.method("demo.Args", "run")
+                        .withEnabled(false)));
+        assertEquals(List.of(), awaitNth(session.functionBreakpoints, 5), "a disabled one is not sent");
+        assertEquals(2, members.size(), "but kept");
+
+        // Debug: Breakpoints lists both, after the line breakpoints.
+        List<BreakpointsPicker.Entry> listed = FxTestSupport.callOnFx(
+                () -> new BreakpointsPicker(host, new Ops(), dap, () -> {}, () -> false, debug.memberBreakpoints())
+                        .entries());
+        assertEquals(
+                List.of("Args.run()", "Args.count"),
+                listed.stream().map(BreakpointsPicker::label).toList());
+        assertEquals("○", BreakpointsPicker.mark(listed.get(0)), "disabled");
+        assertEquals("◉", BreakpointsPicker.mark(listed.get(1)));
     }
 
     /** Stop while the build before a launch runs: nothing is launched once it finishes. */

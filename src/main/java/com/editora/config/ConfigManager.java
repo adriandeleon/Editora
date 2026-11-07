@@ -317,6 +317,11 @@ public class ConfigManager {
         return shared.breakpointsBucket(currentBookmarkKey());
     }
 
+    /** This window's project's method breakpoints and field watchpoints (live list; persist with saveBreakpoints). */
+    public List<MemberBreakpoint> getMemberBreakpoints() {
+        return shared.memberBreakpoints(currentBookmarkKey());
+    }
+
     public void saveBreakpoints() {
         shared.saveBreakpoints();
     }

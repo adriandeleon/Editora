@@ -178,6 +178,24 @@ public final class DapModels {
     public record FileBreakpoints(Path file, List<LineBreakpoint> breakpoints) {}
 
     /**
+     * A method breakpoint ({@code field == false}: a DAP function breakpoint) or a field watchpoint (a DAP data
+     * breakpoint) to send to the adapter. {@code name} is what the adapter takes — java-debug's {@code pkg.Class#member}
+     * for both; {@code access} ({@code write}, {@code read}, {@code readWrite}) applies to a field only.
+     */
+    public record MemberBreakpoint(
+            boolean field,
+            String name,
+            String access,
+            @Nullable String condition,
+            @Nullable String hitCondition) {}
+
+    /**
+     * What the adapter's {@code dataBreakpointInfo} says of a variable: the {@code dataId} a data breakpoint on it
+     * takes (java-debug: {@code pkg.Class#field}), how it describes it, and the accesses it can watch.
+     */
+    public record DataBreakpointTarget(String dataId, String description, List<String> accessTypes) {}
+
+    /**
      * What the adapter says about one breakpoint it was sent, from a {@code setBreakpoints} response or a
      * later {@code breakpoint} event. {@code line} is the 0-based line that was <em>requested</em>;
      * {@code actualLine} the 0-based line the adapter bound it to (-1 when it named none).

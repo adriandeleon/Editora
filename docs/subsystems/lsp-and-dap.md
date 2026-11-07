@@ -1100,7 +1100,23 @@ stepped thread. The "Suspend all threads when one stops" setting is java-debug's
 (`JavaDebugSettings`, read when a session starts): breakpoints suspend with `SUSPEND_ALL`, and java-debug's own
 `continue` then resumes the whole program. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
 installed adapters in a real window (a worker thread's output stops while paused), along with temporary breakpoints
-and changed-value marks: `./mvnw test -Dtest=DebugQuickWinsProbeFxTest -Dgroups=probe -Dlsp.probe=true`. Restart goes
+and changed-value marks: `./mvnw test -Dtest=DebugQuickWinsProbeFxTest -Dgroups=probe -Dlsp.probe=true`.
+**Method breakpoints and field watchpoints** ([`config/MemberBreakpoint`](../../src/main/java/com/editora/config/MemberBreakpoint.java),
+[`ui/MemberBreakpointCommands`](../../src/main/java/com/editora/ui/MemberBreakpointCommands.java)) are java-debug's
+DAP function and data breakpoints, both named `pkg.Class#member` (the binary class name, `Outer$Inner`). A method
+breakpoint stops on entering every overload of that name in that exact class (java-debug matches the method entry's
+declaring type, not subclasses), before its body runs; a field watchpoint stops on a write (or read) of that field in
+any instance. They are kept per project in `breakpoints.json` (`memberBreakpoints`, schema 4) beside the line
+breakpoints, listed after them in Debug: Breakpoints (Alt+E / Alt+D work; Enter jumps through the Java server's
+workspace symbols), and handed to every session: `DapManager.setMemberBreakpoints` keeps the enabled ones (none while
+breakpoints are muted), `publishClient` gives them to a new `DapClient`, whose `initialized` sends
+`setFunctionBreakpoints`/`setDataBreakpoints` only when the adapter's capabilities offer them, and a change after
+that is sent at once. *Toggle Method Breakpoint* / *Toggle Field Watchpoint* read the member at the caret from the
+Java server's document outline (`memberAt`; the package from the source's `package` line) and ask for
+`Class#member` when there is none. While paused, Variables → **Break When Value Changes** asks the adapter
+(`dataBreakpointInfo`) which field a row is; a local variable has no `dataId` and cannot be watched. The stop's
+reason (`function breakpoint` / `data breakpoint`) is named on the state line. The opt-in
+`MemberBreakpointsProbeFxTest` sets both from the caret against the installed jdtls and java-debug. Restart goes
 through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
 build, closed-file breakpoints) rather than only the adapter launch. `debug.start` in a JUnit test file that
 has no `main` of its own debugs the test at the caret, or the class when the caret is outside a test, through
