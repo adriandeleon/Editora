@@ -58,6 +58,10 @@ class RunCoordinatorFlowsFxTest {
     @TempDir
     Path project;
 
+    /** A folder outside the project, for a script that belongs to no project. */
+    @TempDir
+    Path outside;
+
     /** Status messages and run-state changes, in order. */
     private final List<String> log = new ArrayList<>();
 
@@ -1360,6 +1364,126 @@ class RunCoordinatorFlowsFxTest {
         FxTestSupport.drainFx();
         assertEquals(List.of(), buildRuns());
         assertEquals("", console());
+    }
+
+    // --- Run File and configurations that load a project: the build tool's workspace-trust gate ---------
+
+    /**
+     * Run on a Clojure file of a Leiningen project starts {@code lein run -m}, which evaluates {@code project.clj}:
+     * Leiningen's trust gate asks first, and "no" runs nothing — not even the check for an installed lein.
+     */
+    @Test
+    void aDeclinedTrustRunsNoClojureFileOfALeiningenProject() throws Exception {
+        Files.writeString(project.resolve("project.clj"), "(defproject demo \"0.1.0\" :main demo.core)\n");
+        open("src/demo/core.clj", "(ns demo.core)\n\n(defn -main [& args]\n  (println \"ran\"))\n", false);
+        ops.refuseTrust = true;
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        FxTestSupport.drainFx();
+
+        assertEquals(List.of("lein@" + project.getFileName()), ops.buildExecutables);
+        assertEquals("", console());
+        assertEquals(List.of(), statuses(), "the gate itself says why");
+    }
+
+    /** The Clojure CLI reads {@code deps.edn} (an alias's JVM options), Babashka {@code bb.edn}: each tool's gate. */
+    @Test
+    void aDeclinedTrustRunsNoClojureFileOfADepsOrBabashkaProject() throws Exception {
+        Path deps = Files.createDirectories(project.resolve("deps-app"));
+        Files.writeString(deps.resolve("deps.edn"), "{:paths [\"src\"]}\n");
+        open("deps-app/src/app/core.clj", "(ns app.core)\n\n(defn -main [& args]\n  (println \"ran\"))\n", false);
+        Path bb = Files.createDirectories(project.resolve("bb-app"));
+        Files.writeString(bb.resolve("bb.edn"), "{:tasks {}}\n");
+        ops.refuseTrust = true;
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        FxTestSupport.drainFx();
+        open("bb-app/script.clj", "(println \"ran\")\n", false);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        FxTestSupport.drainFx();
+
+        assertEquals(List.of("clojure@deps-app", "babashka@bb-app"), ops.buildExecutables);
+        assertEquals("", console());
+        assertEquals(List.of(), statuses());
+    }
+
+    /**
+     * A Scala file of a Scala CLI project ({@code project.scala}) runs as the whole folder, every source's macros and
+     * compiler plugins included: Scala CLI's gate ({@code RunTrustTest}: a Scala file on its own asks nothing).
+     */
+    @Test
+    void aDeclinedTrustRunsNoFileOfAScalaCliProject() throws Exception {
+        Path app = Files.createDirectories(project.resolve("cli-app"));
+        Files.writeString(app.resolve("project.scala"), "//> using scala 3\n");
+        open("cli-app/Hello.scala", "@main def hello(): Unit = println(\"ran\")\n", false);
+        ops.refuseTrust = true;
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        FxTestSupport.drainFx();
+        assertEquals(List.of("scalacli@cli-app"), ops.buildExecutables);
+        assertEquals("", console());
+        assertEquals(List.of(), statuses());
+    }
+
+    /** A Clojure configuration runs in its project's folder, or the one it names: the tool's gate for that folder. */
+    @Test
+    void aDeclinedTrustRunsNoClojureConfiguration() throws Exception {
+        Files.writeString(project.resolve("project.clj"), "(defproject demo \"0.1.0\")\n");
+        Files.createDirectories(project.resolve("src/demo"));
+        Files.writeString(project.resolve("src/demo/core.clj"), "(ns demo.core)\n(defn -main [& a] (println a))\n");
+        Path other = Files.createDirectories(project.resolve("other"));
+        Files.writeString(other.resolve("deps.edn"), "{}\n");
+        ops.refuseTrust = true;
+
+        FxTestSupport.runOnFx(() -> run.runConfig(
+                new RunConfiguration("Lein", "clojure", "src/demo/core.clj", "", "", "", "", "", "", "", "")));
+        FxTestSupport.drainFx();
+        // A standalone script (no project above it) run in a folder that has a deps.edn reads that deps.edn.
+        Path script = Files.writeString(outside.resolve("tool.clj"), "(println \"ran\")\n");
+        FxTestSupport.runOnFx(() -> run.runConfig(
+                new RunConfiguration("Here", "clojure", script.toString(), "", "", "", "", "other", "", "", "")));
+        FxTestSupport.drainFx();
+
+        assertEquals(List.of("lein@" + project.getFileName(), "clojure@other"), ops.buildExecutables);
+        assertEquals("", console());
+        assertEquals(List.of(), statuses());
+    }
+
+    /**
+     * An npm configuration runs a package script with its pre/post hooks: npm's gate. Trusted, it runs; once trust
+     * is taken back, Rerun asks again rather than replaying the command, and "no" runs nothing.
+     */
+    @Test
+    void anNpmConfigurationAsksForTrustAndRerunAsksAgain() throws Exception {
+        Path npm = project.resolve("fake-npm");
+        Path npmLog = project.resolve("npm.log");
+        Files.writeString(npm, "#!/bin/sh\necho \"$*\" >> \"" + npmLog + "\"\necho \"npm: $*\"\n");
+        Files.setPosixFilePermissions(npm, PosixFilePermissions.fromString("rwxr-xr-x"));
+        Files.writeString(project.resolve("package.json"), "{\"scripts\": {\"hello\": \"echo hi\"}}\n");
+        host.settings.setNpmCommand(npm.toString());
+        RunConfiguration cfg = new RunConfiguration("Hello", "npm", "hello", "", "", "", "", "", "", "", "");
+        ops.refuseTrust = true;
+
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        Thread.sleep(300); // npm picks its Node off the FX thread before it starts: give a launch the time to show
+        FxTestSupport.drainFx();
+        assertEquals(List.of("npm@" + project.getFileName()), ops.buildExecutables);
+        assertFalse(Files.exists(npmLog), "declining must not run the script");
+        assertEquals("", console());
+
+        ops.refuseTrust = false;
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("run hello\n", Files.readString(npmLog));
+
+        ops.refuseTrust = true; // revoked in Settings → Workspace since
+        clearLog();
+        FxTestSupport.runOnFx(run::rerunLast);
+        Thread.sleep(300);
+        FxTestSupport.drainFx();
+        assertEquals("run hello\n", Files.readString(npmLog), "Rerun asked again, and \"no\" ran nothing");
+        assertEquals(3, ops.buildExecutables.size(), ops.buildExecutables.toString());
+        assertFalse(statuses().contains(tr("status.run.ok")), statuses().toString());
     }
 
     // --- the build before a jdtls launch (review D2) ---------------------------------------------------

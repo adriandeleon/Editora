@@ -139,9 +139,19 @@ class DebugCoordinatorCommandsFxTest {
     /** The build tool command the Ops hands out (null: the tool's own name). */
     private volatile List<String> buildCommand;
 
+    /** The user declines every workspace-trust prompt: {@link Ops#buildExecutable} answers null. */
+    private volatile boolean refuseTrust;
+
+    /** Which tool's gate was asked, from which folder ({@code lein@proj}). */
+    private final List<String> trustAsked = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     private final class Ops implements DebugCoordinator.Ops {
         @Override
         public List<String> buildExecutable(com.editora.build.BuildTool tool, Path root) {
+            trustAsked.add(tool.id() + "@" + root.getFileName());
+            if (refuseTrust) {
+                return null; // the user declined the tasks tree's workspace-trust prompt
+            }
             List<String> given = buildCommand;
             return given != null ? given : List.of(tool.commandExample());
         }
@@ -1233,6 +1243,28 @@ class DebugCoordinatorCommandsFxTest {
     }
 
     // --- a saved configuration --------------------------------------------------------------------------
+
+    /**
+     * Debug on a Clojure file of a Leiningen project, or on its configuration, starts {@code lein}, which evaluates
+     * {@code project.clj}: Leiningen's workspace-trust gate asks first, as Run does, and "no" starts nothing.
+     */
+    @Test
+    void aDeclinedTrustDebugsNoClojureFileOrConfigurationOfALeiningenProject() throws Exception {
+        windowProject = project;
+        Files.writeString(project.resolve("project.clj"), "(defproject demo \"0.1.0\")\n");
+        buffer(project.resolve("src/demo/core.clj"), "(ns demo.core)\n\n(defn -main [& args]\n  (println args))\n");
+        refuseTrust = true;
+
+        FxTestSupport.runOnFx(debug::debugStart);
+        FxTestSupport.runOnFx(() -> debug.debugConfig(
+                new RunConfiguration("Lein", "clojure", "src/demo/core.clj", "", "", "", "", "", "", "", "")));
+        FxTestSupport.drainFx();
+
+        String lein = "lein@" + project.getFileName();
+        assertEquals(List.of(lein, lein), trustAsked);
+        assertEquals(List.of(), statuses(), "the gate itself says why");
+        assertEquals(0, adapter.sessionCount());
+    }
 
     @Test
     void aConfigurationThatCannotBeDebuggedSaysWhatIsMissing() throws Exception {

@@ -220,7 +220,7 @@ public final class ClojureRun {
     }
 
     /** The project file that roots {@code tool}'s projects. */
-    private static String projectFile(Tool tool) {
+    static String projectFile(Tool tool) {
         return switch (tool) {
             case CLI -> "deps.edn";
             case LEIN -> "project.clj";

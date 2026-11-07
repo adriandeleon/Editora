@@ -17,6 +17,7 @@ import com.editora.run.ReadPromptShim;
 import com.editora.run.RunConfigRouting;
 import com.editora.run.RunConfigWorkingDirectory;
 import com.editora.run.RunService;
+import com.editora.run.RunTrust;
 import com.editora.run.ScriptRunCommand;
 import com.editora.run.ShellCommand;
 import com.editora.run.StackTraceLinks;
@@ -164,7 +165,9 @@ final class RunCoordinator {
          * The argv prefix a launch may start {@code tool} with from {@code root}: what the tasks tree would
          * run (the project's wrapper, the command override, the PATH command), after the tasks tree's trust
          * gate — or null when the user declined to trust the project's wrapper, in which case the gate has
-         * said so and nothing may run.
+         * said so and nothing may run. A run that loads a project without going through the tool's window (a
+         * Clojure file in a Leiningen project, a Scala CLI project, an npm script) asks it the same way
+         * ({@link RunTrust}).
          */
         default @Nullable List<String> buildExecutable(com.editora.build.BuildTool tool, @Nullable Path root) {
             return List.of(tool.commandExample());
@@ -380,7 +383,30 @@ final class RunCoordinator {
             lastConfigRerun.run();
             return;
         }
+        if (!trusted(lastRunGate)) {
+            return; // trust was revoked since: the gate asks again, and "no" runs nothing
+        }
+        pendingTrustGate = lastRunGate;
         streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv, lastRunScript);
+    }
+
+    /**
+     * Whether a launch that loads {@code gate}'s project may start: that tool's tasks tree asks for workspace trust
+     * as it would before its own build ({@link Ops#buildExecutable}) — a Clojure file's {@code project.clj} or
+     * {@code deps.edn}, a Scala CLI project folder, an npm script's hooks run the repository's code, not just the
+     * file. True when there is no gate. Declining runs nothing; the gate has said why.
+     */
+    private boolean trusted(RunTrust.@Nullable Gate gate) {
+        return gate == null || ops.buildExecutable(gate.tool(), gate.root()) != null;
+    }
+
+    /** The workspace-trust gate Run File on {@code path} has to pass ({@link RunTrust#forFile}), or null. */
+    private RunTrust.@Nullable Gate fileTrustGate(EditorBuffer buffer, Path path) {
+        if ("scala".equals(buffer.getLanguage()) && !com.editora.process.ExecTargets.runsHere(path)) {
+            return null; // Scala CLI is given a remote file alone (scalaCliInputs)
+        }
+        return RunTrust.forFile(
+                buffer.getLanguage(), path, buffer.getContent(), ops.projectRoot(), java.nio.file.Files::isRegularFile);
     }
 
     /**
@@ -560,6 +586,11 @@ final class RunCoordinator {
                     List.of(),
                     com.editora.build.NpmPackageManager.overrideApplies(override, detected.manager()) ? override : "",
                     detected.manager());
+            // A package script runs its pre/post hooks under the project's own package manager: npm's trust gate.
+            RunTrust.Gate gate = RunTrust.npm(cwd);
+            if (!trusted(gate)) {
+                return;
+            }
             // On the Node.js Run File would pick here, as the Package Scripts window runs it (review C101).
             NpmRunSupport.prepare(
                     cwd,
@@ -577,6 +608,7 @@ final class RunCoordinator {
                         pendingRuntimeSource = NodeRunLauncher.source(npm.node());
                         addConsoleNotice(NodeRunLauncher.pinNotice(npm.node()));
                         pendingCommandLine = true; // which manager ran: pnpm, yarn, the npm beside the Node
+                        pendingTrustGate = gate;
                         streamRun(cfg.name(), cwd, npm.argv(), npmEnv, script);
                     });
             return;
@@ -703,6 +735,13 @@ final class RunCoordinator {
             java.util.Map<String, String> env,
             boolean elsewhere) {
         String language = cfg.type();
+        // Leiningen, the Clojure CLI and Babashka load the project in the folder they run in: asked first, before
+        // anything is looked up, so "no" runs nothing at all.
+        RunTrust.Gate gate = com.editora.run.JvmScriptRun.trustGate(
+                language, script, cfg.workingDir().isBlank() && script != null ? null : cwd);
+        if (!trusted(gate)) {
+            return;
+        }
         String toolName = script == null
                 ? com.editora.run.JvmScriptRun.tool(language)
                 : com.editora.run.JvmScriptRun.tool(language, script);
@@ -753,6 +792,7 @@ final class RunCoordinator {
                 launch,
                 elsewhere ? java.util.Map.of() : System.getenv());
         Path dir = cfg.workingDir().isBlank() && how.directory() != null ? how.directory() : cwd;
+        pendingTrustGate = gate;
         streamRun(cfg.name(), dir, how.argv(), how.env(), script);
     }
 
@@ -2159,6 +2199,11 @@ final class RunCoordinator {
         if (path == null) {
             return;
         }
+        // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
+        // the project, not just the file — the workspace-trust gate first, so "no" runs nothing.
+        if (!trusted(fileTrustGate(buffer, path))) {
+            return;
+        }
         // A Groovy (and later Kotlin, Scala, Clojure) file runs through its own tool, on the same JDK as Java.
         boolean jvmScript = com.editora.run.JvmScriptRun.supports(buffer.getLanguage());
         boolean javaSource = !buffer.isPython()
@@ -2297,6 +2342,7 @@ final class RunCoordinator {
                     scalaCliInputs(path, target, buffer.getContent()),
                     List.of(),
                     args);
+            pendingTrustGate = fileTrustGate(buffer, path);
             streamRun(path.getFileName().toString(), path.getParent(), argv, env, path);
             return;
         }
@@ -2320,6 +2366,7 @@ final class RunCoordinator {
                     env,
                     com.editora.process.ExecTargets.runsHere(path) ? System.getenv() : java.util.Map.of());
             Path where = how.directory() != null ? how.directory() : path.getParent();
+            pendingTrustGate = fileTrustGate(buffer, path);
             streamRun(path.getFileName().toString(), where, how.argv(), how.env(), path);
             return;
         }
@@ -2616,6 +2663,12 @@ final class RunCoordinator {
     /** Why the next run's Node.js was chosen ({@code .nvmrc, via nvm}): shown on the runtime chip's tooltip. */
     private @Nullable String pendingRuntimeSource;
 
+    /** The workspace-trust gate the next run passed ({@link RunTrust}), which its Rerun passes again; else null. */
+    private RunTrust.@Nullable Gate pendingTrustGate;
+
+    /** The gate the last run passed: Rerun asks it again, so a trust revoked meanwhile is not bypassed. */
+    private RunTrust.@Nullable Gate lastRunGate;
+
     /** As above; {@code script} is the file being run (saved before a Rerun), null for a Java launch. */
     private void streamRun(
             @Nullable String label,
@@ -2631,6 +2684,7 @@ final class RunCoordinator {
             pendingDeploySummary = null; // the console's extras do not apply to a Terminal tab
             pendingOutputWatcher = null;
             pendingRerun = null;
+            pendingTrustGate = null;
             runInTerminal(label, workingDir, command, env);
             return;
         }
@@ -2649,6 +2703,8 @@ final class RunCoordinator {
         pendingDeploySummary = null;
         lastConfigRerun = pendingRerun;
         pendingRerun = null;
+        lastRunGate = pendingTrustGate;
+        pendingTrustGate = null;
         com.editora.deploy.DeployPaths deployedPaths = deployed == null ? null : deployed.paths();
         lastTestRerun = null;
         stopRequested = false;

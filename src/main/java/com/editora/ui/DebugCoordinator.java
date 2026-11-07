@@ -2106,6 +2106,12 @@ final class DebugCoordinator {
         if (path == null) {
             return; // saved just above, so it has one
         }
+        // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
+        // the project, not just the file — the workspace-trust gate first, as Run asks it, so "no" starts nothing.
+        if (!trusted(com.editora.run.RunTrust.forFile(
+                language, path, b.getContent(), null, java.nio.file.Files::isRegularFile))) {
+            return;
+        }
         b.settleRunScan(); // compact-source detection is the load's off-FX scan; decide from its result
         Integer shebangSource = b.getShebangJavaSource();
         if ("java".equals(language) && b.isCompactSource() && shebangSource != null && shebangSource < 25) {
@@ -2847,6 +2853,15 @@ final class DebugCoordinator {
         updateDebugAvailability();
     }
 
+    /**
+     * Whether a debug launch that loads {@code gate}'s project may start: that tool's tasks tree asks for workspace
+     * trust as it would before its own build ({@link Ops#buildExecutable}), as Run does
+     * ({@code RunCoordinator.trusted}). True when there is no gate. Declining starts nothing; the gate said why.
+     */
+    private boolean trusted(com.editora.run.RunTrust.@Nullable Gate gate) {
+        return gate == null || ops.buildExecutable(gate.tool(), gate.root()) != null;
+    }
+
     /** {@code launch}, after jdtls's build too when the launch runs jdtls's output, not the tool's (Gradle, A202). */
     private Runnable afterToolBuild(com.editora.build.@Nullable BuildTool tool, Path source, Runnable launch) {
         return BuildBeforeLaunch.jdtlsBuildsAfter(tool) ? () -> buildThenLaunch(source, launch) : launch;
@@ -2899,6 +2914,16 @@ final class DebugCoordinator {
         }
         if (beforeLaunch.isActive() || pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        // A Clojure file's project (project.clj, deps.edn, bb.edn) or a Scala CLI project folder is loaded with it:
+        // that tool's workspace-trust gate first, as Run asks it, so "no" starts nothing.
+        com.editora.run.RunTrust.Gate gate = com.editora.run.ScriptRunCommand.SCALA.equals(cfg.type())
+                ? com.editora.run.RunTrust.scalaCli(
+                        com.editora.run.ScalaRun.ownerOf(script, null, java.nio.file.Files::isRegularFile))
+                : com.editora.run.JvmScriptRun.trustGate(
+                        cfg.type(), script, cfg.workingDir().isBlank() ? null : cwd);
+        if (!trusted(gate)) {
             return;
         }
         String jdkHome = cfg.jdkHome().isBlank() ? host.settings().getMavenJdkHome() : cfg.jdkHome();
@@ -3587,6 +3612,9 @@ final class DebugCoordinator {
         }
         relaunch = () -> debugConfig(currentConfiguration(name, cfg));
         if (com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
+            if (!trusted(com.editora.run.RunTrust.npm(cwd))) {
+                return; // a package script runs its pre/post hooks: npm's workspace-trust gate, as Run asks it
+            }
             // The project's own package manager, as Run and the npm tool window use it.
             var detected = com.editora.build.BuildTool.npmManager(cwd, root);
             String override = host.settings().getNpmCommand();
