@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Map's Project overview opens on every session's first Map open.** The Overview card used to open once per
+  workspace, the first time ever; it now opens the first time the Map shows a folder in each session (not again
+  when the window is closed and opened again), so a Map opened afresh starts from the project's facts. ⋯ → Project
+  overview still opens it at any time.
+- **Map cards opened from one column line up.** A second code card opened from a row of the same column stands
+  level with the first — flowing left to right or right to left, at the same left edge and below it, in a column of
+  cards; flowing down or up, at the same top and right of it, in a row — instead of cascading or going on past it.
 - **Pause stops the whole Java program.** It suspended only the thread on screen, and the program's other threads
   kept running. Continue after a Pause resumes every thread.
 
@@ -75,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Map's cards keep their places.** Where the open preview cards stand (with the open folders, selection, zoom
+  and pan) is now saved to disk moments after it changes, not only when the session ends cleanly, so a card moved
+  before a crash or a kill comes back where it was; and a card brought back with its Structure column out is no
+  longer nudged for the column, so it stands where it was left.
 - **The window buttons show with a dark theme.** On Linux, minimise, maximise and close were drawn dark grey on
   the dark title bar, all but invisible, whenever the theme was dark and the desktop's was not: JavaFX styles the
   window frame and its buttons from the desktop's light or dark setting. Every window, dialogs included, now takes

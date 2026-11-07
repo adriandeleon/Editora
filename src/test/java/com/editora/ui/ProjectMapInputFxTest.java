@@ -903,6 +903,11 @@ class ProjectMapInputFxTest {
             return b;
         });
         MapWindow w = window("emacs");
+        // The Overview card opens by itself on a folder's first Map open, and Escape closes open cards before it
+        // clears the search: wait for the card and close it, so the first Escape here reaches the search.
+        ProjectMapView view = FxTestSupport.field(w.panel(), "mapView");
+        waitForFx(() -> view.overviewCard() != null);
+        FxTestSupport.runOnFx(() -> FxTestSupport.<MapCards>field(view, "cards").closeVisible());
         TextField search = FxTestSupport.field(w.panel(), "mapFilterField");
         FxTestSupport.runOnFx(() -> {
             search.setText("f1");

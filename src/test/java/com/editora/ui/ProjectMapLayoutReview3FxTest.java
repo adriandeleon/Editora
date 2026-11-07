@@ -315,16 +315,10 @@ class ProjectMapLayoutReview3FxTest {
         Files.writeString(core.resolve("DemoApplication.java"), "class DemoApplication {}\n");
         Files.createDirectories(root.resolve("docs"));
         Files.writeString(root.resolve("docs/guide.md"), "x\n");
-        int[] seen = new int[1];
-        Fixture map = openMap(1200, 800, view -> {
-            view.setOnOverviewSeen(() -> seen[0]++);
-            view.setOverviewSeen(false);
-        });
+        Fixture map = openMap(1200, 800, view -> view.setOverviewOnFirstShow(true));
         waitFor(() -> map.view().overviewCard() != null, "the card opens on the first Map open");
         FxTestSupport.runOnFx(() -> {
             ProjectMapOverviewCard card = map.view().overviewCard();
-            assertTrue(map.view().isOverviewSeen(), "and is seen from then on");
-            assertEquals(1, seen[0], "the workspace is told once");
             assertTrue(card.isVisible());
             assertEquals(tr("project.map.overview.title", "spring"), card.title());
             assertTrue(
@@ -358,7 +352,6 @@ class ProjectMapLayoutReview3FxTest {
             map.view().openOverview(); // ⋯ → Project overview
         });
         waitFor(() -> map.view().overviewCard() != null, "the menu opens it again");
-        assertEquals(1, seen[0]);
     }
 
     // --- A11: ignored and generated rows ---------------------------------------------------------------------
