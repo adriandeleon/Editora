@@ -328,6 +328,140 @@ public final class DapClient implements IDebugProtocolClient {
         return caps != null && Boolean.TRUE.equals(caps.getSupportsGotoTargetsRequest());
     }
 
+    /** The method breakpoints and field watchpoints in force (sent on {@code initialized} and when they change). */
+    private volatile List<DapModels.MemberBreakpoint> memberBreakpoints = List.of();
+
+    /**
+     * Sets the method breakpoints and field watchpoints: remembered before the session is configured (the
+     * {@code initialized} event sends them), sent at once after. An adapter that does not offer function or data
+     * breakpoints is sent neither.
+     */
+    public void setMemberBreakpoints(@Nullable List<DapModels.MemberBreakpoint> breakpoints) {
+        List<DapModels.MemberBreakpoint> list = breakpoints == null ? List.of() : List.copyOf(breakpoints);
+        for (DapClient child : children) {
+            child.setMemberBreakpoints(list); // each session holds its own breakpoints
+        }
+        synchronized (configurationLock) {
+            memberBreakpoints = list;
+            if (server != null && configured) {
+                sendMemberBreakpointsNow();
+            }
+        }
+    }
+
+    /** The method breakpoints and field watchpoints this session was last given (test/diagnostic read). */
+    List<DapModels.MemberBreakpoint> memberBreakpoints() {
+        return memberBreakpoints;
+    }
+
+    /** Sends {@code setFunctionBreakpoints} and {@code setDataBreakpoints}, each when the adapter offers it. */
+    private void sendMemberBreakpointsNow() {
+        IDebugProtocolServer s = server;
+        Capabilities caps = capabilities;
+        if (s == null || caps == null) {
+            return;
+        }
+        List<DapModels.MemberBreakpoint> all = memberBreakpoints;
+        try {
+            if (Boolean.TRUE.equals(caps.getSupportsFunctionBreakpoints())) {
+                List<org.eclipse.lsp4j.debug.FunctionBreakpoint> methods = new ArrayList<>();
+                for (DapModels.MemberBreakpoint m : all) {
+                    if (!m.field()) {
+                        org.eclipse.lsp4j.debug.FunctionBreakpoint f = new org.eclipse.lsp4j.debug.FunctionBreakpoint();
+                        f.setName(m.name());
+                        f.setCondition(blankToNull(m.condition()));
+                        f.setHitCondition(blankToNull(m.hitCondition()));
+                        methods.add(f);
+                    }
+                }
+                org.eclipse.lsp4j.debug.SetFunctionBreakpointsArguments a =
+                        new org.eclipse.lsp4j.debug.SetFunctionBreakpointsArguments();
+                a.setBreakpoints(methods.toArray(new org.eclipse.lsp4j.debug.FunctionBreakpoint[0]));
+                ignore(timed(s.setFunctionBreakpoints(a)));
+            }
+            if (Boolean.TRUE.equals(caps.getSupportsDataBreakpoints())) {
+                List<org.eclipse.lsp4j.debug.DataBreakpoint> fields = new ArrayList<>();
+                for (DapModels.MemberBreakpoint m : all) {
+                    if (m.field()) {
+                        org.eclipse.lsp4j.debug.DataBreakpoint d = new org.eclipse.lsp4j.debug.DataBreakpoint();
+                        d.setDataId(m.name());
+                        d.setAccessType(accessType(m.access()));
+                        d.setCondition(blankToNull(m.condition()));
+                        d.setHitCondition(blankToNull(m.hitCondition()));
+                        fields.add(d);
+                    }
+                }
+                org.eclipse.lsp4j.debug.SetDataBreakpointsArguments a =
+                        new org.eclipse.lsp4j.debug.SetDataBreakpointsArguments();
+                a.setBreakpoints(fields.toArray(new org.eclipse.lsp4j.debug.DataBreakpoint[0]));
+                ignore(timed(s.setDataBreakpoints(a)));
+            }
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "setFunctionBreakpoints/setDataBreakpoints failed", e);
+        }
+    }
+
+    private static @Nullable String blankToNull(@Nullable String s) {
+        return s == null || s.isBlank() ? null : s;
+    }
+
+    static org.eclipse.lsp4j.debug.DataBreakpointAccessType accessType(@Nullable String access) {
+        if ("read".equals(access)) {
+            return org.eclipse.lsp4j.debug.DataBreakpointAccessType.READ;
+        }
+        return "readWrite".equals(access)
+                ? org.eclipse.lsp4j.debug.DataBreakpointAccessType.READ_WRITE
+                : org.eclipse.lsp4j.debug.DataBreakpointAccessType.WRITE;
+    }
+
+    /** Whether the stopped session's adapter takes data breakpoints (java-debug: field watchpoints). */
+    public boolean supportsDataBreakpoints() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsDataBreakpoints());
+    }
+
+    /** Whether the adapter takes function breakpoints (java-debug: method breakpoints). */
+    public boolean supportsFunctionBreakpoints() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsFunctionBreakpoints());
+    }
+
+    /**
+     * Asks what a data breakpoint on variable {@code name} of container {@code variablesReference} would watch;
+     * empty when it can be watched by none (java-debug: anything but an object's field).
+     */
+    public CompletableFuture<java.util.Optional<DapModels.DataBreakpointTarget>> dataBreakpointInfo(
+            int variablesReference, String name) {
+        DapClient session = target();
+        if (session != this) {
+            return session.dataBreakpointInfo(variablesReference, name);
+        }
+        org.eclipse.lsp4j.debug.DataBreakpointInfoArguments a =
+                new org.eclipse.lsp4j.debug.DataBreakpointInfoArguments();
+        a.setVariablesReference(variablesReference);
+        a.setName(name);
+        return timed(server().dataBreakpointInfo(a)).thenApply(r -> {
+            if (r == null || r.getDataId() == null || r.getDataId().isBlank()) {
+                return java.util.Optional.<DapModels.DataBreakpointTarget>empty();
+            }
+            List<String> types = new ArrayList<>();
+            if (r.getAccessTypes() != null) {
+                for (org.eclipse.lsp4j.debug.DataBreakpointAccessType t : r.getAccessTypes()) {
+                    if (t != null) {
+                        types.add(
+                                switch (t) {
+                                    case READ -> "read";
+                                    case READ_WRITE -> "readWrite";
+                                    default -> "write";
+                                });
+                    }
+                }
+            }
+            return java.util.Optional.of(new DapModels.DataBreakpointTarget(
+                    r.getDataId(), r.getDescription() == null ? "" : r.getDescription(), List.copyOf(types)));
+        });
+    }
+
     /**
      * Opens the socket to {@code 127.0.0.1:port} (with a few short retries — the adapter may need a moment
      * to start listening), wires the DAP launcher, and sends {@code initialize} with {@code adapterId}
@@ -591,6 +725,9 @@ public final class DapClient implements IDebugProtocolClient {
                     ex.setFilters(filters.toArray(new String[0]));
                     ignore(timed(server().setExceptionBreakpoints(ex)));
                 }
+                if (!memberBreakpoints.isEmpty()) {
+                    sendMemberBreakpointsNow();
+                }
             }
             ignore(timed(server().configurationDone(new ConfigurationDoneArguments())));
         } catch (RuntimeException e) {
@@ -786,6 +923,7 @@ public final class DapClient implements IDebugProtocolClient {
         DapClient child = new DapClient(this);
         child.initialBreakpoints = initialBreakpoints;
         child.exceptionFilters = exceptionFilters;
+        child.memberBreakpoints = memberBreakpoints;
         children.add(child);
         if (disposed) { // the session ended while this was queued
             children.remove(child);

@@ -28,7 +28,7 @@ Two serialization formats, chosen per file:
 | `recent-files.json` | JSON | `RecentFiles.Stored` | Was a bare array (v0). One shared instance; remote entries kept. |
 | `bookmarks.json` | JSON | `BookmarkStore` | Per-project buckets. |
 | `notes.json` | JSON | `NoteStore` | Per-project buckets. |
-| `breakpoints.json` | JSON | `BreakpointStore` | Per-project buckets. |
+| `breakpoints.json` | JSON | `BreakpointStore` | Per-project buckets: line breakpoints per file, and the method breakpoints and field watchpoints (`memberBreakpoints`, schema 4). |
 | `history/index.json` + `history/blobs/` | JSON | `HistoryStore` | Local History; blobs gzip'd. The user's files, not configuration; left out of the export. |
 | `connections.json` | JSON | `ConnectionStore` | SFTP connection metadata, no secrets. |
 | `macros.json` | JSON | `MacroStore` | App-global keyboard macros. |

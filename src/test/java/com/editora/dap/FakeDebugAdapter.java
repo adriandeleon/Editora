@@ -102,6 +102,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set (before the client connects), sessions advertise {@code supportsRestartFrame}, as java-debug. */
     public volatile boolean restartFrame;
 
+    /**
+     * When set (before the client connects), sessions advertise function and data breakpoints, as java-debug, and
+     * {@code dataBreakpointInfo} names the field {@code count} of every container {@code demo.Args#count}.
+     */
+    public volatile boolean memberBreakpoints;
+
     /** When set (before the client connects), sessions advertise {@code supportsStepInTargetsRequest}. */
     public volatile boolean stepInTargets;
 
@@ -233,6 +239,11 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         public final List<SetBreakpointsArguments> breakpoints = new CopyOnWriteArrayList<>();
         public final List<SetExceptionBreakpointsArguments> exceptionBreakpoints = new CopyOnWriteArrayList<>();
+        /** The method names of every {@code setFunctionBreakpoints}. */
+        public final List<List<String>> functionBreakpoints = new CopyOnWriteArrayList<>();
+        /** The {@code dataId/accessType} of each breakpoint of every {@code setDataBreakpoints}. */
+        public final List<List<String>> dataBreakpoints = new CopyOnWriteArrayList<>();
+
         public final CountDownLatch configured = new CountDownLatch(1);
         public final CountDownLatch disconnected = new CountDownLatch(1);
         public volatile InitializeRequestArguments initializeArgs;
@@ -489,6 +500,10 @@ public final class FakeDebugAdapter implements AutoCloseable {
             if (stepInTargets) {
                 capabilities.setSupportsStepInTargetsRequest(true);
             }
+            if (memberBreakpoints) {
+                capabilities.setSupportsFunctionBreakpoints(true);
+                capabilities.setSupportsDataBreakpoints(true);
+            }
             if (completions != null) {
                 capabilities.setSupportsCompletionsRequest(true);
             }
@@ -592,6 +607,42 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 response.setBreakpoints(answer.apply(args).toArray(new org.eclipse.lsp4j.debug.Breakpoint[0]));
             }
             return CompletableFuture.completedFuture(response);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.SetFunctionBreakpointsResponse> setFunctionBreakpoints(
+                org.eclipse.lsp4j.debug.SetFunctionBreakpointsArguments args) {
+            List<String> names = new java.util.ArrayList<>();
+            for (var b : args.getBreakpoints()) {
+                names.add(b.getName());
+            }
+            functionBreakpoints.add(names);
+            record("setFunctionBreakpoints");
+            return CompletableFuture.completedFuture(new org.eclipse.lsp4j.debug.SetFunctionBreakpointsResponse());
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.SetDataBreakpointsResponse> setDataBreakpoints(
+                org.eclipse.lsp4j.debug.SetDataBreakpointsArguments args) {
+            List<String> ids = new java.util.ArrayList<>();
+            for (var b : args.getBreakpoints()) {
+                ids.add(b.getDataId() + "/" + b.getAccessType());
+            }
+            dataBreakpoints.add(ids);
+            record("setDataBreakpoints");
+            return CompletableFuture.completedFuture(new org.eclipse.lsp4j.debug.SetDataBreakpointsResponse());
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.DataBreakpointInfoResponse> dataBreakpointInfo(
+                org.eclipse.lsp4j.debug.DataBreakpointInfoArguments args) {
+            record("dataBreakpointInfo");
+            var r = new org.eclipse.lsp4j.debug.DataBreakpointInfoResponse();
+            r.setDescription(args.getName());
+            if ("count".equals(args.getName())) {
+                r.setDataId("demo.Args#count");
+            }
+            return CompletableFuture.completedFuture(r);
         }
 
         @Override

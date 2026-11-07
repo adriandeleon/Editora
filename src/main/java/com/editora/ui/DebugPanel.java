@@ -163,6 +163,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             setVariable(parentRef, name, value, cb);
         }
 
+        /** Whether the session can watch a field (Variables → Break When Value Changes). */
+        default boolean canWatchField() {
+            return false;
+        }
+
+        /** A field watchpoint on {@code name}, a variable of container {@code parentRef}, when it is a field. */
+        default void watchField(int parentRef, String name) {}
+
         /** Load a row the stop's time budget left unloaded (a click on it); delivers the loaded row (B201). */
         default void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
             cb.accept(row);
@@ -265,6 +273,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private DapManager.State lastState = DapManager.State.INACTIVE;
 
     private boolean stoppedOnException;
+
+    /** The state line's key when the program stopped on a method breakpoint or a field watchpoint, else null. */
+    private @Nullable String stoppedOnMember;
 
     /** Which exception the program is stopped on ("IllegalStateException: boom"); empty until it is known. */
     private String stoppedException = "";
@@ -1144,6 +1155,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     ? tr("debugpanel.state.exception")
                     : tr("debugpanel.state.exceptionNamed", stoppedException);
         }
+        if (stoppedOnMember != null && lastState == DapManager.State.SUSPENDED) {
+            return tr(stoppedOnMember); // java-debug's own words for these stops: "function"/"data breakpoint"
+        }
         if (lastState == DapManager.State.RUNNING && outputTrailing) {
             return tr("debugpanel.state.ending"); // the program has ended; its last output is arriving (choice 27)
         }
@@ -1350,6 +1364,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * exception stop is called out: it otherwise looks exactly like a breakpoint hit on the same line.
      */
     public void setStopReason(@Nullable String reason) {
+        String member = "function breakpoint".equals(reason)
+                ? "debugpanel.state.methodBreakpoint"
+                : "data breakpoint".equals(reason) ? "debugpanel.state.fieldWatchpoint" : null;
+        if (!java.util.Objects.equals(member, stoppedOnMember)) {
+            stoppedOnMember = member;
+            refreshStatus();
+        }
         boolean exception = "exception".equals(reason);
         boolean named = !stoppedException.isEmpty();
         if (!exception) {
@@ -1610,6 +1631,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 toWatches.setGraphic(Icons.newFile());
                 toWatches.setOnAction(e -> addWatchPrompt(expression));
                 menu.getItems().add(toWatches);
+                if (row.parentRef() > 0 && actions.canWatchField()) {
+                    // IntelliJ's and VS Code's "Break When Value Changes": a watchpoint on the field this row is
+                    javafx.scene.control.MenuItem watchField =
+                            new javafx.scene.control.MenuItem(tr("debugpanel.watchField"));
+                    watchField.setOnAction(e -> actions.watchField(row.parentRef(), row.name()));
+                    menu.getItems().add(watchField);
+                }
             }
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
