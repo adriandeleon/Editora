@@ -113,6 +113,11 @@ public final class LanguageRegistry {
             Map.entry("jsonc", "json"),
             Map.entry("code-workspace", "json"), // VS Code workspace files: JSONC (JS review A102)
             Map.entry("json5", "json"),
+            // JSON Lines / NDJSON: a JSON value per line (logs, datasets) — its own language, as the JSON server
+            // and a whole-document parse would call every line after the first an error.
+            Map.entry("jsonl", "jsonl"),
+            Map.entry("ndjson", "jsonl"),
+            Map.entry("jsonlines", "jsonl"),
             Map.entry("c", "c"),
             Map.entry("h", "c"),
             Map.entry("cpp", "cpp"),

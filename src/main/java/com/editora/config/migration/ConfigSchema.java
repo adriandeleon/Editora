@@ -369,7 +369,11 @@ public enum ConfigSchema {
                     Map.entry(157, (Migration) ConfigMigrations::identity),
                     // v158→159: + debugSuspendAllThreads (off) — a Java stop suspends every thread, Continue resumes
                     // them all. Additive: absent is the default.
-                    Map.entry(158, (Migration) ConfigMigrations::identity)),
+                    Map.entry(158, (Migration) ConfigMigrations::identity),
+                    // v159→160: JSON Lines became a language of its own ("jsonl", .jsonl/.ndjson files, which were
+                    // plain text before). A saved spellDisabledLanguages that leaves JSON unchecked gets "jsonl"
+                    // too, as the new default list does; a list that checks JSON is left alone.
+                    Map.entry(159, (Migration) ConfigMigrations::spellSkipJsonLinesLikeJson)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

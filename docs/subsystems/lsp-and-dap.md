@@ -895,7 +895,9 @@ targets) is added to its pulled or pushed diagnostics off the FX thread (`LspMan
 form) or in a template folder (`templates/`, `_layouts/`, `partials/` …) is not checked for balance, only for links;
 a link missing where it points is accepted under the project's `public/`, `static/` or `assets/`
 (`HtmlMarkupCheck.servedElsewhere`). A page no server serves shows the same check on the `.http` variable marks'
-squiggle overlay (`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`). `textDocument/documentColor` (any server with a
+squiggle overlay (`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`; the buffer holds several such checks
+and runs the first whose gate is open — JSON Lines' one-value-per-line check, `ui.JsonLinesMarks`, is the other,
+since no server reads that format). `textDocument/documentColor` (any server with a
 `colorProvider`: html, css) rides `requestFoldingRanges`' pulses; `EditorBuffer.setColorSwatches` draws an inlay per
 colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`). Between answers
 the cached colours move with each edit (`ColorSwatch.shifted`, on the area's `plainTextChanges`), so a swatch stays

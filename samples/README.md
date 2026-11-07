@@ -29,7 +29,8 @@ has no sample anywhere in the corpus.
 a Scala 2 brace object), `samples/syntax/sample.clj` (Clojure: a namespace, a protocol and records, a
 macro, character and regex literals), `samples/syntax/sample.php`, `samples/syntax/sample.rb`,
 `samples/syntax/sample.lua`, `samples/syntax/sample.html`, `samples/syntax/sample.css`,
-`samples/syntax/sample.json`, `samples/syntax/sample.yaml`, `samples/syntax/sample.xml`,
+`samples/syntax/sample.json`, `samples/syntax/sample.jsonl` (JSON Lines: one value per line, of every
+kind), `samples/syntax/sample.yaml`, `samples/syntax/sample.xml`,
 `samples/syntax/sample.toml`, `samples/syntax/sample.sql`, `samples/syntax/sample.sh`,
 `samples/syntax/sample.ps1`, `samples/syntax/sample.bat`, `samples/syntax/sample.groovy`,
 `samples/syntax/sample.ini`, `samples/syntax/sample.js` (JavaScript, via the TypeScript grammar),
@@ -202,11 +203,16 @@ the download error. Package versions are pinned to ones that compile with typst 
 - `samples/typst/packages/lilaq-chart.typ` — a plotted sine/cosine chart (`@preview/lilaq`).
 - `samples/typst/packages/polylux-slides.typ` — a 3-slide deck (`@preview/polylux`); the preview stacks 3 pages.
 
-## structured/ — JSON/YAML/TOML/XML tree + OpenAPI docs preview
+## structured/ — JSON/JSON Lines/YAML/TOML/XML tree + OpenAPI docs preview
 
 - `samples/structured/config.json` — the 3-mode preview renders a collapsible, type-colored tree.
 - `samples/structured/config.yaml` — same data as YAML; the preview tree is identical.
 - `samples/structured/config.toml` — same data as TOML.
+- `samples/structured/events.jsonl` — JSON Lines (also `.ndjson`): the preview is a list of the records, each
+  keyed by its line number.
+- `samples/structured/broken.jsonl` — the lines that are not exactly one JSON value are squiggled (a trailing
+  comma, two records on one line, a record split over two lines); the preview names the first one with a link
+  to it.
 - `samples/structured/config.xml` — same data as XML; the preview renders a collapsible DOM tree
   (tags + attributes + text, text-only elements inlined).
 - `samples/structured/petstore.yaml` — an OpenAPI 3 spec; the preview auto-renders browsable API docs

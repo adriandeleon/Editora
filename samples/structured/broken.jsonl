@@ -1,0 +1,6 @@
+{"id": 1, "ok": true}
+{"id": 2, "ok": true,}
+{"id": 3, "ok": true} {"id": 4, "ok": true}
+{"id": 5, "note": "a record split over two lines",
+ "ok": false}
+{"id": 6, "ok": true}

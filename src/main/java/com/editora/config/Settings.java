@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 159;
+    public static final int SCHEMA_VERSION = 160;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -244,6 +244,7 @@ public class Settings {
      */
     public static final java.util.List<String> DEFAULT_SPELL_DISABLED_LANGUAGES = java.util.List.of(
             "json",
+            "jsonl",
             "yaml",
             "toml",
             "xml",

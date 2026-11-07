@@ -22,6 +22,7 @@ class LanguageNamesTest {
     void acronymsAndOwnCasingsAreKept() {
         assertEquals("XML", LanguageNames.display(LanguageRegistry.forFileName("pom.xml")));
         assertEquals("JSON", LanguageNames.display("json"));
+        assertEquals("JSON Lines", LanguageNames.display("jsonl"));
         assertEquals("YAML", LanguageNames.display(LanguageRegistry.forFileName("ci.yml")));
         assertEquals("HTML", LanguageNames.display("html"));
         assertEquals("CSS", LanguageNames.display("css"));

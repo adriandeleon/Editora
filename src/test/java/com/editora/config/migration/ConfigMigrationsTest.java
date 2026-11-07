@@ -104,6 +104,21 @@ class ConfigMigrationsTest {
     }
 
     @Test
+    void jsonLinesJoinsASpellSkipListThatSkipsJson() throws Exception {
+        ObjectNode skipsJson = (ObjectNode) mapper.readTree("{\"spellDisabledLanguages\":[\"json\",\"yaml\"]}");
+        ConfigMigrations.spellSkipJsonLinesLikeJson(skipsJson);
+        ConfigMigrations.spellSkipJsonLinesLikeJson(skipsJson); // safe to repeat
+        assertEquals(
+                "[\"json\",\"yaml\",\"jsonl\"]",
+                skipsJson.get("spellDisabledLanguages").toString());
+        ObjectNode checksJson = (ObjectNode) mapper.readTree("{\"spellDisabledLanguages\":[\"yaml\"]}");
+        ConfigMigrations.spellSkipJsonLinesLikeJson(checksJson);
+        assertEquals("[\"yaml\"]", checksJson.get("spellDisabledLanguages").toString(), "a JSON-checking choice stays");
+        ObjectNode none = (ObjectNode) mapper.readTree("{}");
+        assertFalse(ConfigMigrations.spellSkipJsonLinesLikeJson(none).has("spellDisabledLanguages"));
+    }
+
+    @Test
     void anOpenaiShapedLeftoverEndpointLeavesAnthropicButAProxyStays() throws Exception {
         ObjectNode leftover = (ObjectNode) mapper.readTree("""
                 {"aiProvider":"anthropic","aiEndpoint":"http://192.168.1.5:8080/v1/chat/completions/",

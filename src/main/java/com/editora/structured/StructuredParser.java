@@ -11,7 +11,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Parses JSON / YAML / TOML text into a neutral {@link StructuredNode} tree for the 3-mode preview, and
+ * Parses JSON / JSON Lines / YAML / TOML text into a neutral {@link StructuredNode} tree for the 3-mode preview, and
  * (when the document is an OpenAPI/Swagger spec) an {@link OpenApiModel}. The only place the module touches
  * Jackson: JSON via {@link ObjectMapper}, YAML via {@link YAMLMapper}, TOML via {@link TomlMapper} — all
  * yield a {@code JsonNode}, converted once to the toolkit-free tree. Pure; unit-tested. Called off the FX
@@ -22,6 +22,8 @@ public final class StructuredParser {
     /** Which structured format a buffer holds (from its language id). */
     public enum Format {
         JSON,
+        /** JSON Lines: one value per line, previewed as an array of the lines' values keyed by line number. */
+        JSONL,
         YAML,
         TOML;
 
@@ -32,6 +34,7 @@ public final class StructuredParser {
             }
             return switch (language) {
                 case "json" -> JSON;
+                case "jsonl" -> JSONL;
                 case "yaml" -> YAML;
                 case "toml" -> TOML;
                 default -> null;
@@ -44,12 +47,19 @@ public final class StructuredParser {
 
     /**
      * The parse outcome: a {@code root} tree (never null on success), an optional {@code openApi} model when
-     * the doc is a spec, or an {@code error} message on failure / over the node cap.
+     * the doc is a spec, or an {@code error} message on failure / over the node cap — with, when the parser
+     * knows it, the 1-based {@code line} and {@code column} it stopped at (0 = unknown).
      */
     public record Parsed(
             @Nullable StructuredNode root,
             @Nullable OpenApiModel openApi,
-            @Nullable String error) {
+            @Nullable String error,
+            int line,
+            int column) {
+        public Parsed(@Nullable StructuredNode root, @Nullable OpenApiModel openApi, @Nullable String error) {
+            this(root, openApi, error, 0, 0);
+        }
+
         public boolean ok() {
             return error == null && root != null;
         }
@@ -68,6 +78,9 @@ public final class StructuredParser {
         if (text == null || text.isBlank()) {
             return new Parsed(new StructuredNode(null, StructuredNode.Kind.OBJECT, null, List.of()), null, null);
         }
+        if (fmt == Format.JSONL) {
+            return parseLines(text);
+        }
         try {
             JsonNode json = mapperFor(fmt).readTree(text);
             if (json == null || json.isMissingNode()) {
@@ -84,9 +97,30 @@ public final class StructuredParser {
         }
     }
 
+    /**
+     * A JSON Lines document as an array of its lines' values, each keyed by its 1-based line number (blank lines
+     * are skipped, so the numbers are the editor's); the first line that is not one value is the error.
+     */
+    private static Parsed parseLines(String text) {
+        try {
+            int[] count = {1};
+            List<StructuredNode> records = new ArrayList<>();
+            for (JsonLines.Line line : JsonLines.values(text)) {
+                records.add(fromJson(Integer.toString(line.number()), line.value(), count));
+            }
+            return new Parsed(new StructuredNode(null, StructuredNode.Kind.ARRAY, null, records), null, null);
+        } catch (JsonLines.LineException e) {
+            JsonLines.Problem p = e.problem();
+            String what = p.kind() == JsonLines.Kind.TRAILING ? "More than one JSON value on this line" : p.detail();
+            return new Parsed(null, null, what, p.line(), p.errorColumn());
+        } catch (TooLargeException e) {
+            return new Parsed(null, null, "document too large to preview (over " + MAX_NODES + " nodes)");
+        }
+    }
+
     static ObjectMapper mapperFor(Format fmt) {
         return switch (fmt) {
-            case JSON -> new ObjectMapper();
+            case JSON, JSONL -> new ObjectMapper();
             case YAML -> new YAMLMapper();
             case TOML -> new TomlMapper();
         };

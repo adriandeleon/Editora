@@ -14,6 +14,7 @@ class StructuredParserTest {
     @Test
     void formatForLanguage() {
         assertSame(StructuredParser.Format.JSON, StructuredParser.Format.forLanguage("json"));
+        assertSame(StructuredParser.Format.JSONL, StructuredParser.Format.forLanguage("jsonl"));
         assertSame(StructuredParser.Format.YAML, StructuredParser.Format.forLanguage("yaml"));
         assertSame(StructuredParser.Format.TOML, StructuredParser.Format.forLanguage("toml"));
         assertNull(StructuredParser.Format.forLanguage("markdown"));
@@ -79,5 +80,36 @@ class StructuredParserTest {
         assertFalse(bad.ok());
         assertNull(bad.root());
         assertNull(StructuredParser.parse("x", null).root());
+    }
+
+    @Test
+    void jsonLinesPreviewIsAnArrayOfRecordsKeyedByLineNumber() {
+        String text = "{\"id\":1,\"ok\":true}\n\n[1,2]\n\"done\"\n";
+        StructuredParser.Parsed p = StructuredParser.parse(text, StructuredParser.Format.JSONL);
+        assertTrue(p.ok());
+        StructuredNode root = p.root();
+        assertSame(StructuredNode.Kind.ARRAY, root.kind());
+        assertEquals(3, root.size());
+        assertEquals("1", root.children().get(0).key());
+        assertSame(StructuredNode.Kind.OBJECT, root.children().get(0).kind());
+        assertEquals("3", root.children().get(1).key(), "the blank line 2 is skipped; numbers stay the editor's");
+        assertSame(StructuredNode.Kind.ARRAY, root.children().get(1).kind());
+        assertEquals("done", root.children().get(2).value());
+    }
+
+    @Test
+    void jsonLinesPreviewErrorNamesTheFirstBadLineAndColumn() {
+        String text = "{\"id\":1}\n{\"id\":2} {\"id\":3}\n{bad}\n";
+        StructuredParser.Parsed p = StructuredParser.parse(text, StructuredParser.Format.JSONL);
+        assertFalse(p.ok());
+        assertEquals(2, p.line());
+        assertEquals(10, p.column());
+        assertTrue(p.error().contains("More than one JSON value"));
+    }
+
+    @Test
+    void jsonLinesEmptyDocumentIsAnEmptyList() {
+        StructuredParser.Parsed p = StructuredParser.parse("\n\n", StructuredParser.Format.JSONL);
+        assertTrue(p.ok());
     }
 }
