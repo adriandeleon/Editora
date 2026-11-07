@@ -63,7 +63,8 @@ final class TrustPrompts {
 
     /**
      * The prompt for the first build in {@code root}: what it will run (the wrapper if any, the pom's plugins,
-     * {@code .mvn/} files, a project.json override — {@link com.editora.build.BuildTrust}), one line each.
+     * {@code .mvn/} files, an {@code .editora/settings.json} build command — {@link com.editora.build.BuildTrust}),
+     * one line each.
      */
     static Prompt buildProject(Window owner, @Nullable Path root, com.editora.build.BuildTrust.Summary summary) {
         // root is a folder (the wrapper's, or the project's) at every caller; typed nullable by Path.getParent()

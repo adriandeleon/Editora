@@ -20,7 +20,7 @@ import static com.editora.i18n.Messages.tr;
  * {@code build.sbt} and {@code project/} plugins, Mill's {@code build.mill}/{@code build.sc} (Scala that Mill
  * compiles and runs) and its {@code mill-build/} meta-build, the JVM options files those launchers read
  * ({@code .jvmopts}, {@code .sbtopts}, {@code .mill-jvm-opts}, which can add a {@code -javaagent}), and a
- * {@code .editora/project.json} that replaces the build command. The prompt lists what it found so the user
+ * {@code .editora/settings.json} that replaces the build command. The prompt lists what it found so the user
  * consents to something concrete; the gate itself (ask once per folder, remembered, inherited by subfolders,
  * revocable) lives in {@code ui.BuildCoordinator}. Pure except for the file probes, so it is unit-tested on
  * a temp folder.
@@ -37,7 +37,8 @@ public final class BuildTrust {
      *
      * @param root the marker directory the build runs in
      * @param wrapper the repo-shipped wrapper the launch would execute, or {@code null}
-     * @param projectOverride a {@code project.json} build-command override, or {@code ""}
+     * @param projectOverride the build command {@code .editora/settings.json} sets for {@code tool}, whether or not
+     *     the folder is trusted yet — never the user's Settings one — or {@code ""}
      * @param items what will run, one line each, localized — never empty
      */
     public record Summary(Path root, @Nullable Path wrapper, String projectOverride, List<String> items) {}
