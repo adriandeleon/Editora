@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scripts, a `mill-build/` meta-build and the launcher options files (`.mill-jvm-opts`, `.jvmopts`, `.sbtopts`).
   Running a task, Run on a Scala file of the build, Test Results, Run and Debug's build before a launch and Load all
   tasks all ask; declining runs nothing. A folder you already trusted is unchanged.
+- **Leiningen, Babashka, Clojure CLI, Cargo, Scala CLI and npm builds ask before running a folder's code.** Each
+  of these runs code the repository supplies beyond the task you pick: Leiningen evaluates `project.clj` and its
+  plugins, Babashka runs a task's `:init` and `:depends` first, a `deps.edn` alias can add JVM options such as a
+  `-javaagent`, Cargo compiles and runs `build.rs` scripts and procedural macros, Scala CLI runs macros and compiler
+  plugins as it compiles, and npm runs `pre` and `post` scripts, install hooks and, through a `.yarnrc.yml`
+  `yarnPath`, a yarn the repository ships. Their first build in a folder now asks for workspace trust, as Maven,
+  Gradle, sbt and Mill do, listing what it found (`.cargo/config.toml`, `rust-toolchain.toml`, `.npmrc`,
+  `.yarnrc.yml`, `.pnpmfile.cjs`, `.lein-classpath` and the like); declining runs nothing. Go builds are not asked
+  about: `go build` never runs a module's code. A folder you already trusted is unchanged.
 
 ### Added
 
@@ -126,9 +135,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **The build trust prompt names the project's build command, not yours.** In a folder not yet trusted, the
-  Maven/Gradle trust prompt listed the command set in your own Settings as if the project's `.editora/settings.json`
-  ran it, and never listed a command the project file does set — the one trusting the folder would apply. It now
-  lists the project file's command whenever there is one, and the file's right name.
+  build trust prompt listed the command set in your own Settings as if the project's `.editora/settings.json` ran
+  it, and never listed a command the project file does set — the one trusting the folder would apply. It now lists
+  the project file's command whenever there is one, and the file's right name.
+- **`.http` results stay on their requests after a line is added above them.** A request's last result after its
+  line could vanish, with the ■ drawn on the old lines for a moment, when a line was added above the requests while
+  the editor was still finding them in the text from before the edit; that out-of-date answer is now dropped and
+  the edit's own scan places them.
 - **Settings help links open the right section.** The **?** on Code Completion and Spell Check opened the
   Editing page and Mermaid's the Diagrams page, none of which covers them; they now open Autocomplete and Spell
   checking on the Languages page and Mermaid diagrams on the Markdown page. The Sync page's subtitle and *Sync Now*

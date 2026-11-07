@@ -771,15 +771,19 @@ final class BuildCoordinator {
     /**
      * The workspace-trust gate: whether a build may execute from {@code root} right now.
      *
-     * <p>Every build of a Maven, Gradle, sbt or Mill project runs code the repository supplies — not only a
-     * shipped {@code ./mvnw}/{@code ./gradlew}/{@code ./mill} (the one case this used to gate, and for Mill not
-     * even that) but the pom's plugins and extensions, the files under {@code .mvn/}, every Gradle script, sbt's
-     * {@code build.sbt} and {@code project/}, Mill's {@code build.mill}/{@code build.sc} — on the user's own
-     * {@code mvn}, {@code sbt} or {@code mill} just the same. So the first build of any kind in an untrusted folder asks once, with a prompt that lists
-     * what it found ({@link BuildTrust}); trust is remembered per folder (the wrapper's, else the open
-     * project — a module must not silently cover a script one level up), inherited by subfolders, shown in
-     * the tasks window's header with a Revoke, and revocable in Settings → Workspace. The other tools
-     * (npm, Cargo, Go, Scala CLI, the Clojure tools) are not gated yet and pass straight through.
+     * <p>A build of every tool but Go runs code the repository supplies beyond the task the user picked — not only a
+     * shipped {@code ./mvnw}/{@code ./gradlew}/{@code ./mill} (the one case this used to gate, and for Mill not even
+     * that) but the pom's plugins and extensions, the files under {@code .mvn/}, every Gradle script, sbt's
+     * {@code build.sbt} and {@code project/}, Mill's {@code build.mill}/{@code build.sc}, Leiningen's
+     * {@code project.clj}, Babashka's {@code bb.edn} tasks, Cargo's {@code build.rs} and procedural macros, a Scala
+     * CLI compile's macros and compiler plugins, a {@code deps.edn} alias's JVM options, and npm's pre/post and
+     * install scripts or a repository's own {@code yarnPath} yarn — on the user's own tool just the same. So the
+     * first build of any kind in an untrusted folder asks once, with a prompt that lists what it found
+     * ({@link BuildTrust}); trust is remembered per folder (the wrapper's, else the open project — a module must not
+     * silently cover a script one level up), inherited by subfolders, shown in the tasks window's header with a
+     * Revoke, and revocable in Settings → Workspace. Go alone passes straight through: its builds never execute the
+     * module's code, and {@code go run}/{@code test}/{@code generate} run it because the user asked for that by name
+     * ({@link BuildTrust#gates} has the per-tool reasons).
      *
      * <p>Declining does <b>not</b> silently fall back to anything: "no" has to mean no build, not a quieter
      * one. The same gate covers Gradle's "Load all tasks…", the Run/Debug build-before-launch step and the
