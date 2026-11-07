@@ -1233,8 +1233,48 @@ public final class DapClient implements IDebugProtocolClient {
                         : r.getExceptionId();
         String message =
                 d != null && d.getMessage() != null && !d.getMessage().isBlank() ? d.getMessage() : r.getDescription();
-        DapModels.ExceptionInfo info = new DapModels.ExceptionInfo(type, message);
+        DapModels.ExceptionInfo info = new DapModels.ExceptionInfo(
+                type,
+                message,
+                r.getBreakMode() == null ? "" : breakModeName(r.getBreakMode()),
+                d == null ? "" : d.getStackTrace(),
+                d == null ? List.of() : causes(d.getInnerException(), 0));
         return info.isEmpty() ? null : info;
+    }
+
+    /** The protocol's name of an exception break mode ({@code userUnhandled}, not lsp4j's enum constant). */
+    private static String breakModeName(org.eclipse.lsp4j.debug.ExceptionBreakMode mode) {
+        return switch (mode) {
+            case NEVER -> "never";
+            case ALWAYS -> "always";
+            case UNHANDLED -> "unhandled";
+            case USER_UNHANDLED -> "userUnhandled";
+        };
+    }
+
+    /** At most this many causes deep: a cycle or a long chain must not run on. */
+    private static final int MAX_CAUSE_DEPTH = 8;
+
+    /** An exception's inner exceptions ("Caused by"), each with its own, to {@link #MAX_CAUSE_DEPTH}. Pure. */
+    private static List<DapModels.ExceptionInfo> causes(ExceptionDetails @Nullable [] inner, int depth) {
+        if (inner == null || depth >= MAX_CAUSE_DEPTH) {
+            return List.of();
+        }
+        List<DapModels.ExceptionInfo> out = new ArrayList<>();
+        for (ExceptionDetails c : inner) {
+            if (c == null) {
+                continue;
+            }
+            String type = c.getFullTypeName() != null && !c.getFullTypeName().isBlank()
+                    ? c.getFullTypeName()
+                    : c.getTypeName();
+            DapModels.ExceptionInfo cause = new DapModels.ExceptionInfo(
+                    type, c.getMessage(), "", c.getStackTrace(), causes(c.getInnerException(), depth + 1));
+            if (!cause.isEmpty()) {
+                out.add(cause);
+            }
+        }
+        return out;
     }
 
     /** Replaces {@code fb}'s file in the set installed on a session's {@code initialized} event. */

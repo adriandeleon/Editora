@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Exception card.** When the program stops on an exception, a card opens under the line that threw it, as
+  Visual Studio's Exception Helper and VS Code's exception widget do: whether the program catches it, its type and
+  message, the exceptions that caused it and the stack trace when the debugger sends them (Python and
+  JavaScript), with **Copy** and — for a caught exception — **Don’t Stop on Caught Exceptions**. It never takes
+  focus: Esc in the editor or a click elsewhere closes it, and Continue, a step or another frame does too.
+  *Debug: Show Exception* opens it again.
 - **Threads view.** The Debug window's Call Stack area has a **Threads** switch (and *Debug: Threads* opens it):
   every thread of the program, which are suspended and why, and which is shown. Right-click a thread to **Pause
   Thread** or **Resume Thread** — that thread alone, the others staying as they are — or **Show Frames** of a

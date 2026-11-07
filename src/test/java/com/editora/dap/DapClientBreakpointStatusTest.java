@@ -258,4 +258,41 @@ class DapClientBreakpointStatusTest {
         assertNull(DapClient.exceptionInfo(new ExceptionInfoResponse()), "an empty answer says nothing");
         assertNull(DapClient.exceptionInfo(null));
     }
+
+    @Test
+    void anExceptionInfoAnswerSaysWhetherItIsCaughtAndCarriesItsTraceAndCauses() {
+        // java-debug: the type, its toString() and the break mode — userUnhandled when nothing catches it.
+        ExceptionInfoResponse java = new ExceptionInfoResponse();
+        java.setExceptionId("java.lang.IllegalStateException");
+        java.setDescription("java.lang.IllegalStateException: boom");
+        java.setBreakMode(org.eclipse.lsp4j.debug.ExceptionBreakMode.USER_UNHANDLED);
+        DapModels.ExceptionInfo uncaught = DapClient.exceptionInfo(java);
+        assertEquals("userUnhandled", uncaught.breakMode());
+        assertTrue(uncaught.uncaught());
+        java.setBreakMode(org.eclipse.lsp4j.debug.ExceptionBreakMode.ALWAYS);
+        assertTrue(DapClient.exceptionInfo(java).caught());
+
+        // debugpy / js-debug: a stack trace and inner exceptions, each with its own.
+        ExceptionInfoResponse py = new ExceptionInfoResponse();
+        py.setExceptionId("ValueError");
+        ExceptionDetails details = new ExceptionDetails();
+        details.setFullTypeName("builtins.ValueError");
+        details.setMessage("bad value");
+        details.setStackTrace("  File \"app.py\", line 3, in <module>\n    run()\n");
+        ExceptionDetails cause = new ExceptionDetails();
+        cause.setTypeName("KeyError");
+        cause.setMessage("'id'");
+        ExceptionDetails root = new ExceptionDetails();
+        root.setTypeName("OSError");
+        cause.setInnerException(new ExceptionDetails[] {root});
+        details.setInnerException(new ExceptionDetails[] {cause, null});
+        py.setDetails(details);
+        DapModels.ExceptionInfo info = DapClient.exceptionInfo(py);
+        assertEquals("File \"app.py\", line 3, in <module>\n    run()", info.stackTrace(), "stripped");
+        assertEquals(1, info.causes().size());
+        assertEquals("KeyError", info.causes().get(0).type());
+        assertEquals("OSError", info.causes().get(0).causes().get(0).type());
+        assertEquals("", info.breakMode());
+        assertFalse(info.caught() || info.uncaught(), "the adapter did not say");
+    }
 }

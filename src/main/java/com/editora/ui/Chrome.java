@@ -568,6 +568,7 @@ final class Chrome {
 
     /** Debug commands that only mean anything while a thread is suspended at a stop. */
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
+            "debug.showException",
             "debug.continue",
             "debug.stepOver",
             "debug.stepInto",

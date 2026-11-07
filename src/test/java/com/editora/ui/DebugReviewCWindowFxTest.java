@@ -334,6 +334,48 @@ class DebugReviewCWindowFxTest {
         }
     }
 
+    @Test
+    void anExceptionStopOpensTheExceptionCardUnderTheLineAndTheNextStopClosesIt() throws Exception {
+        Path util = file("util.py", UTIL);
+        open(util);
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            org.eclipse.lsp4j.debug.ExceptionInfoResponse info = new org.eclipse.lsp4j.debug.ExceptionInfoResponse();
+            info.setExceptionId("ValueError");
+            info.setBreakMode(org.eclipse.lsp4j.debug.ExceptionBreakMode.USER_UNHANDLED);
+            org.eclipse.lsp4j.debug.ExceptionDetails details = new org.eclipse.lsp4j.debug.ExceptionDetails();
+            details.setFullTypeName("builtins.ValueError");
+            details.setMessage("bad value");
+            details.setStackTrace("File \"util.py\", line 3");
+            info.setDetails(details);
+            adapter.exceptionInfo = info;
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            stopAt(session, util, 3, "exception");
+            await(
+                    "the exception card",
+                    () -> debug.exceptionCard() != null
+                            && debug.exceptionCard().shown() != null
+                            && "builtins.ValueError"
+                                    .equals(debug.exceptionCard().shown().type()));
+            com.editora.dap.DapModels.ExceptionInfo shown =
+                    FxTestSupport.callOnFx(() -> debug.exceptionCard().shown());
+            assertEquals("builtins.ValueError", shown.type());
+            assertTrue(shown.uncaught());
+            assertEquals("File \"util.py\", line 3", shown.stackTrace());
+
+            // Closed and reopened: Show Exception brings it back for the same stop.
+            FxTestSupport.runOnFx(() -> debug.exceptionCard().hide());
+            FxTestSupport.runOnFx(debug::showException);
+            await("Show Exception reopens it", () -> debug.exceptionCard().isShowing());
+
+            FxTestSupport.runOnFx(manager::resume);
+            session.awaitRequest("continue");
+            await("Continue closes it", () -> !debug.exceptionCard().isShowing());
+            stopAt(session, util, 3, "breakpoint");
+            FxTestSupport.drainFx();
+            assertFalse(FxTestSupport.callOnFx(() -> debug.exceptionCard().isShowing()), "not for a breakpoint");
+        }
+    }
+
     // --- C10 / C11: the editor's and the gutter's debugger menus --------------------------------------------
 
     @Test

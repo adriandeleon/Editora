@@ -332,6 +332,7 @@ final class MenuBarModel {
                                                 "debug.applyCodeChanges",
                                                 "debug.evaluate",
                                                 "debug.showValue",
+                                                "debug.showException",
                                                 "debug.addWatch",
                                                 "debug.toggleHex",
                                                 SEPARATOR,

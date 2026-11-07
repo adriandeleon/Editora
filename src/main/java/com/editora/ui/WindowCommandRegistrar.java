@@ -2169,6 +2169,10 @@ final class WindowCommandRegistrar {
                         "debug.threads", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showThreads)));
         host.registry()
                 .register(Command.of(
+                        "debug.showException",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showException)));
+        host.registry()
+                .register(Command.of(
                         "debug.evaluate",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::focusEvaluate)));
         host.registry()
