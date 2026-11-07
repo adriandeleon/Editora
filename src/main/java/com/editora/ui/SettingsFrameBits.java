@@ -20,7 +20,10 @@ final class SettingsFrameBits {
 
     private SettingsFrameBits() {}
 
-    /** The docs page for each Settings page (by its category name); a page without one links the docs home. */
+    /**
+     * The docs page for each Settings page (by its category name), with the section's anchor when the setting is one
+     * part of a longer page; a page without one links the docs home.
+     */
     private static final Map<String, String> DOCS = Map.ofEntries(
             Map.entry("APPEARANCE", "themes-fonts"),
             Map.entry("INTERFACE", "workspace"),
@@ -28,11 +31,11 @@ final class SettingsFrameBits {
             Map.entry("WORKSPACE", "workspace"),
             Map.entry("TOOL_WINDOWS", "workspace"),
             Map.entry("EDITOR", "editing"),
-            Map.entry("COMPLETION", "editing"),
+            Map.entry("COMPLETION", "languages#autocomplete"),
             Map.entry("SNIPPETS", "snippets-templates"),
             Map.entry("TEMPLATES", "snippets-templates"),
             Map.entry("TODO", "todo"),
-            Map.entry("SPELL_CHECK", "editing"),
+            Map.entry("SPELL_CHECK", "languages#spell-checking"),
             Map.entry("SEARCH", "navigation"),
             Map.entry("ABBREVIATIONS", "snippets-templates"),
             Map.entry("AI_GENERAL", "ai"),
@@ -41,7 +44,7 @@ final class SettingsFrameBits {
             Map.entry("LSP", "lsp"),
             Map.entry("DEBUG", "run-debug"),
             Map.entry("MARKDOWN", "markdown"),
-            Map.entry("MERMAID", "diagrams"),
+            Map.entry("MERMAID", "markdown#mermaid-diagrams"),
             Map.entry("DIAGRAMS", "diagrams"),
             Map.entry("TYPST", "typst"),
             Map.entry("BUILD_TOOLS", "build-tools"),
