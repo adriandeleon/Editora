@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Gradle, sbt and Mill do, listing what it found (`.cargo/config.toml`, `rust-toolchain.toml`, `.npmrc`,
   `.yarnrc.yml`, `.pnpmfile.cjs`, `.lein-classpath` and the like); declining runs nothing. Go builds are not asked
   about: `go build` never runs a module's code. A folder you already trusted is unchanged.
+- **Run and Debug ask the same question before loading a project.** Run on a Clojure file of a Leiningen,
+  `deps.edn` or `bb.edn` project started `lein`, `clojure` or `bb` there without asking, and so did a file of a Scala
+  CLI project (`project.scala`) and an npm run configuration, though the build tool's own window asked for the same
+  folder. Run and Debug on such a file or configuration now ask for that tool's workspace trust first; declining
+  runs nothing, and Rerun asks again if you revoked trust since. A file run on its own, in no project, is not asked
+  about.
 
 ### Added
 

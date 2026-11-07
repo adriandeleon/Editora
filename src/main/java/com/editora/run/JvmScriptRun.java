@@ -68,6 +68,19 @@ public final class JvmScriptRun {
     }
 
     /**
+     * The workspace-trust gate a Clojure run of {@code file} in {@code directory} (a run configuration's own
+     * folder, or null for the one {@link ClojureRun#plan} picks) has to pass before its tool loads the project
+     * there ({@link RunTrust#clojure}); null for any other language, and for a file run on its own. Reads the
+     * file's head.
+     */
+    public static RunTrust.@Nullable Gate trustGate(String language, @Nullable Path file, @Nullable Path directory) {
+        if (!"clojure".equals(language)) {
+            return null;
+        }
+        return RunTrust.clojure(file, file == null ? "" : head(file), directory, Files::isRegularFile);
+    }
+
+    /**
      * How a JVM-language file is started.
      *
      * @param argv the command line

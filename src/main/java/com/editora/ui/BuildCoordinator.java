@@ -788,7 +788,9 @@ final class BuildCoordinator {
      * <p>Declining does <b>not</b> silently fall back to anything: "no" has to mean no build, not a quieter
      * one. The same gate covers Gradle's "Load all tasks…", the Run/Debug build-before-launch step and the
      * Maven classpath fallback ({@link #trustedExecutable}); Run on a Scala file of an sbt or Mill build and the
-     * Test Results runs reach it through {@link #runTaskAt}.
+     * Test Results runs reach it through {@link #runTaskAt}. Run and Debug launches that start the tool themselves
+     * (a Clojure file of a Leiningen, {@code deps.edn} or {@code bb.edn} project, a Scala CLI project's file, an
+     * npm configuration) ask it through {@link #trustedExecutable} too ({@code run.RunTrust}).
      */
     private boolean allowRun(Path root) {
         if (!BuildTrust.gates(tool)) {
