@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scripts, a `mill-build/` meta-build and the launcher options files (`.mill-jvm-opts`, `.jvmopts`, `.sbtopts`).
   Running a task, Run on a Scala file of the build, Test Results, Run and Debug's build before a launch and Load all
   tasks all ask; declining runs nothing. A folder you already trusted is unchanged.
+- **Leiningen, Babashka, Clojure CLI, Cargo, Scala CLI and npm builds ask before running a folder's code.** Each
+  of these runs code the repository supplies beyond the task you pick: Leiningen evaluates `project.clj` and its
+  plugins, Babashka runs a task's `:init` and `:depends` first, a `deps.edn` alias can add JVM options such as a
+  `-javaagent`, Cargo compiles and runs `build.rs` scripts and procedural macros, Scala CLI runs macros and compiler
+  plugins as it compiles, and npm runs `pre` and `post` scripts, install hooks and, through a `.yarnrc.yml`
+  `yarnPath`, a yarn the repository ships. Their first build in a folder now asks for workspace trust, as Maven,
+  Gradle, sbt and Mill do, listing what it found (`.cargo/config.toml`, `rust-toolchain.toml`, `.npmrc`,
+  `.yarnrc.yml`, `.pnpmfile.cjs`, `.lein-classpath` and the like); declining runs nothing. Go builds are not asked
+  about: `go build` never runs a module's code. A folder you already trusted is unchanged.
 
 ### Added
 

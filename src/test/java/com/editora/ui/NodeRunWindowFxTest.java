@@ -132,6 +132,7 @@ class NodeRunWindowFxTest {
                       }
                     }
                     """);
+            fx.shared.getTrustStore().trust(root); // the user's own project: npm asks for trust before a script
             BuildCoordinator npm = FxTestSupport.callOnFx(() -> c.buildCoordinator(BuildTool.NPM));
             FxTestSupport.runOnFx(() -> npm.runTaskAt(root, List.of("run", "where"), List.of()));
             Path out = root.resolve("where.txt");
