@@ -15,13 +15,76 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BuildTrustTest {
 
     @Test
-    void theBuildsWhoseDefinitionIsCodeGateRuns() {
+    void everyToolButGoGatesRuns() {
         assertTrue(BuildTrust.gates(BuildTool.MAVEN));
         assertTrue(BuildTrust.gates(BuildTool.GRADLE));
         assertTrue(BuildTrust.gates(BuildTool.SBT), "build.sbt and project/*.scala are compiled and run");
         assertTrue(BuildTrust.gates(BuildTool.MILL), "build.mill is Scala that Mill compiles and runs");
-        assertFalse(BuildTrust.gates(BuildTool.NPM));
-        assertFalse(BuildTrust.gates(BuildTool.CARGO));
+        assertTrue(BuildTrust.gates(BuildTool.LEIN), "project.clj is Clojure that lein evaluates");
+        assertTrue(BuildTrust.gates(BuildTool.BABASHKA), "bb.edn tasks are Clojure, with :init before each");
+        assertTrue(BuildTrust.gates(BuildTool.CLOJURE), "a deps.edn alias can add a -javaagent");
+        assertTrue(BuildTrust.gates(BuildTool.CARGO), "build.rs and procedural macros run on cargo build");
+        assertTrue(BuildTrust.gates(BuildTool.SCALA_CLI), "macros and compiler plugins run as it compiles");
+        assertTrue(BuildTrust.gates(BuildTool.NPM), "pre/post scripts, install hooks, a repository's yarnPath");
+        assertFalse(BuildTrust.gates(BuildTool.GO), "go build never runs the module's code");
+    }
+
+    @Test
+    void aLeiningenFolderListsItsProjectAndLeinClasspath(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("project.clj"), "(defproject demo \"1.0\")\n");
+        Files.writeString(root.resolve("profiles.clj"), "{}\n");
+        Files.writeString(root.resolve(".lein-classpath"), "evil.jar\n");
+        assertEquals(
+                java.util.List.of(
+                        tr("trust.item.leinScripts", "project.clj, profiles.clj"),
+                        tr("trust.item.launcherOptions", ".lein-classpath")),
+                BuildTrust.describe(BuildTool.LEIN, root, null, "").items());
+    }
+
+    @Test
+    void aCargoFolderNamesBuildScriptsAndTheSettingsThatSwapTheCompiler(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("Cargo.toml"), "[package]\nname = \"demo\"\n");
+        assertEquals(
+                java.util.List.of(tr("trust.item.cargoBuild")),
+                BuildTrust.describe(BuildTool.CARGO, root, null, "").items(),
+                "a plain crate still runs its dependencies' build scripts");
+        Files.createDirectories(root.resolve(".cargo"));
+        Files.writeString(root.resolve(".cargo").resolve("config.toml"), "[build]\nrustc-wrapper = \"./x\"\n");
+        Files.writeString(root.resolve("rust-toolchain.toml"), "[toolchain]\npath = \"./tc\"\n");
+        assertEquals(
+                java.util.List.of(
+                        tr("trust.item.cargoBuild"),
+                        tr("trust.item.cargoSettings", ".cargo/config.toml, rust-toolchain.toml")),
+                BuildTrust.describe(BuildTool.CARGO, root, null, "").items());
+    }
+
+    @Test
+    void anNpmFolderNamesItsScriptsAndThePackageManagerFiles(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("package.json"), "{}");
+        assertEquals(
+                java.util.List.of(tr("trust.item.npmScripts")),
+                BuildTrust.describe(BuildTool.NPM, root, null, "").items());
+        Files.writeString(root.resolve(".npmrc"), "script-shell=./sh\n");
+        Files.writeString(root.resolve(".yarnrc.yml"), "yarnPath: .yarn/releases/yarn.cjs\n");
+        Files.writeString(root.resolve(".pnpmfile.cjs"), "");
+        assertEquals(
+                java.util.List.of(
+                        tr("trust.item.npmScripts"),
+                        tr("trust.item.packageManagerFiles", ".npmrc, .yarnrc.yml, .pnpmfile.cjs")),
+                BuildTrust.describe(BuildTool.NPM, root, null, "").items());
+    }
+
+    @Test
+    void theClojureAndScalaCliToolsSayWhatTheirFilesRun(@TempDir Path root) throws Exception {
+        assertEquals(
+                java.util.List.of(tr("trust.item.bbTasks")),
+                BuildTrust.describe(BuildTool.BABASHKA, root, null, "").items());
+        assertEquals(
+                java.util.List.of(tr("trust.item.depsAliases")),
+                BuildTrust.describe(BuildTool.CLOJURE, root, null, "").items());
+        assertEquals(
+                java.util.List.of(tr("trust.item.scalaCli")),
+                BuildTrust.describe(BuildTool.SCALA_CLI, root, null, "").items());
     }
 
     @Test

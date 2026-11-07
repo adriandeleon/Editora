@@ -12,14 +12,18 @@ import org.jspecify.annotations.Nullable;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * What the workspace-trust prompt for a build says will run. Every build of a Maven, Gradle, sbt or Mill project
- * executes code the repository supplies — not only a shipped {@code ./mvnw}/{@code ./gradlew}/{@code ./mill} (the
- * one case the gate used to cover) but the pom's plugins and {@code <extensions>}, the files under
- * {@code .mvn/} ({@code extensions.xml} loads core extensions before the build, {@code maven.config} can
- * add {@code -s evil-settings.xml} or {@code -Dmaven.ext.class.path=…}), every Gradle build script, sbt's
+ * What the workspace-trust prompt for a build says will run. A build of every tool but Go executes code the
+ * repository supplies beyond the task the user picked — not only a shipped {@code ./mvnw}/{@code ./gradlew}/
+ * {@code ./mill} (the one case the gate used to cover) but the pom's plugins and {@code <extensions>}, the files
+ * under {@code .mvn/} ({@code extensions.xml} loads core extensions before the build, {@code maven.config} can add
+ * {@code -s evil-settings.xml} or {@code -Dmaven.ext.class.path=…}), every Gradle build script, sbt's
  * {@code build.sbt} and {@code project/} plugins, Mill's {@code build.mill}/{@code build.sc} (Scala that Mill
- * compiles and runs) and its {@code mill-build/} meta-build, the JVM options files those launchers read
- * ({@code .jvmopts}, {@code .sbtopts}, {@code .mill-jvm-opts}, which can add a {@code -javaagent}), and a
+ * compiles and runs) and its {@code mill-build/} meta-build, Leiningen's {@code project.clj} (Clojure that lein
+ * evaluates, with its {@code :plugins}), Babashka's {@code bb.edn} tasks, Cargo's {@code build.rs} scripts and
+ * procedural macros, the macros and compiler plugins a Scala CLI compile runs, the JVM options a {@code deps.edn}
+ * alias adds, npm's pre/post and install hooks and a repository's own package manager ({@code .yarnrc.yml}'s
+ * {@code yarnPath}), the JVM options files the launchers read ({@code .jvmopts}, {@code .sbtopts},
+ * {@code .mill-jvm-opts}, {@code .lein-classpath}, which can add a {@code -javaagent}), and a
  * {@code .editora/project.json} that replaces the build command. The prompt lists what it found so the user
  * consents to something concrete; the gate itself (ask once per folder, remembered, inherited by subfolders,
  * revocable) lives in {@code ui.BuildCoordinator}. Pure except for the file probes, so it is unit-tested on
@@ -43,12 +47,28 @@ public final class BuildTrust {
     public record Summary(Path root, @Nullable Path wrapper, String projectOverride, List<String> items) {}
 
     /**
-     * Whether {@code tool}'s builds run repository code and so ask for trust first: Maven and Gradle, and the
-     * Scala builds whose build definition is itself code — sbt ({@code build.sbt}, {@code project/*.scala}) and
-     * Mill ({@code build.mill}, {@code build.sc}), on a repo-shipped launcher or the user's own alike.
+     * Whether {@code tool}'s builds run repository code beyond the task the user picked, and so ask for trust first.
+     * Every tool but Go does: the build definition is code (Maven's plugins, Gradle's scripts, sbt's
+     * {@code build.sbt}, Mill's {@code build.mill}, Leiningen's {@code project.clj}, Babashka's {@code bb.edn}
+     * tasks with their {@code :init} and {@code :depends}), compiling runs code (Cargo's {@code build.rs} and
+     * procedural macros, Scala CLI's macros and {@code //> using plugin} compiler plugins), or the task runs more
+     * than its name says (npm's {@code pre}/{@code post} scripts and install hooks, a repository's own
+     * {@code yarnPath} yarn or {@code .pnpmfile.cjs}, a {@code deps.edn} alias's {@code :jvm-opts}) — on a
+     * repository launcher or the user's own tool alike.
+     *
+     * <p>Go stays ungated by Go's own design: {@code go build}, {@code vet}, {@code fmt}, {@code mod},
+     * {@code clean} and {@code install} never execute the module's code (no build scripts, {@code #cgo} flags
+     * allow-listed, a {@code go.mod} {@code toolchain} line only downloads a checksum-verified Go release), and
+     * {@code run}, {@code test} and {@code generate} run it because that is the task the user picked by name.
+     * gopls is not withheld on an untrusted folder either ({@code lsp.UntrustedBuilds}), for the same reason.
+     *
+     * <p>An exhaustive switch, so a new tool does not compile until it is decided.
      */
     public static boolean gates(BuildTool tool) {
-        return tool == BuildTool.MAVEN || tool == BuildTool.GRADLE || tool == BuildTool.SBT || tool == BuildTool.MILL;
+        return switch (tool) {
+            case MAVEN, GRADLE, SBT, MILL, LEIN, BABASHKA, CLOJURE, CARGO, SCALA_CLI, NPM -> true;
+            case GO -> false;
+        };
     }
 
     public static Summary describe(BuildTool tool, Path root, @Nullable Path wrapper, String projectOverride) {
@@ -64,6 +84,18 @@ public final class BuildTrust {
             items.addAll(sbtItems(root));
         } else if (tool == BuildTool.MILL) {
             items.addAll(millItems(root));
+        } else if (tool == BuildTool.LEIN) {
+            items.addAll(leinItems(root));
+        } else if (tool == BuildTool.BABASHKA) {
+            items.add(tr("trust.item.bbTasks"));
+        } else if (tool == BuildTool.CLOJURE) {
+            items.add(tr("trust.item.depsAliases"));
+        } else if (tool == BuildTool.CARGO) {
+            items.addAll(cargoItems(root));
+        } else if (tool == BuildTool.SCALA_CLI) {
+            items.add(tr("trust.item.scalaCli"));
+        } else if (tool == BuildTool.NPM) {
+            items.addAll(npmItems(root));
         }
         if (projectOverride != null && !projectOverride.isBlank()) {
             items.add(tr("trust.item.projectOverride", projectOverride.strip(), tool.commandExample()));
@@ -173,6 +205,57 @@ public final class BuildTrust {
         List<String> opts = present(root, ".mill-jvm-opts", ".mill-opts");
         if (!opts.isEmpty()) {
             items.add(tr("trust.item.launcherOptions", String.join(", ", opts)));
+        }
+        return items;
+    }
+
+    /**
+     * Leiningen evaluates {@code project.clj} (and a project's {@code profiles.clj}) as Clojure on every task, loading
+     * its {@code :plugins}, {@code :hooks} and {@code :middleware}; its launcher puts a {@code .lein-classpath} on
+     * lein's own classpath.
+     */
+    private static List<String> leinItems(Path root) {
+        List<String> files = present(root, "project.clj", "profiles.clj");
+        List<String> items = new ArrayList<>();
+        if (!files.isEmpty()) {
+            items.add(tr("trust.item.leinScripts", String.join(", ", files)));
+        }
+        List<String> opts = present(root, ".lein-classpath");
+        if (!opts.isEmpty()) {
+            items.add(tr("trust.item.launcherOptions", String.join(", ", opts)));
+        }
+        return items;
+    }
+
+    /**
+     * {@code cargo build}, {@code check}, {@code test}, {@code run}, {@code clippy}, {@code doc} and {@code bench}
+     * compile and run every crate's {@code build.rs} and procedural macros, the package's and its dependencies';
+     * {@code .cargo/config.toml} can swap the compiler ({@code build.rustc}, {@code rustc-wrapper}) or the runner, and
+     * a {@code rust-toolchain.toml} can name a toolchain folder ({@code path}).
+     */
+    private static List<String> cargoItems(Path root) {
+        List<String> items = new ArrayList<>();
+        items.add(tr("trust.item.cargoBuild"));
+        List<String> settings =
+                present(root, ".cargo/config.toml", ".cargo/config", "rust-toolchain.toml", "rust-toolchain");
+        if (!settings.isEmpty()) {
+            items.add(tr("trust.item.cargoSettings", String.join(", ", settings)));
+        }
+        return items;
+    }
+
+    /**
+     * A script runs with its {@code pre} and {@code post} scripts, and {@code install}/{@code ci} run the package's
+     * and every dependency's install scripts; {@code .npmrc} can set the {@code script-shell} and
+     * {@code node-options}, {@code .yarnrc.yml}'s {@code yarnPath} makes a repository file the yarn that runs,
+     * {@code .pnpmfile.cjs} hooks pnpm's installs, and {@code bunfig.toml} can preload scripts.
+     */
+    private static List<String> npmItems(Path root) {
+        List<String> items = new ArrayList<>();
+        items.add(tr("trust.item.npmScripts"));
+        List<String> files = present(root, ".npmrc", ".yarnrc.yml", ".yarnrc", ".pnpmfile.cjs", "bunfig.toml");
+        if (!files.isEmpty()) {
+            items.add(tr("trust.item.packageManagerFiles", String.join(", ", files)));
         }
         return items;
     }
