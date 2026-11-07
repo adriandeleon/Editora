@@ -185,6 +185,7 @@ final class NavigationCoordinator {
         openFilesPalette.setItemStyleClass(
                 tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
         openFilesPalette.setItemIcon(tab -> FileIcons.forFileName(bufferTitle(tab))); // file-type glyph
+        openFilesPalette.setFixedListHeight(FileFinder.LIST_HEIGHT); // same card size as C-x C-f
         toolWindowPalette = new QuickOpen<>(
                 tr("nav.toolWindows.title"),
                 tr("toolwindow.splitPrompt"),
