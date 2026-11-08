@@ -34,6 +34,11 @@ public final class BreakpointDescription {
         if (!bp.hitCondition().isEmpty()) {
             out.add(tr("debug.breakpoint.hitCondition", bp.hitCondition()));
         }
+        if (bp.hasLambdas()) {
+            String numbers =
+                    String.join(", ", bp.lambdas().stream().map(String::valueOf).toList());
+            out.add(tr(bp.lambdasOnly() ? "debug.breakpoint.lambdasOnly" : "debug.breakpoint.lambdas", numbers));
+        }
         if (bp.temporary() && !bp.isLogpoint()) {
             out.add(tr("debug.breakpoint.temporary"));
         }

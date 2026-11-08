@@ -466,6 +466,8 @@ public enum ConfigSchema {
     // v3 → v4: + memberBreakpoints, the method breakpoints and field watchpoints per project (additive; absent ⇒
     // none).
     // v4 → v5: + pins, the values pinned to lines per project and file (additive; absent ⇒ none).
+    // v5 → v6: Breakpoint gained `lambdas` and `lambdasOnly`, the lambdas of its line it stops in (additive; absent ⇒
+    // it stops on the line only).
     BREAKPOINTS(
             BreakpointStore.SCHEMA_VERSION,
             1,
@@ -477,6 +479,8 @@ public enum ConfigSchema {
                     3,
                     ConfigMigrations::identity,
                     4,
+                    ConfigMigrations::identity,
+                    5,
                     ConfigMigrations::identity)),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),

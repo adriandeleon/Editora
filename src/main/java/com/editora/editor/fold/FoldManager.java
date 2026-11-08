@@ -107,6 +107,8 @@ public final class FoldManager {
     static final String LOGPOINT_GLYPH_PATH = "M12 1.5L22.5 12L12 22.5L1.5 12z";
     /** Two bars over the dot — a conditional breakpoint ("="), as VS Code marks one. */
     static final String CONDITION_MARK_PATH = "M7 8.5h10v2.4H7zM7 13.1h10v2.4H7z";
+    /** A "λ" over a breakpoint dot that also (or only) stops inside lambdas of its line. */
+    static final String LAMBDA_MARK_PATH = "M8 6h2.6L17.2 18h-2.6zM11.3 10.4l1.4 2.4L9.8 18H7.2z";
     /** A "1" over the dot of a temporary breakpoint (removed once hit), in the dot's 24-unit box. */
     static final String TEMPORARY_MARK_PATH = "M10.6 6.5h2.8v11h-2.8zM8.4 8.6l2.2-2.1v2.9l-2.2 1.2z";
     /** The execution-point arrow drawn in the breakpoint strip of the line the debugger is stopped on. */
@@ -2043,12 +2045,14 @@ public final class FoldManager {
         svg.setScaleX(0.5);
         svg.setScaleY(0.5);
         boolean conditional = kinds.contains("conditional");
-        if (!conditional && !kinds.contains("temporary")) {
+        boolean lambda = kinds.contains("lambda");
+        if (!conditional && !lambda && !kinds.contains("temporary")) {
             return new Group(svg);
         }
-        // "=" over the dot: a condition, readable without telling colours apart; "1" a temporary breakpoint.
+        // "=" over the dot: a condition, readable without telling colours apart; "λ" one that stops in lambdas;
+        // "1" a temporary breakpoint.
         SVGPath mark = new SVGPath();
-        mark.setContent(conditional ? CONDITION_MARK_PATH : TEMPORARY_MARK_PATH);
+        mark.setContent(conditional ? CONDITION_MARK_PATH : lambda ? LAMBDA_MARK_PATH : TEMPORARY_MARK_PATH);
         mark.getStyleClass().add("breakpoint-condition-mark");
         if (kinds.contains("muted")) {
             mark.getStyleClass().add("breakpoint-muted"); // faded with its dot

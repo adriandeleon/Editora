@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lambda breakpoints in Java.** A line breakpoint stops once, when its line runs, never inside a lambda on that
+  line. *Debug: Toggle Lambda Breakpoint* (Shift+F9 in the VS Code, CUA and Sublime keymaps) sets one that stops
+  inside the lambda at the caret each time its body runs, with the lambda's parameters in Variables, as VS Code's
+  inline breakpoints and IntelliJ's lambda breakpoints do. Right-click a breakpoint's dot on a line with lambdas to
+  choose where it stops: **Stop on the Line**, and **Stop in Lambda 1**, **2**… for each lambda the line starts.
+  Such a breakpoint carries a λ on its dot, keeps its condition, hit count and log message for every place it stops,
+  and is saved with the project's breakpoints.
 - **Navigate code on the Project Map.** The editor's code navigation now works inside Map cards and answers with
   cards beside them instead of leaving the Map: Go to Definition (and Peek Definition), Go to Declaration, Go to Type
   Definition, Go to Implementation, Go to Super Method, Find Usages, Call Hierarchy and Type Hierarchy, typed with
