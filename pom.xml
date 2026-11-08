@@ -78,7 +78,7 @@
              @NullMarked package of the main compile and fails the build on a null it cannot prove safe. JSpecify
              supplies the annotations. Error Prone reaches into javac, hence .mvn/jvm.config. -->
         <jspecify.version>1.0.1</jspecify.version>
-        <errorprone.version>2.51.0</errorprone.version>
+        <errorprone.version>2.52.0</errorprone.version>
         <nullaway.version>0.14.3</nullaway.version>
         <testfx.version>4.0.18</testfx.version>
         <jpackage.plugin.version>1.8.0</jpackage.plugin.version>
