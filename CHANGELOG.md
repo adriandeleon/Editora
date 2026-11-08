@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Method breakpoints and field watchpoints show in the gutter.** They were listed only in *Debug: Breakpoints*.
+  Each is now marked on its member's declaration line in an open Java file — every overload of a method — as
+  IntelliJ and Eclipse do: a dot with an arrow into it for a method breakpoint, a dot with an eye for a field
+  watchpoint, gold when it has a condition and grey when disabled. Hover it to see what it is; click it to remove
+  it; right-click it to disable or remove it. The mark follows its member as you edit.
 - **Lambda breakpoints in Java.** A line breakpoint stops once, when its line runs, never inside a lambda on that
   line. *Debug: Toggle Lambda Breakpoint* (Shift+F9 in the VS Code, CUA and Sublime keymaps) sets one that stops
   inside the lambda at the caret each time its body runs, with the lambda's parameters in Variables, as VS Code's

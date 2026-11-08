@@ -314,6 +314,8 @@ final class DebugCoordinator {
         dapManager.setCodeReplaceNotices(this::codeReplaceNotice);
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
         memberBreakpoints = new MemberBreakpointCommands(host, ops, dapManager, lspManager, () -> breakpointsMuted);
+        memberMarks = new MemberBreakpointMarks(host, ops, lspManager);
+        memberBreakpoints.setOnChanged(memberMarks::refreshAll);
         lambdaBreakpoints = new LambdaBreakpoints(host);
         pinnedValues = new PinnedValues(host, ops, dapManager);
     }
@@ -341,6 +343,19 @@ final class DebugCoordinator {
 
     /** Method breakpoints and field watchpoints. */
     private final MemberBreakpointCommands memberBreakpoints;
+
+    /** Their marks on the declaration lines of the open files. */
+    private final MemberBreakpointMarks memberMarks;
+
+    /** Places the method breakpoints' and field watchpoints' marks again in every open file. */
+    void memberMarksRefreshAll() {
+        memberMarks.refreshAll();
+    }
+
+    /** Places them again in {@code buffer} (its text settled after an edit). */
+    void memberMarksRefresh(EditorBuffer buffer) {
+        memberMarks.refresh(buffer);
+    }
 
     private final LambdaBreakpoints lambdaBreakpoints;
 
@@ -1099,6 +1114,7 @@ final class DebugCoordinator {
         }
         showBreakpointStates(buffer); // opened during a session: it shows what the adapter already said
         pinnedValues.restore(buffer);
+        memberMarks.refresh(buffer);
         reshowFrameIn(buffer);
     }
 
@@ -4365,7 +4381,12 @@ final class DebugCoordinator {
         buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
         buffer.getBreakpointManager().setMuted(breakpointsMuted ? tr("debug.breakpoint.muted") : "");
         buffer.setGutterBreakpointClick((b, line) -> {
-            if (breakpointAllowed(b, line)) {
+            var mark = b.getBreakpointManager().isBreakpoint(line)
+                    ? null
+                    : b.getBreakpointManager().memberMark(line);
+            if (mark != null) {
+                mark.members().forEach(memberBreakpoints::toggle); // a method breakpoint's mark: removes it
+            } else if (breakpointAllowed(b, line)) {
                 b.toggleBreakpoint(line);
             }
         });
@@ -4935,6 +4956,10 @@ final class DebugCoordinator {
         var mgr = b.getBreakpointManager();
         Breakpoint bp = mgr.get(line);
         if (bp == null) {
+            var mark = mgr.memberMark(line);
+            if (mark != null) {
+                showGutterMenu(memberGutterItems(mark), e);
+            }
             return;
         }
         // Bare titles, as every other row of this menu ("Debug: Edit Breakpoint…" beside "Remove Breakpoint",
@@ -4965,6 +4990,26 @@ final class DebugCoordinator {
             gutterMenu.getItems().addAll(lambdas);
         }
         gutterMenu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), list);
+        showGutterMenu(List.copyOf(gutterMenu.getItems()), e);
+    }
+
+    /** The gutter menu of a method breakpoint's or field watchpoint's mark: Enable / Disable, Remove, Breakpoints. */
+    private List<javafx.scene.control.MenuItem> memberGutterItems(
+            com.editora.editor.debug.BreakpointManager.MemberMark mark) {
+        boolean enabled = mark.enabled();
+        javafx.scene.control.MenuItem flip =
+                new javafx.scene.control.MenuItem(tr(enabled ? "debug.gutter.disable" : "debug.gutter.enable"));
+        flip.setOnAction(ev -> mark.members().forEach(m -> memberBreakpoints.replace(m.withEnabled(!enabled))));
+        javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(
+                tr(mark.field() ? "debug.gutter.removeFieldWatchpoint" : "debug.gutter.removeMethodBreakpoint"));
+        remove.setGraphic(Icons.remove());
+        remove.setOnAction(ev -> mark.members().forEach(memberBreakpoints::remove));
+        javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
+        return List.of(flip, remove, new javafx.scene.control.SeparatorMenuItem(), list);
+    }
+
+    private void showGutterMenu(List<javafx.scene.control.MenuItem> items, javafx.scene.input.ContextMenuEvent e) {
+        gutterMenu.getItems().setAll(items);
         Node source = e.getSource() instanceof Node n ? n : null;
         if (source != null && source.getScene() != null && source.getScene().getWindow() != null) {
             gutterMenu.show(source, e.getScreenX(), e.getScreenY());

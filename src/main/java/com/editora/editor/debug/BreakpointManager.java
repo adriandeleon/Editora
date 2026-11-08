@@ -137,7 +137,9 @@ public final class BreakpointManager implements LineMarks.Carrier {
         String next = hoverText == null || hoverText.isBlank() ? null : hoverText;
         if (!java.util.Objects.equals(mutedText, next)) {
             mutedText = next;
-            onLinesRepaint.accept(new ArrayList<>(byLine.keySet()));
+            List<Integer> lines = new ArrayList<>(byLine.keySet());
+            lines.addAll(memberMarks.keySet());
+            onLinesRepaint.accept(lines);
         }
     }
 
@@ -173,6 +175,97 @@ public final class BreakpointManager implements LineMarks.Carrier {
             classes = classes == null ? "muted" : classes + " muted";
         }
         return classes;
+    }
+
+    // --- method breakpoints and field watchpoints, marked on their declaration lines ----------------------
+
+    /**
+     * The method breakpoints or field watchpoints whose member is declared on a line: {@code members} (a method
+     * breakpoint holds every overload, so several lines can carry the same one) and the glyph's hover text.
+     */
+    public record MemberMark(List<com.editora.config.MemberBreakpoint> members, String tooltip) {
+        public MemberMark {
+            members = List.copyOf(members);
+            tooltip = tooltip == null ? "" : tooltip;
+        }
+
+        /** Whether it marks a field watchpoint (else a method breakpoint). */
+        public boolean field() {
+            return !members.isEmpty() && members.getFirst().kind() == com.editora.config.MemberBreakpoint.Kind.FIELD;
+        }
+
+        /** Whether any of them is on. */
+        public boolean enabled() {
+            return members.stream().anyMatch(com.editora.config.MemberBreakpoint::enabled);
+        }
+    }
+
+    private java.util.Map<Integer, MemberMark> memberMarks = java.util.Map.of();
+
+    /** Sets the member marks, by (view) line, and repaints the lines that gained, lost or changed one. */
+    public void setMemberMarks(java.util.Map<Integer, MemberMark> byLine) {
+        java.util.Map<Integer, MemberMark> next = byLine == null ? java.util.Map.of() : java.util.Map.copyOf(byLine);
+        if (next.equals(memberMarks)) {
+            return;
+        }
+        java.util.Set<Integer> lines = new java.util.TreeSet<>(memberMarks.keySet());
+        lines.addAll(next.keySet());
+        lines.removeIf(l -> java.util.Objects.equals(memberMarks.get(l), next.get(l)));
+        memberMarks = next;
+        onLinesRepaint.accept(lines);
+    }
+
+    /** The member mark on (view) {@code line}, or null. */
+    public @Nullable MemberMark memberMark(int line) {
+        return memberMarks.get(line);
+    }
+
+    /** Every member mark, by (view) line. */
+    public java.util.Map<Integer, MemberMark> memberMarks() {
+        return memberMarks;
+    }
+
+    /** Whether the gutter draws a glyph on {@code line}: a line breakpoint, or else a member mark. */
+    public boolean hasGlyph(int line) {
+        return byLine.containsKey(line) || memberMarks.containsKey(line);
+    }
+
+    /**
+     * The glyph's extra CSS classes on {@code line}: a line breakpoint's ({@link #styleClasses}), or a member mark's
+     * — {@code method} or {@code field}, with {@code conditional}, {@code disabled} and {@code muted} as they apply.
+     */
+    public @Nullable String glyphClasses(int line) {
+        if (byLine.containsKey(line)) {
+            return styleClasses(line);
+        }
+        MemberMark mark = memberMarks.get(line);
+        if (mark == null) {
+            return null;
+        }
+        StringBuilder classes = new StringBuilder(mark.field() ? "field" : "method");
+        if (!mark.enabled()) {
+            classes.append(" disabled");
+        } else if (mark.members().stream()
+                .anyMatch(m -> m.enabled()
+                        && !(m.condition().isEmpty() && m.hitCondition().isEmpty()))) {
+            classes.append(" conditional");
+        }
+        if (mutedText != null) {
+            classes.append(" muted");
+        }
+        return classes.toString();
+    }
+
+    /** The glyph's hover text on {@code line}: a line breakpoint's ({@link #tooltip}), or a member mark's. */
+    public @Nullable String glyphTooltip(int line) {
+        if (byLine.containsKey(line)) {
+            return tooltip(line);
+        }
+        MemberMark mark = memberMarks.get(line);
+        if (mark == null) {
+            return null;
+        }
+        return mutedText == null ? mark.tooltip() : mutedText + "\n" + mark.tooltip();
     }
 
     /** The hover text of the breakpoint on {@code line}: its condition / log message / hit count / disabled state

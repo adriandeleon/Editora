@@ -1123,6 +1123,15 @@ Java server's document outline (`memberAt`; the package from the source's `packa
 (`dataBreakpointInfo`) which field a row is; a local variable has no `dataId` and cannot be watched. The stop's
 reason (`function breakpoint` / `data breakpoint`) is named on the state line. The opt-in
 `MemberBreakpointsProbeFxTest` sets both from the caret against the installed jdtls and java-debug.
+Each is marked in the gutter on its member's declaration line ([`ui/MemberBreakpointMarks`](../../src/main/java/com/editora/ui/MemberBreakpointMarks.java)):
+`declarationLines` walks the file's document outline as `memberAt` does (binary class names, `<init>` for a
+constructor) and puts every breakpoint on each declaration of its member — all overloads of a method. The marks live
+on the `BreakpointManager` (`setMemberMarks`, view lines) beside the line breakpoints; the gutter draws a line
+breakpoint first, else the mark (`hasGlyph`, `glyphClasses` → `method`/`field` with `conditional`, `disabled`,
+`muted`; `glyphTooltip`). They are placed again when the member breakpoints change (at once from the marks already
+shown, `current`, then from a fresh outline), when a file opens, when a server's capabilities arrive
+(`onServerCapabilitiesReady`) and on each typing pause (`LspCoordinator.Ops.onTypingPause`); an answer for an older
+document version is dropped. A click on a mark removes its breakpoints; its right-click menu disables or removes them.
 **Pinned values** ([`editor/debug/PinManager`](../../src/main/java/com/editora/editor/debug/PinManager.java),
 [`ui/PinnedValues`](../../src/main/java/com/editora/ui/PinnedValues.java)) are expressions pinned to a line
 (`config/PinnedLine`: line, expressions, line-text snapshot), at most four per line. The manager is one more
