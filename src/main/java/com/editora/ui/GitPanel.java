@@ -855,7 +855,21 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             Label note = new Label(filteredOut ? tr("gitpanel.noMatches") : tr("gitpanel.clean"));
             note.getStyleClass().add("tool-window-placeholder");
             note.setWrapText(true);
-            StackPane notePane = new StackPane(note);
+            VBox noteBox = new VBox(8, note);
+            noteBox.setAlignment(Pos.CENTER);
+            String toPush = filteredOut ? null : toPushNote(lastStatus);
+            if (toPush != null) {
+                // A clean tree is not the end of the story when commits are still waiting to go out: say
+                // so where the user is looking, with the Push one click away.
+                Label pushNote = new Label(toPush);
+                pushNote.getStyleClass().add("tool-window-placeholder");
+                pushNote.setWrapText(true);
+                Button push = new Button(tr("gitpanel.cleanPush"));
+                push.setOnAction(e -> actions.push());
+                noteBox.getChildren().addAll(pushNote, push);
+            }
+            noteBox.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+            StackPane notePane = new StackPane(noteBox);
             VBox.setVgrow(notePane, Priority.ALWAYS);
             // The filter bar stays even with nothing to show, or a filter that matches nothing would remove
             // the only control that can clear it.
@@ -865,6 +879,20 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             getChildren()
                     .setAll(header, operationBanner, filterBar, tree, messageToolbar, amendBox, message, commitRow);
         }
+    }
+
+    /**
+     * The line the "nothing to commit" note adds when the branch still has commits to push ("2 commits to
+     * push to origin/main"), or {@code null} when it has none. A branch with no upstream is left to the
+     * header's {@code ↑ publish}: a repository with no remote at all would otherwise nag forever.
+     */
+    static @Nullable String toPushNote(GitStatus status) {
+        String upstream = status.upstream();
+        if (upstream == null || upstream.isBlank() || status.ahead() <= 0) {
+            return null;
+        }
+        int ahead = status.ahead();
+        return tr(ahead == 1 ? "gitpanel.cleanToPush.one" : "gitpanel.cleanToPush.many", ahead, upstream);
     }
 
     /** An unstaged change that is not a conflict: unmerged paths have a group of their own. */

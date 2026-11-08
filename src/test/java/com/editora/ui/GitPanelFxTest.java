@@ -122,6 +122,56 @@ class GitPanelFxTest {
         assertTrue(FxTestSupport.callOnFx(commit::isDisable), "nothing staged ⇒ commit disabled");
     }
 
+    @Test
+    void cleanTreeWithCommitsAheadSaysSoAndOffersPush() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(new GitStatus(true, "master", "origin/master", 2, 0, List.of())));
+        String expected = com.editora.i18n.Messages.tr("gitpanel.cleanToPush.many", 2, "origin/master");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> labelTexts(p).contains(expected)),
+                "the clean note mentions the commits to push");
+        Button push = FxTestSupport.callOnFx(() -> cleanPushButton(p));
+        assertTrue(push != null, "the clean note offers a Push button");
+        FxTestSupport.runOnFx(push::fire);
+        assertEquals(1, rec.pushes);
+
+        // Pushed: back to the plain note, no Push button.
+        FxTestSupport.runOnFx(() -> p.setStatus(new GitStatus(true, "master", "origin/master", 0, 0, List.of())));
+        assertFalse(FxTestSupport.callOnFx(() -> labelTexts(p).contains(expected)));
+        assertTrue(FxTestSupport.callOnFx(() -> cleanPushButton(p)) == null);
+    }
+
+    @Test
+    void toPushNoteNeedsAnUpstreamAndCommitsAhead() {
+        assertEquals(
+                com.editora.i18n.Messages.tr("gitpanel.cleanToPush.one", 1, "origin/main"),
+                GitPanel.toPushNote(new GitStatus(true, "main", "origin/main", 1, 3, List.of())));
+        assertEquals(null, GitPanel.toPushNote(new GitStatus(true, "main", "origin/main", 0, 3, List.of())));
+        // No upstream: the header's "publish" covers it; a remote-less repo must not nag.
+        assertEquals(null, GitPanel.toPushNote(new GitStatus(true, "main", "", 4, 0, List.of())));
+    }
+
+    private static List<String> labelTexts(GitPanel p) {
+        List<String> out = new ArrayList<>();
+        p.lookupAll(".label").forEach(n -> {
+            if (n instanceof Label l && l.getText() != null) {
+                out.add(l.getText());
+            }
+        });
+        return out;
+    }
+
+    private static Button cleanPushButton(GitPanel p) {
+        String text = com.editora.i18n.Messages.tr("gitpanel.cleanPush");
+        for (javafx.scene.Node n : p.lookupAll(".button")) {
+            if (n instanceof Button b && text.equals(b.getText())) {
+                return b;
+            }
+        }
+        return null;
+    }
+
     /** Records what the panel asks the controller to do, so the multi-selection actions can be asserted. */
     private static class Recording implements GitPanel.Actions {
         final List<List<String>> staged = new ArrayList<>();
@@ -129,6 +179,7 @@ class GitPanelFxTest {
         final List<List<String>> discardedTracked = new ArrayList<>();
         final List<List<String>> discardedUntracked = new ArrayList<>();
         final List<Boolean> reviews = new ArrayList<>();
+        int pushes;
 
         @Override
         public void open(String repoRelativePath) {}
@@ -162,7 +213,9 @@ class GitPanelFxTest {
         }
 
         @Override
-        public void push() {}
+        public void push() {
+            pushes++;
+        }
 
         @Override
         public void refresh() {}
