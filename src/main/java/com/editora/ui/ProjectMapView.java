@@ -2541,8 +2541,21 @@ final class ProjectMapView extends VBox {
      * for any other command, another row, or with the keyboard elsewhere.
      */
     boolean runRowNavigation(String commandId) {
+        return surface.isFocused() && rowNavigation(commandId);
+    }
+
+    /**
+     * A navigation command run from outside the Map window — Show Callees as Cards from the command palette: asked in
+     * the card the Map's keyboard was last in, else of the selected declaration row. False with neither.
+     */
+    boolean runNavigation(String commandId) {
+        ProjectMapPreview card = focusedCard();
+        return card != null ? card.runMarkerCommand(commandId) : rowNavigation(commandId);
+    }
+
+    private boolean rowNavigation(String commandId) {
         List<MapCardLinks.Kind> kinds = MapCardLinks.NAVIGATION_COMMANDS.get(commandId);
-        if (kinds == null || !cards.linksAvailable() || !surface.isFocused()) {
+        if (kinds == null || !cards.linksAvailable()) {
             return false;
         }
         ProjectMapModel.Entry entry =

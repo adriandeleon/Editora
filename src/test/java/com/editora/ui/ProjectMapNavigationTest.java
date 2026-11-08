@@ -34,6 +34,10 @@ class ProjectMapNavigationTest {
                 "both ways");
         assertEquals(List.of(MapCardLinks.Kind.REFERENCES), MapCardLinks.NAVIGATION_COMMANDS.get("lsp.findReferences"));
         assertEquals(List.of(MapCardLinks.Kind.CALLERS), MapCardLinks.NAVIGATION_COMMANDS.get("lsp.callHierarchy"));
+        assertEquals(
+                List.of(MapCardLinks.Kind.CALLEES),
+                MapCardLinks.NAVIGATION_COMMANDS.get(MapCardLinks.CALLEES_COMMAND),
+                "the Map's own command");
         assertNull(MapCardLinks.NAVIGATION_COMMANDS.get("lsp.rename"), "an edit is the editor's");
     }
 
@@ -67,6 +71,14 @@ class ProjectMapNavigationTest {
         assertTrue(MapCardLinks.Kind.SUPER_METHOD.goesTo());
         assertTrue(MapCardLinks.Kind.SUPERTYPES.leads, "drawn from the card asked from");
         assertFalse(MapCardLinks.Kind.SUPERTYPES.goesTo(), "asked with the subtypes: the keyboard stays");
+        assertTrue(MapCardLinks.Kind.CALLEES.leads, "drawn from the caller");
+        assertFalse(MapCardLinks.Kind.CALLEES.goesTo(), "many calls: the keyboard stays");
+        assertFalse(MapCardLinks.Kind.CALLEES.sameName(), "a callee is selected by its own name");
+        assertFalse(ProjectMapLinkSearch.byNameKinds(MapCardLinks.Kind.CALLEES), "needs a server");
+        assertTrue(MapCardLinks.MENU_KINDS.contains(MapCardLinks.Kind.CALLEES));
+        assertEquals(
+                "area: calls 2 declarations at 3 call sites.",
+                MapCardLinks.foundText(MapCardLinks.Kind.CALLEES, 3, "area", 2, 0));
         assertFalse(MapCardLinks.Kind.REFERENCES.leads);
         assertFalse(MapCardLinks.Kind.IMPLEMENTATIONS.goesTo());
         assertTrue(ProjectMapLinkSearch.byNameKinds(MapCardLinks.Kind.DEFINITION));

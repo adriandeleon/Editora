@@ -989,6 +989,14 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("projectMap.trailNext", () -> projectMapTrail(1)));
         host.registry().register(Command.of("projectMap.trailPrevious", () -> projectMapTrail(-1)));
         host.registry().register(Command.of("projectMap.trailClose", () -> projectMapTrail(0)));
+        // What a declaration calls, as cards (Map code navigation): typed in a card or on a declaration row the Map
+        // runs it there; from the palette it asks the card or row the Map's keyboard was last on.
+        host.registry().register(Command.of(MapCardLinks.CALLEES_COMMAND, () -> {
+            ProjectPanel panel = host.projectPanel();
+            if (panel == null || !panel.mapNavigationCommand(MapCardLinks.CALLEES_COMMAND)) {
+                host.setStatus(tr("status.projectMap.calleesWhere"));
+            }
+        }));
         host.registry().register(Command.of("markwhen.toggleView", host.previews()::toggleMarkwhenView));
         host.registry().register(Command.of("structured.toggleView", host.previews()::toggleStructuredView));
         // Two file-type-agnostic view-mode toggles replace the former per-type view.toggle*Preview palette

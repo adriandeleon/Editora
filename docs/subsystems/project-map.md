@@ -303,14 +303,22 @@ the column it goes back to the card; the card menu's **Show / Hide this preview'
 code navigation typed in a card, whatever keys the keymap gives it, is answered with cards beside the card, never
 in the editor: Go to Definition and Peek Definition (F12, Alt+F12 in the CUA and VS Code keymaps), Go to Declaration,
 Go to Type Definition, Go to Implementation, Go to Super Method, Find Usages (Shift+F12), Call Hierarchy (the callers)
-and Type Hierarchy (supertypes and subtypes, both asked). Ctrl+click (Cmd+click on macOS) on a name in a card is Go to
+and Type Hierarchy (supertypes and subtypes, both asked). **Show Callees as Cards** (`projectMap.showCallees`, the
+Map's own command with no default key, and an item of the card and declaration-row menus) asks the other way: the
+server's outgoing calls (`callHierarchy/outgoingCalls`, `Kind.CALLEES`), each callee's declaration a card, labelled
+"calls" from the card asked from, with its call sites counted; a callee the card already shows (further down the
+same file card) opens no card. From the command palette it asks in the card the Map's keyboard was last in, else of
+the selected declaration row (`ProjectPanel.mapNavigationCommand`).
+Ctrl+click (Cmd+click on macOS) on a name in a card is Go to
 Definition from there, the editor's gesture. Each asks `MapCardLinks` with a kind (`MapCardLinks.Kind`) at the card's
 caret — a declaration card's caret too, not its declaration — and the answer opens as linked cards (below), so their
 placement, edges, "+N more" chip, closing and eviction are those of References and Callers as Cards. The kinds that
-*lead* (`Kind.leads`: definition, declaration, type definition, super method, supertypes) draw their edge from the
-card asked from to the result, labelled "definition", "declaration", "type", "overrides" or "extends"; the others
+*lead* (`Kind.leads`: definition, declaration, type definition, super method, supertypes, callees) draw their edge
+from the card asked from to the result, labelled "definition", "declaration", "type", "overrides", "extends" or
+"calls"; the others
 (references, callers, implementations, subtypes) from the result to it ("references", "calls", "implements",
-"extends"). For the Go to kinds (`Kind.goesTo`, not supertypes, which come with the subtypes) the keyboard follows to
+"extends"). For the Go to kinds (`Kind.goesTo`, not supertypes, which come with the subtypes, nor callees, a list)
+the keyboard follows to
 the first result card, brought into view once laid out, so F12 again goes on from there (`MapCards.followed`); a
 place on the card asked from itself (a definition further down the same file card, or within a declaration card's
 lines) opens no card: the card's caret moves there, the name selected. The result card selects the asked name at
@@ -335,9 +343,9 @@ local of an enclosing scope first (`index.JsLocals`), then the nearest declarati
 (`IndexCoordinator.nearestDeclaration` over `index.DeclarationScanner`), else every declaration of that name in the
 project's files of the language, nearest the card's file first, within the name match's budget. A server that fails
 falls back the same way. What only a server answers — type definition, implementations, super method, type
-hierarchy — says so instead ("This needs a language server for the file…", or "The language server does not answer
-this request."). A result in a library (a `jdt://` class file) has no card: the status says to open the file in the
-editor to follow it there.
+hierarchy, callees — says so instead ("This needs a language server for the file…", or "The language server does not
+answer this request."). A result in a library (a `jdt://` class file) has no card: the status says to open the file
+in the editor to follow it there.
 
 **In the editor.** The card menu's **In the Editor** submenu keeps Go to Definition, Find Usages, Go to
 Implementation, Type Hierarchy and Call Hierarchy that open the card's file in the editor at the place right-clicked
@@ -349,7 +357,7 @@ Map's file list; several are offered in a menu under the breadcrumb), and Show G
 menu's item, is the card's file's.
 
 **Declaration rows.** A declaration row's menu (the Map's Structure columns and a card's) has the Map's kinds about
-its declaration — Show References, Callers, Implementations, Supertypes and Subtypes as Cards, Go to Type
+its declaration — Show References, Callers, Callees, Implementations, Supertypes and Subtypes as Cards, Go to Type
 Definition, Go to Super Method; not Definition or Declaration, which are the row itself — then the same In the
 Editor submenu at the declaration, with the caret on its name. The same commands typed on the map with a declaration
 row selected ask about it (`ProjectMapView.runRowNavigation`, through the Map window's `HANDLED_COMMANDS`).
