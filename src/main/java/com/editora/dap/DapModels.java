@@ -170,12 +170,21 @@ public final class DapModels {
         }
     }
 
-    /** A breakpoint to send to the adapter for one file: 0-based {@code line} + optional condition/log. */
+    /**
+     * A breakpoint to send to the adapter for one file: 0-based {@code line} + optional condition/log, and the 1-based
+     * {@code column} a lambda breakpoint stops at (the lambda's start), or 0 for the line itself.
+     */
     public record LineBreakpoint(
             int line,
             @Nullable String condition,
             @Nullable String logMessage,
-            @Nullable String hitCondition) {
+            @Nullable String hitCondition,
+            int column) {
+        public LineBreakpoint(
+                int line, @Nullable String condition, @Nullable String logMessage, @Nullable String hitCondition) {
+            this(line, condition, logMessage, hitCondition, 0);
+        }
+
         public LineBreakpoint(int line, @Nullable String condition, @Nullable String logMessage) {
             this(line, condition, logMessage, null);
         }

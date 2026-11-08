@@ -147,7 +147,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
 
     /**
      * The gutter glyph's extra CSS classes for the breakpoint on {@code line}, space-separated and without
-     * the {@code breakpoint-} prefix: its kind (disabled / logpoint / conditional) and, while a session is
+     * the {@code breakpoint-} prefix: its kind (disabled / logpoint / conditional, temporary, lambda) and, while a session is
      * live, {@code unverified} or {@code unverified rejected}. Null for a plain breakpoint.
      */
     public @Nullable String styleClasses(int line) {
@@ -159,6 +159,9 @@ public final class BreakpointManager implements LineMarks.Carrier {
                 !bp.enabled() ? "disabled" : bp.isLogpoint() ? "logpoint" : bp.isConditional() ? "conditional" : null;
         if (bp.temporary() && !bp.isLogpoint()) {
             kind = kind == null ? "temporary" : kind + " temporary"; // a logpoint never stops, so is never removed
+        }
+        if (bp.hasLambdas()) {
+            kind = kind == null ? "lambda" : kind + " lambda";
         }
         Live state = live(line);
         String classes = kind;
@@ -290,6 +293,22 @@ public final class BreakpointManager implements LineMarks.Carrier {
         Breakpoint bp = byLine.get(line);
         if (bp != null && bp.temporary() != temporary) {
             byLine.put(line, bp.withTemporary(temporary));
+            fireChanged();
+        }
+    }
+
+    /**
+     * Makes the breakpoint on {@code line} stop inside the lambdas numbered {@code lambdas} on its line (from 1),
+     * as well as on the line or ({@code only}) instead of it. No lambda: it stops on the line alone.
+     */
+    public void setLambdas(int line, java.util.List<Integer> lambdas, boolean only) {
+        Breakpoint bp = byLine.get(line);
+        if (bp == null) {
+            return;
+        }
+        Breakpoint next = bp.withLambdas(lambdas, only);
+        if (!next.lambdas().equals(bp.lambdas()) || next.lambdasOnly() != bp.lambdasOnly()) {
+            byLine.put(line, next);
             fireChanged();
         }
     }

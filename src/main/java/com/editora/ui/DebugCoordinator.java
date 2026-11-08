@@ -314,6 +314,7 @@ final class DebugCoordinator {
         dapManager.setCodeReplaceNotices(this::codeReplaceNotice);
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
         memberBreakpoints = new MemberBreakpointCommands(host, ops, dapManager, lspManager, () -> breakpointsMuted);
+        lambdaBreakpoints = new LambdaBreakpoints(host);
         pinnedValues = new PinnedValues(host, ops, dapManager);
     }
 
@@ -340,6 +341,8 @@ final class DebugCoordinator {
 
     /** Method breakpoints and field watchpoints. */
     private final MemberBreakpointCommands memberBreakpoints;
+
+    private final LambdaBreakpoints lambdaBreakpoints;
 
     MemberBreakpointCommands memberBreakpoints() {
         return memberBreakpoints;
@@ -1126,13 +1129,22 @@ final class DebugCoordinator {
         // B1: in the numbering of the code the program runs — a breakpoint whose line was added since the
         // session started has no place in it, and waits for the next session.
         LaunchedLines.Mapping map = lineMap(buffer);
-        for (Breakpoint bp : buffer.getBreakpointManager().documentSnapshot()) {
+        var mgr = buffer.getBreakpointManager();
+        boolean java = BreakpointTargets.javaLanguage(buffer.getLanguage());
+        for (Breakpoint bp : mgr.documentSnapshot()) {
             int line = map.toLaunched(bp.line());
             if (bp.enabled() && !breakpointsMuted && line >= 0) { // Mute Breakpoints: the adapter is told none
-                lines.add(new DapModels.LineBreakpoint(line, bp.condition(), bp.logMessage(), bp.hitCondition()));
+                lines.addAll(BreakpointTargets.of(bp, line, documentLineText(buffer, bp.line()), java));
             }
         }
         return new DapModels.FileBreakpoints(file, lines);
+    }
+
+    /** The text of whole-document line {@code line} of {@code buffer}, or null while narrowing hides it. */
+    private static @Nullable String documentLineText(EditorBuffer buffer, int line) {
+        var area = buffer.getArea();
+        int i = line - buffer.getBreakpointManager().regionFirstLine();
+        return i >= 0 && i < area.getParagraphs().size() ? area.getParagraph(i).getText() : null;
     }
 
     // --- B1: lines of the code the program runs, against the document as it is now ---------------------
@@ -4868,6 +4880,17 @@ final class DebugCoordinator {
         });
     }
 
+    /**
+     * Debug: Toggle Lambda Breakpoint — a breakpoint that stops inside the lambda at the caret when its body runs
+     * (see {@link LambdaBreakpoints}).
+     */
+    void toggleLambdaBreakpointAtCaret() {
+        EditorBuffer b = breakpointBuffer();
+        if (b != null && breakpointAllowed(b, b.getFocusedArea().getCurrentParagraph())) {
+            lambdaBreakpoints.toggleAtCaret(b);
+        }
+    }
+
     /** Debug: Enable / Disable Breakpoint — flips the caret line's breakpoint without removing it. */
     void toggleBreakpointEnabledAtCaret() {
         EditorBuffer b = breakpointBuffer();
@@ -4935,7 +4958,13 @@ final class DebugCoordinator {
             }
         });
         javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
-        gutterMenu.getItems().setAll(edit, flip, remove, new javafx.scene.control.SeparatorMenuItem(), list);
+        gutterMenu.getItems().setAll(edit, flip, remove);
+        List<javafx.scene.control.MenuItem> lambdas = lambdaBreakpoints.choices(b, line, bp);
+        if (!lambdas.isEmpty()) {
+            gutterMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+            gutterMenu.getItems().addAll(lambdas);
+        }
+        gutterMenu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), list);
         Node source = e.getSource() instanceof Node n ? n : null;
         if (source != null && source.getScene() != null && source.getScene().getWindow() != null) {
             gutterMenu.show(source, e.getScreenX(), e.getScreenY());
@@ -4974,6 +5003,9 @@ final class DebugCoordinator {
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
         items.add(
                 menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
+        if (LambdaBreakpoints.caretLineHasLambdas(b)) {
+            items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
+        }
         if (dapManager.state() == DapManager.State.SUSPENDED) {
             items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
             items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));

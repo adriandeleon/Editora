@@ -554,6 +554,158 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.runOnFx(() -> b.toggleBreakpoint(1));
     }
 
+    // --- gap: lambda breakpoints ------------------------------------------------------------------------------
+
+    private static final String LAMBDAS = "import java.util.List;\n\npublic class Main {\n"
+            + "    public static void main(String[] a) {\n"
+            + "        List.of(1, 2).forEach(x -> System.out.println(x * 2));\n"
+            + "        Runnable r = () -> {}; Runnable s = () -> {};\n"
+            + "    }\n}\n";
+
+    @Test
+    void lambdaBreakpointsComeFromTheCaretAndTheGutterAndReachTheAdapterAsColumns() throws Exception {
+        Path main = file("Main.java", LAMBDAS);
+        EditorBuffer b = open(main);
+        var mgr = FxTestSupport.callOnFx(b::getBreakpointManager);
+        String forEach = LAMBDAS.lines().toList().get(4);
+        String runnables = LAMBDAS.lines().toList().get(5);
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().moveTo(4, 2); // before the lambda: the line's first one
+            debug.toggleLambdaBreakpointAtCaret();
+            b.getFocusedArea().moveTo(5, runnables.lastIndexOf("{}"));
+            debug.toggleLambdaBreakpointAtCaret(); // the second Runnable
+            b.getFocusedArea().moveTo(0, 3);
+            debug.toggleLambdaBreakpointAtCaret(); // "import" starts no lambda
+        });
+        assertEquals(List.of(1), FxTestSupport.callOnFx(() -> mgr.get(4).lambdas()));
+        assertTrue(FxTestSupport.callOnFx(() -> mgr.get(4).lambdasOnly()));
+        assertEquals(List.of(2), FxTestSupport.callOnFx(() -> mgr.get(5).lambdas()));
+        assertFalse(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(0)));
+        assertTrue(FxTestSupport.callOnFx(() -> mgr.styleClasses(4)).contains("lambda"), "the dot carries a λ");
+        assertTrue(FxTestSupport.callOnFx(() -> mgr.tooltip(4)).contains(tr("debug.breakpoint.lambdasOnly", "1")));
+        String title = DebugPanelText.bareTitle(tr("command.debug.toggleLambdaBreakpoint"));
+        assertFalse(
+                FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
+                        .map(MenuItem::getText)
+                        .toList()
+                        .contains(title)),
+                "the caret's line starts no lambda");
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(4, 2));
+        assertTrue(FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
+                .map(MenuItem::getText)
+                .toList()
+                .contains(title)));
+
+        // The gutter menu of line 6: on the line too, and the first lambda as well.
+        FxTestSupport.drainFx();
+        Node slot = FxTestSupport.callOnFx(
+                () -> find(b.getArea().getParagraphGraphicFactory().apply(5), "breakpoint-slot"));
+        ContextMenu menu = FxTestSupport.field(debug, "gutterMenu");
+        FxTestSupport.runOnFx(() -> slot.fireEvent(
+                new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
+        FxTestSupport.drainFx();
+        List<String> labels = FxTestSupport.callOnFx(
+                () -> menu.getItems().stream().map(MenuItem::getText).toList());
+        assertEquals(tr("debug.gutter.stopOnLine"), labels.get(4), labels.toString());
+        assertEquals(tr("debug.gutter.stopInLambda", 1, "() -> {}; Runnable s = () -> {};"), labels.get(5));
+        assertEquals(tr("debug.gutter.stopInLambda", 2, "() -> {};"), labels.get(6));
+        var onLine = (javafx.scene.control.CheckMenuItem)
+                FxTestSupport.callOnFx(() -> menu.getItems().get(4));
+        assertFalse(FxTestSupport.callOnFx(onLine::isSelected));
+        FxTestSupport.runOnFx(() -> {
+            menu.hide();
+            onLine.setSelected(true);
+            onLine.fire();
+        });
+        FxTestSupport.runOnFx(() -> slot.fireEvent(
+                new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
+        var firstAgain = (javafx.scene.control.CheckMenuItem)
+                FxTestSupport.callOnFx(() -> menu.getItems().get(5));
+        FxTestSupport.runOnFx(() -> {
+            menu.hide();
+            firstAgain.setSelected(true); // as a click ticks it before its action runs
+            firstAgain.fire();
+        });
+        assertEquals(List.of(1, 2), FxTestSupport.callOnFx(() -> mgr.get(5).lambdas()));
+        assertFalse(FxTestSupport.callOnFx(() -> mgr.get(5).lambdasOnly()));
+        assertTrue(
+                FxTestSupport.callOnFx(() ->
+                        fx.controller.config.getBreakpoints().get(DebugCoordinator.key(main)).stream()
+                                .anyMatch(bp -> bp.line() == 5 && bp.lambdas().equals(List.of(1, 2)))),
+                "kept with the project's breakpoints");
+
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            // Every line breakpoint bound; of line 6's lambdas, the second one not (yet).
+            adapter.sessionBreakpointAnswer = args -> java.util.Arrays.stream(args.getBreakpoints())
+                    .map(sb -> FakeDebugAdapter.Session.breakpoint(
+                            null,
+                            sb.getColumn() == null || sb.getLine() == 5 || sb.getColumn() < 40,
+                            sb.getLine(),
+                            sb.getColumn() != null && sb.getColumn() >= 40 ? "not loaded yet" : null))
+                    .toList();
+            FakeDebugAdapter.Session session = connect(adapter, main);
+            FxTestSupport.runOnFx(debug::toggleMuteBreakpoints); // muted and back: the breakpoints are sent again
+            FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+            await(
+                    "the file's breakpoints sent",
+                    () -> session.breakpoints.stream()
+                            .anyMatch(a ->
+                                    a.getSource().getPath().endsWith("Main.java") && a.getBreakpoints().length == 4));
+            var sent = session.breakpoints.stream()
+                    .filter(a -> a.getSource().getPath().endsWith("Main.java"))
+                    .reduce((x, y) -> y)
+                    .orElseThrow()
+                    .getBreakpoints();
+            List<String> asked = java.util.Arrays.stream(sent)
+                    .map(sb -> sb.getLine() + ":" + sb.getColumn())
+                    .toList();
+            assertEquals(
+                    List.of(
+                            "5:" + (forEach.indexOf("x ->") + 1),
+                            "6:null",
+                            "6:" + (runnables.indexOf("() ->") + 1),
+                            "6:" + (runnables.lastIndexOf("() ->") + 1)),
+                    asked);
+            // One glyph per line: bound when the line and all its lambdas are.
+            var bound = com.editora.editor.debug.BreakpointManager.LiveState.VERIFIED;
+            await("line 5 bound", () -> mgr.live(4) != null && mgr.live(4).state() == bound);
+            await(
+                    "line 6 waiting on its second lambda",
+                    () -> mgr.live(5) != null
+                            && mgr.live(5).state() == com.editora.editor.debug.BreakpointManager.LiveState.PENDING);
+            assertTrue(FxTestSupport.callOnFx(() -> mgr.tooltip(5)).contains("not loaded yet"));
+        }
+
+        // The command on line 5's only lambda again: the breakpoint stopped nowhere else, so it goes.
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().moveTo(4, forEach.indexOf("System"));
+            debug.toggleLambdaBreakpointAtCaret();
+        });
+        assertFalse(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(4)));
+        // Taking a lambda from a breakpoint that also stops on its line keeps it.
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().moveTo(5, runnables.lastIndexOf("{}"));
+            debug.toggleLambdaBreakpointAtCaret();
+        });
+        assertEquals(List.of(1), FxTestSupport.callOnFx(() -> mgr.get(5).lambdas()));
+        FxTestSupport.runOnFx(() -> b.toggleBreakpoint(5));
+    }
+
+    @Test
+    void lambdaBreakpointsAreForJava() throws Exception {
+        Path util = file("util.py", "f = lambda x: x\ng = [y for y in range(3)]\n");
+        EditorBuffer b = open(util);
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().moveTo(0, 4);
+            debug.toggleLambdaBreakpointAtCaret();
+        });
+        assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(0)));
+        assertFalse(FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
+                .map(MenuItem::getText)
+                .toList()
+                .contains(DebugPanelText.bareTitle(tr("command.debug.toggleLambdaBreakpoint")))));
+    }
+
     // --- gap: the breakpoints list and Mute ----------------------------------------------------------------
 
     @Test

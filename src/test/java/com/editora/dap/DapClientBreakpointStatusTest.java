@@ -295,4 +295,27 @@ class DapClientBreakpointStatusTest {
         assertEquals("", info.breakMode());
         assertFalse(info.caught() || info.uncaught(), "the adapter did not say");
     }
+
+    /** A line's lambda breakpoints come back as one status for the line: the gutter has one glyph per line. */
+    @Test
+    void aLinesLambdaBreakpointsFoldIntoOneStatus() {
+        var bound = new DapModels.BreakpointStatus(4, true, false, "", 4);
+        var waiting = new DapModels.BreakpointStatus(4, false, false, "class not loaded", -1);
+        var refused = new DapModels.BreakpointStatus(4, false, true, "no lambda here", -1);
+        var other = new DapModels.BreakpointStatus(9, true, false, "", 9);
+        List<DapModels.BreakpointStatus> merged = DapClient.perLine(List.of(bound, waiting, refused, other));
+        assertEquals(2, merged.size());
+        DapModels.BreakpointStatus line = merged.getFirst();
+        assertFalse(line.verified(), "bound only when every target is");
+        assertTrue(line.failed(), "refused when any is");
+        assertEquals("class not loaded", line.message());
+        assertEquals(4, line.actualLine(), "where the line's own answer put it");
+        assertEquals(other, merged.get(1));
+        var both = DapClient.perLine(List.of(
+                new DapModels.BreakpointStatus(4, true, false, "", -1),
+                new DapModels.BreakpointStatus(4, true, false, "lambda", 4)));
+        assertEquals(List.of(new DapModels.BreakpointStatus(4, true, false, "lambda", 4)), both);
+        var lambdaRefused = DapClient.perLine(List.of(bound, refused));
+        assertEquals("no lambda here", lambdaRefused.getFirst().message());
+    }
 }

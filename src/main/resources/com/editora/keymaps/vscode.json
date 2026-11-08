@@ -54,6 +54,7 @@
   "S-f5": "debug.stop",
   "C-S-f5": "debug.restart",
   "f9": "debug.toggleBreakpoint",
+  "S-f9": "debug.toggleLambdaBreakpoint",
   "f10": "debug.stepOver",
   "f11": "debug.stepInto",
   "S-f11": "debug.stepOut",

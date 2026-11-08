@@ -111,4 +111,38 @@ class BreakpointTest {
                 com.editora.editor.debug.BreakpointDescription.lines(b.withLogMessage("at {i}")),
                 "a logpoint never stops, so it is never removed");
     }
+
+    @Test
+    void lambdasAreKeptSortedOnceAndAnOnlyWithNoneStopsOnTheLine() {
+        Breakpoint b = Breakpoint.plain(2, "f(x -> x);");
+        assertTrue(b.lambdas().isEmpty());
+        assertTrue(b.stopsOnLine());
+        assertFalse(b.hasLambdas());
+        Breakpoint some = b.withLambdas(java.util.Arrays.asList(3, null, 1, 3, 0, -2, Breakpoint.MAX_LAMBDA + 1), true);
+        assertEquals(List.of(1, 3), some.lambdas());
+        assertTrue(some.hasLambdas());
+        assertFalse(some.stopsOnLine());
+        assertTrue(some.lambdasOnly());
+        assertFalse(b.withLambdas(List.of(), true).lambdasOnly(), "no lambda: it stops on the line");
+        assertFalse(b.withLambdas(null, true).hasLambdas());
+        // Every other change keeps them.
+        assertEquals(
+                some.lambdas(),
+                some.withLine(5).withCondition("x > 1").withEnabled(false).lambdas());
+        assertTrue(some.withTemporary(true)
+                .withHitCondition("2")
+                .withLogMessage("m")
+                .withLineText("t")
+                .lambdasOnly());
+    }
+
+    @Test
+    void lambdasSurviveTheFileAndAnOlderFileHasNone() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Breakpoint some = Breakpoint.plain(2, "f(x -> x);").withLambdas(List.of(2), true);
+        assertEquals(some, mapper.readValue(mapper.writeValueAsString(some), Breakpoint.class));
+        Breakpoint old = mapper.readValue("{\"line\":4,\"enabled\":true,\"lineText\":\"a\"}", Breakpoint.class);
+        assertEquals(List.of(), old.lambdas());
+        assertTrue(old.stopsOnLine());
+    }
 }

@@ -37,6 +37,7 @@ com.editora.ui.JavaCodeChangesProbeFxTest
 com.editora.ui.JavaDebugRealAdapterProbeFxTest
 com.editora.ui.DebugQuickWinsProbeFxTest
 com.editora.ui.PinnedValuesProbeFxTest
+com.editora.ui.LambdaBreakpointsProbeFxTest
 com.editora.ui.MemberBreakpointsProbeFxTest
 com.editora.ui.ThreadsViewProbeFxTest
 com.editora.ui.ExceptionCardProbeFxTest
