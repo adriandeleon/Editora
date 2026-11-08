@@ -59,13 +59,16 @@ final class MapCardLinks {
      * answers where the asked name leads (its definition, its supertypes): the edge runs from the card asked from to
      * the result, and the keyboard follows to the first result card, so a chain of Go to Definition walks the code.
      * The others answer what leads to it (its references, callers, implementations, subtypes): their edges run from
-     * the result to the card asked from.
+     * the result to the card asked from. Callees lead (the edge runs from the caller) but, like the supertypes, are
+     * many: the keyboard stays.
      */
     enum Kind {
         /** Every place that names the declaration. */
         REFERENCES("references", false),
         /** The declarations that call it. */
         CALLERS("callers", false),
+        /** The declarations it calls (Call Hierarchy, outgoing). */
+        CALLEES("callees", true),
         /** Where the name is defined (Go to Definition). */
         DEFINITION("definition", true),
         /** Where the name is declared (Go to Declaration). */
@@ -93,23 +96,28 @@ final class MapCardLinks {
 
         /**
          * Whether the keyboard follows to its first result, as the editor's caret goes to a definition: the Go to
-         * kinds, not the type hierarchy, whose supertypes are asked together with its subtypes.
+         * kinds, not the type hierarchy, whose supertypes are asked together with its subtypes, nor the callees, a
+         * list of what a declaration calls rather than one place to go.
          */
         boolean goesTo() {
-            return leads && this != SUPERTYPES;
+            return leads && this != SUPERTYPES && this != CALLEES;
         }
 
         /** Whether its result has the asked name too, so the name is selected there (a subtype's is its own). */
         boolean sameName() {
-            return this != TYPE_DEFINITION && this != SUPERTYPES && this != SUBTYPES;
+            return this != TYPE_DEFINITION && this != SUPERTYPES && this != SUBTYPES && this != CALLEES;
         }
     }
 
     /**
      * The card commands of the editor's code navigation (Go to Definition, Find Usages, …), each with the kind it asks
-     * for on the Map; Type Hierarchy asks both ways. In the menus' order.
+     * for on the Map; Type Hierarchy asks both ways. {@link #CALLEES_COMMAND} is the Map's own: the editor's Call
+     * Hierarchy panel turns its direction itself. In the menus' order.
      */
     static final Map<String, List<Kind>> NAVIGATION_COMMANDS = navigationCommands();
+
+    /** Show Callees as Cards typed in a card or on a declaration row: what it calls (no default key). */
+    static final String CALLEES_COMMAND = "projectMap.showCallees";
 
     private static Map<String, List<Kind>> navigationCommands() {
         Map<String, List<Kind>> commands = new LinkedHashMap<>();
@@ -121,6 +129,7 @@ final class MapCardLinks {
         commands.put("lsp.gotoSuperMethod", List.of(Kind.SUPER_METHOD));
         commands.put("lsp.findReferences", List.of(Kind.REFERENCES));
         commands.put("lsp.callHierarchy", List.of(Kind.CALLERS));
+        commands.put(CALLEES_COMMAND, List.of(Kind.CALLEES));
         commands.put("lsp.typeHierarchy", List.of(Kind.SUPERTYPES, Kind.SUBTYPES));
         return java.util.Collections.unmodifiableMap(commands);
     }
@@ -134,6 +143,7 @@ final class MapCardLinks {
             Kind.SUPER_METHOD,
             Kind.REFERENCES,
             Kind.CALLERS,
+            Kind.CALLEES,
             Kind.SUPERTYPES,
             Kind.SUBTYPES);
 

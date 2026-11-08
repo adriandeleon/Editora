@@ -2777,6 +2777,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return isMapShowing() && mapView.trails.command(delta);
     }
 
+    /**
+     * {@code projectMap.showCallees} from the command palette (Map code navigation): asked in the Map's card the
+     * keyboard was last in, else of its selected declaration row. False when the Map is not showing or has neither.
+     */
+    public boolean mapNavigationCommand(String commandId) {
+        return isMapShowing() && mapView.runNavigation(commandId);
+    }
+
     /** One filesystem watcher event: what happened to which path (#677). */
     public record FsChange(Path path, FsKind kind) {}
 

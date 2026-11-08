@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **See what a function calls on the Project Map.** *Show Callees as Cards*, in a Map card's menu and a declaration
+  row's, opens a card for each declaration the function calls, joined to it by a "calls" edge with the number of call
+  sites. It asks the language server's call hierarchy for outgoing calls, the counterpart of *Show Callers as Cards*.
+  Calls to code already in the card open no card. It's also a command, *Project Map: Show Callees as Cards*, which you
+  can bind to a key.
 - **Go to File and Go to Symbol open cards on the Project Map.** Typed in the Map window, the file finder (Ctrl+P in
   VS Code, Ctrl+Shift+N in IntelliJ, `C-x C-f` in Emacs) and Go to Symbol in Workspace now open over the Map, and what
   you pick opens as a card there, its name selected, instead of an editor tab. The finder starts in the folder of the

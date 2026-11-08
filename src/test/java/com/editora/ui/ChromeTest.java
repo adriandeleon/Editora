@@ -443,7 +443,8 @@ class ChromeTest {
             "projectMap.exportPdf",
             "projectMap.trailNext",
             "projectMap.trailPrevious",
-            "projectMap.trailClose"
+            "projectMap.trailClose",
+            "projectMap.showCallees"
         }) {
             assertTrue(Chrome.contextEnabled(id, printing(false, false, false, true)), id + " needs no buffer");
             Chrome.PaletteContext treeMode = printing(true, true, true, false);

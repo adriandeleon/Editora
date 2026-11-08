@@ -2301,9 +2301,11 @@ final class ProjectMapPreview extends StackPane {
         for (MapCardLinks.Kind kind : MapCardLinks.MENU_KINDS) {
             MenuItem item = new MenuItem(MapCardLinks.menuLabel(kind));
             item.setDisable(!text);
-            // References and Callers of a declaration card are its declaration's (explore position 5); the rest go
-            // from where the menu was opened, as the editor's commands do.
-            boolean atPlace = kind != MapCardLinks.Kind.REFERENCES && kind != MapCardLinks.Kind.CALLERS;
+            // References, Callers and Callees of a declaration card are its declaration's (explore position 5); the
+            // rest go from where the menu was opened, as the editor's commands do.
+            boolean atPlace = kind != MapCardLinks.Kind.REFERENCES
+                    && kind != MapCardLinks.Kind.CALLERS
+                    && kind != MapCardLinks.Kind.CALLEES;
             item.setOnAction(ignored -> actions.show(this, kind, line, column, atPlace));
             items.add(item);
         }

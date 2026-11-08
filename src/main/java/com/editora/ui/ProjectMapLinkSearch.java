@@ -290,15 +290,19 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         int line = at.line();
         int column = at.column();
         switch (kind) {
-            case CALLERS, SUPERTYPES, SUBTYPES -> {
-                boolean calls = kind == MapCardLinks.Kind.CALLERS;
+            case CALLERS, CALLEES, SUPERTYPES, SUBTYPES -> {
+                boolean calls = kind == MapCardLinks.Kind.CALLERS || kind == MapCardLinks.Kind.CALLEES;
                 Consumer<List<LspManager.HierarchyNode>> prepared = items -> {
                     if (items.isEmpty()) {
                         release.run();
                         answer.accept(new MapCardLinks.Answer(List.of(), MapCardLinks.Via.SERVER, false, null, name));
                     } else if (calls) {
                         servers.callHierarchyChildren(
-                                file, items.getFirst().raw(), true, nodesFound, failedThenReleased);
+                                file,
+                                items.getFirst().raw(),
+                                kind == MapCardLinks.Kind.CALLERS, // incoming; the callees are the outgoing calls
+                                nodesFound,
+                                failedThenReleased);
                     } else {
                         servers.typeHierarchyChildren(
                                 file, items.getFirst().raw(), kind == MapCardLinks.Kind.SUPERTYPES, nodesFound);
@@ -326,7 +330,7 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
     private static boolean answers(LspManager servers, MapCardLinks.Kind kind, Path file) {
         return switch (kind) {
             case REFERENCES -> servers.supportsReferences(file);
-            case CALLERS -> servers.supportsCallHierarchy(file);
+            case CALLERS, CALLEES -> servers.supportsCallHierarchy(file);
             case DEFINITION -> true;
             case DECLARATION -> servers.supportsDeclaration(file);
             case TYPE_DEFINITION -> servers.supportsTypeDefinition(file);

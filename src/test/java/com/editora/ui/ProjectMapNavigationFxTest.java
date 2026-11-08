@@ -33,6 +33,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -230,6 +231,52 @@ class ProjectMapNavigationFxTest {
     }
 
     @Test
+    void showCalleesInACardOpensWhatItsDeclarationCallsAndTheKeyboardStays() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Path shape = Files.writeString(src.resolve("Shape.java"), SHAPE);
+        Path use = Files.writeString(src.resolve("Use.java"), USE);
+        ServerCapabilities capabilities = new ServerCapabilities();
+        capabilities.setCallHierarchyProvider(true);
+        FakeLanguageServer fake = startServer(capabilities);
+        fake.callHierarchyResponse = List.of(callItem("total", use, 3, 11));
+        // total() calls area() (in Shape.java) once and twice() (further down its own file) once.
+        fake.outgoingCallsResponse = List.of(
+                new org.eclipse.lsp4j.CallHierarchyOutgoingCall(callItem("area", shape, 3, 11), List.of(range(4, 21))),
+                new org.eclipse.lsp4j.CallHierarchyOutgoingCall(callItem("twice", use, 7, 11), List.of(range(4, 30))));
+
+        ProjectPanel panel = openPanel();
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        FxTestSupport.runOnFx(() -> view.setLinkSource(new ProjectMapLinkSearch(manager, panel.projectIndex())));
+        ProjectMapPreview source = openCard(cards, use);
+
+        FxTestSupport.runOnFx(() -> {
+            source.editor().requestFocus();
+            source.editor().moveTo(3, 12);
+            assertTrue(source.runMarkerCommand(MapCardLinks.CALLEES_COMMAND), "the Map's command, typed in a card");
+        });
+        waitFor(() -> resultCards(cards, shape).size() == 1, "area()'s card");
+        ProjectMapPreview callee =
+                FxTestSupport.callOnFx(() -> resultCards(cards, shape).getFirst());
+        waitFor(() -> "area".equals(callee.editor().getSelectedText()), "the callee's own name selected");
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(1, fake.outgoingCallRequests.size(), "the outgoing calls asked");
+            assertEquals(List.of(), fake.incomingCallRequests, "not the callers");
+            MapCardLinks.EdgeSet set = cards.links.setsForTest(source).get(MapCardLinks.Kind.CALLEES);
+            assertNotNull(set);
+            assertEquals(
+                    List.of("calls"),
+                    set.labelsForTest().stream().map(Label::getText).toList());
+            assertEquals(2, cards.previews.size(), "twice() is on the card asked from: no card of its own");
+            assertEquals(List.of(), cards.backTrailForTest(), "a list of calls: the keyboard stays");
+        });
+
+        // From the command palette: asked in the card the Map's keyboard was last in.
+        FxTestSupport.runOnFx(() -> assertTrue(panel.mapNavigationCommand(MapCardLinks.CALLEES_COMMAND)));
+        waitFor(() -> fake.outgoingCallRequests.size() == 2, "asked again");
+    }
+
+    @Test
     void withNoServerADefinitionIsTheDeclarationOfThatNameAndOneOnTheSameCardMovesItsCaret() throws Exception {
         Path src = Files.createDirectories(root.resolve("src"));
         Path shape = Files.writeString(src.resolve("Shape.java"), SHAPE);
@@ -275,6 +322,13 @@ class ProjectMapNavigationFxTest {
                 () -> cards.links.setsForTest(source).get(MapCardLinks.Kind.IMPLEMENTATIONS) == null
                         && resultCards(cards, src).size() == 1,
                 "no implementation cards");
+        ProjectMapStatusLine status = FxTestSupport.field(panel, "mapStatusLine");
+        FxTestSupport.runOnFx(() -> assertTrue(source.runMarkerCommand(MapCardLinks.CALLEES_COMMAND)));
+        waitFor(
+                () -> status.text().contains(com.editora.i18n.Messages.tr("project.map.links.needsServer")),
+                "callees need a server");
+        FxTestSupport.runOnFx(
+                () -> assertNull(cards.links.setsForTest(source).get(MapCardLinks.Kind.CALLEES), "no callee cards"));
     }
 
     // --- helpers ------------------------------------------------------------------------------------
@@ -315,6 +369,12 @@ class ProjectMapNavigationFxTest {
                         && entry.getKey().startsWith(under))
                 .map(Map.Entry::getValue)
                 .toList();
+    }
+
+    private static org.eclipse.lsp4j.CallHierarchyItem callItem(String name, Path file, int line, int column) {
+        Range whole = new Range(new Position(line, 0), new Position(line + 2, 5));
+        return new org.eclipse.lsp4j.CallHierarchyItem(
+                name, SymbolKind.Method, LspTestHooks.uri(file), whole, range(line, column));
     }
 
     private static TypeHierarchyItem typeItem(String name, Path file, int line, int column) {
