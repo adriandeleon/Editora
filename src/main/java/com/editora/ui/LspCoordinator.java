@@ -179,6 +179,9 @@ final class LspCoordinator {
          *  provides the java-debug commands (some distributions bundle the plugin — #711). */
         void onServerCapabilitiesReady();
 
+        /** {@code buffer}'s text settled after an edit (the typing pause its server is told on). */
+        default void onTypingPause(EditorBuffer buffer) {}
+
         /**
          * The canonical (symlink-resolved) form of {@code file}, so every consumer of the diagnostics map keys
          * agrees. A server reports diagnostics under whatever URI it chose (some canonicalize, some echo the
@@ -4084,6 +4087,7 @@ final class LspCoordinator {
             if (path != null) {
                 lspManager.pullDiagnostics(path);
                 requestStructureSymbols(buffer);
+                ops.onTypingPause(buffer);
                 if (buffer == host.activeBuffer()) popups.refreshSignatureHelpIfShowing();
                 requestFoldingRanges(buffer); // #738 — rides the same debounce, no extra pulse
             }

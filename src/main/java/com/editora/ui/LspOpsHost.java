@@ -217,6 +217,12 @@ final class LspOpsHost implements LspCoordinator.Ops {
         // there is no local plugin jar to locate, so this is what un-gates debugging (#711).
         mc.debugCoordinator.refreshJavaDebugAvailability();
         mc.installPrompts.maybeOfferInstall(mc.activeBuffer()); // the install banner may no longer be warranted
+        mc.debugCoordinator.memberMarksRefreshAll(); // the outline that places them can now be read
+    }
+
+    @Override
+    public void onTypingPause(EditorBuffer buffer) {
+        mc.debugCoordinator.memberMarksRefresh(buffer); // a method may have moved
     }
 
     @Override

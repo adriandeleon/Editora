@@ -29,7 +29,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * Opt-in probe against the installed JDT LS and java-debug adapter, in a real window: a method breakpoint set from
  * the caret (the method read from jdtls's outline) stops the program on entering the method, and a field watchpoint
  * set from the caret while it runs stops it where the field is assigned — after the method breakpoint was taken
- * away again. Run it with {@code ./mvnw test -Dtest=MemberBreakpointsProbeFxTest -Dgroups=probe -Dlsp.probe=true}.
+ * away again. Both are marked in the gutter on their declaration lines, read from jdtls's outline, and a mark follows
+ * its member when an edit moves it. Run it with {@code ./mvnw test -Dtest=MemberBreakpointsProbeFxTest -Dgroups=probe -Dlsp.probe=true}.
  */
 @Tag("probe")
 @Tag("fx")
@@ -53,6 +54,7 @@ class MemberBreakpointsProbeFxTest {
 
     private static final int FIELD_LINE = 1; // static int count;
     private static final int BODY_LINE = 3; // count += n;
+    private static final int DECLARATION_LINE = 2; // static void bump(int n) {
 
     @BeforeAll
     static void boot() throws Exception {
@@ -100,6 +102,8 @@ class MemberBreakpointsProbeFxTest {
                     "the method breakpoint from the caret",
                     30,
                     () -> call(() -> debug.memberBreakpoints().all()).contains(bump));
+            // Its mark: on bump's declaration line, read from jdtls's outline.
+            awaitMark(b, DECLARATION_LINE, "method");
 
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
             awaitStop(dap, BODY_LINE, debug);
@@ -116,8 +120,13 @@ class MemberBreakpointsProbeFxTest {
                     "the field watchpoint from the caret",
                     20,
                     () -> call(() -> debug.memberBreakpoints().all()).contains(count));
+            awaitMark(b, FIELD_LINE, "field");
             FxTestSupport.runOnFx(() -> debug.memberBreakpoints().remove(bump));
             assertEquals(List.of(count), call(() -> debug.memberBreakpoints().all()));
+            await(
+                    "bump's mark gone",
+                    20,
+                    () -> call(() -> b.getBreakpointManager().memberMark(DECLARATION_LINE)) == null);
 
             // A method breakpoint stops before the body runs: this call's own assignment is the next stop, and
             // the call after it stops only at its assignment, not on entering (that breakpoint is gone).
@@ -132,6 +141,11 @@ class MemberBreakpointsProbeFxTest {
 
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", 20, () -> !call(dap::isActive));
+
+            // An edit above moves the field: after the typing pause its mark is on its new line.
+            FxTestSupport.runOnFx(() -> b.getArea().insertText(0, 0, "// moved\n"));
+            awaitMark(b, FIELD_LINE + 1, "field");
+            assertEquals(null, call(() -> b.getBreakpointManager().memberMark(FIELD_LINE)));
         } finally {
             fx.dispose();
         }
@@ -157,6 +171,19 @@ class MemberBreakpointsProbeFxTest {
             }
             Thread.sleep(50);
         }
+    }
+
+    /** A member mark of {@code kind} ({@code method} / {@code field}) on (view) {@code line}. */
+    private static void awaitMark(EditorBuffer b, int line, String kind) throws InterruptedException {
+        await(
+                "a " + kind + " mark on line " + (line + 1),
+                60,
+                () -> call(() -> {
+                    String classes = b.getBreakpointManager().glyphClasses(line);
+                    return b.getBreakpointManager().memberMark(line) != null
+                            && classes != null
+                            && classes.startsWith(kind);
+                }));
     }
 
     private static void awaitStop(DapManager dap, int line, DebugCoordinator debug) throws InterruptedException {

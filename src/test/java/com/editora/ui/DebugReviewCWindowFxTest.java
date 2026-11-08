@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -704,6 +705,91 @@ class DebugReviewCWindowFxTest {
                 .map(MenuItem::getText)
                 .toList()
                 .contains(DebugPanelText.bareTitle(tr("command.debug.toggleLambdaBreakpoint")))));
+    }
+
+    // --- gap: method breakpoints and field watchpoints in the gutter ----------------------------------------
+
+    @Test
+    void aMethodBreakpointsMarkShowsInTheGutterAClickRemovesItAndItHasItsOwnMenu() throws Exception {
+        Path order = file(
+                "Order.java",
+                "package shop;\n\npublic class Order {\n    int count;\n    long total() {\n        return count;\n"
+                        + "    }\n}\n");
+        EditorBuffer b = open(order);
+        var mgr = FxTestSupport.callOnFx(b::getBreakpointManager);
+        com.editora.config.MemberBreakpoint total = com.editora.config.MemberBreakpoint.method("shop.Order", "total");
+        com.editora.config.MemberBreakpoint count = com.editora.config.MemberBreakpoint.field(
+                        "shop.Order", "count", com.editora.config.MemberBreakpoint.WRITE)
+                .withCondition("count > 2");
+        FxTestSupport.runOnFx(() -> {
+            debug.memberBreakpoints().add(total);
+            debug.memberBreakpoints().add(count);
+            // No language server here to read the outline: the marks go where it would put them.
+            mgr.setMemberMarks(java.util.Map.of(
+                    4,
+                            new com.editora.editor.debug.BreakpointManager.MemberMark(
+                                    List.of(total), MemberBreakpointMarks.tooltip(List.of(total))),
+                    3, new com.editora.editor.debug.BreakpointManager.MemberMark(List.of(count), "")));
+        });
+        FxTestSupport.drainFx();
+        assertEquals("method", FxTestSupport.callOnFx(() -> mgr.glyphClasses(4)));
+        assertEquals("field conditional", FxTestSupport.callOnFx(() -> mgr.glyphClasses(3)));
+        assertTrue(FxTestSupport.callOnFx(() -> mgr.glyphTooltip(4)).startsWith("Order.total()"));
+        Node method = FxTestSupport.callOnFx(
+                () -> find(b.getArea().getParagraphGraphicFactory().apply(4), "breakpoint-method"));
+        assertNotNull(method, "the dot with an entry arrow");
+        assertFalse(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(4)), "not a line breakpoint");
+
+        // Right-click: the watchpoint's own menu.
+        Node slot = FxTestSupport.callOnFx(
+                () -> find(b.getArea().getParagraphGraphicFactory().apply(3), "breakpoint-slot"));
+        ContextMenu menu = FxTestSupport.field(debug, "gutterMenu");
+        FxTestSupport.runOnFx(() -> slot.fireEvent(
+                new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
+        FxTestSupport.drainFx();
+        assertEquals(
+                java.util.Arrays.asList(
+                        tr("debug.gutter.disable"),
+                        tr("debug.gutter.removeFieldWatchpoint"),
+                        null,
+                        DebugPanelText.bareTitle(tr("command.debug.breakpoints"))),
+                FxTestSupport.callOnFx(
+                        () -> menu.getItems().stream().map(MenuItem::getText).toList()));
+        FxTestSupport.runOnFx(() -> {
+            menu.hide();
+            menu.getItems().getFirst().fire(); // Disable
+        });
+        assertFalse(FxTestSupport.callOnFx(
+                () -> debug.memberBreakpoints().all().get(1).enabled()));
+        assertEquals("field disabled", FxTestSupport.callOnFx(() -> mgr.glyphClasses(3)), "greyed at once");
+
+        // Muted: faded like every glyph.
+        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        assertEquals("method muted", FxTestSupport.callOnFx(() -> mgr.glyphClasses(4)));
+        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+
+        // A click on the method's mark removes the method breakpoint (a line breakpoint is not set).
+        java.util.function.BiConsumer<EditorBuffer, Integer> click = FxTestSupport.field(b, "gutterBreakpointClick");
+        FxTestSupport.runOnFx(() -> click.accept(b, 4));
+        assertEquals(
+                List.of(count.withEnabled(false)),
+                FxTestSupport.callOnFx(() -> debug.memberBreakpoints().all()));
+        assertFalse(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(4)));
+        assertNull(FxTestSupport.callOnFx(() -> mgr.memberMark(4)), "its mark went with it");
+
+        // The watchpoint's menu Remove; the line's plain click then sets a line breakpoint as before.
+        FxTestSupport.runOnFx(() -> slot.fireEvent(
+                new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            menu.hide();
+            menu.getItems().get(1).fire(); // Remove Field Watchpoint
+        });
+        assertTrue(FxTestSupport.callOnFx(() -> debug.memberBreakpoints().all().isEmpty()));
+        assertTrue(FxTestSupport.callOnFx(() -> mgr.memberMarks().isEmpty()));
+        FxTestSupport.runOnFx(() -> click.accept(b, 4));
+        assertTrue(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(4)));
+        FxTestSupport.runOnFx(() -> b.toggleBreakpoint(4));
     }
 
     // --- gap: the breakpoints list and Mute ----------------------------------------------------------------

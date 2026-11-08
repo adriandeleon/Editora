@@ -322,7 +322,8 @@ jobs:
       # DebugQuickWinsProbeFxTest: Pause suspends every thread (java-debug pauseAll / continueAll), a temporary
       # breakpoint is removed once hit, and Variables marks the values a step changed.
       # MemberBreakpointsProbeFxTest: a method breakpoint and a field watchpoint set from the caret (jdtls's
-      # outline) stop on entering the method and where the field is assigned (java-debug function/data breakpoints).
+      # outline) stop on entering the method and where the field is assigned (java-debug function/data breakpoints),
+      # and are marked in the gutter on their declaration lines.
       # ThreadsViewProbeFxTest: the Threads view's Pause Thread / Resume Thread act on one thread only.
       # ExceptionCardProbeFxTest: a caught then an uncaught exception open the exception card under the line.
       # AttachToProcessProbeFxTest: a JVM listening for JDWP and a Python under debugpy --listen are found by

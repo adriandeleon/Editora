@@ -883,10 +883,10 @@ public class EditorBuffer implements TabContent {
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
                 () -> debugEnabled,
-                breakpoints::isBreakpoint,
-                breakpoints::styleClasses,
+                breakpoints::hasGlyph, // a line breakpoint, or a method breakpoint's / field watchpoint's mark
+                breakpoints::glyphClasses,
                 line -> gutterBreakpointClick.accept(this, line));
-        folds.setBreakpointTooltip(breakpoints::tooltip);
+        folds.setBreakpointTooltip(breakpoints::glyphTooltip);
         folds.setDebugGutterHooks(
                 i -> executionLine.isMarked(area, i), (l, e) -> gutterBreakpointMenu.show(this, l, e));
         // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
