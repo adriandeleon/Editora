@@ -556,6 +556,10 @@ final class TestNavigationCoordinator {
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugJsTestAtCaret(b)) {
             return;
         }
+        // A Go test file's test at the caret is debugged under Delve's test mode.
+        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugGoTestAtCaret(b)) {
+            return;
+        }
         com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
         if (target == null) {
             host.setStatus(tr("status.testrunner.noTestAtCaret"));

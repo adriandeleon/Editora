@@ -742,4 +742,16 @@ class InstallCatalogTest {
         String bad = InstallCatalog.checksumProblem("js-debug", data, "00");
         org.junit.jupiter.api.Assertions.assertTrue(bad != null && bad.contains(good), String.valueOf(bad));
     }
+
+    @Test
+    void delveIsInstalledByGoInstall() {
+        List<Step> dlv = InstallCatalog.debuggerInstall("dlv").orElseThrow();
+        assertEquals(1, dlv.size());
+        assertEquals(Kind.TOOL_COMMAND, dlv.getFirst().kind());
+        assertEquals(java.util.Set.of(Prereq.GO), dlv.getFirst().prereqs());
+        assertEquals(
+                List.of("go", "install", "github.com/go-delve/delve/cmd/dlv@latest"),
+                dlv.getFirst().npmPackages());
+        assertTrue(InstallCatalog.debuggerInstall("debugpy").isEmpty());
+    }
 }

@@ -36,6 +36,7 @@ public final class InlineValueScope {
             "while",
             "do",
             "switch",
+            "select", // Go
             "case",
             "default",
             "try",

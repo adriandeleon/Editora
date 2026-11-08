@@ -316,6 +316,21 @@ jobs:
           scripts/install-debugpy.sh
           PYTHONPATH="$HOME/.editora/plugins/dap/python" python3 -c "import debugpy; print(debugpy.__version__)"
 
+      # Go and Delve for GoDebugProbeFxTest. Delve is pinned to the release last checked (go install @latest is what
+      # Editora's installer runs). ptrace_scope 0 lets Delve attach to a program it did not start (Ubuntu's 1 allows
+      # only a debugger's own children), as a developer does before attaching on such a machine.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27'
+          cache: false
+
+      - name: Install Delve
+        run: |
+          go install github.com/go-delve/delve/cmd/dlv@v1.27.2
+          "$(go env GOPATH)/bin/dlv" version
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+
       # JavaDebugRealAdapterProbeFxTest: a Maven project launch, a program Editora starts itself (runInTerminal),
       # and Stop / window close leaving no debuggee or compile folder — against the real java-debug.
       # PlainFolderDebugProbeFxTest: F5 in a two-package plain folder, an edit, F5, a compile error (review 3, C208).
@@ -330,8 +345,11 @@ jobs:
       # Attach to Process, stop at a breakpoint, and keep running after Stop (its Node test runs in the Node job).
       # PinnedValuesProbeFxTest: values pinned to a line paint each stop's values there, and clear while running.
       # LambdaBreakpointsProbeFxTest: a lambda breakpoint stops in the body once per call; a line breakpoint does not.
+      # GoDebugProbeFxTest: on Delve, a Go package stops with its variables, steps and lists its goroutines; a test
+      # file debugs the test at the caret; a running Go program is attached by process id and left running; and in a
+      # window F5 and Debug Test at Caret do the same.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

@@ -15,8 +15,10 @@ import org.jspecify.annotations.Nullable;
 /**
  * The programs on this machine Debug: Attach to Process can attach to (Visual Studio's and IntelliJ's process
  * pickers): a JVM started with the JDWP agent listening ({@code -agentlib:jdwp=…,server=y,address=5005}), a Node.js
- * started with its inspector ({@code --inspect}), and a Python waiting for debugpy ({@code -m debugpy --listen 5678}).
- * The same kinds of process started without debugging are listed too, so the picker can say what to add.
+ * started with its inspector ({@code --inspect}), a Python waiting for debugpy ({@code -m debugpy --listen 5678}), and
+ * a Go program, which Delve attaches to by its process id. The same kinds of process started without debugging are
+ * listed too, so the picker can say what to add. A Go program is told by its executable ({@link GoBinaries}), not its
+ * command line; not on Windows.
  *
  * <p>Read from each process's command line ({@link ProcessHandle.Info}); Windows does not give another process's
  * arguments that way, so there it is asked of {@code Win32_Process} through PowerShell. Only this user's processes
@@ -30,32 +32,34 @@ public final class LocalProcesses {
     public enum Kind {
         JAVA,
         NODE,
-        PYTHON
+        PYTHON,
+        GO
     }
 
     /**
      * A process the picker lists. {@code port > 0} when it listens for a debugger ({@code host} is where to connect);
      * {@code 0} when it was started without debugging, or listens on a port its command line does not name
-     * ({@code address=0}: chosen when it started).
+     * ({@code address=0}: chosen when it started). A Go program has no port: Delve attaches to it by {@code pid}.
      */
     public record Target(long pid, Kind kind, String name, String host, int port) {
 
-        /** Whether a debugger can attach to it at a known address. */
+        /** Whether a debugger can attach to it: at a known address, or a Go program by its process id. */
         public boolean attachable() {
-            return port > 0;
+            return port > 0 || kind == Kind.GO;
         }
 
-        /** {@code host:port}, as Attach takes it; {@code ""} when not attachable. */
+        /** {@code host:port}, as Attach takes it; {@code ""} when it has none. */
         public String address() {
-            return attachable() ? host + ":" + port : "";
+            return port > 0 ? host + ":" + port : "";
         }
     }
 
-    /** Every Java, Node.js and Python process of this user but this one, attachable ones first. Blocking. */
+    /** Every Java, Node.js, Python and Go process of this user but this one, attachable ones first. Blocking. */
     public static List<Target> scan() {
         long self = ProcessHandle.current().pid();
         List<Target> out = new ArrayList<>();
         Map<Long, String> windows = isWindows() ? windowsCommandLines() : Map.of();
+        Map<String, Boolean> goPrograms = new java.util.HashMap<>(); // one read per program file, not per process
         ProcessHandle.allProcesses().forEach(p -> {
             if (p.pid() == self) {
                 return;
@@ -72,6 +76,9 @@ public final class LocalProcesses {
                     }
                 }
                 Target t = classify(p.pid(), command, args);
+                if (t == null && isGoProgram(command, goPrograms)) {
+                    t = new Target(p.pid(), Kind.GO, fileName(command), "", 0);
+                }
                 if (t != null) {
                     out.add(t);
                 }
@@ -80,6 +87,14 @@ public final class LocalProcesses {
             }
         });
         return sorted(out);
+    }
+
+    /** Whether {@code command} (an absolute program path) is a Go program, read once per path into {@code seen}. */
+    private static boolean isGoProgram(String command, Map<String, Boolean> seen) {
+        if (command.isEmpty() || isWindows() || !command.startsWith("/")) {
+            return false;
+        }
+        return seen.computeIfAbsent(command, c -> GoBinaries.isGo(java.nio.file.Path.of(c)));
     }
 
     /** Attachable first, then by kind and name. Pure. */

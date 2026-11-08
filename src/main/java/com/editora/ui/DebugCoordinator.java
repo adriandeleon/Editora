@@ -709,6 +709,12 @@ final class DebugCoordinator {
                 scope.debugTool("python", s.getPythonDebugCommand()),
                 s.isJsDebugEnabled(),
                 scope.debugTool("javascript", s.getJsDebugPath()));
+        // Delve: as configured, else `dlv` on the PATH (where `go install` puts it is on Editora's PATH).
+        dapManager.configureExternal(
+                com.editora.dap.DebugLanguages.GO,
+                on && s.isGoDebugEnabled(),
+                scope.debugTool("go", s.getGoDebugPath()),
+                found -> applyGating());
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         dapManager.setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dapManager.setProgramTerminal(
@@ -2204,6 +2210,85 @@ final class DebugCoordinator {
     }
 
     /**
+     * Debugs Go file {@code path} on Delve: in a test file the test at the caret (its package's tests outside any), else
+     * its package — the file alone outside a module — with {@code args} as the program's or the test binary's. Delve
+     * builds it with the {@code go} the Go build tool runs, after the module's trust as a Go task asks it.
+     */
+    private void debugGoFile(EditorBuffer b, Path path, List<String> args) {
+        Path module = com.editora.dap.GoLaunch.moduleRoot(path);
+        List<String> go = module != null
+                ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
+                : com.editora.build.BuildExecutable.resolve(
+                        List.of(), host.settings().getGoCommand(), "go");
+        if (go == null) {
+            return; // the module was not trusted: nothing is built
+        }
+        int caret = caretLine(b);
+        String text = b.getContent();
+        java.util.Map<String, Object> launch =
+                com.editora.dap.GoLaunch.launch(path, text, caret, module != null, args, java.util.Map.of(), false);
+        nameSession(com.editora.dap.GoLaunch.sessionName(path, text, caret));
+        dapManager.setExternalPathDirs("go", goToolDirs(go));
+        Path built = module != null ? module : path.toAbsolutePath().getParent();
+        relaunch = () -> startGo(path, built, launch); // the same test again, wherever the caret is now
+        startGo(path, built, launch);
+    }
+
+    /**
+     * Saves the edited Go files under {@code built} (the module, or the loose file's folder: Delve builds them from
+     * disk), then starts {@code launch} for {@code path}.
+     */
+    private void startGo(Path path, @Nullable Path built, java.util.Map<String, Object> launch) {
+        host.forEachBuffer(other -> {
+            Path p = other.getPath();
+            if (other.isDirty()
+                    && p != null
+                    && "go".equals(other.getLanguage())
+                    && built != null
+                    && p.toAbsolutePath().startsWith(built)) {
+                ops.saveBuffer(other);
+            }
+        });
+        withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.GO, launch));
+    }
+
+    /** The folder of {@code go} (its argv) when it is a path, for Delve's PATH: Delve builds with the {@code go} found there. */
+    static List<String> goToolDirs(List<String> go) {
+        if (go.isEmpty()) {
+            return List.of();
+        }
+        Path exe;
+        try {
+            exe = Path.of(go.getFirst());
+        } catch (java.nio.file.InvalidPathException e) {
+            return List.of();
+        }
+        Path dir = exe.isAbsolute() ? exe.getParent() : null;
+        return dir == null ? List.of() : List.of(dir.toString());
+    }
+
+    /** The 0-based document line of {@code b}'s caret. */
+    private static int caretLine(EditorBuffer b) {
+        return b.getFocusedArea().getCurrentParagraph()
+                + b.getBreakpointManager().regionFirstLine();
+    }
+
+    /**
+     * Debug Test at Caret on a Go test file ({@code *_test.go}): the test at the caret under Delve's test mode, the
+     * package's tests outside any. False — nothing done — for any other buffer.
+     */
+    boolean debugGoTestAtCaret(@Nullable EditorBuffer b) {
+        if (b == null
+                || b.getPath() == null
+                || !"go".equals(b.getLanguage())
+                || !com.editora.dap.GoLaunch.isTestFile(b.getPath())) {
+            return false;
+        }
+        launchBuffer(b);
+        return true;
+    }
+
+    /**
      * Debug Test at Caret on a JavaScript/TypeScript test file ({@link com.editora.dap.JsLaunch#isTestFile}): the
      * file runs under {@code node --test}, narrowed to the test at the caret by name when there is one. False —
      * nothing done — for any other buffer.
@@ -2295,6 +2380,10 @@ final class DebugCoordinator {
             Path launchedJs = path;
             relaunch = () -> relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
             debugJsFile(path, fileArgs, nodeArgs);
+            return;
+        }
+        if ("go".equals(language)) {
+            debugGoFile(b, path, fileArgs);
             return;
         }
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
@@ -3657,6 +3746,9 @@ final class DebugCoordinator {
     /** A row's second line: which debugger, and where it listens — or what to start the program with. Pure. */
     static String processDetail(com.editora.dap.LocalProcesses.Target t) {
         String kind = tr("debug.attachProcess.kind." + t.kind().name().toLowerCase(java.util.Locale.ROOT));
+        if (t.kind() == com.editora.dap.LocalProcesses.Kind.GO) {
+            return tr("debug.attachProcess.byPid", kind);
+        }
         return t.attachable()
                 ? tr("debug.attachProcess.listening", kind, t.address())
                 : tr("debug.attachProcess.notListening", kind, startFlag(t.kind()));
@@ -3668,6 +3760,7 @@ final class DebugCoordinator {
             case JAVA -> "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005";
             case NODE -> "--inspect";
             case PYTHON -> "-m debugpy --listen 5678";
+            case GO -> "";
         };
     }
 
@@ -3717,7 +3810,30 @@ final class DebugCoordinator {
                 relaunch = null;
                 withClosedBreakpoints(() -> dapManager.startPythonAttach(anchor, t.host(), t.port()));
             }
+            case GO -> attachToGo(t.pid(), t.name());
         }
+    }
+
+    /**
+     * Attaches Delve to Go program {@code pid} of this machine ({@code dlv attach}): Stop detaches and leaves it running.
+     * The session is anchored at the active Go file, else the project; breakpoints are its Go files'.
+     */
+    private void attachToGo(long pid, String name) {
+        if (!debugEffectiveFor("go")) {
+            host.setStatus(unavailableMessage("go", null));
+            return;
+        }
+        EditorBuffer b = host.activeBuffer();
+        Path active = b != null && "go".equals(b.getLanguage()) ? b.getPath() : null;
+        Path root = ops.projectRoot();
+        Path anchor = active != null ? active : root != null ? root : Path.of(System.getProperty("user.home"));
+        java.util.Map<String, Object> attach = com.editora.dap.GoLaunch.attach(pid);
+        ops.openToolWindow();
+        nameSession(name + " (" + pid + ")");
+        Runnable start = () -> withClosedBreakpoints(
+                () -> dapManager.startExternal(anchor, com.editora.dap.DebugLanguages.GO, attach));
+        relaunch = start; // attaches again
+        start.run();
     }
 
     /**

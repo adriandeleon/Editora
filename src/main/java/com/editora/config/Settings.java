@@ -894,6 +894,11 @@ public class Settings {
     /** Path to vscode-js-debug's {@code dapDebugServer.js} (or a dir to scan); blank = auto-detect
      *  (Editora's plugins dir, mason, VS Code js-debug extension). */
     private String jsDebugPath = "";
+    /** Go debugging (Delve's {@code dlv dap}): on by default, only effective when {@code debugSupport} is on and Delve
+     *  is found. */
+    private boolean goDebugEnabled = true;
+    /** Delve's {@code dlv} (a path, or a command on the PATH); blank = {@code dlv} on the PATH (with {@code ~/go/bin}). */
+    private String goDebugPath = "";
     /**
      * Language Server Protocol support (code intelligence through each language's server): on by default since
      * 0.27.1. Each server self-gates on being installed, and the install banner offers the missing ones. Off, a new
@@ -3783,6 +3788,22 @@ public class Settings {
 
     public void setJsDebugPath(String jsDebugPath) {
         this.jsDebugPath = jsDebugPath == null ? "" : jsDebugPath;
+    }
+
+    public boolean isGoDebugEnabled() {
+        return goDebugEnabled;
+    }
+
+    public void setGoDebugEnabled(boolean goDebugEnabled) {
+        this.goDebugEnabled = goDebugEnabled;
+    }
+
+    public String getGoDebugPath() {
+        return goDebugPath == null ? "" : goDebugPath;
+    }
+
+    public void setGoDebugPath(String goDebugPath) {
+        this.goDebugPath = goDebugPath == null ? "" : goDebugPath;
     }
 
     public String getJavaLspCommand() {

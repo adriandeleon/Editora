@@ -13,9 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DapServerRegistryTest {
 
     @Test
-    void languageIdsForDebugAreJavaPythonJavascriptGroovyKotlinClojureAndScala() {
+    void languageIdsForDebugAreJavaPythonJavascriptGroovyKotlinClojureScalaAndGo() {
         assertEquals(
-                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala"),
+                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go"),
                 DapServerRegistry.languageIdsForDebug());
     }
 
@@ -55,7 +55,8 @@ class DapServerRegistryTest {
         assertEquals(DapServerRegistry.Kind.JDTLS, DapServerRegistry.kindFor("java"));
         assertEquals(DapServerRegistry.Kind.STDIO, DapServerRegistry.kindFor("python"));
         assertEquals(DapServerRegistry.Kind.SOCKET, DapServerRegistry.kindFor("javascript"));
-        assertNull(DapServerRegistry.kindFor("go"));
+        assertEquals(DapServerRegistry.Kind.EXTERNAL, DapServerRegistry.kindFor("go"));
+        assertNull(DapServerRegistry.kindFor("rust"));
     }
 
     @Test

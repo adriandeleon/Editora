@@ -106,7 +106,18 @@ final class DebugAdapterSettings {
                     "js-debug",
                     "js-debug",
                     "status.debug.jsOff",
-                    (s, scope) -> tr("status.debug.jsDebugMissing")));
+                    (s, scope) -> tr("status.debug.jsDebugMissing")),
+            new Binding(
+                    DebugLanguages.GO,
+                    Settings::isGoDebugEnabled,
+                    Settings::setGoDebugEnabled,
+                    Settings::getGoDebugPath,
+                    Settings::setGoDebugPath,
+                    "settings.debug.goPath",
+                    "dlv",
+                    "dlv",
+                    "status.debug.goOff",
+                    (s, scope) -> tr("status.debug.delveMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {

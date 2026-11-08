@@ -181,4 +181,14 @@ class LocalProcessesTest {
             p.waitFor(10, TimeUnit.SECONDS);
         }
     }
+
+    @Test
+    void aGoProgramIsAttachableByItsProcessIdWithNoAddress() {
+        var go = new LocalProcesses.Target(4, LocalProcesses.Kind.GO, "server", "", 0);
+        assertTrue(go.attachable());
+        assertEquals("", go.address());
+        var idle = new LocalProcesses.Target(1, LocalProcesses.Kind.JAVA, "B", "localhost", 0);
+        assertEquals(List.of(go, idle), LocalProcesses.sorted(List.of(idle, go)), "attachable first");
+        assertNull(LocalProcesses.classify(5, "/usr/local/bin/server", List.of()), "not told by its command line");
+    }
 }

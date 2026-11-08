@@ -20,26 +20,32 @@ class DebugLanguagesTest {
     @Test
     void everyLanguageAndWhatServesIt() {
         assertEquals(
-                List.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala"),
+                List.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go"),
                 List.copyOf(DebugLanguages.ids()));
         assertEquals(DebugLanguages.ids(), DapServerRegistry.languageIdsForDebug());
         for (String ts : List.of("typescript", "javascriptreact", "typescriptreact", "javascript")) {
             assertSame(DebugLanguages.JAVASCRIPT, DebugLanguages.forLanguage(ts), ts);
         }
         assertNull(DebugLanguages.byId("typescript"), "an editor language is not an adapter language");
-        assertNull(DebugLanguages.forLanguage("go"));
+        assertSame(DebugLanguages.GO, DebugLanguages.forLanguage("go"));
+        assertNull(DebugLanguages.forLanguage("rust"));
         assertNull(DebugLanguages.forLanguage(null));
         assertNull(DebugLanguages.byId(null));
         for (DebugLanguage l : DebugLanguages.all()) {
             assertSame(l, DebugLanguages.byId(l.id()));
             assertTrue(l.editorLanguages().contains(l.id()), l.id());
-            assertNull(l.external(), "none of today's adapters is started by the generic path");
+            assertEquals(
+                    l == DebugLanguages.GO,
+                    l.external() != null,
+                    l.id() + ": Go's adapter alone is started by the generic path");
         }
     }
 
     @Test
     void howEachIsReachedAndWhatMakesItAvailable() {
         assertEquals(DebugLanguage.Availability.JAVA_DEBUG_PLUGIN, DebugLanguages.JAVA.availability());
+        assertEquals(DebugLanguage.Availability.LOCATED, DebugLanguages.GO.availability());
+        assertEquals(DapServerRegistry.Kind.EXTERNAL, DapServerRegistry.kindFor("go"));
         assertEquals(DebugLanguage.Availability.LOCATED, DebugLanguages.PYTHON.availability());
         assertEquals(DebugLanguage.Availability.LOCATED, DebugLanguages.JAVASCRIPT.availability());
         for (DebugLanguage l :
@@ -105,5 +111,16 @@ class DebugLanguagesTest {
         assertEquals("debug.error.pythonUnavailable", DebugLanguages.PYTHON.unavailableKey());
         assertEquals("debug.error.jsUnavailable", DebugLanguages.JAVASCRIPT.unavailableKey());
         assertEquals("status.debug.unavailable", DebugLanguages.KOTLIN.unavailableKey(), "it said JavaScript's");
+        assertEquals("debug.error.goUnavailable", DebugLanguages.GO.unavailableKey());
+    }
+
+    @Test
+    void goIsDelvesDapServerOnAPortItAnnounces() {
+        ExternalAdapter dlv = DebugLanguages.GO.external();
+        assertEquals(ExternalAdapter.Transport.ANNOUNCED_PORT, dlv.transport());
+        assertEquals(List.of("/home/u/go/bin/dlv", "dap", "--listen=127.0.0.1:0"), dlv.argv("/home/u/go/bin/dlv", -1));
+        assertEquals(46317, dlv.announcedPort("DAP server listening at: 127.0.0.1:46317"), "as Delve 1.27 prints it");
+        assertEquals(List.of(), ExceptionFilterCatalog.known("go"), "Delve stops on a panic by itself");
+        assertEquals("go", DebugLanguages.GO.launchType());
     }
 }

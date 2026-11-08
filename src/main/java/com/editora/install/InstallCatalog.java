@@ -1269,6 +1269,20 @@ public final class InstallCatalog {
         };
     }
 
+    /** Delve's module, as {@code go install} takes it. */
+    public static final String DELVE_MODULE = "github.com/go-delve/delve/cmd/dlv@latest";
+
+    /**
+     * The install step of a debugger installed by its language's own toolchain, by its Settings key: {@code dlv}
+     * (Delve, through {@code go install}, into the Go bin folder). Empty for another key. Pure.
+     */
+    public static Optional<List<Step>> debuggerInstall(String key) {
+        if ("dlv".equals(key)) {
+            return Optional.of(List.of(toolStep("dlv", Prereq.GO, List.of("go", "install", DELVE_MODULE))));
+        }
+        return Optional.empty();
+    }
+
     /** The install step for a pinned tool (empty for an unknown id). Pure. */
     public static Optional<List<Step>> toolInstall(String id) {
         return pinnedTool(id).map(tool -> {

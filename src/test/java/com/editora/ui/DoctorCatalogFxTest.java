@@ -556,6 +556,27 @@ class DoctorCatalogFxTest {
     }
 
     @Test
+    void delveIsFoundWhereTheSettingPointsOrReportedMissing(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Ops ops = new Ops();
+        ops.debug = true;
+        Path dlv = Files.writeString(dir.resolve("dlv"), "#!/bin/sh\n");
+        org.junit.jupiter.api.Assumptions.assumeTrue(dlv.toFile().setExecutable(true) && Files.isExecutable(dlv));
+        host.settings.setGoDebugPath(dlv.toString());
+        DoctorCheck found = spec(specs(host, ops), "debug.go").probe().get();
+        assertEquals(DoctorStatus.OK, found.status());
+        assertEquals(dlv.toString(), found.detail());
+
+        host.settings.setGoDebugPath(dir.resolve("gone").toString());
+        DoctorCheck missing = spec(specs(host, ops), "debug.go").probe().get();
+        assertEquals(DoctorStatus.MISSING, missing.status());
+        assertEquals(List.of("dlv"), missing.tipArgs());
+
+        host.settings.setGoDebugEnabled(false);
+        assertFalse(has(specs(host, ops), "debug.go"), "no row while Go debugging is off");
+    }
+
+    @Test
     void theJavaDebugAdapterIsFoundWhereTheSettingPointsOrReportedMissing(@TempDir Path dir) throws Exception {
         Host host = new Host();
         Ops ops = new Ops();

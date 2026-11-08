@@ -45,6 +45,7 @@ com.editora.ui.AttachToProcessProbeFxTest
 com.editora.ui.JavaEditingCostProbeTest
 com.editora.ui.JavaTypingSoakProbeTest
 com.editora.ui.JsDebugProbeFxTest
+com.editora.ui.GoDebugProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

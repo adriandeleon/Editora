@@ -111,4 +111,23 @@ class InlineValueScopeTest {
                 DebugIdentifiers.matchesIn("# x is a string here", Set.of("x"), col -> true),
                 "a name that only occurs in a comment is no match at all");
     }
+
+    @Test
+    void aGoSelectIsControlFlowAndAGoroutineItsOwnScope() {
+        String go = """
+                func work(ch chan int) {
+                \tx := 1
+                \tselect {
+                \tcase v := <-ch:
+                \t\tx += v
+                \t}
+                \tgo func() {
+                \t\ty := x
+                \t}()
+                }
+                """;
+        IntFunction<String> at = lines(go);
+        assertEquals(0, InlineValueScope.headerOf(at, 4), "a select case is the function's");
+        assertEquals(6, InlineValueScope.headerOf(at, 7), "a goroutine's body is its own");
+    }
 }

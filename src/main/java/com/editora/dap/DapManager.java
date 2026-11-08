@@ -185,6 +185,12 @@ public final class DapManager {
      * path, or the command found on the PATH). See {@link #configureExternal}.
      */
     private final Map<String, String> externalLocated = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Folders put first on an external adapter's PATH, by adapter language: the Go toolchain Settings names, which
+     * Delve builds the program with. Empty: the adapter finds its tools on the PATH Editora's processes get.
+     */
+    private final Map<String, List<String>> externalPathDirs = new java.util.concurrent.ConcurrentHashMap<>();
     /** The Debugging setting's Node.js ("" = automatic), see {@link com.editora.run.NodeRuntimes}. */
     private volatile String nodePath = "";
     /** The window's project root for the next JavaScript launch (its package root and workspace folder). */
@@ -1948,9 +1954,8 @@ public final class DapManager {
         if (external == null) {
             throw new IllegalArgumentException(language.id() + " is not an external adapter");
         }
-        String asked = command == null || command.isBlank() ? external.command().getFirst() : command.strip();
         io.submit(() -> {
-            String found = on ? locateExecutable(asked) : null;
+            String found = on ? locateExternal(language, command) : null;
             if (found == null) {
                 externalLocated.remove(language.id());
             } else {
@@ -1960,6 +1965,79 @@ public final class DapManager {
                 Platform.runLater(() -> onDone.accept(found != null));
             }
         });
+    }
+
+    /**
+     * Puts {@code dirs} first on the PATH of adapter language {@code languageId}'s adapter from its next session on
+     * (Go: the folder of the {@code go} Settings names, so that Delve builds with it).
+     */
+    public void setExternalPathDirs(String languageId, List<String> dirs) {
+        externalPathDirs.put(languageId, List.copyOf(dirs));
+    }
+
+    /** {@code path} with {@code first} before its own folders, none twice. Pure. */
+    static String pathWithFirst(List<String> first, @Nullable String path, String separator) {
+        java.util.LinkedHashSet<String> dirs = new java.util.LinkedHashSet<>();
+        for (String d : first) {
+            if (d != null && !d.isBlank()) {
+                dirs.add(d);
+            }
+        }
+        if (path != null && !path.isEmpty()) {
+            dirs.addAll(List.of(path.split(java.util.regex.Pattern.quote(separator))));
+        }
+        return String.join(separator, dirs);
+    }
+
+    /**
+     * External adapter language {@code language}'s adapter as an executable file: {@code command} (a configured path
+     * or command), or when blank the profile's own command ({@code dlv}), found on the PATH; null when not found.
+     * Blocking: off the FX thread.
+     */
+    public static @Nullable String locateExternal(DebugLanguage language, @Nullable String command) {
+        ExternalAdapter external = language.external();
+        if (external == null) {
+            return null;
+        }
+        String asked = command == null || command.isBlank() ? external.command().getFirst() : command.strip();
+        String found = locateExecutable(asked);
+        if (found != null || asked.indexOf('/') >= 0 || asked.indexOf('\\') >= 0) {
+            return found; // a path is that file, or nothing
+        }
+        // `go install` puts Delve in the Go bin folder, which may not have been there when Editora read its PATH.
+        boolean windows = java.io.File.pathSeparatorChar == ';';
+        for (Path dir : DebugLanguages.GO.equals(language)
+                ? goBinDirs(System.getenv(), Path.of(System.getProperty("user.home", "")))
+                : List.<Path>of()) {
+            String inDir = locateExecutable(
+                    dir.resolve(windows ? asked + ".exe" : asked).toString());
+            if (inDir != null) {
+                return inDir;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Where {@code go install} puts programs: {@code $GOBIN}, else each {@code $GOPATH} folder's {@code bin}, else
+     * {@code ~/go/bin}. Pure.
+     */
+    static List<Path> goBinDirs(Map<String, String> env, Path home) {
+        List<Path> out = new ArrayList<>();
+        String gobin = env.get("GOBIN");
+        if (gobin != null && !gobin.isBlank()) {
+            out.add(Path.of(gobin.strip()));
+        }
+        String gopath = env.get("GOPATH");
+        if (gopath != null && !gopath.isBlank()) {
+            for (String dir : gopath.split(java.util.regex.Pattern.quote(java.io.File.pathSeparator))) {
+                if (!dir.isBlank()) {
+                    out.add(Path.of(dir.strip(), "bin"));
+                }
+            }
+        }
+        out.add(home.resolve("go").resolve("bin"));
+        return out;
     }
 
     /** {@code command} as an executable file: itself when it is a path, else found on the PATH; null when neither. */
@@ -1976,8 +2054,9 @@ public final class DapManager {
     /**
      * Debugs {@code file}'s program on {@code language}'s external adapter ({@link DebugLanguage#external}): starts the
      * adapter's command (the executable detection found, else the profile's own), reaches it as its transport says,
-     * then initializes and sends {@code launch} — shaped by the language ({@link ExternalAdapter#launchRequest}).
-     * Restart starts it all again; Stop ends the adapter with the program it ran.
+     * then initializes and sends {@code launch} — shaped by the language ({@link ExternalAdapter#launchRequest}) — or
+     * {@code attach} when the request says so ({@code "request": "attach"}: Stop then detaches, and the program runs
+     * on). Restart starts it all again; Stop ends the adapter with the program it ran.
      */
     public void startExternal(Path file, DebugLanguage language, Map<String, Object> launch) {
         if (managerClosed) {
@@ -2024,7 +2103,16 @@ public final class DapManager {
         int port = external.transport() == ExternalAdapter.Transport.PORT_ARGUMENT ? freePort() : -1;
         ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(external.argv(executable, port)));
         ProcessRunner.applyUserEnv(pb);
-        Path cwd = file.getParent();
+        List<String> first = externalPathDirs.getOrDefault(language.id(), List.of());
+        if (!first.isEmpty()) {
+            Map<String, String> env = pb.environment();
+            String key = env.keySet().stream()
+                    .filter(k -> k.equalsIgnoreCase("PATH"))
+                    .findFirst()
+                    .orElse("PATH");
+            env.put(key, pathWithFirst(first, env.get(key), java.io.File.pathSeparator));
+        }
+        Path cwd = Files.isDirectory(file) ? file : file.getParent();
         if (cwd != null && Files.isDirectory(cwd)) {
             pb.directory(cwd.toFile());
         }
@@ -2037,11 +2125,15 @@ public final class DapManager {
             com.editora.process.ProcessRegistry.killTree(proc);
             return;
         }
+        boolean attach = "attach".equals(launch.get("request"));
         DapClient c = new DapClient(sessionHost(epoch));
         c.setPaths(DapPaths.LOCAL);
         c.setBreakpoints(bps);
         c.setExceptionFilters(filters);
         c.setRunsDebuggee(programConsole);
+        if (attach) {
+            c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
+        }
         AdapterStderr stderr = null;
         java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connected;
         switch (external.transport()) {
@@ -2097,9 +2189,10 @@ public final class DapManager {
                 c.dispose();
                 return;
             }
-            c.launch(launch).whenComplete((v, le) -> {
+            (attach ? c.attach(launch) : c.launch(launch)).whenComplete((v, le) -> {
                 if (le != null) {
-                    fail(epoch, tr("debug.error.launchFailed", msg(le)) + AdapterStderr.suffix(tail));
+                    String key = attach ? "debug.error.attachFailed" : "debug.error.launchFailed";
+                    fail(epoch, tr(key, msg(le)) + AdapterStderr.suffix(tail));
                 }
             });
             Platform.runLater(() -> {

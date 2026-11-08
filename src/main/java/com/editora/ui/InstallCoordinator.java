@@ -131,11 +131,53 @@ final class InstallCoordinator {
         switch (key) {
             case "typst" -> installTypstCli(); // the typst CLI (renderer), not an LSP server
             case "js-debug" -> installSupport(Lang.JAVASCRIPT, null, "js-debug", ok -> {});
+            case "dlv" -> installDebugger(key);
             case "python" -> installSupport(Lang.PYTHON);
             case "javascript" -> installSupport(Lang.JAVASCRIPT);
             case "mermaid" -> installSupport(Lang.MERMAID);
             default -> installSupport(Lang.JAVA);
         }
+    }
+
+    /**
+     * Installs a debugger its language's toolchain installs ({@code dlv}: Delve, by {@code go install}) — when that
+     * toolchain is on the PATH; otherwise says it is needed. Then every adapter is looked for again.
+     */
+    private void installDebugger(String key) {
+        List<Step> steps = InstallCatalog.debuggerInstall(key).orElse(List.of());
+        if (steps.isEmpty()) {
+            return;
+        }
+        if (installingServers.contains(key)) {
+            host.setStatus(tr("status.install.inProgress"));
+            return;
+        }
+        service.detectPrereqs(present -> {
+            Set<Prereq> needed = steps.stream()
+                    .flatMap(s -> s.prereqs().stream())
+                    .collect(Collectors.toCollection(() -> EnumSet.noneOf(Prereq.class)));
+            needed.removeAll(present);
+            if (!needed.isEmpty()) {
+                String names = needed.stream().map(this::prereqName).collect(Collectors.joining(", "));
+                host.setStatus(tr("status.install.needPrereq", names));
+                alert(Alert.AlertType.WARNING, tr("status.install.needPrereq", names));
+                return;
+            }
+            installingServers.add(key);
+            String name = "Delve";
+            host.setStatus(tr("status.install.installing", name));
+            service.install(
+                    steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
+                        installingServers.remove(key);
+                        if (result.ok()) {
+                            ops.reapplyToolSupport();
+                            host.setStatus(tr("status.install.done", name));
+                        } else {
+                            host.setStatus(tr("status.install.failed", name));
+                            alert(Alert.AlertType.ERROR, result.message());
+                        }
+                    });
+        });
     }
 
     /** As above; {@code onlyStep}, when given, is the one step of the language to install. */
