@@ -74,6 +74,38 @@ class PinManagerFxTest {
     }
 
     @Test
+    void pinsAreCarriedThroughNarrowingAndARestoreSaysWhenOneMoved() throws Exception {
+        onFx(() -> {
+            String whole = "a\nb\nc\nd\ne\n";
+            CodeArea area = new CodeArea(whole);
+            PinManager pins = new PinManager(area);
+            pins.toggle(0, "a");
+            pins.toggle(3, "d");
+            int start = area.getAbsolutePosition(2, 0);
+            int end = area.getAbsolutePosition(3, 1);
+            // Narrowed to lines 3–4: the pin on "d" is the region's line 1; the one on "a" is held aside.
+            pins.narrow(start, end, () -> area.replaceText("c\nd"));
+            assertEquals(List.of("d"), pins.expressions(1));
+            assertTrue(pins.expressions(0).isEmpty());
+            pins.widen(() -> area.replaceText(whole));
+            assertEquals(List.of("a"), pins.expressions(0));
+            assertEquals(List.of("d"), pins.expressions(3), "back on its whole-document line");
+
+            // Clearing while narrowed drops the held ones too.
+            pins.narrow(start, end, () -> area.replaceText("c\nd"));
+            pins.clear();
+            pins.widen(() -> area.replaceText(whole));
+            assertTrue(pins.isEmpty());
+
+            // A restore that had to move a pin (its line was edited outside) says so, for the caller to save.
+            assertTrue(pins.restore(List.of(new PinnedLine(0, List.of("e"), "e"))));
+            assertEquals(List.of("e"), pins.expressions(4));
+            assertFalse(pins.restore(List.of(new PinnedLine(4, List.of("e"), "e"))));
+            assertFalse(pins.restore(null));
+        });
+    }
+
+    @Test
     void savedPinsReanchorToTheirLineTextAfterAnOutsideEdit() {
         List<String> lines = List.of("// new first line", "int a = 1;", "int c = a + b;");
         NavigableMap<Integer, PinnedLine> resolved = PinManager.reanchor(

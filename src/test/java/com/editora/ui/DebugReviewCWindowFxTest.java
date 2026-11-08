@@ -376,6 +376,100 @@ class DebugReviewCWindowFxTest {
         }
     }
 
+    // --- pinned values ----------------------------------------------------------------------------------------
+
+    private static java.util.Map<Integer, String> pinned(EditorBuffer b) {
+        Object overlay = FxTestSupport.field(b, "inlineValues");
+        return overlay == null ? null : FxTestSupport.field(overlay, "pinned");
+    }
+
+    @Test
+    void pinnedValuesAreEvaluatedAtEveryStopKeptWithTheProjectAndClearedWhenItRuns() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        PinnedValues pins = debug.pinnedValues();
+        FxTestSupport.runOnFx(() -> {
+            pins.toggle(b, 1, "x"); // line 2: x = n + 1
+            pins.toggle(b, 1, "bad + 1"); // the adapter refuses it
+            // From the selection, then from the caret's identifier, through the command.
+            b.getFocusedArea().selectRange(2, 8, 2, 13); // "x * 2"
+            debug.togglePinAtCaret();
+            b.getFocusedArea().moveTo(3, 12); // on "y" of "return y"
+            debug.togglePinAtCaret();
+        });
+        assertEquals(
+                List.of("x", "bad + 1"),
+                FxTestSupport.callOnFx(() -> b.getPinManager().expressions(1)));
+        assertEquals(
+                List.of("x * 2"), FxTestSupport.callOnFx(() -> b.getPinManager().expressions(2)));
+        assertEquals(
+                List.of("y"), FxTestSupport.callOnFx(() -> b.getPinManager().expressions(3)));
+        assertEquals(
+                3,
+                FxTestSupport.callOnFx(() -> fx.controller
+                        .config
+                        .getPins()
+                        .get(DebugCoordinator.key(util))
+                        .size()),
+                "saved with the project's breakpoints");
+
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            stopAt(session, util, 3, "breakpoint");
+            await("the pins painted", () -> {
+                var shown = pinned(b);
+                return shown != null && shown.size() == 3;
+            });
+            var shown = FxTestSupport.callOnFx(() -> pinned(b));
+            assertEquals(
+                    "x = val(x)  ·  bad + 1 = " + tr("debug.pin.failed", "Cannot evaluate: bad + 1"), shown.get(1));
+            assertEquals("x * 2 = val(x * 2)", shown.get(2));
+
+            // Pinned while paused: it shows at once; Pin to Line in the value popup pins to the popup's line.
+            DebugValuePopup.Source source = FxTestSupport.field(debug.valuePopup(), "source");
+            FxTestSupport.runOnFx(() -> source.pin(b.getFocusedArea(), 0, "n"));
+            await("the popup's pin painted", () -> "n = val(n)".equals(pinned(b).get(0)));
+
+            // Unpin a line; a line with none says so.
+            FxTestSupport.runOnFx(() -> {
+                b.getFocusedArea().moveTo(2, 0);
+                debug.unpinLine();
+            });
+            await("line 3 unpinned", () -> !pinned(b).containsKey(2));
+            assertTrue(FxTestSupport.callOnFx(
+                    () -> b.getPinManager().expressions(2).isEmpty()));
+            FxTestSupport.runOnFx(debug::unpinLine); // nothing left on line 3
+
+            FxTestSupport.runOnFx(manager::resume);
+            session.awaitRequest("continue");
+            await("cleared while running", () -> pinned(b) == null);
+        }
+        // Gone and back: the saved pins come back with the file.
+        FxTestSupport.runOnFx(() -> b.getPinManager().clearLine(0));
+        assertEquals(List.of("x", "bad + 1"), FxTestSupport.callOnFx(() -> {
+            EditorBuffer again = new EditorBuffer();
+            again.setContent(UTIL);
+            again.getPinManager().restore(fx.controller.config.getPins().get(DebugCoordinator.key(util)));
+            return again.getPinManager().expressions(1);
+        }));
+    }
+
+    @Test
+    void thePopupKnowsTheLineItOpenedFor() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        int line = FxTestSupport.callOnFx(() -> {
+            var area = b.getFocusedArea();
+            area.layout();
+            int at = area.getAbsolutePosition(2, 4);
+            var bounds = area.getCharacterBoundsOnScreen(at, at + 1).orElseThrow();
+            return DebugValuePopup.lineAbove(area, bounds.getMinX(), bounds.getMaxY() + 2);
+        });
+        assertEquals(2, line, "just below the word: its own line");
+        assertEquals(-1, (int)
+                FxTestSupport.callOnFx(() -> DebugValuePopup.lineAbove(new org.fxmisc.richtext.CodeArea(), 0, 0)));
+    }
+
     // --- C10 / C11: the editor's and the gutter's debugger menus --------------------------------------------
 
     @Test
