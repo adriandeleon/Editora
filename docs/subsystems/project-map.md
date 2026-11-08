@@ -354,6 +354,21 @@ Definition, Go to Super Method; not Definition or Declaration, which are the row
 Editor submenu at the declaration, with the caret on its name. The same commands typed on the map with a declaration
 row selected ask about it (`ProjectMapView.runRowNavigation`, through the Map window's `HANDLED_COMMANDS`).
 
+**Go to File and Go to Symbol on the Map.** Typed in the Map window — in a card or on the map —
+`file.find` (Ctrl+P in VS Code, Ctrl+Shift+N in IntelliJ, `C-x C-f` in Emacs) and `lsp.gotoSymbol` show the editor's
+pickers over the Map window (`ProjectPanel.mapGotoFile` / `mapGotoSymbol`, through the Map window's
+`HANDLED_COMMANDS`), and what is picked opens as a card on the Map, never a tab (`ProjectMapView.showOnMap`): its row
+revealed, then its card — for a symbol the card of the declaration holding it when the Map holds the file's outline,
+else the file's card scrolled there, the name selected (`MapCards.openPlaceCard`, `MapCardLinks.openPlace`). The
+keyboard goes to it and, picked from a card, Back returns to that card and its caret. The file finder starts in the
+folder of the card the keyboard is in (or of the selected row); a file outside the Map's root, or a new name typed,
+goes to the editor as the finder does there (`FileActions.openPicked`). Go to Symbol asks the server that runs for
+the card's file (or the selected row's) — `workspace/symbol` names no document, so a running server serves a file no
+editor holds (`LspDocumentSymbols.workspaceSession`) — seeded with the card's one-line selection; a library symbol
+opens in the editor (`FileActions.openWorkspaceSymbol`). With no server that answers, it puts `@` in the Map's search
+for a declarations-by-name query instead and says so. A command a card does not run goes on to the Map window's own
+handler: `KeyDispatcher.HANDLED_COMMANDS` is asked from the focused node outwards until one runs the command.
+
 **Linked reference cards** (explore position 5, `MapCardLinks`, `ProjectMapLinkSearch`). A code card's menu and a
 declaration row's menu (the Map's Structure columns and a card's) have **Show References as Cards** and **Show
 Callers as Cards**. A declaration card (or row, whose card opens first) asks about its declaration, its name found on

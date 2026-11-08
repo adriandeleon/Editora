@@ -2554,6 +2554,61 @@ final class ProjectMapView extends VBox {
         return true;
     }
 
+    /** The card the keyboard is in, or null: the place Go to File and Go to Symbol typed on the Map start from. */
+    @Nullable
+    ProjectMapPreview focusedCard() {
+        javafx.scene.Scene scene = surface.getScene();
+        for (Node node = scene == null ? null : scene.getFocusOwner(); node != null; node = node.getParent()) {
+            if (node instanceof ProjectMapPreview card) {
+                return card;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The file Go to File and Go to Symbol typed on the Map start from: {@code card}'s file, else the selected row's
+     * (a declaration's file), else null.
+     */
+    @Nullable
+    Path gotoAnchor(@Nullable ProjectMapPreview card) {
+        Path own = card == null ? null : card.path();
+        if (own != null) {
+            return own;
+        }
+        Path selected = surface.selectedEntry()
+                .filter(entry -> !entry.isPlaceholder())
+                .map(ProjectMapModel.Entry::path)
+                .orElse(null);
+        while (selected != null && ProjectMapStructure.isSymbolPath(selected) && selected.getParent() != null) {
+            selected = selected.getParent();
+        }
+        return selected;
+    }
+
+    /**
+     * Go to File and Go to Symbol typed on the Map (Map code navigation): reveals {@code target} on the Map and opens
+     * its card — at the 0-based {@code line} with {@code name} selected, in the card of the declaration holding it,
+     * or the whole file with a negative line — the keyboard in it and, picked from {@code from}, Back returning
+     * there. A folder is only revealed. False, with nothing done, for a place outside the Map's root.
+     */
+    boolean showOnMap(@Nullable ProjectMapPreview from, Path target, int line, @Nullable String name) {
+        Path normalized = ProjectMapModel.normalize(target);
+        Path currentRoot = root;
+        if (normalized == null
+                || currentRoot == null
+                || !com.editora.config.PathKeys.sameFileSystem(normalized, currentRoot)
+                || !normalized.startsWith(currentRoot)) {
+            return false;
+        }
+        revealPath(normalized);
+        if (!java.nio.file.Files.isDirectory(normalized)) {
+            historyMarkPlace(normalized);
+            cards.openPlaceCard(from, normalized, line, name == null ? null : followName(name));
+        }
+        return true;
+    }
+
     /** Where Show References / Callers as Cards find their places (the panel's language servers and file list). */
     void setLinkSource(MapCardLinks.@Nullable Source source) {
         cards.setLinkSource(source);

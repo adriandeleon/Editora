@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Go to File and Go to Symbol open cards on the Project Map.** Typed in the Map window, the file finder (Ctrl+P in
+  VS Code, Ctrl+Shift+N in IntelliJ, `C-x C-f` in Emacs) and Go to Symbol in Workspace now open over the Map, and what
+  you pick opens as a card there, its name selected, instead of an editor tab. The finder starts in the folder of the
+  card you're in, Go to Symbol asks that card's language server, and Back returns to the card you came from. Without a
+  language server, Go to Symbol starts an `@name` search in the Map instead.
 - **Navigate code on the Project Map.** The editor's code navigation now works inside Map cards and answers with
   cards beside them instead of leaving the Map: Go to Definition (and Peek Definition), Go to Declaration, Go to Type
   Definition, Go to Implementation, Go to Super Method, Find Usages, Call Hierarchy and Type Hierarchy, typed with

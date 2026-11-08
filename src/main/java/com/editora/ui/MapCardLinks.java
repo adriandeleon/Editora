@@ -635,6 +635,23 @@ final class MapCardLinks {
     }
 
     /**
+     * Opens the card of {@code file}'s 0-based {@code line} — the card of the declaration holding it when the file is
+     * outlined, else the whole file's — with {@code name} on that line selected (Go to Symbol and Go to File typed on
+     * the Map). A negative line opens the whole file. Null when it was refused (every card is pinned).
+     */
+    @Nullable
+    ProjectMapPreview openPlace(Path file, int line, @Nullable String name) {
+        List<ProjectMapStructure.Node> roots = line < 0 ? null : outlineOf(file);
+        ProjectMapStructure.Node node = roots == null ? null : enclosing(roots, line);
+        ProjectMapPreview card = node != null ? cards.openDeclaration(node) : cards.openFile(file);
+        if (card != null && line >= 0) {
+            card.linksRevealPlace(
+                    line, name == null || name.isBlank() ? null : ProjectMapLinkSearch.namePattern(name, false));
+        }
+        return card;
+    }
+
+    /**
      * The places of an answer grouped by the declaration that holds them — the deepest of {@code outline}'s
      * declarations whose lines hold the place — in path and line order, each with how many places it holds. A file
      * whose outline is not given (null) or a place outside every declaration groups by file. Matched by name, a
