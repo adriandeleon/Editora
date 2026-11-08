@@ -331,6 +331,17 @@ public final class DapClient implements IDebugProtocolClient {
         return caps != null && Boolean.TRUE.equals(caps.getSupportsGotoTargetsRequest());
     }
 
+    /**
+     * Whether ending the session asks the adapter to end the program too (DAP {@code terminateDebuggee}). False for a
+     * program the session attached to, which debugpy would otherwise kill on Stop; java-debug ignores it for an attach.
+     */
+    private volatile boolean terminateOnDisconnect = true;
+
+    /** See {@link #terminateOnDisconnect}; call before the session ends. */
+    public void setTerminateOnDisconnect(boolean terminate) {
+        this.terminateOnDisconnect = terminate;
+    }
+
     /** The method breakpoints and field watchpoints in force (sent on {@code initialized} and when they change). */
     private volatile List<DapModels.MemberBreakpoint> memberBreakpoints = List.of();
 
@@ -1738,7 +1749,7 @@ public final class DapClient implements IDebugProtocolClient {
         try {
             if (server != null) {
                 DisconnectArguments a = new DisconnectArguments();
-                a.setTerminateDebuggee(true);
+                a.setTerminateDebuggee(terminateOnDisconnect);
                 disconnect = timed(server.disconnect(a));
                 ignore(disconnect);
             }

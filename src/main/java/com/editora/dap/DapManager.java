@@ -1920,6 +1920,77 @@ public final class DapManager {
     }
 
     /**
+     * Attaches to a Python listening for a debugger ({@code python -m debugpy --listen host:port …}, or one that
+     * called {@code debugpy.listen}): that debugpy runs its own adapter on the port, so the session connects to it
+     * over the socket and sends {@code attach}, as VS Code's {@code connect} configuration does. {@code anchor} names the session (a file or folder of this
+     * machine). Restart attaches again; Stop detaches and leaves the program running.
+     */
+    public void startPythonAttach(Path anchor, String host, int port) {
+        // Not readyProgram: the program brings its own debugpy, so none need be installed here.
+        if (managerClosed) {
+            return;
+        }
+        if (!enabled) {
+            listener.onError(tr("debug.error.disabled"));
+            return;
+        }
+        if (client != null) {
+            stop(); // one session at a time
+        }
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("python");
+        if (spec == null) {
+            listener.onError(tr("debug.error.noAdapter"));
+            return;
+        }
+        restartAction = () -> startPythonAttach(anchor, host, port);
+        debugFile = anchor;
+        long epoch = beginSession();
+        setState(State.STARTING);
+        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<String> filters = filtersFor("python");
+        startupTask = io.submit(() -> {
+            try {
+                if (!isCurrent(epoch)) {
+                    return;
+                }
+                DapClient c = new DapClient(sessionHost(epoch));
+                c.setPaths(DapPaths.LOCAL);
+                c.setBreakpoints(bps);
+                c.setExceptionFilters(filters);
+                c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
+                if (!publishClient(epoch, c)) {
+                    c.dispose();
+                    return;
+                }
+                onOutput(epoch, tr("debug.console.attaching", host + ":" + port) + "\n", COMMAND_CATEGORY);
+                // `debugpy --listen` runs debugpy's own adapter on that port: the client talks DAP to it directly.
+                c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
+                    if (e != null) {
+                        fail(epoch, tr("debug.error.debugpyConnect", msg(e)));
+                        return;
+                    }
+                    if (!isCurrent(epoch)) {
+                        c.dispose();
+                        return;
+                    }
+                    c.attach(LaunchConfig.pythonAttach(host, port)).whenComplete((v, ae) -> {
+                        if (ae != null) {
+                            fail(epoch, tr("debug.error.attachFailed", msg(ae)));
+                        }
+                    });
+                    Platform.runLater(() -> {
+                        if (isCurrent(epoch, c)) {
+                            setState(State.RUNNING);
+                        }
+                    });
+                });
+            } catch (Exception e) {
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
+            }
+        });
+    }
+
+    /**
      * Debugs a pytest run ({@code python -m pytest args}) in {@code cwd}, anchored at test file {@code anchor}.
      * When the interpreter has no pytest, {@code unittestArgs} (non-empty) run under {@code python -m unittest}
      * instead; otherwise the session ends saying pytest is missing for that interpreter.

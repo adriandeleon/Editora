@@ -856,6 +856,23 @@ class DapManagerSessionFxTest {
     }
 
     @Test
+    void aPythonListeningForADebuggerIsAttachedToOverItsSocketAndStopLeavesItRunning() throws Exception {
+        int running = count("RUNNING");
+        onFx(() -> dap.startPythonAttach(dir, "localhost", adapter.port()));
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("attach");
+        assertEquals("python", session.launchArgs.get("type"));
+        Map<?, ?> connect = (Map<?, ?>) session.launchArgs.get("connect");
+        assertEquals("localhost", connect.get("host"));
+        assertEquals(adapter.port(), ((Number) connect.get("port")).intValue(), "JSON carries the port as a number");
+        awaitEvents("RUNNING", running + 1);
+
+        onFx(dap::stop);
+        assertTrue(session.disconnected.await(10, TimeUnit.SECONDS));
+        assertEquals(Boolean.FALSE, session.terminateDebuggee, "Stop detaches: debugpy would end the program");
+    }
+
+    @Test
     void pauseDoesNothingWhenTheAdapterCannotListItsThreads() throws Exception {
         project();
         FakeDebugAdapter.Session session = launch();

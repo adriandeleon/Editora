@@ -3536,11 +3536,12 @@ final class DebugCoordinator {
         }
         List<String> rows = new ArrayList<>(earlier);
         rows.add(""); // "Another address…"
+        rows.add(PROCESS_ROW); // "A program on this machine…"
         QuickOpen<String> picker = new QuickOpen<>(
                 tr("dialog.debug.attachTitle"),
                 tr("debug.attach.pickPrompt"),
                 () -> rows,
-                a -> a.isEmpty() ? tr("debug.attach.another") : a,
+                a -> a.isEmpty() ? tr("debug.attach.another") : PROCESS_ROW.equals(a) ? tr("debug.attach.process") : a,
                 a -> "",
                 a -> {
                     if (a == null) {
@@ -3548,12 +3549,146 @@ final class DebugCoordinator {
                     }
                     if (a.isEmpty()) {
                         promptAttachAddress(b, language, earlier.get(0));
+                    } else if (PROCESS_ROW.equals(a)) {
+                        debugAttachToProcess();
                     } else {
                         attachTo(b, language, a);
                     }
                 });
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());
+    }
+
+    /** The Attach picker's row that opens Attach to Process (no address can look like it). */
+    private static final String PROCESS_ROW = "\u0000process";
+
+    /**
+     * Debug: Attach to Process — the Java, Node.js and Python programs running on this machine, those listening for
+     * a debugger first (a JVM's JDWP agent, Node's inspector, debugpy's {@code --listen}); picking one attaches the
+     * right debugger to it. One started without debugging says what to start it with.
+     */
+    void debugAttachToProcess() {
+        host.setStatus(tr("status.debug.scanningProcesses"));
+        Thread.ofPlatform().daemon().name("editora-process-scan").start(() -> {
+            List<com.editora.dap.LocalProcesses.Target> found;
+            try {
+                found = com.editora.dap.LocalProcesses.scan();
+            } catch (RuntimeException e) {
+                found = List.of();
+            }
+            List<com.editora.dap.LocalProcesses.Target> targets = found;
+            Platform.runLater(() -> showProcessPicker(targets));
+        });
+    }
+
+    private void showProcessPicker(List<com.editora.dap.LocalProcesses.Target> targets) {
+        host.setStatus(null);
+        QuickOpen<com.editora.dap.LocalProcesses.Target> picker = new QuickOpen<>(
+                tr("debug.attachProcess.title"),
+                tr("debug.attachProcess.prompt"),
+                () -> targets,
+                t -> tr("debug.attachProcess.row", t.name(), String.valueOf(t.pid())),
+                DebugCoordinator::processDetail,
+                t -> {
+                    if (t != null) {
+                        attachToProcess(t);
+                    }
+                });
+        if (targets.isEmpty()) {
+            picker.setPlaceholder(tr("debug.attachProcess.none"));
+        }
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /** A row's second line: which debugger, and where it listens — or what to start the program with. Pure. */
+    static String processDetail(com.editora.dap.LocalProcesses.Target t) {
+        String kind = tr("debug.attachProcess.kind." + t.kind().name().toLowerCase(java.util.Locale.ROOT));
+        return t.attachable()
+                ? tr("debug.attachProcess.listening", kind, t.address())
+                : tr("debug.attachProcess.notListening", kind, startFlag(t.kind()));
+    }
+
+    /** What a program of {@code kind} is started with so a debugger can attach. Pure. */
+    static String startFlag(com.editora.dap.LocalProcesses.Kind kind) {
+        return switch (kind) {
+            case JAVA -> "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005";
+            case NODE -> "--inspect";
+            case PYTHON -> "-m debugpy --listen 5678";
+        };
+    }
+
+    /** Attaches the debugger of {@code t}'s kind to it, or says what to start it with when it is not listening. */
+    void attachToProcess(com.editora.dap.LocalProcesses.Target t) {
+        if (!t.attachable()) {
+            host.setStatus(tr("status.debug.processNotListening", t.name(), startFlag(t.kind())));
+            return;
+        }
+        switch (t.kind()) {
+            case JAVA -> {
+                EditorBuffer anchor = jvmAnchor();
+                if (anchor == null) {
+                    host.setStatus(tr("status.debug.attachNeedsJavaFile"));
+                    return;
+                }
+                String language = attachLanguage(anchor);
+                if (language != null) {
+                    attachTo(anchor, language, t.address());
+                }
+            }
+            case NODE -> {
+                if (!debugEffectiveFor("javascript")) {
+                    host.setStatus(unavailableMessage("javascript", null));
+                    return;
+                }
+                EditorBuffer b = host.activeBuffer();
+                Path dir = b != null && b.getPath() != null ? b.getPath().getParent() : ops.projectRoot();
+                String label = t.name() + " (" + t.pid() + ")";
+                ops.openToolWindow();
+                nameSession(label);
+                relaunch = null; // an attach is re-attached as it was
+                withClosedBreakpoints(() -> dapManager.startJsAttach(
+                        t.host(), t.port(), label, dir, List.of(com.editora.dap.JsLaunch.NODE_INTERNALS), false));
+            }
+            case PYTHON -> {
+                if (!debugSupportEnabled()) {
+                    host.setStatus(tr("statusbar.tip.debugDisabled"));
+                    return; // the program brings its own debugpy: none is needed here
+                }
+                EditorBuffer b = host.activeBuffer();
+                Path active = b != null && "python".equals(b.getLanguage()) ? b.getPath() : null;
+                Path root = ops.projectRoot();
+                Path anchor = active != null ? active : root != null ? root : Path.of(System.getProperty("user.home"));
+                ops.openToolWindow();
+                nameSession(t.name() + " (" + t.pid() + ")");
+                relaunch = null;
+                withClosedBreakpoints(() -> dapManager.startPythonAttach(anchor, t.host(), t.port()));
+            }
+        }
+    }
+
+    /**
+     * The file a JVM attach is made from: the active one when it is Java (or another JVM language), else the first
+     * such tab — java-debug resolves the attached program's classes through that file's project.
+     */
+    private @Nullable EditorBuffer jvmAnchor() {
+        EditorBuffer active = host.activeBuffer();
+        if (isJvmFile(active)) {
+            return active;
+        }
+        EditorBuffer[] found = new EditorBuffer[1];
+        host.forEachBuffer(b -> {
+            if (found[0] == null && isJvmFile(b)) {
+                found[0] = b;
+            }
+        });
+        return found[0];
+    }
+
+    private static boolean isJvmFile(@Nullable EditorBuffer b) {
+        return b != null
+                && b.getPath() != null
+                && ("java".equals(b.getLanguage()) || jvmAdapterLanguage(b.getPath()) != null);
     }
 
     /**

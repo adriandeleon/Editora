@@ -1144,6 +1144,30 @@ the screen. A line drawn only a pulse or two after the stop (a file just opened)
 sends only `exceptionId` and its `toString()` as a quoted string value, so the card strips the quotes and the type in
 front. **Don’t Stop on Caught Exceptions** (a caught exception, with the caught toggle on) turns that toggle off.
 The opt-in `ExceptionCardProbeFxTest` checks a caught then an uncaught exception against java-debug.
+**Attach to Process** (`debug.attachToProcess`; [`dap/LocalProcesses`](../../src/main/java/com/editora/dap/LocalProcesses.java))
+reads every process's command line (`ProcessHandle.Info`; on Windows, where other processes' arguments are not given
+that way, `Win32_Process` through PowerShell) and lists the Java, Node.js and Python ones: a JVM whose
+`-agentlib:jdwp` / `-Xrunjdwp` has `server=y` and a fixed `address` (a wildcard host is this machine; `server=n` or
+`address=0` cannot be attached to), a Node.js with `--inspect`, `--inspect-brk` or `--inspect-wait` (default 9229;
+`--inspect-port` alone does not listen), and a Python under `-m debugpy --listen`. A JVM is attached through the
+ordinary Java attach (`attachTo`, from the active Java tab or the first open one, and remembered for Reattach), a
+Node.js through `startJsAttach`, and a Python through the new `DapManager.startPythonAttach`: `debugpy --listen` runs
+debugpy's own adapter on that port, so the session connects to it over the socket (`DapClient.connect`) and sends
+`attach` — no local debugpy is needed — and ends with `terminateDebuggee: false`
+(`DapClient.setTerminateOnDisconnect`), since debugpy would otherwise end the program on Stop. The opt-in
+`AttachToProcessProbeFxTest` attaches to a real JVM, Python and Node.js; each test skips without its tools.
+**Attach to Process** (`debug.attachToProcess`; [`dap/LocalProcesses`](../../src/main/java/com/editora/dap/LocalProcesses.java))
+reads every process's command line (`ProcessHandle.Info`; on Windows, where other processes' arguments are not given
+that way, `Win32_Process` through PowerShell) and lists the Java, Node.js and Python ones: a JVM whose
+`-agentlib:jdwp` / `-Xrunjdwp` has `server=y` and a fixed `address` (a wildcard host is this machine; `server=n` or
+`address=0` cannot be attached to), a Node.js with `--inspect`, `--inspect-brk` or `--inspect-wait` (default 9229;
+`--inspect-port` alone does not listen), and a Python under `-m debugpy --listen`. A JVM is attached through the
+ordinary Java attach (`attachTo`, from the active Java tab or the first open one, and remembered for Reattach), a
+Node.js through `startJsAttach`, and a Python through the new `DapManager.startPythonAttach`: `debugpy --listen` runs
+debugpy's own adapter on that port, so the session connects to it over the socket (`DapClient.connect`) and sends
+`attach` — no local debugpy is needed — and ends with `terminateDebuggee: false`
+(`DapClient.setTerminateOnDisconnect`), since debugpy would otherwise end the program on Stop. The opt-in
+`AttachToProcessProbeFxTest` attaches to a real JVM, Python and Node.js; each test skips without its tools.
 Restart goes
 through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
 build, closed-file breakpoints) rather than only the adapter launch. `debug.start` in a JUnit test file that

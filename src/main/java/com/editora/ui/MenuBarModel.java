@@ -290,6 +290,7 @@ final class MenuBarModel {
                                 "debug.start",
                                 "debug.mainClass",
                                 "debug.attach",
+                                "debug.attachToProcess",
                                 "debug.reattach",
                                 "debug.stop",
                                 "debug.restart",

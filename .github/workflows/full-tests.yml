@@ -310,6 +310,12 @@ jobs:
           test -x "$HOME/.editora/plugins/lsp/java/bin/jdtls"
           compgen -G "$HOME/.editora/plugins/dap/java/com.microsoft.java.debug.plugin-*.jar"
 
+      # debugpy for AttachToProcessProbeFxTest's Python program (debugpy --listen), in Editora's own folder.
+      - name: Install debugpy
+        run: |
+          scripts/install-debugpy.sh
+          PYTHONPATH="$HOME/.editora/plugins/dap/python" python3 -c "import debugpy; print(debugpy.__version__)"
+
       # JavaDebugRealAdapterProbeFxTest: a Maven project launch, a program Editora starts itself (runInTerminal),
       # and Stop / window close leaving no debuggee or compile folder — against the real java-debug.
       # PlainFolderDebugProbeFxTest: F5 in a two-package plain folder, an edit, F5, a compile error (review 3, C208).
@@ -319,8 +325,10 @@ jobs:
       # outline) stop on entering the method and where the field is assigned (java-debug function/data breakpoints).
       # ThreadsViewProbeFxTest: the Threads view's Pause Thread / Resume Thread act on one thread only.
       # ExceptionCardProbeFxTest: a caught then an uncaught exception open the exception card under the line.
+      # AttachToProcessProbeFxTest: a JVM listening for JDWP and a Python under debugpy --listen are found by
+      # Attach to Process, stop at a breakpoint, and keep running after Stop (its Node test runs in the Node job).
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython* -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release
@@ -368,5 +376,6 @@ jobs:
       # TypeScriptServerNodeProbeFxTest: a JavaScript file gets a diagnostic from the real server Editora starts.
       # JsDebugProbeFxTest: a breakpoint hits, steps, and the session ends with the program.
       # PyrightProbeFxTest: Pyright analyses with the project venv, tags hints, organizes imports once.
+      # AttachToProcessProbeFxTest#aNode*: a Node.js started with --inspect is found by Attach to Process and attached.
       - name: Test the TypeScript server, JavaScript debugging and Pyright
-        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode* -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
