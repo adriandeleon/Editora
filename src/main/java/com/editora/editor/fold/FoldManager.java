@@ -109,6 +109,12 @@ public final class FoldManager {
     static final String CONDITION_MARK_PATH = "M7 8.5h10v2.4H7zM7 13.1h10v2.4H7z";
     /** A "λ" over a breakpoint dot that also (or only) stops inside lambdas of its line. */
     static final String LAMBDA_MARK_PATH = "M8 6h2.6L17.2 18h-2.6zM11.3 10.4l1.4 2.4L9.8 18H7.2z";
+    /** An arrow into the dot of a method breakpoint: it stops on entering the method (Eclipse's entry mark). */
+    static final String METHOD_MARK_PATH = "M5.5 10.6h6.6V7.4l5.9 4.6-5.9 4.6v-3.2H5.5z";
+    /** An eye over the dot of a field watchpoint: it watches the field (IntelliJ's watchpoint eye). */
+    static final String FIELD_MARK_PATH =
+            "M12 7.6c-3 0-5.4 1.9-6.6 4.4 1.2 2.5 3.6 4.4 6.6 4.4s5.4-1.9 6.6-4.4C17.4 9.5 15 7.6 12 7.6z"
+                    + "M12 14.3a2.3 2.3 0 1 1 0-4.6 2.3 2.3 0 0 1 0 4.6z";
     /** A "1" over the dot of a temporary breakpoint (removed once hit), in the dot's 24-unit box. */
     static final String TEMPORARY_MARK_PATH = "M10.6 6.5h2.8v11h-2.8zM8.4 8.6l2.2-2.1v2.9l-2.2 1.2z";
     /** The execution-point arrow drawn in the breakpoint strip of the line the debugger is stopped on. */
@@ -2046,13 +2052,23 @@ public final class FoldManager {
         svg.setScaleY(0.5);
         boolean conditional = kinds.contains("conditional");
         boolean lambda = kinds.contains("lambda");
-        if (!conditional && !lambda && !kinds.contains("temporary")) {
+        boolean method = kinds.contains("method");
+        boolean field = kinds.contains("field");
+        if (!conditional && !lambda && !method && !field && !kinds.contains("temporary")) {
             return new Group(svg);
         }
-        // "=" over the dot: a condition, readable without telling colours apart; "λ" one that stops in lambdas;
-        // "1" a temporary breakpoint.
+        // An arrow in: a method breakpoint; an eye: a field watchpoint (their colour says a condition). "=" over the
+        // dot: a condition, readable without telling colours apart; "λ" one that stops in lambdas; "1" temporary.
         SVGPath mark = new SVGPath();
-        mark.setContent(conditional ? CONDITION_MARK_PATH : lambda ? LAMBDA_MARK_PATH : TEMPORARY_MARK_PATH);
+        mark.setContent(
+                method
+                        ? METHOD_MARK_PATH
+                        : field
+                                ? FIELD_MARK_PATH
+                                : conditional ? CONDITION_MARK_PATH : lambda ? LAMBDA_MARK_PATH : TEMPORARY_MARK_PATH);
+        if (field) {
+            mark.setFillRule(javafx.scene.shape.FillRule.EVEN_ODD); // the pupil is a hole in the eye
+        }
         mark.getStyleClass().add("breakpoint-condition-mark");
         if (kinds.contains("muted")) {
             mark.getStyleClass().add("breakpoint-muted"); // faded with its dot

@@ -73,9 +73,17 @@ final class MemberBreakpointCommands {
         return out;
     }
 
+    private Runnable onChanged = () -> {};
+
+    /** Runs after every change to the list (the gutter's marks follow it). */
+    void setOnChanged(Runnable onChanged) {
+        this.onChanged = onChanged == null ? () -> {} : onChanged;
+    }
+
     private void save(List<MemberBreakpoint> list) {
         ops.persistMemberBreakpoints(list);
         push();
+        onChanged.run();
     }
 
     /** Adds {@code m}, or removes the breakpoint already on its member. Reports which on the status line. */
