@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Go to File and Go to Symbol open cards on the Project Map.** Typed in the Map window, the file finder (Ctrl+P in
+  VS Code, Ctrl+Shift+N in IntelliJ, `C-x C-f` in Emacs) and Go to Symbol in Workspace now open over the Map, and what
+  you pick opens as a card there, its name selected, instead of an editor tab. The finder starts in the folder of the
+  card you're in, Go to Symbol asks that card's language server, and Back returns to the card you came from. Without a
+  language server, Go to Symbol starts an `@name` search in the Map instead.
 - **Method breakpoints and field watchpoints show in the gutter.** They were listed only in *Debug: Breakpoints*.
   Each is now marked on its member's declaration line in an open Java file — every overload of a method — as
   IntelliJ and Eclipse do: a dot with an arrow into it for a method breakpoint, a dot with an eye for a field

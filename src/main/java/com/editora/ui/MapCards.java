@@ -220,6 +220,12 @@ final class MapCards {
      * previews).
      */
     private final Set<Region> cardColumnCards = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    /**
+     * Cards opened by Go to Symbol and Go to File (Map code navigation): no row or column asked for them, so they stay
+     * until their file's own folder is collapsed (see {@link #cardOrphaned}).
+     */
+    private final Set<ProjectMapPreview> pickedCards =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     /** A card of the last session is being brought back: its Structure column opens without moving it (B6). */
     private boolean restoringCard;
 
@@ -469,10 +475,15 @@ final class MapCards {
      * new step forgets the Forward ones), and the keyboard goes to {@code to}, brought into view once it is laid out.
      */
     private void followed(ProjectMapPreview from, ProjectMapPreview to) {
+        followed(from, from.caretOffset(), to);
+    }
+
+    /** {@link #followed(ProjectMapPreview, ProjectMapPreview)} with {@code from}'s caret as it was before the step. */
+    private void followed(ProjectMapPreview from, int fromCaret, ProjectMapPreview to) {
         if (disposed) {
             return;
         }
-        backTrail.push(new TrailStop(from, from.caretOffset()));
+        backTrail.push(new TrailStop(from, fromCaret));
         while (backTrail.size() > TRAIL_LIMIT) {
             backTrail.removeLast();
         }
@@ -535,6 +546,30 @@ final class MapCards {
     @Nullable
     ProjectMapPreview openFileCard(Path file) {
         return previewFile(file.toAbsolutePath().normalize(), file);
+    }
+
+    /**
+     * Go to Symbol and Go to File on the Map: opens (or brings up) the card of {@code file}'s 0-based {@code line} —
+     * the card of the declaration holding it, the file outlined first when it can be — with {@code name} selected
+     * there; a negative line opens the whole file. The keyboard goes to it and, typed in {@code from}, Back returns
+     * there. Nothing opens when every open card is pinned (the status line says so).
+     */
+    void openPlaceCard(@Nullable ProjectMapPreview from, Path file, int line, @Nullable String name) {
+        Path normalized = file.toAbsolutePath().normalize();
+        ProjectMapPreview stepFrom = from != null && cardTouches.containsKey(from) ? from : null;
+        int fromCaret = stepFrom == null ? 0 : stepFrom.caretOffset(); // before the place moves it, if the same card
+        Consumer<@Nullable ProjectMapPreview> opened = card -> {
+            if (card == null || disposed) {
+                return;
+            }
+            pickedCards.add(card);
+            if (stepFrom != null && cardTouches.containsKey(stepFrom)) {
+                followed(stepFrom, fromCaret, card);
+            } else {
+                card.focusContent();
+            }
+        };
+        links.openPlace(normalized, line, name, opened);
     }
 
     /**
@@ -2175,6 +2210,7 @@ final class MapCards {
         cardTouches.remove(preview);
         pinnedCards.remove(preview);
         cardColumnCards.remove(preview);
+        pickedCards.remove(preview);
         cardsGitRequests.remove(preview);
         closeCardNotes(preview);
         closeCardStructure(preview);
@@ -2213,6 +2249,7 @@ final class MapCards {
         cardDiskRefresh.stop();
         cardTouches.clear();
         pinnedCards.clear();
+        pickedCards.clear();
         cardsGitRequests.clear();
         backTrail.clear();
         forwardTrail.clear();
@@ -2287,11 +2324,15 @@ final class MapCards {
 
     /**
      * {@link #orphaned}, except that a declaration card stays while its file card's Structure column is out and the
-     * file's own row is still on the map. One asked for from that column goes with the column, whether or not its row
-     * is on the map, as one asked for from the Map's column goes with its row.
+     * file's own row is still on the map, and a picked one ({@link #pickedCards}) while its file's row is. One asked
+     * for from that column goes with the column, whether or not its row is on the map, as one asked for from the
+     * Map's column goes with its row.
      */
     private boolean cardOrphaned(Path root, Path key, ProjectMapPreview card, Set<Path> shown) {
         Path file = ProjectMapStructure.isSymbolPath(key) ? structure.fileOf(key) : null;
+        if (pickedCards.contains(card)) {
+            return orphaned(root, file != null ? file : key, shown); // a pick goes with its file's folder only
+        }
         if (file != null && cardColumnCards.contains(card)) {
             return cardStructureOf(file) == null || orphaned(root, file, shown);
         }

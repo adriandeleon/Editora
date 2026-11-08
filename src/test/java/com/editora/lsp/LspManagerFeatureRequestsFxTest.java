@@ -987,10 +987,17 @@ class LspManagerFeatureRequestsFxTest {
                 modern,
                 "a symbol with no file cannot be jumped to; one with only a file opens at its top");
 
+        // workspace/symbol names no document: a file no editor holds (a Project Map card's) is answered by the server
+        // running for its folder; a file no server serves gets nothing.
         Path other = unopened();
-        assertTrue(this.<List<LspManager.WorkspaceSymbolMatch>>await(cb -> manager.workspaceSymbols(other, "", cb))
+        assertTrue(manager.supportsWorkspaceSymbols(other));
+        assertEquals(
+                modern,
+                this.<List<LspManager.WorkspaceSymbolMatch>>await(cb -> manager.workspaceSymbols(other, "", cb)));
+        Path unserved = Files.writeString(root.resolve("notes.txt"), "notes\n");
+        assertTrue(this.<List<LspManager.WorkspaceSymbolMatch>>await(cb -> manager.workspaceSymbols(unserved, "", cb))
                 .isEmpty());
-        assertFalse(manager.supportsWorkspaceSymbols(other));
+        assertFalse(manager.supportsWorkspaceSymbols(unserved));
     }
 
     // --- semantic token deltas (#679) ------------------------------------------------------------------

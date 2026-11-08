@@ -705,7 +705,8 @@ public class KeyDispatcher {
      * — multi-key chords included ({@code C-c n}) — and answers whether it ran it. A Project Map card adds a
      * Personal Note or a bookmark to its own file this way: dispatched globally the command acted on the active
      * editor tab, a different file. Unlike {@link #CLAIMED_KEYS} it is keyed by command, so it follows the user's
-     * keymap and leaves a prefix such as {@code C-c} alone.
+     * keymap and leaves a prefix such as {@code C-c} alone. A component that does not run the command passes it to
+     * the nearest enclosing one that declares this too: a Map card's Go to File reaches the Map window's own.
      */
     public static final String HANDLED_COMMANDS = "editora.handlesCommands";
 
@@ -716,7 +717,9 @@ public class KeyDispatcher {
                     && node.getProperties().get(HANDLED_COMMANDS) instanceof java.util.function.Predicate<?> rule) {
                 @SuppressWarnings("unchecked")
                 var runs = (java.util.function.Predicate<String>) rule;
-                return runs.test(commandId);
+                if (runs.test(commandId)) {
+                    return true;
+                }
             }
             node = node.getParent();
         }
