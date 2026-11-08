@@ -92,6 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Commit window says when a clean tree still has commits to push.** Below "Nothing to commit — working tree
+  clean" it now adds "2 commits to push to origin/main" and a Push button, instead of leaving the small `↑2` in the
+  header as the only sign. A branch with no upstream keeps the header's `↑ publish` alone.
 - **The Map's Project overview opens on every session's first Map open.** The Overview card used to open once per
   workspace, the first time ever; it now opens the first time the Map shows a folder in each session (not again
   when the window is closed and opened again), so a Map opened afresh starts from the project's facts. ⋯ → Project
