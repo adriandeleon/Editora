@@ -270,6 +270,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         /** Opens {@code url} in the browser, through the window's link choke point (a Map card's Quick Documentation). */
         default void openExternalUrl(String url) {}
 
+        /** Go to File typed on the Map, for a file the Map cannot show: opened in the editor as its finder would. */
+        default void openPicked(Path file) {}
+
+        /** Go to Symbol typed on the Map, for a symbol the Map cannot show (a library's): opened in the editor. */
+        default void openWorkspaceSymbol(Path anchor, com.editora.lsp.LspManager.WorkspaceSymbolMatch match) {}
+
         /**
          * The commit that last changed {@code file} — with {@code startLine >= 0}, its 0-based lines {@code
          * startLine..endLine} — for a Map card's status line (Map explore round, position 9); null, on the FX thread,
@@ -393,6 +399,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * Project window), where an open Map stays on the folder it was opened on (see {@link #setMapRootPinned}).
      */
     private @Nullable Path mapRoot;
+    /** The window's language servers: Go to Symbol typed on the Map asks them ({@link #mapGotoSymbol}). */
+    private com.editora.lsp.@Nullable LspManager mapServers;
     /** Whether this window's root follows its active tab, so an open Map keeps its own root. */
     private java.util.function.BooleanSupplier mapRootPinned = () -> false;
     /** When the Map last asked to create a file in a folder (New ▸ from a Map row), to reveal the result. */
@@ -790,11 +798,96 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 }
                 return true;
             }
+            case "file.find" -> {
+                return mapGotoFile();
+            }
+            case "lsp.gotoSymbol" -> {
+                return mapGotoSymbol();
+            }
             default -> {
                 // Go to Implementation, Find Usages… on a selected declaration row: answered as cards on the Map.
                 return mapView.runRowNavigation(commandId);
             }
         }
+    }
+
+    /**
+     * Go to File typed on the Map (Map code navigation): the editor's file finder over the Map window, starting in
+     * the folder of the card the keyboard is in (or of the selected row); the file picked opens as a card on the Map,
+     * and Back in it returns to that card. A file outside the Map's root, or a new one typed, goes to the editor.
+     */
+    private boolean mapGotoFile() {
+        Path root = mapRoot;
+        javafx.stage.Stage owner = mapWindow.stage();
+        if (root == null || owner == null) {
+            return false;
+        }
+        ProjectMapPreview from = mapView.focusedCard();
+        Path anchor = mapView.gotoAnchor(from);
+        Path start = anchor == null ? root : java.nio.file.Files.isDirectory(anchor) ? anchor : anchor.getParent();
+        Path startDir = start == null ? root : start;
+        FileFinder finder = new FileFinder(() -> startDir, picked -> {
+            if (!java.nio.file.Files.exists(picked) || !mapView.showOnMap(from, picked, -1, null)) {
+                FileActions actions = fileActions;
+                if (actions != null) {
+                    actions.openPicked(picked);
+                    raiseEditorWindow();
+                }
+            }
+        });
+        finder.setOverlayHost(mapWindow.overlayHost());
+        finder.show(owner);
+        return true;
+    }
+
+    /**
+     * Go to Symbol typed on the Map (Map code navigation): the editor's workspace-symbol picker over the Map window,
+     * asked of the language server of the card the keyboard is in (or of the selected row's file), its one-line
+     * selection the query as in the editor; the symbol picked opens as a card on the Map, its name selected, and Back
+     * in it returns to that card. A library symbol goes to the editor. Without a server that answers, the Map's own
+     * search is offered for an {@code @name} query.
+     */
+    private boolean mapGotoSymbol() {
+        if (mapRoot == null) {
+            return false;
+        }
+        ProjectMapPreview from = mapView.focusedCard();
+        Path anchor = mapView.gotoAnchor(from);
+        com.editora.lsp.LspManager servers = mapServers;
+        if (servers == null || anchor == null || !servers.supportsWorkspaceSymbols(anchor)) {
+            mapStatusLine.show(tr("project.map.goto.symbolSearch"));
+            mapFilterField.requestFocus();
+            mapFilterField.setText("@");
+            mapFilterField.end();
+            return true;
+        }
+        Path asked = anchor;
+        String selected = from == null ? null : from.editor().getSelectedText();
+        String seed = selected != null && !selected.isBlank() && !selected.contains("\n") ? selected.strip() : "";
+        new WorkspaceSymbolPopup(mapWindow.overlayHost(), new WorkspaceSymbolPopup.Ops() {
+                    @Override
+                    public void query(String text, Consumer<List<com.editora.lsp.LspManager.WorkspaceSymbolMatch>> cb) {
+                        servers.workspaceSymbols(
+                                asked,
+                                text,
+                                ms -> cb.accept(SymbolRanking.withoutExcluded(ms, servers.javaFilteredTypes())));
+                    }
+
+                    @Override
+                    public void open(com.editora.lsp.LspManager.WorkspaceSymbolMatch match) {
+                        Path file = match.file();
+                        if (file != null && mapView.showOnMap(from, file, match.line(), match.name())) {
+                            return;
+                        }
+                        FileActions actions = fileActions;
+                        if (actions != null) {
+                            actions.openWorkspaceSymbol(asked, match);
+                            raiseEditorWindow();
+                        }
+                    }
+                })
+                .show(seed);
+        return true;
     }
 
     /**
@@ -1136,6 +1229,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * results come from this panel's project index (Map refactor stage 2).
      */
     void shareIndexes(IndexCoordinator index, com.editora.lsp.@Nullable LspManager lsp) {
+        mapServers = lsp;
         setMapSymbolSearch(new ProjectMapSymbolSearch(index, lsp)::find);
         mapView.setLinkSource(new ProjectMapLinkSearch(lsp, projectIndex)); // Show References / Callers as Cards
         index.setFileIndex(projectIndex);

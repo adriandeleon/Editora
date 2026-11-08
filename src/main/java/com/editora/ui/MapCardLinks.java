@@ -461,8 +461,12 @@ final class MapCardLinks {
 
     /** The outline of {@code file} arrived: the questions that waited for it go on once they have all theirs. */
     void outlineChanged(Path file) {
-        if (pending.isEmpty() || structure.view(file).problem() == ProjectMapStructure.Problem.LOADING) {
+        if (structure.view(file).problem() == ProjectMapStructure.Problem.LOADING) {
             return;
+        }
+        PlaceWaiting place = placeWaiting;
+        if (place != null && place.file().equals(file)) {
+            placeArrived(place);
         }
         for (Pending waiting : List.copyOf(pending)) {
             if (waiting.waitingFor.remove(file) && waiting.waitingFor.isEmpty()) {
@@ -473,10 +477,14 @@ final class MapCardLinks {
         }
     }
 
-    /** The files whose outlines the links need kept: those of the questions still waiting. */
+    /** The files whose outlines the links need kept: those of the questions, and the picked place, still waiting. */
     Set<Path> outlineFiles() {
         Set<Path> files = new LinkedHashSet<>();
         pending.forEach(waiting -> files.addAll(waiting.outlined));
+        PlaceWaiting place = placeWaiting;
+        if (place != null) {
+            files.add(place.file());
+        }
         return files;
     }
 
@@ -632,6 +640,64 @@ final class MapCardLinks {
     private @Nullable List<ProjectMapStructure.Node> outlineOf(Path file) {
         ProjectMapStructure.View view = structure.view(file);
         return view.problem() == ProjectMapStructure.Problem.NONE ? view.roots() : null;
+    }
+
+    /** A place picked with Go to Symbol, waiting for its file's outline to open in its declaration's card. */
+    private record PlaceWaiting(
+            Path file,
+            int line,
+            @Nullable String name,
+            Consumer<@Nullable ProjectMapPreview> opened,
+            javafx.animation.PauseTransition timeout) {}
+
+    private @Nullable PlaceWaiting placeWaiting;
+
+    /**
+     * Opens the card of {@code file}'s 0-based {@code line} and hands it to {@code opened} (null when refused: every
+     * card is pinned) — Go to Symbol and Go to File typed on the Map. The card is the one of the declaration holding
+     * the line, as a linked card's answer: an outlinable file's outline is asked for and waited for first (up to
+     * {@link #OUTLINE_WAIT}, then the file's card); {@code name} is selected on that line. A negative line opens the
+     * whole file at once. A newer place replaces one still waiting.
+     */
+    void openPlace(Path file, int line, @Nullable String name, Consumer<@Nullable ProjectMapPreview> opened) {
+        PlaceWaiting older = placeWaiting;
+        if (older != null) {
+            older.timeout().stop();
+            placeWaiting = null;
+        }
+        if (line >= 0 && structure.supports(file)) {
+            structure.ensure(file);
+            if (structure.view(file).problem() == ProjectMapStructure.Problem.LOADING) {
+                javafx.animation.PauseTransition timeout = new javafx.animation.PauseTransition(OUTLINE_WAIT);
+                PlaceWaiting waiting = new PlaceWaiting(file, line, name, opened, timeout);
+                timeout.setOnFinished(event -> placeArrived(waiting));
+                placeWaiting = waiting;
+                timeout.playFromStart();
+                return;
+            }
+        }
+        opened.accept(openPlaceNow(file, line, name));
+    }
+
+    /** {@code waiting}'s outline arrived, or the wait ran out: its card opens now, if it is still the one waiting. */
+    private void placeArrived(PlaceWaiting waiting) {
+        if (placeWaiting != waiting) {
+            return;
+        }
+        placeWaiting = null;
+        waiting.timeout().stop();
+        waiting.opened().accept(openPlaceNow(waiting.file(), waiting.line(), waiting.name()));
+    }
+
+    private @Nullable ProjectMapPreview openPlaceNow(Path file, int line, @Nullable String name) {
+        List<ProjectMapStructure.Node> roots = line < 0 ? null : outlineOf(file);
+        ProjectMapStructure.Node node = roots == null ? null : enclosing(roots, line);
+        ProjectMapPreview card = node != null ? cards.openDeclaration(node) : cards.openFile(file);
+        if (card != null && line >= 0) {
+            card.linksRevealPlace(
+                    line, name == null || name.isBlank() ? null : ProjectMapLinkSearch.namePattern(name, false));
+        }
+        return card;
     }
 
     /**
@@ -827,6 +893,11 @@ final class MapCardLinks {
         asked.clear();
         pending.forEach(waiting -> waiting.timeout.stop());
         pending.clear();
+        PlaceWaiting place = placeWaiting;
+        if (place != null) {
+            place.timeout().stop();
+            placeWaiting = null;
+        }
         placeBeside.clear();
     }
 

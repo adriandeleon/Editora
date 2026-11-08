@@ -985,7 +985,7 @@ final class LspNavigation {
     }
 
     /** Opens a workspace-symbol match: its file, or a {@code jdt://} one as library source asked of {@code anchor}. */
-    private void openWorkspaceSymbol(Path anchor, LspManager.WorkspaceSymbolMatch match) {
+    void openWorkspaceSymbol(Path anchor, LspManager.WorkspaceSymbolMatch match) {
         Path file = match.file();
         if (file != null) {
             ops.openAndGoto(file, match.line(), match.character());

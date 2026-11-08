@@ -302,8 +302,17 @@ final class LspDocumentSymbols {
 
     /** True if {@code file}'s server is ready and advertises {@code workspace/symbol} (Go to Symbol). */
     public boolean supportsWorkspaceSymbols(Path file) {
-        LanguageServerSession s = m.sessionFor(file);
+        LanguageServerSession s = workspaceSession(file);
         return s != null && workspaceSymbolProvider(s.capabilities());
+    }
+
+    /**
+     * The session {@code workspace/symbol} goes to for {@code file}: the one serving it, else — {@code file} in no
+     * editor, a Project Map card's — the running one that would serve it, since the request names no document.
+     */
+    private @Nullable LanguageServerSession workspaceSession(Path file) {
+        LanguageServerSession s = m.sessionFor(file);
+        return s != null ? s : m.runningSessionFor(file);
     }
 
     /** Pure: whether the server advertises {@code workspace/symbol} (Boolean or options form). Null-safe. */
@@ -313,12 +322,12 @@ final class LspDocumentSymbols {
 
     /**
      * Runs {@code workspace/symbol} on {@code anchorFile}'s server for {@code query} and delivers the matches
-     * on the FX thread. Empty when the file has no server. Handles both the legacy flat {@code SymbolInformation}
-     * and the modern {@code WorkspaceSymbol} response shapes (the latter may carry a range-less URI-only
-     * location, mapped to line 0).
+     * on the FX thread. Empty when no server serves the file (see {@link #workspaceSession}). Handles both the
+     * legacy flat {@code SymbolInformation} and the modern {@code WorkspaceSymbol} response shapes (the latter may
+     * carry a range-less URI-only location, mapped to line 0).
      */
     public void workspaceSymbols(Path anchorFile, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
-        workspaceSymbols(m.sessionFor(anchorFile), query, cb);
+        workspaceSymbols(workspaceSession(anchorFile), query, cb);
     }
 
     private static void workspaceSymbols(

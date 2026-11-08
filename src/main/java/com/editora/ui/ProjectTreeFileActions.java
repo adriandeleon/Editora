@@ -21,6 +21,11 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
     private final java.util.function.Consumer<Path> findInFolder;
     /** The window's link choke point; nothing until {@link #of} sets it. */
     private java.util.function.Consumer<String> openUrl = url -> {};
+    /** The window's file finder's choice: a file opened, or a new one started. Nothing until {@link #of}. */
+    private java.util.function.Consumer<Path> openPicked = file -> {};
+    /** The window's Go to Symbol choice, a library's source included. Nothing until {@link #of}. */
+    private java.util.function.BiConsumer<Path, com.editora.lsp.LspManager.WorkspaceSymbolMatch> openSymbol =
+            (anchor, match) -> {};
 
     ProjectTreeFileActions(
             GitCoordinator git,
@@ -43,12 +48,24 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
                 localHistoryEnabled,
                 window.searchCoordinator::findInFolder);
         actions.openUrl = window::openExternalUrl;
+        actions.openPicked = window.navigation::findFileChosen;
+        actions.openSymbol = window.lspCoordinator.navigation::openWorkspaceSymbol;
         return actions;
     }
 
     @Override
     public void openExternalUrl(String url) {
         openUrl.accept(url);
+    }
+
+    @Override
+    public void openPicked(Path file) {
+        openPicked.accept(file);
+    }
+
+    @Override
+    public void openWorkspaceSymbol(Path anchor, com.editora.lsp.LspManager.WorkspaceSymbolMatch match) {
+        openSymbol.accept(anchor, match);
     }
 
     /** {@code findInFolder}: a folder's Find in Folder…, the Find in Files popup set to that folder. */
