@@ -855,10 +855,11 @@ class DebugReviewCWindowFxTest {
                 assertEquals("go", session.initializeArgs.getAdapterID(), transport.toString());
                 assertEquals("debug", session.launchArgs.get("mode"), "the language's own launch fields");
                 assertEquals(util.toString(), session.launchArgs.get("program"));
-                assertTrue(
-                        session.breakpoints.stream()
-                                .anyMatch(a -> a.getSource().getPath().endsWith("util.py")),
-                        transport + ": the breakpoints were sent");
+                // After the adapter's `initialized` event, which may come after `launch`.
+                await(
+                        transport + ": the breakpoints were sent",
+                        () -> session.breakpoints.stream()
+                                .anyMatch(a -> a.getSource().getPath().endsWith("util.py")));
                 await(transport + ": running", () -> manager.state() == DapManager.State.RUNNING);
                 FxTestSupport.runOnFx(manager::stop);
                 await(transport + ": stopped", () -> !manager.isActive());
