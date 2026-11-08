@@ -946,6 +946,7 @@ public final class DapClient implements IDebugProtocolClient {
         child.initialBreakpoints = initialBreakpoints;
         child.exceptionFilters = exceptionFilters;
         child.memberBreakpoints = memberBreakpoints;
+        child.terminateOnDisconnect = terminateOnDisconnect; // js-debug's program runs in the child sessions
         children.add(child);
         if (disposed) { // the session ended while this was queued
             children.remove(child);

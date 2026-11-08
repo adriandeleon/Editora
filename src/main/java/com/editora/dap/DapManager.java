@@ -2812,6 +2812,8 @@ public final class DapManager {
         c.setBreakpoints(bps);
         c.setExceptionFilters(filters);
         c.setRunsDebuggee(runsDebuggee);
+        // Stop detaches from a program it attached to: vscode-js-debug ends it on terminateDebuggee (seen with 1.117).
+        c.setTerminateOnDisconnect(!attach);
         c.setAdapterProcess(proc); // killed on dispose (it serves the socket)
         if (forward != null) {
             c.closeOnDispose(forward);

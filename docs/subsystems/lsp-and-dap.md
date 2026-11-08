@@ -1153,8 +1153,9 @@ that way, `Win32_Process` through PowerShell) and lists the Java, Node.js and Py
 ordinary Java attach (`attachTo`, from the active Java tab or the first open one, and remembered for Reattach), a
 Node.js through `startJsAttach`, and a Python through the new `DapManager.startPythonAttach`: `debugpy --listen` runs
 debugpy's own adapter on that port, so the session connects to it over the socket (`DapClient.connect`) and sends
-`attach` — no local debugpy is needed — and ends with `terminateDebuggee: false`
-(`DapClient.setTerminateOnDisconnect`), since debugpy would otherwise end the program on Stop. The opt-in
+`attach` — no local debugpy is needed. Every attach session ends with `terminateDebuggee: false`
+(`DapClient.setTerminateOnDisconnect`, inherited by js-debug's child sessions): debugpy and vscode-js-debug (1.117)
+both end an attached program on `true`, which made Stop on a Node.js attach kill the program; java-debug ignores it. The opt-in
 `AttachToProcessProbeFxTest` attaches to a real JVM, Python and Node.js; each test skips without its tools.
 **Attach to Process** (`debug.attachToProcess`; [`dap/LocalProcesses`](../../src/main/java/com/editora/dap/LocalProcesses.java))
 reads every process's command line (`ProcessHandle.Info`; on Windows, where other processes' arguments are not given
@@ -1165,8 +1166,9 @@ that way, `Win32_Process` through PowerShell) and lists the Java, Node.js and Py
 ordinary Java attach (`attachTo`, from the active Java tab or the first open one, and remembered for Reattach), a
 Node.js through `startJsAttach`, and a Python through the new `DapManager.startPythonAttach`: `debugpy --listen` runs
 debugpy's own adapter on that port, so the session connects to it over the socket (`DapClient.connect`) and sends
-`attach` — no local debugpy is needed — and ends with `terminateDebuggee: false`
-(`DapClient.setTerminateOnDisconnect`), since debugpy would otherwise end the program on Stop. The opt-in
+`attach` — no local debugpy is needed. Every attach session ends with `terminateDebuggee: false`
+(`DapClient.setTerminateOnDisconnect`, inherited by js-debug's child sessions): debugpy and vscode-js-debug (1.117)
+both end an attached program on `true`, which made Stop on a Node.js attach kill the program; java-debug ignores it. The opt-in
 `AttachToProcessProbeFxTest` attaches to a real JVM, Python and Node.js; each test skips without its tools.
 Restart goes
 through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
