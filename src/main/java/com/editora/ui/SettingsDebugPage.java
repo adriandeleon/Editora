@@ -245,13 +245,9 @@ final class SettingsDebugPage {
                 w.cardRow(c, Category.DEBUG, nodeLink, "node nodejs node.js runtime path debug build tools");
             }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
-            ToolStatusRow status = new ToolStatusRow(
-                            switch (dbg.id()) {
-                                case "java" -> "java-debug";
-                                case "python" -> "debugpy";
-                                default -> "js-debug";
-                            })
-                    .install(() -> w.installSupport("javascript".equals(dbg.id()) ? "js-debug" : dbg.id())); // D111
+            DebugAdapterSettings.Binding binding = java.util.Objects.requireNonNull(DebugAdapterSettings.of(dbg.id()));
+            ToolStatusRow status =
+                    new ToolStatusRow(binding.toolId()).install(() -> w.installSupport(binding.installId())); // D111
             debugStatusLabels.put(dbg.id(), status);
             w.installButtons.put("debug:" + dbg.id(), status.installButton());
             if ("python".equals(dbg.id())) { // its field is on the LSP page's Python card

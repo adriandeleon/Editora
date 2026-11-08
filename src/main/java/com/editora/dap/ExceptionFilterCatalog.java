@@ -6,39 +6,17 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The exception filters each adapter is known to offer, for the picker before a session has asked the adapter
- * itself (a live session's {@code exceptionBreakpointFilters} replace these). Defaults as the adapters declare
- * them: debugpy and Editora's JVM adapter stop on uncaught exceptions; java-debug and vscode-js-debug on none.
+ * itself (a live session's {@code exceptionBreakpointFilters} replace these), as each {@link DebugLanguage} lists
+ * them. Defaults as the adapters declare them: debugpy and Editora's JVM adapter stop on uncaught exceptions;
+ * java-debug and vscode-js-debug on none.
  */
 public final class ExceptionFilterCatalog {
 
     private ExceptionFilterCatalog() {}
 
     public static List<DapModels.ExceptionFilterOption> known(String language) {
-        if (language == null) {
-            return List.of();
-        }
-        return switch (language) {
-            case "python" ->
-                List.of(
-                        new DapModels.ExceptionFilterOption("raised", "Raised Exceptions", false),
-                        new DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", true),
-                        new DapModels.ExceptionFilterOption("userUnhandled", "User Uncaught Exceptions", false));
-            case "java" ->
-                List.of(
-                        new DapModels.ExceptionFilterOption("caught", "Caught Exceptions", false),
-                        new DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", false));
-            case "javascript" ->
-                List.of(
-                        new DapModels.ExceptionFilterOption("all", "Caught Exceptions", false),
-                        new DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", false));
-            // Editora's JVM adapter (com.editora.dap.jvm): a script's uncaught exception stops, as debugpy's does.
-            // Metals' adapter (scala-debug-adapter, on java-debug) offers the same two ids.
-            case "groovy", "kotlin", "clojure", "scala" ->
-                List.of(
-                        new DapModels.ExceptionFilterOption("caught", "Caught Exceptions", false),
-                        new DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", true));
-            default -> List.of();
-        };
+        DebugLanguage l = DebugLanguages.byId(language);
+        return l == null ? List.of() : l.exceptionFilters();
     }
 
     /**
@@ -47,20 +25,14 @@ public final class ExceptionFilterCatalog {
      * the Run menu and the Debug window turns on and off.
      */
     public static @Nullable String caughtFilter(String language) {
-        if (language == null) {
-            return null;
-        }
-        return switch (language) {
-            case "java", "groovy", "kotlin", "clojure", "scala" -> "caught";
-            case "python" -> "raised";
-            case "javascript" -> "all";
-            default -> null;
-        };
+        DebugLanguage l = DebugLanguages.byId(language);
+        return l == null ? null : l.caughtFilter();
     }
 
     /** The id of {@code language}'s "stop on uncaught exceptions" filter, or null when its adapter has none. */
     public static @Nullable String uncaughtFilter(String language) {
-        return caughtFilter(language) == null ? null : "uncaught";
+        DebugLanguage l = DebugLanguages.byId(language);
+        return l == null ? null : l.uncaughtFilter();
     }
 
     /**

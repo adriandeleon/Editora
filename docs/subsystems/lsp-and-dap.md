@@ -1005,12 +1005,20 @@ the child env. The result is cached after the first call.
 
 ## DAP
 
-### Five transports
+### Language profiles and transports
 
 Editora debugs Java, Python, and JavaScript (Node), off by default
-(`Settings.debugSupport`). [`dap/DapServerRegistry`](../../src/main/java/com/editora/dap/DapServerRegistry.java)
-is the pure language → adapter spec (a `Kind` transport, the DAP `launch` type, the `initialize`
-adapter id, and the default interpreter + adapter args). `languageIdsForDebug()` =
+(`Settings.debugSupport`). Each language is a [`dap/DebugLanguage`](../../src/main/java/com/editora/dap/DebugLanguage.java)
+profile in [`dap/DebugLanguages`](../../src/main/java/com/editora/dap/DebugLanguages.java): its `Kind` transport, the
+DAP `launch` type, the `initialize` adapter id, the default interpreter + adapter args, the fallback transport, what
+makes it available (`Availability`: the java-debug plugin, a located adapter, or built in), the exception filters it
+offers and its "caught" one, the language server's start command for a hosted adapter, whether a remote file is
+debugged on its own host, and its "unavailable" message. [`dap/DapServerRegistry`](../../src/main/java/com/editora/dap/DapServerRegistry.java),
+`ExceptionFilterCatalog`, `HostedDebugAdapter`, `DapManager.isLanguageAvailable` / `debuggableOnHost` and
+`DebugCoordinator.debugEffectiveFor` read them instead of comparing language names. An adapter's own settings
+(its switch, command or path, install id, off and missing messages) are a binding in
+[`ui/DebugAdapterSettings`](../../src/main/java/com/editora/ui/DebugAdapterSettings.java), which the Debugging
+page, the `debug.toggleAdapter` / `debug.setAdapterPath` pickers and `unavailableMessage` read. `languageIdsForDebug()` =
 `{java, python, javascript, groovy, kotlin, clojure, scala}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
 `javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
 project's breakpoints live in its `.ts`/`.tsx` sources.
@@ -1024,6 +1032,18 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `kotlin` | `JVM` | The same adapter. A script is `kotlinc -script <file>` (agent in `JAVA_OPTS`); a program is compiled first (`kotlinc <file> -include-runtime -d <jar>`, cached by content under `<config>/cache/kotlin-run`) and run as `java <agent> -jar <jar>` (`jvmOptionsInArgv`). A file's declared `package` matches its classes' source path wherever the file sits. Debug via Build Tool and Attach from a Kotlin file attach this adapter (`attach`, `hostName`/`port`) instead of java-debug, which never binds a `.kt` breakpoint. kotlin-lsp's own undocumented DAP (`start_debug_server`) is not used. |
 | `clojure` | `JVM` | The same adapter. `run/ClojureRun` picks the tool: the Clojure CLI (`clojure -J<agent> -J-Dclojure.compiler.disable-locals-clearing=true -M -m <ns>`, the agent as a `-J` argument — the launch's `jvmOptionPrefix`) in its `deps.edn` project, Leiningen (`lein run -m <ns>`, the agent in `JVM_OPTS`, which only the project's JVM reads) in a `project.clj` one, and a file outside any project as a script. A function's class (`my_app.core$greet`) records `core.clj` and the package path `my_app/`, so a breakpoint in `src/my_app/core.clj` binds by source name; a script loaded by path records that absolute path (Clojure's SMAP), which `JvmSourceMap.compiledFrom` accepts. Frames read as the function, demunged (`my-app.core/greet`); stepping skips `clojure.lang`, `clojure.core*` and `clojure.main`. Babashka is a native program with no JVM: Debug says so and does not start. Limits: values show as their class (the adapter runs no `toString`), and a function redefined from a REPL is a new class the session's breakpoints were not set in. |
 | `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
+
+**External adapters.** A `Kind.EXTERNAL` profile carries an [`ExternalAdapter`](../../src/main/java/com/editora/dap/ExternalAdapter.java):
+the adapter's command and how DAP reaches it — `STDIO` (lldb-dap, `gdb -i dap`, netcoredbg), `PORT_ARGUMENT` (a free
+port Editora picks, in place of `{port}`; CodeLLDB) or `ANNOUNCED_PORT` (the adapter prints the port it listens on,
+matched by the profile's pattern; Delve's `DAP server listening at: 127.0.0.1:38697`). `DapManager.configureExternal`
+finds the command (a configured path, else on the PATH: `locateExecutable`) and `startExternal` starts it with the
+found executable in place of the command's first word, connects (`connectStdio`, or `connect` with the adapter
+process set to be killed on dispose), and sends the `launch` the language shaped (`ExternalAdapter.launchRequest`:
+`program`, `args`, `cwd`, `env`, `stopOnEntry` plus the language's own fields). Output before an announcement goes to
+the console as the command's; after it, as the program's (Delve writes its debuggee's output there). No language uses
+it yet: it is the path Go, Rust and C/C++ are added on. `DebugReviewCWindowFxTest` drives all three transports
+through `RelayAdapterMain`, a test process standing in for the adapter in front of the in-process fake.
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send
@@ -1434,7 +1454,9 @@ install …@latest`, rustup, the GitHub `releases/latest` archives).
 
 See [extending.md](../extending.md) — adding an LSP server is one `ServerDef` entry plus its id in the
 coordinator's `SERVER_IDS` and the served language ids in `EditorBuffer.LSP_LANGUAGES`, plus a Settings
-command/enable pair; adding a DAP adapter is one `Def` entry in `DapServerRegistry`.
+command/enable pair; adding a DAP adapter is one `DebugLanguage` profile in `DebugLanguages` (an `EXTERNAL` one
+when the adapter is its own program, started by `DapManager.startExternal`), plus a `DebugAdapterSettings` binding
+when it has settings of its own.
 
 ## Request traffic (2026-10 performance pass)
 

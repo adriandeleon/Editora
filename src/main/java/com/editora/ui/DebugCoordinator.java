@@ -464,23 +464,23 @@ final class DebugCoordinator {
         if (!debugSupportEnabled() || language == null) {
             return false;
         }
-        language = DapServerRegistry.adapterLanguage(language); // TypeScript/JSX: the JavaScript debugger
-        var s = host.settings();
-        return switch (language) {
-            case "java" ->
-                lspEnabled()
-                        && lsp.serverEnabled("java")
-                        && lsp.isServerAvailable("java")
-                        && dapManager.isAdapterAvailable();
-            case "python" -> s.isPythonDebugEnabled() && dapManager.isLanguageAvailable("python");
-            case "javascript" -> s.isJsDebugEnabled() && dapManager.isLanguageAvailable("javascript");
-            // Editora's own JVM adapter: nothing to install; the tool (groovy, kotlinc, clojure or lein) is checked
-            // when the session starts (bb cannot be debugged).
-            case "groovy", "kotlin", "clojure" -> dapManager.isLanguageAvailable(language);
-            // Metals' adapter for a build's file, Editora's own for a script; which applies is decided at start.
-            case "scala" -> dapManager.isLanguageAvailable("scala");
-            default -> false;
-        };
+        com.editora.dap.DebugLanguage profile =
+                com.editora.dap.DebugLanguages.forLanguage(language); // TS: JavaScript's
+        if (profile == null) {
+            return false;
+        }
+        if (profile.availability() == com.editora.dap.DebugLanguage.Availability.JAVA_DEBUG_PLUGIN) {
+            return lspEnabled()
+                    && lsp.serverEnabled("java")
+                    && lsp.isServerAvailable("java")
+                    && dapManager.isAdapterAvailable();
+        }
+        // Its own switch, when it has one (Python, JavaScript), and its adapter found. Editora's own JVM adapter and
+        // Metals' have nothing to install: the tool (groovy, kotlinc, clojure or lein), or Metals for a build's Scala
+        // file, is checked when the session starts.
+        DebugAdapterSettings.Binding settings = DebugAdapterSettings.of(profile.id());
+        return (settings == null || settings.isEnabled(host.settings()))
+                && dapManager.isLanguageAvailable(profile.id());
     }
 
     /**
@@ -494,19 +494,15 @@ final class DebugCoordinator {
         if (!debugSupportEnabled() || language == null || !DapManager.debuggableOnHost(language)) {
             return false;
         }
-        language = DapServerRegistry.adapterLanguage(language);
-        var s = host.settings();
-        boolean enabled = switch (language) {
-            case "python" -> s.isPythonDebugEnabled();
-            case "javascript" -> s.isJsDebugEnabled();
-            // jdtls runs on the host and is handed the java-debug jar there (copied from this machine,
-            // or the host's own), so the adapter is the host's jdtls's.
-            default ->
-                lspEnabled()
+        DebugAdapterSettings.Binding settings = DebugAdapterSettings.of(DapServerRegistry.adapterLanguage(language));
+        boolean enabled = settings != null && settings.toggleable()
+                ? settings.isEnabled(host.settings())
+                // Java: jdtls runs on the host and is handed the java-debug jar there (copied from this machine,
+                // or the host's own), so the adapter is the host's jdtls's.
+                : lspEnabled()
                         && lsp.serverEnabled("java")
                         && (dapManager.isAdapterAvailable()
                                 || com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null);
-        };
         return enabled && RemoteExec.runsFor(file);
     }
 
@@ -2601,22 +2597,18 @@ final class DebugCoordinator {
         if (!local || !debugSupportEnabled()) {
             return tr("status.debug.unavailable");
         }
+        String id = language == null ? "" : DapServerRegistry.adapterLanguage(language);
+        if ("java".equals(id)) {
+            return javaUnavailableMessage();
+        }
+        DebugAdapterSettings.Binding settings = DebugAdapterSettings.of(id);
+        if (settings == null || settings.offKey() == null || settings.missing() == null) {
+            return tr("status.debug.unavailable");
+        }
         var s = host.settings();
-        return switch (language == null ? "" : DapServerRegistry.adapterLanguage(language)) {
-            case "python" ->
-                !s.isPythonDebugEnabled()
-                        ? tr("status.debug.pythonOff")
-                        : tr(
-                                "status.debug.debugpyMissing",
-                                host.projectScope()
-                                                .debugTool("python", s.getPythonDebugCommand())
-                                                .isBlank()
-                                        ? com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER
-                                        : host.projectScope().debugTool("python", s.getPythonDebugCommand()));
-            case "javascript" -> !s.isJsDebugEnabled() ? tr("status.debug.jsOff") : tr("status.debug.jsDebugMissing");
-            case "java" -> javaUnavailableMessage();
-            default -> tr("status.debug.unavailable");
-        };
+        return !settings.isEnabled(s)
+                ? tr(settings.offKey())
+                : settings.missing().apply(s, host.projectScope());
     }
 
     /**
