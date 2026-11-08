@@ -245,6 +245,22 @@ public final class LaunchConfig {
         return m;
     }
 
+    /**
+     * debugpy's {@code attach} to a program listening for it at {@code host:port} ({@code python -m debugpy --listen}):
+     * {@code connect} names where; the program's files are this machine's, so no path mappings.
+     */
+    public static Map<String, Object> pythonAttach(String host, int port) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", "python");
+        m.put("name", "Editora (Attach)");
+        m.put("request", "attach");
+        Map<String, Object> connect = new LinkedHashMap<>();
+        connect.put("host", notBlank(host) ? host : "localhost");
+        connect.put("port", port);
+        m.put("connect", connect);
+        return m;
+    }
+
     /** An {@code attach} request body for a running JVM (JDWP). Blank host defaults to {@code localhost}. */
     public static Map<String, Object> attach(String host, int port) {
         return attach(host, port, null);

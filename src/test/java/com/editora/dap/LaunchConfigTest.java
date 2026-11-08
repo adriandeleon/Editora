@@ -249,4 +249,16 @@ class LaunchConfigTest {
                 LaunchConfig.nodeAttach("pwa-node", "x", 1234, java.util.List.of())
                         .get("address"));
     }
+
+    @Test
+    void debugpyAttachesToWhereTheProgramListens() {
+        var m = LaunchConfig.pythonAttach("localhost", 5678);
+        org.junit.jupiter.api.Assertions.assertEquals("python", m.get("type"));
+        org.junit.jupiter.api.Assertions.assertEquals("attach", m.get("request"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Map.of("host", "localhost", "port", 5678), m.get("connect"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Map.of("host", "localhost", "port", 1),
+                LaunchConfig.pythonAttach("", 1).get("connect"));
+    }
 }

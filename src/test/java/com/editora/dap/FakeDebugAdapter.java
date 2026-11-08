@@ -239,6 +239,8 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         public final List<SetBreakpointsArguments> breakpoints = new CopyOnWriteArrayList<>();
         public final List<SetExceptionBreakpointsArguments> exceptionBreakpoints = new CopyOnWriteArrayList<>();
+        /** The {@code terminateDebuggee} of the {@code disconnect}, once it came. */
+        public volatile Boolean terminateDebuggee;
         /** The method names of every {@code setFunctionBreakpoints}. */
         public final List<List<String>> functionBreakpoints = new CopyOnWriteArrayList<>();
         /** The {@code dataId/accessType} of each breakpoint of every {@code setDataBreakpoints}. */
@@ -761,6 +763,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         @Override
         public CompletableFuture<Void> disconnect(DisconnectArguments args) {
+            terminateDebuggee = args == null ? null : args.getTerminateDebuggee();
             record("disconnect");
             disconnected.countDown();
             CountDownLatch hold = holdDisconnect;

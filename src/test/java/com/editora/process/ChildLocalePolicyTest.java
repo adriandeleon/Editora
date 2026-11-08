@@ -49,6 +49,7 @@ class ChildLocalePolicyTest {
             "AppInfo.java", // git rev-parse of the build's own checkout
             "crypto/Pinentry.java", // `gpgconf --list-dirs homedir`: a path
             "dap/DapManager.java", // probe(): `node --version` (also js-debug's minimum), `python -c "import debugpy"`
+            "dap/LocalProcesses.java", // Windows: Win32_Process command lines, parsed
             "diagram/DiagramRenderer.java", // detect(): --version / --help
             "doctor/DoctorProbes.java", // version probes
             "git/GitService.java", // background reads: porcelain output
@@ -117,6 +118,7 @@ class ChildLocalePolicyTest {
     /** Build their own {@code ProcessBuilder} and then apply one of the two environments above. */
     private static final Set<String> RAW_SPAWN_FILES = Set.of(
             "dap/jvm/JvmDebugAdapter.java", // the debugged program, with applyUserEnv
+            "dap/LocalProcesses.java", // powershell.exe for Win32_Process, applyStandardEnv
             "Relaunch.java", // applyUserEnv: Editora itself, started again by Restart Now
             "agent/AcpClient.java",
             "container/ContainerExecTarget.java", // the engine's exec client: the user's environment, here only
