@@ -543,26 +543,26 @@ final class MapCards {
     }
 
     /**
-     * Go to Symbol and Go to File on the Map: opens (or brings up) the card of {@code file}'s 0-based {@code line}, the
-     * card of the declaration holding it when the file is outlined, with {@code name} selected there; a negative line
-     * opens the whole file. The keyboard goes to it and, typed in {@code from}, Back returns there. Null when every
-     * open card is pinned (the status line says so).
+     * Go to Symbol and Go to File on the Map: opens (or brings up) the card of {@code file}'s 0-based {@code line} —
+     * the card of the declaration holding it, the file outlined first when it can be — with {@code name} selected
+     * there; a negative line opens the whole file. The keyboard goes to it and, typed in {@code from}, Back returns
+     * there. Nothing opens when every open card is pinned (the status line says so).
      */
-    @Nullable
-    ProjectMapPreview openPlaceCard(@Nullable ProjectMapPreview from, Path file, int line, @Nullable String name) {
+    void openPlaceCard(@Nullable ProjectMapPreview from, Path file, int line, @Nullable String name) {
         Path normalized = file.toAbsolutePath().normalize();
         ProjectMapPreview stepFrom = from != null && cardTouches.containsKey(from) ? from : null;
         int fromCaret = stepFrom == null ? 0 : stepFrom.caretOffset(); // before the place moves it, if the same card
-        ProjectMapPreview card = line < 0 ? openFileCard(normalized) : links.openPlace(normalized, line, name);
-        if (card == null) {
-            return null;
-        }
-        if (stepFrom != null) {
-            followed(stepFrom, fromCaret, card);
-        } else {
-            card.focusContent();
-        }
-        return card;
+        Consumer<@Nullable ProjectMapPreview> opened = card -> {
+            if (card == null || disposed) {
+                return;
+            }
+            if (stepFrom != null && cardTouches.containsKey(stepFrom)) {
+                followed(stepFrom, fromCaret, card);
+            } else {
+                card.focusContent();
+            }
+        };
+        links.openPlace(normalized, line, name, opened);
     }
 
     /**

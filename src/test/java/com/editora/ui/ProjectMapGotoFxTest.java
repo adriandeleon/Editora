@@ -167,6 +167,150 @@ class ProjectMapGotoFxTest {
     }
 
     @Test
+    void goToSymbolFromTheMapOpensTheDeclarationsCardAndALibrarySymbolGoesToTheEditor() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Path shape = Files.writeString(src.resolve("Shape.java"), SHAPE);
+        Path use = Files.writeString(src.resolve("Use.java"), USE);
+        ServerCapabilities capabilities = new ServerCapabilities();
+        capabilities.setWorkspaceSymbolProvider(true);
+        FakeLanguageServer fake = startServer(capabilities);
+        fake.workspaceSymbolResponse = List.of(new WorkspaceSymbol(
+                "area()", SymbolKind.Method, Either.forLeft(new Location(LspTestHooks.uri(shape), range(3, 11)))));
+
+        ProjectPanel panel = openPanel();
+        List<String> handed = handToEditor(panel);
+        setField(panel, "mapServers", manager);
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        MapSurface surface = FxTestSupport.field(view, "surface");
+        FxTestSupport.runOnFx(() -> view.setLinkSource(new ProjectMapLinkSearch(manager, panel.projectIndex())));
+        // Shape.java is not outlined yet: the pick waits for its outline, then opens the declaration's card.
+        FxTestSupport.runOnFx(() -> view.revealPath(use));
+        waitFor(() -> use.equals(view.gotoAnchor(null)), "Use.java selected on the map");
+
+        // Typed on the map, no card: asked of the selected row's file's server.
+        FxTestSupport.runOnFx(() -> {
+            surface.requestFocus();
+            assertTrue(view.focusedCard() == null);
+            assertTrue(runMapCommand(panel, "lsp.gotoSymbol"));
+        });
+        ListView<?> symbols = waitForOverlayList(panel);
+        FxTestSupport.runOnFx(() -> overlayField(panel).setText("area"));
+        waitFor(() -> !symbols.getItems().isEmpty(), "the server's symbols");
+        FxTestSupport.runOnFx(() -> {
+            symbols.getSelectionModel().select(0);
+            pressEnter(overlayField(panel));
+        });
+        waitFor(
+                () -> placeCards(cards, shape).stream()
+                        .anyMatch(card -> "area".equals(card.editor().getSelectedText())),
+                "area's card, its name selected");
+        FxTestSupport.runOnFx(() -> {
+            ProjectMapPreview found = placeCards(cards, shape).getFirst();
+            assertNotNull(found.range(), "the declaration's own card: " + found.title());
+            assertEquals(List.of(), cards.backTrailForTest(), "picked on the map: no card to go back to");
+        });
+
+        // The card's one-line selection is the query, as in the editor.
+        ProjectMapPreview source = openCard(cards, use);
+        FxTestSupport.runOnFx(() -> {
+            source.editor().requestFocus();
+            int at = source.editor().getText().indexOf("Shape");
+            source.editor().selectRange(at, at + "Shape".length());
+            assertTrue(runMapCommand(panel, "lsp.gotoSymbol"));
+        });
+        waitForOverlayList(panel);
+        FxTestSupport.runOnFx(() -> {
+            assertEquals("Shape", overlayField(panel).getText());
+            panel.mapWindow().overlayHost().hide();
+        });
+
+        // A JDK class has no file on the Map: the editor opens its source.
+        fake.symbolInformationResponse = List.of(new org.eclipse.lsp4j.SymbolInformation(
+                "ArrayList",
+                SymbolKind.Class,
+                new Location("jdt://contents/java.base/java.util/ArrayList.class?=demo", range(40, 13)),
+                "java.util"));
+        FxTestSupport.runOnFx(() -> {
+            source.editor().selectRange(0, 0);
+            assertTrue(runMapCommand(panel, "lsp.gotoSymbol"));
+        });
+        ListView<?> library = waitForOverlayList(panel);
+        FxTestSupport.runOnFx(() -> overlayField(panel).setText("ArrayList"));
+        waitFor(() -> !library.getItems().isEmpty(), "the library symbol");
+        FxTestSupport.runOnFx(() -> {
+            library.getSelectionModel().select(0);
+            pressEnter(overlayField(panel));
+        });
+        waitFor(
+                () -> handed.stream().anyMatch(s -> s.startsWith("openWorkspaceSymbol") && s.contains("ArrayList")),
+                "handed to the editor");
+    }
+
+    @Test
+    void goToFileHandsANewFileOrOneOutsideTheMapToTheEditor() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Files.writeString(src.resolve("Shape.java"), SHAPE);
+        Path outside = Files.writeString(temp.resolve("Elsewhere.java"), "class Elsewhere {}\n");
+        ProjectPanel panel = openPanel();
+        List<String> handed = handToEditor(panel);
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        MapSurface surface = FxTestSupport.field(view, "surface");
+        waitFor(() -> surface.contains(src), "the src row");
+        FxTestSupport.runOnFx(() -> {
+            surface.select(src);
+            surface.requestFocus();
+            assertTrue(runMapCommand(panel, "file.find"));
+        });
+        waitForOverlayList(panel);
+        FxTestSupport.runOnFx(() -> {
+            TextField field = overlayField(panel);
+            assertEquals(src.toString(), Path.of(field.getText()).toString(), "starts in the selected folder");
+            field.setText(src.resolve("New.java").toString());
+            pressEnter(field);
+        });
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(List.of("openPicked:" + src.resolve("New.java")), handed, "a new file: the editor's");
+            assertTrue(runMapCommand(panel, "file.find"));
+        });
+        waitForOverlayList(panel);
+        FxTestSupport.runOnFx(() -> {
+            TextField field = overlayField(panel);
+            field.setText(outside.toString());
+            pressEnter(field);
+            assertEquals("openPicked:" + outside, handed.getLast(), "outside the Map's root: the editor's");
+            assertTrue(view.showOnMap(null, src, -1, null), "a folder is revealed");
+            assertTrue(cards.previews.isEmpty(), "and opens no card");
+        });
+
+        // A panel with no root has no Map to answer on: the editor window's commands run.
+        ProjectPanel bare = FxTestSupport.callOnFx(() -> DisposedPanels.track(
+                new ProjectPanel(editorOpened::add, (a, b) -> {}, x -> {}, x -> false, x -> false)));
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(runMapCommand(bare, "file.find"));
+            assertFalse(runMapCommand(bare, "lsp.gotoSymbol"));
+        });
+    }
+
+    @Test
+    void aServerThatCannotListSymbolsLeavesGoToSymbolToTheMapsNameSearch() throws Exception {
+        Path use = Files.writeString(root.resolve("Use.java"), USE);
+        startServer(new ServerCapabilities()); // no workspace/symbol
+        ProjectPanel panel = openPanel();
+        setField(panel, "mapServers", manager);
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        FxTestSupport.runOnFx(() -> view.revealPath(use));
+        waitFor(() -> use.equals(view.gotoAnchor(null)), "Use.java selected on the map");
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(runMapCommand(panel, "lsp.gotoSymbol"));
+            assertFalse(panel.mapWindow().overlayHost().isShowing(), "no picker to ask");
+            assertEquals(
+                    "@", FxTestSupport.<TextField>field(panel, "mapFilterField").getText());
+        });
+    }
+
+    @Test
     void withNoServerGoToSymbolOffersTheMapsNameSearch() throws Exception {
         Files.writeString(root.resolve("Shape.java"), SHAPE);
         ProjectPanel panel = openPanel();
@@ -209,6 +353,26 @@ class ProjectMapGotoFxTest {
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
+    }
+
+    /** What the panel hands to the editor window ({@code openPicked:path}, {@code openWorkspaceSymbol:name}). */
+    private static List<String> handToEditor(ProjectPanel panel) throws Exception {
+        List<String> handed = new CopyOnWriteArrayList<>();
+        ProjectPanel.FileActions actions = (ProjectPanel.FileActions) java.lang.reflect.Proxy.newProxyInstance(
+                ProjectPanel.FileActions.class.getClassLoader(),
+                new Class<?>[] {ProjectPanel.FileActions.class},
+                (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "openPicked" -> handed.add("openPicked:" + args[0]);
+                        case "openWorkspaceSymbol" ->
+                            handed.add("openWorkspaceSymbol:" + ((LspManager.WorkspaceSymbolMatch) args[1]).name());
+                        default -> {}
+                    }
+                    Class<?> type = method.getReturnType();
+                    return type == boolean.class ? Boolean.FALSE : type == int.class ? 0 : null;
+                });
+        FxTestSupport.runOnFx(() -> panel.setFileActions(actions));
+        return handed;
     }
 
     private static void setField(Object target, String name, Object value) {
