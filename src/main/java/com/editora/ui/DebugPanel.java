@@ -1514,6 +1514,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return allFrames;
     }
 
+    /** Selects the listed frame {@code frameId} (reported like a click); false when it is not listed. */
+    boolean selectFrameById(int frameId) {
+        for (DapModels.StackFrameInfo f : stack.getItems()) {
+            if (f.id() == frameId && !StackFolding.isFold(f)) {
+                stack.getSelectionModel().select(f);
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether the user unfolded this stack's runtime frames (until the next stop). */
     private boolean framesExpanded;
 

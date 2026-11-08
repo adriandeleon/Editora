@@ -226,11 +226,33 @@ public final class DapModels {
     }
 
     /** The exception a thread is stopped on: its type name and message (either may be empty). */
-    public record ExceptionInfo(String type, String message) {
+    public record ExceptionInfo(
+            String type, String message, String breakMode, String stackTrace, List<ExceptionInfo> causes) {
 
         public ExceptionInfo {
             type = type == null ? "" : type.strip();
             message = message == null ? "" : message.strip();
+            breakMode = breakMode == null ? "" : breakMode.strip();
+            stackTrace = stackTrace == null ? "" : stackTrace.strip();
+            causes = causes == null ? List.of() : List.copyOf(causes);
+        }
+
+        /** An exception named by its type and message alone. */
+        public ExceptionInfo(String type, String message) {
+            this(type, message, "", "", List.of());
+        }
+
+        /**
+         * Whether the program would not catch it ({@code unhandled}, {@code userUnhandled}): java-debug says
+         * {@code userUnhandled} for an uncaught exception and {@code always} for a caught one.
+         */
+        public boolean uncaught() {
+            return "unhandled".equals(breakMode) || "userUnhandled".equals(breakMode);
+        }
+
+        /** Whether the adapter said the program catches it ({@code always}). */
+        public boolean caught() {
+            return "always".equals(breakMode);
         }
 
         public boolean isEmpty() {

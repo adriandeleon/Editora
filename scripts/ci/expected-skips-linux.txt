@@ -38,6 +38,7 @@ com.editora.ui.JavaDebugRealAdapterProbeFxTest
 com.editora.ui.DebugQuickWinsProbeFxTest
 com.editora.ui.MemberBreakpointsProbeFxTest
 com.editora.ui.ThreadsViewProbeFxTest
+com.editora.ui.ExceptionCardProbeFxTest
 com.editora.ui.JavaEditingCostProbeTest
 com.editora.ui.JavaTypingSoakProbeTest
 com.editora.ui.JsDebugProbeFxTest

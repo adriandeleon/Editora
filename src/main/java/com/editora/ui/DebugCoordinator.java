@@ -1285,6 +1285,10 @@ final class DebugCoordinator {
             @Override
             public void onState(DapManager.State state) {
                 closeSmartStepPicker(state); // review E108
+                if (state != DapManager.State.SUSPENDED) {
+                    hideExceptionCard(); // Continue, a step, the session's end: the stop it described is over
+                    stopException = null;
+                }
                 // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
                 // starts in that state by itself, so there is nothing to show and no reason to build it now.
                 boolean show = debugPanel != null || state != DapManager.State.INACTIVE;
@@ -1367,6 +1371,9 @@ final class DebugCoordinator {
 
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> stopFrames) {
+                stopSerial++;
+                stopException = null; // a new stop: the last one's exception is not this one's
+                hideExceptionCard();
                 List<DapModels.StackFrameInfo> frames = currentLines(stopFrames);
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
@@ -1456,6 +1463,8 @@ final class DebugCoordinator {
                 // Which exception: the one thing an exception stop has to say, and the stop event does not.
                 panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
                 panel().setExceptionInfo(info);
+                stopException = info;
+                showExceptionCard(false); // under the line that threw, when it is the one shown
                 host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
             }
 
@@ -1837,6 +1846,85 @@ final class DebugCoordinator {
     /** The id of the frame an exception stop threw in (its line is drawn red), or -1. */
     private int exceptionFrameId = -1;
 
+    /** The exception of the stop shown, once the adapter has said which (else null). */
+    private DapModels.@Nullable ExceptionInfo stopException;
+
+    /** The frame whose line the editor marks as the execution line, or null. */
+    private DapModels.@Nullable StackFrameInfo paintedFrame;
+
+    /** Counts stops: the exception card opens by itself once per stop, and again only when asked. */
+    private int stopSerial;
+
+    /** The stop the exception card last opened by itself for. */
+    private int exceptionCardStop = -1;
+
+    private @Nullable DebugExceptionCard exceptionCard;
+
+    /**
+     * Opens the exception card under the line that threw, when that frame is the one shown and the adapter has said
+     * which exception it is. By itself ({@code asked} false) only once per stop: closing it keeps it closed.
+     */
+    private void showExceptionCard(boolean asked) {
+        DapModels.ExceptionInfo info = stopException;
+        DapModels.StackFrameInfo frame = paintedFrame;
+        EditorBuffer b = execHighlightBuffer;
+        if (info == null
+                || frame == null
+                || b == null
+                || frame.id() != exceptionFrameId
+                || dapManager.state() != DapManager.State.SUSPENDED) {
+            return;
+        }
+        if (!asked && exceptionCardStop == stopSerial) {
+            return;
+        }
+        exceptionCardStop = stopSerial;
+        if (exceptionCard == null) {
+            exceptionCard = new DebugExceptionCard(new DebugExceptionCard.Actions(
+                    () -> {
+                        if (exceptionToggleOn(true)) {
+                            toggleExceptionKind(true); // says so on the status line
+                        }
+                    },
+                    () -> host.setStatus(tr("status.debug.exceptionCopied"))));
+        }
+        int line = frame.line() - b.getBreakpointManager().regionFirstLine();
+        exceptionCard.show(b.getFocusedArea(), line, info, info.caught() && exceptionToggleOn(true));
+    }
+
+    private void hideExceptionCard() {
+        if (exceptionCard != null) {
+            exceptionCard.hide();
+        }
+    }
+
+    /** The exception card (test read; null until an exception stop opened it). */
+    @Nullable
+    DebugExceptionCard exceptionCard() {
+        return exceptionCard;
+    }
+
+    /**
+     * Debug: Show Exception — opens the card of the exception the program stopped on again, going back to the frame
+     * that threw when another one is shown.
+     */
+    void showException() {
+        if (stopException == null || dapManager.state() != DapManager.State.SUSPENDED) {
+            host.setStatus(tr("status.debug.noException"));
+            return;
+        }
+        DapModels.StackFrameInfo frame = paintedFrame;
+        if (frame == null || frame.id() != exceptionFrameId) {
+            if (!panel().selectFrameById(exceptionFrameId)) {
+                host.setStatus(tr("status.debug.noException"));
+                return;
+            }
+            exceptionCardStop = -1; // the frame's paint opens it, once laid out
+            return;
+        }
+        showExceptionCard(true);
+    }
+
     private void paintExecutionLine(EditorBuffer b, DapModels.StackFrameInfo frame) {
         execHighlightBuffer = b;
         ops.afterBufferLoad(b, () -> {
@@ -1847,6 +1935,12 @@ final class DebugCoordinator {
                 // there (a stop outside the region has no line to show and paints nothing).
                 b.setExecutionLine(frame.line() - b.getBreakpointManager().regionFirstLine());
                 b.setExecutionLineException(frame.id() == exceptionFrameId);
+                paintedFrame = frame;
+                if (frame.id() == exceptionFrameId) {
+                    Platform.runLater(() -> showExceptionCard(false)); // once the line has been laid out
+                } else {
+                    hideExceptionCard(); // another frame's line: the card belongs to the one that threw
+                }
             }
         });
     }
@@ -1866,6 +1960,8 @@ final class DebugCoordinator {
     }
 
     private void clearExecHighlight() {
+        paintedFrame = null;
+        hideExceptionCard();
         if (execHighlightBuffer != null) {
             execHighlightBuffer.clearExecutionLine();
             execHighlightBuffer = null;

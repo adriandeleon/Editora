@@ -1133,6 +1133,17 @@ shown, the next still-stopped thread is brought forward as after Continue, and a
 shown because the shown one was resumed alone — brings it forward (`showSuspendedThread`). The adapter's `thread`
 events (start/exit) reach the panel as `onThreadsChanged`, coalesced into one listing per 250 ms while the view is
 shown. The opt-in `ThreadsViewProbeFxTest` checks Pause Thread and Resume Thread act on one thread against java-debug.
+The **exception card** ([`ui/DebugExceptionCard`](../../src/main/java/com/editora/ui/DebugExceptionCard.java)) opens
+under the line that threw once `exceptionInfo` has answered (`onExceptionInfo`) and that frame is the one painted
+(`paintedFrame.id() == exceptionFrameId`), once per stop by itself and again through `debug.showException`. It is a
+`PopupControl` owned by the window that never takes focus: auto-hide does not consume the click that closes it, an Esc
+filter on the editor closes it, and it follows the line on scroll (`estimatedScrollY`) and closes when the line leaves
+the screen. A line drawn only a pulse or two after the stop (a file just opened) is waited for, at most ten times
+40 ms. `DapModels.ExceptionInfo` now carries the adapter's `breakMode` (java-debug: `userUnhandled` for uncaught,
+`always` for caught), `details.stackTrace` and `details.innerException` (as `causes`, at most eight deep). java-debug
+sends only `exceptionId` and its `toString()` as a quoted string value, so the card strips the quotes and the type in
+front. **Don’t Stop on Caught Exceptions** (a caught exception, with the caught toggle on) turns that toggle off.
+The opt-in `ExceptionCardProbeFxTest` checks a caught then an uncaught exception against java-debug.
 Restart goes
 through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
 build, closed-file breakpoints) rather than only the adapter launch. `debug.start` in a JUnit test file that

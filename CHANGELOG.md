@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Exception card.** When the program stops on an exception, a card opens under the line that threw it, as
+  Visual Studio's Exception Helper and VS Code's exception widget do: whether the program catches it, its type and
+  message, the exceptions that caused it and the stack trace when the debugger sends them (Python and
+  JavaScript), with **Copy** and — for a caught exception — **Don’t Stop on Caught Exceptions**. It never takes
+  focus: Esc in the editor or a click elsewhere closes it, and Continue, a step or another frame does too.
+  *Debug: Show Exception* opens it again.
 - **JSON Lines files.** `.jsonl`, `.ndjson` and `.jsonlines` files open as **JSON Lines**: each line is coloured as
   JSON, a line that is not exactly one JSON value (a trailing comma, two records on one line, a record split over
   two lines) is underlined with what is wrong, and the preview shows the records as a tree keyed by line number —
