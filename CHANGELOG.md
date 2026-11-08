@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Navigate code on the Project Map.** The editor's code navigation now works inside Map cards and answers with
+  cards beside them instead of leaving the Map: Go to Definition (and Peek Definition), Go to Declaration, Go to Type
+  Definition, Go to Implementation, Go to Super Method, Find Usages, Call Hierarchy and Type Hierarchy, typed with
+  your keymap's keys or picked from a card's menu, and Ctrl+click (Cmd+click on macOS) on a name. Each result card is
+  joined to the card it came from by a labelled edge ("definition", "implements", "extends"…), the keyboard follows a
+  definition to its card, and Back and Forward step between the cards you followed. Quick Documentation shows the
+  language server's hover over a card. Without a language server, Go to Definition finds the declarations of that
+  name. A declaration row's menu offers the same, and a card menu's **In the Editor** submenu still runs these
+  commands in the editor.
 - **Pinned values while debugging.** *Debug: Pin Value to Line* pins the selection, or the expression at the caret,
   to the caret's line (or asks for one), as Visual Studio's pinned DataTips and IntelliJ's inline watches do: at
   every stop it is evaluated in the selected frame and its value painted at the end of that line, after the values

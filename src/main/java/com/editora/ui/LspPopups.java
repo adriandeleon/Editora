@@ -139,60 +139,13 @@ final class LspPopups {
         if (problemsNode != null && content != problemsNode) {
             content = new VBox(10, problemsNode, new javafx.scene.control.Separator(), content);
         }
-        // In a scroll pane no taller than part of the window: a command's hover from bash-language-server is
-        // its whole man page (8 KB for `ls`), which made a popup thousands of pixels tall with most of it
-        // off screen and out of reach.
-        javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(content);
-        scroll.getStyleClass().add("lsp-hover-scroll");
-        scroll.setFitToWidth(true); // prose wraps at the popup's width; code blocks scroll sideways themselves
-        scroll.setHbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.setVbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.AS_NEEDED);
-        scroll.setFocusTraversable(false);
-        scroll.setMaxWidth(HoverCard.maxWidth(markdown)); // a man page's 80 columns uncut (Bash review C7)
-        scroll.setMaxHeight(HoverCard.maxHeight(area));
-        // Wide enough for the signature: the popup sized itself to the docstring's prose, so Pyright's
-        // `def helper(` block scrolled sideways under its own language tag (Python review B12).
-        scroll.setMinWidth(HoverCard.codeWidth(markdown));
-        VBox box = new VBox(scroll);
-        box.getStyleClass().add("lsp-hover-popup");
-        box.setMaxWidth(HoverCard.maxWidth(markdown));
-        box.getStylesheets()
-                .addAll(
-                        getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
-                        getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
-        com.editora.editor.PopupSheets.followOwnerTheme(
-                box, area.getScene() == null ? null : area.getScene().getWindow());
-
-        Popup popup = new Popup();
-        popup.setAutoHide(true); // click outside / focus loss dismisses it
-        popup.setConsumeAutoHidingEvents(false);
-        popup.getContent().add(box);
-        hoverPopup = popup;
-
-        // Dismiss on Escape, caret movement, or scroll, page with Page Down/Up (and Emacs's C-v/M-v, which the
-        // keymap hands over while it shows: C7) — all detached again when the popup hides.
-        EventHandler<KeyEvent> esc = HoverCard.keys(scroll, this::hideHoverPopup);
-        ChangeListener<Object> dismiss = (o, a, b) -> hideHoverPopup();
-        boolean ownChords = area.getProperties()
-                        .putIfAbsent(com.editora.command.KeyDispatcher.OWNED_CHORDS, HoverCard.SCROLL_CHORDS)
-                == null;
-        area.addEventFilter(KeyEvent.KEY_PRESSED, esc);
-        area.caretPositionProperty().addListener(dismiss);
-        area.estimatedScrollYProperty().addListener(dismiss);
-        popup.setOnHidden(ev -> {
-            area.removeEventFilter(KeyEvent.KEY_PRESSED, esc);
-            if (ownChords) {
-                area.getProperties().remove(com.editora.command.KeyDispatcher.OWNED_CHORDS, HoverCard.SCROLL_CHORDS);
-            }
-            area.caretPositionProperty().removeListener(dismiss);
-            area.estimatedScrollYProperty().removeListener(dismiss);
-            if (hoverPopup == popup) {
+        Popup[] shown = new Popup[1];
+        shown[0] = HoverCard.show(area, content, markdown, () -> {
+            if (hoverPopup == shown[0]) {
                 hoverPopup = null;
             }
         });
-
-        showAtCaret(popup, area);
-        scroll.setVvalue(0); // from its first line, whatever layout scrolled to (HTML review B8)
+        hoverPopup = shown[0];
     }
 
     /**
@@ -200,7 +153,7 @@ final class LspPopups {
      * A8: hover and signature help covered the line they describe near the window's bottom). The height is
      * only known once shown, so it is moved after showing.
      */
-    private static void showAtCaret(javafx.stage.PopupWindow popup, CodeArea area) {
+    static void showAtCaret(javafx.stage.PopupWindow popup, CodeArea area) {
         var bounds = area.getCaretBounds().orElse(null);
         if (bounds == null) {
             popup.show(area, 0, 0);
