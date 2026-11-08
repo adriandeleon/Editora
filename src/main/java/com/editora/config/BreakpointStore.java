@@ -20,7 +20,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class BreakpointStore {
 
     /** Current on-disk schema version of {@code breakpoints.json}. */
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -29,6 +29,9 @@ public class BreakpointStore {
 
     /** Project key -> its method breakpoints and field watchpoints (schema 4), in the order they were added. */
     private Map<String, List<MemberBreakpoint>> memberBreakpoints = new LinkedHashMap<>();
+
+    /** Project key -> (file key -> the values pinned to its lines) (schema 5). */
+    private Map<String, Map<String, List<PinnedLine>>> pins = new LinkedHashMap<>();
 
     public int getSchemaVersion() {
         return schemaVersion;
@@ -52,6 +55,19 @@ public class BreakpointStore {
 
     public void setMemberBreakpoints(Map<String, List<MemberBreakpoint>> memberBreakpoints) {
         this.memberBreakpoints = memberBreakpoints == null ? new LinkedHashMap<>() : memberBreakpoints;
+    }
+
+    public Map<String, Map<String, List<PinnedLine>>> getPins() {
+        return pins;
+    }
+
+    public void setPins(Map<String, Map<String, List<PinnedLine>>> pins) {
+        this.pins = pins == null ? new LinkedHashMap<>() : pins;
+    }
+
+    /** One project's pinned values by file, creating an empty map if absent. */
+    public Map<String, List<PinnedLine>> pinsBucket(String projectKey) {
+        return pins.computeIfAbsent(projectKey == null ? "" : projectKey, k -> new LinkedHashMap<>());
     }
 
     /** One project's method breakpoints and field watchpoints, creating an empty list if absent. */

@@ -41,6 +41,9 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
     /** Variable name → rendered value for the suspended frame; null = inactive. */
     private @Nullable Map<String, String> values;
 
+    /** Line → its pinned values ({@code expr = value}), painted after the line's own values; null = none. */
+    private @Nullable Map<Integer, String> pinned;
+
     /** The 0-based line the frame is stopped on (its function is the only one annotated); -1 = unknown. */
     private int frameLine = -1;
 
@@ -86,6 +89,7 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
         second.font = font;
         second.setRenderingActive(rendering);
         second.setValues(values, frameLine);
+        second.setPinned(pinned);
         follower = second;
         return second;
     }
@@ -114,7 +118,27 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
 
     /** Whether there is anything to paint; the canvas is 1x1 (no viewport texture) whenever there is not. */
     private boolean drawable() {
-        return values != null && rendering;
+        return (values != null || pinned != null) && rendering;
+    }
+
+    /** Sets the pinned values to paint, by line (null or empty clears them). */
+    public void setPinned(@Nullable Map<Integer, String> byLine) {
+        if (follower != null) {
+            follower.setPinned(byLine);
+        }
+        this.pinned = byLine == null || byLine.isEmpty() ? null : Map.copyOf(byLine);
+        activate();
+    }
+
+    private void activate() {
+        boolean active = values != null || pinned != null;
+        setVisible(active);
+        if (active) {
+            requestLayout();
+            scheduleRedraw();
+        } else {
+            CanvasGuards.release(canvas); // release the full-viewport texture while inactive
+        }
     }
 
     /**
@@ -136,14 +160,7 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
         }
         this.values = (v == null || v.isEmpty()) ? null : Map.copyOf(v);
         this.frameLine = frameLine;
-        boolean active = values != null;
-        setVisible(active);
-        if (active) {
-            requestLayout();
-            scheduleRedraw();
-        } else {
-            CanvasGuards.release(canvas); // release the full-viewport texture while inactive
-        }
+        activate();
     }
 
     /** Keeps the annotation font in step with the editor font (italic variant). */
@@ -179,7 +196,9 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
         Map<String, String> vals = values;
-        if (vals == null || !drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        Map<String, String> known = vals == null ? Map.of() : vals;
+        Map<Integer, String> pins = pinned;
+        if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         try {
@@ -194,44 +213,68 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
             g.setTextBaseline(VPos.CENTER);
             g.setTextAlign(TextAlignment.LEFT);
             // The frame's function header: a lambda opened on another line declares its own parameters there.
-            int frameHeader =
-                    frameLine < 0 ? InlineValueScope.UNKNOWN : InlineValueScope.headerOf(this::codeLine, frameLine);
+            int frameHeader = vals == null || frameLine < 0
+                    ? InlineValueScope.UNKNOWN
+                    : InlineValueScope.headerOf(this::codeLine, frameLine);
             for (int p = first; p <= last; p++) {
-                if (frameLine >= 0 && p > frameLine) {
-                    break; // a line below the stop has not run yet: a value there reads as that line's (review C3)
-                }
-                if (area.isFolded(p)) {
+                String pin = pins == null ? null : pins.get(p);
+                boolean valuesHere = vals != null && !(frameLine >= 0 && p > frameLine); // below the stop: not yet run
+                if ((!valuesHere && pin == null) || area.isFolded(p)) {
                     continue;
                 }
                 String line = area.getParagraph(p).getText();
-                if (line.isEmpty()) {
-                    continue;
-                }
                 int par = p;
-                List<String> names = namesOn(
-                        line,
-                        p,
-                        frameLine,
-                        frameHeader,
-                        vals.keySet(),
-                        col -> !isCode(area.getStyleAtPosition(par, col + 1)),
-                        this::codeLine);
-                if (names.isEmpty() || (lineFilter != null && !lineFilter.test(p))) {
+                List<String> names = !valuesHere || line.isEmpty()
+                        ? List.of()
+                        : namesOn(
+                                line,
+                                p,
+                                frameLine,
+                                frameHeader,
+                                known.keySet(),
+                                col -> !isCode(area.getStyleAtPosition(par, col + 1)),
+                                this::codeLine);
+                if (lineFilter != null && !lineFilter.test(p)) {
+                    names = List.of();
+                }
+                if (names.isEmpty() && pin == null) {
                     continue;
                 }
-                int lastChar = line.length() - 1;
-                int abs = area.getAbsolutePosition(p, lastChar);
-                Bounds b = area.getCharacterBoundsOnScreen(abs, abs + 1)
-                        .map(canvas::screenToLocal)
-                        .orElse(null);
-                if (b == null) {
-                    continue;
+                double y;
+                double x;
+                if (line.isEmpty()) {
+                    Bounds para = area.getParagraphBoundsOnScreen(p)
+                            .map(canvas::screenToLocal)
+                            .orElse(null);
+                    if (para == null) {
+                        continue;
+                    }
+                    x = para.getMinX() + 16;
+                    y = para.getMinY() + para.getHeight() / 2;
+                } else {
+                    int abs = area.getAbsolutePosition(p, line.length() - 1);
+                    Bounds b = area.getCharacterBoundsOnScreen(abs, abs + 1)
+                            .map(canvas::screenToLocal)
+                            .orElse(null);
+                    if (b == null) {
+                        continue;
+                    }
+                    x = b.getMaxX() + 16;
+                    y = b.getMinY() + b.getHeight() / 2;
                 }
-                double x = b.getMaxX() + 16;
                 if (x < 0 || x > w) {
                     continue;
                 }
-                g.fillText(annotation(names, vals), x, b.getMinY() + b.getHeight() / 2);
+                if (!names.isEmpty()) {
+                    String text = annotation(names, known);
+                    g.setFill(colors.inlineValue());
+                    g.fillText(text, x, y);
+                    x += textWidth(text) + 16;
+                }
+                if (pin != null) {
+                    g.setFill(colors.info()); // a pinned value: asked for, not inferred
+                    g.fillText(PIN_MARK + pin, x, y);
+                }
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event redraws.
@@ -276,6 +319,17 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
             first++;
         }
         return first == text.length() || !isCode(area.getStyleAtPosition(p, first + 1)) ? "" : text;
+    }
+
+    /** Leads a pinned value's text, telling it from the values the editor infers. */
+    static final String PIN_MARK = "◆ ";
+
+    private final javafx.scene.text.Text measure = new javafx.scene.text.Text();
+
+    private double textWidth(String text) {
+        measure.setFont(font);
+        measure.setText(text);
+        return measure.getLayoutBounds().getWidth();
     }
 
     /** {@code name: value  name2: value2} for up to {@link #MAX_PER_LINE} names, values capped. */

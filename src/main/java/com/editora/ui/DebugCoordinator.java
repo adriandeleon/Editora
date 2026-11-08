@@ -177,6 +177,14 @@ final class DebugCoordinator {
         /** The per-file breakpoint map ({@code breakpoints.json}); path-string → that file's breakpoints. */
         Map<String, List<Breakpoint>> breakpointMap();
 
+        /** The values pinned to {@code fileKey}'s lines ({@code breakpoints.json}). */
+        default List<com.editora.config.PinnedLine> pins(String fileKey) {
+            return List.of();
+        }
+
+        /** Replaces the values pinned to {@code fileKey}'s lines (none: removed) and writes {@code breakpoints.json}. */
+        default void persistPins(String fileKey, List<com.editora.config.PinnedLine> pins) {}
+
         /** This project's method breakpoints and field watchpoints ({@code breakpoints.json}). */
         default List<com.editora.config.MemberBreakpoint> memberBreakpoints() {
             return List.of();
@@ -306,6 +314,28 @@ final class DebugCoordinator {
         dapManager.setCodeReplaceNotices(this::codeReplaceNotice);
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
         memberBreakpoints = new MemberBreakpointCommands(host, ops, dapManager, lspManager, () -> breakpointsMuted);
+        pinnedValues = new PinnedValues(host, ops, dapManager);
+    }
+
+    /** Values pinned to lines. */
+    private final PinnedValues pinnedValues;
+
+    PinnedValues pinnedValues() {
+        return pinnedValues;
+    }
+
+    /** Debug: Pin Value to Line — the selection or the expression at the caret, on the caret's line. */
+    void togglePinAtCaret() {
+        if (debugSupportEnabled()) {
+            pinnedValues.togglePinAtCaret();
+        } else {
+            host.setStatus(tr("statusbar.tip.debugDisabled"));
+        }
+    }
+
+    /** Debug: Unpin Values on Line. */
+    void unpinLine() {
+        pinnedValues.unpinLine();
     }
 
     /** Method breakpoints and field watchpoints. */
@@ -1065,6 +1095,7 @@ final class DebugCoordinator {
             persistBreakpoints(buffer); // self-heal re-anchored indices once
         }
         showBreakpointStates(buffer); // opened during a session: it shows what the adapter already said
+        pinnedValues.restore(buffer);
         reshowFrameIn(buffer);
     }
 
@@ -1612,6 +1643,7 @@ final class DebugCoordinator {
                     panel().setScopes(scopes);
                     applyInlineValues(frame, scopes);
                 });
+                pinnedValues.refresh(frame.id()); // every pinned value, evaluated in this frame
             }
 
             @Override
@@ -1750,6 +1782,7 @@ final class DebugCoordinator {
 
     private void clearDebugEditorSurfaces() {
         debugFrameId = -1;
+        pinnedValues.clear();
         if (debugValuesBuffer != null) {
             debugValuesBuffer.setInlineValues(null, -1);
             debugValuesBuffer.setDebugHoverActive(false);
@@ -5048,6 +5081,19 @@ final class DebugCoordinator {
                 public void addWatch(String expression) {
                     ops.openToolWindow();
                     panel().addWatchPrompt(expression);
+                }
+
+                @Override
+                public void pin(org.fxmisc.richtext.CodeArea area, int line, String expression) {
+                    EditorBuffer[] owner = new EditorBuffer[1];
+                    host.forEachBuffer(b -> {
+                        if (owner[0] == null && (b.getArea() == area || b.getFocusedArea() == area)) {
+                            owner[0] = b;
+                        }
+                    });
+                    if (owner[0] != null) {
+                        pinnedValues.toggle(owner[0], line, expression);
+                    }
                 }
             });
             if (valuePopup.popup().getSkin() != null) {

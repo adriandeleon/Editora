@@ -72,6 +72,6 @@ class MemberBreakpointTest {
 
         BreakpointStore v3 = mapper.readValue("{\"schemaVersion\":3,\"byProject\":{}}", BreakpointStore.class);
         assertTrue(v3.getMemberBreakpoints().isEmpty());
-        assertEquals(4, BreakpointStore.SCHEMA_VERSION);
+        assertTrue(BreakpointStore.SCHEMA_VERSION >= 4, "member breakpoints came with schema 4");
     }
 }

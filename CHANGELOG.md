@@ -43,7 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   language server's hover over a card. Without a language server, Go to Definition finds the declarations of that
   name. A declaration row's menu offers the same, and a card menu's **In the Editor** submenu still runs these
   commands in the editor.
-
+- **Pinned values while debugging.** *Debug: Pin Value to Line* pins the selection, or the expression at the caret,
+  to the caret's line (or asks for one), as Visual Studio's pinned DataTips and IntelliJ's inline watches do: at
+  every stop it is evaluated in the selected frame and its value painted at the end of that line, after the values
+  the editor shows by itself — `total = 3  ·  items.size() = 2`. **Pin to Line** in the hover's value popup does the
+  same. Pins follow their line through edits, are saved with the project's breakpoints, and *Debug: Unpin Values on
+  Line* removes them; running the same command again unpins one.
 - **Attach to Process.** *Debug: Attach to Process…* (Run menu, and the last row of the Attach picker) lists the
   Java, Node.js and Python programs running on this machine — those listening for a debugger first: a JVM started
   with the JDWP agent (`-agentlib:jdwp=…,server=y,address=5005`), a Node.js started with `--inspect`, a Python

@@ -1258,9 +1258,15 @@ public class SharedConfig {
         return breakpointStore.members(key);
     }
 
+    /** A project's pinned values by file (live map; persist with {@link #saveBreakpoints}). */
+    public Map<String, List<PinnedLine>> pinsBucket(String key) {
+        return breakpointStore.pinsBucket(key);
+    }
+
     public void deleteBreakpointsForProject(String projectKey) {
         String key = projectKey == null ? "" : projectKey;
         boolean lines = breakpointStore.getByProject().remove(key) != null;
+        lines |= breakpointStore.getPins().remove(key) != null;
         if (breakpointStore.getMemberBreakpoints().remove(key) != null || lines) {
             saveBreakpoints();
         }

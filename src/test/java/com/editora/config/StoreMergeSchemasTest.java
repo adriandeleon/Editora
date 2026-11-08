@@ -88,6 +88,17 @@ class StoreMergeSchemasTest {
     }
 
     @Test
+    void pinnedValuesOfOneFileAreToldApartByLine() throws Exception {
+        assertEquals(
+                json("{'pins':{'':{'/a.java':[{'line':1,'expressions':['x']},{'line':5},{'line':9}]}}}"),
+                merge(
+                        ConfigSchema.BREAKPOINTS,
+                        "{'pins':{'':{'/a.java':[{'line':1,'expressions':['a']}]}}}",
+                        "{'pins':{'':{'/a.java':[{'line':1,'expressions':['x']},{'line':5}]}}}",
+                        "{'pins':{'':{'/a.java':[{'line':1,'expressions':['a']},{'line':9}]}}}"));
+    }
+
+    @Test
     void notesAreToldApartByTheirId() throws Exception {
         assertEquals(
                 json("{'byProject':{'p':{'/a.txt':[{'id':'n1','body':'edited here'},{'id':'n3','body':'theirs'}]}}}"),

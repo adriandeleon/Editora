@@ -336,6 +336,8 @@ final class MenuBarModel {
                                                 "debug.showException",
                                                 "debug.addWatch",
                                                 "debug.toggleHex",
+                                                "debug.pinValue",
+                                                "debug.unpinLine",
                                                 SEPARATOR,
                                                 "debug.toggleBreakpointEnabled",
                                                 "debug.toggleTemporaryBreakpoint",
