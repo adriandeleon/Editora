@@ -255,6 +255,25 @@ It searches the text the card shows (a declaration card's lines), at most 10,000
 bar first and leaves the match selected; the next Escape closes the card. The find commands go through
 `KeyDispatcher.HANDLED_COMMANDS`, so they follow the keymap and never reach the editor's own find.
 
+**Moving inside a card.** `MapCardMoves` runs the editor's movement commands typed in a focused card on the card's
+text, through the same `HANDLED_COMMANDS` predicate (taken even with nothing to move to, so they never reach the active
+tab). **Go to Line** (`nav.goToLine`, or the menu's **Go to Line…**) opens a bar under the title bar, like find's: a
+field holding the caret's line and "Lines a–b", numbered as the file numbers them, so a declaration card's lines keep
+their file numbers. It takes `line` or `line:column`; a line outside the card goes to its first or last line, as the
+editor clamps, and what is not a number marks the field and leaves the bar open. Enter goes and closes the bar;
+Escape closes it before the find bar or the card. **Matching bracket** (`nav.matchingBracket`) uses
+`BraceMatcher.jumpTarget` as the editor does, and **Beginning / End of Defun** (`nav.beginningOfDefun`,
+`nav.endOfDefun`) Python's def/class rule or the column-0 rule. In a **file card**, Alt+Page Up / Alt+Page Down (all
+cards claim `DECLARATION_CARD_KEYS`) and the menu's **Previous / Next Declaration** move the caret to the declaration
+before or after it, by the line its name is on in the file's outline (`MapCards.cardsMoveCaret`), onto its name. An
+outline not held yet is asked for and the move waits for it up to `MapCardLinks.OUTLINE_WAIT`; a declaration past what
+the card holds opens as its own card, and a file with no outline, or nothing that way, says so in the status. A file
+card's outline, once held, is kept up to date with the cards' outline files. When the caret rests (150 ms) in a
+focused card, the **other uses of the name at the caret** are washed with the editor's `OccurrenceHighlightOverlay`:
+whole-word matches of the name in the card's text (`MapCardMoves.usesOf`, at most 2,000), not for keywords, constants
+or numbers (by the card's own colouring), nor when something other than the name is selected, nor for a name used
+once. It is by name, not by the language server, so a card answers at once and for any file.
+
 **Title bar.** Title, lock, status, then a declaration card's ‹ ›, −/+, the pin, Structure (file cards), Notes,
 Open and ×. The title keeps room for the file's name (a declaration card's: up to its parameters), at most half
 the card (review 3, C11), and takes whatever the buttons leave up to its whole text before the status gets any;
@@ -575,7 +594,7 @@ after the file was first outlined). The wiring is `ProjectPanel.shareIndexes` �
 
 **Declaration cards step.** A declaration card's ‹ › (and Alt+Page Up / Alt+Page Down, claimed through
 `DECLARATION_CARD_KEYS`, and the menu's **Previous / Next Declaration**) show the previous or next declaration of the
-same file, depth-first through its outline (`MapCards.cardsStep`), in the same card where it stands: the card is
+same file (in a file card the same keys move the caret instead; see Moving inside a card), depth-first through its outline (`MapCards.cardsStep`), in the same card where it stands: the card is
 re-keyed to that declaration, its title, lines and gutter follow, its notes and Git context are read again, and
 another card already open on that declaration closes. The menu's **Show in Structure** selects its row in the file's
 Structure column: the file card's column when that card has it out, else the Map's own Structure column of the file
@@ -1494,6 +1513,9 @@ The focused coverage lives in:
   context and its cache per HEAD, closed-file outlines from a running server (and the heuristic fallback and wait),
   a file's notes on its code card, and the glance text and title bar at the minimum width; `GitServiceLastChangeTest`
   and `LspClosedFileSymbolsFxTest` (no running server: nothing asked, nothing started);
+- `ProjectMapCardMovesFxTest` / `MapCardMovesTest` for moving inside a card: Go to Line in file and declaration
+  cards, its bar's Enter and Escape and the menu item, matching bracket and Beginning / End of Defun, a file card's
+  Alt+Page Up / Down through its outline (and the wait for it), a file with no outline, and the uses wash;
 - `ProjectMapWindowReviewFxTest` for the pinned root in the No Project window, the Map returning with its
   project, cards and row states across a close and reopen, the theme mirror, a maximized window, New Folder
   and Rename from the Map, an unreadable folder's status line, Reveal Active File and its option, a card's
