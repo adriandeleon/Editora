@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import java.util.List;
-
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -10,12 +8,6 @@ import static com.editora.i18n.Messages.tr;
  * ({@code applySupport}). Moved out of {@link DebugCoordinator}, which opens them.
  */
 final class DebugAdapterPickers {
-
-    /** Debug adapters whose enable can be toggled ("java" has no enable — gated by the Java LSP server). */
-    private static final String[] DEBUG_TOGGLEABLE_ADAPTERS = {"python", "javascript"};
-
-    /** Debug adapters with a configurable command/path. */
-    private static final String[] DEBUG_PATH_ADAPTERS = {"java", "python", "javascript"};
 
     private final CoordinatorHost host;
     private final Runnable applySupport;
@@ -27,50 +19,40 @@ final class DebugAdapterPickers {
 
     /** The adapter's name as the pickers show it. */
     static String label(String id) {
-        return switch (id) {
-            case "python" -> "Python";
-            case "javascript" -> "JavaScript";
-            default -> "Java";
-        };
+        DebugAdapterSettings.Binding b = DebugAdapterSettings.of(id);
+        return b == null ? id : b.language().displayName();
     }
 
     private boolean enabled(String id) {
-        var s = host.settings();
-        return switch (id) {
-            case "python" -> s.isPythonDebugEnabled();
-            case "javascript" -> s.isJsDebugEnabled();
-            default -> true;
-        };
+        DebugAdapterSettings.Binding b = DebugAdapterSettings.of(id);
+        return b == null || b.isEnabled(host.settings());
     }
 
     private String path(String id) {
-        var s = host.settings();
-        return switch (id) {
-            case "python" -> s.getPythonDebugCommand();
-            case "javascript" -> s.getJsDebugPath();
-            default -> s.getJavaDebugPluginPath();
-        };
+        DebugAdapterSettings.Binding b = DebugAdapterSettings.of(id);
+        return b == null ? "" : b.path().apply(host.settings());
     }
 
-    /** Picker over the python/javascript debug adapters: toggles the chosen one's enable. */
+    /** Picker over the debug adapters with a switch of their own (Python, JavaScript): toggles the chosen one. */
     void chooseToggle() {
         QuickOpen<String> picker = new QuickOpen<>(
                 tr("command.debug.toggleAdapter"),
                 tr("palette.setting.pick"),
-                () -> List.of(DEBUG_TOGGLEABLE_ADAPTERS),
+                () -> DebugAdapterSettings.toggleable().stream()
+                        .map(DebugAdapterSettings.Binding::id)
+                        .toList(),
                 id -> label(id) + "  —  " + tr(enabled(id) ? "common.on" : "common.off"),
                 id -> "",
                 id -> {
                     if (id == null) {
                         return;
                     }
-                    var s = host.settings();
-                    boolean next = !enabled(id);
-                    if ("python".equals(id)) {
-                        s.setPythonDebugEnabled(next);
-                    } else {
-                        s.setJsDebugEnabled(next);
+                    DebugAdapterSettings.Binding b = DebugAdapterSettings.of(id);
+                    if (b == null || b.setEnabled() == null) {
+                        return;
                     }
+                    boolean next = !enabled(id);
+                    b.setEnabled().accept(host.settings(), next);
                     host.requestSave();
                     applySupport.run();
                     host.syncSettingsWindow();
@@ -80,30 +62,27 @@ final class DebugAdapterPickers {
         picker.show(host.window());
     }
 
-    /** Picker over the java/python/javascript debug adapters, then prompts for that adapter's path. */
+    /** Picker over the debug adapters with a command or path of their own, then prompts for it. */
     void choosePath() {
         QuickOpen<String> picker = new QuickOpen<>(
                 tr("command.debug.setAdapterPath"),
                 tr("palette.setting.pick"),
-                () -> List.of(DEBUG_PATH_ADAPTERS),
+                () -> DebugAdapterSettings.all().stream()
+                        .map(DebugAdapterSettings.Binding::id)
+                        .toList(),
                 DebugAdapterPickers::label,
                 this::path,
                 id -> {
                     if (id == null) {
                         return;
                     }
-                    // Python's "path" is the interpreter that runs debugpy (and, when the project has none of
-                    // its own, the program): say so rather than ask for a debugpy path it is not.
-                    String label =
-                            "python".equals(id) ? tr("settings.debug.pythonCommand") : tr("palette.setting.value");
-                    host.promptText(label(id), label, path(id), v -> {
+                    DebugAdapterSettings.Binding b = DebugAdapterSettings.of(id);
+                    if (b == null) {
+                        return;
+                    }
+                    host.promptText(label(id), tr(b.pathLabelKey()), path(id), v -> {
                         String value = v.trim();
-                        var s = host.settings();
-                        switch (id) {
-                            case "python" -> s.setPythonDebugCommand(value);
-                            case "javascript" -> s.setJsDebugPath(value);
-                            default -> s.setJavaDebugPluginPath(value);
-                        }
+                        b.setPath().accept(host.settings(), value);
                         host.requestSave();
                         applySupport.run();
                         host.syncSettingsWindow();

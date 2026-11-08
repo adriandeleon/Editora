@@ -179,6 +179,12 @@ public final class DapManager {
     private String jsPath = ""; // configured dapDebugServer.js path/dir (blank ⇒ auto-detect)
     private @Nullable Path jsServer; // resolved dapDebugServer.js (null ⇒ not found)
     private boolean jsAvailable;
+
+    /**
+     * The external adapters detection found, by adapter language: the executable each is started with (a configured
+     * path, or the command found on the PATH). See {@link #configureExternal}.
+     */
+    private final Map<String, String> externalLocated = new java.util.concurrent.ConcurrentHashMap<>();
     /** The Debugging setting's Node.js ("" = automatic), see {@link com.editora.run.NodeRuntimes}. */
     private volatile String nodePath = "";
     /** The window's project root for the next JavaScript launch (its package root and workspace folder). */
@@ -487,18 +493,25 @@ public final class DapManager {
 
     /** Whether a usable debug adapter is available for {@code language} (after detection). */
     public boolean isLanguageAvailable(String language) {
-        if (language == null) {
+        DebugLanguage l = DebugLanguages.byId(language);
+        if (l == null) {
             return false;
         }
-        return switch (language) {
-            case "java" -> javaDebugUsable();
+        return switch (l.availability()) {
+            case JAVA_DEBUG_PLUGIN -> javaDebugUsable();
+            case LOCATED -> located(l);
+            // Editora's own adapter, or Metals': nothing to install, only the debugging switch (the tool, or Metals
+            // running, is checked when the session starts).
+            case BUILT_IN -> enabled;
+        };
+    }
+
+    /** Whether detection found {@code l}'s adapter (debugpy, vscode-js-debug, an external adapter's command). */
+    private boolean located(DebugLanguage l) {
+        return switch (l.id()) {
             case "python" -> pythonAvailable;
             case "javascript" -> jsAvailable;
-            // Editora's own adapter: nothing to install, only the debugging switch (the tool is checked at start).
-            case "groovy", "kotlin", "clojure" -> enabled;
-            // Metals' adapter (checked at start: it needs Metals running) or, for a script, Editora's own.
-            case "scala" -> enabled;
-            default -> false;
+            default -> enabled && externalLocated.containsKey(l.id());
         };
     }
 
@@ -1919,6 +1932,238 @@ public final class DapManager {
         });
     }
 
+    // --- An external adapter: its own program, started by its command ----------------------------------
+
+    /** How long an {@link ExternalAdapter.Transport#ANNOUNCED_PORT} adapter has to say where it listens. */
+    static final java.time.Duration ANNOUNCE_TIMEOUT = java.time.Duration.ofSeconds(15);
+
+    /**
+     * Finds external adapter language {@code language}'s adapter: {@code command} (a configured executable; blank:
+     * the profile's own command, looked up on the PATH) when {@code on}. Off the FX thread; {@code onDone} hears
+     * whether it was found, on the FX thread.
+     */
+    public void configureExternal(
+            DebugLanguage language, boolean on, String command, java.util.function.@Nullable Consumer<Boolean> onDone) {
+        ExternalAdapter external = language.external();
+        if (external == null) {
+            throw new IllegalArgumentException(language.id() + " is not an external adapter");
+        }
+        String asked = command == null || command.isBlank() ? external.command().getFirst() : command.strip();
+        io.submit(() -> {
+            String found = on ? locateExecutable(asked) : null;
+            if (found == null) {
+                externalLocated.remove(language.id());
+            } else {
+                externalLocated.put(language.id(), found);
+            }
+            if (onDone != null) {
+                Platform.runLater(() -> onDone.accept(found != null));
+            }
+        });
+    }
+
+    /** {@code command} as an executable file: itself when it is a path, else found on the PATH; null when neither. */
+    static @Nullable String locateExecutable(String command) {
+        Path p;
+        try {
+            p = Path.of(ProcessRunner.resolveExecutable(List.of(command)).getFirst());
+        } catch (java.nio.file.InvalidPathException e) {
+            return null; // not a name a file can have
+        }
+        return p.isAbsolute() && Files.isRegularFile(p) && Files.isExecutable(p) ? p.toString() : null;
+    }
+
+    /**
+     * Debugs {@code file}'s program on {@code language}'s external adapter ({@link DebugLanguage#external}): starts the
+     * adapter's command (the executable detection found, else the profile's own), reaches it as its transport says,
+     * then initializes and sends {@code launch} — shaped by the language ({@link ExternalAdapter#launchRequest}).
+     * Restart starts it all again; Stop ends the adapter with the program it ran.
+     */
+    public void startExternal(Path file, DebugLanguage language, Map<String, Object> launch) {
+        if (managerClosed) {
+            return;
+        }
+        if (!enabled) {
+            listener.onError(tr("debug.error.disabled"));
+            return;
+        }
+        ExternalAdapter external = language.external();
+        if (external == null) {
+            listener.onError(tr(language.unavailableKey()));
+            return;
+        }
+        if (client != null) {
+            stop(); // one session at a time
+        }
+        restartAction = () -> startExternal(file, language, launch);
+        debugFile = file;
+        long epoch = beginSession();
+        setState(State.STARTING);
+        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<String> filters = filtersFor(language.id());
+        String executable = externalLocated.get(language.id());
+        startupTask = io.submit(() -> {
+            try {
+                runExternal(file, language, external, executable, bps, filters, epoch, launch);
+            } catch (Exception e) {
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
+            }
+        });
+    }
+
+    private void runExternal(
+            Path file,
+            DebugLanguage language,
+            ExternalAdapter external,
+            @Nullable String executable,
+            List<DapModels.FileBreakpoints> bps,
+            @Nullable List<String> filters,
+            long epoch,
+            Map<String, Object> launch)
+            throws Exception {
+        int port = external.transport() == ExternalAdapter.Transport.PORT_ARGUMENT ? freePort() : -1;
+        ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(external.argv(executable, port)));
+        ProcessRunner.applyUserEnv(pb);
+        Path cwd = file.getParent();
+        if (cwd != null && Files.isDirectory(cwd)) {
+            pb.directory(cwd.toFile());
+        }
+        onOutput(epoch, String.join(" ", pb.command()) + "\n", COMMAND_CATEGORY);
+        if (external.transport() == ExternalAdapter.Transport.ANNOUNCED_PORT) {
+            pb.redirectErrorStream(true); // the announcement may come on either stream
+        }
+        Process proc = BusyExecutable.start(pb);
+        if (!isCurrent(epoch)) {
+            com.editora.process.ProcessRegistry.killTree(proc);
+            return;
+        }
+        DapClient c = new DapClient(sessionHost(epoch));
+        c.setPaths(DapPaths.LOCAL);
+        c.setBreakpoints(bps);
+        c.setExceptionFilters(filters);
+        c.setRunsDebuggee(programConsole);
+        AdapterStderr stderr = null;
+        java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connected;
+        switch (external.transport()) {
+            case STDIO -> {
+                stderr = AdapterStderr.drain(proc); // DAP is on stdin/stdout; an undrained PIPE deadlocks
+                if (!publishClient(epoch, c)) {
+                    com.editora.process.ProcessRegistry.killTree(proc);
+                    c.dispose();
+                    return;
+                }
+                connected = c.connectStdio(proc, language.adapterId());
+            }
+            case PORT_ARGUMENT -> {
+                stderr = AdapterStderr.drain(proc);
+                drainToConsole(proc.getInputStream(), epoch);
+                c.setAdapterProcess(proc); // killed on dispose: it serves the socket
+                if (!publishClient(epoch, c)) {
+                    c.dispose();
+                    return;
+                }
+                connected = c.connect(port, language.adapterId());
+            }
+            case ANNOUNCED_PORT -> {
+                c.setAdapterProcess(proc);
+                int announced = awaitAnnouncement(proc, external, epoch);
+                if (announced < 0) {
+                    c.dispose();
+                    fail(
+                            epoch,
+                            tr(
+                                    "debug.error.adapterNoPort",
+                                    String.join(" ", pb.command()),
+                                    ANNOUNCE_TIMEOUT.toSeconds()));
+                    return;
+                }
+                if (!publishClient(epoch, c)) {
+                    c.dispose();
+                    return;
+                }
+                connected = c.connect(announced, language.adapterId());
+            }
+            default -> throw new IllegalStateException(external.transport().toString());
+        }
+        AdapterStderr tail = stderr;
+        connected.whenComplete((caps, e) -> {
+            if (e != null) {
+                fail(
+                        epoch,
+                        tr("debug.error.adapterConnect", language.displayName(), msg(e)) + AdapterStderr.suffix(tail));
+                return;
+            }
+            if (!isCurrent(epoch)) {
+                c.dispose();
+                return;
+            }
+            c.launch(launch).whenComplete((v, le) -> {
+                if (le != null) {
+                    fail(epoch, tr("debug.error.launchFailed", msg(le)) + AdapterStderr.suffix(tail));
+                }
+            });
+            Platform.runLater(() -> {
+                if (isCurrent(epoch, c)) {
+                    setState(State.RUNNING);
+                }
+            });
+        });
+    }
+
+    /**
+     * Reads {@code proc}'s output until it announces its port (passing the lines before it to the console), then
+     * passes the rest on as the program's output — Delve writes its debuggee's there. -1 when it ends, or says
+     * nothing, within {@link #ANNOUNCE_TIMEOUT}.
+     */
+    private int awaitAnnouncement(Process proc, ExternalAdapter external, long epoch) {
+        java.util.concurrent.CompletableFuture<Integer> port = new java.util.concurrent.CompletableFuture<>();
+        Thread reader = new Thread(
+                () -> {
+                    try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(
+                            proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = in.readLine()) != null) {
+                            int found = port.isDone() ? -1 : external.announcedPort(line);
+                            if (found > 0) {
+                                port.complete(found);
+                            } else {
+                                onOutput(epoch, line + "\n", port.isDone() ? "stdout" : COMMAND_CATEGORY);
+                            }
+                        }
+                    } catch (java.io.IOException e) {
+                        // the adapter ended: whoever waits hears -1
+                    }
+                    port.complete(-1);
+                },
+                "dap-external-adapter-output");
+        reader.setDaemon(true);
+        reader.start();
+        try {
+            return port.get(ANNOUNCE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** Passes {@code out} (a socket adapter's standard output) to the console as program output, on a daemon thread. */
+    private void drainToConsole(java.io.InputStream out, long epoch) {
+        Thread t = new Thread(
+                () -> {
+                    try (java.io.BufferedReader in = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(out, java.nio.charset.StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = in.readLine()) != null) {
+                            onOutput(epoch, line + "\n", "stdout");
+                        }
+                    } catch (java.io.IOException e) {
+                        // the adapter ended
+                    }
+                },
+                "dap-external-adapter-stdout");
+        t.setDaemon(true);
+        t.start();
+    }
+
     /**
      * Attaches to a Python listening for a debugger ({@code python -m debugpy --listen host:port …}, or one that
      * called {@code debugpy.listen}): that debugpy runs its own adapter on the port, so the session connects to it
@@ -2040,8 +2285,8 @@ public final class DapManager {
                 return false;
             }
         } else if (!isLanguageAvailable(language)) {
-            listener.onError(
-                    "python".equals(language) ? tr("debug.error.pythonUnavailable") : tr("debug.error.jsUnavailable"));
+            DebugLanguage l = DebugLanguages.byId(language);
+            listener.onError(tr(l == null ? "status.debug.unavailable" : l.unavailableKey()));
             return false;
         }
         if (client != null) {
@@ -2862,8 +3107,8 @@ public final class DapManager {
 
     /** Languages a remote file is debugged in on its own host (Java through the jdtls running there). */
     public static boolean debuggableOnHost(String language) {
-        String adapter = DapServerRegistry.adapterLanguage(language); // TypeScript is debugged as JavaScript
-        return "python".equals(adapter) || "javascript".equals(adapter) || "java".equals(adapter);
+        DebugLanguage l = DebugLanguages.forLanguage(language); // TypeScript is debugged as JavaScript
+        return l != null && l.debuggableOnHost();
     }
 
     /** Why {@code language} cannot be debugged on remote {@code file}'s host, or null when it can be tried. */

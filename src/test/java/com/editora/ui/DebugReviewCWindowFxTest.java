@@ -792,6 +792,88 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.runOnFx(() -> b.toggleBreakpoint(4));
     }
 
+    // --- an external adapter: its own program, reached as its transport says ---------------------------------
+
+    @Test
+    void anExternalAdapterIsReachedOverItsStreamsOnAPortItAnnouncesOrOnAPortItIsGiven() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        FxTestSupport.runOnFx(() -> b.toggleBreakpoint(1));
+        String jvm = ProcessHandle.current().info().command().orElse("java");
+        String classPath = System.getProperty("java.class.path");
+        for (com.editora.dap.ExternalAdapter.Transport transport : com.editora.dap.ExternalAdapter.Transport.values()) {
+            try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+                String target = String.valueOf(adapter.port());
+                List<String> mode = switch (transport) {
+                    case STDIO -> List.of("stdio", target);
+                    case ANNOUNCED_PORT -> List.of("announce", target);
+                    case PORT_ARGUMENT -> List.of("listen", com.editora.dap.ExternalAdapter.PORT, target);
+                };
+                List<String> command = new java.util.ArrayList<>(
+                        List.of("java-from-the-profile", "-cp", classPath, "com.editora.dap.RelayAdapterMain"));
+                command.addAll(mode);
+                com.editora.dap.DebugLanguage go = new com.editora.dap.DebugLanguage(
+                        "go",
+                        "Go",
+                        java.util.Set.of("go"),
+                        com.editora.dap.DapServerRegistry.Kind.EXTERNAL,
+                        "go",
+                        "go",
+                        "",
+                        List.of(),
+                        null,
+                        com.editora.dap.DebugLanguage.Availability.LOCATED,
+                        List.of(),
+                        null,
+                        null,
+                        false,
+                        "status.debug.unavailable",
+                        new com.editora.dap.ExternalAdapter(
+                                command,
+                                transport,
+                                transport == com.editora.dap.ExternalAdapter.Transport.ANNOUNCED_PORT
+                                        ? java.util.regex.Pattern.compile("DAP server listening at: \\S*:(\\d+)")
+                                        : null));
+                // Detection finds the command (here the JVM running this test): it is what starts the adapter.
+                java.util.concurrent.CompletableFuture<Boolean> found = new java.util.concurrent.CompletableFuture<>();
+                manager.configureExternal(go, true, jvm, found::complete);
+                assertTrue(found.get(10, TimeUnit.SECONDS), "the JVM is found as " + jvm);
+                FxTestSupport.runOnFx(() -> manager.startExternal(
+                        util,
+                        go,
+                        com.editora.dap.ExternalAdapter.launchRequest(
+                                "go",
+                                util.toString(),
+                                List.of("-v"),
+                                util.getParent().toString(),
+                                java.util.Map.of(),
+                                false,
+                                java.util.Map.of("mode", "debug"))));
+                FakeDebugAdapter.Session session = adapter.awaitSession();
+                assertNotNull(session, transport + ": the relay reached the adapter");
+                session.awaitRequest("launch");
+                assertEquals("go", session.initializeArgs.getAdapterID(), transport.toString());
+                assertEquals("debug", session.launchArgs.get("mode"), "the language's own launch fields");
+                assertEquals(util.toString(), session.launchArgs.get("program"));
+                // After the adapter's `initialized` event, which may come after `launch`.
+                await(
+                        transport + ": the breakpoints were sent",
+                        () -> session.breakpoints.stream()
+                                .anyMatch(a -> a.getSource().getPath().endsWith("util.py")));
+                await(transport + ": running", () -> manager.state() == DapManager.State.RUNNING);
+                FxTestSupport.runOnFx(manager::stop);
+                await(transport + ": stopped", () -> !manager.isActive());
+                await(
+                        transport + ": Stop ended the adapter's process",
+                        () -> ProcessHandle.current()
+                                .descendants()
+                                .noneMatch(p -> p.isAlive()
+                                        && p.info().commandLine().orElse("").contains("RelayAdapterMain")));
+            }
+        }
+        FxTestSupport.runOnFx(() -> b.toggleBreakpoint(1));
+    }
+
     // --- gap: the breakpoints list and Mute ----------------------------------------------------------------
 
     @Test

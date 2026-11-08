@@ -91,11 +91,20 @@ signature change. If the language has no bundled grammar, also do
 
 ## Add a DAP adapter
 
-Mirrors the LSP recipe. The language→adapter spec is
-[`dap/DapServerRegistry.java`](../src/main/java/com/editora/dap/DapServerRegistry.java)
-(`Kind` = `JDTLS` / `STDIO` / `SOCKET` / `JVM` / `LANGUAGE_SERVER`), `languageIdsForDebug()` gates the breakpoint gutter +
-debug commands, and the Settings → Debugging page is data-driven over
-`SettingsDebugPage.debugAdapterUis()`. Java rides the jdtls session; Python (debugpy) is stdio;
+Mirrors the LSP recipe. Each language is a profile in
+[`dap/DebugLanguages.java`](../src/main/java/com/editora/dap/DebugLanguages.java)
+([`DebugLanguage`](../src/main/java/com/editora/dap/DebugLanguage.java): `Kind` = `JDTLS` / `STDIO` / `SOCKET` / `JVM` /
+`LANGUAGE_SERVER` / `EXTERNAL`, launch type, adapter id, availability, exception filters, hosted start command,
+remote host, "unavailable" message), which [`dap/DapServerRegistry.java`](../src/main/java/com/editora/dap/DapServerRegistry.java)
+answers from; `languageIdsForDebug()` gates the breakpoint gutter + debug commands, an adapter with settings of its
+own (a switch, a command or path) is a binding in `ui/DebugAdapterSettings`, and the Settings → Debugging page is
+data-driven over `SettingsDebugPage.debugAdapterUis()`.
+
+An adapter that is its own program (Delve, CodeLLDB, lldb-dap) is `Kind.EXTERNAL`: its profile's
+[`ExternalAdapter`](../src/main/java/com/editora/dap/ExternalAdapter.java) names the command and the transport (its
+standard streams, a port passed as `{port}`, or a port it announces, matched by a pattern), and
+`DapManager.configureExternal` / `startExternal` find it, start it and send the `launch` the language shapes
+(`ExternalAdapter.launchRequest`). Java rides the jdtls session; Python (debugpy) is stdio;
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
 
@@ -103,9 +112,8 @@ A JVM language other than Java (Groovy, Kotlin, Clojure) uses `Kind.JVM`: Editor
 ([ADR 0018](decisions/0018-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
 where its launcher takes JVM options: a variable such as Groovy's and Kotlin's `JAVA_OPTS`, or an argument
 prefix such as the Clojure CLI's `-J`, which the adapter's launch request carries as `jvmOptionPrefix`), a
-`run/JvmTools` entry (and its SDKMAN candidate when that is named otherwise), a `DapServerRegistry` `Def`, its
-`RunScan` branch, its runtime-internal packages in `JvmSourceMap.stepFilters`, the `ExceptionFilterCatalog`
-filters, and, when its classes' names are not the source's, a `JvmSourceMap.frameName` case. A language whose
+`run/JvmTools` entry (and its SDKMAN candidate when that is named otherwise), a `DebugLanguages` profile (its
+exception filters included), its `RunScan` branch, its runtime-internal packages in `JvmSourceMap.stepFilters`, and, when its classes' names are not the source's, a `JvmSourceMap.frameName` case. A language whose
 files run under more than one tool decides per file in `JvmScriptRun.launch` (Clojure: `run/ClojureRun` picks the
 Clojure CLI, Leiningen or Babashka, the folder and the command line). A language whose files are compiled before
 they run (a Kotlin `.kt` program) plans the compile itself (`run/KotlinRun`, `run/KotlinBuild`), runs it as a
@@ -117,9 +125,9 @@ whose packages need not follow folders says so in `JvmSourceMap.packagesFollowFo
 by file name.
 
 An adapter that the language's **server** starts on request is `Kind.LANGUAGE_SERVER`: the start command and its
-arguments go in [`dap/HostedDebugAdapter`](../src/main/java/com/editora/dap/HostedDebugAdapter.java) (Metals'
-`debug-adapter-start`), which also reads the reply's socket; `DapManager.startHosted` does the rest. A file the
-server does not debug can fall back to another kind (`DapServerRegistry.fallbackKind`). jdtls keeps its own
+arguments go in its profile (`hostedStartCommand`: Metals' `debug-adapter-start`) and
+[`dap/HostedDebugAdapter`](../src/main/java/com/editora/dap/HostedDebugAdapter.java), which also reads the reply's socket; `DapManager.startHosted` does the rest. A file the
+server does not debug can fall back to another kind (the profile's `fallbackKind`). jdtls keeps its own
 `JDTLS` path, since Java's launch is resolved by the client first.
 
 ## Add a build tool

@@ -28,7 +28,8 @@ public final class HostedDebugAdapter {
 
     /** The command that asks {@code language}'s language server for a debug adapter, or null. */
     public static @Nullable String startCommand(String language) {
-        return "scala".equals(language) ? "debug-adapter-start" : null;
+        DebugLanguage l = DebugLanguages.byId(language);
+        return l == null ? null : l.hostedStartCommand();
     }
 
     /**

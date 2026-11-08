@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  * {@code initialize} adapter id, and (for the standalone adapters) the default interpreter + adapter
  * arguments. Mirrors {@code LspServerRegistry}, but debug-adapter-centric.
  *
- * <p>Five transports:
+ * <p>Six transports:
  * <ul>
  *   <li><b>java</b> → {@link Kind#JDTLS}: the Microsoft java-debug adapter is started <em>inside</em> jdtls
  *       via {@code workspace/executeCommand} (which returns a socket port); the registry carries no command
@@ -26,11 +26,14 @@ import org.jspecify.annotations.Nullable;
  *   <li><b>scala</b> → {@link Kind#LANGUAGE_SERVER}: Metals starts its adapter on request
  *       ({@link HostedDebugAdapter}); a file outside an sbt, Mill, Gradle or Maven build is run by Scala CLI
  *       under Editora's JVM adapter instead ({@link #fallbackKind}).</li>
+ *   <li>{@link Kind#EXTERNAL}: an adapter that is its own program ({@link ExternalAdapter}), started by the
+ *       generic path; none of the languages above, which keep the flows their adapters need.</li>
  * </ul>
  *
  * <p>All methods are static + pure (no process launch, no I/O), so they are unit-testable. The
  * {@link DapManager} assembles the final argv from {@link DapServerSpec} (interpreter/entry + located
- * adapter path + port). Adding a language later (e.g. Go delve, Ruby) = one more {@link Def} entry.
+ * adapter path + port). The languages themselves are {@link DebugLanguages}' profiles: adding one (Go's Delve,
+ * CodeLLDB) is one more {@link DebugLanguage}, an {@link Kind#EXTERNAL} one when the adapter is its own program.
  */
 public final class DapServerRegistry {
 
@@ -45,7 +48,12 @@ public final class DapServerRegistry {
          * An adapter the language server starts when asked ({@link HostedDebugAdapter}): Metals'
          * {@code debug-adapter-start} compiles the build target and answers a socket to connect to.
          */
-        LANGUAGE_SERVER
+        LANGUAGE_SERVER,
+        /**
+         * An adapter that is its own program, started by its command and reached over its standard streams or a port
+         * ({@link ExternalAdapter}): Delve, CodeLLDB, {@code lldb-dap}. Its profile says how.
+         */
+        EXTERNAL
     }
 
     /**
@@ -71,83 +79,11 @@ public final class DapServerRegistry {
 
     public static final String DEFAULT_NODE_INTERPRETER = "node";
 
-    /** Per-language debug-adapter definitions (the served editor language ids → adapter transport/launch). */
-    private enum Def {
-        JAVA("java", Kind.JDTLS, "java", "java", "", List.of(), Set.of("java")),
-        PYTHON(
-                "python",
-                Kind.STDIO,
-                "python",
-                "python",
-                DEFAULT_PYTHON_INTERPRETER,
-                List.of("-m", "debugpy.adapter"),
-                Set.of("python")),
-        JAVASCRIPT(
-                "javascript",
-                Kind.SOCKET,
-                "pwa-node",
-                "pwa-node",
-                DEFAULT_NODE_INTERPRETER,
-                List.of(),
-                // TypeScript too: Node 22.18+/23.6+ runs a .ts file itself, and a compiled project's .ts/.tsx
-                // sources are where its breakpoints go (source maps). One adapter, one "javascript" session.
-                Set.of("javascript", "typescript", "javascriptreact", "typescriptreact")),
-        // A Groovy script runs under `groovy` with the JDWP agent in JAVA_OPTS; Editora's own adapter maps its
-        // breakpoints by source name (java-debug parses every file as Java).
-        GROOVY("groovy", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("groovy")),
-        // A Kotlin script runs under `kotlinc -script` (agent in JAVA_OPTS), a program as `java -jar` (agent on
-        // its command line). kotlin-lsp's own debugger is undocumented and alpha: not used.
-        KOTLIN("kotlin", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("kotlin")),
-        // A Clojure file runs under the Clojure CLI (the agent as a -J argument) or Leiningen (in JVM_OPTS); its
-        // functions' classes (my_app.core$greet) record core.clj, so breakpoints bind by source name as Groovy's.
-        // Babashka is native: nothing to attach to.
-        CLOJURE("clojure", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("clojure")),
-        // A file of a build debugs on Metals' adapter (it knows the classpath); a script on Editora's own.
-        SCALA("scala", Kind.LANGUAGE_SERVER, "scala", "scala", "", List.of(), Set.of("scala"));
-
-        final String language;
-        final Kind kind;
-        final String launchType;
-        final String adapterId;
-        final String defaultInterpreter;
-        final List<String> adapterArgs;
-        final Set<String> languageIds;
-
-        Def(
-                String language,
-                Kind kind,
-                String launchType,
-                String adapterId,
-                String defaultInterpreter,
-                List<String> adapterArgs,
-                Set<String> languageIds) {
-            this.language = language;
-            this.kind = kind;
-            this.launchType = launchType;
-            this.adapterId = adapterId;
-            this.defaultInterpreter = defaultInterpreter;
-            this.adapterArgs = adapterArgs;
-            this.languageIds = languageIds;
-        }
-    }
-
     private DapServerRegistry() {}
 
-    private static @Nullable Def defFor(String languageId) {
-        if (languageId == null) {
-            return null;
-        }
-        for (Def d : Def.values()) {
-            if (d.languageIds.contains(languageId)) {
-                return d;
-            }
-        }
-        return null;
-    }
-
-    /** The adapter languages ({@code java}, {@code python}, {@code javascript}). */
+    /** The adapter languages ({@code java}, {@code python}, {@code javascript}, …). */
     public static Set<String> languageIdsForDebug() {
-        return Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala");
+        return DebugLanguages.ids();
     }
 
     /**
@@ -155,7 +91,8 @@ public final class DapServerRegistry {
      * (a Scala script outside any build: Editora's {@link Kind#JVM} adapter over Scala CLI), or null.
      */
     public static @Nullable Kind fallbackKind(String languageId) {
-        return "scala".equals(languageId) ? Kind.JVM : null;
+        DebugLanguage l = DebugLanguages.byId(languageId);
+        return l == null ? null : l.fallbackKind();
     }
 
     /**
@@ -164,28 +101,25 @@ public final class DapServerRegistry {
      * messages are kept per adapter language.
      */
     public static String adapterLanguage(String languageId) {
-        Def d = defFor(languageId);
-        return d == null ? languageId : d.language;
+        DebugLanguage l = DebugLanguages.forLanguage(languageId);
+        return l == null ? languageId : l.id();
     }
 
     /** Whether a debug adapter is registered for {@code languageId}. */
     public static boolean isDebuggable(String languageId) {
-        return defFor(languageId) != null;
+        return DebugLanguages.forLanguage(languageId) != null;
     }
 
     /** The transport kind for {@code languageId}, or {@code null} when unsupported. */
     public static @Nullable Kind kindFor(String languageId) {
-        Def d = defFor(languageId);
-        return d == null ? null : d.kind;
+        DebugLanguage l = DebugLanguages.forLanguage(languageId);
+        return l == null ? null : l.kind();
     }
 
     /** The full spec for {@code languageId}, or {@code null} when unsupported. */
     public static @Nullable DapServerSpec specFor(String languageId) {
-        Def d = defFor(languageId);
-        if (d == null) {
-            return null;
-        }
-        return new DapServerSpec(d.language, d.kind, d.launchType, d.adapterId, d.defaultInterpreter, d.adapterArgs);
+        DebugLanguage l = DebugLanguages.forLanguage(languageId);
+        return l == null ? null : l.spec();
     }
 
     /**
@@ -195,11 +129,11 @@ public final class DapServerRegistry {
      * interpreter only (without {@code -m debugpy.adapter} — see {@link DapServerSpec#adapterArgs}).
      */
     public static List<String> interpreterArgv(String languageId, String command) {
-        Def d = defFor(languageId);
-        if (d == null || d.defaultInterpreter.isEmpty()) {
+        DebugLanguage l = DebugLanguages.forLanguage(languageId);
+        if (l == null || l.defaultInterpreter().isEmpty()) {
             return List.of();
         }
-        String cmd = command == null || command.isBlank() ? d.defaultInterpreter : command;
+        String cmd = command == null || command.isBlank() ? l.defaultInterpreter() : command;
         return com.editora.run.ProgramArgs.commandLine(cmd);
     }
 
