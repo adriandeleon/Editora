@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Navigate code on the Project Map.** The editor's code navigation now works inside Map cards and answers with
+  cards beside them instead of leaving the Map: Go to Definition (and Peek Definition), Go to Declaration, Go to Type
+  Definition, Go to Implementation, Go to Super Method, Find Usages, Call Hierarchy and Type Hierarchy, typed with
+  your keymap's keys or picked from a card's menu, and Ctrl+click (Cmd+click on macOS) on a name. Each result card is
+  joined to the card it came from by a labelled edge ("definition", "implements", "extends"…), the keyboard follows a
+  definition to its card, and Back and Forward step between the cards you followed. Quick Documentation shows the
+  language server's hover over a card. Without a language server, Go to Definition finds the declarations of that
+  name. A declaration row's menu offers the same, and a card menu's **In the Editor** submenu still runs these
+  commands in the editor.
+
 - **Attach to Process.** *Debug: Attach to Process…* (Run menu, and the last row of the Attach picker) lists the
   Java, Node.js and Python programs running on this machine — those listening for a debugger first: a JVM started
   with the JDWP agent (`-agentlib:jdwp=…,server=y,address=5005`), a Node.js started with `--inspect`, a Python

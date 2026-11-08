@@ -343,6 +343,11 @@ final class MapCards {
             public void openAt(Path file, int line) {
                 host.openAt(file, line);
             }
+
+            @Override
+            public void follow(ProjectMapPreview from, ProjectMapPreview to) {
+                followed(from, to);
+            }
         };
     }
 
@@ -351,7 +356,7 @@ final class MapCards {
     /** Where Show References / Callers as Cards find their places; null takes the menu items away. */
     void setLinkSource(MapCardLinks.@Nullable Source source) {
         links.setSource(source);
-        previews.values().forEach(card -> card.setLinkActions(source == null ? null : this::showLinks));
+        previews.values().forEach(card -> card.setLinkActions(source == null ? null : cardNavigation));
     }
 
     /** Whether Show References / Callers as Cards are offered. */
@@ -364,19 +369,152 @@ final class MapCards {
      * stands at the file's 0-based {@code line} and {@code column}.
      */
     void showLinks(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column) {
+        showLinks(card, kind, line, column, false);
+    }
+
+    /**
+     * {@code kind} asked from {@code card} (Map code navigation): of what stands at the file's 0-based {@code line}
+     * and {@code column} — with {@code atPlace} false, a declaration card's declaration instead — answered as cards
+     * beside it.
+     */
+    void showLinks(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {
+        MapCardLinks.Request request = linksRequest(card, kind, line, column, atPlace);
+        if (request != null) {
+            touchCard(card, true);
+            links.show(card, request);
+        }
+    }
+
+    private MapCardLinks.@Nullable Request linksRequest(
+            ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {
         Path file = card.path();
         if (file == null || !cardTouches.containsKey(card)) {
-            return;
+            return null;
         }
         ProjectMapPreview.Range shown = card.range();
         ProjectMapPreview.Content content = host.content(file);
         String text = content != null && content.open() ? content.text() : null;
-        MapCardLinks.Request request = shown != null
+        return shown != null && !atPlace
                 ? new MapCardLinks.Request(
                         kind, file, shown.line(), -1, ProjectMapView.followName(shown.symbol()), text)
                 : new MapCardLinks.Request(kind, file, line, column, null, text);
+    }
+
+    /**
+     * Quick Documentation from {@code card} at the file's 0-based {@code line} and {@code column}: the server's hover
+     * in a popup at the card's caret, or the status line says why there is none.
+     */
+    void showHover(ProjectMapPreview card, int line, int column) {
+        MapCardLinks.Request request = linksRequest(card, MapCardLinks.Kind.DEFINITION, line, column, true);
+        MapCardLinks.Source source = links.source();
+        Path root = host.root();
+        if (request == null || source == null || root == null) {
+            return;
+        }
         touchCard(card, true);
-        links.show(card, request);
+        source.hover(root, request, answer -> {
+            if (disposed || !cardTouches.containsKey(card)) {
+                return;
+            }
+            String markdown = answer.markdown();
+            if (markdown != null) {
+                ProjectMapPreview.FollowActions actions = followActions;
+                card.showHover(markdown, url -> {
+                    if (actions != null) {
+                        actions.openUrl(url);
+                    }
+                });
+            } else {
+                String name = answer.name();
+                String none = name == null || name.isBlank()
+                        ? tr("project.map.links.hover.noneUnnamed")
+                        : tr("project.map.links.hover.none", name);
+                String note = answer.note();
+                host.status(note == null ? none : note);
+            }
+        });
+    }
+
+    // --- Following the code from card to card (Map code navigation) --------------------------------------
+
+    /** How many steps Back and Forward remember. */
+    static final int TRAIL_LIMIT = 50;
+
+    /** A place the code was followed from: a card and its caret then. */
+    private record TrailStop(ProjectMapPreview card, int caret) {}
+
+    private final java.util.ArrayDeque<TrailStop> backTrail = new java.util.ArrayDeque<>();
+    private final java.util.ArrayDeque<TrailStop> forwardTrail = new java.util.ArrayDeque<>();
+
+    /** What a card's code navigation does: asks {@link #links}, shows Quick Documentation, walks the trail. */
+    private final ProjectMapPreview.LinkActions cardNavigation = new ProjectMapPreview.LinkActions() {
+        @Override
+        public void show(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {
+            showLinks(card, kind, line, column, atPlace);
+        }
+
+        @Override
+        public void hover(ProjectMapPreview card, int line, int column) {
+            showHover(card, line, column);
+        }
+
+        @Override
+        public boolean step(ProjectMapPreview card, boolean back) {
+            return trailStep(card, back);
+        }
+    };
+
+    /**
+     * The code was followed from {@code from} to {@code to}: where {@code from}'s caret was is remembered for Back (a
+     * new step forgets the Forward ones), and the keyboard goes to {@code to}, brought into view once it is laid out.
+     */
+    private void followed(ProjectMapPreview from, ProjectMapPreview to) {
+        if (disposed) {
+            return;
+        }
+        backTrail.push(new TrailStop(from, from.caretOffset()));
+        while (backTrail.size() > TRAIL_LIMIT) {
+            backTrail.removeLast();
+        }
+        forwardTrail.clear();
+        if (to == from) {
+            return; // its caret moves to the place; the keyboard is in it already
+        }
+        to.focusContent();
+        javafx.application.Platform.runLater(() -> {
+            if (!disposed && cardTouches.containsKey(to) && to.getWidth() > 0) {
+                bringIntoView(to);
+            }
+        });
+    }
+
+    /**
+     * Back (or Forward) from {@code current}: the newest remembered card still open, its caret where it was, brought
+     * into view with the keyboard in it; {@code current} and its caret are remembered the other way. False, and the
+     * status says so, when there is nowhere to go.
+     */
+    boolean trailStep(ProjectMapPreview current, boolean back) {
+        java.util.ArrayDeque<TrailStop> from = back ? backTrail : forwardTrail;
+        java.util.ArrayDeque<TrailStop> to = back ? forwardTrail : backTrail;
+        while (!from.isEmpty()) {
+            TrailStop stop = from.pop();
+            if (!cardTouches.containsKey(stop.card())) {
+                continue; // closed since
+            }
+            to.push(new TrailStop(current, current.caretOffset()));
+            stop.card().restoreCaret(stop.caret());
+            if (stop.card() != current) {
+                bringIntoView(stop.card());
+            }
+            return true;
+        }
+        host.status(tr(back ? "project.map.links.trail.noBack" : "project.map.links.trail.noForward"));
+        return false;
+    }
+
+    /** The cards Back would go to, newest first. For tests. */
+    List<ProjectMapPreview> backTrailForTest() {
+        return backTrail.stream().map(TrailStop::card).toList();
     }
 
     /** Show References / Callers as Cards from a declaration row: its card opens and asks. */
@@ -1301,7 +1439,7 @@ final class MapCards {
         preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
         preview.setFollowActions(followActions);
-        preview.setLinkActions(links.available() ? this::showLinks : null);
+        preview.setLinkActions(links.available() ? cardNavigation : null);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
         preview.setOnTouch(() -> touchCard(preview, false));
@@ -2040,6 +2178,8 @@ final class MapCards {
         cardsGitRequests.remove(preview);
         closeCardNotes(preview);
         closeCardStructure(preview);
+        backTrail.removeIf(stop -> stop.card() == preview);
+        forwardTrail.removeIf(stop -> stop.card() == preview);
         // Its edges, and the edge to it from the card it was found from; the result cards it opened go with it.
         List<ProjectMapPreview> results = links.cardClosed(preview);
         CardAttachment views = viewsAttachments.remove(preview);
@@ -2074,6 +2214,8 @@ final class MapCards {
         cardTouches.clear();
         pinnedCards.clear();
         cardsGitRequests.clear();
+        backTrail.clear();
+        forwardTrail.clear();
         List<ProjectMapPreview> open = List.copyOf(previews.values());
         previews.clear();
         List<CardAttachment> stuck = allAttachments();

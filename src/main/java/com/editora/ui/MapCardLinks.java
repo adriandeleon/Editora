@@ -54,12 +54,146 @@ final class MapCardLinks {
     /** Groups the "+N more" chip's menu lists. */
     static final int MAX_MORE_ITEMS = 200;
 
-    /** What is asked for. */
+    /**
+     * What is asked for: the editor's code navigation, answered as cards on the Map. A kind that {@link #leads}
+     * answers where the asked name leads (its definition, its supertypes): the edge runs from the card asked from to
+     * the result, and the keyboard follows to the first result card, so a chain of Go to Definition walks the code.
+     * The others answer what leads to it (its references, callers, implementations, subtypes): their edges run from
+     * the result to the card asked from.
+     */
     enum Kind {
         /** Every place that names the declaration. */
-        REFERENCES,
+        REFERENCES("references", false),
         /** The declarations that call it. */
-        CALLERS
+        CALLERS("callers", false),
+        /** Where the name is defined (Go to Definition). */
+        DEFINITION("definition", true),
+        /** Where the name is declared (Go to Declaration). */
+        DECLARATION("declaration", true),
+        /** The declaration of its type (Go to Type Definition). */
+        TYPE_DEFINITION("typeDefinition", true),
+        /** What implements or overrides it (Go to Implementation). */
+        IMPLEMENTATIONS("implementations", false),
+        /** The method it overrides, or the class a type extends (Go to Super Method). */
+        SUPER_METHOD("superMethod", true),
+        /** The types it extends or implements (Type Hierarchy, up). */
+        SUPERTYPES("supertypes", true),
+        /** The types that extend or implement it (Type Hierarchy, down). */
+        SUBTYPES("subtypes", false);
+
+        /** The middle of its message keys, {@code project.map.links.<stem>.…}. */
+        final String stem;
+        /** Whether it answers where the name leads (see the type). */
+        final boolean leads;
+
+        Kind(String stem, boolean leads) {
+            this.stem = stem;
+            this.leads = leads;
+        }
+
+        /**
+         * Whether the keyboard follows to its first result, as the editor's caret goes to a definition: the Go to
+         * kinds, not the type hierarchy, whose supertypes are asked together with its subtypes.
+         */
+        boolean goesTo() {
+            return leads && this != SUPERTYPES;
+        }
+
+        /** Whether its result has the asked name too, so the name is selected there (a subtype's is its own). */
+        boolean sameName() {
+            return this != TYPE_DEFINITION && this != SUPERTYPES && this != SUBTYPES;
+        }
+    }
+
+    /**
+     * The card commands of the editor's code navigation (Go to Definition, Find Usages, …), each with the kind it asks
+     * for on the Map; Type Hierarchy asks both ways. In the menus' order.
+     */
+    static final Map<String, List<Kind>> NAVIGATION_COMMANDS = navigationCommands();
+
+    private static Map<String, List<Kind>> navigationCommands() {
+        Map<String, List<Kind>> commands = new LinkedHashMap<>();
+        commands.put("lsp.gotoDefinition", List.of(Kind.DEFINITION));
+        commands.put("lsp.peekDefinition", List.of(Kind.DEFINITION));
+        commands.put("lsp.gotoDeclaration", List.of(Kind.DECLARATION));
+        commands.put("lsp.gotoTypeDefinition", List.of(Kind.TYPE_DEFINITION));
+        commands.put("lsp.gotoImplementation", List.of(Kind.IMPLEMENTATIONS));
+        commands.put("lsp.gotoSuperMethod", List.of(Kind.SUPER_METHOD));
+        commands.put("lsp.findReferences", List.of(Kind.REFERENCES));
+        commands.put("lsp.callHierarchy", List.of(Kind.CALLERS));
+        commands.put("lsp.typeHierarchy", List.of(Kind.SUPERTYPES, Kind.SUBTYPES));
+        return java.util.Collections.unmodifiableMap(commands);
+    }
+
+    /** The menus' Map navigation items, in order: the kinds a card or a declaration row offers. */
+    static final List<Kind> MENU_KINDS = List.of(
+            Kind.DEFINITION,
+            Kind.DECLARATION,
+            Kind.TYPE_DEFINITION,
+            Kind.IMPLEMENTATIONS,
+            Kind.SUPER_METHOD,
+            Kind.REFERENCES,
+            Kind.CALLERS,
+            Kind.SUPERTYPES,
+            Kind.SUBTYPES);
+
+    /** A menu item's label for {@code kind}. */
+    static String menuLabel(Kind kind) {
+        return switch (kind) {
+            case REFERENCES -> tr("project.map.links.showReferences");
+            case CALLERS -> tr("project.map.links.showCallers");
+            default -> tr("project.map.links." + kind.stem + ".show");
+        };
+    }
+
+    /** What the status line says while {@code kind} of {@code name} (null: not known yet) is being looked up. */
+    static String findingText(Kind kind, @Nullable String name) {
+        boolean unnamed = name == null || name.isBlank();
+        return switch (kind) {
+            case REFERENCES ->
+                unnamed
+                        ? tr("project.map.links.findingReferencesUnnamed")
+                        : tr("project.map.links.findingReferences", name);
+            case CALLERS ->
+                unnamed ? tr("project.map.links.findingCallersUnnamed") : tr("project.map.links.findingCallers", name);
+            default ->
+                unnamed
+                        ? tr("project.map.links.findingUnnamed")
+                        : tr("project.map.links." + kind.stem + ".finding", name);
+        };
+    }
+
+    /** What the status line says when nothing of {@code kind} was found. */
+    static String noneText(Kind kind, @Nullable String name) {
+        boolean unnamed = name == null || name.isBlank();
+        return switch (kind) {
+            case REFERENCES ->
+                unnamed ? tr("project.map.links.noReferencesUnnamed") : tr("project.map.links.noReferences", name);
+            case CALLERS ->
+                unnamed ? tr("project.map.links.noCallersUnnamed") : tr("project.map.links.noCallers", name);
+            default ->
+                unnamed ? tr("project.map.links.noneUnnamed") : tr("project.map.links." + kind.stem + ".none", name);
+        };
+    }
+
+    /** The status line's summary of an answer: {@code total} places in {@code groups} cards, {@code more} listed. */
+    static String foundText(Kind kind, int total, @Nullable String name, int groups, int more) {
+        String key = switch (kind) {
+            case REFERENCES -> "project.map.links.foundReferencesChip";
+            case CALLERS -> "project.map.links.foundCallersChip";
+            default -> "project.map.links." + kind.stem + ".found";
+        };
+        return tr(key, total, name == null ? "" : name, groups, more);
+    }
+
+    /** The "+N more" chip's accessible text. */
+    static String moreText(Kind kind, int more, @Nullable String name) {
+        String key = switch (kind) {
+            case REFERENCES -> "project.map.links.moreReferences";
+            case CALLERS -> "project.map.links.moreCallers";
+            default -> "project.map.links.moreFound";
+        };
+        return tr(key, more, name == null ? "" : name);
     }
 
     /** How the places were found: by a language server, or by matching the name (edges dashed, "by name"). */
@@ -117,11 +251,25 @@ final class MapCardLinks {
         }
     }
 
+    /**
+     * Quick Documentation at a place: the server's hover text (Markdown), or null with why there is none, and the
+     * name it was asked about.
+     */
+    record Hover(
+            @Nullable String markdown,
+            @Nullable String note,
+            @Nullable String name) {}
+
     /** Where the places come from; {@link ProjectMapLinkSearch} is the editor's. */
     @FunctionalInterface
     interface Source {
         /** Answers {@code request} about a file under {@code root} by calling {@code answer} once, on the FX thread. */
         void find(Path root, Request request, Consumer<Answer> answer);
+
+        /** Quick Documentation at {@code request}'s place, answered once on the FX thread; none by default. */
+        default void hover(Path root, Request request, Consumer<Hover> answer) {
+            answer.accept(new Hover(null, tr("project.map.links.hover.noServer"), request.name()));
+        }
     }
 
     /**
@@ -129,7 +277,17 @@ final class MapCardLinks {
      * any declaration, or in a file with no outline — the file at its first place. {@code count} places in all;
      * {@code line} is the first (0-based).
      */
-    record Group(Path file, ProjectMapStructure.@Nullable Node declaration, String label, int line, int count) {
+    record Group(
+            Path file,
+            ProjectMapStructure.@Nullable Node declaration,
+            String label,
+            int line,
+            int count,
+            @Nullable String mark) {
+        Group(Path file, ProjectMapStructure.@Nullable Node declaration, String label, int line, int count) {
+            this(file, declaration, label, line, count, null);
+        }
+
         /** The key its card is open under. */
         Path key() {
             ProjectMapStructure.Node node = declaration;
@@ -171,6 +329,13 @@ final class MapCardLinks {
         List<double[]> columns();
 
         void openAt(Path file, int line);
+
+        /**
+         * The code was followed from {@code from} to {@code to} (Go to Definition and the other kinds that lead): the
+         * keyboard goes to {@code to}, brought into view, and the step is remembered for Back. {@code to} may be
+         * {@code from} itself, its caret moved.
+         */
+        default void follow(ProjectMapPreview from, ProjectMapPreview to) {}
     }
 
     private final Cards cards;
@@ -204,6 +369,12 @@ final class MapCardLinks {
         this.source = source;
     }
 
+    /** Where questions are answered, or null. */
+    @Nullable
+    Source source() {
+        return source;
+    }
+
     /** Whether questions can be asked (the menu items are shown). */
     boolean available() {
         return source != null;
@@ -222,18 +393,8 @@ final class MapCardLinks {
         long id = ++requestSequence;
         asked.computeIfAbsent(from, ignored -> new java.util.EnumMap<>(Kind.class))
                 .put(request.kind(), id);
-        String name = request.name();
-        boolean callers = request.kind() == Kind.CALLERS;
         // A file card's name is found only once its text is read: until then the status names no file (C12).
-        cards.status(
-                name == null || name.isBlank()
-                        ? tr(
-                                callers
-                                        ? "project.map.links.findingCallersUnnamed"
-                                        : "project.map.links.findingReferencesUnnamed")
-                        : tr(
-                                callers ? "project.map.links.findingCallers" : "project.map.links.findingReferences",
-                                name));
+        cards.status(findingText(request.kind(), request.name()));
         answering.find(root, request, answer -> answered(from, request, id, answer));
     }
 
@@ -244,10 +405,7 @@ final class MapCardLinks {
         }
         String name = answer.name() != null ? answer.name() : request.name();
         if (answer.hits().isEmpty()) {
-            boolean callers = request.kind() == Kind.CALLERS;
-            String none = name == null || name.isBlank()
-                    ? tr(callers ? "project.map.links.noCallersUnnamed" : "project.map.links.noReferencesUnnamed")
-                    : tr(callers ? "project.map.links.noCallers" : "project.map.links.noReferences", name);
+            String none = noneText(request.kind(), name);
             String note = answer.note();
             cards.status(note == null ? none : note + " " + none);
             return;
@@ -339,19 +497,41 @@ final class MapCardLinks {
                 file -> waiting.outlined.contains(file) ? outlineOf(file) : null,
                 root);
         Path fromKey = from.range() == null ? from.path() : null;
+        Kind kind = waiting.request.kind();
+        // Where the name leads may be on the card asked from (a definition further down the same file): the card
+        // goes there rather than opening itself again.
+        Group here = kind.leads
+                ? groups.stream()
+                        .filter(group -> shows(from, group))
+                        .findFirst()
+                        .orElse(null)
+                : null;
         groups = linksRank(
                 groups.stream()
                         .filter(group -> !group.key().equals(fromKey) && !isCardOf(from, group))
+                        .filter(group -> !kind.leads || !shows(from, group))
                         .toList(),
                 waiting.request.file(),
                 root);
-        EdgeSet set = replaceSet(from, waiting.request.kind(), waiting.answer.via(), waiting.name);
+        if (groups.isEmpty() && here != null) {
+            cards.follow(from, from); // where its caret was, for Back, before it moves
+            from.linksRevealPlace(here.line(), markOf(kind, here, waiting.name));
+            String note = waiting.answer.note();
+            String summary = foundText(kind, here.count(), waiting.name, 1, 0);
+            cards.status((note == null ? "" : note + " ") + summary);
+            return;
+        }
+        EdgeSet set = replaceSet(from, kind, waiting.answer.via(), waiting.name);
         int opened = 0;
         boolean refused = false;
+        ProjectMapPreview first = null;
         for (Group group : groups) {
             if (opened < MAX_CARDS && !refused) {
                 Opened done = set.open(group);
                 if (done == Opened.OPENED) {
+                    if (first == null && !set.edges.isEmpty()) {
+                        first = set.edges.getLast().target;
+                    }
                     opened++;
                 } else if (done == Opened.REFUSED) {
                     refused = true; // no room (pinned cards): it and every later place go on the chip (C4)
@@ -362,15 +542,11 @@ final class MapCardLinks {
             }
         }
         set.updateChip();
+        if (kind.goesTo() && first != null) {
+            cards.follow(from, first); // the keyboard follows the code: F12 again goes on from there
+        }
         int total = groups.stream().mapToInt(Group::count).sum();
-        String summary = tr(
-                waiting.request.kind() == Kind.CALLERS
-                        ? "project.map.links.foundCallersChip"
-                        : "project.map.links.foundReferencesChip",
-                total,
-                waiting.name == null ? "" : waiting.name,
-                groups.size(),
-                set.more.size());
+        String summary = foundText(kind, total, waiting.name, groups.size(), set.more.size());
         String note = waiting.answer.note();
         String partial = waiting.answer.partial() ? " " + tr("project.map.links.partial") : "";
         String noRoom = refused ? " " + tr("project.map.links.noRoom") : "";
@@ -434,6 +610,15 @@ final class MapCardLinks {
                 || rest.startsWith(".spec.");
     }
 
+    /** Whether {@code from} shows {@code group}'s place: its file, and the line among those it holds. */
+    private static boolean shows(ProjectMapPreview from, Group group) {
+        if (!group.file().equals(from.path())) {
+            return false;
+        }
+        ProjectMapPreview.Range shown = from.range();
+        return shown == null || shown.startLine() <= group.line() && group.line() <= shown.endLine();
+    }
+
     /** Whether {@code group} is the very declaration {@code from} shows (a recursive call, the declaration itself). */
     private static boolean isCardOf(ProjectMapPreview from, Group group) {
         ProjectMapPreview.Range shown = from.range();
@@ -465,12 +650,16 @@ final class MapCardLinks {
             @Nullable Path root) {
         Map<Path, Group> byKey = new LinkedHashMap<>();
         for (Hit hit : sorted(hits, root)) {
-            if (via == Via.NAME && hit.file().equals(request.file()) && hit.line() == request.line()) {
+            if (via == Via.NAME
+                    && !request.kind().leads
+                    && hit.file().equals(request.file())
+                    && hit.line() == request.line()) {
                 continue; // the declaration asked about
             }
             List<ProjectMapStructure.Node> roots = outline.apply(hit.file());
             ProjectMapStructure.Node node = roots == null ? null : enclosing(roots, hit.line());
             if (via == Via.NAME
+                    && !request.kind().leads
                     && node != null
                     && node.symbol().line() == hit.line()
                     && name != null
@@ -483,12 +672,17 @@ final class MapCardLinks {
                     : caller != null && !caller.isBlank()
                             ? caller
                             : com.editora.config.PathDisplay.fileName(hit.file());
-            Group group = new Group(hit.file(), node, label, hit.line(), Math.max(1, hit.count()));
+            Group group = new Group(hit.file(), node, label, hit.line(), Math.max(1, hit.count()), hit.name());
             byKey.merge(
                     group.key(),
                     group,
                     (held, more) -> new Group(
-                            held.file(), held.declaration(), held.label(), held.line(), held.count() + more.count()));
+                            held.file(),
+                            held.declaration(),
+                            held.label(),
+                            held.line(),
+                            held.count() + more.count(),
+                            held.mark()));
         }
         return List.copyOf(byKey.values());
     }
@@ -743,11 +937,7 @@ final class MapCardLinks {
             if (card != null && card != from) {
                 // At the place itself — the call or the use, selected as find selects a match — now, or once a new
                 // card's text is shown and its opening line applied (C2: a declaration card opened at its top).
-                card.linksRevealPlace(
-                        group.line(),
-                        name == null || name.isBlank()
-                                ? null
-                                : ProjectMapLinkSearch.namePattern(name, kind == Kind.CALLERS));
+                card.linksRevealPlace(group.line(), markOf(kind, group, name));
             }
             cards.touch(from); // used: never the card evicted to make room for the next result
             boolean placedHere = !placeBeside.containsKey(group.key()); // a new card, placed beside it
@@ -798,10 +988,7 @@ final class MapCardLinks {
 
         void updateChip() {
             chip.setText(tr("project.map.links.more", more.size()));
-            chip.setAccessibleText(tr(
-                    kind == Kind.CALLERS ? "project.map.links.moreCallers" : "project.map.links.moreReferences",
-                    more.size(),
-                    name == null ? "" : name));
+            chip.setAccessibleText(moreText(kind, more.size(), name));
             chip.setVisible(!more.isEmpty() && from.isVisible());
             if (!more.isEmpty()) {
                 chip.toFront(); // over the result cards that just opened (C3)
@@ -895,7 +1082,9 @@ final class MapCardLinks {
                     continue;
                 }
                 double[] b = MapCards.drawnBounds(edge.target);
-                double[] ends = edgeEnds(b, a); // from the result card to the card asked from: "X calls this"
+                // From the result card to the card asked from ("X calls this"), or the other way for where the code
+                // leads ("this is defined there").
+                double[] ends = kind.leads ? edgeEnds(a, b) : edgeEnds(b, a);
                 edge.drawn = ends;
                 g.setLineDashes(via == Via.NAME ? new double[] {6, 5} : null); // by name: dashed
                 g.strokeLine(ends[0], ends[1], ends[2], ends[3]);
@@ -965,7 +1154,11 @@ final class MapCardLinks {
         String word = tr(
                 via == Via.NAME
                         ? "project.map.links.edge.byName"
-                        : kind == Kind.CALLERS ? "project.map.links.edge.calls" : "project.map.links.edge.references");
+                        : switch (kind) {
+                            case CALLERS -> "project.map.links.edge.calls";
+                            case REFERENCES -> "project.map.links.edge.references";
+                            default -> "project.map.links." + kind.stem + ".edge";
+                        });
         return count > 1 ? tr("project.map.links.edge.count", word, count) : word;
     }
 
@@ -973,10 +1166,21 @@ final class MapCardLinks {
     static String edgeDescription(Kind kind, Via via, String target, String source, int count) {
         String key = via == Via.NAME
                 ? "project.map.links.accessible.byName"
-                : kind == Kind.CALLERS
-                        ? "project.map.links.accessible.calls"
-                        : "project.map.links.accessible.references";
+                : switch (kind) {
+                    case CALLERS -> "project.map.links.accessible.calls";
+                    case REFERENCES -> "project.map.links.accessible.references";
+                    default -> "project.map.links." + kind.stem + ".accessible";
+                };
         return tr(key, target, source, count);
+    }
+
+    /**
+     * What is selected at a result's place: the asked name where the result has it too (a call, a definition), else
+     * the result's own name (a subtype, the type of a variable), else nothing (the line is).
+     */
+    static java.util.regex.@Nullable Pattern markOf(Kind kind, Group group, @Nullable String name) {
+        String mark = kind.sameName() ? name : group.mark();
+        return mark == null || mark.isBlank() ? null : ProjectMapLinkSearch.namePattern(mark, kind == Kind.CALLERS);
     }
 
     /**

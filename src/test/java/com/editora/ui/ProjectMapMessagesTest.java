@@ -19,8 +19,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class ProjectMapMessagesTest {
 
-    private static final List<String> BUILT_FROM_A_PREFIX =
-            List.of("project.map.help.", "project.map.type.", "project.map.flow.");
+    /**
+     * Keys the code builds rather than spells out. The Map code navigation's are built from each {@code
+     * MapCardLinks.Kind}'s stem; {@code ProjectMapNavigationTest} checks every kind's texts are in the catalog.
+     */
+    private static final List<String> BUILT_FROM_A_PREFIX = java.util.stream.Stream.concat(
+                    Stream.of("project.map.help.", "project.map.type.", "project.map.flow."),
+                    java.util.Arrays.stream(MapCardLinks.Kind.values())
+                            .filter(kind -> kind != MapCardLinks.Kind.REFERENCES && kind != MapCardLinks.Kind.CALLERS)
+                            .map(kind -> "project.map.links." + kind.stem + "."))
+            .toList();
 
     @Test
     void everyProjectMapStringIsUsed() throws IOException {

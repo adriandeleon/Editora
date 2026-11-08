@@ -235,6 +235,9 @@ final class ProjectMapPreview extends StackPane {
         /** Opens {@code file} in the editor annotated with Git blame (Map explore round, position 9). */
         default void annotate(Path file) {}
 
+        /** Opens a link of the card's Quick Documentation in the browser. */
+        default void openUrl(String url) {}
+
         /**
          * The commit that last changed {@code file}, or its 0-based lines {@code startLine..endLine} when {@code
          * startLine >= 0}; null, on the FX thread, when Git knows none (Map explore round, position 9).
@@ -269,14 +272,33 @@ final class ProjectMapPreview extends StackPane {
     }
 
     /**
-     * Show References / Callers as Cards from a card (Project Map explore, position 5): {@code kind} of what stands at
-     * the file's 0-based {@code line} and {@code column} — the menu's place in a file card; a declaration card asks
-     * about its declaration.
+     * The code navigation a card does on the Map (Project Map explore, position 5, and Map code navigation): Go to
+     * Definition, Find Usages and the rest answered as cards beside it, Quick Documentation, and Back / Forward along
+     * the cards the code was followed through.
      */
-    @FunctionalInterface
     interface LinkActions {
-        void show(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column);
+        /**
+         * {@code kind} of what stands at the file's 0-based {@code line} and {@code column}; with {@code atPlace}
+         * false a declaration card asks about its declaration instead (its menu's References and Callers as Cards).
+         */
+        void show(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace);
+
+        /** Quick Documentation at the file's 0-based {@code line} and {@code column}. */
+        default void hover(ProjectMapPreview card, int line, int column) {}
+
+        /** Back ({@code back}) or Forward along the cards the code was followed through; false when there is none. */
+        default boolean step(ProjectMapPreview card, boolean back) {
+            return false;
+        }
     }
+
+    /** Quick Documentation typed in a card: the server's hover at the card's caret. */
+    static final String HOVER_COMMAND = "lsp.hover";
+
+    /** Back and Forward typed in a card: along the cards the code was followed through (not the editor's trail). */
+    static final String BACK_COMMAND = "nav.back";
+
+    static final String FORWARD_COMMAND = "nav.forward";
 
     /** The Go To Related File command: typed in a card, it reveals the card's file's counterpart on the Map. */
     static final String RELATED_COMMAND = "nav.relatedFile";
@@ -693,6 +715,7 @@ final class ProjectMapPreview extends StackPane {
             onTouch.run();
         });
         addEventFilter(KeyEvent.KEY_PRESSED, this::keyPressed);
+        editor.addEventFilter(MouseEvent.MOUSE_PRESSED, this::navigationClick);
         setContentZoom(1.0);
     }
 
@@ -732,6 +755,8 @@ final class ProjectMapPreview extends StackPane {
             if (editorContextMenu.isShowing() || menuDismissedByThisKey) {
                 menuDismissedByThisKey = false;
                 editorContextMenu.hide();
+            } else if (hoverShown()) {
+                hideHover(); // Quick Documentation goes first, as in the editor
             } else if (selectionBar.isVisible()) {
                 selectionBar.setVisible(false); // as in an editor: the bar goes first, the card on the next Escape
             } else if (findShown()) {
@@ -800,10 +825,14 @@ final class ProjectMapPreview extends StackPane {
 
     /**
      * Go to Definition, Find Usages and the other code commands typed in the card — F12 and Shift+F12 in most
-     * keymaps — follow the code from the card's caret (review 3 C12) instead of acting on the active editor tab;
+     * keymaps — follow the code from the card's caret instead of acting on the active editor tab: on the Map, as
+     * cards beside this one (Map code navigation), or, where the Map cannot answer, in the editor (review 3 C12);
      * Related File and File History act on the card's file. False for any other command, or with nothing to follow.
      */
     private boolean followRunsCommand(String commandId) {
+        if (navigateRunsCommand(commandId)) {
+            return true;
+        }
         FollowActions actions = followActions;
         Path file = path;
         boolean follows = FOLLOW_COMMANDS.contains(commandId)
@@ -820,6 +849,140 @@ final class ProjectMapPreview extends StackPane {
             actions.follow(file, fileLine(editor.getCurrentParagraph()), editor.getCaretColumn(), commandId);
         }
         return true;
+    }
+
+    /**
+     * The code navigation typed in the card, answered on the Map: Go to Definition, Declaration, Type Definition,
+     * Implementation, Super Method, Find Usages, Call and Type Hierarchy as cards, Quick Documentation as a popup,
+     * Back and Forward along the cards followed. False without {@link LinkActions} or for any other command.
+     */
+    private boolean navigateRunsCommand(String commandId) {
+        LinkActions links = linkActions;
+        java.util.List<MapCardLinks.Kind> kinds = MapCardLinks.NAVIGATION_COMMANDS.get(commandId);
+        boolean back = BACK_COMMAND.equals(commandId);
+        boolean step = back || FORWARD_COMMAND.equals(commandId);
+        boolean hover = HOVER_COMMAND.equals(commandId);
+        if (links == null || path == null || disposed || kinds == null && !step && !hover) {
+            return false;
+        }
+        if (step) {
+            links.step(this, back);
+            return true;
+        }
+        if (symbolMissing || frame.getCenter() != textPane || editor.getLength() == 0) {
+            return true; // nothing to follow here, and never the active tab's
+        }
+        int line = fileLine(editor.getCurrentParagraph());
+        int column = editor.getCaretColumn();
+        if (hover) {
+            links.hover(this, line, column);
+        } else if (kinds != null) {
+            kinds.forEach(kind -> links.show(this, kind, line, column, true));
+        }
+        return true;
+    }
+
+    /**
+     * Ctrl+click (Cmd+click on macOS) on a name in the card: Go to Definition from there, on the Map — the editor's
+     * gesture. Nothing without {@link LinkActions} or off the text.
+     */
+    private void navigationClick(MouseEvent event) {
+        LinkActions links = linkActions;
+        if (!event.isShortcutDown()
+                || event.getButton() != javafx.scene.input.MouseButton.PRIMARY
+                || links == null
+                || path == null
+                || disposed
+                || symbolMissing
+                || editor.getLength() == 0) {
+            return;
+        }
+        try {
+            int offset = editor.hit(event.getX(), event.getY()).getInsertionIndex();
+            editor.moveTo(offset);
+            editor.requestFocus();
+            links.show(
+                    this,
+                    MapCardLinks.Kind.DEFINITION,
+                    fileLine(editor.getCurrentParagraph()),
+                    editor.getCaretColumn(),
+                    true);
+            event.consume();
+        } catch (RuntimeException offTheText) {
+            // a press past the text: nothing to follow
+        }
+    }
+
+    /** The Quick Documentation popup showing over the card's text, or null. */
+    private javafx.stage.@Nullable Popup hoverPopup;
+
+    /**
+     * Shows Quick Documentation — the server's hover {@code markdown} — at the card's caret, as the editor's Show
+     * Documentation does; Escape, a click elsewhere, a caret move or a scroll close it. Links open through {@code
+     * openUrl}.
+     */
+    void showHover(String markdown, Consumer<String> openUrl) {
+        hideHover();
+        if (disposed || getScene() == null) {
+            return;
+        }
+        javafx.scene.Node content;
+        try {
+            content = com.editora.editor.markdown.MarkdownRenderer.renderPopup(
+                    com.editora.editor.markdown.MarkdownRenderer.parseForRender(markdown), openUrl);
+        } catch (RuntimeException unrendered) {
+            Label label = new Label(markdown);
+            label.setWrapText(true);
+            content = label;
+        }
+        javafx.stage.Popup[] shown = new javafx.stage.Popup[1];
+        shown[0] = HoverCard.show(editor, content, markdown, () -> {
+            if (hoverPopup == shown[0]) {
+                hoverPopup = null;
+            }
+        });
+        hoverPopup = shown[0];
+    }
+
+    /** Whether Quick Documentation is showing over the card. */
+    boolean hoverShown() {
+        javafx.stage.Popup popup = hoverPopup;
+        return popup != null && popup.isShowing();
+    }
+
+    private void hideHover() {
+        javafx.stage.Popup popup = hoverPopup;
+        hoverPopup = null;
+        if (popup != null) {
+            popup.hide();
+        }
+    }
+
+    /** The caret on the card's 0-based {@code line} and {@code column}, clamped to the text. */
+    private void moveCaretTo(int line, int column) {
+        int paragraphs = editor.getParagraphs().size();
+        if (paragraphs == 0) {
+            return;
+        }
+        int paragraph = Math.max(0, Math.min(line, paragraphs - 1));
+        editor.moveTo(
+                paragraph,
+                Math.max(0, Math.min(column, editor.getParagraph(paragraph).length())));
+    }
+
+    /** The caret's offset in the card's text, for Back to return to. */
+    int caretOffset() {
+        return editor.getCaretPosition();
+    }
+
+    /** Puts the caret back at {@code offset} of the card's text (Back, Forward), the line in sight. */
+    void restoreCaret(int offset) {
+        if (disposed || frame.getCenter() != textPane) {
+            return;
+        }
+        int at = Math.max(0, Math.min(offset, editor.getLength()));
+        editor.moveTo(at);
+        editor.requestFollowCaret();
     }
 
     /** Where the card's follow actions go (review 3 C12); null leaves the code commands to the keymap. */
@@ -1694,6 +1857,7 @@ final class ProjectMapPreview extends StackPane {
         disposed = true;
         generation.incrementAndGet();
         editorContextMenu.hide();
+        hideHover();
         selectionBar.setVisible(false);
         synchronized (tasks) {
             tasks.clear(); // a task already running finishes, and its result is dropped by the generation check
@@ -1866,15 +2030,15 @@ final class ProjectMapPreview extends StackPane {
             items.add(0, openNarrowed);
             items.add(1, new SeparatorMenuItem());
         }
-        java.util.List<MenuItem> follow = followMenuItems();
-        if (!follow.isEmpty()) {
-            items.add(new SeparatorMenuItem());
-            items.addAll(follow);
-        }
         java.util.List<MenuItem> links = linkMenuItems();
         if (!links.isEmpty()) {
             items.add(new SeparatorMenuItem());
             items.addAll(links);
+        }
+        java.util.List<MenuItem> follow = followMenuItems();
+        if (!follow.isEmpty()) {
+            items.add(new SeparatorMenuItem());
+            items.addAll(follow);
         }
         MarkerActions actions = markerActions;
         if (!empty && selected != null && actions != null) {
@@ -2087,11 +2251,20 @@ final class ProjectMapPreview extends StackPane {
         boolean text = !symbolMissing && frame.getCenter() == textPane && editor.getLength() > 0;
         int line = fileLine(followAt[0]);
         int column = followAt[1];
+        java.util.List<MenuItem> inEditor = new java.util.ArrayList<>();
         for (String commandId : FOLLOW_COMMANDS) {
             MenuItem item = new MenuItem(followLabel(commandId));
             item.setDisable(!text);
             item.setOnAction(ignored -> actions.follow(file, line, column, commandId));
-            items.add(item);
+            inEditor.add(item);
+        }
+        if (linkActions != null) {
+            // The Map answers them as cards (above): the editor's own run stays one submenu away.
+            javafx.scene.control.Menu editorMenu = new javafx.scene.control.Menu(tr("project.map.follow.inEditor"));
+            editorMenu.getItems().setAll(inEditor);
+            items.add(editorMenu);
+        } else {
+            items.addAll(inEditor);
         }
         items.add(new SeparatorMenuItem());
         MenuItem related = new MenuItem(tr("project.map.follow.related"));
@@ -2124,13 +2297,25 @@ final class ProjectMapPreview extends StackPane {
         boolean text = !symbolMissing && frame.getCenter() == textPane && editor.getLength() > 0;
         int line = fileLine(followAt[0]);
         int column = followAt[1];
-        MenuItem references = new MenuItem(tr("project.map.links.showReferences"));
-        references.setDisable(!text);
-        references.setOnAction(ignored -> actions.show(this, MapCardLinks.Kind.REFERENCES, line, column));
-        MenuItem callers = new MenuItem(tr("project.map.links.showCallers"));
-        callers.setDisable(!text);
-        callers.setOnAction(ignored -> actions.show(this, MapCardLinks.Kind.CALLERS, line, column));
-        return java.util.List.of(references, callers);
+        java.util.List<MenuItem> items = new java.util.ArrayList<>();
+        for (MapCardLinks.Kind kind : MapCardLinks.MENU_KINDS) {
+            MenuItem item = new MenuItem(MapCardLinks.menuLabel(kind));
+            item.setDisable(!text);
+            // References and Callers of a declaration card are its declaration's (explore position 5); the rest go
+            // from where the menu was opened, as the editor's commands do.
+            boolean atPlace = kind != MapCardLinks.Kind.REFERENCES && kind != MapCardLinks.Kind.CALLERS;
+            item.setOnAction(ignored -> actions.show(this, kind, line, column, atPlace));
+            items.add(item);
+        }
+        MenuItem hover = new MenuItem(tr("project.map.links.hover.show"));
+        hover.setDisable(!text);
+        int[] at = followAt.clone();
+        hover.setOnAction(ignored -> {
+            moveCaretTo(at[0], at[1]); // the popup stands at the caret: where the menu was opened
+            actions.hover(this, line, column);
+        });
+        items.add(hover);
+        return items;
     }
 
     private int clickLineAt(double x, double y) {

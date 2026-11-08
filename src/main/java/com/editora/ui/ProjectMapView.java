@@ -2507,24 +2507,51 @@ final class ProjectMapView extends VBox {
                         ? symbol.block()
                         : new com.editora.text.FoldRegions.Region(symbol.line(), symbol.endLine())));
         menu.getItems().setAll(preview, openAt, openNarrowed);
-        menu.getItems().addAll(followItems(symbol.file(), symbol.line(), followName(symbol.label())));
         menu.getItems().addAll(linksItems(entry));
+        menu.getItems().addAll(followItems(symbol.file(), symbol.line(), followName(symbol.label())));
         return menu;
     }
 
     /**
-     * A declaration row's Show References as Cards and Show Callers as Cards (explore position 5): its card opens
-     * and the places found open as cards beside it, joined to it by labelled edges. Empty without a source.
+     * What a declaration row's menu asks about it on the Map (explore position 5, Map code navigation): its card
+     * opens and what is found — its references, callers, implementations, the method it overrides, its type, its
+     * supertypes and subtypes — opens as cards beside it, joined to it by labelled edges. Its definition and
+     * declaration are the row itself, so those are not offered. Empty without a source.
      */
     private List<MenuItem> linksItems(ProjectMapModel.Entry entry) {
         if (!cards.linksAvailable()) {
             return List.of();
         }
-        MenuItem references = new MenuItem(tr("project.map.links.showReferences"));
-        references.setOnAction(event -> cards.showLinks(entry, MapCardLinks.Kind.REFERENCES));
-        MenuItem callers = new MenuItem(tr("project.map.links.showCallers"));
-        callers.setOnAction(event -> cards.showLinks(entry, MapCardLinks.Kind.CALLERS));
-        return List.of(new SeparatorMenuItem(), references, callers);
+        List<MenuItem> items = new ArrayList<>();
+        items.add(new SeparatorMenuItem());
+        for (MapCardLinks.Kind kind : MapCardLinks.MENU_KINDS) {
+            if (kind == MapCardLinks.Kind.DEFINITION || kind == MapCardLinks.Kind.DECLARATION) {
+                continue;
+            }
+            MenuItem item = new MenuItem(MapCardLinks.menuLabel(kind));
+            item.setOnAction(event -> cards.showLinks(entry, kind));
+            items.add(item);
+        }
+        return items;
+    }
+
+    /**
+     * The editor's code navigation typed on the map with a declaration row selected (Go to Implementation, Find
+     * Usages, Call and Type Hierarchy, …): asked about that declaration, as its menu would, answered as cards. False
+     * for any other command, another row, or with the keyboard elsewhere.
+     */
+    boolean runRowNavigation(String commandId) {
+        List<MapCardLinks.Kind> kinds = MapCardLinks.NAVIGATION_COMMANDS.get(commandId);
+        if (kinds == null || !cards.linksAvailable() || !surface.isFocused()) {
+            return false;
+        }
+        ProjectMapModel.Entry entry =
+                surface.selectedEntry().filter(ProjectMapModel.Entry::isSymbol).orElse(null);
+        if (entry == null) {
+            return false;
+        }
+        kinds.forEach(kind -> cards.showLinks(entry, kind));
+        return true;
     }
 
     /** Where Show References / Callers as Cards find their places (the panel's language servers and file list). */
@@ -2560,6 +2587,9 @@ final class ProjectMapView extends VBox {
                 Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
             found.accept(null);
         }
+
+        /** Opens a link of a card's Quick Documentation in the browser, as the editor's hover does. */
+        default void openUrl(String url) {}
     }
 
     private @Nullable FollowCode followCode;
@@ -2592,6 +2622,11 @@ final class ProjectMapView extends VBox {
                             }
 
                             @Override
+                            public void openUrl(String url) {
+                                code.openUrl(url);
+                            }
+
+                            @Override
                             public void lastChange(
                                     Path file,
                                     int startLine,
@@ -2604,8 +2639,8 @@ final class ProjectMapView extends VBox {
 
     /**
      * A declaration row's follow items: Go to Definition, Find Usages, Go to Implementation, Type and Call
-     * Hierarchy at the declaration, then Related Test / Subject and File History of its file. Empty without a
-     * {@link FollowCode}.
+     * Hierarchy at the declaration in the editor — in an In the Editor submenu when the Map answers them as cards —
+     * then Related Test / Subject and File History of its file. Empty without a {@link FollowCode}.
      */
     private List<MenuItem> followItems(Path file, int line, String name) {
         FollowCode code = followCode;
@@ -2614,10 +2649,18 @@ final class ProjectMapView extends VBox {
         }
         List<MenuItem> items = new ArrayList<>();
         items.add(new SeparatorMenuItem());
+        List<MenuItem> inEditor = new ArrayList<>();
         for (String commandId : ProjectMapPreview.FOLLOW_COMMANDS) {
             MenuItem item = new MenuItem(ProjectMapPreview.followLabel(commandId));
             item.setOnAction(event -> code.follow(file, line, -1, name, commandId));
-            items.add(item);
+            inEditor.add(item);
+        }
+        if (cards.linksAvailable()) {
+            javafx.scene.control.Menu editorMenu = new javafx.scene.control.Menu(tr("project.map.follow.inEditor"));
+            editorMenu.getItems().setAll(inEditor);
+            items.add(editorMenu);
+        } else {
+            items.addAll(inEditor);
         }
         items.add(new SeparatorMenuItem());
         items.add(mapMenuItem("project.map.follow.related", () -> followRelated(file)));

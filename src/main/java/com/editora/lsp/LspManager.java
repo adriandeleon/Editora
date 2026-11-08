@@ -3182,6 +3182,12 @@ public final class LspManager {
         navigation.definition(file, line, character, cb);
     }
 
+    /** See {@link LspNavigationRequests#definition}. */
+    public void definition(
+            Path file, int line, int character, Consumer<List<Target>> cb, @Nullable Consumer<String> onError) {
+        navigation.definition(file, line, character, cb, onError);
+    }
+
     /** See {@link LspNavigationRequests#definitionAt}. */
     public void definitionAt(
             Path anchorFile, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
