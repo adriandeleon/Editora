@@ -1116,6 +1116,9 @@ public final class DapClient implements IDebugProtocolClient {
         for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
             SourceBreakpoint sb = new SourceBreakpoint();
             sb.setLine(lb.line() + 1); // DAP is 1-based; our model is 0-based
+            if (lb.column() > 0) {
+                sb.setColumn(lb.column()); // a lambda breakpoint: the lambda starting at this column
+            }
             if (lb.condition() != null && !lb.condition().isBlank()) {
                 sb.setCondition(lb.condition());
             }
@@ -1171,13 +1174,34 @@ public final class DapClient implements IDebugProtocolClient {
                     continue;
                 }
                 int line = sent.get(i).line();
-                if (b.getId() != null) {
+                if (b.getId() != null && sent.get(i).column() <= 0) {
                     breakpointIds.put(b.getId(), new BreakpointKey(file, line));
                 }
                 statuses.add(status(line, b));
             }
         }
-        host.onBreakpointStatus(file, statuses, true);
+        host.onBreakpointStatus(file, perLine(statuses), true);
+    }
+
+    /**
+     * Pure: one status per line, the line's lambda breakpoints folded into its own — bound only when every one is,
+     * refused when any is (with that one's message), and at the line the line's own answer moved it to.
+     */
+    static List<DapModels.BreakpointStatus> perLine(List<DapModels.BreakpointStatus> statuses) {
+        Map<Integer, DapModels.BreakpointStatus> byLine = new java.util.LinkedHashMap<>();
+        for (DapModels.BreakpointStatus s : statuses) {
+            byLine.merge(s.line(), s, (a, b) -> {
+                boolean verified = a.verified() && b.verified();
+                boolean failed = a.failed() || b.failed();
+                String message = !a.verified() && !a.message().isEmpty() ? a.message() : b.message();
+                if (verified) {
+                    message = a.message().isEmpty() ? b.message() : a.message();
+                }
+                return new DapModels.BreakpointStatus(
+                        a.line(), verified, failed, message, a.actualLine() >= 0 ? a.actualLine() : b.actualLine());
+            });
+        }
+        return new ArrayList<>(byLine.values());
     }
 
     /** Pure: one adapter breakpoint as a {@link DapModels.BreakpointStatus} for the 0-based line asked for. */

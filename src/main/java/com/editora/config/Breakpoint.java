@@ -1,5 +1,9 @@
 package com.editora.config;
 
+import java.util.List;
+import java.util.TreeSet;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
@@ -7,7 +11,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * boolean expression that must hold for the breakpoint to stop) and {@code logMessage} (a non-empty
  * value makes it a <em>logpoint</em> — it logs instead of stopping), an {@code enabled} flag, and a
  * captured snapshot of the line's text (so breakpoints can be re-anchored to their content when a file is
- * edited outside the editor). Persisted per file path, bucketed per project, in {@link BreakpointStore}
+ * edited outside the editor). On a line of Java that starts lambdas, it can also stop inside some of them
+ * ({@code lambdas}: their numbers on the line, from 1, left to right), or only there ({@code lambdasOnly}): the
+ * Java debugger's lambda breakpoints. Persisted per file path, bucketed per project, in {@link BreakpointStore}
  * ({@code breakpoints.json}).
  *
  * <p>A Jackson-serialized record; the {@code com.editora.config} package is already opened to
@@ -21,7 +27,9 @@ public record Breakpoint(
         boolean enabled,
         String lineText,
         String hitCondition,
-        boolean temporary) {
+        boolean temporary,
+        List<Integer> lambdas,
+        boolean lambdasOnly) {
 
     /** Max stored length of the captured line snapshot. */
     public static final int MAX_LINE_TEXT = 200;
@@ -34,6 +42,31 @@ public record Breakpoint(
         if (lineText.length() > MAX_LINE_TEXT) {
             lineText = lineText.substring(0, MAX_LINE_TEXT);
         }
+        TreeSet<Integer> numbers = new TreeSet<>();
+        if (lambdas != null) {
+            for (Integer n : lambdas) {
+                if (n != null && n >= 1 && n <= MAX_LAMBDA) {
+                    numbers.add(n);
+                }
+            }
+        }
+        lambdas = List.copyOf(numbers);
+        lambdasOnly = lambdasOnly && !lambdas.isEmpty(); // with no lambda it stops on the line
+    }
+
+    /** Highest lambda number kept: a line never starts more lambdas than this. */
+    public static final int MAX_LAMBDA = 32;
+
+    /** A breakpoint that stops on its line only. */
+    public Breakpoint(
+            int line,
+            String condition,
+            String logMessage,
+            boolean enabled,
+            String lineText,
+            String hitCondition,
+            boolean temporary) {
+        this(line, condition, logMessage, enabled, lineText, hitCondition, temporary, List.of(), false);
     }
 
     /** A breakpoint that stays after it is hit. */
@@ -63,24 +96,29 @@ public record Breakpoint(
     }
 
     public Breakpoint withLine(int newLine) {
-        return new Breakpoint(newLine, condition, logMessage, enabled, lineText, hitCondition, temporary);
+        return new Breakpoint(
+                newLine, condition, logMessage, enabled, lineText, hitCondition, temporary, lambdas, lambdasOnly);
     }
 
     /** This breakpoint with a fresh snapshot of its line's text (the line was edited in place). */
     public Breakpoint withLineText(String newLineText) {
-        return new Breakpoint(line, condition, logMessage, enabled, newLineText, hitCondition, temporary);
+        return new Breakpoint(
+                line, condition, logMessage, enabled, newLineText, hitCondition, temporary, lambdas, lambdasOnly);
     }
 
     public Breakpoint withCondition(String newCondition) {
-        return new Breakpoint(line, newCondition, logMessage, enabled, lineText, hitCondition, temporary);
+        return new Breakpoint(
+                line, newCondition, logMessage, enabled, lineText, hitCondition, temporary, lambdas, lambdasOnly);
     }
 
     public Breakpoint withLogMessage(String newLog) {
-        return new Breakpoint(line, condition, newLog, enabled, lineText, hitCondition, temporary);
+        return new Breakpoint(
+                line, condition, newLog, enabled, lineText, hitCondition, temporary, lambdas, lambdasOnly);
     }
 
     public Breakpoint withEnabled(boolean newEnabled) {
-        return new Breakpoint(line, condition, logMessage, newEnabled, lineText, hitCondition, temporary);
+        return new Breakpoint(
+                line, condition, logMessage, newEnabled, lineText, hitCondition, temporary, lambdas, lambdasOnly);
     }
 
     /**
@@ -88,7 +126,8 @@ public record Breakpoint(
      * fifth), and with debugpy also {@code >= 3} or {@code % 2}. Blank: every hit.
      */
     public Breakpoint withHitCondition(String newHitCondition) {
-        return new Breakpoint(line, condition, logMessage, enabled, lineText, newHitCondition, temporary);
+        return new Breakpoint(
+                line, condition, logMessage, enabled, lineText, newHitCondition, temporary, lambdas, lambdasOnly);
     }
 
     /**
@@ -96,6 +135,28 @@ public record Breakpoint(
      * "Remove once hit", Visual Studio's temporary breakpoint.
      */
     public Breakpoint withTemporary(boolean newTemporary) {
-        return new Breakpoint(line, condition, logMessage, enabled, lineText, hitCondition, newTemporary);
+        return new Breakpoint(
+                line, condition, logMessage, enabled, lineText, hitCondition, newTemporary, lambdas, lambdasOnly);
+    }
+
+    /**
+     * This breakpoint stopping inside the lambdas numbered {@code newLambdas} on its line (from 1, left to right) as
+     * well as on the line, or ({@code only}) instead of on it. No lambda: a plain line breakpoint.
+     */
+    public Breakpoint withLambdas(List<Integer> newLambdas, boolean only) {
+        return new Breakpoint(
+                line, condition, logMessage, enabled, lineText, hitCondition, temporary, newLambdas, only);
+    }
+
+    /** Whether it stops inside any lambda of its line. */
+    @JsonIgnore
+    public boolean hasLambdas() {
+        return !lambdas.isEmpty();
+    }
+
+    /** Whether it stops on the line itself (and not only inside its lambdas). */
+    @JsonIgnore
+    public boolean stopsOnLine() {
+        return !lambdasOnly;
     }
 }

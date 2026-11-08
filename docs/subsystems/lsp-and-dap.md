@@ -1135,6 +1135,22 @@ info colour, `◆ `); `clearDebugEditorSurfaces` clears them when the program ru
 (selection or `DebugExpressions.atCaret`, else a prompt; again unpins) and `debug.unpinLine`; the value popup's
 Pin to Line pins its expression to the line it opened for (`DebugValuePopup.lineAbove`). The opt-in
 `PinnedValuesProbeFxTest` checks two pins against java-debug across two stops.
+**Lambda breakpoints** ([`ui/LambdaBreakpoints`](../../src/main/java/com/editora/ui/LambdaBreakpoints.java),
+[`editor/debug/JavaLambdas`](../../src/main/java/com/editora/editor/debug/JavaLambdas.java)) are line breakpoints
+that also, or only, stop inside lambdas of their line: `Breakpoint.lambdas` holds their numbers on the line (from 1,
+left to right) and `lambdasOnly` says the line itself is not a target (`breakpoints.json` schema 6). java-debug
+installs a line breakpoint at the line's first location only, so it never stops in a lambda body; a breakpoint with a
+`column` is matched by `LambdaExpressionLocator` to the lambda whose start position (its parameter, or the `(` of its
+parameter list) is exactly that column, and installed on the synthetic `lambda$…` method. `JavaLambdas.on` finds
+those starts in the line's text (each `->` outside strings and comments, traced back to its parameters, skipping a
+switch rule's `case …` / `default` arrow), and `BreakpointTargets.of` turns one breakpoint into the line's
+`setBreakpoints` entries at send time — the line unless `lambdasOnly`, then one per lambda still on the line, each
+with the breakpoint's condition, hit count and log message. Keeping numbers rather than columns lets an edit before
+a lambda move it without losing it; a number the line no longer has falls back to the line. `DapClient.perLine`
+folds the answers into one status per line (bound when all are, refused when any is). Commands:
+`debug.toggleLambdaBreakpoint` (the lambda at or before the caret, else the first; again removes it, and the
+breakpoint with it when it stopped nowhere else); the gutter menu's Stop on the Line / Stop in Lambda n check items.
+The opt-in `LambdaBreakpointsProbeFxTest` checks both kinds against java-debug.
 The **Threads view** (the Call Stack area's Threads switch, `debug.threads`) lists `DapManager.threadStatuses`: the
 adapter's `threads`, each marked suspended when it is in `stoppedThreads` (with its stop reason), is the thread shown,
 or — after a whole-program suspend (`allSuspended`) — was not resumed on its own since (`resumedSinceSuspendAll`).

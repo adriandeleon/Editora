@@ -29,6 +29,6 @@ class PinnedLineTest {
         assertTrue(back.pinsBucket("other").isEmpty());
         BreakpointStore v4 = mapper.readValue("{\"schemaVersion\":4,\"byProject\":{}}", BreakpointStore.class);
         assertTrue(v4.getPins().isEmpty());
-        assertEquals(5, BreakpointStore.SCHEMA_VERSION);
+        assertTrue(BreakpointStore.SCHEMA_VERSION >= 5, "pins came with schema 5");
     }
 }
