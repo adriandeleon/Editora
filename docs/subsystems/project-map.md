@@ -360,7 +360,9 @@ pickers over the Map window (`ProjectPanel.mapGotoFile` / `mapGotoSymbol`, throu
 `HANDLED_COMMANDS`), and what is picked opens as a card on the Map, never a tab (`ProjectMapView.showOnMap`): its row
 revealed, then its card — for a symbol the card of the declaration holding it, the file's outline asked for and
 waited for first as a linked card's answer does (`OUTLINE_WAIT`, then the file's card scrolled there), the name
-selected (`MapCards.openPlaceCard`, `MapCardLinks.openPlace`; a newer pick replaces one still waiting). The
+selected (`MapCards.openPlaceCard`, `MapCardLinks.openPlace`; a newer pick replaces one still waiting). No row or
+column asked for such a card, so it stays until its file's own folder is collapsed (`MapCards.pickedCards`), where
+a declaration card otherwise goes with the Structure column that opened it. The
 keyboard goes to it and, picked from a card, Back returns to that card and its caret. The file finder starts in the
 folder of the card the keyboard is in (or of the selected row); a file outside the Map's root, or a new name typed,
 goes to the editor as the finder does there (`FileActions.openPicked`). Go to Symbol asks the server that runs for

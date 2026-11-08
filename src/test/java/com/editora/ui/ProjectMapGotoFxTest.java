@@ -205,11 +205,18 @@ class ProjectMapGotoFxTest {
                 () -> placeCards(cards, shape).stream()
                         .anyMatch(card -> "area".equals(card.editor().getSelectedText())),
                 "area's card, its name selected");
+        ProjectMapPreview declaration =
+                FxTestSupport.callOnFx(() -> placeCards(cards, shape).getFirst());
         FxTestSupport.runOnFx(() -> {
-            ProjectMapPreview found = placeCards(cards, shape).getFirst();
-            assertNotNull(found.range(), "the declaration's own card: " + found.title());
+            assertNotNull(declaration.range(), "the declaration's own card: " + declaration.title());
             assertEquals(List.of(), cards.backTrailForTest(), "picked on the map: no card to go back to");
         });
+        // No Structure column holds it, yet the Map's next check for cards whose rows went away keeps it: its file's
+        // folder is still open.
+        setField(cards, "cardsCheckedAgainst", null);
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(cards, "repaintPreviewConnectors"));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> assertTrue(cards.previews.containsValue(declaration), "the picked card stays"));
 
         // The card's one-line selection is the query, as in the editor.
         ProjectMapPreview source = openCard(cards, use);
