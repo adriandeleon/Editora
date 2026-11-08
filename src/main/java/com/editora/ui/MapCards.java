@@ -1090,6 +1090,7 @@ final class MapCards {
 
     void dispose() {
         disposed = true;
+        cancelDeclarationMove();
         closeAllPreviews();
         connectorPulse.stop();
     }
@@ -1135,6 +1136,7 @@ final class MapCards {
             cardsUpdateStepping(card);
         }
         links.outlineChanged(file); // a question waiting to group its places by declaration
+        declarationMoveOutlined(file); // a file card's caret waiting to move to a declaration
     }
 
     /** Preview and note cards of a renamed file, or of files under a renamed folder, follow it (C21). */
@@ -1262,6 +1264,16 @@ final class MapCards {
             }
         }
         files.addAll(links.outlineFiles());
+        DeclarationMove move = declarationMove;
+        if (move != null) {
+            files.add(move.file());
+        }
+        for (ProjectMapPreview card : previews.values()) {
+            Path file = card.path();
+            if (card.range() == null && file != null && structure.hasOutline(file)) {
+                files.add(file); // a file card whose caret moved by declarations: its outline is kept up to date
+            }
+        }
         return files;
     }
 
@@ -1484,6 +1496,7 @@ final class MapCards {
         });
         preview.setOnNotesToggled(shown -> showCardNotes(preview, shown));
         preview.setOnStructureToggled(shown -> showCardStructure(preview, shown));
+        preview.setOnDeclarationMove(direction -> cardsMoveCaret(preview, direction));
         preview.setOnFocusStructure(() -> {
             ProjectMapCardStructure column = cardStructures.get(preview);
             if (column != null) {
@@ -1787,6 +1800,107 @@ final class MapCards {
         cardsRequestLastChange(card);
         linksCloseResults(results);
         repaintPreviewConnectors(); // its connector now meets the new declaration's row
+    }
+
+    /** A file card's caret move waiting for its file's outline (see {@link #cardsMoveCaret}). */
+    private record DeclarationMove(
+            ProjectMapPreview card, Path file, int direction, javafx.animation.PauseTransition timeout) {}
+
+    private @Nullable DeclarationMove declarationMove;
+
+    /**
+     * A file card's Alt+Page Up / Alt+Page Down (card movement): the caret goes to the declaration before or after it,
+     * as the file's outline has them. An outline not held yet is asked for, and the caret moves when it comes, for up
+     * to {@link MapCardLinks#OUTLINE_WAIT}. A declaration past what the card holds opens as its own card; a file with
+     * no outline, or no declaration that way, says so in the status.
+     */
+    void cardsMoveCaret(ProjectMapPreview card, int direction) {
+        Path file = card.path();
+        if (disposed || file == null || !cardTouches.containsKey(card)) {
+            return;
+        }
+        cancelDeclarationMove();
+        if (!structure.supports(file)) {
+            host.status(tr("status.projectMap.noDeclarations"));
+            return;
+        }
+        structure.ensure(file);
+        if (structure.view(file).problem() != ProjectMapStructure.Problem.LOADING) {
+            moveCaretNow(card, file, direction);
+            return;
+        }
+        javafx.animation.PauseTransition timeout = new javafx.animation.PauseTransition(MapCardLinks.OUTLINE_WAIT);
+        DeclarationMove move = new DeclarationMove(card, file, direction, timeout);
+        declarationMove = move;
+        timeout.setOnFinished(event -> {
+            if (declarationMove == move) {
+                declarationMove = null;
+                host.status(tr("status.projectMap.noDeclarations"));
+            }
+        });
+        timeout.playFromStart();
+    }
+
+    private void cancelDeclarationMove() {
+        DeclarationMove move = declarationMove;
+        declarationMove = null;
+        if (move != null) {
+            move.timeout().stop();
+        }
+    }
+
+    /** A waiting caret move, now that {@code file}'s outline came. */
+    private void declarationMoveOutlined(Path file) {
+        DeclarationMove move = declarationMove;
+        if (move == null
+                || !move.file().equals(file)
+                || structure.view(file).problem() == ProjectMapStructure.Problem.LOADING) {
+            return;
+        }
+        cancelDeclarationMove();
+        if (cardTouches.containsKey(move.card()) && file.equals(move.card().path())) {
+            moveCaretNow(move.card(), file, move.direction());
+        }
+    }
+
+    private void moveCaretNow(ProjectMapPreview card, Path file, int direction) {
+        List<ProjectMapStructure.Node> declarations = cardsDeclarations(file);
+        if (declarations.isEmpty()) {
+            host.status(tr("status.projectMap.noDeclarations"));
+            return;
+        }
+        ProjectMapStructure.Node target = declarationFrom(declarations, card.caretFileLine(), direction);
+        if (target == null) {
+            host.status(tr(
+                    direction < 0 ? "status.projectMap.noDeclarationBefore" : "status.projectMap.noDeclarationAfter"));
+            return;
+        }
+        ProjectMapModel.Symbol symbol = target.symbol();
+        touchCard(card, false);
+        if (!card.moveCaretToLine(symbol.line(), ProjectMapView.followName(symbol.label()))) {
+            previewSymbol(symbolEntry(target), null); // past what the card holds: the declaration's own card
+        }
+    }
+
+    /**
+     * The declaration nearest before ({@code direction < 0}) or after {@code line} — the file's 0-based line — by the
+     * line its name is on; null when there is none that way. Pure.
+     */
+    static ProjectMapStructure.@Nullable Node declarationFrom(
+            List<ProjectMapStructure.Node> declarations, int line, int direction) {
+        ProjectMapStructure.Node best = null;
+        for (ProjectMapStructure.Node node : declarations) {
+            int at = node.symbol().line();
+            boolean ahead = direction < 0 ? at < line : at > line;
+            if (ahead
+                    && (best == null
+                            || (direction < 0
+                                    ? at > best.symbol().line()
+                                    : at < best.symbol().line()))) {
+                best = node;
+            }
+        }
+        return best;
     }
 
     /**

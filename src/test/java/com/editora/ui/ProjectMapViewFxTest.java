@@ -1419,6 +1419,7 @@ class ProjectMapViewFxTest {
                                 tr("project.map.preview.copyAll"), // nothing selected: Copy takes it all
                                 tr("editmenu.selectAll"),
                                 tr("project.map.preview.find"), // explore round: find in the card
+                                tr("project.map.preview.goToLine.menu"), // and go to a line in it
                                 tr("editmenu.addBookmark"),
                                 tr("editmenu.addNote"),
                                 tr("project.map.preview.pin.menu"), // and pin it

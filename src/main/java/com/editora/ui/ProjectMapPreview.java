@@ -385,6 +385,26 @@ final class ProjectMapPreview extends StackPane {
     private final NoteHighlightOverlay noteMarks = new NoteHighlightOverlay(editor);
     /** The text with its note marks over it: what the card shows for anything but an image. */
     private final StackPane textPane = new StackPane(editorScroll, noteMarks);
+    /** Go to Line, the matching bracket, definitions and the wash of a name's other uses, in the card's text. */
+    private final MapCardMoves moves = new MapCardMoves(editor, header, new MapCardMoves.Card() {
+        @Override
+        public int firstFileLine() {
+            Range shown = range;
+            return shown == null ? 0 : shown.startLine();
+        }
+
+        @Override
+        public @Nullable String fileName() {
+            Path file = path;
+            Path name = file == null ? null : file.getFileName();
+            return name == null ? null : name.toString();
+        }
+
+        @Override
+        public boolean textShown() {
+            return !disposed && frame.getCenter() == textPane;
+        }
+    });
     /** The notes stuck on the card, whose text {@link #noteMarks} paints (see {@link #markNotes}). */
     private java.util.List<PersonalNote> marked = java.util.List.of();
 
@@ -523,6 +543,8 @@ final class ProjectMapPreview extends StackPane {
     private Consumer<Boolean> onPinned = pinned -> {};
     /** Told -1 or +1: a declaration card's ‹ or › (and Alt+Page Up / Alt+Page Down). */
     private java.util.function.IntConsumer onStep = direction -> {};
+    /** Told -1 or +1: a file card's Alt+Page Up / Alt+Page Down, the caret to the declaration before or after it. */
+    private java.util.function.IntConsumer onDeclarationMove = direction -> {};
     /** Whether the file has a declaration before / after the one a declaration card shows. */
     private boolean stepBack;
 
@@ -546,7 +568,7 @@ final class ProjectMapPreview extends StackPane {
         getProperties().put(com.editora.command.KeyDispatcher.HANDLED_COMMANDS, (java.util.function.Predicate<String>)
                 this::runMarkerCommand);
         // Alt+arrows move the card and Alt+Shift+arrows resize it (history and word moves elsewhere).
-        getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, GEOMETRY_KEYS);
+        getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, DECLARATION_CARD_KEYS);
         setManaged(false);
         setVisible(false);
 
@@ -659,6 +681,7 @@ final class ProjectMapPreview extends StackPane {
         titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
         header.getChildren().setAll(titleBar);
         installFindBar();
+        textPane.getChildren().add(moves.usesOverlay());
 
         editor.getStyleClass().addAll("editor-area", "project-map-preview-editor");
         editor.setEditable(false);
@@ -743,7 +766,7 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         int declarationStep = declarationStepOf(event);
-        if (declarationStep != 0 && range != null) {
+        if (declarationStep != 0) {
             stepDeclaration(declarationStep);
             event.consume();
             return;
@@ -759,6 +782,8 @@ final class ProjectMapPreview extends StackPane {
                 hideHover(); // Quick Documentation goes first, as in the editor
             } else if (selectionBar.isVisible()) {
                 selectionBar.setVisible(false); // as in an editor: the bar goes first, the card on the next Escape
+            } else if (moves.lineBarShown()) {
+                moves.closeLineBar();
             } else if (findShown()) {
                 closeFind(); // the find bar goes before the card, and the match stays selected
             } else {
@@ -793,6 +818,9 @@ final class ProjectMapPreview extends StackPane {
         }
         if (FIND_COMMANDS.contains(commandId)) {
             return runFindCommand(commandId);
+        }
+        if (moves.run(commandId)) {
+            return true;
         }
         if (followRunsCommand(commandId)) {
             return true;
@@ -1218,10 +1246,9 @@ final class ProjectMapPreview extends StackPane {
         }
         String name = PathDisplay.fileName(shownPath);
         Range shown = range;
-        getProperties()
-                .put(
-                        com.editora.command.KeyDispatcher.CLAIMED_KEYS,
-                        shown == null ? GEOMETRY_KEYS : DECLARATION_CARD_KEYS);
+        // Alt+Page Up / Alt+Page Down: a declaration card steps to another declaration, a file card's caret moves to
+        // one.
+        getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, DECLARATION_CARD_KEYS);
         updateStepButtons();
         if (shown == null) {
             title.setText(name);
@@ -1331,6 +1358,7 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         long requested = generation.incrementAndGet();
+        moves.reset();
         path = file.toAbsolutePath().normalize();
         this.placementResolver = placementResolver;
         preferredWidth = DEFAULT_WIDTH;
@@ -1858,6 +1886,7 @@ final class ProjectMapPreview extends StackPane {
         generation.incrementAndGet();
         editorContextMenu.hide();
         hideHover();
+        moves.reset();
         selectionBar.setVisible(false);
         synchronized (tasks) {
             tasks.clear(); // a task already running finishes, and its result is dropped by the generation check
@@ -2019,7 +2048,10 @@ final class ProjectMapPreview extends StackPane {
         MenuItem find = new MenuItem(tr("project.map.preview.find"), Icons.find());
         find.setDisable(empty);
         find.setOnAction(ignored -> showFind());
-        java.util.List<MenuItem> items = new java.util.ArrayList<>(java.util.List.of(copy, selectAll, find));
+        MenuItem goToLine = new MenuItem(tr("project.map.preview.goToLine.menu"));
+        goToLine.setDisable(empty);
+        goToLine.setOnAction(ignored -> moves.showLineBar());
+        java.util.List<MenuItem> items = new java.util.ArrayList<>(java.util.List.of(copy, selectAll, find, goToLine));
         Path selected = path;
         Range shown = range;
         Runnable narrowed = onOpenNarrowed;
@@ -2072,6 +2104,18 @@ final class ProjectMapPreview extends StackPane {
                 }
             });
             items.add(column);
+            if (shown == null) {
+                // A file card's caret to the declaration before or after it (Alt+Page Up / Alt+Page Down).
+                MenuItem previous =
+                        new MenuItem(tr("project.map.preview.previousDeclaration.menu"), Icons.chevronLeft());
+                previous.setDisable(empty);
+                previous.setOnAction(ignored -> stepDeclaration(-1));
+                MenuItem next = new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight());
+                next.setDisable(empty);
+                next.setOnAction(ignored -> stepDeclaration(1));
+                items.add(previous);
+                items.add(next);
+            }
         }
         if (shown != null) {
             // A declaration card's ‹ › and Show in Structure (position 8): the buttons may have given way.
@@ -2474,12 +2518,65 @@ final class ProjectMapPreview extends StackPane {
         };
     }
 
-    /** Shows the previous ({@code -1}) or next declaration of the file in this declaration card. */
+    /**
+     * Shows the previous ({@code -1}) or next declaration of the file in this declaration card; in a file card, moves
+     * the caret to the declaration before or after it.
+     */
     void stepDeclaration(int direction) {
-        if (disposed || range == null || direction < 0 && !stepBack || direction > 0 && !stepForward) {
+        if (disposed) {
+            return;
+        }
+        if (range == null) {
+            if (frame.getCenter() == textPane && editor.getLength() > 0) {
+                onDeclarationMove.accept(direction < 0 ? -1 : 1);
+            }
+            return;
+        }
+        if (direction < 0 && !stepBack || direction > 0 && !stepForward) {
             return;
         }
         onStep.accept(direction < 0 ? -1 : 1);
+    }
+
+    /** Where a file card's Alt+Page Up / Alt+Page Down go: told -1 for the declaration before the caret, +1 after. */
+    void setOnDeclarationMove(java.util.function.IntConsumer callback) {
+        onDeclarationMove = callback == null ? direction -> {} : callback;
+    }
+
+    /** The file's 0-based line the card's caret is on. */
+    int caretFileLine() {
+        return fileLine(editor.getCurrentParagraph());
+    }
+
+    /**
+     * A file card's caret to the file's 0-based {@code fileLine}, on {@code name} where the line has it as a word, else
+     * at the line's first non-blank; the line in sight, a few lines of what leads to it above it. False — nothing
+     * moved — past what the card holds.
+     */
+    boolean moveCaretToLine(int fileLine, @Nullable String name) {
+        int line = fileLine - fileLine(0);
+        if (disposed
+                || frame.getCenter() != textPane
+                || line < 0
+                || line >= editor.getParagraphs().size()) {
+            return false;
+        }
+        String text = editor.getParagraph(line).getText();
+        int column = name == null || name.isBlank() ? -1 : ProjectMapLinkSearch.wordAt(text, name);
+        if (column < 0) {
+            column = text.length() - text.stripLeading().length();
+        }
+        editor.moveTo(line, column);
+        openingPending = -1;
+        linksPlacePending = null;
+        editor.showParagraphAtTop(Math.max(0, line - 3));
+        editor.requestFollowCaret();
+        return true;
+    }
+
+    /** The card's movement commands: Go to Line's bar and the uses wash. For tests. */
+    MapCardMoves moves() {
+        return moves;
     }
 
     /**
