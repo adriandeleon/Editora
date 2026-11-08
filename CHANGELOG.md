@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Setup:** Delve is found on the PATH or where `go install` puts it. *Settings → Debugging → Go* turns Go
     debugging on or off, sets Delve's path, and installs Delve with `go install`. The Doctor checks for it.
   - **Build output:** Delve's build goes to the temporary folder, not your package.
+- **Move around inside a Project Map card.** Go to Line, the matching bracket and Beginning / End of Defun, typed in
+  a card with your keymap's keys, now move the card's caret instead of the editor's. Go to Line opens a small bar
+  under the card's title, numbered as the file numbers its lines, so a declaration card's lines keep their file
+  numbers. In a file card, Alt+Page Up and Alt+Page Down move the caret to the declaration before or after it, as they
+  already step a declaration card through its file. The card menu has *Go to Line…* and, in a file card, *Previous
+  Declaration* and *Next Declaration*. When the caret rests on a name, its other uses in the card are highlighted, as
+  in the editor.
 - **See what a function calls on the Project Map.** *Show Callees as Cards*, in a Map card's menu and a declaration
   row's, opens a card for each declaration the function calls, joined to it by a "calls" edge with the number of call
   sites. It asks the language server's call hierarchy for outgoing calls, the counterpart of *Show Callers as Cards*.
