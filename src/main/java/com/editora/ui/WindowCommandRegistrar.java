@@ -2177,6 +2177,13 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showException)));
         host.registry()
                 .register(Command.of(
+                        "debug.pinValue",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::togglePinAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.unpinLine", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::unpinLine)));
+        host.registry()
+                .register(Command.of(
                         "debug.evaluate",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::focusEvaluate)));
         host.registry()

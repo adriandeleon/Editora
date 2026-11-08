@@ -646,6 +646,8 @@ public class EditorBuffer implements TabContent {
             (buffer, line) -> buffer.toggleBookmark(line);
     /** Breakpoints for this buffer (gutter strip + persistence + sent to a live DAP session). */
     final BreakpointManager breakpoints = new BreakpointManager(area);
+    /** The values pinned to this buffer's lines while debugging (painted at each line's end while paused). */
+    final com.editora.editor.debug.PinManager pins = new com.editora.editor.debug.PinManager(area);
     /** When true, the leftmost breakpoint strip is reserved + clickable (debugging is enabled). */
     private boolean debugEnabled = false;
     /** Handles a breakpoint-strip click; default toggles. The controller overrides to persist + re-send. */
@@ -3117,6 +3119,22 @@ public class EditorBuffer implements TabContent {
             java.util.BitSet script = isHttpFile() ? com.editora.http.HttpScriptLines.of(getContent()) : null;
             inlineValues().setValues(shown, frameLine, script == null ? null : script::get);
         }
+    }
+
+    /**
+     * While suspended: the pinned values to paint, by line ({@code expr = value} text), after the line's own inline
+     * values; null or empty clears them.
+     */
+    public void setPinnedValues(java.util.@Nullable Map<Integer, String> shown) {
+        java.util.Map<Integer, String> pinned = hugeFile ? null : shown;
+        if ((pinned != null && !pinned.isEmpty()) || inlineValues != null) {
+            inlineValues().setPinned(pinned);
+        }
+    }
+
+    /** The values pinned to this buffer's lines. */
+    public com.editora.editor.debug.PinManager getPinManager() {
+        return pins;
     }
 
     /** IntelliJ-style blame "Annotate" gutter column: per-0-based-line annotations (null/empty clears it).

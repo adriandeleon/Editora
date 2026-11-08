@@ -183,6 +183,23 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public List<com.editora.config.PinnedLine> pins(String fileKey) {
+        return List.copyOf(mc.config.getPins().getOrDefault(fileKey, List.of()));
+    }
+
+    @Override
+    public void persistPins(String fileKey, List<com.editora.config.PinnedLine> pins) {
+        if (pins.isEmpty()) {
+            if (mc.config.getPins().remove(fileKey) == null) {
+                return;
+            }
+        } else {
+            mc.config.getPins().put(fileKey, List.copyOf(pins));
+        }
+        mc.config.saveBreakpoints();
+    }
+
+    @Override
     public List<com.editora.config.MemberBreakpoint> memberBreakpoints() {
         return List.copyOf(mc.config.getMemberBreakpoints());
     }

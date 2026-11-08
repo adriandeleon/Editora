@@ -78,7 +78,8 @@ final class BufferNarrowing {
         b.clearBraceMatch(); // its offsets are the area's, which the swap changes
         NarrowCarry.Held held = NarrowCarry.hold(b.area, full, s, e, b.symbols, regions);
         narrowHeld = held; // set first: the swap fires the dirty listener, which reads getContent()
-        LineMarks.narrow(s, e, () -> NarrowCarry.narrow(b.area, s, e), b.bookmarks, b.breakpoints, b.notes, b.gitLines);
+        LineMarks.narrow(
+                s, e, () -> NarrowCarry.narrow(b.area, s, e), b.bookmarks, b.breakpoints, b.notes, b.gitLines, b.pins);
         b.symbols = NarrowCarry.narrowSymbols(held); // before the regions: their listeners read the symbols
         b.folds.carryRegions(NarrowCarry.narrowRegions(held));
         b.forgetHistoryAtNarrowBoundary(hadHistory);
@@ -124,7 +125,7 @@ final class BufferNarrowing {
         String region = b.documentTextSnapshot();
         b.clearBraceMatch(); // its offsets are the area's, which the swap changes
         int top = ScrollAnchor.firstVisibleLine(b.area); // the region's lines stay put on screen, as in Emacs
-        LineMarks.widen(() -> NarrowCarry.widen(b.area, held), b.bookmarks, b.breakpoints, b.notes, b.gitLines);
+        LineMarks.widen(() -> NarrowCarry.widen(b.area, held), b.bookmarks, b.breakpoints, b.notes, b.gitLines, b.pins);
         b.symbols = NarrowCarry.widenSymbols(held, region, b.symbols); // before the regions, as narrowTo
         List<FoldRegions.Region> regions = NarrowCarry.widenRegions(held, region, b.folds.regions());
         b.forgetHistoryAtNarrowBoundary(hadHistory);

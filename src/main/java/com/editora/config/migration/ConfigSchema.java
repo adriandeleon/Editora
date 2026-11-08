@@ -465,10 +465,19 @@ public enum ConfigSchema {
     // v2 → v3: Breakpoint gained `temporary` (additive; absent ⇒ stays after a hit).
     // v3 → v4: + memberBreakpoints, the method breakpoints and field watchpoints per project (additive; absent ⇒
     // none).
+    // v4 → v5: + pins, the values pinned to lines per project and file (additive; absent ⇒ none).
     BREAKPOINTS(
             BreakpointStore.SCHEMA_VERSION,
             1,
-            Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity, 3, ConfigMigrations::identity)),
+            Map.of(
+                    1,
+                    ConfigMigrations::identity,
+                    2,
+                    ConfigMigrations::identity,
+                    3,
+                    ConfigMigrations::identity,
+                    4,
+                    ConfigMigrations::identity)),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),
     /** Legacy {@code recent-files.json} was a bare JSON array (v0); v1 wraps it in an object. */
