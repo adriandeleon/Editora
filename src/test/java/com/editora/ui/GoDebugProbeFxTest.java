@@ -290,6 +290,7 @@ class GoDebugProbeFxTest {
 
     @Test
     void aRunningGoProgramIsFoundAttachedByItsProcessIdAndLeftRunning(@TempDir Path dir) throws Exception {
+        assumeGoAndDelve(); // before go build
         Path ptrace = Path.of("/proc/sys/kernel/yama/ptrace_scope");
         assumeTrue(
                 !Files.exists(ptrace) || Files.readString(ptrace).strip().equals("0"),
