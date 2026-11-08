@@ -1123,6 +1123,18 @@ Java server's document outline (`memberAt`; the package from the source's `packa
 (`dataBreakpointInfo`) which field a row is; a local variable has no `dataId` and cannot be watched. The stop's
 reason (`function breakpoint` / `data breakpoint`) is named on the state line. The opt-in
 `MemberBreakpointsProbeFxTest` sets both from the caret against the installed jdtls and java-debug.
+**Pinned values** ([`editor/debug/PinManager`](../../src/main/java/com/editora/editor/debug/PinManager.java),
+[`ui/PinnedValues`](../../src/main/java/com/editora/ui/PinnedValues.java)) are expressions pinned to a line
+(`config/PinnedLine`: line, expressions, line-text snapshot), at most four per line. The manager is one more
+`LineMarks` carrier beside bookmarks and breakpoints (it follows edits through `LineMarkTracker`, rides the
+narrowing swap, and re-anchors to its line text on reopen), and the pins are kept in `breakpoints.json`
+(`pins`, project → file → lines; schema 5, merged by line). On every frame selection `PinnedValues.refresh` sends
+each open file's pins — at most 40 a stop — to `evaluateFull` with context `watch` in that frame and paints
+`expr = value` (or `unavailable: …`) after the line's inline values (`InlineValuesOverlay.setPinned`, the palette's
+info colour, `◆ `); `clearDebugEditorSurfaces` clears them when the program runs. Commands: `debug.pinValue`
+(selection or `DebugExpressions.atCaret`, else a prompt; again unpins) and `debug.unpinLine`; the value popup's
+Pin to Line pins its expression to the line it opened for (`DebugValuePopup.lineAbove`). The opt-in
+`PinnedValuesProbeFxTest` checks two pins against java-debug across two stops.
 The **Threads view** (the Call Stack area's Threads switch, `debug.threads`) lists `DapManager.threadStatuses`: the
 adapter's `threads`, each marked suspended when it is in `stoppedThreads` (with its stop reason), is the thread shown,
 or — after a whole-program suspend (`allSuspended`) — was not resumed on its own since (`resumedSinceSuspendAll`).

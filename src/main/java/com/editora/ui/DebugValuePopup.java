@@ -51,7 +51,13 @@ final class DebugValuePopup implements DebugValuePresenter {
                 int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb);
 
         void addWatch(String expression);
+
+        /** Pins {@code expression} to line {@code line} (0-based) of {@code area}'s file, or unpins it there. */
+        default void pin(CodeArea area, int line, String expression) {}
     }
+
+    /** The line the popup was opened for (where Pin to Line pins), or -1. */
+    private int anchorLine = -1;
 
     static final double MAX_WIDTH = 560;
     static final double MAX_HEIGHT = 340;
@@ -107,13 +113,29 @@ final class DebugValuePopup implements DebugValuePresenter {
         copy.setOnAction(e -> copySelected());
         MenuItem watch = new MenuItem();
         watch.setOnAction(e -> addSelectedToWatches());
-        menu.getItems().addAll(copy, watch);
+        MenuItem pin = new MenuItem();
+        pin.setOnAction(e -> pinSelected());
+        menu.getItems().addAll(copy, watch, pin);
         menu.setOnShowing(e -> {
             String expr = selectedExpression();
             watch.setText(tr("debugpanel.addToWatches", expr));
             watch.setDisable(expr.isEmpty());
+            pin.setText(tr("debugpanel.pinToLine", expr, anchorLine + 1));
+            pin.setDisable(expr.isEmpty() || anchorLine < 0 || owner == null);
         });
         tree.setContextMenu(menu);
+        // A plain value is one line: Copy Value and Pin to Line on it too.
+        MenuItem copyLine = new MenuItem(tr("debugpanel.copyValue"));
+        copyLine.setOnAction(e -> DebugPanel.copyToClipboard(line.getText()));
+        MenuItem pinLine = new MenuItem();
+        pinLine.setOnAction(e -> pin(expression));
+        ContextMenu lineMenu = new ContextMenu(copyLine, pinLine);
+        lineMenu.setOnShowing(e -> {
+            String expr = expression == null ? "" : expression;
+            pinLine.setText(tr("debugpanel.pinToLine", expr, anchorLine + 1));
+            pinLine.setDisable(expr.isEmpty() || anchorLine < 0 || owner == null);
+        });
+        line.setContextMenu(lineMenu);
         textHeader.getStyleClass().add("debug-value-line");
         text.getStyleClass().add("debug-value-text");
         text.setEditable(false);
@@ -160,6 +182,7 @@ final class DebugValuePopup implements DebugValuePresenter {
     @Override
     public void show(CodeArea area, String expr, double x, double y, boolean keyboard) {
         int asked = ++shown;
+        anchorLine = keyboard ? area.getCurrentParagraph() : lineAbove(area, x, y);
         closing.stop();
         source.evaluate(expr, r -> {
             if (asked != shown
@@ -408,6 +431,38 @@ final class DebugValuePopup implements DebugValuePresenter {
             DebugPanel.copyToClipboard(DebugPanelText.copyValue(sel.getValue().value()));
         } else if (root.getChildren().contains(line)) {
             DebugPanel.copyToClipboard(line.getText());
+        }
+    }
+
+    /** Pins the selected row's expression to the line the popup was opened for (Visual Studio's pin on a DataTip). */
+    private void pinSelected() {
+        pin(selectedExpression());
+    }
+
+    private void pin(@Nullable String expr) {
+        CodeArea area = owner;
+        int line = anchorLine;
+        if (expr != null && !expr.isEmpty() && area != null && line >= 0) {
+            hide();
+            source.pin(area, line, expr);
+        }
+    }
+
+    /**
+     * The line the popup at {@code (x, y)} (screen) was opened for: the hover places it just below the word's line,
+     * Show Value at Caret below the caret's. -1 when it cannot be told.
+     */
+    static int lineAbove(CodeArea area, double x, double y) {
+        try {
+            javafx.geometry.Point2D local = area.screenToLocal(x, y - 6);
+            if (local == null) {
+                return -1;
+            }
+            int offset = area.hit(local.getX(), local.getY()).getInsertionIndex();
+            return area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                    .getMajor();
+        } catch (RuntimeException e) {
+            return -1;
         }
     }
 

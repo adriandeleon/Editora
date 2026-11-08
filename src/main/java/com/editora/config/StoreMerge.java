@@ -67,7 +67,7 @@ public final class StoreMerge {
                         ? List.of("line")
                         : path.size() == 2 && "memberBreakpoints".equals(path.get(0))
                                 ? List.of("kind", "className", "member")
-                                : null;
+                                : path.size() == 3 && "pins".equals(path.get(0)) ? List.of("line") : null;
             case NOTES -> path -> bucketed(path) ? List.of("id") : null;
             case HISTORY -> path -> bucketed(path) ? List.of("timestamp", "sha256", "reason") : null;
             case CONNECTIONS -> path -> path.equals(List.of("connections")) ? List.of("host", "port", "user") : null;
