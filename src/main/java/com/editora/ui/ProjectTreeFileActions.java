@@ -19,6 +19,8 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
     private final FileWorkflowCoordinator fileWorkflows;
     private final BooleanSupplier localHistoryEnabled;
     private final java.util.function.Consumer<Path> findInFolder;
+    /** The window's link choke point; nothing until {@link #of} sets it. */
+    private java.util.function.Consumer<String> openUrl = url -> {};
 
     ProjectTreeFileActions(
             GitCoordinator git,
@@ -32,7 +34,7 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
 
     /** The window's actions, its Find in Files popup included (Project Map review 3 E10: Find in Folder…). */
     static ProjectTreeFileActions of(MainController window, BooleanSupplier localHistoryEnabled) {
-        return new ProjectTreeFileActions(
+        ProjectTreeFileActions actions = new ProjectTreeFileActions(
                 window.git,
                 window.gitWindows,
                 window.diffCoordinator,
@@ -40,6 +42,13 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
                 window.fileWorkflows,
                 localHistoryEnabled,
                 window.searchCoordinator::findInFolder);
+        actions.openUrl = window::openExternalUrl;
+        return actions;
+    }
+
+    @Override
+    public void openExternalUrl(String url) {
+        openUrl.accept(url);
     }
 
     /** {@code findInFolder}: a folder's Find in Folder…, the Find in Files popup set to that folder. */

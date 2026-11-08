@@ -77,6 +77,11 @@ final class ProjectMapHelp {
                 row,
                 tr("project.map.help.cardFind.gesture", chord("shortcut", "F")),
                 "project.map.help.cardFind");
+        row = addRow(
+                pointer,
+                row,
+                tr("project.map.help.cardNavigate.gesture", modifier("shortcut")),
+                "project.map.help.cardNavigate");
 
         GridPane keys = grid();
         row = addHeading(keys, 0, "project.map.help.keyboard");

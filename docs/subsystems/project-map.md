@@ -299,14 +299,60 @@ resize a card (`ProjectMapPreview.GEOMETRY_KEYS`, claimed through `KeyDispatcher
 size go in its accessible help. The Structure tool window's command (`tool.structure`: Alt+7 in the Emacs and
 IntelliJ keymaps) typed in a file card shows the card's own Structure column and puts the keyboard there; typed in
 the column it goes back to the card; the card menu's **Show / Hide this preview's Structure** does the same.
-A card follows the code (`ProjectMapPreview.FOLLOW_COMMANDS`): Go to Definition, Find Usages, Go to
-Implementation, Type Hierarchy and Call Hierarchy typed in a card (F12 / Shift+F12 in the CUA and VS Code keymaps)
-or picked from its menu open the card's file in the editor at the card's caret (the menu's: where it was
-right-clicked) and run the command there (`FileActions.followCode` → `FileWorkflowCoordinator.openThenRun`), and the
-editor window comes forward; Go to Related File typed in a card, and the menu's **Related Test / Subject**, reveal
-the file's test or subject on the Map (`search.RelatedFiles` names, looked up beside it and in the Map's file list;
-several are offered in a menu under the breadcrumb), and Show Git History typed in a card, or its menu's item, is
-the card's file's. A declaration row's menu has the same items at the declaration, with the caret on its name.
+**A card navigates the code on the Map** (Map code navigation, `MapCardLinks.NAVIGATION_COMMANDS`). The editor's
+code navigation typed in a card, whatever keys the keymap gives it, is answered with cards beside the card, never
+in the editor: Go to Definition and Peek Definition (F12, Alt+F12 in the CUA and VS Code keymaps), Go to Declaration,
+Go to Type Definition, Go to Implementation, Go to Super Method, Find Usages (Shift+F12), Call Hierarchy (the callers)
+and Type Hierarchy (supertypes and subtypes, both asked). Ctrl+click (Cmd+click on macOS) on a name in a card is Go to
+Definition from there, the editor's gesture. Each asks `MapCardLinks` with a kind (`MapCardLinks.Kind`) at the card's
+caret — a declaration card's caret too, not its declaration — and the answer opens as linked cards (below), so their
+placement, edges, "+N more" chip, closing and eviction are those of References and Callers as Cards. The kinds that
+*lead* (`Kind.leads`: definition, declaration, type definition, super method, supertypes) draw their edge from the
+card asked from to the result, labelled "definition", "declaration", "type", "overrides" or "extends"; the others
+(references, callers, implementations, subtypes) from the result to it ("references", "calls", "implements",
+"extends"). For the Go to kinds (`Kind.goesTo`, not supertypes, which come with the subtypes) the keyboard follows to
+the first result card, brought into view once laid out, so F12 again goes on from there (`MapCards.followed`); a
+place on the card asked from itself (a definition further down the same file card, or within a declaration card's
+lines) opens no card: the card's caret moves there, the name selected. The result card selects the asked name at
+the place (`MapCardLinks.markOf`) — the result's own name for a type definition, a supertype or a subtype.
+
+**Back and Forward** (`nav.back` / `nav.forward`: Ctrl+Alt+Left / Right in the CUA and IntelliJ keymaps, `M-,` in Emacs) typed in a card walk the
+cards the code was followed through, not the editor's trail: each step that led to a card (or moved a card's caret)
+remembers the card it left and its caret (`MapCards.TrailStop`, at most `TRAIL_LIMIT` 50); Back brings that card into
+view with its caret where it was and remembers the current card for Forward; a new step forgets the Forward ones;
+closed cards are skipped and dropped. With nowhere to go the status line says so ("No earlier card to go back to.").
+
+**Quick Documentation** (`lsp.hover`, and the card menu's item at the place right-clicked) asks the running server's
+hover with the file lent, as linked cards do (`MapCardLinks.Source.hover`), and shows it at the card's caret in the
+editor's hover popup (`HoverCard.show`, shared with the editor's Show Documentation: scrolled, Page Down/Up, closed
+by a caret move, a scroll, a click elsewhere or Escape — the first Escape closes only the popup, the card stays;
+links open through the window's link choke point, `FileActions.openExternalUrl`). Without a server the status line
+says it needs one.
+
+**Without a language server** a definition or a declaration is matched by name
+(`ProjectMapLinkSearch.declarations`, edges dashed "by name"): in the card's own file, a JavaScript or TypeScript
+local of an enclosing scope first (`index.JsLocals`), then the nearest declaration at or above the place
+(`IndexCoordinator.nearestDeclaration` over `index.DeclarationScanner`), else every declaration of that name in the
+project's files of the language, nearest the card's file first, within the name match's budget. A server that fails
+falls back the same way. What only a server answers — type definition, implementations, super method, type
+hierarchy — says so instead ("This needs a language server for the file…", or "The language server does not answer
+this request."). A result in a library (a `jdt://` class file) has no card: the status says to open the file in the
+editor to follow it there.
+
+**In the editor.** The card menu's **In the Editor** submenu keeps Go to Definition, Find Usages, Go to
+Implementation, Type Hierarchy and Call Hierarchy that open the card's file in the editor at the place right-clicked
+and run the command there (`ProjectMapPreview.FOLLOW_COMMANDS`, `FileActions.followCode` →
+`FileWorkflowCoordinator.openThenRun`, review 3 C12), the editor window coming forward; with no link source (none is
+set) the typed commands still do that. Go to Related File typed in a card, and the menu's **Related Test /
+Subject**, reveal the file's test or subject on the Map (`search.RelatedFiles` names, looked up beside it and in the
+Map's file list; several are offered in a menu under the breadcrumb), and Show Git History typed in a card, or its
+menu's item, is the card's file's.
+
+**Declaration rows.** A declaration row's menu (the Map's Structure columns and a card's) has the Map's kinds about
+its declaration — Show References, Callers, Implementations, Supertypes and Subtypes as Cards, Go to Type
+Definition, Go to Super Method; not Definition or Declaration, which are the row itself — then the same In the
+Editor submenu at the declaration, with the caret on its name. The same commands typed on the map with a declaration
+row selected ask about it (`ProjectMapView.runRowNavigation`, through the Map window's `HANDLED_COMMANDS`).
 
 **Linked reference cards** (explore position 5, `MapCardLinks`, `ProjectMapLinkSearch`). A code card's menu and a
 declaration row's menu (the Map's Structure columns and a card's) have **Show References as Cards** and **Show

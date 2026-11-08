@@ -84,36 +84,45 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
 
     @Override
     public void find(Path root, MapCardLinks.Request request, Consumer<MapCardLinks.Answer> answer) {
+        withText(request, answer::accept, text -> located(root, request, text, answer));
+    }
+
+    /**
+     * {@code then} with the file's text — the editor's when given, else read off the FX thread — or {@code
+     * unreadable} told why it could not be read. FX thread.
+     */
+    private void withText(
+            MapCardLinks.Request request, Consumer<MapCardLinks.Answer> unreadable, Consumer<String> then) {
         String given = request.text();
         if (given != null) {
-            located(root, request, given, answer);
+            then.accept(given);
             return;
         }
         run(() -> {
             String text = read(request.file());
             ui.execute(() -> {
                 if (text == null) {
-                    answer.accept(MapCardLinks.Answer.none(
+                    unreadable.accept(MapCardLinks.Answer.none(
                             MapCardLinks.Via.NAME,
                             tr(
                                     "project.map.links.unreadable",
                                     com.editora.config.PathDisplay.fileName(request.file()))));
                 } else {
-                    located(root, request, text, answer);
+                    then.accept(text);
                 }
             });
         });
     }
 
-    /** With the file's text in hand: where the name is, then the server's answer or the name match. FX thread. */
-    private void located(Path root, MapCardLinks.Request request, String text, Consumer<MapCardLinks.Answer> answer) {
+    /**
+     * The request with its place settled from the file's text: the column of its name on its line (a negative
+     * column), or the name at its column; null when there is no name there. Pure.
+     */
+    static MapCardLinks.@Nullable Request settle(MapCardLinks.Request request, String text) {
         String[] lines = text.split("\\R", -1);
         int line = Math.max(0, Math.min(request.line(), lines.length - 1));
         String lineText = lines.length == 0 ? "" : lines[line];
-        String language = LanguageRegistry.forFileName(
-                request.file().getFileName() == null
-                        ? ""
-                        : request.file().getFileName().toString());
+        String language = languageOf(request.file());
         String name = request.name();
         int column = request.column();
         if (column < 0) {
@@ -122,24 +131,110 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
             name = IndexCoordinator.nameAt(lineText, column, language);
         }
         if (name == null || name.isBlank()) {
-            answer.accept(MapCardLinks.Answer.none(MapCardLinks.Via.NAME, tr("project.map.links.noName")));
-            return;
+            return null;
         }
         if (column < 0) {
             column = Math.max(0, lineText.indexOf(name));
         }
-        String found = name;
-        MapCardLinks.Request at = new MapCardLinks.Request(request.kind(), request.file(), line, column, found, text);
-        // A server that fails or times out is not taken to mean "nothing there": the name is matched instead, and
-        // the status says the server did not answer (review 4, C6).
-        Consumer<String> failed =
-                why -> byName(root, at, language, tr("project.map.links.serverFailedByName", why), answer);
-        if (!askServer(at, text, answer, failed)) {
-            String note = lsp != null && lsp.runsFor(request.file())
-                    ? tr("project.map.links.serverCannot")
-                    : tr("project.map.links.noServer");
-            byName(root, at, language, note, answer);
+        return new MapCardLinks.Request(request.kind(), request.file(), line, column, name, text);
+    }
+
+    private static String languageOf(Path file) {
+        return LanguageRegistry.forFileName(
+                file.getFileName() == null ? "" : file.getFileName().toString());
+    }
+
+    /**
+     * Quick Documentation at the request's place: the running server's hover, the file lent to it while it answers.
+     * Without a server the answer has no text and says why. Answered once, on the FX thread.
+     */
+    @Override
+    public void hover(Path root, MapCardLinks.Request request, Consumer<MapCardLinks.Hover> answer) {
+        withText(request, none -> answer.accept(new MapCardLinks.Hover(null, none.note(), request.name())), text -> {
+            MapCardLinks.Request at = settle(request, text);
+            if (at == null) {
+                answer.accept(new MapCardLinks.Hover(null, tr("project.map.links.noName"), null));
+                return;
+            }
+            LspManager servers = lsp;
+            Runnable loan = servers == null ? null : lend(servers, at.file(), text);
+            if (servers == null || loan == null) {
+                answer.accept(new MapCardLinks.Hover(null, tr("project.map.links.hover.noServer"), at.name()));
+                return;
+            }
+            servers.hover(
+                    at.file(),
+                    at.line(),
+                    at.column(),
+                    markdown -> {
+                        loan.run();
+                        answer.accept(new MapCardLinks.Hover(
+                                markdown == null || markdown.isBlank() ? null : markdown, null, at.name()));
+                    },
+                    why -> {
+                        loan.run();
+                        answer.accept(
+                                new MapCardLinks.Hover(null, tr("project.map.links.hover.failed", why), at.name()));
+                    });
+        });
+    }
+
+    /** {@code file} lent to its running server, or null when none runs for it. FX thread. */
+    private static @Nullable Runnable lend(LspManager servers, Path file, String text) {
+        try {
+            return servers.lendDocument(file, text);
+        } catch (RuntimeException unavailable) {
+            ProjectMapLog.unexpected("lending a file to its language server", unavailable);
+            return null;
         }
+    }
+
+    /** With the file's text in hand: where the name is, then the server's answer or the name match. FX thread. */
+    private void located(Path root, MapCardLinks.Request request, String text, Consumer<MapCardLinks.Answer> answer) {
+        MapCardLinks.Request at = settle(request, text);
+        if (at == null) {
+            answer.accept(MapCardLinks.Answer.none(MapCardLinks.Via.NAME, tr("project.map.links.noName")));
+            return;
+        }
+        String language = languageOf(request.file());
+        boolean matchable = byNameKinds(at.kind());
+        // A server that fails or times out is not taken to mean "nothing there": the name is matched instead, and
+        // the status says the server did not answer (review 4, C6). What only a server can answer says so.
+        Consumer<String> failed = why -> {
+            if (matchable) {
+                byName(root, at, language, tr("project.map.links.serverFailedByName", why), answer);
+            } else {
+                answer.accept(MapCardLinks.Answer.none(
+                        MapCardLinks.Via.SERVER, tr("project.map.links.serverFailed", why), at.name()));
+            }
+        };
+        if (!askServer(at, text, answer, failed)) {
+            boolean runs = lsp != null && lsp.runsFor(request.file());
+            if (matchable) {
+                byName(
+                        root,
+                        at,
+                        language,
+                        tr(runs ? "project.map.links.serverCannot" : "project.map.links.noServer"),
+                        answer);
+            } else {
+                answer.accept(MapCardLinks.Answer.none(
+                        MapCardLinks.Via.SERVER,
+                        tr(runs ? "project.map.links.serverCannotAnswer" : "project.map.links.needsServer"),
+                        at.name()));
+            }
+        }
+    }
+
+    /**
+     * Whether {@code kind} can be answered without a server: references and callers by the name's uses, a definition
+     * or declaration by the declarations of that name. Pure.
+     */
+    static boolean byNameKinds(MapCardLinks.Kind kind) {
+        return switch (kind) {
+            case REFERENCES, CALLERS, DEFINITION, DECLARATION -> true;
+            default -> false;
+        };
     }
 
     /**
@@ -152,20 +247,14 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         if (servers == null) {
             return false;
         }
-        Runnable loan;
-        try {
-            loan = servers.lendDocument(at.file(), text);
-        } catch (RuntimeException unavailable) {
-            ProjectMapLog.unexpected("lending a file to its language server", unavailable);
-            loan = null;
-        }
+        Runnable loan = lend(servers, at.file(), text);
         if (loan == null) {
             return false;
         }
         Runnable release = loan;
         Path file = at.file();
-        boolean callers = at.kind() == MapCardLinks.Kind.CALLERS;
-        if (callers ? !servers.supportsCallHierarchy(file) : !servers.supportsReferences(file)) {
+        MapCardLinks.Kind kind = at.kind();
+        if (!answers(servers, kind, file)) {
             release.run();
             return false;
         }
@@ -174,57 +263,77 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
             release.run();
             failed.accept(why);
         };
-        if (callers) {
-            servers.prepareCallHierarchy(
-                    file,
-                    at.line(),
-                    at.column(),
-                    items -> {
-                        if (items.isEmpty()) {
-                            release.run();
-                            answer.accept(
-                                    new MapCardLinks.Answer(List.of(), MapCardLinks.Via.SERVER, false, null, name));
-                            return;
-                        }
-                        servers.callHierarchyChildren(
-                                file,
-                                items.getFirst().raw(),
-                                true,
-                                calls -> {
-                                    release.run();
-                                    List<MapCardLinks.Hit> hits = new ArrayList<>();
-                                    for (LspManager.HierarchyNode caller : calls) {
-                                        Path from = caller.file();
-                                        if (from != null) { // a library's caller has no file on the map
-                                            hits.add(new MapCardLinks.Hit(
-                                                    from, caller.line(), caller.col(), caller.calls(), caller.name()));
-                                        }
-                                    }
-                                    answer.accept(
-                                            new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, null, name));
-                                },
-                                failedThenReleased);
-                    },
-                    failedThenReleased);
-        } else {
-            servers.references(
-                    file,
-                    at.line(),
-                    at.column(),
-                    targets -> {
+        Consumer<List<LspManager.HierarchyNode>> nodesFound = nodes -> {
+            release.run();
+            List<MapCardLinks.Hit> hits = new ArrayList<>();
+            for (LspManager.HierarchyNode node : nodes) {
+                Path from = node.file();
+                if (from != null) { // a library's caller or type has no file on the map
+                    hits.add(new MapCardLinks.Hit(from, node.line(), node.col(), node.calls(), node.name()));
+                }
+            }
+            String note = hits.isEmpty() && !nodes.isEmpty() ? tr("project.map.links.inLibrary") : null;
+            answer.accept(new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, note, name));
+        };
+        Consumer<List<LspManager.Target>> targetsFound = targets -> {
+            release.run();
+            List<MapCardLinks.Hit> hits = new ArrayList<>();
+            for (LspManager.Target target : targets) {
+                Path to = target.file();
+                if (to != null) {
+                    hits.add(new MapCardLinks.Hit(to, target.line(), target.character(), 1, null));
+                }
+            }
+            String note = hits.isEmpty() && !targets.isEmpty() ? tr("project.map.links.inLibrary") : null;
+            answer.accept(new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, note, name));
+        };
+        int line = at.line();
+        int column = at.column();
+        switch (kind) {
+            case CALLERS, SUPERTYPES, SUBTYPES -> {
+                boolean calls = kind == MapCardLinks.Kind.CALLERS;
+                Consumer<List<LspManager.HierarchyNode>> prepared = items -> {
+                    if (items.isEmpty()) {
                         release.run();
-                        List<MapCardLinks.Hit> hits = new ArrayList<>();
-                        for (LspManager.Target target : targets) {
-                            Path to = target.file();
-                            if (to != null) {
-                                hits.add(new MapCardLinks.Hit(to, target.line(), target.character(), 1, null));
-                            }
-                        }
-                        answer.accept(new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, null, name));
-                    },
-                    failedThenReleased);
+                        answer.accept(new MapCardLinks.Answer(List.of(), MapCardLinks.Via.SERVER, false, null, name));
+                    } else if (calls) {
+                        servers.callHierarchyChildren(
+                                file, items.getFirst().raw(), true, nodesFound, failedThenReleased);
+                    } else {
+                        servers.typeHierarchyChildren(
+                                file, items.getFirst().raw(), kind == MapCardLinks.Kind.SUPERTYPES, nodesFound);
+                    }
+                };
+                if (calls) {
+                    servers.prepareCallHierarchy(file, line, column, prepared, failedThenReleased);
+                } else {
+                    servers.prepareTypeHierarchy(file, line, column, prepared);
+                }
+            }
+            case REFERENCES -> servers.references(file, line, column, targetsFound, failedThenReleased);
+            case DEFINITION -> servers.definition(file, line, column, targetsFound, failedThenReleased);
+            case DECLARATION -> servers.declarationAt(file, null, line, column, targetsFound, failedThenReleased);
+            case TYPE_DEFINITION ->
+                servers.typeDefinitionAt(file, null, line, column, targetsFound, failedThenReleased);
+            case IMPLEMENTATIONS ->
+                servers.implementationAt(file, null, line, column, targetsFound, failedThenReleased);
+            case SUPER_METHOD -> servers.superMethodAt(file, null, line, column, targetsFound, failedThenReleased);
         }
         return true;
+    }
+
+    /** Whether {@code file}'s running server answers {@code kind} (a definition: every server does). */
+    private static boolean answers(LspManager servers, MapCardLinks.Kind kind, Path file) {
+        return switch (kind) {
+            case REFERENCES -> servers.supportsReferences(file);
+            case CALLERS -> servers.supportsCallHierarchy(file);
+            case DEFINITION -> true;
+            case DECLARATION -> servers.supportsDeclaration(file);
+            case TYPE_DEFINITION -> servers.supportsTypeDefinition(file);
+            case IMPLEMENTATIONS -> servers.supportsImplementation(file);
+            case SUPER_METHOD -> servers.supportsSuperMethod(file);
+            case SUPERTYPES, SUBTYPES -> servers.supportsTypeHierarchy(file);
+        };
     }
 
     /** The name matched as a whole word in the project's files of {@code language}, off the FX thread. */
@@ -234,7 +343,9 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         run(() -> {
             MapCardLinks.Answer found;
             try {
-                found = scan(root, name, language, at.kind() == MapCardLinks.Kind.CALLERS, note, at.file());
+                found = at.kind().leads
+                        ? declarations(root, at, language, note)
+                        : scan(root, name, language, at.kind() == MapCardLinks.Kind.CALLERS, note, at.file());
             } catch (RuntimeException failed) {
                 ProjectMapLog.unexpected("matching a declaration's name", failed);
                 found = MapCardLinks.Answer.none(MapCardLinks.Via.NAME, note, name);
@@ -242,6 +353,96 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
             MapCardLinks.Answer done = found;
             ui.execute(() -> answer.accept(done));
         });
+    }
+
+    /**
+     * Go to Definition without a server: the declaration of the name that the asked place most likely means — in its
+     * own file, a JavaScript or TypeScript local of an enclosing scope first, then the nearest declaration at or above
+     * it — else every declaration of that name in the project's files of its language, nearest the asked file first,
+     * within the name match's budget. Blocking.
+     */
+    MapCardLinks.Answer declarations(Path root, MapCardLinks.Request at, String language, @Nullable String note) {
+        String name = at.name() == null ? "" : at.name();
+        String text = at.text();
+        if (name.isBlank() || !com.editora.index.DeclarationScanner.supports(language)) {
+            return MapCardLinks.Answer.none(MapCardLinks.Via.NAME, note, name.isBlank() ? null : name);
+        }
+        if (text != null) {
+            int offset = offsetOf(text, at.line(), at.column());
+            int local = com.editora.index.JsLocals.declarationOf(text, offset, name, language);
+            if (local >= 0) {
+                int[] place = placeOf(text, local);
+                return new MapCardLinks.Answer(
+                        List.of(new MapCardLinks.Hit(at.file(), place[0], place[1], 1, name)),
+                        MapCardLinks.Via.NAME,
+                        false,
+                        note,
+                        name);
+            }
+            com.editora.index.Symbol own = IndexCoordinator.nearestDeclaration(
+                    com.editora.index.DeclarationScanner.scan(text, language), name, at.line());
+            if (own != null) {
+                return new MapCardLinks.Answer(
+                        List.of(new MapCardLinks.Hit(at.file(), own.line(), own.column(), 1, name)),
+                        MapCardLinks.Via.NAME,
+                        false,
+                        note,
+                        name);
+            }
+        }
+        com.editora.search.ProjectFileList.Snapshot listed = files.snapshot(root);
+        if (listed == null) {
+            return MapCardLinks.Answer.none(MapCardLinks.Via.NAME, note, name);
+        }
+        long deadline = clock.getAsLong() + BUDGET_MILLIS;
+        List<MapCardLinks.Hit> hits = new ArrayList<>();
+        boolean partial = listed.truncated();
+        int read = 0;
+        for (String relative : linksScanOrder(listed.files(), language, root, at.file())) {
+            Path file = root.resolve(relative);
+            if (read++ >= MAX_FILES || hits.size() >= MAX_HITS || clock.getAsLong() > deadline) {
+                partial = true;
+                break;
+            }
+            if (file.equals(at.file())) {
+                continue; // read above
+            }
+            String body = read(file);
+            if (body == null || body.indexOf(name) < 0) {
+                continue;
+            }
+            for (com.editora.index.Symbol symbol : com.editora.index.DeclarationScanner.scan(body, language)) {
+                if (symbol.name().equals(name) && hits.size() < MAX_HITS) {
+                    hits.add(new MapCardLinks.Hit(file, symbol.line(), symbol.column(), 1, name));
+                }
+            }
+        }
+        return new MapCardLinks.Answer(hits, MapCardLinks.Via.NAME, partial, note, name);
+    }
+
+    /** The offset of the 0-based {@code line} and {@code column} in {@code text}, clamped to it. Pure. */
+    static int offsetOf(String text, int line, int column) {
+        int start = 0;
+        for (int at = 0; at < line; at++) {
+            int next = text.indexOf('\n', start);
+            if (next < 0) {
+                return text.length();
+            }
+            start = next + 1;
+        }
+        int end = text.indexOf('\n', start);
+        return Math.min(start + Math.max(0, column), end < 0 ? text.length() : end);
+    }
+
+    /** The 0-based line and column of {@code offset} in {@code text}. Pure. */
+    static int[] placeOf(String text, int offset) {
+        int line = 0;
+        int lineStart = 0;
+        for (int i = text.indexOf('\n'); i >= 0 && i < offset; i = text.indexOf('\n', i + 1)) {
+            line++;
+            lineStart = i + 1;
+        }
+        return new int[] {line, offset - lineStart};
     }
 
     /** The name match itself, in the file list's order. Blocking. */

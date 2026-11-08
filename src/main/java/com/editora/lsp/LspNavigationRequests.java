@@ -287,7 +287,13 @@ final class LspNavigationRequests {
     }
 
     public void definition(Path file, int line, int character, Consumer<List<Target>> cb) {
-        requestDefinition(m.sessionFor(file), file == null ? null : LspManager.uri(file), line, character, cb);
+        definition(file, line, character, cb, null);
+    }
+
+    /** As above; {@code onError} (when given) hears a failed or timed-out request (the Project Map's cards). */
+    public void definition(
+            Path file, int line, int character, Consumer<List<Target>> cb, @Nullable Consumer<String> onError) {
+        requestDefinition(m.sessionFor(file), file == null ? null : LspManager.uri(file), line, character, cb, onError);
     }
 
     /**
@@ -303,7 +309,8 @@ final class LspNavigationRequests {
                 documentUri != null ? documentUri : anchorFile == null ? null : LspManager.uri(anchorFile),
                 line,
                 character,
-                cb);
+                cb,
+                null);
     }
 
     /**
@@ -472,7 +479,8 @@ final class LspNavigationRequests {
             @Nullable String documentUri,
             int line,
             int character,
-            Consumer<List<Target>> cb) {
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10);
         // a pom on the Maven server is lemminx too, its own answer still first (XML/pom review 4, B34).
         boolean xml = s != null && XmlServerSettings.isLemminx(s.serverId());
@@ -484,7 +492,7 @@ final class LspNavigationRequests {
         Consumer<List<Target>> answer = xml && s != null && documentUri != null
                 ? notingMissingInclude(s, documentUri, new Position(line, character), missingLink, cb)
                 : cb;
-        requestLocations(s, documentUri, line, character, request, answer, null);
+        requestLocations(s, documentUri, line, character, request, answer, onError);
     }
 
     /**

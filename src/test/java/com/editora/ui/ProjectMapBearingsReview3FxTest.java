@@ -432,7 +432,7 @@ class ProjectMapBearingsReview3FxTest {
     }
 
     @Test
-    void f12InACardOpensTheFileInTheEditorAtTheCardsCaret() throws Exception {
+    void f12InACardIsAnsweredOnTheMapNotInTheEditor() throws Exception {
         if (fx == null) {
             fx = FxWindowFixture.create();
         }
@@ -463,12 +463,14 @@ class ProjectMapBearingsReview3FxTest {
             Event.fireEvent(
                     card.editor(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.F12, false, false, false, false));
         });
-        waitForFx(() -> {
+        // Map code navigation: the card asks for the definition itself, and says what it found in the Map's status
+        // line; the file is not opened in the editor (its In the Editor submenu still does that).
+        ProjectMapStatusLine status = FxTestSupport.field(panel, "mapStatusLine");
+        waitForFx(() -> status.text().contains("helper"));
+        FxTestSupport.runOnFx(() -> {
             EditorBuffer buffer = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[0]);
-            return buffer != null
-                    && app.equals(buffer.getPath())
-                    && buffer.getArea().getCurrentParagraph() == 4
-                    && buffer.getArea().getCaretColumn() == 9;
+            assertTrue(buffer == null || !app.equals(buffer.getPath()), "the editor did not open the card's file");
+            assertTrue(status.text().contains(tr("project.map.links.definition.none", "helper")), status.text());
         });
     }
 

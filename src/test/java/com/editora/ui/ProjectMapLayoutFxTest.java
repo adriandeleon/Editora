@@ -835,11 +835,12 @@ class ProjectMapLayoutFxTest {
                 }
             }
             // The intro, six headings (pointer, cards and notes, keyboard, search, where am I, filters), the Cards
-            // section's opening sentence and 58 gesture rows (review 3: B14 added the type-ahead row, B19 the search
+            // section's opening sentence and 59 gesture rows (review 3: B14 added the type-ahead row, B19 the search
             // and "where am I" ones; the explore round the card pin, declaration stepping and find in a card; review
-            // 4 A4 a playing trail's keys).
-            assertEquals(1 + 6 + 1 + 58 * 2, text.size());
+            // 4 A4 a playing trail's keys; Map code navigation the card's Ctrl+click).
+            assertEquals(1 + 6 + 1 + 59 * 2, text.size());
             assertTrue(text.contains(tr("project.map.help.trailStep")));
+            assertTrue(text.contains(tr("project.map.help.cardNavigate")));
             assertTrue(text.contains(tr("project.map.help.chevron")));
             assertTrue(text.contains(tr("project.map.help.dragHeader.gesture")));
             assertTrue(text.contains(tr("project.map.help.escape")));

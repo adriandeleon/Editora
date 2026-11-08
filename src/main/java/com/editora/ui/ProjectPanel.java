@@ -267,6 +267,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
          */
         default void followCode(Path file, int line, int column, @Nullable String name, String commandId) {}
 
+        /** Opens {@code url} in the browser, through the window's link choke point (a Map card's Quick Documentation). */
+        default void openExternalUrl(String url) {}
+
         /**
          * The commit that last changed {@code file} — with {@code startLine >= 0}, its 0-based lines {@code
          * startLine..endLine} — for a Map card's status line (Map explore round, position 9); null, on the FX thread,
@@ -788,7 +791,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 return true;
             }
             default -> {
-                return false;
+                // Go to Implementation, Find Usages… on a selected declaration row: answered as cards on the Map.
+                return mapView.runRowNavigation(commandId);
             }
         }
     }
@@ -2753,6 +2757,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             public void annotate(Path file) {
                 actions.gitAnnotate(file);
                 raiseEditorWindow();
+            }
+
+            @Override
+            public void openUrl(String url) {
+                actions.openExternalUrl(url);
             }
 
             @Override
