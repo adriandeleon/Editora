@@ -320,25 +320,49 @@ public final class LocalProcesses {
      * PowerShell cannot say within a few seconds.
      */
     private static Map<Long, String> windowsCommandLines() {
-        String script = "Get-CimInstance Win32_Process -Filter \"Name like 'java%' or Name like 'node%' or Name like"
-                + " 'python%'\" | ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }";
+        java.nio.file.Path out = null;
         try {
-            Process p = new ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+            out = java.nio.file.Files.createTempFile("editora-processes", ".txt");
+            // -EncodedCommand: Java's Windows launcher does not escape quotes inside an argument, so a -Command script
+            // with quotes in it reached PowerShell mangled and listed nothing.
+            ProcessBuilder pb = new ProcessBuilder(
+                            "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded(WINDOWS_LIST))
                     .redirectErrorStream(true)
-                    .start();
+                    .redirectOutput(out.toFile()); // a file, so a slow PowerShell cannot hold the scan past its limit
+            com.editora.process.ProcessRunner.applyStandardEnv(pb); // the output is parsed
+            Process p = pb.start();
             p.getOutputStream().close();
-            byte[] out = p.getInputStream().readAllBytes();
-            if (!p.waitFor(5, TimeUnit.SECONDS)) {
+            if (!p.waitFor(WINDOWS_LIST_SECONDS, TimeUnit.SECONDS)) {
                 p.destroyForcibly();
                 return Map.of();
             }
-            return parseWindowsList(new String(out, StandardCharsets.UTF_8));
-        } catch (java.io.IOException e) {
+            return parseWindowsList(java.nio.file.Files.readString(out, java.nio.charset.Charset.defaultCharset()));
+        } catch (java.io.IOException | RuntimeException e) {
             return Map.of();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return Map.of();
+        } finally {
+            if (out != null) {
+                try {
+                    java.nio.file.Files.deleteIfExists(out);
+                } catch (java.io.IOException ignored) {
+                    // a temporary file
+                }
+            }
         }
+    }
+
+    /** How long PowerShell may take to list the processes: its first start on a machine takes seconds. */
+    static final int WINDOWS_LIST_SECONDS = 15;
+
+    /** Lists this user's Java, Node.js and Python processes as {@code pid<TAB>command line} lines. */
+    static final String WINDOWS_LIST = "Get-CimInstance Win32_Process -Filter \"Name like 'java%' or Name like 'node%'"
+            + " or Name like 'python%'\" | ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }";
+
+    /** {@code script} as PowerShell's {@code -EncodedCommand} takes it: Base64 of its UTF-16LE text. Pure. */
+    static String encoded(String script) {
+        return java.util.Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_16LE));
     }
 
     /** {@code pid<TAB>command line} lines as a map. Pure. */

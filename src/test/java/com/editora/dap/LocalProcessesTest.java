@@ -122,6 +122,15 @@ class LocalProcessesTest {
     }
 
     @Test
+    void theWindowsListGoesToPowerShellEncodedSoItsQuotesSurvive() {
+        String encoded = LocalProcesses.encoded(LocalProcesses.WINDOWS_LIST);
+        assertTrue(encoded.matches("[A-Za-z0-9+/=]+"), "nothing for the Windows launcher to quote");
+        assertEquals(
+                LocalProcesses.WINDOWS_LIST,
+                new String(java.util.Base64.getDecoder().decode(encoded), java.nio.charset.StandardCharsets.UTF_16LE));
+    }
+
+    @Test
     void listeningProgramsComeFirst() {
         var idle = new LocalProcesses.Target(1, LocalProcesses.Kind.JAVA, "B", "localhost", 0);
         var node = new LocalProcesses.Target(2, LocalProcesses.Kind.NODE, "a.js", "localhost", 9229);
