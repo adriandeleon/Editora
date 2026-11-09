@@ -445,7 +445,67 @@ final class SettingsDebugPage {
                                 javafx.application.Platform.runLater(
                                         () -> cb.accept(found != null, found == null ? "" : found));
                             });
-                        }));
+                        }),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.CSHARP,
+                        "netcoredbg",
+                        "debug c# csharp dotnet .net netcoredbg path found install",
+                        v -> config.getSettings().setCsharpDebugEnabled(v),
+                        () -> config.getSettings().isCsharpDebugEnabled(),
+                        v -> config.getSettings().setCsharpDebugPath(v),
+                        () -> config.getSettings().getCsharpDebugPath()),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.RUBY,
+                        "rdbg",
+                        "debug ruby rdbg debug gem path found install",
+                        v -> config.getSettings().setRubyDebugEnabled(v),
+                        () -> config.getSettings().isRubyDebugEnabled(),
+                        v -> config.getSettings().setRubyDebugPath(v),
+                        () -> config.getSettings().getRubyDebugPath()),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.PHP,
+                        "phpDebug.js",
+                        "debug php xdebug php-debug vscode-php-debug node path found install",
+                        v -> config.getSettings().setPhpDebugEnabled(v),
+                        () -> config.getSettings().isPhpDebugEnabled(),
+                        v -> config.getSettings().setPhpDebugPath(v),
+                        () -> config.getSettings().getPhpDebugPath()));
+    }
+
+    /**
+     * The card of an external adapter with a switch and a path of its own: found (whether or not switched on) by
+     * {@link com.editora.dap.DapManager#locateExternal}, off the FX thread as it lists folders.
+     */
+    private DebugAdapterUi externalAdapterUi(
+            com.editora.dap.DebugLanguage language,
+            String prompt,
+            String keywords,
+            java.util.function.Consumer<Boolean> setEnabled,
+            java.util.function.BooleanSupplier getEnabled,
+            java.util.function.Consumer<String> setPath,
+            java.util.function.Supplier<String> getPath) {
+        String id = language.id();
+        return new DebugAdapterUi(
+                id,
+                "settings.debug." + id,
+                "settings.debug.enable." + id,
+                "settings.debug." + id + "Path",
+                prompt,
+                keywords,
+                setEnabled,
+                getEnabled,
+                setPath,
+                getPath,
+                cb -> {
+                    String configured = getPath.get();
+                    Thread.ofVirtual()
+                            .name("settings-" + id + "-debugger-probe")
+                            .start(() -> {
+                                String found = com.editora.dap.DapManager.locateExternal(language, configured);
+                                javafx.application.Platform.runLater(
+                                        () -> cb.accept(found != null, found == null ? "" : found));
+                            });
+                });
     }
 
     /** Re-checks each debug adapter's availability (java plugin jar / debugpy / js-debug+node) and colors

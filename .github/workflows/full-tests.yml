@@ -350,6 +350,48 @@ jobs:
           unzip -q /tmp/codelldb.vsix -d "$dest"
           "$dest/extension/adapter/codelldb" --help | head -3
 
+      # .NET 10 and netcoredbg for CsharpDebugProbeFxTest, netcoredbg where Editora's installer puts it. The release
+      # and hash are the ones InstallCatalog pins.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install netcoredbg
+        env:
+          NETCOREDBG_VERSION: 3.2.0-1092
+          NETCOREDBG_SHA256: 080eb3b2d2152465f599d3b33d1ee6e747794e11cc0a3773ec689f5e5f2c5afa
+        run: |
+          dotnet --version
+          curl -fsSL -o /tmp/netcoredbg.tar.gz "https://github.com/Samsung/netcoredbg/releases/download/${NETCOREDBG_VERSION}/netcoredbg-linux-amd64.tar.gz"
+          echo "${NETCOREDBG_SHA256}  /tmp/netcoredbg.tar.gz" | sha256sum -c -
+          dest="$HOME/.editora/plugins/dap/csharp"
+          mkdir -p "$dest"
+          tar -xzf /tmp/netcoredbg.tar.gz -C "$dest"
+          "$dest/netcoredbg/netcoredbg" --version | head -1
+
+      # Ruby's debug gem (rdbg) for RubyDebugProbeFxTest, installed as Editora's Install runs it; PHP with Xdebug and
+      # the pinned vscode-php-debug for PhpDebugProbeFxTest, where Editora's installer puts it (it runs on the
+      # runner's Node.js).
+      - name: Install rdbg, Xdebug and PHP Debug
+        env:
+          PHP_DEBUG_VERSION: 1.40.2
+          PHP_DEBUG_SHA256: 17631993fe800083a2fc89a6782c8bf58a79603ad201ddff60d9b59ba2345d5f
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ruby ruby-dev php-cli php-xdebug
+          ruby --version
+          gem install --user-install --no-document debug -v 1.11.0
+          php --version | head -1
+          php -m | grep -x Xdebug
+          node --version
+          curl -fsSL -o /tmp/php-debug.vsix "https://github.com/xdebug/vscode-php-debug/releases/download/v${PHP_DEBUG_VERSION}/php-debug-${PHP_DEBUG_VERSION}.vsix"
+          echo "${PHP_DEBUG_SHA256}  /tmp/php-debug.vsix" | sha256sum -c -
+          dest="$HOME/.editora/plugins/dap/php"
+          mkdir -p "$dest"
+          unzip -q /tmp/php-debug.vsix -d "$dest"
+          test -f "$dest/extension/out/phpDebug.js"
+
       # JavaDebugRealAdapterProbeFxTest: a Maven project launch, a program Editora starts itself (runInTerminal),
       # and Stop / window close leaving no debuggee or compile folder — against the real java-debug.
       # PlainFolderDebugProbeFxTest: F5 in a two-package plain folder, an edit, F5, a compile error (review 3, C208).
@@ -375,8 +417,12 @@ jobs:
       # pointer, Step Over Instruction, a C string's memory; and in a window the Disassembly and Memory views fill.
       # LaunchJsonProbeFxTest: launch.json configurations on CodeLLDB (a preLaunchTask, its cargo field), GDB (gdb,
       # cppdbg, F5 with C/C++ set to GDB), a user's own adapter, Delve's exec mode, and debugpy's with args and env.
+      # CsharpDebugProbeFxTest: on netcoredbg, a dotnet-built project stops with its C# values, steps and ends; an
+      # exception user code does not handle stops; and in a window F5 builds a project and a lone file-based app.
+      # RubyDebugProbeFxTest: under rdbg, a script stops in a block, steps and ends; and in a window F5 does the same.
+      # PhpDebugProbeFxTest: on Xdebug through vscode-php-debug, a script stops, steps and ends; and in a window F5.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

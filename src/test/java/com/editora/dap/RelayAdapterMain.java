@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
  *   <li>{@code stdio <target>}: over its standard input and output.
  *   <li>{@code announce <target>}: on a port it picks, printed as Delve prints it
  *       ({@code DAP server listening at: 127.0.0.1:<port>}) after a line of other output.
+ *   <li>{@code announce-rdbg <target>}: the same, announced on its standard error as rdbg announces it.
  *   <li>{@code listen <port> <target>}: on the port it was given.
  * </ul>
  */
@@ -37,6 +38,14 @@ public final class RelayAdapterMain {
                     PrintStream out = new PrintStream(System.out, true, StandardCharsets.UTF_8);
                     out.println("Type 'dlv help' for list of commands.");
                     out.println("DAP server listening at: 127.0.0.1:" + server.getLocalPort());
+                    serveOne(server, Integer.parseInt(args[1]));
+                }
+            }
+            case "announce-rdbg" -> {
+                try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+                    PrintStream err = new PrintStream(System.err, true, StandardCharsets.UTF_8);
+                    err.println("DEBUGGER: Debugger can attach via TCP/IP (127.0.0.1:" + server.getLocalPort() + ")");
+                    err.println("DEBUGGER: wait for debugger connection...");
                     serveOne(server, Integer.parseInt(args[1]));
                 }
             }

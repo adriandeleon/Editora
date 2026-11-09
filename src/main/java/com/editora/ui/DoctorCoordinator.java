@@ -806,6 +806,37 @@ final class DoctorCoordinator {
                     return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "codelldb");
                 }));
             }
+            if (s.isCsharpDebugEnabled()) {
+                String configured = scope.debugTool("csharp", s.getCsharpDebugPath());
+                // Its Install is on Settings → Debugging → C#, where Settings… leads.
+                DoctorCheck check = DoctorCheck.checking("debug.csharp", "debug", tr("doctor.label.netcoredbg"), "")
+                        .withSettings("debug");
+                specs.add(probe(check, base -> {
+                    String found = com.editora.dap.DapManager.locateExternal(
+                            com.editora.dap.DebugLanguages.CSHARP, configured);
+                    return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "netcoredbg");
+                }));
+            }
+            if (s.isRubyDebugEnabled()) {
+                String configured = scope.debugTool("ruby", s.getRubyDebugPath());
+                DoctorCheck check = DoctorCheck.checking("debug.ruby", "debug", tr("doctor.label.rdbg"), "")
+                        .withSettings("debug");
+                specs.add(probe(check, base -> {
+                    String found =
+                            com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.RUBY, configured);
+                    return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "rdbg");
+                }));
+            }
+            if (s.isPhpDebugEnabled()) {
+                String configured = scope.debugTool("php", s.getPhpDebugPath());
+                DoctorCheck check = DoctorCheck.checking("debug.php", "debug", tr("doctor.label.phpDebug"), "")
+                        .withSettings("debug");
+                specs.add(probe(check, base -> {
+                    String found =
+                            com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.PHP, configured);
+                    return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "php-debug");
+                }));
+            }
         } else {
             specs.add(terminal(offRow(
                     DoctorCheck.checking("debug", "debug", tr("doctor.label.sectionOff"), "")

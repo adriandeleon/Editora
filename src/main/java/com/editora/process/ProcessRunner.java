@@ -540,6 +540,7 @@ public final class ProcessRunner {
             System.getProperty("user.home") + "/go/bin", // Go (gopls and other `go install` bins)
             System.getProperty("user.home") + "/.cargo/bin", // Rust (rust-analyzer, cargo-installed bins)
             System.getProperty("user.home") + "/.dotnet/tools", // .NET global tools (csharp-ls, etc.)
+            System.getProperty("user.home") + "/.dotnet", // the SDK where Microsoft's dotnet-install script puts it
             // Editora-managed language servers dropped by scripts/install-*.sh (e.g. jdtls -> bin/jdtls).
             System.getProperty("user.home") + "/.editora/plugins/lsp/java/bin",
             System.getProperty("user.home") + "/.editora-dev/plugins/lsp/java/bin");

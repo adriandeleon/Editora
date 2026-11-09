@@ -129,6 +129,11 @@ public final class DebugAdapterLocator {
         editoraConfigDir = configDir;
     }
 
+    /** This launch's config folder, or null before it is told. */
+    static @Nullable Path editoraConfigDir() {
+        return editoraConfigDir;
+    }
+
     /** Collects matching jars across {@code dirs} and returns the newest. */
     private static Optional<Path> scanNewest(List<Path> dirs) {
         List<String> jars = new ArrayList<>();

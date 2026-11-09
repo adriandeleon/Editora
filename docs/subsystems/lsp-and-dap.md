@@ -1007,7 +1007,7 @@ the child env. The result is cached after the first call.
 
 ### Language profiles and transports
 
-Editora debugs Java, Python, JavaScript (Node), the JVM languages, Go, Rust, C and C++, off by default
+Editora debugs Java, Python, JavaScript (Node), the JVM languages, Go, Rust, C, C++, C#, Ruby and PHP, off by default
 (`Settings.debugSupport`). Each language is a [`dap/DebugLanguage`](../../src/main/java/com/editora/dap/DebugLanguage.java)
 profile in [`dap/DebugLanguages`](../../src/main/java/com/editora/dap/DebugLanguages.java): its `Kind` transport, the
 DAP `launch` type, the `initialize` adapter id, the default interpreter + adapter args, the fallback transport, what
@@ -1019,7 +1019,7 @@ debugged on its own host, and its "unavailable" message. [`dap/DapServerRegistry
 (its switch, command or path, install id, off and missing messages) are a binding in
 [`ui/DebugAdapterSettings`](../../src/main/java/com/editora/ui/DebugAdapterSettings.java), which the Debugging
 page, the `debug.toggleAdapter` / `debug.setAdapterPath` pickers and `unavailableMessage` read. `languageIdsForDebug()` =
-`{java, python, javascript, groovy, kotlin, clojure, scala, go, rust, cpp}` (`c` files are served by `cpp`); `typescript`, `javascriptreact` and `typescriptreact` files are served by the
+`{java, python, javascript, groovy, kotlin, clojure, scala, go, rust, cpp, csharp, ruby, php}` (`c` files are served by `cpp`); `typescript`, `javascriptreact` and `typescriptreact` files are served by the
 `javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
 project's breakpoints live in its `.ts`/`.tsx` sources.
 
@@ -1034,6 +1034,9 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `go` | `EXTERNAL` | Delve: `dlv dap --listen=127.0.0.1:0`, the port read from its `DAP server listening at:` line (`ANNOUNCED_PORT`); see **Go** below. |
 | `rust` | `EXTERNAL` | CodeLLDB: `codelldb --port N` on a port Editora picks (`PORT_ARGUMENT`); see **Rust** below. |
 | `cpp` | `EXTERNAL` | The same CodeLLDB as Rust (`DebugLanguages.CODELLDB`); see **C and C++** below. |
+| `csharp` | `EXTERNAL` | netcoredbg: `netcoredbg --interpreter=vscode` over stdio (`STDIO`); see **C#** below. |
+| `ruby` | `EXTERNAL` | rdbg, which is the program itself: `rdbg --command --open --stop-at-load --host=127.0.0.1 --port=0 -- ruby <file>`, the port read from its `Debugger can attach via TCP/IP` line (`ANNOUNCED_PORT`); see **Ruby** below. |
+| `php` | `EXTERNAL` | vscode-php-debug: `node phpDebug.js` over stdio, which starts `php` with Xdebug; see **PHP** below. |
 | `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
 
 **External adapters.** A `Kind.EXTERNAL` profile carries an [`ExternalAdapter`](../../src/main/java/com/editora/dap/ExternalAdapter.java):
@@ -1046,7 +1049,12 @@ process set to be killed on dispose), and sends the `launch` the language shaped
 `program`, `args`, `cwd`, `env`, `stopOnEntry` plus the language's own fields). Output before an announcement goes to
 the console as the command's; after it, as the program's (Delve writes its debuggee's output there). A request whose
 `request` is `attach` is sent as `attach`, and Stop then detaches (`setTerminateOnDisconnect(false)`).
-`setExternalPathDirs` puts folders first on an adapter's PATH; Go uses it. An external profile's
+`setExternalPathDirs` puts folders first on an adapter's PATH; Go uses it. `startExternal` can take words after the
+adapter's command (`adapterTail`): the program, for an adapter that *is* the program (Ruby's rdbg), which then starts
+in the request's `cwd` with its `env` (`DapManager.adapterFolder`). An adapter found as a `.js` file runs on the
+Node.js Settings names (`adapterNode`; vscode-php-debug). An adapter Editora can install is found as CodeLLDB is
+([`dap/InstalledAdapter`](../../src/main/java/com/editora/dap/InstalledAdapter.java): a configured file or folder,
+else `<config>/plugins/dap/<language>`, else the newest VS Code extension that ships it, else the PATH). An external profile's
 session starts with its own default exception filters when none were chosen (`ExternalAdapterFilters`):
 CodeLLDB names `rust_panic` only after `launch`, too late for its `initialize` defaults.
 `DebugReviewCWindowFxTest` drives all three transports through `RelayAdapterMain`, a test process standing in for
@@ -1158,6 +1166,50 @@ CodeLLDB has it, sent as the profile's default: see **External adapters**).
 `NativeDebugWindowFxTest` drives the window against a Make project whose recipe writes a stand-in program, with a
 stand-in `codelldb`.
 
+**C#.** The `csharp` profile is Samsung's netcoredbg (MIT), `netcoredbg --interpreter=vscode` over stdio.
+`InstalledAdapter.NETCOREDBG` finds it as configured (`Settings.csharpDebugPath`), else in Editora's install
+(`plugins/dap/csharp/netcoredbg/netcoredbg`), else in the free C# extension's `.debugger/netcoredbg`
+(`muhammad-sammy.csharp-*`; Microsoft's own extension ships vsdbg, licensed for Microsoft's tools only), else on the
+PATH. `Settings.csharpDebugEnabled` switches it. Settings → Debugging → C#'s Install fetches the pinned release
+(`InstallCatalog.netcoredbg`, 3.2.0-1092, SHA-256 checked; Samsung builds no Intel macOS one).
+[`dap/DotnetLaunch`](../../src/main/java/com/editora/dap/DotnetLaunch.java) plans F5:
+- **A project**: the nearest `.csproj` in the file's folder or above it (of several, the one named after the folder).
+  `dotnet build <project>` runs as a before-launch step, after the folder's trust (MSBuild runs the project's
+  targets: `dialog.trust.item.dotnet`).
+- **A lone file**: a .NET 10 file-based app, `dotnet build <file>`; no trust is asked (the SDK's own targets).
+
+Then `dotnet build <target> -getProperty:TargetPath`, which only evaluates, names the assembly (`targetPath`: the
+last absolute `.dll` line). netcoredbg's `launch` gets it as `program`, run on `dotnet` in the project's folder
+(`justMyCode`); the program's output comes as output events. An exception user code does not handle stops it
+(`user-unhandled`, on by default as in Visual Studio; `all` stops on every throw). `ProcessRunner`'s PATH includes
+`~/.dotnet`, where Microsoft's install script puts the SDK. Not yet: a test at the caret, and C# in Attach to Process.
+
+**Ruby.** The `ruby` profile is the debug gem's `rdbg` (Ruby 3.1 and later ship it). It is the program itself: the
+command ends with `-- ruby <file> <args>` (`ScriptLaunch.rubyTail`), rdbg prints `DEBUGGER: Debugger can attach via
+TCP/IP (127.0.0.1:N)` on standard error (`DebugLanguages.RDBG_ANNOUNCEMENT`; the adapter's streams are merged) and
+waits at load; `launch` (`localfs: true`) tells it it runs on this machine's files, and `configurationDone` lets it
+go on. The program's output follows the announcement on the same stream. `DapManager.locateExternal` finds `rdbg` as
+configured (`Settings.rubyDebugPath`), else on the PATH, else in the user's gem folders (`gemUserBinDirs`:
+`~/.local/share/gem/ruby/*/bin`, `~/.gem/ruby/*/bin`, newest first). Settings → Debugging → Ruby's Install runs
+`gem install --user-install debug` (a system Ruby's own gem folder is root's). Its exception filters (`any`,
+`RuntimeError`) are off by default, as in VS Code.
+
+**PHP.** The `php` profile is Xdebug through vscode-php-debug (MIT), `phpDebug.js` on Node.js 20.18 or later over
+stdio. `InstalledAdapter.PHP_DEBUG` finds it as configured (`Settings.phpDebugPath`: the file or its unpacked
+`.vsix`), else in Editora's install (`plugins/dap/php/extension/out/phpDebug.js`), else in VS Code's
+`xdebug.php-debug-*`. Settings → Debugging → PHP's Install fetches the pinned `.vsix` (1.40.2, one for every
+platform). F5 sends `ScriptLaunch.phpLaunch`: the file as `program`, `port: 0` (the adapter listens on a free port),
+and `runtimeArgs` telling Xdebug to debug and connect there (`-dxdebug.mode=debug`,
+`-dxdebug.start_with_request=yes`, `-dxdebug.client_port=${port}`, which the adapter fills in). The adapter starts
+`php` itself and passes its output on as output events. PHP needs the Xdebug extension (`php-xdebug`). Its exception
+filters (`Exception`, `Error`, `Warning`, `Notice`, `Deprecated`, `*`) are off by default. PHP has no attach: Xdebug
+connects to a listening adapter, which a launch.json `php` configuration without a `program` ("Listen for Xdebug")
+starts.
+
+`CsharpDebugProbeFxTest`, `RubyDebugProbeFxTest` and `PhpDebugProbeFxTest`, opt-in, run in CI with the pinned
+adapters (`setup-dotnet`, the runner's Ruby with the debug gem, `php-xdebug`). `PresetDebugWindowFxTest` drives the
+window against stand-ins for all three adapters and for `dotnet` (`DebugCoordinator.dotnetCommand`).
+
 **launch.json.** *Debug: Start Configuration…* (`DebugCoordinator.startLaunchConfiguration`) lists the configurations
 of the project's `.vscode/launch.json`, else the nearest one above the active file (`LaunchJson.find`). The one started
 last comes first.
@@ -1187,6 +1239,9 @@ the fields VS Code reads itself are left out (`name`, its tasks, `console`, `pre
 | `go` | Delve | as written, `output` in the temporary folder when not given; `mode: remote` is not supported. |
 | `debugpy`, `python` | debugpy | laid over the launch Editora plans for the program (`DapManager.startConfigured` → `overlay`, which keeps Editora's console); an attach connects to `connect`. |
 | `node`, `pwa-node` | vscode-js-debug | as Python; an attach to `address` / `port`. |
+| `coreclr` | netcoredbg | as written (`program` is the built assembly; a `preLaunchTask` builds it); an attach by `processId`. C# Dev Kit's `dotnet` type is not supported. |
+| `rdbg` | rdbg | a launch runs `rdbg … -- <command> <script> <args>` (`LaunchRoute.rdbgTail`: `command` defaults to `ruby`, `useBundler` puts `bundle exec` first) in its `cwd` with its `env`; an attach connects to a local `debugPort` (`rdbgPort`; `DapManager.startPortAttach`). |
+| `php` | vscode-php-debug | as written; without a `program` it listens for Xdebug ("Listen for Xdebug"). `${port}` is left for the adapter. |
 | `java` | java-debug | a transient run configuration (`LaunchRoute.javaRunConfiguration`: `mainClass`, `projectName`, quoted `args` and `vmArgs`, `cwd`, `env`); a `mainClass` that is a `.java` file debugs that file. |
 | a user's adapter | it | as written. |
 

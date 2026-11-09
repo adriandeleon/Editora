@@ -763,6 +763,24 @@ final class DebugCoordinator {
         dapManager.configureExternal(
                 com.editora.dap.DebugLanguages.GDB, on, scope.debugTool("gdb", s.getGdbPath()), found -> applyGating());
         loadCustomAdapters(on);
+        // netcoredbg: as configured, else Editora's install, a VS Code extension's, or the PATH.
+        dapManager.configureExternal(
+                com.editora.dap.DebugLanguages.CSHARP,
+                on && s.isCsharpDebugEnabled(),
+                scope.debugTool("csharp", s.getCsharpDebugPath()),
+                found -> applyGating());
+        // rdbg: as configured, else on the PATH or where `gem install --user-install` put it.
+        dapManager.configureExternal(
+                com.editora.dap.DebugLanguages.RUBY,
+                on && s.isRubyDebugEnabled(),
+                scope.debugTool("ruby", s.getRubyDebugPath()),
+                found -> applyGating());
+        // vscode-php-debug: as configured, else Editora's install or VS Code's extension.
+        dapManager.configureExternal(
+                com.editora.dap.DebugLanguages.PHP,
+                on && s.isPhpDebugEnabled(),
+                scope.debugTool("php", s.getPhpDebugPath()),
+                found -> applyGating());
         // C and C++: the same CodeLLDB as Rust's.
         dapManager.configureExternal(
                 com.editora.dap.DebugLanguages.CPP,
@@ -2308,7 +2326,7 @@ final class DebugCoordinator {
                     withClosedBreakpoints(() -> dapManager.startConfigured(file, "javascript", route.request()));
                 }
             }
-            case DELVE, CODELLDB, GDB, CUSTOM -> {
+            case DELVE, CODELLDB, NETCOREDBG, RDBG, PHP_DEBUG, GDB, CUSTOM -> {
                 if (profile == null) {
                     return;
                 }
@@ -2339,9 +2357,30 @@ final class DebugCoordinator {
                     cargoThenStart(workspace, name, anchor, profile, request, cargo);
                     return;
                 }
+                if (route.kind() == com.editora.dap.LaunchRoute.Kind.RDBG) {
+                    rdbgSession(anchor, request, route.attach(), name);
+                    return;
+                }
                 startExternalSession(anchor, profile, request, name);
             }
         }
+    }
+
+    /**
+     * An {@code rdbg} configuration: a launch runs its script under rdbg ({@link com.editora.dap.LaunchRoute#rdbgTail});
+     * an attach connects to the program already under {@code rdbg --open} on its {@code debugPort}.
+     */
+    private void rdbgSession(Path anchor, java.util.Map<String, Object> request, boolean attach, String label) {
+        ops.openToolWindow();
+        nameSession(label);
+        com.editora.dap.DebugLanguage ruby = com.editora.dap.DebugLanguages.RUBY;
+        Runnable start = attach
+                ? () -> withClosedBreakpoints(() -> dapManager.startPortAttach(
+                        anchor, ruby, com.editora.dap.LaunchRoute.rdbgPort(request), request))
+                : () -> withClosedBreakpoints(() ->
+                        dapManager.startExternal(anchor, ruby, request, com.editora.dap.LaunchRoute.rdbgTail(request)));
+        relaunch = start;
+        start.run();
     }
 
     /** {@code host:port} an attach configuration names ({@code connect: {host, port}}, or {@code address} / {@code port}). */
@@ -3171,6 +3210,101 @@ final class DebugCoordinator {
         });
     }
 
+    /**
+     * Debugs C# file {@code path} on netcoredbg: its project — after the folder's trust, as MSBuild runs the project's
+     * targets — or, outside every project, the file as a .NET 10 file-based app, is built with {@code dotnet build} in
+     * the Debug console; the assembly that made is then launched in the project's folder
+     * ({@link com.editora.dap.DotnetLaunch}).
+     */
+    private void debugCsharpFile(Path path, List<String> args) {
+        Path project = com.editora.dap.DotnetLaunch.projectFile(path);
+        com.editora.dap.DotnetLaunch.Plan plan = com.editora.dap.DotnetLaunch.plan(path, project);
+        if (plan.project()
+                && !ops.trustBuild(
+                        plan.root(),
+                        List.of(tr("dialog.trust.item.dotnet", plan.target().getFileName())))) {
+            return; // not trusted: nothing is built
+        }
+        nameSession(plan.sessionName());
+        relaunch = () -> startCsharp(path, plan, args);
+        startCsharp(path, plan, args);
+    }
+
+    /** The .NET SDK's command (a test's stand-in replaces it). */
+    List<String> dotnetCommand = List.of("dotnet");
+
+    /** How long {@code dotnet} has to name the assembly it built (it only evaluates the project). */
+    private static final java.time.Duration DOTNET_QUERY_TIMEOUT = java.time.Duration.ofMinutes(2);
+
+    /** Saves the C# files under the project, builds it in the Debug console, then launches its assembly. */
+    private void startCsharp(Path path, com.editora.dap.DotnetLaunch.Plan plan, List<String> args) {
+        saveBuffersUnder(plan.root(), "csharp");
+        if (beforeLaunch.isActive() || pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        List<String> dotnet = dotnetCommand;
+        List<String> build = new java.util.ArrayList<>(dotnet);
+        build.addAll(plan.buildArgs());
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(String.valueOf(path.getFileName()), build, "status.run.dotnetBuild"),
+                plan.root(),
+                com.editora.dap.DotnetLaunch.BUILD_ENV,
+                beforeLaunchConsole(),
+                () -> Thread.ofVirtual().name("editora-dotnet-target").start(() -> {
+                    var listed = com.editora.dap.DotnetLaunch.queryTargetPath(dotnet, plan, DOTNET_QUERY_TIMEOUT);
+                    Platform.runLater(() -> launchCsharpAssembly(path, plan, args, listed));
+                }));
+        updateDebugAvailability();
+    }
+
+    /** Launches the assembly {@code listed} names for {@code path} on netcoredbg, or says why there is none. */
+    private void launchCsharpAssembly(
+            Path path,
+            com.editora.dap.DotnetLaunch.Plan plan,
+            List<String> args,
+            com.editora.process.ProcessRunner.Result listed) {
+        Path assembly = listed.ok() ? com.editora.dap.DotnetLaunch.targetPath(listed.out()) : null;
+        if (!listed.ok()) {
+            String why = (listed.err().isBlank() ? listed.out() : listed.err()).strip();
+            host.setStatus(tr(
+                    "status.debug.csharpBuildFailed",
+                    why.isEmpty()
+                            ? "exit " + listed.exit()
+                            : why.lines().reduce((a, z) -> z).orElse(why)));
+            return;
+        }
+        if (assembly == null || !java.nio.file.Files.isRegularFile(assembly)) {
+            host.setStatus(tr("status.debug.csharpNoProgram", path.getFileName()));
+            return;
+        }
+        java.util.Map<String, Object> launch = com.editora.dap.DotnetLaunch.launch(assembly, args, plan.root());
+        ops.openToolWindow();
+        withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.CSHARP, launch));
+    }
+
+    /**
+     * Debugs Ruby or PHP file {@code path} in its folder: a Ruby script under rdbg ({@code -- ruby <file>}), a PHP one by
+     * {@code php} with Xdebug, which vscode-php-debug starts ({@link com.editora.dap.ScriptLaunch}).
+     */
+    private void debugScriptFile(Path path, String language, List<String> args) {
+        Path cwd = path.toAbsolutePath().getParent();
+        Path dir = cwd != null ? cwd : path.toAbsolutePath();
+        Runnable start = "ruby".equals(language)
+                ? () -> withClosedBreakpoints(() -> dapManager.startExternal(
+                        path,
+                        com.editora.dap.DebugLanguages.RUBY,
+                        com.editora.dap.ScriptLaunch.rubyLaunch(path, args, dir),
+                        com.editora.dap.ScriptLaunch.rubyTail(path, args)))
+                : () -> withClosedBreakpoints(() -> dapManager.startExternal(
+                        path,
+                        com.editora.dap.DebugLanguages.PHP,
+                        com.editora.dap.ScriptLaunch.phpLaunch(path, args, dir)));
+        relaunch = start;
+        start.run();
+    }
+
     /** Saves the edited buffers of {@code language} under {@code root}: a build reads them from disk. */
     private void saveBuffersUnder(@Nullable Path root, String language) {
         host.forEachBuffer(other -> {
@@ -3325,6 +3459,14 @@ final class DebugCoordinator {
         }
         if ("cpp".equals(language)) {
             debugNativeFile(b, path, fileArgs);
+            return;
+        }
+        if ("csharp".equals(language)) {
+            debugCsharpFile(path, fileArgs);
+            return;
+        }
+        if ("ruby".equals(language) || "php".equals(language)) {
+            debugScriptFile(path, language, fileArgs);
             return;
         }
         com.editora.dap.DebugLanguage own = com.editora.dap.DebugLanguages.forLanguage(b.getLanguage());
@@ -6107,8 +6249,8 @@ final class DebugCoordinator {
     /**
      * Whether the editor menu offers Debug File of its own for a file of {@code language}: one that Run File can't
      * run ({@code runnable} false; a runnable file has Debug File beside Run File) but Debug can. That is a classic
-     * Java main class outside a Maven or Gradle project ({@code inJavaProject} false), and any Go or Rust file,
-     * which Delve or Cargo builds for the debugger. Pure.
+     * Java main class outside a Maven or Gradle project ({@code inJavaProject} false), and any Go, Rust, C, C++, C#,
+     * Ruby or PHP file, which only the debugger's own launch runs. Pure.
      */
     static boolean offersOwnDebugFile(String language, boolean runnable, boolean inJavaProject) {
         if (runnable) {
@@ -6116,7 +6258,7 @@ final class DebugCoordinator {
         }
         return switch (language) {
             case "java" -> !inJavaProject;
-            case "go", "rust" -> true;
+            case "go", "rust", "c", "cpp", "csharp", "ruby", "php" -> true;
             default -> false;
         };
     }

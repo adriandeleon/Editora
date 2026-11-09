@@ -774,4 +774,53 @@ class InstallCatalogTest {
         }
         assertEquals(null, InstallCatalog.largeDownload("rust"), "not a language server's download");
     }
+
+    @Test
+    void netcoredbgIsAPinnedReleaseExceptOnIntelMacs() {
+        Step step = InstallCatalog.debuggerInstall(InstallCatalog.NETCOREDBG_STEP)
+                .orElseThrow()
+                .getFirst();
+        assertEquals(Kind.PINNED_SERVER, step.kind());
+        assertEquals(InstallCatalog.NETCOREDBG_DIR, step.destSubpath());
+        assertEquals(java.util.Set.of(Prereq.TAR), step.prereqs());
+        var recipe = InstallCatalog.pinnedServer(InstallCatalog.NETCOREDBG_STEP).orElseThrow();
+        assertEquals("netcoredbg", recipe.launcher());
+        for (Platform p : Platform.values()) {
+            var asset = recipe.assetFor(p);
+            if (p == Platform.MAC_X64) {
+                org.junit.jupiter.api.Assertions.assertNull(asset, "Samsung builds no Intel macOS netcoredbg");
+                continue;
+            }
+            assertNotNull(asset, p.toString());
+            assertTrue(asset.url().startsWith("https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/"));
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), asset.sha256());
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(asset.url()));
+        }
+    }
+
+    @Test
+    void rdbgIsTheDebugGemForTheUserAndPhpDebugOneVsixForEveryPlatform() {
+        Step rdbg = InstallCatalog.debuggerInstall(InstallCatalog.RDBG_STEP)
+                .orElseThrow()
+                .getFirst();
+        assertEquals(Kind.TOOL_COMMAND, rdbg.kind());
+        assertEquals(java.util.Set.of(Prereq.RUBY), rdbg.prereqs());
+        assertEquals(List.of("gem", "install", "--user-install", "debug"), rdbg.npmPackages());
+        Step php = InstallCatalog.debuggerInstall(InstallCatalog.PHP_DEBUG_STEP)
+                .orElseThrow()
+                .getFirst();
+        assertEquals(Kind.PINNED_SERVER, php.kind());
+        assertEquals(InstallCatalog.PHP_DEBUG_DIR, php.destSubpath());
+        var recipe = InstallCatalog.pinnedServer(InstallCatalog.PHP_DEBUG_STEP).orElseThrow();
+        assertEquals("phpDebug.js", recipe.launcher());
+        var linux = recipe.assetFor(Platform.LINUX_X64);
+        assertNotNull(linux);
+        assertEquals(
+                "https://github.com/xdebug/vscode-php-debug/releases/download/v1.40.2/php-debug-1.40.2.vsix",
+                linux.url());
+        for (Platform p : Platform.values()) {
+            assertEquals(linux, recipe.assetFor(p), p + ": one .vsix, run on Node.js");
+        }
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(linux.url()));
+    }
 }

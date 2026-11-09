@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 164;
+    public static final int SCHEMA_VERSION = 165;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -909,6 +909,18 @@ public class Settings {
     private String cppDebugger = "codelldb";
     /** GDB ({@code gdb}, 14 or later, for its DAP mode); blank = {@code gdb} on the PATH. */
     private String gdbPath = "";
+    /** C# debugging (netcoredbg): on by default, only effective when {@code debugSupport} is on and netcoredbg is found. */
+    private boolean csharpDebugEnabled = true;
+    /** netcoredbg (the program, or its folder); blank = Editora's install, a VS Code extension's, the PATH. */
+    private String csharpDebugPath = "";
+    /** Ruby debugging (the debug gem's rdbg): on by default, only effective when rdbg is found. */
+    private boolean rubyDebugEnabled = true;
+    /** rdbg; blank = {@code rdbg} on the PATH or where the gem put it. */
+    private String rubyDebugPath = "";
+    /** PHP debugging (Xdebug through vscode-php-debug): on by default, only effective when the adapter is found. */
+    private boolean phpDebugEnabled = true;
+    /** vscode-php-debug's {@code phpDebug.js} (or its folder); blank = Editora's install, VS Code's extension. */
+    private String phpDebugPath = "";
     /**
      * Language Server Protocol support (code intelligence through each language's server): on by default since
      * 0.27.1. Each server self-gates on being installed, and the install banner offers the missing ones. Off, a new
@@ -3854,6 +3866,54 @@ public class Settings {
 
     public void setGdbPath(String gdbPath) {
         this.gdbPath = gdbPath == null ? "" : gdbPath;
+    }
+
+    public boolean isCsharpDebugEnabled() {
+        return csharpDebugEnabled;
+    }
+
+    public void setCsharpDebugEnabled(boolean csharpDebugEnabled) {
+        this.csharpDebugEnabled = csharpDebugEnabled;
+    }
+
+    public String getCsharpDebugPath() {
+        return csharpDebugPath == null ? "" : csharpDebugPath;
+    }
+
+    public void setCsharpDebugPath(String csharpDebugPath) {
+        this.csharpDebugPath = csharpDebugPath == null ? "" : csharpDebugPath;
+    }
+
+    public boolean isRubyDebugEnabled() {
+        return rubyDebugEnabled;
+    }
+
+    public void setRubyDebugEnabled(boolean rubyDebugEnabled) {
+        this.rubyDebugEnabled = rubyDebugEnabled;
+    }
+
+    public String getRubyDebugPath() {
+        return rubyDebugPath == null ? "" : rubyDebugPath;
+    }
+
+    public void setRubyDebugPath(String rubyDebugPath) {
+        this.rubyDebugPath = rubyDebugPath == null ? "" : rubyDebugPath;
+    }
+
+    public boolean isPhpDebugEnabled() {
+        return phpDebugEnabled;
+    }
+
+    public void setPhpDebugEnabled(boolean phpDebugEnabled) {
+        this.phpDebugEnabled = phpDebugEnabled;
+    }
+
+    public String getPhpDebugPath() {
+        return phpDebugPath == null ? "" : phpDebugPath;
+    }
+
+    public void setPhpDebugPath(String phpDebugPath) {
+        this.phpDebugPath = phpDebugPath == null ? "" : phpDebugPath;
     }
 
     public String getJavaLspCommand() {
