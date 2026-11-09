@@ -2314,7 +2314,7 @@ final class DebugCoordinator {
                 java.util.Map.of(),
                 beforeLaunchConsole(),
                 () -> Thread.ofVirtual().name("editora-cargo-artifacts").start(() -> {
-                    var listed = com.editora.process.ProcessRunner.run(root, CARGO_LIST_TIMEOUT, json);
+                    var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, CARGO_LIST_TIMEOUT);
                     Platform.runLater(() -> launchRustArtifact(path, root, plan, args, terminal, listed));
                 }));
         updateDebugAvailability();

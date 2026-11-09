@@ -166,10 +166,10 @@ class RustLaunchTest {
         Map<String, Object> launch = RustLaunch.launch(
                 Path.of("/p/target/debug/shelf"), List.of("-v"), Path.of("/p"), Map.of(), false, false);
         assertEquals("lldb", launch.get("type"));
-        assertEquals("/p/target/debug/shelf", launch.get("program"));
+        assertEquals(Path.of("/p/target/debug/shelf").toString(), launch.get("program"));
         assertEquals(List.of("rust"), launch.get("sourceLanguages"), "Rust's formatters and panic stop");
         assertEquals("console", launch.get("terminal"));
-        assertEquals("/p", launch.get("cwd"));
+        assertEquals(Path.of("/p").toString(), launch.get("cwd"));
         assertEquals(
                 "integrated",
                 RustLaunch.launch(Path.of("/x"), List.of(), Path.of("/p"), Map.of(), false, true)

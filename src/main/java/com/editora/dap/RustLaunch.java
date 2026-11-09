@@ -290,6 +290,15 @@ public final class RustLaunch {
         return block;
     }
 
+    /**
+     * Runs {@code cargoJson} (Cargo with {@code --message-format=json}) in {@code root} for the messages
+     * {@link #artifacts} reads — output Editora parses, so in the C locale. Blocking: off the FX thread.
+     */
+    public static com.editora.process.ProcessRunner.Result listArtifacts(
+            Path root, List<String> cargoJson, java.time.Duration timeout) {
+        return com.editora.process.ProcessRunner.run(root, timeout, cargoJson);
+    }
+
     /** The executables Cargo's JSON {@code messages} (one per line) report built. */
     public static List<Artifact> artifacts(String messages) {
         List<Artifact> out = new ArrayList<>();
