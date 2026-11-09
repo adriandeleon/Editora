@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use crate::pricing;
 
@@ -35,7 +35,8 @@ pub fn items() -> Vec<Item> {
 /// Totals up to `limit` items: `total`, `lines` and `by_prefix` change on every pass.
 pub fn checkout(shelf: &[Item], limit: usize) -> (Vec<String>, f64) {
     let mut lines = Vec::new();
-    let mut by_prefix: BTreeMap<String, u32> = BTreeMap::new();
+    // A HashMap expands to its entries in Variables (a BTreeMap shows as LLDB's raw tree).
+    let mut by_prefix: HashMap<String, u32> = HashMap::new();
     let mut total = 0.0;
     for item in shelf.iter().take(limit) {
         let discount = pricing::discount_for(item); // break here: Step Into, then look at `discount` per item
@@ -54,7 +55,9 @@ pub fn checkout(shelf: &[Item], limit: usize) -> (Vec<String>, f64) {
         .map(|item| item.name.as_str())
         .collect();
     cheap.sort();
-    lines.push(format!("cheap: {cheap:?}  by prefix: {by_prefix:?}"));
+    let mut prefixes: Vec<(&String, &u32)> = by_prefix.iter().collect();
+    prefixes.sort(); // a HashMap has no order: sorted, the line reads the same every run
+    lines.push(format!("cheap: {cheap:?}  by prefix: {prefixes:?}"));
     (lines, total)
 }
 

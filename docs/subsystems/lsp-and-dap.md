@@ -1108,7 +1108,9 @@ with `--message-format=json`, which builds nothing, and launches the executable 
 
 The `launch` adds `sourceLanguages: ["rust"]` (Rust's formatters and the panic stop) and `terminal`: `console`, or
 `integrated` (`runInTerminal`, the program's input) with "Run the debugged program in the Debug console".
-CodeLLDB reports a panic's stop with the reason `breakpoint`. Attaching to a running Rust program isn't offered yet.
+CodeLLDB reports a panic's stop with the reason `breakpoint`. Rust's LLDB formatters expand a `Vec`, a `String` and a
+`HashMap`, but not a `BTreeMap`, which shows as its raw tree (so `samples/debug/rust` keeps a `HashMap`).
+Attaching to a running Rust program isn't offered yet.
 
 `RustDebugProbeFxTest`, opt-in, runs in CI with the pinned CodeLLDB. It drives the real Cargo and CodeLLDB:
 - Rust values, Step Over and the program's output;
