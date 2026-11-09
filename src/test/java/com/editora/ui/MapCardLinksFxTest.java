@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Label;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
@@ -313,6 +314,155 @@ class MapCardLinksFxTest {
                 assertTrue(h.links().allAttachments().isEmpty());
             });
         }
+    }
+
+    @Test
+    void theListFiltersOpensByKeyAndGivesWayToATree() throws Exception {
+        Path project = project(9);
+        Path testFile = Files.writeString(
+                Files.createDirectories(project.resolve("src/test")).resolve("GoTest.txt"), "one\ngo here\n");
+        try (Harness h = open(project)) {
+            Path readmeFile = project.resolve("README.md");
+            ProjectMapPreview readme = card(h, readmeFile);
+            FxTestSupport.runOnFx(() -> {
+                h.cards().showLinks(readme, MapCardLinks.Kind.REFERENCES, 0, 6);
+                List<MapCardLinks.Hit> hits = new ArrayList<>();
+                for (int i = 0; i < 9; i++) {
+                    hits.add(new MapCardLinks.Hit(project.resolve(String.format("many/t%03d.txt", i)), 2, 11, 1, null));
+                }
+                hits.add(new MapCardLinks.Hit(testFile, 1, 0, 1, null));
+                h.source().answer(0, answer(hits, false, null));
+            });
+            waitForFx(() -> {
+                MapCardLinks.EdgeSet set = h.links().setsForTest(readme).get(MapCardLinks.Kind.REFERENCES);
+                return set != null && set.labelsForTest().size() == MapCardLinks.MAX_CARDS;
+            });
+            MapCardLinks.EdgeSet set =
+                    FxTestSupport.callOnFx(() -> h.links().setsForTest(readme).get(MapCardLinks.Kind.REFERENCES));
+            FxTestSupport.runOnFx(set.chip::fire);
+            waitForFx(() -> set.list != null
+                    && set.list.places().stream()
+                            .allMatch(place -> !place.text().isEmpty()));
+            FxTestSupport.drainFx(); // its cells drawn
+            FxTestSupport.runOnFx(() -> {
+                MapResultsList list = set.list;
+                assertEquals(10, list.places().size());
+                assertEquals(10, list.groups().size());
+                assertTrue(list.places().getLast().file().equals(testFile), "a test's place last");
+                assertEquals(tr("project.map.places.title", "go"), list.titleText());
+
+                // Tests cleared, then a filter that keeps nothing, then all again.
+                list.tests().setSelected(false);
+                assertTrue(list.rowsForTest().stream().noneMatch(row -> row.contains("GoTest")));
+                list.filter().setText("no such place");
+                assertEquals(List.of(tr("project.map.places.none")), list.rowsForTest());
+                list.filter().setText("");
+                list.tests().setSelected(true);
+                assertEquals(20, list.rowsForTest().size());
+
+                // Down in the filter: the first place, the keyboard in the list.
+                list.tree().getSelectionModel().clearSelection();
+                assertFalse(list.openSelected(), "nothing selected");
+                list.filter().fireEvent(key(KeyCode.DOWN));
+                MapResultsList.Row row =
+                        list.tree().getSelectionModel().getSelectedItem().getValue();
+                assertNotNull(row.place());
+                assertEquals(project.resolve("many/t000.txt"), row.place().file());
+                list.filter().fireEvent(key(KeyCode.ENTER)); // a place selected already: it stays
+                assertEquals(
+                        row, list.tree().getSelectionModel().getSelectedItem().getValue());
+                // Enter on a place whose card is open: that card, at the place; no card more.
+                list.tree().fireEvent(key(KeyCode.ENTER));
+                assertEquals(MapCardLinks.MAX_CARDS, set.labelsForTest().size());
+                assertEquals(tr("project.map.links.more", 4), set.chip.getText());
+
+                // A filter that keeps the selected place keeps it selected.
+                list.filter().setText("t00");
+                assertEquals(
+                        row.place(),
+                        list.tree()
+                                .getSelectionModel()
+                                .getSelectedItem()
+                                .getValue()
+                                .place());
+                list.filter().setText("");
+
+                // The column's sides and bounds.
+                for (CardAttachment.Side side : CardAttachment.Side.values()) {
+                    assertEquals(MapSideColumn.WIDTH * readme.mapScale(), list.boundsAt(side)[2], 0.01);
+                }
+                assertTrue(list.contains(list.tree()));
+                assertFalse(list.contains(readme));
+                assertEquals(readme, list.card());
+                assertNotNull(list.bounds());
+                list.raise();
+                list.show(false); // shown again: it stays one column
+                readme.setVisible(false);
+                assertNull(list.bounds(), "hidden with its card");
+                readme.setVisible(true);
+
+                // Escape closes it; the chip opens it again; a hierarchy tree takes its place.
+                list.tree().fireEvent(key(KeyCode.ESCAPE));
+                assertNull(set.list);
+                assertTrue(list.disposed());
+                assertNull(list.bounds());
+                assertEquals(0, list.reserved(list.side()));
+                set.chip.fire();
+                MapResultsList again = set.list;
+                assertNotNull(again);
+                h.links()
+                        .showHierarchy(
+                                readme,
+                                new MapCardLinks.Request(MapCardLinks.Kind.CALLERS, readmeFile, 0, 6, "go", null));
+                assertNull(set.list, "one column beside a card");
+                assertTrue(again.disposed());
+                assertNotNull(h.links().hierarchy(readme));
+                set.chip.fire();
+                assertNull(h.links().hierarchy(readme), "and the list takes the tree's");
+                assertNotNull(set.list);
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                // A double-click on a place opens it, as Enter does.
+                MapResultsList list = set.list;
+                @SuppressWarnings("unchecked")
+                javafx.scene.control.TreeCell<MapResultsList.Row> cell = list.tree().lookupAll(".tree-cell").stream()
+                        .map(node -> (javafx.scene.control.TreeCell<MapResultsList.Row>) node)
+                        .filter(found ->
+                                found.getItem() != null && found.getItem().place() != null)
+                        .findFirst()
+                        .orElseThrow();
+                list.tree().getSelectionModel().select(cell.getTreeItem());
+                cell.fireEvent(new javafx.scene.input.MouseEvent(
+                        javafx.scene.input.MouseEvent.MOUSE_CLICKED,
+                        0,
+                        0,
+                        0,
+                        0,
+                        javafx.scene.input.MouseButton.PRIMARY,
+                        2,
+                        false,
+                        false,
+                        false,
+                        false,
+                        true,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        null));
+                assertEquals(MapCardLinks.MAX_CARDS, set.labelsForTest().size());
+                // Before its places are known it says it is reading them.
+                list.show(List.of(), List.of(), Runnable::run);
+                assertEquals(List.of(tr("project.map.places.reading")), list.rowsForTest());
+            });
+        }
+    }
+
+    private static javafx.scene.input.KeyEvent key(KeyCode code) {
+        return new javafx.scene.input.KeyEvent(
+                javafx.scene.input.KeyEvent.KEY_PRESSED, "", "", code, false, false, false, false);
     }
 
     @Test

@@ -140,10 +140,9 @@ final class MapResultsList extends MapSideColumn {
             }
         });
         tree.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
-            if (event.getCode() == KeyCode.ENTER && !event.isShortcutDown() && !event.isAltDown()) {
-                if (openSelected()) {
-                    event.consume();
-                }
+            if (event.getCode() == KeyCode.ENTER) {
+                openSelected();
+                event.consume();
             }
         });
         setTitle(tr("project.map.places.title", name), tree);
@@ -233,15 +232,7 @@ final class MapResultsList extends MapSideColumn {
         if (best != null) {
             return best;
         }
-        if (whole != null) {
-            return whole;
-        }
-        for (MapCardLinks.Group group : groups) {
-            if (group.file().equals(file) && group.line() == line) {
-                return group; // a server's caller, listed by its declaration's line
-            }
-        }
-        return null;
+        return whole; // a group of no declaration holds its file's places (a server's caller outside the outline)
     }
 
     /** {@code file}'s lines (at most 1 MB read), or none when it cannot be read. */
@@ -270,7 +261,7 @@ final class MapResultsList extends MapSideColumn {
     /** Lists the places the filter keeps, by file, keeping the selection where it still is. */
     void refill() {
         Place selected = selectedPlace();
-        String query = filter.getText() == null ? "" : filter.getText();
+        String query = filter.getText();
         Map<Path, List<Place>> byFile = new LinkedHashMap<>();
         for (Place place : places) {
             if (keeps(place, relative(place.file()), query, tests.isSelected())) {
@@ -326,19 +317,21 @@ final class MapResultsList extends MapSideColumn {
     }
 
     private String relative(Path file) {
-        Path base = root;
-        if (base != null && file.startsWith(base)) {
-            return com.editora.search.ProjectWalk.relativize(base, file);
+        return relative(root, file);
+    }
+
+    /** How a row names {@code file}: its project path, a library class's archive and name, else the whole path. Pure. */
+    static String relative(@Nullable Path root, Path file) {
+        if (root != null && file.startsWith(root)) {
+            return com.editora.search.ProjectWalk.relativize(root, file);
         }
         MapLibrarySources.Library library = MapLibrarySources.of(file);
-        Path fileName = file.getFileName();
-        String shown = fileName == null ? file.toString() : fileName.toString();
-        return library == null ? file.toString() : library.where() + "/" + shown;
+        return library == null ? file.toString() : library.where() + "/" + file.getFileName();
     }
 
     private @Nullable Place selectedPlace() {
         TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
-        return item == null || item.getValue() == null ? null : item.getValue().place();
+        return item == null ? null : item.getValue().place();
     }
 
     private void selectFirstPlace() {
@@ -359,9 +352,8 @@ final class MapResultsList extends MapSideColumn {
         if (place == null) {
             return false;
         }
-        if (opener.open(place)) {
-            tree.refresh(); // its group now has a card
-        }
+        opener.open(place);
+        tree.refresh(); // its group may have a card now
         return true;
     }
 
@@ -422,10 +414,11 @@ final class MapResultsList extends MapSideColumn {
         @Override
         protected void updateItem(@Nullable Row row, boolean empty) {
             super.updateItem(row, empty);
-            setText(empty || row == null ? null : row.text());
-            Place place = empty || row == null ? null : row.place();
-            pseudoClassStateChanged(MESSAGE, !empty && row != null && row.message());
-            pseudoClassStateChanged(FILE, !empty && row != null && row.file() != null && place == null);
+            Row shown = empty ? null : row;
+            Place place = shown == null ? null : shown.place();
+            setText(shown == null ? null : shown.text());
+            pseudoClassStateChanged(MESSAGE, shown != null && shown.message());
+            pseudoClassStateChanged(FILE, shown != null && shown.file() != null && place == null);
             pseudoClassStateChanged(OPENED, place != null && opened.test(place.group()));
         }
     }

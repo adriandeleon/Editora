@@ -134,9 +134,7 @@ abstract class MapSideColumn implements CardAttachment {
     protected final void setBody(Node... parts) {
         content.getChildren().setAll(header);
         content.getChildren().addAll(parts);
-        if (parts.length > 0) {
-            VBox.setVgrow(parts[parts.length - 1], Priority.ALWAYS);
-        }
+        VBox.setVgrow(parts[parts.length - 1], Priority.ALWAYS);
     }
 
     /** Sets the title, its tooltip, and {@code spoken}'s accessible name. */
@@ -189,7 +187,7 @@ abstract class MapSideColumn implements CardAttachment {
     }
 
     private void layout() {
-        if (!shown || disposed) {
+        if (disposed) {
             return;
         }
         column.setVisible(card.isVisible());

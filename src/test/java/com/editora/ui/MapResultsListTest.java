@@ -30,6 +30,12 @@ class MapResultsListTest {
         assertNull(MapResultsList.groupOf(groups, use, 30), "outside every declaration of a file with no file group");
         MapCardLinks.Group server = new MapCardLinks.Group(use, null, "twice", 30, 1);
         assertSame(server, MapResultsList.groupOf(List.of(server), use, 30));
+        assertSame(server, MapResultsList.groupOf(List.of(server), use, 31), "a group of no declaration: its file's");
+        assertNull(MapResultsList.groupOf(List.of(server), other, 31));
+        MapCardLinks.Group named = group(use, "named()", 50, 52, 60);
+        assertSame(named, MapResultsList.groupOf(List.of(named), use, 50), "on its name's line, above its lines");
+        MapCardLinks.Group twin = group(use, "twin()", 3, 3, 6);
+        assertSame(inner, MapResultsList.groupOf(List.of(inner, twin), use, 4), "the first of two alike");
     }
 
     @Test
@@ -70,6 +76,18 @@ class MapResultsListTest {
         assertTrue(MapResultsList.keeps(place, "src/test/UseTest.java", "", true));
         assertFalse(MapResultsList.keeps(place, "src/test/UseTest.java", "", false), "a test left out");
         assertEquals(tr("project.map.places.place", "5", "return Shape.area();"), MapResultsList.placeText(place));
+    }
+
+    @Test
+    void aRowNamesItsFileByItsProjectPathItsLibraryOrItsWholePath(@org.junit.jupiter.api.io.TempDir Path temp) {
+        Path root = Path.of("/p").toAbsolutePath();
+        assertEquals("src/Use.java", MapResultsList.relative(root, use));
+        Path outside = Path.of("/elsewhere/A.java").toAbsolutePath();
+        assertEquals(outside.toString(), MapResultsList.relative(root, outside));
+        assertEquals(outside.toString(), MapResultsList.relative(null, outside));
+        Path library = MapLibrarySources.write(
+                "jdt://contents/java.base/java.util/List.class", temp.resolve("Use.java"), "interface List {}\n");
+        assertEquals("java.base/List.java", MapResultsList.relative(root, library));
     }
 
     private static MapCardLinks.Group group(Path file, String label, int line, int start, int end) {
