@@ -1998,6 +1998,16 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 10px;
 }
+/* An answer's list of every place (gap 7): a file's row in bold, a place that has a card marked with the accent. */
+.project-map-results-tree .tree-cell:file {
+    -fx-font-weight: bold;
+}
+.project-map-results-tree .tree-cell:opened {
+    -fx-text-fill: -color-accent-fg;
+}
+.project-map-results-filter {
+    -fx-font-size: 11px;
+}
 /* Linked reference cards: an edge's label, at the middle of the line from a result card to the card it was found
    from, and the "+N more" chip under that card. A label found by name only is dashed, as its edge is. */
 .project-map-link-label {

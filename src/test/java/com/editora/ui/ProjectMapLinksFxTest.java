@@ -8,9 +8,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
-import javafx.scene.control.MenuItem;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 
@@ -226,17 +224,23 @@ class ProjectMapLinksFxTest {
             assertTrue(set.chip.isVisible(), "the chip shows under the card");
             set.chip.fire();
         });
-        ContextMenu menu = FxTestSupport.callOnFx(() -> javafx.stage.Window.getWindows().stream()
-                .filter(window -> window instanceof ContextMenu && window.isShowing())
-                .map(window -> (ContextMenu) window)
-                .findFirst()
-                .orElseThrow());
+        // The chip's list: every caller's call, by file, with its line's text; the ones without a card first unmarked.
+        waitFor(
+                () -> set.list != null
+                        && set.list.places().stream()
+                                .anyMatch(place -> place.text().contains("add(")),
+                "the list, its lines read");
         FxTestSupport.runOnFx(() -> {
-            assertEquals(2, menu.getItems().size());
-            MenuItem first = menu.getItems().getFirst();
-            assertTrue(first.getText().startsWith("run6"), first.getText());
-            menu.hide();
-            first.fire();
+            MapResultsList list = set.list;
+            assertEquals(MapCardLinks.MAX_CARDS + 2, list.places().size(), "one call in each caller");
+            List<MapResultsList.Place> waiting = list.places().stream()
+                    .filter(place -> set.more.contains(place.group()))
+                    .toList();
+            assertEquals(2, waiting.size(), "the two on the chip");
+            assertTrue(
+                    waiting.getFirst().group().label().startsWith("run6"),
+                    waiting.getFirst().group().label());
+            assertTrue(list.openPlaceForTest(waiting.getFirst()));
         });
         waitFor(() -> resultCards(cards, src).size() == MapCardLinks.MAX_CARDS + 1, "the chosen one opens too");
         FxTestSupport.runOnFx(() -> {
