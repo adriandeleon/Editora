@@ -128,10 +128,26 @@ final class MapCardLinks {
         commands.put("lsp.gotoImplementation", List.of(Kind.IMPLEMENTATIONS));
         commands.put("lsp.gotoSuperMethod", List.of(Kind.SUPER_METHOD));
         commands.put("lsp.findReferences", List.of(Kind.REFERENCES));
-        commands.put("lsp.callHierarchy", List.of(Kind.CALLERS));
         commands.put(CALLEES_COMMAND, List.of(Kind.CALLEES));
-        commands.put("lsp.typeHierarchy", List.of(Kind.SUPERTYPES, Kind.SUBTYPES));
         return java.util.Collections.unmodifiableMap(commands);
+    }
+
+    /**
+     * Call Hierarchy and Type Hierarchy typed in a card or on a declaration row: the hierarchy as a tree beside the
+     * card ({@link MapHierarchyTree}), first the callers or the subtypes, as deep as the reader opens it.
+     */
+    static final Map<String, Kind> HIERARCHY_COMMANDS =
+            Map.of("lsp.callHierarchy", Kind.CALLERS, "lsp.typeHierarchy", Kind.SUBTYPES);
+
+    /** The menus' hierarchy items, in order: Show Call Hierarchy (the callers first), Show Type Hierarchy. */
+    static final List<Kind> HIERARCHY_MENU_KINDS = List.of(Kind.CALLERS, Kind.SUBTYPES);
+
+    /** A hierarchy menu item's label: Show Call Hierarchy or Show Type Hierarchy. */
+    static String hierarchyMenuLabel(Kind kind) {
+        return tr(
+                kind == Kind.CALLERS || kind == Kind.CALLEES
+                        ? "project.map.hierarchy.showCalls"
+                        : "project.map.hierarchy.showTypes");
     }
 
     /** The menus' Map navigation items, in order: the kinds a card or a declaration row offers. */
@@ -346,6 +362,11 @@ final class MapCardLinks {
          * {@code from} itself, its caret moved.
          */
         default void follow(ProjectMapPreview from, ProjectMapPreview to) {}
+
+        /** The side {@code card}'s Structure column stands on, or null while it has none: a hierarchy tree goes past it. */
+        default CardAttachment.@Nullable Side structureSide(ProjectMapPreview card) {
+            return null;
+        }
     }
 
     private final Cards cards;
@@ -366,6 +387,10 @@ final class MapCardLinks {
     private final Map<Path, ProjectMapPreview> placeBeside = new HashMap<>();
     /** The answer whose result card is opening now: its card and its other results are not evicted for it (C4). */
     private @Nullable EdgeSet filling;
+    /** The hierarchy trees, by the card they were asked from (one each). */
+    private final Map<ProjectMapPreview, MapHierarchyTree> trees = new IdentityHashMap<>();
+    /** A hierarchy tree's levels waiting for their files' outlines. */
+    private final List<LevelWaiting> levels = new ArrayList<>();
 
     MapCardLinks(Cards cards, ProjectMapStructure structure, Pane canvasHost, Node connectorLayer) {
         this.cards = cards;
@@ -485,12 +510,20 @@ final class MapCardLinks {
                 finish(waiting);
             }
         }
+        for (LevelWaiting waiting : List.copyOf(levels)) {
+            if (waiting.waitingFor.remove(file) && waiting.waitingFor.isEmpty()) {
+                levels.remove(waiting);
+                waiting.timeout.stop();
+                finishLevel(waiting);
+            }
+        }
     }
 
     /** The files whose outlines the links need kept: those of the questions, and the picked place, still waiting. */
     Set<Path> outlineFiles() {
         Set<Path> files = new LinkedHashSet<>();
         pending.forEach(waiting -> files.addAll(waiting.outlined));
+        levels.forEach(waiting -> files.addAll(waiting.outlined));
         PlaceWaiting place = placeWaiting;
         if (place != null) {
             files.add(place.file());
@@ -807,16 +840,22 @@ final class MapCardLinks {
         return set;
     }
 
-    /** The edge sets stuck on {@code card} (its questions' answers). */
+    /** The edge sets stuck on {@code card} (its questions' answers), and its hierarchy tree. */
     List<CardAttachment> attachments(ProjectMapPreview card) {
         Map<Kind, EdgeSet> of = sets.get(card);
-        return of == null ? List.of() : List.copyOf(of.values());
+        List<CardAttachment> all = new ArrayList<>(of == null ? List.of() : of.values());
+        MapHierarchyTree tree = trees.get(card);
+        if (tree != null) {
+            all.add(tree);
+        }
+        return all;
     }
 
-    /** Every edge set. */
+    /** Every edge set and hierarchy tree. */
     List<CardAttachment> allAttachments() {
         List<CardAttachment> all = new ArrayList<>();
         sets.values().forEach(of -> all.addAll(of.values()));
+        all.addAll(trees.values());
         return all;
     }
 
@@ -857,6 +896,10 @@ final class MapCardLinks {
     /** Ends the questions asked from {@code card}: their edge sets go; the result cards they opened are returned. */
     private List<ProjectMapPreview> linksEndQuestions(ProjectMapPreview card) {
         asked.remove(card);
+        MapHierarchyTree tree = trees.remove(card);
+        if (tree != null) {
+            tree.dispose(); // about the declaration it showed: closed with it, or gone with what it showed
+        }
         List<ProjectMapPreview> results = new ArrayList<>();
         Map<Kind, EdgeSet> of = sets.remove(card);
         if (of != null) {
@@ -900,6 +943,10 @@ final class MapCardLinks {
     void closeAll() {
         sets.values().forEach(of -> of.values().forEach(EdgeSet::dispose));
         sets.clear();
+        trees.values().forEach(MapHierarchyTree::dispose);
+        trees.clear();
+        levels.forEach(waiting -> waiting.timeout.stop());
+        levels.clear();
         asked.clear();
         pending.forEach(waiting -> waiting.timeout.stop());
         pending.clear();
@@ -909,6 +956,139 @@ final class MapCardLinks {
             placeWaiting = null;
         }
         placeBeside.clear();
+    }
+
+    // --- hierarchy trees (Map code browser gap 4) ------------------------------------------------------------
+
+    /**
+     * Shows {@code request}'s hierarchy — its callers, callees, subtypes or supertypes — as a tree beside {@code from},
+     * replacing one shown there before, with the keyboard in it. Its first level is asked at once.
+     */
+    void showHierarchy(ProjectMapPreview from, Request request) {
+        Path root = cards.root();
+        if (source == null || root == null || !cards.isOpen(from)) {
+            return;
+        }
+        closeHierarchy(from);
+        MapHierarchyTree tree = new MapHierarchyTree(
+                from,
+                canvasHost,
+                request,
+                this::askLevel,
+                (group, kind, name) -> openFromTree(from, group, kind, name),
+                () -> {
+                    closeHierarchy(from);
+                    from.focusContent();
+                },
+                () -> cards.touch(from),
+                cards::connectorsMoved);
+        trees.put(from, tree);
+        CardAttachment.Side structure = cards.structureSide(from);
+        tree.show(structure != CardAttachment.Side.LEFT); // past the card's Structure column
+        cards.touch(from);
+        cards.connectorsMoved();
+    }
+
+    /** Takes {@code from}'s hierarchy tree away, if it has one. */
+    void closeHierarchy(ProjectMapPreview from) {
+        MapHierarchyTree tree = trees.remove(from);
+        if (tree != null) {
+            tree.dispose();
+            cards.connectorsMoved();
+        }
+    }
+
+    /** The hierarchy tree beside {@code card}, or null. */
+    @Nullable
+    MapHierarchyTree hierarchy(ProjectMapPreview card) {
+        return trees.get(card);
+    }
+
+    /**
+     * One level of a hierarchy tree: {@code request}'s answer grouped by the declarations that hold its places, as
+     * the cards are — once the outlines of its first files are read — ranked as the cards are, handed to {@code then}.
+     */
+    private void askLevel(Request request, Consumer<MapHierarchyTree.Level> then) {
+        Source answering = source;
+        Path root = cards.root();
+        if (answering == null || root == null) {
+            then.accept(new MapHierarchyTree.Level(List.of(), Via.NAME, null, false, request.name()));
+            return;
+        }
+        answering.find(root, request, answer -> {
+            String name = answer.name() != null ? answer.name() : request.name();
+            if (answer.hits().isEmpty()) {
+                then.accept(new MapHierarchyTree.Level(List.of(), answer.via(), answer.note(), answer.partial(), name));
+                return;
+            }
+            LevelWaiting waiting = new LevelWaiting(request, answer, name, then);
+            for (Path file : filesInOrder(answer.hits(), cards.root())) {
+                if (waiting.outlined.size() >= MAX_OUTLINED_FILES) {
+                    break;
+                }
+                if (!structure.supports(file)) {
+                    continue;
+                }
+                waiting.outlined.add(file);
+                structure.ensure(file);
+                if (structure.view(file).problem() == ProjectMapStructure.Problem.LOADING) {
+                    waiting.waitingFor.add(file);
+                }
+            }
+            if (waiting.waitingFor.isEmpty()) {
+                finishLevel(waiting);
+                return;
+            }
+            levels.add(waiting);
+            waiting.timeout.setOnFinished(event -> {
+                if (levels.remove(waiting)) {
+                    finishLevel(waiting);
+                }
+            });
+            waiting.timeout.playFromStart();
+        });
+    }
+
+    private void finishLevel(LevelWaiting waiting) {
+        Path root = cards.root();
+        List<Group> groups = group(
+                waiting.answer.hits(),
+                waiting.answer.via(),
+                waiting.request,
+                waiting.name,
+                file -> waiting.outlined.contains(file) ? outlineOf(file) : null,
+                root);
+        waiting.then.accept(new MapHierarchyTree.Level(
+                linksRank(groups, waiting.request.file(), root),
+                waiting.answer.via(),
+                waiting.answer.note(),
+                waiting.answer.partial(),
+                waiting.name));
+    }
+
+    /**
+     * A row of {@code from}'s hierarchy tree opened: its declaration's card beside {@code from}, at the place —
+     * the call in a caller, selected as find selects a match — with the keyboard following (Back returns).
+     */
+    private void openFromTree(ProjectMapPreview from, Group group, Kind kind, @Nullable String name) {
+        if (!cards.isOpen(from)) {
+            return;
+        }
+        ProjectMapStructure.Node node = group.declaration();
+        placeBeside.put(group.key(), from);
+        ProjectMapPreview card;
+        try {
+            card = node != null ? cards.openDeclaration(node) : cards.openFile(group.file());
+        } finally {
+            placeBeside.remove(group.key());
+        }
+        if (card == null) {
+            cards.status(tr("project.map.links.noRoom"));
+            return;
+        }
+        cards.touch(from);
+        cards.follow(from, card); // where from's caret was, for Back, before the place moves a caret
+        card.linksRevealPlace(group.line(), markOf(kind, group, name));
     }
 
     /** Whether {@code card} is the result card of an open edge set: it stays while that set's card does. */
@@ -1310,6 +1490,24 @@ final class MapCardLinks {
                 new double[] {x, x - size * Math.cos(angle - 0.45), x - size * Math.cos(angle + 0.45)},
                 new double[] {y, y - size * Math.sin(angle - 0.45), y - size * Math.sin(angle + 0.45)},
                 3);
+    }
+
+    /** A hierarchy tree's level waiting for its files' outlines. */
+    private static final class LevelWaiting {
+        final Request request;
+        final Answer answer;
+        final @Nullable String name;
+        final Consumer<MapHierarchyTree.Level> then;
+        final Set<Path> outlined = new LinkedHashSet<>();
+        final Set<Path> waitingFor = new LinkedHashSet<>();
+        final javafx.animation.PauseTransition timeout = new javafx.animation.PauseTransition(OUTLINE_WAIT);
+
+        LevelWaiting(Request request, Answer answer, @Nullable String name, Consumer<MapHierarchyTree.Level> then) {
+            this.request = request;
+            this.answer = answer;
+            this.name = name;
+            this.then = then;
+        }
     }
 
     /** An answer waiting for the outlines of its first files. */
