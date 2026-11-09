@@ -12,9 +12,7 @@ import java.util.function.Consumer;
 
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
-import javafx.scene.control.MenuItem;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
@@ -206,8 +204,8 @@ class MapCardLinksFxTest {
     }
 
     @Test
-    void placesWithNoOutlineOpenTheirFilesAtThePlaceAndTheChipListsTwoHundredOfTheRest() throws Exception {
-        int files = MapCardLinks.MAX_MORE_ITEMS + MapCardLinks.MAX_CARDS + 3;
+    void placesWithNoOutlineOpenTheirFilesAtThePlaceAndTheChipListsEveryPlace() throws Exception {
+        int files = 200 + MapCardLinks.MAX_CARDS + 3;
         Path project = project(files);
         try (Harness h = open(project)) {
             Path readmeFile = project.resolve("README.md");
@@ -274,24 +272,31 @@ class MapCardLinksFxTest {
                 readme.setVisible(true);
                 set.chip.fire();
             });
-            ContextMenu menu = FxTestSupport.callOnFx(() -> javafx.stage.Window.getWindows().stream()
-                    .filter(window -> window instanceof ContextMenu && window.isShowing())
-                    .map(window -> (ContextMenu) window)
-                    .findFirst()
-                    .orElseThrow());
+            // The chip's list: every place, by file, each with its line's text once read.
+            waitForFx(() -> set.list != null
+                    && set.list.places().stream()
+                            .anyMatch(place -> !place.text().isEmpty()));
             FxTestSupport.runOnFx(() -> {
-                List<MenuItem> items = menu.getItems();
-                assertEquals(MapCardLinks.MAX_MORE_ITEMS + 1, items.size());
-                MenuItem rest = items.getLast();
-                assertTrue(rest.isDisable());
-                assertEquals(
-                        tr("project.map.links.moreLeft", files - MapCardLinks.MAX_CARDS - MapCardLinks.MAX_MORE_ITEMS),
-                        rest.getText());
+                MapResultsList list = set.list;
+                assertNotNull(list);
+                assertEquals(files + 1, list.places().size(), "every place, the card asked from left out");
+                assertTrue(h.links().allAttachments().contains(list), "placement keeps clear of it");
+                List<String> rows = list.rowsForTest();
+                assertEquals(files * 2 + 1, rows.size(), "a row per file and per place: " + rows.subList(0, 4));
+                list.filter().setText("t006");
+                assertEquals(2, list.rowsForTest().size(), "the filter keeps t006.txt's place");
                 assertTrue(
-                        items.getFirst().getText().contains("many/t006.txt"),
-                        items.getFirst().getText());
-                menu.hide();
-                items.getFirst().fire();
+                        list.rowsForTest().getFirst().contains("many/t006.txt"),
+                        list.rowsForTest().toString());
+                list.tree()
+                        .getSelectionModel()
+                        .select(list.tree()
+                                .getRoot()
+                                .getChildren()
+                                .getFirst()
+                                .getChildren()
+                                .getFirst());
+                assertTrue(list.openSelected());
                 assertEquals(tr("project.map.links.more", files - MapCardLinks.MAX_CARDS - 1), set.chip.getText());
                 assertEquals(MapCardLinks.MAX_CARDS + 1, set.labelsForTest().size());
 
@@ -300,6 +305,7 @@ class MapCardLinksFxTest {
                 h.source().answer(1, answer(List.of(new MapCardLinks.Hit(first, 2, 11, 1, null)), false, null));
                 MapCardLinks.EdgeSet again = h.links().setsForTest(readme).get(MapCardLinks.Kind.REFERENCES);
                 assertTrue(again != set);
+                assertNull(set.list, "the old answer's list goes with it");
                 assertEquals(1, again.labelsForTest().size(), "the open card is reused");
                 assertFalse(set.chip.isVisible() && set.chip.getParent() != null, "the old chip is gone");
                 assertTrue(h.cards().codeCard(project.resolve("many/t001.txt")) != null, "its cards stay");

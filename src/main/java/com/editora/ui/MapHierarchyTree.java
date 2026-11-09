@@ -5,13 +5,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.beans.value.ChangeListener;
 import javafx.css.PseudoClass;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -20,13 +16,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
-import javafx.scene.transform.Scale;
 
 import org.jspecify.annotations.Nullable;
 
@@ -42,13 +32,7 @@ import static com.editora.i18n.Messages.tr;
  * a double-click opens a row's declaration as a card beside the card asked from, the keyboard following, so Back
  * returns. It moves, zooms and closes with its card; Escape closes it.
  */
-final class MapHierarchyTree implements CardAttachment {
-
-    /** The column's width, unzoomed. */
-    static final double WIDTH = 320;
-
-    /** Between the card's edge and the column. */
-    static final double GAP = 8;
+final class MapHierarchyTree extends MapSideColumn {
 
     private static final PseudoClass MESSAGE = PseudoClass.getPseudoClass("message");
 
@@ -80,30 +64,17 @@ final class MapHierarchyTree implements CardAttachment {
         }
     }
 
-    private final ProjectMapPreview card;
-    private final Pane host;
     private final MapCardLinks.Request asked;
     private final Asker asker;
     private final Opener opener;
-    private final Runnable onClose;
-    private final Runnable onActivate;
-    private final Runnable onMoved;
 
-    private final StackPane column = new StackPane();
-    private final Label title = new Label();
     private final Button flip = new Button("⇄");
     private final TreeView<Row> tree = new TreeView<>();
-    private final Scale zoom = new Scale(1, 1, 0, 0);
-    private final ChangeListener<Object> follow = (obs, old, now) -> layout();
 
     private MapCardLinks.Kind kind;
     private @Nullable String name;
     /** Bumped when the tree turns the other way or closes: answers asked before are dropped. */
     private long generation;
-
-    private Side side = Side.LEFT;
-    private boolean shown;
-    private boolean disposed;
 
     /**
      * @param asked the question about the root (its kind is the tree's first direction)
@@ -120,72 +91,20 @@ final class MapHierarchyTree implements CardAttachment {
             Runnable onClose,
             Runnable onActivate,
             Runnable onMoved) {
-        this.card = card;
-        this.host = host;
+        super(card, host, "project-map-hierarchy", tr("project.map.hierarchy.close"), onClose, onActivate, onMoved);
         this.asked = asked;
         this.asker = asker;
         this.opener = opener;
-        this.onClose = onClose;
-        this.onActivate = onActivate;
-        this.onMoved = onMoved;
         this.kind = asked.kind();
         this.name = asked.name();
 
-        column.getStyleClass().addAll("project-map-card-structure", "project-map-hierarchy");
-        column.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        column.setManaged(false);
-        zoom.xProperty().bind(card.mapScaleProperty());
-        zoom.yProperty().bind(card.mapScaleProperty());
-        column.getTransforms().add(zoom);
-
-        title.getStyleClass().add("project-map-card-structure-title");
-        title.setMinWidth(0);
-        title.setMaxWidth(Double.MAX_VALUE);
-        title.setTextOverrun(OverrunStyle.ELLIPSIS);
-        title.setTooltip(new Tooltip());
-        HBox.setHgrow(title, Priority.ALWAYS);
-        flip.getStyleClass().add("project-map-preview-button");
         flip.setTooltip(new Tooltip());
-        flip.setFocusTraversable(false);
         flip.setOnAction(event -> turn());
-        Button close = new Button("×");
-        close.getStyleClass().add("project-map-preview-button");
-        close.setTooltip(new Tooltip(tr("project.map.hierarchy.close")));
-        close.setAccessibleText(tr("project.map.hierarchy.close"));
-        close.setFocusTraversable(false);
-        close.setOnAction(event -> onClose.run());
-        HBox header = new HBox(6, title, flip, close);
-        header.getStyleClass().add("project-map-card-structure-header");
-        header.setAlignment(Pos.CENTER_LEFT);
-
+        addHeaderButton(flip);
         tree.getStyleClass().addAll("project-map-card-structure-tree", "project-map-hierarchy-tree");
         tree.setCellFactory(view -> new RowCell());
         tree.setAccessibleHelp(tr("project.map.hierarchy.help"));
-        VBox.setVgrow(tree, Priority.ALWAYS);
-        Region tint = new Region();
-        tint.getStyleClass().add("project-map-card-structure-tint");
-        tint.setMouseTransparent(true);
-        Region border = new Region();
-        border.getStyleClass().add("project-map-card-structure-border");
-        border.setMouseTransparent(true);
-        column.getChildren().setAll(tint, new VBox(header, tree), border);
-
-        column.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
-            raise();
-            onActivate.run();
-        });
-        column.focusWithinProperty().addListener((obs, was, within) -> {
-            if (within) {
-                onActivate.run();
-            }
-        });
-        column.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
-            if (event.getCode() == KeyCode.ESCAPE) {
-                onClose.run();
-                card.focusContent();
-                event.consume();
-            }
-        });
+        setBody(tree);
         tree.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ENTER && !event.isShortcutDown() && !event.isAltDown()) {
                 if (openSelected()) {
@@ -236,7 +155,7 @@ final class MapHierarchyTree implements CardAttachment {
         item.asked = true;
         long at = generation;
         asker.ask(item.request, level -> {
-            if (at != generation || disposed) {
+            if (at != generation || disposed()) {
                 return;
             }
             if (item == tree.getRoot() && level.name() != null && !level.name().isBlank()) {
@@ -339,10 +258,7 @@ final class MapHierarchyTree implements CardAttachment {
     }
 
     private void relabel() {
-        String text = titleText(kind, rootText());
-        title.setText(text);
-        title.getTooltip().setText(text);
-        tree.setAccessibleText(text);
+        setTitle(titleText(kind, rootText()), tree);
         String other = turnText(opposite(kind));
         flip.getTooltip().setText(other);
         flip.setAccessibleText(other);
@@ -400,61 +316,14 @@ final class MapHierarchyTree implements CardAttachment {
         }
     }
 
-    // --- placement ------------------------------------------------------------------------------------------
-
-    /** Sticks the tree on its card on the side with room, {@code preferLeft} first, and puts the keyboard in it. */
-    void show(boolean preferLeft) {
-        if (!shown) {
-            shown = true;
-            card.layoutXProperty().addListener(follow);
-            card.layoutYProperty().addListener(follow);
-            card.widthProperty().addListener(follow);
-            card.heightProperty().addListener(follow);
-            card.mapScaleProperty().addListener(follow);
-            card.visibleProperty().addListener(follow);
-            host.getChildren().add(column);
-        }
-        double scale = card.mapScale();
-        double left = card.getLayoutX();
-        double right = left + card.getWidth() * scale;
-        side = CardAttachment.side(left, right, (WIDTH + GAP) * scale, host.getWidth(), preferLeft);
-        layout();
-        tree.requestFocus();
+    @Override
+    protected Node focusTarget() {
+        return tree;
     }
 
-    private void layout() {
-        if (!shown || disposed) {
-            return;
-        }
-        column.setVisible(card.isVisible());
-        double[] at = boundsAt(side);
-        column.relocate(at[0], at[1]);
-        column.resize(WIDTH, Math.max(160, card.getHeight()));
-        moved();
-    }
-
-    private void moved() {
-        if (shown && !disposed) {
-            onMoved.run();
-        }
-    }
-
-    /** Where the tree is drawn on {@code which} side of its card, {@code {x, y, w, h}} in the host's pixels. */
-    double[] boundsAt(Side which) {
-        double scale = card.mapScale();
-        double dx = switch (which) {
-            case RIGHT -> card.getWidth() + GAP;
-            case LEFT -> -(WIDTH + GAP);
-            case OVER -> card.getWidth() - WIDTH;
-        };
-        return new double[] {
-            card.getLayoutX() + dx * scale, card.getLayoutY(), WIDTH * scale, Math.max(160, card.getHeight()) * scale
-        };
-    }
-
-    /** The side it stands on. */
-    Side side() {
-        return side;
+    @Override
+    protected void onDisposed() {
+        generation++;
     }
 
     /** The kind it lists now. */
@@ -465,59 +334,5 @@ final class MapHierarchyTree implements CardAttachment {
     /** The tree, for tests. */
     TreeView<Row> tree() {
         return tree;
-    }
-
-    @Override
-    public ProjectMapPreview card() {
-        return card;
-    }
-
-    @Override
-    public double reserved(Side which) {
-        return shown && !disposed && side == which && which != Side.OVER ? WIDTH + GAP : 0;
-    }
-
-    @Override
-    public void raise() {
-        column.toFront();
-    }
-
-    @Override
-    public boolean contains(@Nullable Node node) {
-        for (Node at = node; at != null; at = at.getParent()) {
-            if (at == column) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    @Override
-    public double @Nullable [] bounds() {
-        return shown && !disposed && column.isVisible() ? boundsAt(side) : null;
-    }
-
-    @Override
-    public void drawConnectors(javafx.scene.canvas.GraphicsContext g) {}
-
-    @Override
-    public void dispose() {
-        if (disposed) {
-            return;
-        }
-        disposed = true;
-        generation++;
-        card.layoutXProperty().removeListener(follow);
-        card.layoutYProperty().removeListener(follow);
-        card.widthProperty().removeListener(follow);
-        card.heightProperty().removeListener(follow);
-        card.mapScaleProperty().removeListener(follow);
-        card.visibleProperty().removeListener(follow);
-        host.getChildren().remove(column);
-    }
-
-    /** Whether it was taken off its card. */
-    boolean disposed() {
-        return disposed;
     }
 }
