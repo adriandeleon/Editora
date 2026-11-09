@@ -147,7 +147,41 @@ public final class DebugLanguages {
             "status.debug.unavailable",
             null);
 
-    private static final List<DebugLanguage> ALL = List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA);
+    /**
+     * What Delve prints once {@code dlv dap} listens: {@code DAP server listening at: 127.0.0.1:38697} (an IPv6
+     * address in brackets on a machine that resolves there).
+     */
+    public static final java.util.regex.Pattern DELVE_ANNOUNCEMENT =
+            java.util.regex.Pattern.compile("DAP server listening at: \\S*:(\\d+)");
+
+    /**
+     * Go, on Delve's DAP server ({@code dlv dap}): started on a port it picks ({@code 127.0.0.1:0}) and announces.
+     * Delve builds the program itself (with optimizations off), runs it, and stops on a panic by itself: it offers no
+     * exception choices. Delve is found as configured, on the PATH, or where {@code go install} put it.
+     */
+    public static final DebugLanguage GO = new DebugLanguage(
+            "go",
+            "Go",
+            Set.of("go"),
+            Kind.EXTERNAL,
+            "go",
+            "go",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(),
+            null,
+            null,
+            false,
+            "debug.error.goUnavailable",
+            new ExternalAdapter(
+                    List.of("dlv", "dap", "--listen=127.0.0.1:0"),
+                    ExternalAdapter.Transport.ANNOUNCED_PORT,
+                    DELVE_ANNOUNCEMENT));
+
+    private static final List<DebugLanguage> ALL =
+            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO);
 
     /** Every profile, in the order the Settings page lists them. */
     public static List<DebugLanguage> all() {

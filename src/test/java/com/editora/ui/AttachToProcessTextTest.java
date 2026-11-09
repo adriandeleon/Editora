@@ -24,4 +24,22 @@ class AttachToProcessTextTest {
                 DebugCoordinator.processDetail(idle));
         assertEquals("--inspect", DebugCoordinator.startFlag(LocalProcesses.Kind.NODE));
     }
+
+    @Test
+    void aGoProgramIsAttachedByItsProcessId() {
+        var go = new LocalProcesses.Target(9, LocalProcesses.Kind.GO, "server", "", 0);
+        assertEquals(
+                tr("debug.attachProcess.byPid", tr("debug.attachProcess.kind.go")), DebugCoordinator.processDetail(go));
+        assertEquals("", DebugCoordinator.startFlag(LocalProcesses.Kind.GO), "nothing to start it with");
+    }
+
+    @Test
+    void delveBuildsWithTheGoTheGoBuildToolRuns() {
+        java.nio.file.Path go = java.nio.file.Path.of("/opt/go/bin/go").toAbsolutePath();
+        assertEquals(
+                java.util.List.of(go.getParent().toString()),
+                DebugCoordinator.goToolDirs(java.util.List.of(go.toString(), "-x")));
+        assertEquals(java.util.List.of(), DebugCoordinator.goToolDirs(java.util.List.of("go")), "found on the PATH");
+        assertEquals(java.util.List.of(), DebugCoordinator.goToolDirs(java.util.List.of()));
+    }
 }

@@ -1619,7 +1619,7 @@ class DebugCoordinatorCommandsFxTest {
         host.settings.setPythonDebugCommand("python3");
 
         FxTestSupport.runOnFx(() -> debug.chooseAdapterPath());
-        assertEquals(List.of("java", "python", "javascript"), pickerRows());
+        assertEquals(List.of("java", "python", "javascript", "go"), pickerRows());
         promptAnswer = "  " + python + " ";
         answerPicker(1, javafx.scene.input.KeyCode.ENTER);
 
@@ -1660,7 +1660,7 @@ class DebugCoordinatorCommandsFxTest {
         boolean javascript = host.settings.isJsDebugEnabled();
 
         FxTestSupport.runOnFx(() -> debug.chooseAdapterToggle());
-        assertEquals(List.of("python", "javascript"), pickerRows());
+        assertEquals(List.of("python", "javascript", "go"), pickerRows());
         answerPicker(0, javafx.scene.input.KeyCode.ENTER);
         assertTrue(host.settings.isPythonDebugEnabled());
         assertEquals(javascript, host.settings.isJsDebugEnabled(), "the other adapter is left as it was");

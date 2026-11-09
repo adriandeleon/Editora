@@ -104,7 +104,9 @@ An adapter that is its own program (Delve, CodeLLDB, lldb-dap) is `Kind.EXTERNAL
 [`ExternalAdapter`](../src/main/java/com/editora/dap/ExternalAdapter.java) names the command and the transport (its
 standard streams, a port passed as `{port}`, or a port it announces, matched by a pattern), and
 `DapManager.configureExternal` / `startExternal` find it, start it and send the `launch` the language shapes
-(`ExternalAdapter.launchRequest`). Java rides the jdtls session; Python (debugpy) is stdio;
+(`ExternalAdapter.launchRequest`). Go is the worked example: the `GO` profile (Delve, announced port),
+`dap/GoLaunch` for its requests, a `DebugAdapterSettings` binding and a `SettingsDebugPage` card, and
+`DebugCoordinator.debugGoFile` for F5. Java rides the jdtls session; Python (debugpy) is stdio;
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
 

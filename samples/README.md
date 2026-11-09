@@ -373,7 +373,7 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   logpoint, a watch on `total`, step-into, and set-value. `samples/run/hello.java` is the Java
   equivalent for a first breakpoint.
 
-## debug/ — Java and Clojure debugging (breakpoints, stepping, values, threads)
+## debug/ — Java, Clojure and Go debugging (breakpoints, stepping, values, threads)
 
 - `samples/debug/java/pom.xml` — a standalone **Java 25 Maven** project (not a `<module>` of the root
   pom) built to try every breakpoint kind on, in ~220 lines across six classes. Open the folder as a
@@ -427,6 +427,22 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   - `samples/debug/clojure/test/shelf/core_test.clj` — six green clojure.test tests, run with
     `clojure -M:test` (cognitect's test-runner, a git dependency fetched on first run); a breakpoint is
     marked in the first.
+
+- `samples/debug/go/go.mod` — the same shelf as a standalone **Go module** (five files, ~170 lines),
+  for debugging Go on Delve (Settings → Debugging → Go; Install there runs `go install` for Delve).
+  Open `main.go` and press F5: Delve builds the package and stops at your breakpoints. Every suggested
+  spot is a `break here` comment. `go run .` runs it outside Editora, `go test` runs the tests, and the
+  `crash` program argument panics, which Delve stops on by itself.
+  - `samples/debug/go/main.go` — the entry point: a first plain breakpoint, then Step Into `checkout`.
+  - `samples/debug/go/shelf.go` — the `checkout` loop: a **watch** on `total`, a **logpoint**, a
+    **conditional** breakpoint (`item.SKU == "C-2"`), a map that grows, and `parseQuantity` returning
+    a wrapped error.
+  - `samples/debug/go/pricing.go` — a `switch` hit once per big item, and `applyDiscount`, which
+    **recurses** through a stacked discount, so the call stack shows two `main.applyDiscount` frames.
+  - `samples/debug/go/restock.go` — three goroutines: the **Threads** view lists each, and a
+    **hit-count** breakpoint on a line that runs 480 times.
+  - `samples/debug/go/shelf_test.go` — four green tests and a benchmark: put the caret in one and use
+    **Debug Test at Caret** (or F5) to debug that test alone.
 
 ## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup + tests
 

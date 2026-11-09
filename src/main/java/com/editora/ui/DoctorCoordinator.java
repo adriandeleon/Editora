@@ -785,6 +785,16 @@ final class DoctorCoordinator {
                                     com.editora.install.VersionFloor.NODE_JS_DEBUG.minimum());
                 }));
             }
+            if (s.isGoDebugEnabled()) {
+                String dlvPath = scope.debugTool("go", s.getGoDebugPath());
+                // Its Install is on Settings → Debugging → Go (go install), where Settings… leads.
+                DoctorCheck delve = DoctorCheck.checking("debug.go", "debug", tr("doctor.label.delve"), "")
+                        .withSettings("debug");
+                specs.add(probe(delve, base -> {
+                    String dlv = com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.GO, dlvPath);
+                    return dlv != null ? base.ok(dlv) : base.missing("doctor.tip.missing", "dlv");
+                }));
+            }
         } else {
             specs.add(terminal(offRow(
                     DoctorCheck.checking("debug", "debug", tr("doctor.label.sectionOff"), "")

@@ -20,7 +20,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * Settings → Debugging: the master switch, where the debugged program runs, and one card per debug adapter (Java,
- * Python, JavaScript) with its enable switch, command and detection status. Also owns the Node.js path field the Build
+ * Python, JavaScript, Go) with its enable switch, command and detection status. Also owns the Node.js path field the Build
  * Tools page shows, which is loaded with these controls. {@link SettingsWindow} builds the page with the others.
  */
 final class SettingsDebugPage {
@@ -276,7 +276,7 @@ final class SettingsDebugPage {
             java.util.function.Supplier<String> getCommand,
             java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
 
-    /** The three debug adapters (java/python/javascript), in display order. */
+    /** The debug adapters with a card of their own (java/python/javascript/go), in display order. */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
         return java.util.List.of(
                 new DebugAdapterUi(
@@ -344,6 +344,26 @@ final class SettingsDebugPage {
                             } else {
                                 cb.accept(false, "");
                             }
+                        }),
+                new DebugAdapterUi(
+                        "go",
+                        "settings.debug.go",
+                        "settings.debug.enableGo",
+                        "settings.debug.goPath",
+                        "dlv",
+                        "debug go golang delve dlv path found install",
+                        v -> config.getSettings().setGoDebugEnabled(v),
+                        () -> config.getSettings().isGoDebugEnabled(),
+                        v -> config.getSettings().setGoDebugPath(v),
+                        () -> config.getSettings().getGoDebugPath(),
+                        cb -> { // found, whether or not switched on: the PATH lookup is off the FX thread
+                            String configured = config.getSettings().getGoDebugPath();
+                            Thread.ofVirtual().name("settings-delve-probe").start(() -> {
+                                String dlv = com.editora.dap.DapManager.locateExternal(
+                                        com.editora.dap.DebugLanguages.GO, configured);
+                                javafx.application.Platform.runLater(
+                                        () -> cb.accept(dlv != null, dlv == null ? "" : dlv));
+                            });
                         }));
     }
 

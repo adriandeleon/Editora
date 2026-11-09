@@ -136,4 +136,23 @@ class ExternalAdapterTest {
                 "status.debug.unavailable",
                 external);
     }
+
+    @Test
+    void anAdaptersPathCanLeadWithItsToolchain() {
+        assertEquals(
+                "/opt/go/bin:/usr/bin:/bin", DapManager.pathWithFirst(List.of("/opt/go/bin"), "/usr/bin:/bin", ":"));
+        assertEquals(
+                "/usr/bin:/bin", DapManager.pathWithFirst(List.of("/usr/bin"), "/usr/bin:/bin", ":"), "none twice");
+        assertEquals("/opt/go/bin", DapManager.pathWithFirst(List.of("/opt/go/bin", " "), null, ":"));
+    }
+
+    @Test
+    void goInstallPutsProgramsInGobinElseEachGopathElseHomeGoBin() {
+        Path home = Path.of("/home/u");
+        String sep = java.io.File.pathSeparator;
+        assertEquals(
+                List.of(Path.of("/g/bin"), Path.of("/a", "bin"), Path.of("/b", "bin"), home.resolve("go/bin")),
+                DapManager.goBinDirs(Map.of("GOBIN", "/g/bin", "GOPATH", "/a" + sep + "/b"), home));
+        assertEquals(List.of(home.resolve("go/bin")), DapManager.goBinDirs(Map.of(), home));
+    }
 }

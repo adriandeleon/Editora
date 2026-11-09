@@ -1007,7 +1007,7 @@ the child env. The result is cached after the first call.
 
 ### Language profiles and transports
 
-Editora debugs Java, Python, and JavaScript (Node), off by default
+Editora debugs Java, Python, JavaScript (Node), the JVM languages and Go, off by default
 (`Settings.debugSupport`). Each language is a [`dap/DebugLanguage`](../../src/main/java/com/editora/dap/DebugLanguage.java)
 profile in [`dap/DebugLanguages`](../../src/main/java/com/editora/dap/DebugLanguages.java): its `Kind` transport, the
 DAP `launch` type, the `initialize` adapter id, the default interpreter + adapter args, the fallback transport, what
@@ -1019,7 +1019,7 @@ debugged on its own host, and its "unavailable" message. [`dap/DapServerRegistry
 (its switch, command or path, install id, off and missing messages) are a binding in
 [`ui/DebugAdapterSettings`](../../src/main/java/com/editora/ui/DebugAdapterSettings.java), which the Debugging
 page, the `debug.toggleAdapter` / `debug.setAdapterPath` pickers and `unavailableMessage` read. `languageIdsForDebug()` =
-`{java, python, javascript, groovy, kotlin, clojure, scala}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
+`{java, python, javascript, groovy, kotlin, clojure, scala, go}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
 `javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
 project's breakpoints live in its `.ts`/`.tsx` sources.
 
@@ -1031,6 +1031,7 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `groovy` | `JVM` | Editora's own JDI adapter (`dap/jvm`, [ADR 0018](../decisions/0018-jvm-debug-adapter.md)), served in-process on a loopback port; `DapClient.connect(port, "editora-jvm")`. The program is `groovy <file>` started through `runInTerminal`, with the JDWP agent (`server=n`, connecting back) in `JAVA_OPTS`. Breakpoints bind by source name. |
 | `kotlin` | `JVM` | The same adapter. A script is `kotlinc -script <file>` (agent in `JAVA_OPTS`); a program is compiled first (`kotlinc <file> -include-runtime -d <jar>`, cached by content under `<config>/cache/kotlin-run`) and run as `java <agent> -jar <jar>` (`jvmOptionsInArgv`). A file's declared `package` matches its classes' source path wherever the file sits. Debug via Build Tool and Attach from a Kotlin file attach this adapter (`attach`, `hostName`/`port`) instead of java-debug, which never binds a `.kt` breakpoint. kotlin-lsp's own undocumented DAP (`start_debug_server`) is not used. |
 | `clojure` | `JVM` | The same adapter. `run/ClojureRun` picks the tool: the Clojure CLI (`clojure -J<agent> -J-Dclojure.compiler.disable-locals-clearing=true -M -m <ns>`, the agent as a `-J` argument — the launch's `jvmOptionPrefix`) in its `deps.edn` project, Leiningen (`lein run -m <ns>`, the agent in `JVM_OPTS`, which only the project's JVM reads) in a `project.clj` one, and a file outside any project as a script. A function's class (`my_app.core$greet`) records `core.clj` and the package path `my_app/`, so a breakpoint in `src/my_app/core.clj` binds by source name; a script loaded by path records that absolute path (Clojure's SMAP), which `JvmSourceMap.compiledFrom` accepts. Frames read as the function, demunged (`my-app.core/greet`); stepping skips `clojure.lang`, `clojure.core*` and `clojure.main`. Babashka is a native program with no JVM: Debug says so and does not start. Limits: values show as their class (the adapter runs no `toString`), and a function redefined from a REPL is a new class the session's breakpoints were not set in. |
+| `go` | `EXTERNAL` | Delve: `dlv dap --listen=127.0.0.1:0`, the port read from its `DAP server listening at:` line (`ANNOUNCED_PORT`); see **Go** below. |
 | `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
 
 **External adapters.** A `Kind.EXTERNAL` profile carries an [`ExternalAdapter`](../../src/main/java/com/editora/dap/ExternalAdapter.java):
@@ -1041,9 +1042,44 @@ finds the command (a configured path, else on the PATH: `locateExecutable`) and 
 found executable in place of the command's first word, connects (`connectStdio`, or `connect` with the adapter
 process set to be killed on dispose), and sends the `launch` the language shaped (`ExternalAdapter.launchRequest`:
 `program`, `args`, `cwd`, `env`, `stopOnEntry` plus the language's own fields). Output before an announcement goes to
-the console as the command's; after it, as the program's (Delve writes its debuggee's output there). No language uses
-it yet: it is the path Go, Rust and C/C++ are added on. `DebugReviewCWindowFxTest` drives all three transports
-through `RelayAdapterMain`, a test process standing in for the adapter in front of the in-process fake.
+the console as the command's; after it, as the program's (Delve writes its debuggee's output there). A request whose
+`request` is `attach` is sent as `attach`, and Stop then detaches (`setTerminateOnDisconnect(false)`).
+`setExternalPathDirs` puts folders first on an adapter's PATH. Go uses it; Rust and C/C++ are to follow.
+`DebugReviewCWindowFxTest` drives all three transports through `RelayAdapterMain`, a test process standing in for
+the adapter in front of the in-process fake.
+
+**Go.** The `go` profile is Delve's DAP server. `DapManager.locateExternal` finds `dlv` as configured
+(`Settings.goDebugPath`, or a trusted project's `debug.go`), else on the PATH, else in the folder `go install` fills
+(`$GOBIN`, each `$GOPATH/bin`, `~/go/bin`: it may not have existed when Editora read its PATH). `Settings.goDebugEnabled`
+switches it, and Settings → Debugging → Go has its Install, which runs `go install
+github.com/go-delve/delve/cmd/dlv@latest` (`InstallCatalog.debuggerInstall("dlv")`, needing `go`).
+
+[`dap/GoLaunch`](../../src/main/java/com/editora/dap/GoLaunch.java) shapes the requests the way VS Code's Go extension
+does:
+- A file of a module (a `go.mod` above it) debugs its package (`mode: debug`, `program` = its folder, as `go run .`).
+- A file outside one debugs alone (`go run file.go`).
+- In a `_test.go` file, `mode: test` runs the test function the caret is in (`-test.run ^TestX$`; a benchmark
+  `-test.run ^$ -test.bench ^BenchmarkX$`), or every test of the package outside one.
+- `output` is a file of its own in the temporary folder. Left to Delve, it is `__debug_bin…` in the package, and it
+  stays there when Stop kills Delve.
+
+`DebugCoordinator.debugGoFile` takes the `go` the Go build tool runs (`buildExecutable(GO, module)`) and puts its
+folder first on Delve's PATH, since Delve builds with it. Before each start and Restart it saves the folder's Go files,
+because Delve builds from disk. Restart repeats the same test wherever the caret is now. Debug Test at Caret on a Go
+test file (`debugGoTestAtCaret`) is the same launch.
+
+Attach to Process lists Go programs: `LocalProcesses` reads each candidate executable's section names for
+`.go.buildinfo` / `__go_buildinfo` ([`dap/GoBinaries`](../../src/main/java/com/editora/dap/GoBinaries.java); ELF and
+Mach-O, not Windows), once per program file. It attaches with `attach {mode: local, processId}`. On Linux that needs
+`kernel.yama.ptrace_scope` 0, as for any debugger attaching to a program it did not start.
+
+Delve reports no exception filters (it stops on a panic by itself), and it lists at most 1024 goroutines as threads.
+Comment-only Go lines take no breakpoint (`CodeLessLines`), and a `select` block is control flow to
+`InlineValueScope`.
+
+`GoDebugProbeFxTest`, opt-in, runs in CI's integration job with Go and a pinned Delve. It drives the real Delve
+through `DapManager`: variables, Step Over, goroutines, a test at the caret, and an attach then detach. It also
+drives it through a window: F5 and Debug Test at Caret.
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send

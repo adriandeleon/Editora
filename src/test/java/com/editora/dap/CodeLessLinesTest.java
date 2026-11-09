@@ -53,4 +53,15 @@ class CodeLessLinesTest {
         assertFalse(CodeLessLines.isCodeLess("a", 5, "java"));
         assertFalse(CodeLessLines.isCodeLess(null, 0, "java"));
     }
+
+    @Test
+    void goCommentLinesHaveNoCode() {
+        String go = "package main\n\n// Greet says hello.\nfunc greet() {\n\t/* a block\n\t   comment */\n"
+                + "\tfmt.Println(`// not a comment`) // trailing\n}\n";
+        assertTrue(CodeLessLines.isCodeLess(go, 2, "go"));
+        assertTrue(CodeLessLines.isCodeLess(go, 4, "go"));
+        assertTrue(CodeLessLines.isCodeLess(go, 5, "go"));
+        assertFalse(CodeLessLines.isCodeLess(go, 3, "go"));
+        assertFalse(CodeLessLines.isCodeLess(go, 6, "go"), "a raw string holding // is code");
+    }
 }

@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug Go programs.** Editora now debugs Go with Delve, as VS Code's Go extension does:
+  - **F5 on a Go file** debugs its package, or the file alone outside a module.
+  - **In a `_test.go` file**, F5 and *Debug Test at Caret* run the test function the caret is in (a benchmark on
+    its own), or every test of the package.
+  - **Attach to Process** lists running Go programs and attaches by process id. *Stop* leaves the program running.
+  - **Debugging features:** breakpoints (with conditions, hit counts and logpoints), stepping, Variables, Watches,
+    inline values and the Threads view all work. Goroutines are listed as threads.
+  - **Setup:** Delve is found on the PATH or where `go install` puts it. *Settings → Debugging → Go* turns Go
+    debugging on or off, sets Delve's path, and installs Delve with `go install`. The Doctor checks for it.
+  - **Build output:** Delve's build goes to the temporary folder, not your package.
 - **Move around inside a Project Map card.** Go to Line, the matching bracket and Beginning / End of Defun, typed in
   a card with your keymap's keys, now move the card's caret instead of the editor's. Go to Line opens a small bar
   under the card's title, numbered as the file numbers its lines, so a declaration card's lines keep their file
