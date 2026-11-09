@@ -1034,8 +1034,8 @@ filesystem work.
 **Working sets** are named views of the Map, per workspace (`projectMapWorkingSets`, workspace schema v29,
 `config.ProjectMapWorkingSet`: a name and a `ProjectMapState`). ⋯ → **Working sets** ▸ *Save Current As…* asks for a
 name in the Map window's prompt and saves `bearingsState()` under it — the folders opened by hand, the selection, the
-zoom and pan, and the open code cards with their place, size, text zoom and Structure column — without the
-Back/Forward places. A name already used in the folder (ignoring case) replaces that set where it stands; a folder
+zoom and pan, and the open code cards with their place, size, text zoom and Structure column, their caret and the
+line at their top, and the answers asked from them — without the Back/Forward places. A name already used in the folder (ignoring case) replaces that set where it stands; a folder
 keeps at most 30. One item per set of the folder the Map shows (sets of other folders are kept but not listed) shows
 it again, and *Delete* ▸ removes one. Showing a set goes through the restart's path (`ProjectMapView.viewsApply`):
 the search is cleared, every card closes, the open folders become the set's, `bearingsRestore` brings back the
@@ -1549,7 +1549,20 @@ through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnore
 is no longer written or read, see *The Overview card*). v29 adds
 `projectMapWorkingSets`, the named views of ⋯ → Working sets (see *Working sets and trails*),
 `projectMapShowRecentChanges` for ⋯ "Show recent changes", and a kept card's `pinned`; trails are files of the
-project, not workspace state. The
+project, not workspace state. v31 adds a kept card's `caretLine`, `caretColumn`, `topLine` and `answers` (below).
+
+**A card's answers and caret are kept** (Map code browser gap 9), in the restart state and in working sets alike
+(`ProjectMapState.Card`). Each answer stuck on a card — References, Callers, Go to Definition and the rest — is
+kept as it stood (`MapCardLinks.savedAnswers`): its kind, how it was found (by a server or by name) and the name
+asked about; its groups as ranked, each with its card's path, its file, label, first line, count and mark, whether
+it had an edge, and whether the answer opened that card (and so closes it with its own); and up to
+`MAX_SAVED_PLACES` (500) of its places, for its list. Nothing outside the folder is kept (a library class). When
+the card comes back (`bearingsOpenCard`) its answers are rebuilt without asking again (`restoreAnswers`): an edge to
+each of their cards that is open, the others on the chip; a card the answer led to that comes back later gets its
+edge then (`cardRestored`), whichever order the cards open in. An answer of a kind this build does not know is
+passed over. The card's caret (file line and column) and the file line at its top come back once its text is shown
+and coloured (`ProjectMapPreview.restoreView`, the same wait a linked card's place uses). The state is written as
+before: when cards move or come, and when the Map closes; a caret move alone is kept by the close. The
 status/type filters are not persisted.
 
 The Map recovers from every failure it meets (an empty listing, an unmarked row, no outline, a card left
@@ -1679,7 +1692,11 @@ The focused coverage lives in:
   their folders, selection, zoom and cards, deleted) and trails (made from a file card's selected lines and a
   declaration card through the card menu, played on a Map that has only just been given its folder, the note sheet,
   stepping closing the card the trail opened, a malformed trail and a stop whose file is gone, the editor's reorder,
-  remove, retitle, note and rename), and a restart's declaration card waiting for its outline; `MapTrailsTest` for
+  remove, retitle, note and rename), and a restart's declaration card waiting for its outline;
+  `ProjectMapLinksFxTest.withNoServer…` and `WorkspaceStateV31Test` for kept answers and carets: an answer's groups,
+  edges, owned cards and places saved, a working set bringing them back with the caret and the chip as they were,
+  the card asked from opening before its results, an unknown kind and a place outside the folder passed over, and the
+  v30 → v31 file; `MapTrailsTest` for
   the trail files (layout, malformed and newer files, rename, safe names) and `WorkspaceStateV29Test` for the sets in
   the workspace; `ProjectMapViewsReview4FxTest` and `MapTrailsReview4Test` for review 4's views fixes (a set's and a
   restart's zoom and pan on a deep tree, quick stepping, hand-named and cut trail files, the trail keys and commands,

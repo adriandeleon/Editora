@@ -1476,8 +1476,16 @@ final class ProjectMapPreview extends StackPane {
 
     // --- links: the place a result card was opened for (Map review 4, links group) ---
 
-    /** A place a result card is to show: the file's 0-based line and what marks the place from there on. */
-    private record LinksPlace(int fileLine, java.util.regex.@Nullable Pattern mark) {}
+    /**
+     * A place a result card is to show: the file's 0-based line and what marks the place from there on — or, for a
+     * card brought back by a working set or a restart, the caret's {@code column} on that line and the file's line
+     * at the top of its text ({@code topLine}).
+     */
+    private record LinksPlace(int fileLine, java.util.regex.@Nullable Pattern mark, int column, int topLine) {
+        LinksPlace(int fileLine, java.util.regex.@Nullable Pattern mark) {
+            this(fileLine, mark, -1, -1);
+        }
+    }
 
     /** The place asked for before the card's text was shown and coloured, applied once it is. */
     private @Nullable LinksPlace linksPlacePending;
@@ -1499,6 +1507,29 @@ final class ProjectMapPreview extends StackPane {
         linksPlacePending = shown && linksStyled ? null : place;
     }
 
+    /**
+     * A card brought back by a working set or a restart (gap 9): its caret on the file's 0-based {@code fileLine} and
+     * {@code column}, and the file's {@code topLine} at the top of its text, now if its text is laid out and again
+     * once it is coloured; the user's own scroll or key first cancels the wait.
+     */
+    void restoreView(int fileLine, int column, int topLine) {
+        if (fileLine < 0) {
+            return; // none was kept (a card kept before v31)
+        }
+        LinksPlace place = new LinksPlace(fileLine, null, Math.max(0, column), topLine);
+        boolean shown = linksApplyPlace(place);
+        linksPlacePending = shown && linksStyled ? null : place;
+    }
+
+    /** The file's 0-based line at the top of the card's text. */
+    int topFileLine() {
+        try {
+            return fileLine(Math.max(0, editor.firstVisibleParToAllParIndex()));
+        } catch (RuntimeException notLaidOut) {
+            return fileLine(0);
+        }
+    }
+
     private boolean linksApplyPlace(LinksPlace place) {
         if (frame.getCenter() != textPane || editor.getLength() == 0) {
             return false;
@@ -1510,6 +1541,14 @@ final class ProjectMapPreview extends StackPane {
             return false; // past what the card holds (its read cap)
         }
         line = Math.max(0, line);
+        if (place.column() >= 0) {
+            editor.moveTo(
+                    line, Math.min(place.column(), editor.getParagraph(line).length()));
+            openingPending = -1;
+            int top = place.topLine() - fileLine(0); // none kept (-1): the card's top
+            editor.showParagraphAtTop(Math.max(0, Math.min(top, paragraphs - 1)));
+            return true;
+        }
         int start = editor.getAbsolutePosition(line, 0);
         int end = editor.getAbsolutePosition(line, editor.getParagraph(line).length());
         java.util.regex.Pattern mark = place.mark();
