@@ -292,6 +292,16 @@ final class MapCardLinks {
         default void hover(Path root, Request request, Consumer<Hover> answer) {
             answer.accept(new Hover(null, tr("project.map.links.hover.noServer"), request.name()));
         }
+
+        /**
+         * Keeps {@code file}, whose text is {@code text}, before its running language server and tells {@code
+         * problems} its diagnostics — the ones known now, then each new set — on the FX thread; the handle that stops.
+         * Null when no server runs for it: nothing is started. None by default.
+         */
+        default @Nullable Runnable watchProblems(
+                Path file, String text, Consumer<java.util.List<com.editora.text.LspDiagnostic>> problems) {
+            return null;
+        }
     }
 
     /**

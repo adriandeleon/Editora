@@ -104,11 +104,15 @@ class ProjectMapLinksFxTest {
         ServerCapabilities capabilities = new ServerCapabilities();
         capabilities.setCallHierarchyProvider(Either.forLeft(true));
         capabilities.setReferencesProvider(Either.forLeft(true));
+        capabilities.setHoverProvider(true);
         manager = new LspManager((f, d) -> {}, (t, m) -> {});
         List<FakeLanguageServer> fakes = LspTestHooks.useFakeSessions(manager, capabilities);
         manager.configure(true, Map.of("java", "jdtls"));
+        manager.setOpenDocumentDiagnosticsOnly(true);
         manager.openDocument(open, root, "java", "class Open {}\n"); // an editor tab: the server runs
         FakeLanguageServer fake = fakes.getFirst();
+        fake.hoverResponse = new org.eclipse.lsp4j.Hover(
+                new org.eclipse.lsp4j.MarkupContent("markdown", "**add** — adds two numbers"));
         fake.callHierarchyResponse = List.of(item("add", app, 3, 8));
         fake.incomingCallsResponse = List.of(
                 new CallHierarchyIncomingCall(item("total", caller, 3, 8), List.of(range(4, 19), range(4, 34))),
@@ -144,10 +148,11 @@ class ProjectMapLinksFxTest {
                     fake.opened.stream()
                             .anyMatch(p -> p.getTextDocument().getUri().equals(LspTestHooks.uri(app))),
                     "the file was lent to the server");
-            assertTrue(
+            assertFalse(
                     fake.closed.stream()
                             .anyMatch(p -> p.getTextDocument().getUri().equals(LspTestHooks.uri(app))),
-                    "and given back once it answered");
+                    "the question's loan was given back, but the card keeps the file lent for its problems (gap 8)");
+            assertTrue(source.watchesProblems());
             assertFalse(manager.isManaged(app), "no editor holds it");
             ProjectMapPreview total = resultCards(cards, caller).getFirst();
             assertTrue(
@@ -176,13 +181,45 @@ class ProjectMapLinksFxTest {
             assertEquals(1, fake.references.size());
         });
 
+        // Gap 8: the card's problems come from the server it keeps its file lent to, and the mouse resting on a name
+        // shows its documentation.
+        waitFor(source::watchesProblems, "the card watches its file's problems");
+        org.eclipse.lsp4j.Diagnostic unused = new org.eclipse.lsp4j.Diagnostic(range(3, 8), "add is never used");
+        unused.setSeverity(org.eclipse.lsp4j.DiagnosticSeverity.Warning);
+        LspTestHooks.publishDiagnostics(
+                manager, open, new org.eclipse.lsp4j.PublishDiagnosticsParams(LspTestHooks.uri(app), List.of(unused)));
+        waitFor(() -> source.cardProblems().size() == 1, "the warning marked on the card");
+        int onAdd = APP.indexOf("add(");
+        FxTestSupport.runOnFx(() -> {
+            source.editor().moveTo(0);
+            assertTrue(source.runMarkerCommand(ProjectMapPreview.NEXT_PROBLEM_COMMAND));
+            assertEquals(3, source.editor().getCurrentParagraph(), "Next Problem: on add");
+            source.editor()
+                    .fireEvent(org.fxmisc.richtext.event.MouseOverTextEvent.beginAt(
+                            new javafx.geometry.Point2D(50, 50), onAdd));
+        });
+        waitFor(() -> !fake.hovers.isEmpty(), "the server asked for the name's documentation");
+        assertEquals(3, fake.hovers.getFirst().getPosition().getLine());
+        waitFor(
+                () -> {
+                    String shown = source.mouseHoverText();
+                    return shown != null && shown.contains("add is never used") && shown.contains("adds two");
+                },
+                "the warning and the documentation under the mouse");
+
         Pane host = FxTestSupport.field(view, "canvasHost");
         FxTestSupport.runOnFx(() -> {
             List<Label> labels = callers.labelsForTest();
             cards.close(source);
+            assertFalse(source.watchesProblems(), "the closed card lets its file go");
             assertTrue(labels.stream().noneMatch(host.getChildren()::contains), "its edges close with it");
             assertEquals(List.of(), resultCards(cards, caller), "and the result cards it opened (review 4, C11)");
         });
+        waitFor(
+                () -> fake.closed.stream()
+                        .anyMatch(p -> p.getTextDocument().getUri().equals(LspTestHooks.uri(app))),
+                "given back to the server");
+        assertEquals(List.of(), FxTestSupport.callOnFx(() -> manager.diagnosticsOf(app)), "its problems forgotten");
     }
 
     @Test

@@ -54,14 +54,17 @@ import com.editora.config.TextAnchor;
 import com.editora.editops.LineEndings;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.lsp.LspDiagnosticOverlay;
 import com.editora.editor.markdown.MarkdownFormatBar;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.editor.notes.NoteHighlightOverlay;
 import com.editora.editorconfig.EditorConfigCharset;
+import com.editora.text.LspDiagnostic;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
+import org.fxmisc.richtext.event.MouseOverTextEvent;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.TwoDimensional;
 import org.jspecify.annotations.Nullable;
@@ -296,7 +299,35 @@ final class ProjectMapPreview extends StackPane {
         default boolean step(ProjectMapPreview card, boolean back) {
             return false;
         }
+
+        /**
+         * The server's documentation at the file's 0-based {@code line} and {@code column}, given once on the FX
+         * thread — null when there is none, or no server — for the mouse resting there; nothing is said.
+         */
+        default void documentation(ProjectMapPreview card, int line, int column, Consumer<@Nullable String> answer) {
+            answer.accept(null);
+        }
+
+        /**
+         * Keeps {@code file} — its text {@code text} — before its running server and tells {@code problems} its
+         * diagnostics, now and as they change; the handle that stops, or null when no server runs for it.
+         */
+        default @Nullable Runnable watchProblems(
+                ProjectMapPreview card, Path file, String text, Consumer<java.util.List<LspDiagnostic>> problems) {
+            return null;
+        }
+
+        /** Says {@code message} in the Map's status line. */
+        default void say(String message) {}
     }
+
+    /** Next and Previous Problem typed in a card: through the card's own problems, not the active tab's. */
+    static final String NEXT_PROBLEM_COMMAND = "lsp.nextProblem";
+
+    static final String PREVIOUS_PROBLEM_COMMAND = "lsp.previousProblem";
+
+    /** How long the mouse rests on the text before its problems and documentation show. */
+    static final java.time.Duration MOUSE_HOVER_DELAY = java.time.Duration.ofMillis(500);
 
     /** Quick Documentation typed in a card: the server's hover at the card's caret. */
     static final String HOVER_COMMAND = "lsp.hover";
@@ -389,8 +420,10 @@ final class ProjectMapPreview extends StackPane {
     private final VirtualizedScrollPane<CodeArea> editorScroll = new VirtualizedScrollPane<>(editor);
     /** The amber wash and corner marker an editor tab paints on a Personal Note's text, here for the notes shown. */
     private final NoteHighlightOverlay noteMarks = new NoteHighlightOverlay(editor);
-    /** The text with its note marks over it: what the card shows for anything but an image. */
-    private final StackPane textPane = new StackPane(editorScroll, noteMarks);
+    /** The wavy underlines an editor tab draws under its server's diagnostics, here for the card's lines. */
+    private final LspDiagnosticOverlay problemMarks = new LspDiagnosticOverlay(editor);
+    /** The text with its note and problem marks over it: what the card shows for anything but an image. */
+    private final StackPane textPane = new StackPane(editorScroll, noteMarks, problemMarks);
     /** Go to Line, the matching bracket, definitions and the wash of a name's other uses, in the card's text. */
     private final MapCardMoves moves = new MapCardMoves(editor, header, new MapCardMoves.Card() {
         @Override
@@ -488,6 +521,26 @@ final class ProjectMapPreview extends StackPane {
     private @Nullable String heldText;
 
     private boolean heldTruncated;
+    /** The file's diagnostics, in the file's lines, as its server last gave them (Map code browser gap 8). */
+    private java.util.List<LspDiagnostic> fileProblems = java.util.List.of();
+    /** {@link #fileProblems} on the card's own lines: what {@link #problemMarks} draws. */
+    private java.util.List<LspDiagnostic> cardProblems = java.util.List.of();
+    /** Ends the watch on the file's problems (and its loan to the server); null while none runs. */
+    private @Nullable Runnable problemWatch;
+    /** What {@link #problemWatch} was started for: the file, from an open buffer or the disk text it was lent. */
+    private @Nullable Path watchedPath;
+
+    private boolean watchedFromBuffer;
+    private String watchedText = "";
+    /** The mouse rests on the text: {@link #MOUSE_HOVER_DELAY} passed and it has not moved off. */
+    private boolean mouseResting;
+    /** Bumped by every rest and every move off: a documentation answer for an older rest is dropped. */
+    private long mouseRest;
+    /** The popup showing is the mouse's (it closes when the mouse moves off), not Quick Documentation's. */
+    private boolean hoverFromMouse;
+    /** What the card last showed for the mouse, until it closed it (the popup may also go by itself). For tests. */
+    private @Nullable String mouseHoverText;
+
     /** The card mirrors a buffer with unsaved changes (see {@link #setUnsaved}). */
     private boolean unsaved;
     /** Over the highlighting cap, only this many first lines were coloured; 0 when all or none were. */
@@ -718,6 +771,14 @@ final class ProjectMapPreview extends StackPane {
         frame.centerProperty().addListener((observable, before, now) -> updateCutFooter());
         noteMarks.setSpans(this::noteSpans, () -> !marked.isEmpty()); // inert until notes are stuck on the card
         noteMarks.setActive(true);
+        editor.setMouseOverTextDelay(MOUSE_HOVER_DELAY);
+        editor.addEventHandler(MouseOverTextEvent.MOUSE_OVER_TEXT_BEGIN, this::mouseRests);
+        editor.addEventHandler(MouseEvent.MOUSE_MOVED, this::mouseMovedOnText);
+        editor.addEventHandler(MouseEvent.MOUSE_EXITED, event -> {
+            if (mouseSpan != null) {
+                leaveMouseHover();
+            }
+        });
 
         resizeGrip.getStyleClass().add("project-map-preview-resize");
         resizeGrip.setCursor(Cursor.SE_RESIZE);
@@ -828,6 +889,9 @@ final class ProjectMapPreview extends StackPane {
             return runFindCommand(commandId);
         }
         if (moves.run(commandId)) {
+            return true;
+        }
+        if (problemRunsCommand(commandId)) {
             return true;
         }
         if (followRunsCommand(commandId)) {
@@ -965,22 +1029,49 @@ final class ProjectMapPreview extends StackPane {
         if (disposed || getScene() == null) {
             return;
         }
-        javafx.scene.Node content;
+        showPopup(rendered(markdown, openUrl), markdown, null);
+    }
+
+    /** {@code markdown} as the editor's documentation popup shows it; links open through {@code openUrl}. */
+    private static javafx.scene.Node rendered(String markdown, Consumer<String> openUrl) {
         try {
-            content = com.editora.editor.markdown.MarkdownRenderer.renderPopup(
+            return com.editora.editor.markdown.MarkdownRenderer.renderPopup(
                     com.editora.editor.markdown.MarkdownRenderer.parseForRender(markdown), openUrl);
         } catch (RuntimeException unrendered) {
             Label label = new Label(markdown);
             label.setWrapText(true);
-            content = label;
+            return label;
         }
+    }
+
+    /**
+     * Shows {@code content} in the documentation popup, sized for {@code text}: at the caret, or under the mouse's
+     * screen point {@code mouse} — then it is the mouse's, and goes when the mouse moves off.
+     */
+    private void showPopup(javafx.scene.Node content, String text, javafx.geometry.@Nullable Point2D mouse) {
         javafx.stage.Popup[] shown = new javafx.stage.Popup[1];
-        shown[0] = HoverCard.show(editor, content, markdown, () -> {
-            if (hoverPopup == shown[0]) {
-                hoverPopup = null;
-            }
-        });
+        shown[0] = HoverCard.show(
+                editor,
+                content,
+                text,
+                () -> {
+                    if (hoverPopup == shown[0]) {
+                        hoverPopup = null;
+                        hoverFromMouse = false;
+                    }
+                },
+                mouse);
         hoverPopup = shown[0];
+        hoverFromMouse = mouse != null;
+        if (mouse != null) {
+            // Its own exit, not the one a popup being replaced or closed is sent as it goes: that one would drop the
+            // documentation on its way and close the popup replacing it.
+            shown[0].getContent().get(0).setOnMouseExited(event -> {
+                if (hoverPopup == shown[0]) {
+                    leaveMouseHover();
+                }
+            });
+        }
     }
 
     /** Whether Quick Documentation is showing over the card. */
@@ -992,9 +1083,342 @@ final class ProjectMapPreview extends StackPane {
     private void hideHover() {
         javafx.stage.Popup popup = hoverPopup;
         hoverPopup = null;
+        hoverFromMouse = false;
+        mouseHoverText = null;
         if (popup != null) {
             popup.hide();
         }
+    }
+
+    // --- The file's problems, and what shows where the mouse rests (Map code browser gap 8) --------------------
+
+    /**
+     * Watches the file's problems while the card shows its text — an open buffer's for as long as the card mirrors
+     * it, the disk text's for that text (new text on disk is lent anew) — when nothing watches them for it yet. Ends
+     * the watch when the card shows no text, or disk text cut short: the server would check half a file.
+     */
+    private void watchProblems() {
+        LinkActions links = linkActions;
+        Path file = path;
+        if (links == null
+                || file == null
+                || disposed
+                || missing
+                || frame.getCenter() != textPane
+                || truncatedShown && !fromBuffer) {
+            endProblemWatch();
+            return;
+        }
+        if (problemWatch != null
+                && file.equals(watchedPath)
+                && watchedFromBuffer == fromBuffer
+                && (fromBuffer || watchedText.equals(fullText))) {
+            return;
+        }
+        endProblemWatch();
+        Runnable watch = links.watchProblems(this, file, fullText, this::setProblems);
+        if (watch != null) {
+            problemWatch = watch;
+            watchedPath = file;
+            watchedFromBuffer = fromBuffer;
+            watchedText = fromBuffer ? "" : fullText;
+        }
+    }
+
+    /** Stops watching the file's problems and lets the server go of the file; the card's marks go. */
+    private void endProblemWatch() {
+        Runnable watch = problemWatch;
+        problemWatch = null;
+        watchedPath = null;
+        watchedText = "";
+        if (watch != null) {
+            watch.run();
+        }
+        if (!fileProblems.isEmpty()) {
+            fileProblems = java.util.List.of();
+            showProblems();
+        }
+    }
+
+    /** The file's diagnostics, in its 0-based lines, as its server gave them: marked on the card's lines. */
+    void setProblems(java.util.List<LspDiagnostic> problems) {
+        fileProblems = java.util.List.copyOf(problems); // never after dispose: it ended the watch
+        showProblems();
+    }
+
+    private void showProblems() {
+        cardProblems = frame.getCenter() == textPane
+                ? onCard(fileProblems, fileLine(0), editor.getParagraphs().size())
+                : java.util.List.of();
+        problemMarks.setActive(!cardProblems.isEmpty());
+        problemMarks.setDiagnostics(cardProblems);
+        if (!loading && !disposed) {
+            status.setText(idleStatus(truncatedShown));
+        }
+    }
+
+    /** The diagnostics the card marks, on its own lines. For tests. */
+    java.util.List<LspDiagnostic> cardProblems() {
+        return cardProblems;
+    }
+
+    /** Whether the card watches its file's problems. For tests. */
+    boolean watchesProblems() {
+        return problemWatch != null;
+    }
+
+    /**
+     * {@code problems}, in a file's 0-based lines, moved onto a card showing {@code lines} lines from the file's
+     * {@code firstLine}: those wholly outside it left out, those that run past its edge cut to it. Pure.
+     */
+    static java.util.List<LspDiagnostic> onCard(java.util.List<LspDiagnostic> problems, int firstLine, int lines) {
+        java.util.List<LspDiagnostic> shown = new java.util.ArrayList<>();
+        int lastLine = firstLine + lines - 1;
+        for (LspDiagnostic d : problems) {
+            if (lines <= 0 || d.endLine() < firstLine || d.startLine() > lastLine) {
+                continue;
+            }
+            boolean cutAbove = d.startLine() < firstLine;
+            boolean cutBelow = d.endLine() > lastLine;
+            shown.add(new LspDiagnostic(
+                    cutAbove ? 0 : d.startLine() - firstLine,
+                    cutAbove ? 0 : d.startCol(),
+                    cutBelow ? lines - 1 : d.endLine() - firstLine,
+                    cutBelow ? Integer.MAX_VALUE : d.endCol(),
+                    d.severity(),
+                    d.message(),
+                    d.code(),
+                    d.source(),
+                    d.href(),
+                    d.unnecessary(),
+                    d.deprecated()));
+        }
+        return java.util.List.copyOf(shown);
+    }
+
+    /** "2 errors, 1 warning" for {@code problems}, faded tags left out; null with no error or warning. Pure. */
+    static @Nullable String problemsSummary(java.util.List<LspDiagnostic> problems) {
+        int errors = 0;
+        int warnings = 0;
+        for (LspDiagnostic d : problems) {
+            if (d.tagOnlyHint()) {
+                continue;
+            }
+            if (d.severity() == LspDiagnostic.Severity.ERROR) {
+                errors++;
+            } else if (d.severity() == LspDiagnostic.Severity.WARNING) {
+                warnings++;
+            }
+        }
+        if (errors == 0 && warnings == 0) {
+            return null;
+        }
+        if (warnings == 0) {
+            return tr("project.map.preview.errors", errors);
+        }
+        return errors == 0
+                ? tr("project.map.preview.warnings", warnings)
+                : tr("project.map.preview.errors", errors) + ", " + tr("project.map.preview.warnings", warnings);
+    }
+
+    /**
+     * Next and Previous Problem typed in the card: the caret to the card's next (or previous) error — any problem
+     * when it has no error — wrapping, as the editor's; the status line says it. Taken even with none here, so it
+     * never steps through the active tab's.
+     */
+    private boolean problemRunsCommand(String commandId) {
+        boolean forward = NEXT_PROBLEM_COMMAND.equals(commandId);
+        if (!forward && !PREVIOUS_PROBLEM_COMMAND.equals(commandId)) {
+            return false;
+        }
+        java.util.List<LspDiagnostic> listed =
+                cardProblems.stream().filter(d -> !d.tagOnlyHint()).toList();
+        java.util.List<LspDiagnostic> errors = listed.stream()
+                .filter(d -> d.severity() == LspDiagnostic.Severity.ERROR)
+                .toList();
+        java.util.List<LspDiagnostic> candidates = new java.util.ArrayList<>(errors.isEmpty() ? listed : errors);
+        if (candidates.isEmpty()) {
+            say(tr("project.map.preview.noProblems")); // no text shown: none marked
+            return true;
+        }
+        candidates.sort(
+                java.util.Comparator.comparingInt(LspDiagnostic::startLine).thenComparingInt(LspDiagnostic::startCol));
+        LspDiagnostic target =
+                LspCoordinator.nextProblem(candidates, editor.getCurrentParagraph(), editor.getCaretColumn(), forward);
+        int line = Math.min(target.startLine(), editor.getParagraphs().size() - 1);
+        int column = Math.min(target.startCol(), editor.getParagraph(line).length());
+        hideHover();
+        editor.moveTo(line, column);
+        editor.requestFollowCaret();
+        say(tr("status.lsp.problem", fileLine(line) + 1, target.message()));
+        return true;
+    }
+
+    /** Says {@code message} in the Map's status line, when the card is on a Map. */
+    private void say(String message) {
+        LinkActions links = linkActions;
+        if (links != null) {
+            links.say(message);
+        }
+    }
+
+    /** The offsets of the word the mouse rests on — or of the character, off a word — while it shows something. */
+    private int @Nullable [] mouseSpan;
+
+    /**
+     * The mouse rested on the card's text: the problems there show at once, and the server's documentation for the
+     * name there joins them when it comes — the popup the editor's Show Documentation shows, under the mouse. A
+     * Quick Documentation asked for with the keyboard stays.
+     */
+    private void mouseRests(MouseOverTextEvent event) {
+        long rest = ++mouseRest;
+        if (disposed || hoverShown() && !hoverFromMouse || editorContextMenu.isShowing()) {
+            return; // (an empty text, or an image shown, has no text to rest on)
+        }
+        int offset = Math.max(0, Math.min(event.getCharacterIndex(), editor.getLength() - 1));
+        var at = editor.offsetToPosition(offset, TwoDimensional.Bias.Forward);
+        int paragraph = at.getMajor();
+        int column = at.getMinor();
+        String lineText = editor.getParagraph(paragraph).getText();
+        int[] word = wordAround(lineText, column);
+        int lineStart = offset - column;
+        mouseSpan =
+                word == null ? new int[] {offset, offset + 1} : new int[] {lineStart + word[0], lineStart + word[1]};
+        java.util.List<LspDiagnostic> here = problemMarks.at(paragraph, column);
+        javafx.geometry.Point2D screen = event.getScreenPosition();
+        if (!here.isEmpty()) {
+            showMouseHover(here, null, screen);
+        } else if (hoverFromMouse) {
+            hideHover();
+        }
+        LinkActions links = linkActions;
+        if (links == null || symbolMissing || word == null) {
+            return;
+        }
+        links.documentation(this, fileLine(paragraph), column, docs -> {
+            if (docs != null && rest == mouseRest && (hoverFromMouse || !hoverShown())) {
+                showMouseHover(here, docs, screen);
+            }
+        });
+    }
+
+    /** The mouse moved on the text: off what it rested on, what showed for it goes. */
+    private void mouseMovedOnText(MouseEvent event) {
+        int[] span = mouseSpan;
+        if (span == null) {
+            return;
+        }
+        try {
+            int offset = editor.hit(event.getX(), event.getY()).getInsertionIndex();
+            if (offset >= span[0] && offset <= span[1]) {
+                return;
+            }
+        } catch (RuntimeException offTheText) {
+            // past the text: off what it rested on
+        }
+        leaveMouseHover();
+    }
+
+    /**
+     * The mouse left what it rested on (or the popup): an answer still on its way is dropped, and the popup goes in a
+     * moment unless the mouse is over it — it may be on its way there, to scroll or follow a link.
+     */
+    private void leaveMouseHover() {
+        mouseRest++;
+        mouseSpan = null;
+        if (mouseHoverText == null) {
+            return; // nothing shows for the mouse (or the popup went by itself)
+        }
+        var later = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+        // Unless it rests again meanwhile, Quick Documentation replaced it (no mouse text), or the pointer is on it.
+        later.setOnFinished(event -> {
+            if (mouseSpan == null && mouseHoverText != null && !mousePopupHovered()) {
+                hideHover();
+            }
+        });
+        later.play();
+    }
+
+    /** Closes the documentation popup, as Escape does. For tests. */
+    void hideHoverForTest() {
+        hideHover();
+    }
+
+    /** Whether the pointer is over the mouse's popup, which then stays. For tests. */
+    boolean mousePopupHovered() {
+        javafx.stage.Popup popup = hoverPopup;
+        return popup != null && hoverFromMouse && popup.getContent().get(0).isHover();
+    }
+
+    /** {@code here}'s problems, then {@code docs} rendered, in the popup under the mouse's {@code screen} point. */
+    private void showMouseHover(
+            java.util.List<LspDiagnostic> here, @Nullable String docs, javafx.geometry.Point2D screen) {
+        javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(6);
+        content.getStyleClass().add("project-map-hover");
+        StringBuilder sizing = new StringBuilder();
+        for (LspDiagnostic d : here) {
+            Label problem = new Label(problemText(d));
+            problem.setWrapText(true);
+            problem.getStyleClass().add("project-map-hover-problem");
+            problem.pseudoClassStateChanged(
+                    javafx.css.PseudoClass.getPseudoClass(d.severity().name().toLowerCase(java.util.Locale.ROOT)),
+                    true);
+            problem.setAccessibleText(severityWord(d.severity()) + ": " + problemText(d));
+            content.getChildren().add(problem);
+            sizing.append(problemText(d)).append('\n');
+        }
+        if (docs != null) {
+            if (!here.isEmpty()) {
+                content.getChildren().add(new javafx.scene.control.Separator());
+            }
+            FollowActions actions = followActions;
+            content.getChildren().add(rendered(docs, url -> {
+                if (actions != null) {
+                    actions.openUrl(url);
+                }
+            }));
+            sizing.append(docs);
+        }
+        hideHover();
+        showPopup(content, sizing.toString(), screen);
+        mouseHoverText = sizing.toString();
+    }
+
+    /** What the card shows for the mouse now — its problems' and documentation's text — or null. For tests. */
+    @Nullable
+    String mouseHoverText() {
+        return mouseHoverText;
+    }
+
+    /** A problem's message and, after it, where it comes from — as the editor's tooltip says it. Pure. */
+    static String problemText(LspDiagnostic d) {
+        String origin = d.origin();
+        return origin.isEmpty() ? d.message() : d.message() + "  (" + origin + ")";
+    }
+
+    private static String severityWord(LspDiagnostic.Severity severity) {
+        return switch (severity) {
+            case ERROR -> tr("lsp.problem.severity.error");
+            case WARNING -> tr("lsp.problem.severity.warning");
+            case INFO -> tr("lsp.problem.severity.info");
+            case HINT -> tr("lsp.problem.severity.hint");
+        };
+    }
+
+    /** The {@code [start, end)} columns of the name {@code column} is on in {@code line}, or null off a name. Pure. */
+    static int @Nullable [] wordAround(String line, int column) {
+        if (column < 0 || column >= line.length() || !Character.isJavaIdentifierPart(line.charAt(column))) {
+            return null;
+        }
+        int start = column;
+        while (start > 0 && Character.isJavaIdentifierPart(line.charAt(start - 1))) {
+            start--;
+        }
+        int end = column + 1;
+        while (end < line.length() && Character.isJavaIdentifierPart(line.charAt(end))) {
+            end++;
+        }
+        return new int[] {start, end};
     }
 
     /** The caret on the card's 0-based {@code line} and {@code column}, clamped to the text. */
@@ -1031,7 +1455,12 @@ final class ProjectMapPreview extends StackPane {
 
     /** Where the card menu's Show References / Callers as Cards go (Project Map linked cards); null hides them. */
     void setLinkActions(@Nullable LinkActions actions) {
+        if (linkActions == actions) {
+            return;
+        }
         linkActions = actions;
+        endProblemWatch();
+        watchProblems();
     }
 
     /**
@@ -1310,6 +1739,10 @@ final class ProjectMapPreview extends StackPane {
         if (library != null) {
             parts.add(tr("project.map.preview.library", library.where())); // a JDK or dependency class, read-only
         }
+        String problems = problemsSummary(cardProblems);
+        if (problems != null) {
+            parts.add(problems);
+        }
         if (unsaved && fromBuffer) {
             parts.add(tr("project.map.preview.unsaved"));
         }
@@ -1376,6 +1809,9 @@ final class ProjectMapPreview extends StackPane {
         long requested = generation.incrementAndGet();
         moves.reset();
         path = file.toAbsolutePath().normalize();
+        if (!path.equals(watchedPath)) {
+            endProblemWatch();
+        }
         this.placementResolver = placementResolver;
         preferredWidth = DEFAULT_WIDTH;
         preferredHeight = range == null ? DEFAULT_HEIGHT : fittedHeight(range);
@@ -1453,6 +1889,9 @@ final class ProjectMapPreview extends StackPane {
     void refresh(@Nullable Content content) {
         if (disposed || path == null) {
             return;
+        }
+        if (problemWatch == null) {
+            watchProblems(); // its server may have started since
         }
         if (content != null && content.open()) {
             if (fromBuffer
@@ -1902,6 +2341,8 @@ final class ProjectMapPreview extends StackPane {
         generation.incrementAndGet();
         editorContextMenu.hide();
         hideHover();
+        mouseRest++; // an answer still on its way for the mouse is dropped
+        endProblemWatch();
         moves.reset();
         selectionBar.setVisible(false);
         synchronized (tasks) {
@@ -3752,6 +4193,10 @@ final class ProjectMapPreview extends StackPane {
         Range shown = range;
         declarationText = shown == null ? "" : lineOf(fullText, shown.line());
         updateCutFooter();
+        watchProblems();
+        if (changed) {
+            showProblems();
+        }
         status.setText(idleStatus(truncated));
         if (changed) {
             onTextShown.run();

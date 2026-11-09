@@ -1399,6 +1399,7 @@ public final class LspManager {
         latest.cancelAll(uri);
         DocumentUris.forget(file);
         diagnostics.rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
+        diagnostics.shownDiagnostics.remove(uri);
         deleteJavaScriptShadow(javaScriptShadows.remove(uri));
         if (s != null) {
             s.didClose(uri, this);
@@ -1538,12 +1539,57 @@ public final class LspManager {
                                 key, new Loan(session, held.count() - 1, held.opener(), held.heldElsewhere()));
                     } else {
                         lentDocuments.remove(key);
+                        if (!sessionByDocUri.containsKey(key)) {
+                            diagnostics.forget(key); // a card's problems were kept while it was lent
+                        }
                         if (!held.heldElsewhere()) {
                             session.didClose(key, held.opener());
                         }
                     }
                 }
                 maybeScheduleEviction(session);
+            }
+        };
+    }
+
+    /** The session {@code key}, a document URI, is lent to now, or null (see {@link #lendDocument}). */
+    @Nullable
+    LanguageServerSession lentTo(String key) {
+        Loan loan = lentDocuments.get(key);
+        return loan == null ? null : loan.session();
+    }
+
+    /** Whether {@code key}, a document URI, is open on {@code session} in this window: in an editor, or lent. */
+    boolean manages(String key, LanguageServerSession session) {
+        return sessionByDocUri.get(key) == session || lentTo(key) == session;
+    }
+
+    /**
+     * The diagnostics last given for {@code file} while it is open in an editor or lent ({@link #lendDocument}), as
+     * the editor shows them; empty for any other file, or before its server has said. FX thread.
+     */
+    public List<LspDiagnostic> diagnosticsOf(Path file) {
+        return file == null ? List.of() : diagnostics.shownDiagnostics.getOrDefault(uri(file), List.of());
+    }
+
+    /**
+     * Tells {@code watcher}, on the FX thread, every set of diagnostics given for {@code file} from now on while it is
+     * open in an editor or lent — a Project Map card's problems (Map code browser gap 8). Returns the handle that
+     * stops it.
+     */
+    public Runnable watchDiagnostics(Path file, java.util.function.Consumer<List<LspDiagnostic>> watcher) {
+        String key = uri(file);
+        diagnostics
+                .watchers
+                .computeIfAbsent(key, k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(watcher);
+        java.util.concurrent.atomic.AtomicBoolean ended = new java.util.concurrent.atomic.AtomicBoolean();
+        return () -> {
+            if (ended.compareAndSet(false, true)) {
+                diagnostics.watchers.computeIfPresent(key, (k, list) -> {
+                    list.remove(watcher);
+                    return list.isEmpty() ? null : list;
+                });
             }
         };
     }
@@ -3631,6 +3677,7 @@ public final class LspManager {
         }
         sessionByDocUri.clear();
         diagnostics.rawDiagnostics.clear();
+        diagnostics.shownDiagnostics.clear();
         semanticTokens.semanticTokenState.clear();
         semanticTokens.semanticRequestGeneration.clear();
         semanticTokens.wholeDocumentTokens.clear();
