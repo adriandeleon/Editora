@@ -97,8 +97,12 @@ public class WorkspaceState {
      *
      * <p>v29 → v30 added {@code debugAttachTargets} (the addresses Debug ▸ Attach reached, most recent first).
      * Additive; absent means none, as before.
+     *
+     * <p>v30 → v31 added a {@code projectMapState} card's {@code caretLine}, {@code caretColumn}, {@code topLine} and
+     * {@code answers} (the answers asked from it, with their edges: Map code browser gap 9), in the restart state and
+     * in working sets. Additive; absent means a card at its top with no answers, as before.
      */
-    public static final int SCHEMA_VERSION = 30;
+    public static final int SCHEMA_VERSION = 31;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";

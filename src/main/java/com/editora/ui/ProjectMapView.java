@@ -1202,6 +1202,10 @@ final class ProjectMapView extends VBox {
                         code.contentZoom(),
                         code.structureShown());
                 kept.setPinned(cards.pinned(code)); // a pinned card stays pinned across a restart or a working set
+                kept.setCaretLine(code.caretFileLine()); // where it was read (gap 9)
+                kept.setCaretColumn(code.editor().getCaretColumn());
+                kept.setTopLine(code.topFileLine());
+                kept.setAnswers(cards.links.savedAnswers(code, current)); // its answers and their edges
                 open.add(kept);
             }
         }
@@ -1374,6 +1378,12 @@ final class ProjectMapView extends VBox {
         if (opened != null && card.isPinned()) {
             opened.setPinned(true);
         }
+        Path current = root;
+        if (opened != null && current != null) {
+            opened.restoreView(card.getCaretLine(), card.getCaretColumn(), card.getTopLine());
+            cards.links.restoreAnswers(opened, card.getAnswers(), current); // edges to the cards open now
+            cards.links.cardRestored(key, opened); // and those that waited for this one
+        }
         if (then != null) {
             then.accept(opened);
         }
@@ -1443,6 +1453,7 @@ final class ProjectMapView extends VBox {
         bearingsFlush(); // the folder's state as it was, before the set replaces it
         trails.close(); // its stop's card closes with the others: the bar would name a card no longer there (A7)
         cards.closeAll();
+        cards.links.forgetRestored();
         bearingsPendingCards.clear();
         viewsCardThen.clear();
         viewsCardsAwaitRows = false;

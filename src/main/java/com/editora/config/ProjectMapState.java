@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * What the Project Map keeps of an exploration across restarts, per workspace (Project Map review 3 B6; workspace
  * schema v28): the folder it showed, its open folders and selected row, the Back/Forward places, the zoom and pan,
- * and the open code cards. Paths are relative to {@link #getRoot()} with {@code /} separators; the Map brings the
+ * and the open code cards — with their carets and the answers asked from them (v31). Paths are relative to {@link #getRoot()} with {@code /} separators; the Map brings the
  * state back only for that folder, the first time its window shows, and drops what no longer exists.
  */
 public class ProjectMapState {
@@ -195,6 +195,250 @@ public class ProjectMapState {
 
         public void setPinned(boolean pinned) {
             this.pinned = pinned;
+        }
+
+        private int caretLine = -1;
+        private int caretColumn;
+        private int topLine = -1;
+        private List<Answer> answers = new ArrayList<>();
+
+        /** The file's 0-based line the caret was on; -1 when none was recorded (v31, absent before). */
+        public int getCaretLine() {
+            return caretLine;
+        }
+
+        public void setCaretLine(int caretLine) {
+            this.caretLine = caretLine;
+        }
+
+        /** The caret's 0-based column on {@link #getCaretLine()}. */
+        public int getCaretColumn() {
+            return caretColumn;
+        }
+
+        public void setCaretColumn(int caretColumn) {
+            this.caretColumn = caretColumn;
+        }
+
+        /** The file's 0-based line at the top of the card's text; -1 when none was recorded (v31). */
+        public int getTopLine() {
+            return topLine;
+        }
+
+        public void setTopLine(int topLine) {
+            this.topLine = topLine;
+        }
+
+        /**
+         * The answers asked from this card (References, Callers, Go to Definition…), with their edges to the cards
+         * they opened (v31; Map code browser gap 9).
+         */
+        public List<Answer> getAnswers() {
+            return answers;
+        }
+
+        public void setAnswers(@Nullable List<Answer> answers) {
+            this.answers = answers == null ? new ArrayList<>() : new ArrayList<>(answers);
+        }
+
+        /** A copy of this card, its answers shared (they are not changed once read). */
+        public Card copy() {
+            Card copy = new Card(path, x, y, width, height, textZoom, structure);
+            copy.pinned = pinned;
+            copy.caretLine = caretLine;
+            copy.caretColumn = caretColumn;
+            copy.topLine = topLine;
+            copy.answers = new ArrayList<>(answers);
+            return copy;
+        }
+    }
+
+    /**
+     * One answer stuck on a card: what was asked ({@code kind}, a {@code MapCardLinks.Kind} name), how it was found
+     * ({@code via}: SERVER or NAME), the name asked about, its places grouped and ranked as the cards open (each with
+     * whether it had an edge to an open card, and whether that card was the answer's own), and the places themselves
+     * for its list. Paths are relative to the Map's root.
+     */
+    public static class Answer {
+        private String kind = "";
+        private String via = "";
+        private @Nullable String name;
+        private List<Group> groups = new ArrayList<>();
+        private List<Place> places = new ArrayList<>();
+
+        public Answer() {}
+
+        public String getKind() {
+            return kind;
+        }
+
+        public void setKind(@Nullable String kind) {
+            this.kind = kind == null ? "" : kind;
+        }
+
+        public String getVia() {
+            return via;
+        }
+
+        public void setVia(@Nullable String via) {
+            this.via = via == null ? "" : via;
+        }
+
+        public @Nullable String getName() {
+            return name;
+        }
+
+        public void setName(@Nullable String name) {
+            this.name = name;
+        }
+
+        public List<Group> getGroups() {
+            return groups;
+        }
+
+        public void setGroups(@Nullable List<Group> groups) {
+            this.groups = groups == null ? new ArrayList<>() : new ArrayList<>(groups);
+        }
+
+        public List<Place> getPlaces() {
+            return places;
+        }
+
+        public void setPlaces(@Nullable List<Place> places) {
+            this.places = places == null ? new ArrayList<>() : new ArrayList<>(places);
+        }
+    }
+
+    /**
+     * A card an answer leads to: its card's path (a file, or a declaration below its file), its file, its label,
+     * its first place's 0-based line, how many places it holds, the text marking the place, whether the answer had
+     * an edge to it, and whether the card was opened by the answer (and so closes with its card).
+     */
+    public static class Group {
+        private String path = "";
+        private String file = "";
+        private String label = "";
+        private int line;
+        private int count = 1;
+        private @Nullable String mark;
+        private boolean edge;
+        private boolean owned;
+
+        public Group() {}
+
+        public String getPath() {
+            return path;
+        }
+
+        public void setPath(@Nullable String path) {
+            this.path = path == null ? "" : path;
+        }
+
+        public String getFile() {
+            return file;
+        }
+
+        public void setFile(@Nullable String file) {
+            this.file = file == null ? "" : file;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(@Nullable String label) {
+            this.label = label == null ? "" : label;
+        }
+
+        public int getLine() {
+            return line;
+        }
+
+        public void setLine(int line) {
+            this.line = line;
+        }
+
+        public int getCount() {
+            return count;
+        }
+
+        public void setCount(int count) {
+            this.count = count;
+        }
+
+        public @Nullable String getMark() {
+            return mark;
+        }
+
+        public void setMark(@Nullable String mark) {
+            this.mark = mark;
+        }
+
+        public boolean isEdge() {
+            return edge;
+        }
+
+        public void setEdge(boolean edge) {
+            this.edge = edge;
+        }
+
+        public boolean isOwned() {
+            return owned;
+        }
+
+        public void setOwned(boolean owned) {
+            this.owned = owned;
+        }
+    }
+
+    /** One place of an answer: its file, 0-based line and column, how many places it stands for, and its name. */
+    public static class Place {
+        private String file = "";
+        private int line;
+        private int column;
+        private int count = 1;
+        private @Nullable String name;
+
+        public Place() {}
+
+        public String getFile() {
+            return file;
+        }
+
+        public void setFile(@Nullable String file) {
+            this.file = file == null ? "" : file;
+        }
+
+        public int getLine() {
+            return line;
+        }
+
+        public void setLine(int line) {
+            this.line = line;
+        }
+
+        public int getColumn() {
+            return column;
+        }
+
+        public void setColumn(int column) {
+            this.column = column;
+        }
+
+        public int getCount() {
+            return count;
+        }
+
+        public void setCount(int count) {
+            this.count = count;
+        }
+
+        public @Nullable String getName() {
+            return name;
+        }
+
+        public void setName(@Nullable String name) {
+            this.name = name;
         }
     }
 }

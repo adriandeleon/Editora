@@ -422,6 +422,11 @@ class MapCardLinksFxTest {
                 assertNotNull(set.list);
             });
             FxTestSupport.drainFx();
+            // Its rows laid out (on a loaded machine a pulse or two later).
+            waitForFx(() -> set.list.tree().lookupAll(".tree-cell").stream()
+                    .anyMatch(node -> node instanceof javafx.scene.control.TreeCell<?> found
+                            && found.getItem() instanceof MapResultsList.Row row
+                            && row.place() != null));
             FxTestSupport.runOnFx(() -> {
                 // A double-click on a place opens it, as Enter does.
                 MapResultsList list = set.list;
