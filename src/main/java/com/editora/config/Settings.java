@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 162;
+    public static final int SCHEMA_VERSION = 163;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -903,6 +903,8 @@ public class Settings {
     private boolean rustDebugEnabled = true;
     /** CodeLLDB's {@code codelldb} (the program, or its extension's folder); blank = Editora's install, VS Code's, PATH. */
     private String rustDebugPath = "";
+    /** C and C++ debugging (CodeLLDB, the one Rust's path names): on by default. */
+    private boolean cppDebugEnabled = true;
     /**
      * Language Server Protocol support (code intelligence through each language's server): on by default since
      * 0.27.1. Each server self-gates on being installed, and the install banner offers the missing ones. Off, a new
@@ -3824,6 +3826,14 @@ public class Settings {
 
     public void setRustDebugPath(String rustDebugPath) {
         this.rustDebugPath = rustDebugPath == null ? "" : rustDebugPath;
+    }
+
+    public boolean isCppDebugEnabled() {
+        return cppDebugEnabled;
+    }
+
+    public void setCppDebugEnabled(boolean cppDebugEnabled) {
+        this.cppDebugEnabled = cppDebugEnabled;
     }
 
     public String getJavaLspCommand() {

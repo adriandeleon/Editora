@@ -2009,7 +2009,7 @@ public final class DapManager {
         if (external == null) {
             return null;
         }
-        if (DebugLanguages.RUST.equals(language)) {
+        if (DebugLanguages.CODELLDB.equals(external)) {
             // CodeLLDB lives in its extension's folder (Editora's install, VS Code's), or is named by its path.
             Path home = Path.of(System.getProperty("user.home", ""));
             String onPath = command == null || command.isBlank() ? locateExecutable("codelldb") : null;

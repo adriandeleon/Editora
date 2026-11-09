@@ -39,6 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to from it opens where it stood and replaces it, so a chain of steps keeps one card in view. Pin, drag or resize a
   preview to keep it. Back now reopens a card that was closed, at the line you were on, instead of only selecting
   its row.
+- **Debug C and C++ programs.** Editora now debugs C and C++ with CodeLLDB, the debugger it already uses for Rust:
+  - **F5 in a CMake project** configures a Debug build in `build/editora-debug`, builds it in the Debug console,
+    and debugs the program that holds the file.
+  - **F5 in a Make project** runs `make` and debugs the program it built.
+  - **F5 on a file outside a project** compiles it with `cc` or `c++ -g -O0`.
+  - **Trust:** CMake and Make run the project's code, so Editora asks to trust the folder first, as Maven and Cargo
+    do.
+  - **Values:** `std::string`, `std::vector` and `std::map` read as values.
+  - **A thrown C++ exception** stops the program where it was thrown.
+  - **Attach to Process** lists running Rust, C and C++ programs built with debug information, on Linux, and
+    attaches CodeLLDB by process id.
+  - **Settings:** *Settings → Debugging → Rust, C and C++* has a switch for C and C++.
 - **Follow the code into libraries on the Project Map.** Go to Definition, callers, supertypes and the other Map
   navigation that lands in the JDK or a dependency now opens that class's source as a card, as the editor's library
   tabs do, instead of only a status note. The card is highlighted, outlined and searchable like any other, and says

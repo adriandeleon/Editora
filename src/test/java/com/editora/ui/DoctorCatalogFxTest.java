@@ -574,7 +574,9 @@ class DoctorCatalogFxTest {
         assertEquals(List.of("codelldb"), missing.tipArgs());
 
         host.settings.setRustDebugEnabled(false);
-        assertFalse(has(specs(host, ops), "debug.rust"), "no row while Rust debugging is off");
+        assertTrue(has(specs(host, ops), "debug.rust"), "C and C++ run on the same CodeLLDB");
+        host.settings.setCppDebugEnabled(false);
+        assertFalse(has(specs(host, ops), "debug.rust"), "no row while Rust, C and C++ debugging are off");
     }
 
     @Test

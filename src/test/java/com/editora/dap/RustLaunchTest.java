@@ -186,4 +186,68 @@ class RustLaunchTest {
         assertEquals(dir.resolve("ws/crates/shelf").toAbsolutePath(), RustLaunch.packageRoot(main));
         assertNull(RustLaunch.packageRoot(Files.writeString(dir.resolve("loose.rs"), "fn main() {}\n")));
     }
+
+    private static final String TRICKY = """
+            /* a block comment { with a brace
+               over two lines } */
+            fn helper() {} /* { */ // }
+            #[test]
+
+            fn spaced() {
+                let s = "a \\" { quoted";
+                let c = '\\'';
+                let d = '{';
+                let e = 'x';
+            }
+            #[test]
+            fn unclosed() {
+            """;
+
+    @Test
+    void commentsStringsAndCharsHoldNoBracesAndAnUnclosedTestStillCounts() {
+        assertEquals("spaced", RustLaunch.testAt(TRICKY, 4), "a blank line between the attribute and the fn");
+        assertEquals("spaced", RustLaunch.testAt(TRICKY, 9), "past braces in strings and chars");
+        assertNull(RustLaunch.testAt(TRICKY, 1), "in a block comment");
+        assertNull(RustLaunch.testAt(TRICKY, 2), "a one-line fn with braces in comments");
+        assertEquals("spaced", RustLaunch.testAt(TRICKY, 3), "on its attribute");
+        assertEquals("unclosed", RustLaunch.testAt(TRICKY, 13), "a test the file ends inside");
+    }
+
+    @Test
+    void plansForOddPlaces(@TempDir Path root) {
+        RustLaunch.Plan noExtension = RustLaunch.plan(root, root.resolve("src/odd"), "fn main() {}\n", 0, true);
+        assertEquals("odd", noExtension.sessionName());
+        RustLaunch.Plan libTests = RustLaunch.plan(root, root.resolve("src/lib.rs"), LIB, 2, false);
+        assertEquals(List.of(), libTests.testArgs(), "the crate root's tests: every test, no filter");
+        RustLaunch.Plan rootTest = RustLaunch.plan(root, root.resolve("src/lib.rs"), LIB, 13, false);
+        assertEquals(List.of("tests::adds", "--exact"), rootTest.testArgs());
+        RustLaunch.Plan nestedExample =
+                RustLaunch.plan(root, root.resolve("examples/demo/main.rs"), "fn main() {}\n", 0, true);
+        assertEquals(List.of("build", "--example", "main"), nestedExample.buildArgs());
+        RustLaunch.Plan programNoTests = RustLaunch.plan(root, root.resolve("src/util.rs"), "fn x() {}\n", 0, false);
+        assertEquals(RustLaunch.Mode.PROGRAM, programNoTests.mode(), "nothing else to run");
+        assertEquals("odd", RustLaunch.modulePath(Path.of("src/odd")));
+    }
+
+    @Test
+    void cargoMessagesWithMissingPartsAreSkippedOrRead() {
+        List<RustLaunch.Artifact> built = RustLaunch.artifacts("""
+                {"reason":"compiler-artifact","executable":"/x"}
+                {"reason":"compiler-artifact","target":{"kind":["bin"],"name":"a","src_path":"/p/a.rs"},"executable":"/a"}
+                {"reason":"compiler-artifact","target":{"kind":["bin"],"name":"b","src_path":"/p/b.rs"},"profile":{},"executable":"/b"}
+                {"reason":"compiler-artifact","target":{"kind":["bin"],"name":"c","src_path":"/p/c.rs"},"profile":{"test":false},"executable":null}
+                {"reason":null}
+                {"broken":
+                """);
+        assertEquals(
+                List.of("a", "b"),
+                built.stream().map(RustLaunch.Artifact::target).toList());
+        assertFalse(built.getFirst().test(), "no profile: not a test binary");
+        assertFalse(built.get(1).test(), "a profile without test: not one either");
+        assertEquals(
+                Path.of("/a"),
+                RustLaunch.pick(built.subList(0, 1), Path.of("/p/x.rs"), RustLaunch.Mode.PROGRAM)
+                        .executable(),
+                "the only binary");
+    }
 }

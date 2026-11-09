@@ -1007,7 +1007,7 @@ the child env. The result is cached after the first call.
 
 ### Language profiles and transports
 
-Editora debugs Java, Python, JavaScript (Node), the JVM languages, Go and Rust, off by default
+Editora debugs Java, Python, JavaScript (Node), the JVM languages, Go, Rust, C and C++, off by default
 (`Settings.debugSupport`). Each language is a [`dap/DebugLanguage`](../../src/main/java/com/editora/dap/DebugLanguage.java)
 profile in [`dap/DebugLanguages`](../../src/main/java/com/editora/dap/DebugLanguages.java): its `Kind` transport, the
 DAP `launch` type, the `initialize` adapter id, the default interpreter + adapter args, the fallback transport, what
@@ -1019,7 +1019,7 @@ debugged on its own host, and its "unavailable" message. [`dap/DapServerRegistry
 (its switch, command or path, install id, off and missing messages) are a binding in
 [`ui/DebugAdapterSettings`](../../src/main/java/com/editora/ui/DebugAdapterSettings.java), which the Debugging
 page, the `debug.toggleAdapter` / `debug.setAdapterPath` pickers and `unavailableMessage` read. `languageIdsForDebug()` =
-`{java, python, javascript, groovy, kotlin, clojure, scala, go, rust}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
+`{java, python, javascript, groovy, kotlin, clojure, scala, go, rust, cpp}` (`c` files are served by `cpp`); `typescript`, `javascriptreact` and `typescriptreact` files are served by the
 `javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
 project's breakpoints live in its `.ts`/`.tsx` sources.
 
@@ -1033,6 +1033,7 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `clojure` | `JVM` | The same adapter. `run/ClojureRun` picks the tool: the Clojure CLI (`clojure -J<agent> -J-Dclojure.compiler.disable-locals-clearing=true -M -m <ns>`, the agent as a `-J` argument — the launch's `jvmOptionPrefix`) in its `deps.edn` project, Leiningen (`lein run -m <ns>`, the agent in `JVM_OPTS`, which only the project's JVM reads) in a `project.clj` one, and a file outside any project as a script. A function's class (`my_app.core$greet`) records `core.clj` and the package path `my_app/`, so a breakpoint in `src/my_app/core.clj` binds by source name; a script loaded by path records that absolute path (Clojure's SMAP), which `JvmSourceMap.compiledFrom` accepts. Frames read as the function, demunged (`my-app.core/greet`); stepping skips `clojure.lang`, `clojure.core*` and `clojure.main`. Babashka is a native program with no JVM: Debug says so and does not start. Limits: values show as their class (the adapter runs no `toString`), and a function redefined from a REPL is a new class the session's breakpoints were not set in. |
 | `go` | `EXTERNAL` | Delve: `dlv dap --listen=127.0.0.1:0`, the port read from its `DAP server listening at:` line (`ANNOUNCED_PORT`); see **Go** below. |
 | `rust` | `EXTERNAL` | CodeLLDB: `codelldb --port N` on a port Editora picks (`PORT_ARGUMENT`); see **Rust** below. |
+| `cpp` | `EXTERNAL` | The same CodeLLDB as Rust (`DebugLanguages.CODELLDB`); see **C and C++** below. |
 | `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
 
 **External adapters.** A `Kind.EXTERNAL` profile carries an [`ExternalAdapter`](../../src/main/java/com/editora/dap/ExternalAdapter.java):
@@ -1072,7 +1073,7 @@ because Delve builds from disk. Restart repeats the same test wherever the caret
 test file (`debugGoTestAtCaret`) is the same launch.
 
 Attach to Process lists Go programs: `LocalProcesses` reads each candidate executable's section names for
-`.go.buildinfo` / `__go_buildinfo` ([`dap/GoBinaries`](../../src/main/java/com/editora/dap/GoBinaries.java); ELF and
+`.go.buildinfo` / `__go_buildinfo` ([`dap/ProgramFiles`](../../src/main/java/com/editora/dap/ProgramFiles.java); ELF and
 Mach-O, not Windows), once per program file. It attaches with `attach {mode: local, processId}`. On Linux that needs
 `kernel.yama.ptrace_scope` 0, as for any debugger attaching to a program it did not start.
 
@@ -1116,6 +1117,44 @@ CodeLLDB reports a panic's stop with the reason `breakpoint`. Attaching to a run
 - in a window, F5 and Debug Test at Caret.
 
 `RustDebugWindowFxTest` drives the window against stand-in `cargo` and `codelldb` scripts.
+
+**C and C++.** The `cpp` profile (`c` and `cpp` files) runs on Rust's CodeLLDB: one `codelldb`, found through
+`Settings.rustDebugPath`. `Settings.cppDebugEnabled` switches it, from a check box on Settings → Debugging's
+"Rust, C and C++" card. [`dap/NativeBuild`](../../src/main/java/com/editora/dap/NativeBuild.java) builds the file
+first:
+- **A CMake project** (`cmakeRoot`: the topmost of the folders above the file that each have a
+  `CMakeLists.txt`). A Debug build in `build/editora-debug` (`cmake -S … -B … -DCMAKE_BUILD_TYPE=Debug`, then
+  `cmake --build`). A `codemodel-v2` File API query is written first, and the reply's executable target whose
+  sources hold the file is launched (`cmakeExecutable`), else the only executable target.
+- **A Make project** (`makeRoot`: the nearest makefile). `make -C <folder>`, its default goal, then the native
+  program in the folder (or `bin/`, `build/`) named after the file, else the only one, else the newest
+  (`makeExecutable`; a program is told from a script by its ELF, Mach-O or PE magic).
+- **A lone file.** `cc` / `c++ -g -O0 -o <config>/cache/native-debug/<stem>-<hash>`. A lone header says to open
+  its source.
+
+CMake and Make run the project's code, so `DebugCoordinator.debugNativeFile` asks the folder's trust first
+(`Ops.trustBuild`, the build-trust prompt with one line about the build file). A compiler run asks nothing. The
+build steps run one after another as before-launch steps in the Debug console; later steps keep the earlier ones'
+output (`beforeLaunchConsole(false)`). Restart builds again.
+
+The `launch` adds `sourceLanguages: ["cpp"]`. A thrown C++ exception stops it (`cpp_throw`, on by default as
+CodeLLDB has it, sent as the profile's default: see **External adapters**).
+
+**Attach to Process: native programs.** On Linux `LocalProcesses` lists a program built with debug information
+(`ProgramFiles.kind`: `.debug_info` and no Go section). It's listed as Rust when rustc's `.debug_gdb_scripts` or
+`.rustc` is there, else as native. CodeLLDB attaches by `pid` with that language's `sourceLanguages`
+(`NativeBuild.attach`). A macOS program keeps its DWARF elsewhere, so it isn't listed. GDB's DAP mode
+(`gdb -i dap`) is left for a configurable adapter.
+
+`NativeDebugProbeFxTest`, opt-in, runs in CI with the pinned CodeLLDB. It drives the real tools:
+- a lone C file compiled with `cc`;
+- a CMake C++ project stopping in another source file, with `std::vector` shown as a value;
+- a Make project;
+- an attach then detach;
+- in a window, F5 on a CMake project.
+
+`NativeDebugWindowFxTest` drives the window against a Make project whose recipe writes a stand-in program, with a
+stand-in `codelldb`.
 
 `GoDebugProbeFxTest`, opt-in, runs in CI's integration job with Go and a pinned Delve. It drives the real Delve
 through `DapManager`: variables, Step Over, goroutines, a test at the caret, and an attach then detach. It also
