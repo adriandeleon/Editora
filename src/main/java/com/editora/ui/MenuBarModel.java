@@ -571,7 +571,8 @@ final class MenuBarModel {
                                 "tool.problems",
                                 SEPARATOR,
                                 "tool.terminal",
-                                "terminal.new")),
+                                "terminal.new",
+                                "terminal.moveToEditor")),
                 new MenuSpec(
                         "menubar.help",
                         List.of(

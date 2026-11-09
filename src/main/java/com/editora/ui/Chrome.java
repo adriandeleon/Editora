@@ -520,7 +520,8 @@ final class Chrome {
             "terminal.previous",
             "terminal.rename",
             "terminal.moveTabLeft",
-            "terminal.moveTabRight");
+            "terminal.moveTabRight",
+            "terminal.moveToToolWindow");
 
     /**
      * Debug commands that drive a live session (as opposed to starting/attaching/setting breakpoints). Apply Code
