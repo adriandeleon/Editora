@@ -371,6 +371,29 @@ by a caret move, a scroll, a click elsewhere or Escape — the first Escape clos
 links open through the window's link choke point, `FileActions.openExternalUrl`). Without a server the status line
 says it needs one.
 
+**A card's problems** (Map code browser gap 8). A code card keeps its file before the running language server for
+as long as it shows it (`MapCardLinks.Source.watchProblems`: `LspManager.lendDocument` with the text the card shows,
+and `LspManager.watchDiagnostics`; an open tab's file is the tab's, so nothing is lent and its unsaved text is what
+the server checks). The server's diagnostics are drawn as the editor draws them (`LspDiagnosticOverlay` over the
+card's text), on the card's own lines — a declaration card marks only what falls in its declaration, a problem that
+runs past its edge cut to it (`ProjectMapPreview.onCard`) — and the card's status counts its errors and warnings
+("2 errors, 1 warning"; faded tags and notes are not counted). A lent document's diagnostics are kept, as an open
+one's are, whatever the Problems window's scope (`LspDiagnostics.shownDiagnostics`, given to a card that opens
+later by `LspManager.diagnosticsOf`), and let go with the last loan. Nothing starts a server: a card with none tries
+again on its once-a-second look. Disk text cut short is not lent (the server would check half a file); a new text on
+disk is lent anew. **Next / Previous Problem** (`lsp.nextProblem`, `lsp.previousProblem`) typed in a card go through
+the card's own problems, errors first as the editor's do, wrapping, and the status line says the problem with its
+file line; with none, "No problems in this card" — never the active tab's.
+
+**The mouse resting** on a card's text for `MOUSE_HOVER_DELAY` (500 ms) shows the problems there (coloured by
+severity, with where they come from) and, on a name, the server's documentation under them (`LinkActions
+.documentation`, the same hover Quick Documentation asks, with nothing said when there is none), in the documentation
+popup under the pointer (`HoverCard.show` with a screen point). Moving off the name — or out of the card — closes it
+after a moment unless the mouse went into the popup (to scroll it or follow a link); an answer for an older rest is
+dropped (hiding a popup sends it a mouse exit, which only the popup showing acts on, so the documentation replacing
+the problems is not lost). The popup closes on a scroll, as the editor's does. Quick Documentation asked with the
+keyboard stays until it is closed.
+
 **Without a language server** a definition or a declaration is matched by name
 (`ProjectMapLinkSearch.declarations`, edges dashed "by name"): in the card's own file, a JavaScript or TypeScript
 local of an enclosing scope first (`index.JsLocals`), then the nearest declaration at or above the place
@@ -1608,6 +1631,13 @@ The focused coverage lives in:
   `ProjectMapLinksFxTest` / `MapCardLinksReview4FxTest` for an answer's list: a place's group, the places' order and
   text, the filter and Tests; the chip's list of 209 files' places with their text, the filter, a place opened with
   its edge, the list going with its answer; callers by name listed and opened; a place with no room kept listed;
+- `MapCardProblemsFxTest` for a card's problems: a lent file's diagnostics kept and watched whatever the Problems
+  scope, forgotten with the last loan, nothing started without a server; marks on a declaration card's own lines,
+  the status counts, Next / Previous Problem (errors first, wrapping, none here), one watch per buffer, a disk card
+  lent anew when its text changes and watched once a server runs; the mouse resting on a problem and a name, off a
+  name, on neither, moving within and off the name, a typed Quick Documentation kept, and an answer for an earlier
+  rest or a closed card dropped; `ProjectMapLinksFxTest` for the same through the Map and a server: the warning
+  published for the lent file, Next Problem, the documentation asked, the file given back when the card closes;
 - `MapHistoryTest.aClosedCardsStopKeepsItsLineSoBackOpensItAgain` /
   `ProjectMapNavigationFxTest.aGoToFromAPreviewCardOpensWhereItStoodAndBackOpensItAgain` for preview cards: a Go to
   result is a preview in italics, the next Go to from it opens where it stood and closes it, the result kept as the

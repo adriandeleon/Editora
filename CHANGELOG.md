@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Problems on Project Map cards.** A code card underlines its file's errors and warnings as the editor does, while
+  a language server runs for the file, and its status counts them. A declaration card shows only its declaration's.
+  Next Problem and Previous Problem typed in a card go through the card's problems. Resting the mouse on a card's text
+  shows the problems there and, on a name, its documentation.
 - **Run VS Code's launch.json configurations.** *Debug: Start Configuration…* lists the configurations of the
   project's `.vscode/launch.json` and starts the one you pick as VS Code would:
   - **Supported types:** `lldb` (with its `cargo` build), `gdb`, `cppdbg`, `go` (with `exec` for a binary you built),
