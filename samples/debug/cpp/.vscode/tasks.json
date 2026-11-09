@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // A plain shell command: what Editora runs for a preLaunchTask.
+      "label": "build",
+      "type": "shell",
+      "command": "cmake -S . -B build/vscode -DCMAKE_BUILD_TYPE=Debug && cmake --build build/vscode"
+    }
+  ]
+}

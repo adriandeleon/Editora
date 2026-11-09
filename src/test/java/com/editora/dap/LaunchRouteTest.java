@@ -167,9 +167,9 @@ class LaunchRouteTest {
         assertEquals("app", cfg.projectName());
         assertEquals("'a b' c", cfg.args());
         assertEquals("-Xmx1g", cfg.vmArgs());
-        assertEquals("/ws", cfg.workingDir(), "the workspace when no cwd");
+        assertEquals(Path.of("/ws").toString(), cfg.workingDir(), "the workspace when no cwd");
         assertEquals("K='v w'", cfg.env());
-        assertEquals("/jdk", cfg.jdkHome());
+        assertEquals(Path.of("/jdk").toString(), cfg.jdkHome());
         assertEquals("", LaunchRoute.words(null));
         assertEquals(
                 "/c",

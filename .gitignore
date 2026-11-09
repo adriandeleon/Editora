@@ -56,6 +56,9 @@ Thumbs.db
 /samples/build-tools/cargo/Cargo.lock
 /samples/debug/rust/Cargo.lock
 /samples/debug/cpp/build/
+# The debug samples ship launch.json / tasks.json to try Debug: Start Configuration… on.
+!/samples/debug/cpp/.vscode/
+!/samples/debug/rust/.vscode/
 /samples/build-tools/gradle/.gradle/
 /samples/build-tools/gradle/build/
 /samples/build-tools/go/go-demo

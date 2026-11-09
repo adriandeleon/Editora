@@ -110,7 +110,7 @@ class LaunchJsonTest {
         assertEquals(ws + "|" + ws.getFileName() + "|" + file + "|main.c", out.get("a"));
         assertEquals("main|.c|" + file.getParent() + "|src", out.get("b"));
         assertEquals("src" + sep + "main.c|src|12|sel|/h|", out.get("c"));
-        assertEquals(List.of("/home/u", "high", "high", 7, true), out.get("d"));
+        assertEquals(List.of(Path.of("/home/u").toString(), "high", "high", 7, true), out.get("d"));
         assertEquals(1, asked[0], "an input is asked once a launch");
         assertEquals(Map.of("x", ws + sep + ws), out.get("e"));
 

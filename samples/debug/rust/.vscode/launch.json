@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // CodeLLDB's cargo field: Editora runs cargo build, then debugs the binary the filter picks.
+      "name": "shelf (cargo build)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": { "args": ["build", "--bin=shelf"], "filter": { "name": "shelf", "kind": "bin" } },
+      "args": ["crash"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      // The tests, built by cargo test --no-run, filtered to one by name.
+      "name": "shelf tests (cargo test)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": { "args": ["test", "--no-run", "--bin=shelf"], "filter": { "name": "shelf", "kind": "bin" } },
+      "args": ["${input:test}", "--exact"]
+    }
+  ],
+  "inputs": [
+    { "id": "test", "type": "promptString", "description": "Test to run", "default": "shelf::tests::checkout_totals" }
+  ]
+}
