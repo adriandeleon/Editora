@@ -227,4 +227,24 @@ class RustDebugWindowFxTest {
             await("Rust debugging available again", () -> call(() -> debug.debugEffectiveFor("rust")));
         }
     }
+
+    /** A Rust file is never runnable (no Run File), so the editor menu gives Debug File a place of its own. */
+    @Test
+    void theEditorMenuOffersDebugFile() throws Exception {
+        EditorBuffer b = open(root.resolve("src/main.rs"));
+        List<javafx.scene.control.MenuItem> items = FxTestSupport.callOnFx(() -> debug.editorMenuItems(b));
+        javafx.scene.control.MenuItem debugFile = items.stream()
+                .filter(i -> tr("editmenu.debugFile").equals(i.getText()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(items.stream()
+                        .map(javafx.scene.control.MenuItem::getText)
+                        .toList()));
+        FxTestSupport.runOnFx(debugFile::fire);
+        FakeDebugAdapter.Session session = nextLaunch();
+        assertEquals("/built/shelf", session.launchArgs.get("program"), "the program Cargo built, as F5 debugs it");
+        List<String> during = FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
+                .map(javafx.scene.control.MenuItem::getText)
+                .toList());
+        assertFalse(during.contains(tr("editmenu.debugFile")), "not again while it is debugged: " + during);
+    }
 }

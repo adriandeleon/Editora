@@ -72,11 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Back returns to where you were; Escape closes the tree. Card and declaration-row menus have *Show Call
   Hierarchy* and *Show Type Hierarchy*; *Show Callers as Cards* and the other card items are unchanged.
 - **Debug Rust programs.** Editora now debugs Rust with CodeLLDB, as VS Code does with rust-analyzer:
-  - **F5 in a Cargo package** builds with Cargo in the Debug console, then debugs the program Cargo built. In an
-    `examples/` file it debugs that example.
+  - **F5 in a Cargo package**, or *Debug File* in the editor's right-click menu, builds with Cargo in the Debug
+    console, then debugs the program Cargo built. In an `examples/` file it debugs that example.
   - **In a `#[test]` function**, F5 and *Debug Test at Caret* debug that test alone. Outside a test, an
     integration-test file debugs all its tests.
-  - **Values** are shown as Rust values: a `String` reads as its text, and a `Vec` or a map expands to its items.
+  - **Values** are shown as Rust values: a `String` reads as its text, and a `Vec` or a `HashMap` expands to its
+    items.
   - **A panic** stops the program where it happened.
   - **Debugging features:** breakpoints (with conditions, hit counts and logpoints), stepping, Variables, Watches
     and the Threads view all work.
@@ -84,7 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Install button that fetches CodeLLDB's pinned release and checks its checksum. A CodeLLDB already installed in
     VS Code is found too. The Doctor checks for it.
 - **Debug Go programs.** Editora now debugs Go with Delve, as VS Code's Go extension does:
-  - **F5 on a Go file** debugs its package, or the file alone outside a module.
+  - **F5 on a Go file**, or *Debug File* in the editor's right-click menu, debugs its package, or the file alone
+    outside a module.
   - **In a `_test.go` file**, F5 and *Debug Test at Caret* run the test function the caret is in (a benchmark on
     its own), or every test of the package.
   - **Attach to Process** lists running Go programs and attaches by process id. *Stop* leaves the program running.
