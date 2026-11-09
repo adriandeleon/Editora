@@ -2248,6 +2248,7 @@ public final class DapManager {
             com.editora.process.ProcessRegistry.killTree(proc);
             return;
         }
+        programAdapter = programTail.isEmpty() ? null : new ProgramAdapter(epoch, proc);
         boolean attach = "attach".equals(launch.get("request"));
         DapClient c = new DapClient(sessionHost(epoch));
         c.setPaths(DapPaths.LOCAL);
@@ -4874,7 +4875,29 @@ public final class DapManager {
     /** The inspector's lines dropped from this session's output (reset per session). */
     private volatile JsLaunch.InspectorNoise jsNoise = new JsLaunch.InspectorNoise();
 
+    /** An external adapter that is the debugged program itself (Ruby's rdbg), for session {@code epoch}. */
+    private record ProgramAdapter(long epoch, Process process) {}
+
+    private volatile @Nullable ProgramAdapter programAdapter;
+
+    /** How long a program that is its own adapter has to exit after it says it terminated. */
+    static final long PROGRAM_ADAPTER_EXIT_GRACE_MILLIS = 3_000;
+
     private void onTerminated(long epoch) {
+        ProgramAdapter self = programAdapter;
+        if (self != null && self.epoch() == epoch && self.process().isAlive()) {
+            // rdbg says terminated before Ruby has flushed its standard output and exited: the session ends once
+            // the program has (bounded), and its last output is in, rather than killing it with that output unread.
+            self.process()
+                    .onExit()
+                    .completeOnTimeout(self.process(), PROGRAM_ADAPTER_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)
+                    .thenRun(() -> Platform.runLater(() -> {
+                        if (isCurrent(epoch)) {
+                            whenOutputQuiet(epoch, System.nanoTime(), () -> endSession(epoch));
+                        }
+                    }));
+            return;
+        }
         Platform.runLater(() -> {
             Debuggee program = debuggee;
             if (isCurrent(epoch) && program != null && program.isRunning()) {
