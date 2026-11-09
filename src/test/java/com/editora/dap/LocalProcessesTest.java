@@ -101,6 +101,54 @@ class LocalProcessesTest {
     }
 
     @Test
+    void debugpysOwnHelpersAreNotListed() {
+        // `debugpy --listen` runs its adapter beside the program: not a program to attach to (seen as a
+        // "Python · not started for debugging" row named "adapter").
+        assertNull(of(
+                "/usr/bin/python3",
+                "/home/ada/.local/lib/python3.13/site-packages/debugpy/adapter",
+                "--for-server",
+                "40141",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "5678",
+                "--server-access-token",
+                "55b2"));
+        assertNull(of("python3", "C:\\py\\Lib\\site-packages\\debugpy\\adapter\\__main__.py", "--port", "5678"));
+        assertNull(of("python3", "-m", "debugpy.adapter", "--port", "5678"), "an editor's own adapter");
+        assertNull(of("python3", "/x/site-packages/debugpy/launcher", "53000", "--", "app.py"));
+        assertNull(of("python3", "-m", "debugpy.launcher", "53000", "--", "app.py"));
+        var program = of("/usr/bin/python3", "-m", "debugpy", "--listen", "5678", "worker.py");
+        assertEquals("localhost:5678", program.address(), "the program itself is still listed");
+    }
+
+    @Test
+    void debugpyRunByItsFolderListensToo() {
+        var t = of("python3", "/x/site-packages/debugpy", "--listen", "127.0.0.1:5679", "app.py");
+        assertEquals("127.0.0.1:5679", t.address());
+        assertEquals("app.py", t.name());
+        var main = of("python3", "/x/site-packages/debugpy/__main__.py", "--listen", "5680", "app.py");
+        assertEquals("localhost:5680", main.address());
+        var connected = of("python3", "/x/site-packages/debugpy", "--connect", "127.0.0.1:5678", "app.py");
+        assertFalse(connected.attachable(), "it connects out");
+        assertEquals("app.py", connected.name());
+    }
+
+    @Test
+    void debugpyPartReadsScriptPaths() {
+        assertEquals("", LocalProcesses.debugpyPart("/x/debugpy"));
+        assertEquals("", LocalProcesses.debugpyPart("/x/debugpy/"));
+        assertEquals("", LocalProcesses.debugpyPart("/x/debugpy/__main__.py"));
+        assertEquals("adapter", LocalProcesses.debugpyPart("/x/debugpy/adapter"));
+        assertEquals("launcher", LocalProcesses.debugpyPart("C:\\x\\debugpy\\launcher\\__main__.py"));
+        assertNull(LocalProcesses.debugpyPart("app.py"));
+        assertNull(LocalProcesses.debugpyPart("/x/debugpy/adapter.py"));
+        assertNull(LocalProcesses.debugpyPart("/x/adapter"));
+        assertNull(LocalProcesses.debugpyPart("__main__.py"));
+    }
+
+    @Test
     void otherProgramsAreNotListed() {
         assertNull(of("/bin/bash", "-c", "java -version"));
         assertNull(of("/usr/bin/javac", "A.java"));
