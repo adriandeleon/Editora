@@ -202,6 +202,96 @@ public final class DebugAdapterLocator {
         }
     }
 
+    // --- CodeLLDB (Rust, and native code) ----------------------------------------------------------
+
+    /** Where CodeLLDB's adapter sits in its extension: {@code extension/adapter/codelldb} in the .vsix. */
+    private static final List<String> CODELLDB_IN_EXTENSION = List.of("adapter/codelldb", "extension/adapter/codelldb");
+
+    /**
+     * CodeLLDB's adapter program ({@code codelldb}). A non-blank {@code configured} wins: the program itself, or a
+     * folder holding it ({@code <dir>/adapter/codelldb} or {@code <dir>/extension/adapter/codelldb}, an unpacked
+     * {@code .vsix}). Otherwise: Editora's own install ({@code <config>/plugins/dap/rust}, then {@code ~/.editora} and
+     * {@code ~/.editora-dev}), then VS Code's extension ({@code vadimcn.vscode-lldb-*}, the newest), then
+     * {@code codelldb} on the PATH. Blocking: it lists folders.
+     */
+    public static Optional<Path> locateCodelldb(@Nullable String configured, Path home) {
+        boolean windows = java.io.File.pathSeparatorChar == ';';
+        if (configured != null && !configured.isBlank()) {
+            Path p;
+            try {
+                p = Path.of(configured.strip());
+            } catch (java.nio.file.InvalidPathException e) {
+                return Optional.empty();
+            }
+            if (Files.isRegularFile(p)) {
+                return Optional.of(p);
+            }
+            return Files.isDirectory(p) ? codelldbIn(p, windows) : Optional.empty();
+        }
+        for (Path root : codelldbRoots(home)) {
+            Optional<Path> found = codelldbIn(root, windows);
+            if (found.isPresent()) {
+                return found;
+            }
+        }
+        List<String> extensions = new ArrayList<>();
+        for (Path dir : List.of(
+                home.resolve(".vscode").resolve("extensions"),
+                home.resolve(".vscode-server").resolve("extensions"),
+                home.resolve(".vscode-oss").resolve("extensions"),
+                home.resolve(".cursor").resolve("extensions"))) {
+            if (!Files.isDirectory(dir)) {
+                continue;
+            }
+            try (Stream<Path> s = Files.list(dir)) {
+                s.filter(d -> d.getFileName().toString().startsWith("vadimcn.vscode-lldb-"))
+                        .filter(d -> codelldbIn(d, windows).isPresent())
+                        .forEach(d -> extensions.add(d.toString()));
+            } catch (IOException | RuntimeException ignored) {
+                // unreadable — skip
+            }
+        }
+        String newest = newestByPathVersion(extensions);
+        if (newest != null) {
+            return codelldbIn(Path.of(newest), windows);
+        }
+        return Optional.empty();
+    }
+
+    /** The folders Editora's installer puts CodeLLDB in: this launch's config folder first. Pure construction. */
+    static List<Path> codelldbRoots(Path home) {
+        List<Path> roots = new ArrayList<>();
+        Path configDir = editoraConfigDir;
+        if (configDir != null) {
+            roots.add(configDir.resolve("plugins").resolve("dap").resolve("rust"));
+        }
+        roots.add(home.resolve(".editora").resolve("plugins").resolve("dap").resolve("rust"));
+        roots.add(home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve("rust"));
+        return roots;
+    }
+
+    /** {@code codelldb} (with {@code .exe} on Windows) in extension folder {@code dir}, if it is there. */
+    static Optional<Path> codelldbIn(Path dir, boolean windows) {
+        for (String rel : CODELLDB_IN_EXTENSION) {
+            Path exe = dir.resolve(rel + (windows ? ".exe" : ""));
+            if (Files.isRegularFile(exe)) {
+                return Optional.of(exe);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** The path whose embedded version ({@link #pathVersion}) is the highest; null for none. */
+    static @Nullable String newestByPathVersion(List<String> paths) {
+        String best = null;
+        for (String p : paths) {
+            if (best == null || compareVersions(pathVersion(p), pathVersion(best)) > 0) {
+                best = p;
+            }
+        }
+        return best;
+    }
+
     // --- vscode-js-debug (Node) -----------------------------------------------------------------
 
     /** The DAP entry point of the vscode-js-debug bundle. */

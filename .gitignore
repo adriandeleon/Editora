@@ -54,6 +54,7 @@ Thumbs.db
 # appear). `target/` above already covers Maven/Cargo; these are the rest. SamplesCorpusTest honors this
 # file, so generated output is never mistaken for an undocumented committed sample.
 /samples/build-tools/cargo/Cargo.lock
+/samples/debug/rust/Cargo.lock
 /samples/build-tools/gradle/.gradle/
 /samples/build-tools/gradle/build/
 /samples/build-tools/go/go-demo

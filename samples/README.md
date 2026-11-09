@@ -373,7 +373,7 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   logpoint, a watch on `total`, step-into, and set-value. `samples/run/hello.java` is the Java
   equivalent for a first breakpoint.
 
-## debug/ — Java, Clojure and Go debugging (breakpoints, stepping, values, threads)
+## debug/ — Java, Clojure, Go and Rust debugging (breakpoints, stepping, values, threads)
 
 - `samples/debug/java/pom.xml` — a standalone **Java 25 Maven** project (not a `<module>` of the root
   pom) built to try every breakpoint kind on, in ~220 lines across six classes. Open the folder as a
@@ -443,6 +443,21 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
     **hit-count** breakpoint on a line that runs 480 times.
   - `samples/debug/go/shelf_test.go` — four green tests and a benchmark: put the caret in one and use
     **Debug Test at Caret** (or F5) to debug that test alone.
+
+- `samples/debug/rust/Cargo.toml` — the same shelf as a standalone **Cargo** package (four files, ~200
+  lines), for debugging Rust on CodeLLDB (Settings → Debugging → Rust; Install there fetches CodeLLDB).
+  Open `src/main.rs` and press F5: Cargo builds it in the Debug console, then the debugger stops at your
+  breakpoints, with Strings, Vecs and maps shown as Rust values. Every suggested spot is a `break here`
+  comment. `cargo run` runs it outside Editora, `cargo test` runs the tests, and the `crash` program
+  argument panics, which stops the debugger where it happened.
+  - `samples/debug/rust/src/main.rs` — the entry point: a first plain breakpoint, then Step Into `checkout`.
+  - `samples/debug/rust/src/shelf.rs` — the `checkout` loop: a **watch** on `total`, a **logpoint**, a
+    **conditional** breakpoint in a closure (`item.sku == "C-2"`), a `BTreeMap` that grows, and
+    `parse_quantity` returning an error; two tests for **Debug Test at Caret**.
+  - `samples/debug/rust/src/pricing.rs` — a `match` hit once per big item, and `apply`, which **recurses**
+    through a stacked discount, so the call stack shows two `apply` frames.
+  - `samples/debug/rust/src/restock.rs` — three named threads (`restock-1…3`): the **Threads** view, and a
+    **hit-count** breakpoint on a line that runs 480 times.
 
 ## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup + tests
 

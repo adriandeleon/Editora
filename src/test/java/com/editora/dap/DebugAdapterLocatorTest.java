@@ -256,4 +256,49 @@ class DebugAdapterLocatorTest {
         dap.setServerProvidesJavaDebug(true);
         org.junit.jupiter.api.Assertions.assertTrue(dap.isJavaDebugInstalled(), "a jdtls that ships it");
     }
+
+    @Test
+    void codelldbIsFoundAsConfiguredInEditorasInstallOrInVsCodesNewestExtension(@TempDir Path dir) throws Exception {
+        boolean windows = java.io.File.pathSeparatorChar == ';';
+        String exe = windows ? "codelldb.exe" : "codelldb";
+        Path home = Files.createDirectories(dir.resolve("home"));
+        assertTrue(DebugAdapterLocator.locateCodelldb("", home).isEmpty());
+        assertTrue(DebugAdapterLocator.locateCodelldb(dir.resolve("missing").toString(), home)
+                .isEmpty());
+
+        Path older = Files.createDirectories(home.resolve(".vscode/extensions/vadimcn.vscode-lldb-1.10.0/adapter"));
+        Files.writeString(older.resolve(exe), "");
+        Path newer = Files.createDirectories(home.resolve(".vscode/extensions/vadimcn.vscode-lldb-1.12.3/adapter"));
+        Files.writeString(newer.resolve(exe), "");
+        Files.createDirectories(home.resolve(".vscode/extensions/vadimcn.vscode-lldb-2.0.0")); // no adapter in it
+        assertEquals(Optional.of(newer.resolve(exe)), DebugAdapterLocator.locateCodelldb("", home), "the newest");
+
+        Path config = dir.resolve("config");
+        Path installed = Files.createDirectories(config.resolve("plugins/dap/rust/extension/adapter"));
+        Files.writeString(installed.resolve(exe), "");
+        try {
+            DebugAdapterLocator.setEditoraConfigDir(config);
+            assertEquals(
+                    Optional.of(installed.resolve(exe)),
+                    DebugAdapterLocator.locateCodelldb(null, home),
+                    "Editora's own install first");
+        } finally {
+            DebugAdapterLocator.setEditoraConfigDir(null);
+        }
+
+        assertEquals(
+                Optional.of(installed.resolve(exe)),
+                DebugAdapterLocator.locateCodelldb(
+                        config.resolve("plugins/dap/rust").toString(), home),
+                "a configured folder: the unpacked extension");
+        assertEquals(
+                Optional.of(older.resolve(exe)),
+                DebugAdapterLocator.locateCodelldb(older.resolve(exe).toString(), home),
+                "a configured program");
+        assertTrue(DebugAdapterLocator.locateCodelldb("bad\0name", home).isEmpty());
+        assertEquals(
+                "/e/vadimcn.vscode-lldb-1.12.3",
+                DebugAdapterLocator.newestByPathVersion(
+                        List.of("/e/vadimcn.vscode-lldb-1.9.0", "/e/vadimcn.vscode-lldb-1.12.3")));
+    }
 }

@@ -180,8 +180,37 @@ public final class DebugLanguages {
                     ExternalAdapter.Transport.ANNOUNCED_PORT,
                     DELVE_ANNOUNCEMENT));
 
+    /** CodeLLDB's "stop when Rust panics" exception filter. */
+    public static final String RUST_PANIC_FILTER = "rust_panic";
+
+    /**
+     * Rust, on CodeLLDB (LLDB with Rust's formatters): started on a port Editora picks ({@code codelldb --port N}).
+     * Editora builds the program with Cargo first and launches the executable Cargo reports. A panic stops it, as in
+     * VS Code.
+     */
+    public static final DebugLanguage RUST = new DebugLanguage(
+            "rust",
+            "Rust",
+            Set.of("rust"),
+            Kind.EXTERNAL,
+            "lldb",
+            "lldb",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(filter(RUST_PANIC_FILTER, "Rust: on panic", true)),
+            null,
+            null,
+            false,
+            "debug.error.rustUnavailable",
+            new ExternalAdapter(
+                    List.of("codelldb", "--port", ExternalAdapter.PORT),
+                    ExternalAdapter.Transport.PORT_ARGUMENT,
+                    null));
+
     private static final List<DebugLanguage> ALL =
-            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO);
+            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST);
 
     /** Every profile, in the order the Settings page lists them. */
     public static List<DebugLanguage> all() {

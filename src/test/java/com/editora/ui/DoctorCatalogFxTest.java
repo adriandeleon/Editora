@@ -556,6 +556,28 @@ class DoctorCatalogFxTest {
     }
 
     @Test
+    void codelldbIsFoundWhereTheSettingPointsOrReportedMissing(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Ops ops = new Ops();
+        ops.debug = true;
+        Path adapter = Files.createDirectories(dir.resolve("vsix/extension/adapter"))
+                .resolve(java.io.File.pathSeparatorChar == ';' ? "codelldb.exe" : "codelldb");
+        Files.writeString(adapter, "");
+        host.settings.setRustDebugPath(dir.resolve("vsix").toString());
+        DoctorCheck found = spec(specs(host, ops), "debug.rust").probe().get();
+        assertEquals(DoctorStatus.OK, found.status());
+        assertEquals(adapter.toString(), found.detail());
+
+        host.settings.setRustDebugPath(dir.resolve("gone").toString());
+        DoctorCheck missing = spec(specs(host, ops), "debug.rust").probe().get();
+        assertEquals(DoctorStatus.MISSING, missing.status());
+        assertEquals(List.of("codelldb"), missing.tipArgs());
+
+        host.settings.setRustDebugEnabled(false);
+        assertFalse(has(specs(host, ops), "debug.rust"), "no row while Rust debugging is off");
+    }
+
+    @Test
     void delveIsFoundWhereTheSettingPointsOrReportedMissing(@TempDir Path dir) throws Exception {
         Host host = new Host();
         Ops ops = new Ops();

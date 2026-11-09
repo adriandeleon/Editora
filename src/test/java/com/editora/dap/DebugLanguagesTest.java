@@ -20,7 +20,7 @@ class DebugLanguagesTest {
     @Test
     void everyLanguageAndWhatServesIt() {
         assertEquals(
-                List.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go"),
+                List.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go", "rust"),
                 List.copyOf(DebugLanguages.ids()));
         assertEquals(DebugLanguages.ids(), DapServerRegistry.languageIdsForDebug());
         for (String ts : List.of("typescript", "javascriptreact", "typescriptreact", "javascript")) {
@@ -28,16 +28,17 @@ class DebugLanguagesTest {
         }
         assertNull(DebugLanguages.byId("typescript"), "an editor language is not an adapter language");
         assertSame(DebugLanguages.GO, DebugLanguages.forLanguage("go"));
-        assertNull(DebugLanguages.forLanguage("rust"));
+        assertSame(DebugLanguages.RUST, DebugLanguages.forLanguage("rust"));
+        assertNull(DebugLanguages.forLanguage("zig"));
         assertNull(DebugLanguages.forLanguage(null));
         assertNull(DebugLanguages.byId(null));
         for (DebugLanguage l : DebugLanguages.all()) {
             assertSame(l, DebugLanguages.byId(l.id()));
             assertTrue(l.editorLanguages().contains(l.id()), l.id());
             assertEquals(
-                    l == DebugLanguages.GO,
+                    l == DebugLanguages.GO || l == DebugLanguages.RUST,
                     l.external() != null,
-                    l.id() + ": Go's adapter alone is started by the generic path");
+                    l.id() + ": Go's and Rust's adapters are started by the generic path");
         }
     }
 
@@ -122,5 +123,23 @@ class DebugLanguagesTest {
         assertEquals(46317, dlv.announcedPort("DAP server listening at: 127.0.0.1:46317"), "as Delve 1.27 prints it");
         assertEquals(List.of(), ExceptionFilterCatalog.known("go"), "Delve stops on a panic by itself");
         assertEquals("go", DebugLanguages.GO.launchType());
+    }
+
+    @Test
+    void rustIsCodelldbOnAPortItIsGivenAndStopsOnAPanic() {
+        ExternalAdapter codelldb = DebugLanguages.RUST.external();
+        assertEquals(ExternalAdapter.Transport.PORT_ARGUMENT, codelldb.transport());
+        assertEquals(List.of("/x/codelldb", "--port", "4711"), codelldb.argv("/x/codelldb", 4711));
+        assertEquals("lldb", DebugLanguages.RUST.launchType());
+        assertEquals(
+                List.of(DebugLanguages.RUST_PANIC_FILTER),
+                ExceptionFilterCatalog.known("rust").stream()
+                        .filter(DapModels.ExceptionFilterOption::byDefault)
+                        .map(DapModels.ExceptionFilterOption::filter)
+                        .toList(),
+                "a panic stops, as in VS Code");
+        assertEquals(List.of(DebugLanguages.RUST_PANIC_FILTER), ExternalAdapterFilters.defaults(DebugLanguages.RUST));
+        assertEquals(List.of(), ExternalAdapterFilters.defaults(DebugLanguages.GO));
+        assertFalse(DapManager.debuggableOnHost("rust"));
     }
 }

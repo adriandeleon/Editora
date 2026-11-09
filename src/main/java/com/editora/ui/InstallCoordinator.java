@@ -131,7 +131,7 @@ final class InstallCoordinator {
         switch (key) {
             case "typst" -> installTypstCli(); // the typst CLI (renderer), not an LSP server
             case "js-debug" -> installSupport(Lang.JAVASCRIPT, null, "js-debug", ok -> {});
-            case "dlv" -> installDebugger(key);
+            case "dlv", InstallCatalog.CODELLDB_STEP -> installDebugger(key);
             case "python" -> installSupport(Lang.PYTHON);
             case "javascript" -> installSupport(Lang.JAVASCRIPT);
             case "mermaid" -> installSupport(Lang.MERMAID);
@@ -140,8 +140,9 @@ final class InstallCoordinator {
     }
 
     /**
-     * Installs a debugger its language's toolchain installs ({@code dlv}: Delve, by {@code go install}) — when that
-     * toolchain is on the PATH; otherwise says it is needed. Then every adapter is looked for again.
+     * Installs a debugger of Settings → Debugging: {@code dlv} (Delve, by {@code go install}, when Go is on the PATH)
+     * or {@code codelldb} (CodeLLDB's pinned release, checked and unpacked into the config folder). A missing
+     * prerequisite is said instead. Then every adapter is looked for again.
      */
     private void installDebugger(String key) {
         List<Step> steps = InstallCatalog.debuggerInstall(key).orElse(List.of());
@@ -164,7 +165,7 @@ final class InstallCoordinator {
                 return;
             }
             installingServers.add(key);
-            String name = "Delve";
+            String name = "dlv".equals(key) ? "Delve" : "CodeLLDB";
             host.setStatus(tr("status.install.installing", name));
             service.install(
                     steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {

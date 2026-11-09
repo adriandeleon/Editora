@@ -560,6 +560,10 @@ final class TestNavigationCoordinator {
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugGoTestAtCaret(b)) {
             return;
         }
+        // A Rust test at the caret is debugged on CodeLLDB: its test binary, filtered to it.
+        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugRustTestAtCaret(b)) {
+            return;
+        }
         com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
         if (target == null) {
             host.setStatus(tr("status.testrunner.noTestAtCaret"));

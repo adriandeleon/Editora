@@ -117,7 +117,18 @@ final class DebugAdapterSettings {
                     "dlv",
                     "dlv",
                     "status.debug.goOff",
-                    (s, scope) -> tr("status.debug.delveMissing")));
+                    (s, scope) -> tr("status.debug.delveMissing")),
+            new Binding(
+                    DebugLanguages.RUST,
+                    Settings::isRustDebugEnabled,
+                    Settings::setRustDebugEnabled,
+                    Settings::getRustDebugPath,
+                    Settings::setRustDebugPath,
+                    "settings.debug.rustPath",
+                    "codelldb",
+                    "codelldb",
+                    "status.debug.rustOff",
+                    (s, scope) -> tr("status.debug.codelldbMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {
