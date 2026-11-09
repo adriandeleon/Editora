@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // VS Code's rdbg form: the script runs under rdbg with these arguments.
+      "name": "shelf (rdbg)",
+      "type": "rdbg",
+      "request": "launch",
+      "script": "${workspaceFolder}/shelf.rb",
+      "args": ["${input:limit}"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      // Attach to a program started with: rdbg --open --port 12345 shelf.rb
+      "name": "attach to rdbg on port 12345",
+      "type": "rdbg",
+      "request": "attach",
+      "debugPort": "localhost:12345"
+    }
+  ],
+  "inputs": [
+    { "id": "limit", "type": "pickString", "description": "Items to check out (or crash)", "options": ["6", "8", "crash"], "default": "6" }
+  ]
+}

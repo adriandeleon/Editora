@@ -176,4 +176,67 @@ class LaunchRouteTest {
                 LaunchRoute.javaRunConfiguration("x", config("cwd", "/c"), Path.of("/ws"))
                         .workingDir());
     }
+
+    @Test
+    void csharpRubyAndPhpConfigurationsGoToTheirPresets() {
+        Map<String, DebugLanguage> none = Map.of();
+        LaunchRoute.Route cs = LaunchRoute.of(
+                config("type", "coreclr", "request", "launch", "program", "app.dll", "preLaunchTask", "build"), none);
+        assertEquals(LaunchRoute.Kind.NETCOREDBG, cs.kind());
+        assertSame(DebugLanguages.CSHARP, cs.profile());
+        assertEquals(Map.of("type", "coreclr", "request", "launch", "program", "app.dll"), cs.request());
+        assertTrue(LaunchRoute.of(config("type", "coreclr", "request", "attach", "processId", 7), none)
+                .attach());
+        assertEquals(
+                LaunchRoute.Kind.UNSUPPORTED,
+                LaunchRoute.of(config("type", "dotnet", "projectPath", "x.csproj"), none)
+                        .kind(),
+                "C# Dev Kit's own type");
+
+        LaunchRoute.Route rb = LaunchRoute.of(config("type", "rdbg", "request", "launch", "script", "a.rb"), none);
+        assertEquals(LaunchRoute.Kind.RDBG, rb.kind());
+        assertSame(DebugLanguages.RUBY, rb.profile());
+        assertEquals(true, rb.request().get("localfs"));
+        assertEquals(
+                LaunchRoute.Kind.UNSUPPORTED,
+                LaunchRoute.of(config("type", "rdbg", "request", "launch"), none)
+                        .kind(),
+                "nothing to run");
+        LaunchRoute.Route rbAttach =
+                LaunchRoute.of(config("type", "rdbg", "request", "attach", "debugPort", "localhost:12345"), none);
+        assertEquals(LaunchRoute.Kind.RDBG, rbAttach.kind());
+        assertTrue(rbAttach.attach());
+        assertEquals(
+                LaunchRoute.Kind.UNSUPPORTED,
+                LaunchRoute.of(config("type", "rdbg", "request", "attach", "debugPort", "/tmp/rdbg.sock"), none)
+                        .kind(),
+                "a socket path");
+
+        LaunchRoute.Route php = LaunchRoute.of(config("type", "php", "request", "launch", "port", 9003), none);
+        assertEquals(LaunchRoute.Kind.PHP_DEBUG, php.kind());
+        assertSame(DebugLanguages.PHP, php.profile());
+        assertEquals(9003, php.request().get("port"), "Listen for Xdebug: sent as written");
+        assertEquals(
+                LaunchRoute.Kind.UNSUPPORTED,
+                LaunchRoute.of(config("type", "php", "request", "attach"), none).kind());
+    }
+
+    @Test
+    void anRdbgLaunchRunsItsCommandAndScript() {
+        assertEquals(
+                List.of("--", "ruby", "app.rb", "-v"),
+                LaunchRoute.rdbgTail(config("script", "app.rb", "args", List.of("-v"))));
+        assertEquals(
+                List.of("--", "bundle", "exec", "rake", "spec"),
+                LaunchRoute.rdbgTail(config("command", "bundle exec rake", "script", "spec")));
+        assertEquals(
+                List.of("--", "bundle", "exec", "ruby", "app.rb", "a", "b"),
+                LaunchRoute.rdbgTail(config("useBundler", true, "script", "app.rb", "args", "a b")));
+        assertEquals(12345, LaunchRoute.rdbgPort(config("debugPort", "12345")));
+        assertEquals(12345, LaunchRoute.rdbgPort(config("debugPort", 12345)));
+        assertEquals(12345, LaunchRoute.rdbgPort(config("debugPort", "127.0.0.1:12345")));
+        assertEquals(-1, LaunchRoute.rdbgPort(config("debugPort", "example.com:12345")), "another machine");
+        assertEquals(-1, LaunchRoute.rdbgPort(config("debugPort", "0")));
+        assertEquals(-1, LaunchRoute.rdbgPort(config()));
+    }
 }

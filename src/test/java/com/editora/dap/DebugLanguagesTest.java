@@ -20,7 +20,20 @@ class DebugLanguagesTest {
     @Test
     void everyLanguageAndWhatServesIt() {
         assertEquals(
-                List.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go", "rust", "cpp"),
+                List.of(
+                        "java",
+                        "python",
+                        "javascript",
+                        "groovy",
+                        "kotlin",
+                        "clojure",
+                        "scala",
+                        "go",
+                        "rust",
+                        "cpp",
+                        "csharp",
+                        "ruby",
+                        "php"),
                 List.copyOf(DebugLanguages.ids()));
         assertEquals(DebugLanguages.ids(), DapServerRegistry.languageIdsForDebug());
         for (String ts : List.of("typescript", "javascriptreact", "typescriptreact", "javascript")) {
@@ -29,6 +42,9 @@ class DebugLanguagesTest {
         assertNull(DebugLanguages.byId("typescript"), "an editor language is not an adapter language");
         assertSame(DebugLanguages.GO, DebugLanguages.forLanguage("go"));
         assertSame(DebugLanguages.RUST, DebugLanguages.forLanguage("rust"));
+        assertSame(DebugLanguages.CSHARP, DebugLanguages.forLanguage("csharp"));
+        assertSame(DebugLanguages.RUBY, DebugLanguages.forLanguage("ruby"));
+        assertSame(DebugLanguages.PHP, DebugLanguages.forLanguage("php"));
         assertNull(DebugLanguages.forLanguage("zig"));
         assertNull(DebugLanguages.forLanguage(null));
         assertNull(DebugLanguages.byId(null));
@@ -36,9 +52,17 @@ class DebugLanguagesTest {
             assertSame(l, DebugLanguages.byId(l.id()));
             assertTrue(l.editorLanguages().contains(l.id()), l.id());
             assertEquals(
-                    l == DebugLanguages.GO || l == DebugLanguages.RUST || l == DebugLanguages.CPP,
+                    List.of(
+                                    DebugLanguages.GO,
+                                    DebugLanguages.RUST,
+                                    DebugLanguages.CPP,
+                                    DebugLanguages.CSHARP,
+                                    DebugLanguages.RUBY,
+                                    DebugLanguages.PHP)
+                            .contains(l),
                     l.external() != null,
-                    l.id() + ": Go's, Rust's and C/C++'s adapters are started by the generic path");
+                    l.id()
+                            + ": Go's, Rust's, C/C++'s, C#'s, Ruby's and PHP's adapters are started by the generic path");
         }
     }
 

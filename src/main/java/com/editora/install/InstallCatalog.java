@@ -965,6 +965,12 @@ public final class InstallCatalog {
         if (CODELLDB_STEP.equals(stepId)) {
             return Optional.of(codelldb());
         }
+        if (NETCOREDBG_STEP.equals(stepId)) {
+            return Optional.of(netcoredbg());
+        }
+        if (PHP_DEBUG_STEP.equals(stepId)) {
+            return Optional.of(phpDebug());
+        }
         if (!KOTLIN_LSP_STEP.equals(stepId)) {
             return Optional.empty();
         }
@@ -1001,6 +1007,61 @@ public final class InstallCatalog {
                 " --stdio",
                 370,
                 1200));
+    }
+
+    /**
+     * netcoredbg (MIT, github.com/Samsung/netcoredbg): a {@code .tar.gz} (Linux) or {@code .zip} holding
+     * {@code netcoredbg/netcoredbg} and the .NET debugging libraries it loads. The hashes are the release assets'
+     * SHA-256 as GitHub publishes them for the tag; the Linux x64 one was checked against a downloaded copy. Samsung
+     * builds no Intel macOS one; Windows on ARM runs the x64 build.
+     */
+    private static PinnedServer netcoredbg() {
+        return new PinnedServer(
+                NETCOREDBG_STEP,
+                NETCOREDBG_VERSION,
+                java.util.Map.of(
+                        Platform.LINUX_X64,
+                        new PinnedAsset(
+                                NETCOREDBG_BASE + "linux-amd64.tar.gz",
+                                "080eb3b2d2152465f599d3b33d1ee6e747794e11cc0a3773ec689f5e5f2c5afa",
+                                Packing.TAR_GZ),
+                        Platform.LINUX_ARM,
+                        new PinnedAsset(
+                                NETCOREDBG_BASE + "linux-arm64.tar.gz",
+                                "065ff49badec8a695dbea2de6ab6a330c774a191e426a217ab8cc05250627ccb",
+                                Packing.TAR_GZ),
+                        Platform.MAC_ARM,
+                        new PinnedAsset(
+                                NETCOREDBG_BASE + "osx-arm64.zip",
+                                "f4fa33b3ff874910cc184b4bb3b9c56d0abdf5c6521cee0b144d7c6e4a6e59ea",
+                                Packing.ZIP),
+                        Platform.WIN_X64,
+                        new PinnedAsset(
+                                NETCOREDBG_BASE + "win64.zip",
+                                "3c410a45fa502415203a94fcb88654af65bf8e3dac158a5527a722e7a6b9274a",
+                                Packing.ZIP)),
+                "netcoredbg",
+                "",
+                4,
+                15);
+    }
+
+    /**
+     * vscode-php-debug (MIT, github.com/xdebug/vscode-php-debug): one {@code .vsix} for every platform, a zip holding
+     * {@code extension/out/phpDebug.js}, which runs on Node.js. The hash is the release asset's SHA-256 as GitHub
+     * publishes it for the tag, checked against a downloaded copy.
+     */
+    private static PinnedServer phpDebug() {
+        PinnedAsset vsix = new PinnedAsset(
+                "https://github.com/xdebug/vscode-php-debug/releases/download/v" + PHP_DEBUG_VERSION + "/php-debug-"
+                        + PHP_DEBUG_VERSION + ".vsix",
+                "17631993fe800083a2fc89a6782c8bf58a79603ad201ddff60d9b59ba2345d5f",
+                Packing.ZIP);
+        java.util.Map<Platform, PinnedAsset> assets = new java.util.EnumMap<>(Platform.class);
+        for (Platform p : Platform.values()) {
+            assets.put(p, vsix);
+        }
+        return new PinnedServer(PHP_DEBUG_STEP, PHP_DEBUG_VERSION, assets, "phpDebug.js", "", 2, 8);
     }
 
     /**
@@ -1341,8 +1402,67 @@ public final class InstallCatalog {
                     CODELLDB_DIR,
                     null)));
         }
+        if (RDBG_STEP.equals(key)) {
+            // The debug gem (Ruby 3.1 and later ship it) for the user, as a system Ruby's gem folder is root's.
+            return Optional.of(
+                    List.of(toolStep(RDBG_STEP, Prereq.RUBY, List.of("gem", "install", "--user-install", "debug"))));
+        }
+        if (PHP_DEBUG_STEP.equals(key)) {
+            boolean linux = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
+            return Optional.of(List.of(new Step(
+                    PHP_DEBUG_STEP,
+                    Kind.PINNED_SERVER,
+                    linux ? Set.of() : Set.of(Prereq.TAR),
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    PHP_DEBUG_DIR,
+                    null)));
+        }
+        if (NETCOREDBG_STEP.equals(key)) {
+            // A .tar.gz on Linux, a zip elsewhere: the system tar unpacks both (bsdtar reads zips).
+            return Optional.of(List.of(new Step(
+                    NETCOREDBG_STEP,
+                    Kind.PINNED_SERVER,
+                    Set.of(Prereq.TAR),
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    NETCOREDBG_DIR,
+                    null)));
+        }
         return Optional.empty();
     }
+
+    /** The rdbg step's id and its Settings key: {@code gem install --user-install debug}. */
+    public static final String RDBG_STEP = "rdbg";
+
+    /** The vscode-php-debug step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
+    public static final String PHP_DEBUG_STEP = "php-debug";
+
+    /** The vscode-php-debug release Editora installs. Bump with its hash in {@link #pinnedServer}. */
+    public static final String PHP_DEBUG_VERSION = "1.40.2";
+
+    /** Where vscode-php-debug is unpacked, relative to the config dir; {@code InstalledAdapter.PHP_DEBUG} looks there. */
+    public static final String PHP_DEBUG_DIR = "plugins/dap/php";
+
+    /** The netcoredbg step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
+    public static final String NETCOREDBG_STEP = "netcoredbg";
+
+    /** The netcoredbg release Editora installs. Bump with every hash in {@link #pinnedServer}. */
+    public static final String NETCOREDBG_VERSION = "3.2.0-1092";
+
+    /** Where netcoredbg is unpacked, relative to the config dir; {@code InstalledAdapter.NETCOREDBG} looks there. */
+    public static final String NETCOREDBG_DIR = "plugins/dap/csharp";
+
+    private static final String NETCOREDBG_BASE =
+            "https://github.com/Samsung/netcoredbg/releases/download/" + NETCOREDBG_VERSION + "/netcoredbg-";
 
     /** The CodeLLDB step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
     public static final String CODELLDB_STEP = "codelldb";

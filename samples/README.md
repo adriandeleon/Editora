@@ -482,6 +482,45 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
 - `samples/debug/c/tally.c` — a **lone C file**: F5 compiles it with `cc -g -O0`, no project needed;
   a struct array, Step Into / Step Out on `subtotal`, a watch on `total`.
 
+- `samples/debug/csharp/Shelf.csproj` — the same shelf as a standalone **.NET 10 C#** project (four files,
+  ~150 lines), for debugging C# on netcoredbg (Settings → Debugging → C#; Install there fetches netcoredbg).
+  Open `Program.cs` and press F5: `dotnet build` runs in the Debug console (after asking to trust the
+  folder), then the debugger stops at your breakpoints. `dotnet run` runs it outside Editora; the `crash`
+  program argument throws an exception nobody catches, which stops the debugger where it was thrown.
+  - `samples/debug/csharp/Program.cs` — the entry point (top-level statements): a first plain breakpoint,
+    Step Into `Checkout.Run`, and a caught `ArgumentException` for a word argument.
+  - `samples/debug/csharp/Checkout.cs` — the `Item` record and the checkout loop: a **watch** on `total`, a
+    **logpoint**, a **conditional** breakpoint in a lambda (`item.Sku == "C-2"`), a `SortedDictionary` that grows.
+  - `samples/debug/csharp/Pricing.cs` — a `switch` expression hit once per big item, and `Apply`, which
+    **recurses** through a stacked discount, so the call stack shows two `Apply` frames.
+  - `samples/debug/csharp/Restock.cs` — three named threads (`restock-1…3`): the **Threads** view, and a
+    **hit-count** breakpoint on a line that runs 480 times.
+  - `samples/debug/csharp/.vscode/launch.json` + `samples/debug/csharp/.vscode/tasks.json` — **Debug: Start
+    Configuration…** with VS Code's `coreclr` form: the built `Shelf.dll`, a `pickString` input for its
+    argument, and the `build` task (`dotnet build`) first.
+
+- `samples/debug/ruby/shelf.rb` — the same shelf as a **Ruby** script (three files, ~100 lines), for
+  debugging Ruby on rdbg, the debug gem Ruby 3.1 and later ship (Settings → Debugging → Ruby; Install there
+  runs `gem install --user-install debug`). Open `shelf.rb` and press F5: it runs under rdbg, which stops at
+  your breakpoints. `ruby shelf.rb` runs it outside Editora; the `crash` argument raises a `KeyError`.
+  - `samples/debug/ruby/shelf.rb` — the `Item` struct and the checkout loop: a first plain breakpoint, a
+    **watch** on `total`, a **logpoint**, a **conditional** breakpoint in a block, and a rescued `ArgumentError`.
+  - `samples/debug/ruby/pricing.rb` — `Pricing.apply` **recurses** through a stacked discount.
+  - `samples/debug/ruby/restock.rb` — three named threads: the **Threads** view, and a **hit-count**
+    breakpoint on a line that runs 480 times.
+  - `samples/debug/ruby/.vscode/launch.json` — **Debug: Start Configuration…** with VS Code's `rdbg` form: the
+    script under rdbg with a `pickString` argument, and an attach to `rdbg --open --port 12345 shelf.rb`.
+
+- `samples/debug/php/shelf.php` — the same shelf as a **PHP** script (two files, ~110 lines), for debugging PHP
+  on Xdebug (Settings → Debugging → PHP; Install there fetches the PHP Debug adapter, which runs on Node.js;
+  PHP needs the Xdebug extension, e.g. `php-xdebug`). Open `shelf.php` and press F5: PHP runs it with
+  Xdebug on, and the debugger stops at your breakpoints. `php shelf.php` runs it outside Editora; the
+  `crash` argument throws.
+  - `samples/debug/php/shelf.php` — readonly-property `Item` objects and the checkout loop: a **watch** on
+    `$total`, a **logpoint**, a **conditional** breakpoint, and a caught `InvalidArgumentException` (turn on
+    **PHP: exceptions** in the Breakpoints view to stop where it is thrown).
+  - `samples/debug/php/Pricing.php` — `Pricing::apply` **recurses** through a stacked discount.
+
 ## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup + tests
 
 Five tiny, self-contained projects — one per build tool. Open a file under a project's folder and

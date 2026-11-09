@@ -131,7 +131,11 @@ final class InstallCoordinator {
         switch (key) {
             case "typst" -> installTypstCli(); // the typst CLI (renderer), not an LSP server
             case "js-debug" -> installSupport(Lang.JAVASCRIPT, null, "js-debug", ok -> {});
-            case "dlv", InstallCatalog.CODELLDB_STEP -> installDebugger(key);
+            case "dlv",
+                    InstallCatalog.CODELLDB_STEP,
+                    InstallCatalog.NETCOREDBG_STEP,
+                    InstallCatalog.RDBG_STEP,
+                    InstallCatalog.PHP_DEBUG_STEP -> installDebugger(key);
             case "python" -> installSupport(Lang.PYTHON);
             case "javascript" -> installSupport(Lang.JAVASCRIPT);
             case "mermaid" -> installSupport(Lang.MERMAID);
@@ -165,7 +169,7 @@ final class InstallCoordinator {
                 return;
             }
             installingServers.add(key);
-            String name = "dlv".equals(key) ? "Delve" : "CodeLLDB";
+            String name = debuggerName(key);
             host.setStatus(tr("status.install.installing", name));
             service.install(
                     steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
@@ -179,6 +183,17 @@ final class InstallCoordinator {
                         }
                     });
         });
+    }
+
+    /** The name of the debugger Settings key {@code key} installs, as the status bar says it. */
+    static String debuggerName(String key) {
+        return switch (key) {
+            case "dlv" -> "Delve";
+            case InstallCatalog.NETCOREDBG_STEP -> "netcoredbg";
+            case InstallCatalog.RDBG_STEP -> "rdbg";
+            case InstallCatalog.PHP_DEBUG_STEP -> "PHP Debug (Xdebug)";
+            default -> "CodeLLDB";
+        };
     }
 
     /** As above; {@code onlyStep}, when given, is the one step of the language to install. */

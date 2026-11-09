@@ -152,6 +152,40 @@ class ExternalAdapterTest {
     }
 
     @Test
+    void rdbgSaysItsPortAsItListens() {
+        ExternalAdapter rdbg = DebugLanguages.RUBY.external();
+        assertEquals(41234, rdbg.announcedPort("DEBUGGER: Debugger can attach via TCP/IP (127.0.0.1:41234)"));
+        assertEquals(41235, rdbg.announcedPort("DEBUGGER: Debugger can attach via TCP/IP ([::1]:41235)"), "IPv6");
+        assertEquals(-1, rdbg.announcedPort("DEBUGGER: wait for debugger connection..."));
+        assertEquals(-1, rdbg.announcedPort("DEBUGGER: Debugger can attach via UNIX domain socket (/tmp/x)"));
+    }
+
+    @Test
+    void aProgramThatIsItsAdapterStartsInItsConfigurationsFolder(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("a.rb"), "");
+        Path other = Files.createDirectory(dir.resolve("other"));
+        assertEquals(other, DapManager.adapterFolder(file, Map.of("cwd", other.toString()), true));
+        assertEquals(dir, DapManager.adapterFolder(file, Map.of("cwd", other.toString()), false), "an adapter's own");
+        assertEquals(
+                dir,
+                DapManager.adapterFolder(file, Map.of("cwd", dir.resolve("none").toString()), true));
+        assertEquals(dir, DapManager.adapterFolder(file, Map.of(), true));
+        assertEquals(dir, DapManager.adapterFolder(dir, Map.of(), false), "a folder is its own");
+    }
+
+    @Test
+    void gemInstallUserInstallPutsProgramsInTheUsersGemFolders(@TempDir Path home) throws Exception {
+        assertEquals(List.of(), DapManager.gemUserBinDirs(home));
+        Path xdg = home.resolve(".local/share/gem/ruby");
+        Files.createDirectories(xdg.resolve("3.1.0"));
+        Files.createDirectories(xdg.resolve("3.3.0"));
+        Files.createDirectories(home.resolve(".gem/ruby/2.7.0"));
+        assertEquals(
+                List.of(xdg.resolve("3.3.0/bin"), xdg.resolve("3.1.0/bin"), home.resolve(".gem/ruby/2.7.0/bin")),
+                DapManager.gemUserBinDirs(home));
+    }
+
+    @Test
     void goInstallPutsProgramsInGobinElseEachGopathElseHomeGoBin() {
         Path home = Path.of("/home/u");
         String sep = java.io.File.pathSeparator;

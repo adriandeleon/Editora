@@ -34,6 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug C#, Ruby and PHP.** F5 now debugs these three languages, each with its own card under *Settings →
+  Debugging*, where *Install…* fetches its debugger:
+  - **C#** runs on netcoredbg. Editora builds the project with `dotnet build` in the Debug console, then stops at your
+    breakpoints. A lone `.cs` file works too, as a .NET 10 file-based app. An exception your code does not handle
+    stops it, as in Visual Studio.
+  - **Ruby** runs under rdbg, the debugger Ruby 3.1 and later ship.
+  - **PHP** runs with Xdebug, through the PHP Debug adapter VS Code uses. PHP needs the Xdebug extension, and the
+    adapter runs on Node.js.
+  - **launch.json:** *Debug: Start Configuration…* also runs `coreclr`, `rdbg` (including attaching to
+    `rdbg --open`) and `php` configurations.
+  - **Samples:** `samples/debug/csharp`, `samples/debug/ruby` and `samples/debug/php`, the same shelf as the other
+    languages' samples.
 - **Run VS Code's launch.json configurations.** *Debug: Start Configuration…* lists the configurations of the
   project's `.vscode/launch.json` and starts the one you pick as VS Code would:
   - **Supported types:** `lldb` (with its `cargo` build), `gdb`, `cppdbg`, `go` (with `exec` for a binary you built),

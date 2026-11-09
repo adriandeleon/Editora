@@ -6,8 +6,8 @@ import org.jspecify.annotations.Nullable;
  * Which lines hold no code a debugger could stop on: blank lines and lines that are only a comment. A breakpoint
  * there was accepted, and java-debug even reported it verified, yet it never stopped (B8) — IntelliJ and NetBeans
  * do not let one be set there at all. Decided from the text alone (no language server), for the comment syntax
- * of the languages Editora debugs: {@code //} and {@code /* … *}{@code /} for Java, JavaScript, Go and Rust, {@code #} for
- * Python. Other languages: only blank lines. Errs towards "code": a line it cannot place is left to the adapter.
+ * of the languages Editora debugs: {@code //} and {@code /* … *}{@code /} for Java, JavaScript, Go, Rust, C, C++, C# and
+ * PHP, {@code #} for Python and Ruby. Other languages: only blank lines. Errs towards "code": a line it cannot place is left to the adapter.
  * Pure — tested.
  */
 public final class CodeLessLines {
@@ -29,8 +29,10 @@ public final class CodeLessLines {
         }
         String lang = language == null ? "" : language;
         return switch (lang) {
-            case "python" -> own.startsWith("#");
-            case "java", "javascript", "typescript", "go", "rust", "c", "cpp" -> cStyleCommentOnly(lines, line);
+            case "python", "ruby" -> own.startsWith("#");
+            // PHP's `#[…]` is an attribute, so only its C-style comments count.
+            case "java", "javascript", "typescript", "go", "rust", "c", "cpp", "csharp", "php" ->
+                cStyleCommentOnly(lines, line);
             default -> false;
         };
     }

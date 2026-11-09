@@ -363,6 +363,10 @@ public final class LaunchJson {
             case "selectedText" -> {
                 return ctx.selectedText();
             }
+            case "port" -> {
+                // vscode-php-debug's own: it puts the port it listens on there (runtimeArgs, env), as VS Code leaves it
+                return "${port}";
+            }
             default -> {
                 // the file variables, below
             }

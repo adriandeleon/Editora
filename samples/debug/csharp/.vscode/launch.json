@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // VS Code's C# form: the program is the built assembly; the build task makes it first.
+      "name": "Shelf (coreclr)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/bin/Debug/net10.0/Shelf.dll",
+      "args": ["${input:limit}"],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false
+    }
+  ],
+  "inputs": [
+    { "id": "limit", "type": "pickString", "description": "Items to check out (or crash)", "options": ["6", "8", "crash"], "default": "6" }
+  ]
+}

@@ -49,6 +49,7 @@ class ChildLocalePolicyTest {
             "AppInfo.java", // git rev-parse of the build's own checkout
             "crypto/Pinentry.java", // `gpgconf --list-dirs homedir`: a path
             "dap/DapManager.java", // probe(): `node --version` (also js-debug's minimum), `python -c "import debugpy"`
+            "dap/DotnetLaunch.java", // `dotnet build -getProperty:TargetPath`: the assembly to debug
             "dap/LocalProcesses.java", // Windows: Win32_Process command lines, parsed
             "dap/RustLaunch.java", // Cargo's JSON artifact messages, parsed for the executable to debug
             "diagram/DiagramRenderer.java", // detect(): --version / --help
