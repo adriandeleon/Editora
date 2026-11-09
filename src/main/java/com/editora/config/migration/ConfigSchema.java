@@ -469,7 +469,10 @@ public enum ConfigSchema {
                     // (additive; absent means no named views, no recent-changes tint, unpinned cards)
                     Map.entry(28, ConfigMigrations::identity),
                     // v29→30: + debugAttachTargets (additive; absent means no earlier attach)
-                    Map.entry(29, ConfigMigrations::identity))),
+                    Map.entry(29, ConfigMigrations::identity),
+                    // v30→31: + a projectMapState card's caretLine, caretColumn, topLine and answers (additive;
+                    // absent means a card at its top with no answers)
+                    Map.entry(30, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

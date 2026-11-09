@@ -293,6 +293,132 @@ class ProjectMapLinksFxTest {
                 MapCardLinks.MAX_CARDS + 1,
                 resultCards(cards, src).size(),
                 "a result card stays while the card it was found from does, its folder closed or not"));
+
+        // Gap 9: a working set keeps the answer, its edges and the caret, and brings them back without asking again.
+        int[] before = new int[3]; // edges, groups, places of the answer as it was
+        String[] chipBefore = new String[1];
+        FxTestSupport.runOnFx(() -> {
+            before[0] = set.labelsForTest().size();
+            before[1] = set.groups.size();
+            before[2] = set.hits.size();
+            chipBefore[0] = set.chip.getText();
+            source.editor().moveTo(3, 9);
+            com.editora.config.ProjectMapState state = view.bearingsState();
+            com.editora.config.ProjectMapState.Card kept = state.getCards().stream()
+                    .filter(card -> card.getPath().equals("src/App.java"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(3, kept.getCaretLine());
+            assertEquals(9, kept.getCaretColumn());
+            com.editora.config.ProjectMapState.Answer answer = kept.getAnswers().getFirst();
+            assertEquals("CALLERS", answer.getKind());
+            assertEquals("NAME", answer.getVia());
+            assertEquals("add", answer.getName());
+            assertEquals(before[1], answer.getGroups().size(), "every group, as ranked");
+            assertEquals(
+                    before[0],
+                    answer.getGroups().stream()
+                            .filter(com.editora.config.ProjectMapState.Group::isEdge)
+                            .count());
+            assertTrue(answer.getGroups().stream()
+                    .filter(com.editora.config.ProjectMapState.Group::isEdge)
+                    .allMatch(com.editora.config.ProjectMapState.Group::isOwned));
+            assertEquals(before[2], answer.getPlaces().size());
+            assertTrue(answer.getGroups().getFirst().getPath().startsWith("src/use/Use"));
+            assertTrue(view.workingSets.save("Callers of add"));
+            cards.closeAll();
+            assertTrue(view.workingSets.show("Callers of add"));
+        });
+        waitFor(
+                () -> resultCards(cards, src).size() == MapCardLinks.MAX_CARDS + 1
+                        && cards.codeCard(app) != null
+                        && cards.links.setsForTest(cards.codeCard(app)).get(MapCardLinks.Kind.CALLERS) != null
+                        && cards.links
+                                        .setsForTest(cards.codeCard(app))
+                                        .get(MapCardLinks.Kind.CALLERS)
+                                        .labelsForTest()
+                                        .size()
+                                == before[0],
+                "the set's cards, with the answer's edges");
+        waitFor(() -> cards.codeCard(app).editor().getCurrentParagraph() == 3, "the caret where it was");
+        FxTestSupport.runOnFx(() -> {
+            ProjectMapPreview again = cards.codeCard(app);
+            assertEquals(9, again.editor().getCaretColumn());
+            MapCardLinks.EdgeSet restored = cards.links.setsForTest(again).get(MapCardLinks.Kind.CALLERS);
+            assertEquals(chipBefore[0], restored.chip.getText(), "those still without a card are on the chip");
+            assertTrue(restored.labelsForTest().stream()
+                    .allMatch(label -> label.getText().equals("by name")));
+            assertTrue(restored.labelsForTest().getFirst().getStyleClass().contains("by-name"));
+            assertEquals(before[2], restored.hits.size(), "its places, for its list");
+            assertTrue(
+                    resultCards(cards, src).getFirst().getAccessibleText().contains("names App.java"),
+                    resultCards(cards, src).getFirst().getAccessibleText());
+            cards.close(again);
+            assertEquals(List.of(), resultCards(cards, src), "the cards it opened close with it, as before");
+        });
+
+        // The card asked from opening first (a restart's order can be any): its edges join the cards as they come.
+        // An answer of a kind this build does not know, and a place outside the folder, are passed over.
+        FxTestSupport.runOnFx(() -> {
+            com.editora.config.ProjectMapState saved =
+                    view.workingSets.forRoot().getFirst().getState();
+            com.editora.config.ProjectMapState reordered = new com.editora.config.ProjectMapState();
+            reordered.setRoot(saved.getRoot());
+            reordered.setExpanded(saved.getExpanded());
+            List<com.editora.config.ProjectMapState.Card> order = new java.util.ArrayList<>();
+            for (com.editora.config.ProjectMapState.Card card : saved.getCards()) {
+                com.editora.config.ProjectMapState.Card copy = card.copy();
+                if (copy.getPath().equals("src/App.java")) {
+                    com.editora.config.ProjectMapState.Answer unknown = new com.editora.config.ProjectMapState.Answer();
+                    unknown.setKind("NOT_A_KIND");
+                    unknown.setVia("SERVER");
+                    com.editora.config.ProjectMapState.Answer answer =
+                            copy.getAnswers().getFirst();
+                    com.editora.config.ProjectMapState.Group outside = new com.editora.config.ProjectMapState.Group();
+                    outside.setPath("../elsewhere/X.java");
+                    outside.setFile("../elsewhere/X.java");
+                    com.editora.config.ProjectMapState.Place away = new com.editora.config.ProjectMapState.Place();
+                    away.setFile("../elsewhere/X.java");
+                    com.editora.config.ProjectMapState.Answer widened = new com.editora.config.ProjectMapState.Answer();
+                    widened.setKind(answer.getKind());
+                    widened.setVia(answer.getVia());
+                    widened.setName(answer.getName());
+                    List<com.editora.config.ProjectMapState.Group> groups =
+                            new java.util.ArrayList<>(answer.getGroups());
+                    groups.add(outside);
+                    widened.setGroups(groups);
+                    List<com.editora.config.ProjectMapState.Place> places =
+                            new java.util.ArrayList<>(answer.getPlaces());
+                    places.add(away);
+                    widened.setPlaces(places);
+                    copy.setAnswers(List.of(unknown, widened));
+                    copy.setTopLine(2);
+                    order.addFirst(copy);
+                } else {
+                    order.add(copy);
+                }
+            }
+            reordered.setCards(order);
+            view.viewsApply(reordered);
+        });
+        waitFor(
+                () -> cards.codeCard(app) != null
+                        && cards.links.setsForTest(cards.codeCard(app)).get(MapCardLinks.Kind.CALLERS) != null
+                        && cards.links
+                                        .setsForTest(cards.codeCard(app))
+                                        .get(MapCardLinks.Kind.CALLERS)
+                                        .labelsForTest()
+                                        .size()
+                                == before[0],
+                "every edge joined its card as it came back");
+        FxTestSupport.runOnFx(() -> {
+            MapCardLinks.EdgeSet restored =
+                    cards.links.setsForTest(cards.codeCard(app)).get(MapCardLinks.Kind.CALLERS);
+            assertEquals(1, cards.links.setsForTest(cards.codeCard(app)).size(), "the unknown kind passed over");
+            assertEquals(before[1], restored.groups.size(), "nothing outside the folder");
+            assertEquals(before[2], restored.hits.size());
+            assertEquals(chipBefore[0], restored.chip.getText());
+        });
     }
 
     // --- helpers ------------------------------------------------------------------------------------

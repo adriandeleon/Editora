@@ -934,6 +934,156 @@ final class MapCardLinks {
         return set;
     }
 
+    // --- Answers kept in working sets and across a restart (Map code browser gap 9) ------------------------------
+
+    /** How many places of one answer are kept for its list: a working set is a view, not an index. */
+    static final int MAX_SAVED_PLACES = 500;
+
+    /** A restored answer's edge to a card not open yet: added when its card is brought back. */
+    private record RestoredEdge(EdgeSet set, Group group, boolean owned) {}
+
+    private final Map<Path, List<RestoredEdge>> restoredEdges = new HashMap<>();
+
+    /**
+     * The answers asked from {@code card} as a working set or a restart keeps them: each one's kind, how it was found
+     * and its name, its groups as ranked (with whether each had an edge, and whether the answer opened its card), and
+     * up to {@link #MAX_SAVED_PLACES} of its places, paths relative to {@code root}. What lies outside {@code root} (a
+     * library class) is left out.
+     */
+    List<com.editora.config.ProjectMapState.Answer> savedAnswers(ProjectMapPreview card, Path root) {
+        Map<Kind, EdgeSet> of = sets.get(card);
+        if (of == null) {
+            return List.of();
+        }
+        List<com.editora.config.ProjectMapState.Answer> saved = new ArrayList<>();
+        for (EdgeSet set : of.values()) {
+            com.editora.config.ProjectMapState.Answer answer = new com.editora.config.ProjectMapState.Answer();
+            answer.setKind(set.kind.name());
+            answer.setVia(set.via.name());
+            answer.setName(set.name);
+            List<com.editora.config.ProjectMapState.Group> groups = new ArrayList<>();
+            for (Group group : set.groups) {
+                String key = ProjectMapView.bearingsRelative(root, group.key());
+                String file = ProjectMapView.bearingsRelative(root, group.file());
+                if (key == null || file == null) {
+                    continue;
+                }
+                Edge edge = set.edges.stream()
+                        .filter(e -> e.group == group)
+                        .findFirst()
+                        .orElse(null);
+                com.editora.config.ProjectMapState.Group kept = new com.editora.config.ProjectMapState.Group();
+                kept.setPath(key);
+                kept.setFile(file);
+                kept.setLabel(group.label());
+                kept.setLine(group.line());
+                kept.setCount(group.count());
+                kept.setMark(group.mark());
+                kept.setEdge(edge != null);
+                kept.setOwned(edge != null && set.owned.contains(edge.target));
+                groups.add(kept);
+            }
+            answer.setGroups(groups);
+            List<com.editora.config.ProjectMapState.Place> places = new ArrayList<>();
+            for (Hit hit : set.hits) {
+                String file = ProjectMapView.bearingsRelative(root, hit.file());
+                if (file == null) {
+                    continue;
+                }
+                if (places.size() == MAX_SAVED_PLACES) {
+                    break;
+                }
+                com.editora.config.ProjectMapState.Place place = new com.editora.config.ProjectMapState.Place();
+                place.setFile(file);
+                place.setLine(hit.line());
+                place.setColumn(hit.column());
+                place.setCount(hit.count());
+                place.setName(hit.name());
+                places.add(place);
+            }
+            answer.setPlaces(places);
+            saved.add(answer);
+        }
+        return saved;
+    }
+
+    /**
+     * Brings back {@code answers} — kept by {@link #savedAnswers} — on {@code from}, a card just restored, without
+     * asking again: an edge to each of its cards that is open, the others on the chip until their cards come back
+     * ({@link #cardRestored}), and its places for its list. An answer of an unknown kind is skipped.
+     */
+    void restoreAnswers(ProjectMapPreview from, List<com.editora.config.ProjectMapState.Answer> answers, Path root) {
+        for (com.editora.config.ProjectMapState.Answer answer : answers) {
+            Kind kind = enumOf(Kind.class, answer.getKind());
+            Via via = enumOf(Via.class, answer.getVia());
+            if (kind == null || via == null) {
+                continue;
+            }
+            EdgeSet set = replaceSet(from, kind, via, answer.getName());
+            List<Hit> hits = new ArrayList<>();
+            for (com.editora.config.ProjectMapState.Place place : answer.getPlaces()) {
+                Path file = ProjectMapView.bearingsResolve(root, place.getFile());
+                if (file != null) {
+                    hits.add(new Hit(file, place.getLine(), place.getColumn(), place.getCount(), place.getName()));
+                }
+            }
+            set.hits = List.copyOf(hits);
+            List<Group> groups = new ArrayList<>();
+            for (com.editora.config.ProjectMapState.Group kept : answer.getGroups()) {
+                Path key = ProjectMapView.bearingsResolve(root, kept.getPath());
+                Path file = ProjectMapView.bearingsResolve(root, kept.getFile());
+                if (key == null || file == null) {
+                    continue;
+                }
+                ProjectMapStructure.Node node = structure.node(key); // null for a file
+                Group group = new Group(file, node, kept.getLabel(), kept.getLine(), kept.getCount(), kept.getMark());
+                groups.add(group);
+                ProjectMapPreview target = kept.isEdge() ? cards.card(key) : null;
+                if (target != null) { // never the card asked from: an answer leads away from it
+                    set.addEdge(target, group, kept.isOwned());
+                } else {
+                    set.more.add(group);
+                    if (kept.isEdge()) {
+                        restoredEdges
+                                .computeIfAbsent(key, ignored -> new ArrayList<>())
+                                .add(new RestoredEdge(set, group, kept.isOwned()));
+                    }
+                }
+            }
+            set.groups = List.copyOf(groups);
+            set.updateChip();
+        }
+    }
+
+    /** {@code card}, the card of {@code key}, was brought back: the restored answers' edges waiting for it join it. */
+    void cardRestored(Path key, ProjectMapPreview card) {
+        List<RestoredEdge> waiting = restoredEdges.remove(key);
+        if (waiting == null) {
+            return;
+        }
+        for (RestoredEdge edge : waiting) {
+            EdgeSet set = edge.set();
+            Map<Kind, EdgeSet> of = sets.get(set.from);
+            if (of != null && of.get(set.kind) == set && set.more.remove(edge.group())) {
+                set.addEdge(card, edge.group(), edge.owned());
+                set.updateChip();
+            }
+        }
+    }
+
+    /** Forgets the restored edges still waiting for their cards (every card closed: a working set shown). */
+    void forgetRestored() {
+        restoredEdges.clear();
+    }
+
+    private static <E extends Enum<E>> @Nullable E enumOf(Class<E> type, String name) {
+        try {
+            return Enum.valueOf(type, name);
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
+    }
+
     /** The edge sets stuck on {@code card} (its questions' answers), and its hierarchy tree. */
     List<CardAttachment> attachments(ProjectMapPreview card) {
         Map<Kind, EdgeSet> of = sets.get(card);
@@ -1357,11 +1507,20 @@ final class MapCardLinks {
             if (card == from) {
                 return Opened.SKIPPED;
             }
-            if (!existed) {
-                owned.add(card);
-            }
             if (placedHere) {
                 card.keepPlacedWidth();
+            }
+            addEdge(card, group, !existed);
+            return Opened.OPENED;
+        }
+
+        /**
+         * An edge of this answer to {@code card}, the card of {@code group}, with its label and the card's link text;
+         * {@code ownedCard}: the answer opened the card, which then closes with the card asked from (C11).
+         */
+        void addEdge(ProjectMapPreview card, Group group, boolean ownedCard) {
+            if (ownedCard) {
+                owned.add(card);
             }
             Edge edge = new Edge(card, group);
             edge.label.getStyleClass().addAll("project-map-link-label", via == Via.NAME ? "by-name" : "by-server");
@@ -1375,7 +1534,6 @@ final class MapCardLinks {
             // Under every card, as the edge itself is: a label never covers a card's text.
             canvasHost.getChildren().add(layer < 0 ? canvasHost.getChildren().size() : layer + 1, edge.label);
             edges.add(edge);
-            return Opened.OPENED;
         }
 
         /** Whether an edge of this answer runs to {@code card}. */

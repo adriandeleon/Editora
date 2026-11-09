@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project Map working sets keep each card's answers and caret.** References, Callers, Go to Definition and the
+  other answers asked from a card come back with their edges and their "+N more" list, without asking the language
+  server again. Each card comes back with its caret and scroll position. This holds for working sets and for the
+  Map you see again after a restart.
 - **Problems on Project Map cards.** A code card underlines its file's errors and warnings as the editor does, while
   a language server runs for the file, and its status counts them. A declaration card shows only its declaration's.
   Next Problem and Previous Problem typed in a card go through the card's problems. Resting the mouse on a card's text
