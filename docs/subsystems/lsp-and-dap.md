@@ -1156,6 +1156,39 @@ CodeLLDB has it, sent as the profile's default: see **External adapters**).
 `NativeDebugWindowFxTest` drives the window against a Make project whose recipe writes a stand-in program, with a
 stand-in `codelldb`.
 
+**Disassembly and Memory views.** The Debug window's third area holds three views, chosen by toggles in its header:
+Console, Disassembly and Memory (`DebugPanel.showArea`). They work with adapters that advertise them, which are
+CodeLLDB and Delve:
+- `supportsDisassembleRequest`;
+- `supportsReadMemoryRequest`;
+- `supportsSteppingGranularity`.
+
+`initialize` declares `supportsMemoryReferences`, and each stack frame keeps DAP's `instructionPointerReference`
+(`StackFrameInfo.instructionPointer`).
+
+[`ui/DebugDisassemblyView`](../../src/main/java/com/editora/ui/DebugDisassemblyView.java) shows the selected frame's
+instructions. They come from `DapManager.disassemble`: 40 before the instruction pointer and 120 in all, with
+`resolveSymbols`.
+- The instruction the frame is at is marked and selected. Addresses are compared as numbers (`parseAddress`).
+- Each run of instructions is labelled with the source line it came from.
+- Double-clicking a row opens that line.
+- While the list has the keyboard, Step Over and Step Into step one instruction (`granularity: instruction`), as
+  VS Code's Disassembly view does.
+- Debug: Step Over Instruction and Step Into Instruction do it from anywhere. Debug: Show Disassembly opens the view.
+- It's filled again at every stop and frame change (`DebugCoordinator.refreshLowLevelViews`).
+
+[`ui/DebugMemoryView`](../../src/main/java/com/editora/ui/DebugMemoryView.java) shows the program's memory as rows
+of 16 bytes: address, hex and text (`rows`). It reads a 256-byte page at a time (`DapManager.readMemory`), with ◀ ▶
+to move between pages.
+- Its field takes an address (`0x…`), or an expression whose value's memory reference comes from `evaluate`
+  (`memoryReferenceOf`).
+- A variable's context menu has View Memory, which opens the view at the variable's path expression.
+- An address that can't be read is said, as is an expression with no address, or an adapter that doesn't read
+  memory.
+
+`DisassemblyMemoryProbeFxTest` drives the real CodeLLDB; `GoDebugProbeFxTest` checks Delve's answers too.
+`LowLevelViewsFxTest` drives both views against `FakeDebugAdapter.lowLevel`.
+
 `GoDebugProbeFxTest`, opt-in, runs in CI's integration job with Go and a pinned Delve. It drives the real Delve
 through `DapManager`: variables, Step Over, goroutines, a test at the caret, and an attach then detach. It also
 drives it through a window: F5 and Debug Test at Caret.
