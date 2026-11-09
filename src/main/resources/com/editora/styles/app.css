@@ -1753,6 +1753,10 @@
     -fx-padding: 5 6 5 10;
     -fx-cursor: move;
 }
+/* A preview card (a Go to result the next Go to replaces), as an editor's preview tab: its title in italics. */
+.project-map-preview-transient .project-map-preview-title {
+    -fx-font-style: italic;
+}
 .project-map-preview-title {
     -fx-font-size: 11px;
     -fx-font-weight: bold;

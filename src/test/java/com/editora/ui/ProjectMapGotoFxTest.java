@@ -214,17 +214,20 @@ class ProjectMapGotoFxTest {
             assertEquals(1, source.editor().getCurrentParagraph(), "where the caret was when Forward left it");
             assertFalse(mapCommands.test("file.find"), "only Back and Forward");
 
-            // A closed card's stop is its place: Forward reveals its row.
+            // A closed card's stop keeps its line: Forward opens the card there again.
             FxTestSupport.invokeWith(cards, "closePreview", ProjectMapPreview.class, target);
+            assertEquals(null, cards.codeCard(shape));
             source.editor().requestFocus();
             assertTrue(mapCommands.test("nav.forward"));
             assertTrue(view.history.cardsBack().contains(source));
         });
-        waitFor(() -> shape.equals(surface.selectedPath()), "Shape.java's row selected");
+        waitFor(() -> cards.codeCard(shape) != null, "Shape.java's card opened again");
+        ProjectMapPreview reopened = FxTestSupport.callOnFx(() -> cards.codeCard(shape));
+        waitFor(() -> reopened.editor().getCurrentParagraph() == 2, "at the line its caret was on");
         FxTestSupport.runOnFx(() -> {
-            assertEquals(null, cards.codeCard(shape), "the closed card stays closed");
             assertFalse(view.history.canGoForward());
             assertTrue(view.history.canGoBack());
+            assertTrue(view.history.stops().get(view.history.index()).card() == reopened, "the stop is on it again");
         });
         assertEquals(List.of(), editorOpened, "nothing opened in the editor");
     }

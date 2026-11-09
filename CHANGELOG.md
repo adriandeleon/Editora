@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     at a time. *Debug: Step Over Instruction* and *Step Into Instruction* do it from anywhere.
   - **Memory** shows the program's memory as hex and text, 256 bytes at a time, from an address or an expression.
     *View Memory* in a variable's menu opens it at that variable.
+- **Following code on the Project Map no longer piles up cards.** Like an editor's preview tab, a card opened by Go
+  to Definition (or Declaration, Type Definition, Super Method) is a preview, with its title in italics. The next Go
+  to from it opens where it stood and replaces it, so a chain of steps keeps one card in view. Pin, drag or resize a
+  preview to keep it. Back now reopens a card that was closed, at the line you were on, instead of only selecting
+  its row.
 - **Debug C and C++ programs.** Editora now debugs C and C++ with CodeLLDB, the debugger it already uses for Rust:
   - **F5 in a CMake project** configures a Debug build in `build/editora-debug`, builds it in the Debug console,
     and debugs the program that holds the file.

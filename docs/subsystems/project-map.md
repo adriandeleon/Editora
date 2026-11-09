@@ -343,6 +343,18 @@ place on the card asked from itself (a definition further down the same file car
 lines) opens no card: the card's caret moves there, the name selected. The result card selects the asked name at
 the place (`MapCardLinks.markOf`) — the result's own name for a type definition, a supertype or a subtype.
 
+**Preview cards** (Map code browser gap 6). Following the code step by step used to leave a card per step. A card a Go
+to step opened (a new one, not one already open) is a *preview*, as an editor's preview tab is: its title is in
+italics (`project-map-preview-transient`, `MapCardLinks.previewCards`). The next Go to from a preview that answers one
+place opens that place's card where the preview stands, as drawn (`MapCardLinks.takePlace`, taken first by
+`MapCards.drawnPlacement`), hands it to the answer that opened the preview (so it closes with that card and the orphan
+check keeps it), and closes the preview; the status says so ("The preview card gave way to this one; pin a card, or
+move it, to keep it."). A preview is kept, and a Go to from it opens beside it as before, once it is pinned, dragged,
+resized or moved by key (`ProjectMapPreview.userArranged`), has its Structure column out, shows a hierarchy tree, or is
+asked anything but a Go to (`MapCardLinks.keepCard`). A card the reader opened — from a row, a Go to File or Symbol,
+Back — is never a preview. An answer of several places opens them all, as before. Back from the result opens the
+preview again (below).
+
 **Back and Forward** (`nav.back` / `nav.forward`: Ctrl+Alt+Left / Right in the CUA and IntelliJ keymaps, `M-,` in
 Emacs) typed in a card walk the Map's one history (`MapHistory`, below with the map's Alt+Left / Alt+Right), never the
 editor's: each step that led to a card (or moved a card's caret) is a stop for the card it left, with its caret then,
@@ -741,8 +753,12 @@ a place — a row's path, a declaration card's made-up path — and, when the co
 card and its caret. Alt+Left / Alt+Right on the map, the ‹ › buttons and their menu, and `nav.back` / `nav.forward`
 typed on the map or in a card all walk it. A card's stop on its own row's place is that place (`MapHistory.samePlace`:
 the row it was opened from, or the file of the declaration it shows), so Back does not stop twice at one place; Go to
-File or Symbol picked in a card reveals its row without a stop of its own. A closed card's stop becomes its place
-(`MapHistory.cardClosed`; two of one place in a row are kept once), so Back reveals its row instead of skipping it.
+File or Symbol picked in a card reveals its row without a stop of its own. A closed card's stop becomes its place with
+the file line its caret was on (`MapHistory.cardClosed`, `Stop.line`; the same place at the same line twice in a row
+is kept once), and Back to it opens the card there again (`MapCards.reopenStop`: the file's card, or the
+declaration's while it is in its file's outline, the keyboard in it; `MapHistory.reopened` puts the stop on it), so a
+preview another Go to replaced, or a card closed by hand, comes back as IntelliJ's Back reopens a closed tab. A stop
+it cannot open (a declaration no longer outlined, every card pinned) reveals its row.
 Back from a card the history has no stop for (the keyboard was put there by hand) adds one, so Forward returns to it.
 The workspace keeps the places only (a card's stop as its place).
 
@@ -1571,6 +1587,11 @@ The focused coverage lives in:
 - `ProjectMapCardMovesFxTest` / `MapCardMovesTest` for moving inside a card: Go to Line in file and declaration
   cards, its bar's Enter and Escape and the menu item, matching bracket and Beginning / End of Defun, a file card's
   Alt+Page Up / Down through its outline (and the wait for it), a file with no outline, and the uses wash;
+- `MapHistoryTest.aClosedCardsStopKeepsItsLineSoBackOpensItAgain` /
+  `ProjectMapNavigationFxTest.aGoToFromAPreviewCardOpensWhereItStoodAndBackOpensItAgain` for preview cards: a Go to
+  result is a preview in italics, the next Go to from it opens where it stood and closes it, the result kept as the
+  first card's answer, Back opening the preview's card again (no preview), and a Go to from a kept card opening beside
+  it; and a closed card's stop keeping its line;
 - `MapLibrarySourcesTest` / `ProjectMapNavigationFxTest.aDefinitionInALibraryOpensItsSourceAsACardWhoseOpenIsTheLibraryTab`
   for library cards: a class file URI's parts and file, safe names, the read-only copy written again when its source
   changes, the folder's removal; a JDK definition as a card past its Javadoc, read-only and outside the project, its
