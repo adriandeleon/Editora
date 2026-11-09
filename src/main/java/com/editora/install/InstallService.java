@@ -822,11 +822,16 @@ public final class InstallService {
                 throw new InstallException(s.id() + ": the download does not match its published checksum (expected "
                         + asset.sha256() + ", got " + actual + ") — not installed");
             }
+            boolean unzipHere = asset.packing() == InstallCatalog.Packing.ZIP && unzipsItself();
             Path launcherInInstall = replaceInstall(dest, staged -> {
-                ProcessRunner.Result r = ProcessRunner.runInUserLocale(
-                        null, CMD_TIMEOUT, InstallCatalog.tarExtractArgvAuto(archive, staged));
-                if (!r.ok()) {
-                    throw new InstallException(s.id() + ": tar failed — " + r.message());
+                if (unzipHere) {
+                    unzipWithPrograms(archive, staged, server.maxBytes());
+                } else {
+                    ProcessRunner.Result r = ProcessRunner.runInUserLocale(
+                            null, CMD_TIMEOUT, InstallCatalog.tarExtractArgvAuto(archive, staged));
+                    if (!r.ok()) {
+                        throw new InstallException(s.id() + ": tar failed — " + r.message());
+                    }
                 }
                 Path launcher = findBinary(staged, server.launcher(), false);
                 if (launcher == null) {
@@ -839,6 +844,34 @@ public final class InstallService {
             return InstallCatalog.binaryCommand(dest.resolve(launcherPath.toString()), server.arguments());
         } finally {
             deleteQuietly(archive);
+        }
+    }
+
+    /** Whether a pinned zip is unpacked by Editora rather than the system tar: on Linux, whose GNU tar reads no zip. */
+    private static boolean unzipsItself() {
+        InstallCatalog.Platform p = InstallCatalog.currentPlatform();
+        return p == InstallCatalog.Platform.LINUX_X64 || p == InstallCatalog.Platform.LINUX_ARM;
+    }
+
+    /**
+     * Unpacks zip {@code archive} into {@code dest} (at most {@code maxBytes} in all, one file at most that), then
+     * makes the programs it holds runnable — the files of every {@code bin} and {@code adapter} folder — since a zip
+     * read in Java keeps no file modes (CodeLLDB's adapter and its LLDB's {@code lldb-server}).
+     */
+    static void unzipWithPrograms(Path archive, Path dest, long maxBytes) throws IOException {
+        try (InputStream in = Files.newInputStream(archive)) {
+            Unzip.extract(in, dest, maxBytes, maxBytes * 4, 50_000);
+        }
+        try (Stream<Path> all = Files.walk(dest)) {
+            for (Path f : (Iterable<Path>) all.filter(Files::isRegularFile)::iterator) {
+                Path parent = f.getParent();
+                String folder = parent == null || parent.getFileName() == null
+                        ? ""
+                        : parent.getFileName().toString();
+                if (folder.equals("bin") || folder.equals("adapter")) {
+                    makeExecutable(f);
+                }
+            }
         }
     }
 

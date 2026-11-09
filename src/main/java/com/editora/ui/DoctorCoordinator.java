@@ -795,6 +795,17 @@ final class DoctorCoordinator {
                     return dlv != null ? base.ok(dlv) : base.missing("doctor.tip.missing", "dlv");
                 }));
             }
+            if (s.isRustDebugEnabled()) {
+                String codelldbPath = scope.debugTool("rust", s.getRustDebugPath());
+                // Its Install is on Settings → Debugging → Rust, where Settings… leads.
+                DoctorCheck codelldb = DoctorCheck.checking("debug.rust", "debug", tr("doctor.label.codelldb"), "")
+                        .withSettings("debug");
+                specs.add(probe(codelldb, base -> {
+                    String found = com.editora.dap.DapManager.locateExternal(
+                            com.editora.dap.DebugLanguages.RUST, codelldbPath);
+                    return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "codelldb");
+                }));
+            }
         } else {
             specs.add(terminal(offRow(
                     DoctorCheck.checking("debug", "debug", tr("doctor.label.sectionOff"), "")

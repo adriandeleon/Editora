@@ -48,8 +48,8 @@ class CodeLessLinesTest {
         assertTrue(CodeLessLines.isCodeLess(py, 1, "python"));
         assertTrue(CodeLessLines.isCodeLess(py, 2, "python"));
         assertFalse(CodeLessLines.isCodeLess(py, 3, "python"));
-        assertTrue(CodeLessLines.isCodeLess("a\n  \nb", 1, "rust"));
-        assertFalse(CodeLessLines.isCodeLess("// x", 0, "rust"), "unknown comment syntax: left to the adapter");
+        assertTrue(CodeLessLines.isCodeLess("a\n  \nb", 1, "zig"));
+        assertFalse(CodeLessLines.isCodeLess("// x", 0, "zig"), "unknown comment syntax: left to the adapter");
         assertFalse(CodeLessLines.isCodeLess("a", 5, "java"));
         assertFalse(CodeLessLines.isCodeLess(null, 0, "java"));
     }
@@ -63,5 +63,14 @@ class CodeLessLinesTest {
         assertTrue(CodeLessLines.isCodeLess(go, 5, "go"));
         assertFalse(CodeLessLines.isCodeLess(go, 3, "go"));
         assertFalse(CodeLessLines.isCodeLess(go, 6, "go"), "a raw string holding // is code");
+    }
+
+    @Test
+    void rustCommentLinesHaveNoCode() {
+        String rs = "/// Docs.\nfn main() {\n    // a comment\n    let x = 1; // trailing\n}\n";
+        assertTrue(CodeLessLines.isCodeLess(rs, 0, "rust"));
+        assertTrue(CodeLessLines.isCodeLess(rs, 2, "rust"));
+        assertFalse(CodeLessLines.isCodeLess(rs, 1, "rust"));
+        assertFalse(CodeLessLines.isCodeLess(rs, 3, "rust"));
     }
 }

@@ -754,4 +754,24 @@ class InstallCatalogTest {
                 dlv.getFirst().npmPackages());
         assertTrue(InstallCatalog.debuggerInstall("debugpy").isEmpty());
     }
+
+    @Test
+    void codelldbIsAPinnedReleaseUnpackedIntoTheDebuggersFolder() {
+        List<Step> steps =
+                InstallCatalog.debuggerInstall(InstallCatalog.CODELLDB_STEP).orElseThrow();
+        assertEquals(1, steps.size());
+        Step step = steps.getFirst();
+        assertEquals(Kind.PINNED_SERVER, step.kind());
+        assertEquals(InstallCatalog.CODELLDB_DIR, step.destSubpath());
+        var recipe = InstallCatalog.pinnedServer(InstallCatalog.CODELLDB_STEP).orElseThrow();
+        assertEquals("codelldb", recipe.launcher());
+        for (Platform p : Platform.values()) {
+            var asset = recipe.assetFor(p);
+            assertNotNull(asset, p + ": CodeLLDB publishes a build");
+            assertTrue(asset.url().startsWith("https://github.com/vadimcn/codelldb/releases/download/v1.12.3/"));
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), asset.sha256());
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(asset.url()));
+        }
+        assertEquals(null, InstallCatalog.largeDownload("rust"), "not a language server's download");
+    }
 }

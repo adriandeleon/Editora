@@ -15,7 +15,7 @@ class DapServerRegistryTest {
     @Test
     void languageIdsForDebugAreJavaPythonJavascriptGroovyKotlinClojureScalaAndGo() {
         assertEquals(
-                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go"),
+                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go", "rust"),
                 DapServerRegistry.languageIdsForDebug());
     }
 
@@ -56,7 +56,8 @@ class DapServerRegistryTest {
         assertEquals(DapServerRegistry.Kind.STDIO, DapServerRegistry.kindFor("python"));
         assertEquals(DapServerRegistry.Kind.SOCKET, DapServerRegistry.kindFor("javascript"));
         assertEquals(DapServerRegistry.Kind.EXTERNAL, DapServerRegistry.kindFor("go"));
-        assertNull(DapServerRegistry.kindFor("rust"));
+        assertEquals(DapServerRegistry.Kind.EXTERNAL, DapServerRegistry.kindFor("rust"));
+        assertNull(DapServerRegistry.kindFor("zig"));
     }
 
     @Test

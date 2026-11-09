@@ -715,6 +715,12 @@ final class DebugCoordinator {
                 on && s.isGoDebugEnabled(),
                 scope.debugTool("go", s.getGoDebugPath()),
                 found -> applyGating());
+        // CodeLLDB: as configured, else Editora's install, VS Code's extension, or the PATH.
+        dapManager.configureExternal(
+                com.editora.dap.DebugLanguages.RUST,
+                on && s.isRustDebugEnabled(),
+                scope.debugTool("rust", s.getRustDebugPath()),
+                found -> applyGating());
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         dapManager.setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dapManager.setProgramTerminal(
@@ -2239,16 +2245,7 @@ final class DebugCoordinator {
      * disk), then starts {@code launch} for {@code path}.
      */
     private void startGo(Path path, @Nullable Path built, java.util.Map<String, Object> launch) {
-        host.forEachBuffer(other -> {
-            Path p = other.getPath();
-            if (other.isDirty()
-                    && p != null
-                    && "go".equals(other.getLanguage())
-                    && built != null
-                    && p.toAbsolutePath().startsWith(built)) {
-                ops.saveBuffer(other);
-            }
-        });
+        saveBuffersUnder(built, "go");
         withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.GO, launch));
     }
 
@@ -2267,10 +2264,129 @@ final class DebugCoordinator {
         return dir == null ? List.of() : List.of(dir.toString());
     }
 
+    /**
+     * Debugs Rust file {@code path} on CodeLLDB: the test at the caret (its test binary, filtered to it), else in an
+     * integration test all its tests, else the package's program — or, in a library, the file's tests. Cargo builds
+     * it first in the Debug console (after the package's trust, as a Cargo task asks it); its JSON messages then say
+     * which executable to launch.
+     */
+    private void debugRustFile(EditorBuffer b, Path path, List<String> args) {
+        Path root = com.editora.dap.RustLaunch.packageRoot(path);
+        if (root == null) {
+            host.setStatus(tr("status.debug.rustNoPackage", path.getFileName()));
+            return;
+        }
+        List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
+        if (cargo == null) {
+            return; // the package was not trusted: nothing is built
+        }
+        boolean hasProgram =
+                java.nio.file.Files.isRegularFile(root.resolve("src").resolve("main.rs"))
+                        || java.nio.file.Files.isDirectory(root.resolve("src").resolve("bin"));
+        com.editora.dap.RustLaunch.Plan plan =
+                com.editora.dap.RustLaunch.plan(root, path, b.getContent(), caretLine(b), hasProgram);
+        nameSession(plan.sessionName());
+        relaunch = () -> startRust(path, root, cargo, plan, args); // the same test again, wherever the caret is now
+        startRust(path, root, cargo, plan, args);
+    }
+
+    /**
+     * Saves the package's edited Rust files, builds {@code plan} with Cargo as a before-launch step (its output in the
+     * Debug console; Stop ends it), asks Cargo again for the executables it built (nothing is left to build), and
+     * launches the one for {@code path} on CodeLLDB.
+     */
+    private void startRust(
+            Path path, Path root, List<String> cargo, com.editora.dap.RustLaunch.Plan plan, List<String> args) {
+        saveBuffersUnder(root, "rust");
+        if (beforeLaunch.isActive() || pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        List<String> build = new java.util.ArrayList<>(cargo);
+        build.addAll(plan.buildArgs());
+        List<String> json = new java.util.ArrayList<>(cargo);
+        json.addAll(plan.jsonArgs());
+        boolean terminal = host.settings().isDebugProgramConsole();
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(String.valueOf(path.getFileName()), build, "status.run.cargoBuild"),
+                root,
+                java.util.Map.of(),
+                beforeLaunchConsole(),
+                () -> Thread.ofVirtual().name("editora-cargo-artifacts").start(() -> {
+                    var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, CARGO_LIST_TIMEOUT);
+                    Platform.runLater(() -> launchRustArtifact(path, root, plan, args, terminal, listed));
+                }));
+        updateDebugAvailability();
+    }
+
+    /** How long Cargo has to list what it just built. */
+    private static final java.time.Duration CARGO_LIST_TIMEOUT = java.time.Duration.ofMinutes(2);
+
+    /** Launches the executable Cargo's {@code listed} messages name for {@code path}, or says why there is none. */
+    private void launchRustArtifact(
+            Path path,
+            Path root,
+            com.editora.dap.RustLaunch.Plan plan,
+            List<String> args,
+            boolean terminal,
+            com.editora.process.ProcessRunner.Result listed) {
+        if (!listed.ok()) {
+            String why = listed.err().strip();
+            host.setStatus(tr(
+                    "status.debug.rustBuildFailed",
+                    why.isEmpty()
+                            ? "exit " + listed.exit()
+                            : why.lines().reduce((a, z) -> z).orElse(why)));
+            return;
+        }
+        com.editora.dap.RustLaunch.Artifact artifact =
+                com.editora.dap.RustLaunch.pick(com.editora.dap.RustLaunch.artifacts(listed.out()), path, plan.mode());
+        if (artifact == null) {
+            host.setStatus(tr("status.debug.rustNoProgram", path.getFileName()));
+            return;
+        }
+        List<String> programArgs = new java.util.ArrayList<>(plan.testArgs());
+        programArgs.addAll(args);
+        java.util.Map<String, Object> launch = com.editora.dap.RustLaunch.launch(
+                artifact.executable(), programArgs, root, java.util.Map.of(), false, terminal);
+        ops.openToolWindow();
+        withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.RUST, launch));
+    }
+
+    /** Saves the edited buffers of {@code language} under {@code root}: a build reads them from disk. */
+    private void saveBuffersUnder(@Nullable Path root, String language) {
+        host.forEachBuffer(other -> {
+            Path p = other.getPath();
+            if (other.isDirty()
+                    && p != null
+                    && language.equals(other.getLanguage())
+                    && root != null
+                    && p.toAbsolutePath().startsWith(root)) {
+                ops.saveBuffer(other);
+            }
+        });
+    }
+
     /** The 0-based document line of {@code b}'s caret. */
     private static int caretLine(EditorBuffer b) {
         return b.getFocusedArea().getCurrentParagraph()
                 + b.getBreakpointManager().regionFirstLine();
+    }
+
+    /**
+     * Debug Test at Caret in a Rust file: the {@code #[test]} function at the caret, its test binary filtered to it
+     * ({@link #debugRustFile}). False — nothing done — outside a test, or for any other buffer.
+     */
+    boolean debugRustTestAtCaret(@Nullable EditorBuffer b) {
+        if (b == null
+                || b.getPath() == null
+                || !"rust".equals(b.getLanguage())
+                || com.editora.dap.RustLaunch.testAt(b.getContent(), caretLine(b)) == null) {
+            return false;
+        }
+        launchBuffer(b);
+        return true;
     }
 
     /**
@@ -2384,6 +2500,10 @@ final class DebugCoordinator {
         }
         if ("go".equals(language)) {
             debugGoFile(b, path, fileArgs);
+            return;
+        }
+        if ("rust".equals(language)) {
+            debugRustFile(b, path, fileArgs);
             return;
         }
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.

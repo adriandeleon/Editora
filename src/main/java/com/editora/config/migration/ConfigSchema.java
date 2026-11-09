@@ -376,7 +376,10 @@ public enum ConfigSchema {
                     Map.entry(159, (Migration) ConfigMigrations::spellSkipJsonLinesLikeJson),
                     // v160→161: + goDebugEnabled (on) and goDebugPath ("") — Go debugging on Delve. Additive:
                     // absent is the default.
-                    Map.entry(160, (Migration) ConfigMigrations::identity)),
+                    Map.entry(160, (Migration) ConfigMigrations::identity),
+                    // v161→162: + rustDebugEnabled (on) and rustDebugPath ("") — Rust debugging on CodeLLDB.
+                    // Additive: absent is the default.
+                    Map.entry(161, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

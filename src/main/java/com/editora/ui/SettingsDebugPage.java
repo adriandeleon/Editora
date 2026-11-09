@@ -20,7 +20,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * Settings → Debugging: the master switch, where the debugged program runs, and one card per debug adapter (Java,
- * Python, JavaScript, Go) with its enable switch, command and detection status. Also owns the Node.js path field the Build
+ * Python, JavaScript, Go, Rust) with its enable switch, command and detection status. Also owns the Node.js path field the Build
  * Tools page shows, which is loaded with these controls. {@link SettingsWindow} builds the page with the others.
  */
 final class SettingsDebugPage {
@@ -276,7 +276,7 @@ final class SettingsDebugPage {
             java.util.function.Supplier<String> getCommand,
             java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
 
-    /** The debug adapters with a card of their own (java/python/javascript/go), in display order. */
+    /** The debug adapters with a card of their own (java/python/javascript/go/rust), in display order. */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
         return java.util.List.of(
                 new DebugAdapterUi(
@@ -363,6 +363,26 @@ final class SettingsDebugPage {
                                         com.editora.dap.DebugLanguages.GO, configured);
                                 javafx.application.Platform.runLater(
                                         () -> cb.accept(dlv != null, dlv == null ? "" : dlv));
+                            });
+                        }),
+                new DebugAdapterUi(
+                        "rust",
+                        "settings.debug.rust",
+                        "settings.debug.enableRust",
+                        "settings.debug.rustPath",
+                        "codelldb",
+                        "debug rust cargo codelldb lldb path found install",
+                        v -> config.getSettings().setRustDebugEnabled(v),
+                        () -> config.getSettings().isRustDebugEnabled(),
+                        v -> config.getSettings().setRustDebugPath(v),
+                        () -> config.getSettings().getRustDebugPath(),
+                        cb -> { // found, whether or not switched on: it lists folders, off the FX thread
+                            String configured = config.getSettings().getRustDebugPath();
+                            Thread.ofVirtual().name("settings-codelldb-probe").start(() -> {
+                                String found = com.editora.dap.DapManager.locateExternal(
+                                        com.editora.dap.DebugLanguages.RUST, configured);
+                                javafx.application.Platform.runLater(
+                                        () -> cb.accept(found != null, found == null ? "" : found));
                             });
                         }));
     }
