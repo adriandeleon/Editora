@@ -962,6 +962,9 @@ public final class InstallCatalog {
      * the launcher's and the runtime's execute bits). Windows on ARM runs the x64 build, as for every tool here.
      */
     public static Optional<PinnedServer> pinnedServer(String stepId) {
+        if (CODELLDB_STEP.equals(stepId)) {
+            return Optional.of(codelldb());
+        }
         if (!KOTLIN_LSP_STEP.equals(stepId)) {
             return Optional.empty();
         }
@@ -998,6 +1001,48 @@ public final class InstallCatalog {
                 " --stdio",
                 370,
                 1200));
+    }
+
+    /**
+     * CodeLLDB (MIT, github.com/vadimcn/codelldb): the per-platform {@code .vsix}, a zip holding the adapter
+     * ({@code extension/adapter/codelldb}) and its own LLDB. The hashes are the release assets' SHA-256 as GitHub
+     * publishes them for the tag; the Linux x64 one was checked against a downloaded copy. Windows on ARM runs the x64
+     * build.
+     */
+    private static PinnedServer codelldb() {
+        return new PinnedServer(
+                CODELLDB_STEP,
+                CODELLDB_VERSION,
+                java.util.Map.of(
+                        Platform.LINUX_X64,
+                        new PinnedAsset(
+                                CODELLDB_BASE + "linux-x64.vsix",
+                                "1cd7f386598022b51a5b93b9ffa23e812b23f519cfe1833384ec4bef4bfd1be1",
+                                Packing.ZIP),
+                        Platform.LINUX_ARM,
+                        new PinnedAsset(
+                                CODELLDB_BASE + "linux-arm64.vsix",
+                                "0887f67d440554617894266f80706b700907c36b95e6e49d23b95a0e05318101",
+                                Packing.ZIP),
+                        Platform.MAC_X64,
+                        new PinnedAsset(
+                                CODELLDB_BASE + "darwin-x64.vsix",
+                                "e25cc716b94c62c07fec268ff2785d2b797245b160502baef8b9c970a0c4d8e8",
+                                Packing.ZIP),
+                        Platform.MAC_ARM,
+                        new PinnedAsset(
+                                CODELLDB_BASE + "darwin-arm64.vsix",
+                                "2f114a990e1b368dd1dbd33c80c0e719767af2d228391ec0df0571c957f9ac91",
+                                Packing.ZIP),
+                        Platform.WIN_X64,
+                        new PinnedAsset(
+                                CODELLDB_BASE + "win32-x64.vsix",
+                                "a916e509308dac817732f63ca604a8b93ed29cd16f38a2fa9f0b64ed58e8f51a",
+                                Packing.ZIP)),
+                "codelldb",
+                "",
+                55,
+                170);
     }
 
     /**
@@ -1280,8 +1325,36 @@ public final class InstallCatalog {
         if ("dlv".equals(key)) {
             return Optional.of(List.of(toolStep("dlv", Prereq.GO, List.of("go", "install", DELVE_MODULE))));
         }
+        if (CODELLDB_STEP.equals(key)) {
+            // Unpacked by Editora itself on Linux (GNU tar reads no zip), by the system tar elsewhere.
+            boolean linux = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
+            return Optional.of(List.of(new Step(
+                    CODELLDB_STEP,
+                    Kind.PINNED_SERVER,
+                    linux ? Set.of() : Set.of(Prereq.TAR),
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    CODELLDB_DIR,
+                    null)));
+        }
         return Optional.empty();
     }
+
+    /** The CodeLLDB step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
+    public static final String CODELLDB_STEP = "codelldb";
+
+    /** The CodeLLDB release Editora installs. Bump with every hash in {@link #pinnedServer}. */
+    public static final String CODELLDB_VERSION = "1.12.3";
+
+    /** Where CodeLLDB is unpacked, relative to the config dir; {@code DebugAdapterLocator.codelldbRoots} looks there. */
+    public static final String CODELLDB_DIR = "plugins/dap/rust";
+
+    private static final String CODELLDB_BASE =
+            "https://github.com/vadimcn/codelldb/releases/download/v" + CODELLDB_VERSION + "/codelldb-";
 
     /** The install step for a pinned tool (empty for an unknown id). Pure. */
     public static Optional<List<Step>> toolInstall(String id) {

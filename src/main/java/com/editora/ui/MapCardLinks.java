@@ -1492,7 +1492,6 @@ final class MapCardLinks {
                 3);
     }
 
-    /** An answer waiting for the outlines of its first files. */
     /** A hierarchy tree's level waiting for its files' outlines. */
     private static final class LevelWaiting {
         final Request request;
@@ -1511,6 +1510,7 @@ final class MapCardLinks {
         }
     }
 
+    /** An answer waiting for the outlines of its first files. */
     private static final class Pending {
         final ProjectMapPreview from;
         final Request request;

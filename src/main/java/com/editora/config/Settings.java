@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 161;
+    public static final int SCHEMA_VERSION = 162;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -899,6 +899,10 @@ public class Settings {
     private boolean goDebugEnabled = true;
     /** Delve's {@code dlv} (a path, or a command on the PATH); blank = {@code dlv} on the PATH (with {@code ~/go/bin}). */
     private String goDebugPath = "";
+    /** Rust debugging (CodeLLDB): on by default, only effective when {@code debugSupport} is on and CodeLLDB is found. */
+    private boolean rustDebugEnabled = true;
+    /** CodeLLDB's {@code codelldb} (the program, or its extension's folder); blank = Editora's install, VS Code's, PATH. */
+    private String rustDebugPath = "";
     /**
      * Language Server Protocol support (code intelligence through each language's server): on by default since
      * 0.27.1. Each server self-gates on being installed, and the install banner offers the missing ones. Off, a new
@@ -3804,6 +3808,22 @@ public class Settings {
 
     public void setGoDebugPath(String goDebugPath) {
         this.goDebugPath = goDebugPath == null ? "" : goDebugPath;
+    }
+
+    public boolean isRustDebugEnabled() {
+        return rustDebugEnabled;
+    }
+
+    public void setRustDebugEnabled(boolean rustDebugEnabled) {
+        this.rustDebugEnabled = rustDebugEnabled;
+    }
+
+    public String getRustDebugPath() {
+        return rustDebugPath == null ? "" : rustDebugPath;
+    }
+
+    public void setRustDebugPath(String rustDebugPath) {
+        this.rustDebugPath = rustDebugPath == null ? "" : rustDebugPath;
     }
 
     public String getJavaLspCommand() {

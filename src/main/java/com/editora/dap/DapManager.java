@@ -302,7 +302,17 @@ public final class DapManager {
         sessionLanguage = language;
         jsSession = "javascript".equals(language);
         reportedConditionErrors.clear();
-        return exceptionsMuted ? List.of() : exceptionChoices.get(language);
+        if (exceptionsMuted) {
+            return List.of();
+        }
+        List<String> chosen = exceptionChoices.get(language);
+        DebugLanguage l = DebugLanguages.byId(language);
+        if (chosen == null && l != null && l.kind() == DapServerRegistry.Kind.EXTERNAL) {
+            // An external adapter may name its filters only once it knows the program's language — after
+            // initialize (CodeLLDB's rust_panic): its profile's defaults are sent, as the adapter's own would be.
+            return ExternalAdapterFilters.defaults(l);
+        }
+        return chosen;
     }
 
     /** Mute Breakpoints also mutes the exception stops (review 2, B109), as IntelliJ's Mute does. */
@@ -1998,6 +2008,14 @@ public final class DapManager {
         ExternalAdapter external = language.external();
         if (external == null) {
             return null;
+        }
+        if (DebugLanguages.RUST.equals(language)) {
+            // CodeLLDB lives in its extension's folder (Editora's install, VS Code's), or is named by its path.
+            Path home = Path.of(System.getProperty("user.home", ""));
+            String onPath = command == null || command.isBlank() ? locateExecutable("codelldb") : null;
+            return DebugAdapterLocator.locateCodelldb(command, home)
+                    .map(Path::toString)
+                    .orElse(onPath);
         }
         String asked = command == null || command.isBlank() ? external.command().getFirst() : command.strip();
         String found = locateExecutable(asked);

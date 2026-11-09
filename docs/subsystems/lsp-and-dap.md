@@ -1007,7 +1007,7 @@ the child env. The result is cached after the first call.
 
 ### Language profiles and transports
 
-Editora debugs Java, Python, JavaScript (Node), the JVM languages and Go, off by default
+Editora debugs Java, Python, JavaScript (Node), the JVM languages, Go and Rust, off by default
 (`Settings.debugSupport`). Each language is a [`dap/DebugLanguage`](../../src/main/java/com/editora/dap/DebugLanguage.java)
 profile in [`dap/DebugLanguages`](../../src/main/java/com/editora/dap/DebugLanguages.java): its `Kind` transport, the
 DAP `launch` type, the `initialize` adapter id, the default interpreter + adapter args, the fallback transport, what
@@ -1019,7 +1019,7 @@ debugged on its own host, and its "unavailable" message. [`dap/DapServerRegistry
 (its switch, command or path, install id, off and missing messages) are a binding in
 [`ui/DebugAdapterSettings`](../../src/main/java/com/editora/ui/DebugAdapterSettings.java), which the Debugging
 page, the `debug.toggleAdapter` / `debug.setAdapterPath` pickers and `unavailableMessage` read. `languageIdsForDebug()` =
-`{java, python, javascript, groovy, kotlin, clojure, scala, go}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
+`{java, python, javascript, groovy, kotlin, clojure, scala, go, rust}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
 `javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
 project's breakpoints live in its `.ts`/`.tsx` sources.
 
@@ -1032,6 +1032,7 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `kotlin` | `JVM` | The same adapter. A script is `kotlinc -script <file>` (agent in `JAVA_OPTS`); a program is compiled first (`kotlinc <file> -include-runtime -d <jar>`, cached by content under `<config>/cache/kotlin-run`) and run as `java <agent> -jar <jar>` (`jvmOptionsInArgv`). A file's declared `package` matches its classes' source path wherever the file sits. Debug via Build Tool and Attach from a Kotlin file attach this adapter (`attach`, `hostName`/`port`) instead of java-debug, which never binds a `.kt` breakpoint. kotlin-lsp's own undocumented DAP (`start_debug_server`) is not used. |
 | `clojure` | `JVM` | The same adapter. `run/ClojureRun` picks the tool: the Clojure CLI (`clojure -J<agent> -J-Dclojure.compiler.disable-locals-clearing=true -M -m <ns>`, the agent as a `-J` argument — the launch's `jvmOptionPrefix`) in its `deps.edn` project, Leiningen (`lein run -m <ns>`, the agent in `JVM_OPTS`, which only the project's JVM reads) in a `project.clj` one, and a file outside any project as a script. A function's class (`my_app.core$greet`) records `core.clj` and the package path `my_app/`, so a breakpoint in `src/my_app/core.clj` binds by source name; a script loaded by path records that absolute path (Clojure's SMAP), which `JvmSourceMap.compiledFrom` accepts. Frames read as the function, demunged (`my-app.core/greet`); stepping skips `clojure.lang`, `clojure.core*` and `clojure.main`. Babashka is a native program with no JVM: Debug says so and does not start. Limits: values show as their class (the adapter runs no `toString`), and a function redefined from a REPL is a new class the session's breakpoints were not set in. |
 | `go` | `EXTERNAL` | Delve: `dlv dap --listen=127.0.0.1:0`, the port read from its `DAP server listening at:` line (`ANNOUNCED_PORT`); see **Go** below. |
+| `rust` | `EXTERNAL` | CodeLLDB: `codelldb --port N` on a port Editora picks (`PORT_ARGUMENT`); see **Rust** below. |
 | `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
 
 **External adapters.** A `Kind.EXTERNAL` profile carries an [`ExternalAdapter`](../../src/main/java/com/editora/dap/ExternalAdapter.java):
@@ -1044,7 +1045,9 @@ process set to be killed on dispose), and sends the `launch` the language shaped
 `program`, `args`, `cwd`, `env`, `stopOnEntry` plus the language's own fields). Output before an announcement goes to
 the console as the command's; after it, as the program's (Delve writes its debuggee's output there). A request whose
 `request` is `attach` is sent as `attach`, and Stop then detaches (`setTerminateOnDisconnect(false)`).
-`setExternalPathDirs` puts folders first on an adapter's PATH. Go uses it; Rust and C/C++ are to follow.
+`setExternalPathDirs` puts folders first on an adapter's PATH; Go uses it. An external profile's
+session starts with its own default exception filters when none were chosen (`ExternalAdapterFilters`):
+CodeLLDB names `rust_panic` only after `launch`, too late for its `initialize` defaults.
 `DebugReviewCWindowFxTest` drives all three transports through `RelayAdapterMain`, a test process standing in for
 the adapter in front of the in-process fake.
 
@@ -1076,6 +1079,43 @@ Mach-O, not Windows), once per program file. It attaches with `attach {mode: loc
 Delve reports no exception filters (it stops on a panic by itself), and it lists at most 1024 goroutines as threads.
 Comment-only Go lines take no breakpoint (`CodeLessLines`), and a `select` block is control flow to
 `InlineValueScope`.
+
+**Rust.** The `rust` profile is CodeLLDB (LLDB with Rust's formatters). `DapManager.locateExternal` finds `codelldb`
+through `DebugAdapterLocator.locateCodelldb`, in this order:
+- as configured (`Settings.rustDebugPath`: the program, or an unpacked extension's folder);
+- Editora's install (`<config>/plugins/dap/rust`);
+- VS Code's newest `vadimcn.vscode-lldb-*` extension;
+- the PATH.
+
+Settings → Debugging → Rust's Install fetches the pinned per-platform `.vsix` from CodeLLDB's GitHub release
+(`InstallCatalog.debuggerInstall("codelldb")`, a `PINNED_SERVER` step, SHA-256 checked). On Linux, whose GNU tar
+reads no zip, Editora unpacks it itself (`InstallService.unzipWithPrograms`) and marks the files of every `bin` and
+`adapter` folder executable.
+
+[`dap/RustLaunch`](../../src/main/java/com/editora/dap/RustLaunch.java) plans a Rust file of a Cargo package (the
+nearest `Cargo.toml`):
+- **The test at the caret.** A `#[test]` (or `#[tokio::test]`…) function is debugged in its test binary, filtered
+  to its path (`net::http::tests::adds --exact`, the file's module path plus its inline modules).
+- **An integration test file outside a test:** all its tests (`--test it`).
+- **Otherwise:** the package's program (`cargo build`, or `--example x`).
+- **A library without a program:** the file's tests.
+
+`DebugCoordinator.debugRustFile` asks for the package's trust (`buildExecutable(CARGO, root)`), saves its Rust files,
+and runs the build as a before-launch step in the Debug console (Stop ends it). It then runs the same command again
+with `--message-format=json`, which builds nothing, and launches the executable whose target root is the file
+(`RustLaunch.artifacts` / `pick`). Test binaries carry a hash in their names, which is why they're found this way.
+
+The `launch` adds `sourceLanguages: ["rust"]` (Rust's formatters and the panic stop) and `terminal`: `console`, or
+`integrated` (`runInTerminal`, the program's input) with "Run the debugged program in the Debug console".
+CodeLLDB reports a panic's stop with the reason `breakpoint`. Attaching to a running Rust program isn't offered yet.
+
+`RustDebugProbeFxTest`, opt-in, runs in CI with the pinned CodeLLDB. It drives the real Cargo and CodeLLDB:
+- Rust values, Step Over and the program's output;
+- the test at the caret running alone;
+- a panic;
+- in a window, F5 and Debug Test at Caret.
+
+`RustDebugWindowFxTest` drives the window against stand-in `cargo` and `codelldb` scripts.
 
 `GoDebugProbeFxTest`, opt-in, runs in CI's integration job with Go and a pinned Delve. It drives the real Delve
 through `DapManager`: variables, Step Over, goroutines, a test at the caret, and an attach then detach. It also

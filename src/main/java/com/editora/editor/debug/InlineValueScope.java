@@ -34,6 +34,7 @@ public final class InlineValueScope {
             "for",
             "foreach",
             "while",
+            "loop", // Rust
             "do",
             "switch",
             "select", // Go
