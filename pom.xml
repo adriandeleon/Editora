@@ -40,7 +40,7 @@
         <jcodings.version>1.0.64</jcodings.version>
         <gson.version>2.15.0</gson.version>
         <lsp4j.version>1.0.0</lsp4j.version>
-        <commonmark.version>0.31.0</commonmark.version>
+        <commonmark.version>0.32.0</commonmark.version>
         <autolink.version>0.12.0</autolink.version>
         <!-- 2.x is fine again: the empty exported package that made 2.0.0 unlinkable under jlink
              ("exported package not present") is gone by 2.1.0. Note 2.x moved ViewBox/FloatSize into
