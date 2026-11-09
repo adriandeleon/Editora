@@ -320,37 +320,32 @@ final class TerminalCoordinator {
         moveToToolWindow(terminal.terminal());
     }
 
+    // A terminal in the editor was moved there by the panel, so the panel exists: panel() builds nothing below.
+
     private void moveToToolWindow(javafx.scene.control.Tab tab) {
-        if (panel == null || !panel.isInEditor(tab)) {
+        TerminalPanel p = panel();
+        if (!p.isInEditor(tab)) {
             return;
         }
-        panel.moveToPanel(tab); // first: a tool window shown with no terminal would start one of its own
+        p.moveToPanel(tab); // first: a tool window shown with no terminal would start one of its own
         ops.showToolWindow();
-        panel.focusActive();
+        p.focusActive();
     }
 
     /** Asks for a new name for a terminal shown in the editor. */
     void rename(TerminalEditorTab terminal) {
-        if (panel != null) {
-            panel.askRename(terminal.terminal());
-        }
+        panel().askRename(terminal.terminal());
     }
 
     /** Closes a terminal shown in the editor, asking first when its shell is running something. */
     void requestClose(TerminalEditorTab terminal) {
-        if (panel != null && panel.isInEditor(terminal.terminal())) {
-            panel.requestClose(terminal.terminal());
-        } else if (terminal.editorTab() != null) {
-            ops.closeEditorTab(terminal.editorTab()); // no longer the panel's (it should not happen): just the tab
-        }
+        panel().requestClose(terminal.terminal());
     }
 
     /** An editor tab showing a terminal went (Close All, the window closing): its shell ends with it. */
     void editorTabClosed(TerminalEditorTab terminal) {
         inEditor.remove(terminal.terminal());
-        if (panel != null) {
-            panel.editorTabClosed(terminal.terminal());
-        }
+        panel().editorTabClosed(terminal.terminal());
     }
 
     /** {@code terminal.close}: closes the selected terminal, asking if its shell is running a program. */

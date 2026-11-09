@@ -327,6 +327,11 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         this.editorHost = editorHost;
     }
 
+    /** The tabs shown in the editor, in the order they moved there; for tests. */
+    List<Tab> editorTabsForTest() {
+        return List.copyOf(inEditor);
+    }
+
     /** Whether {@code tab} is shown in the editor. */
     boolean isInEditor(Tab tab) {
         return inEditor.contains(tab);

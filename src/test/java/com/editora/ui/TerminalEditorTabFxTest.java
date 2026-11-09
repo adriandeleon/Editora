@@ -11,11 +11,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 import javafx.application.Platform;
+import javafx.event.Event;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
 
 import com.editora.command.KeyDispatcher;
@@ -230,6 +233,173 @@ class TerminalEditorTabFxTest {
         assertFalse("build".equals(fx(stays::getText)));
     }
 
+    @Test
+    void aBellOrNotificationOutOfSightMarksTheEditorTabUntilItIsSelected() throws Exception {
+        show((title, programs) -> true);
+        Tab tab = movedToEditor();
+        Tab terminalTab = fx(() -> editor.getTabs().getFirst());
+        fx(() -> {
+            Tab other = new Tab("Main.java");
+            editor.getTabs().add(other);
+            editor.getSelectionModel().select(other); // the terminal out of sight
+            return null;
+        });
+
+        shells.getFirst().emit("\u0007");
+        await(() -> call(() -> terminalTab.getStyleClass().contains(TerminalPanel.BELL)), "the editor tab's bell mark");
+        shells.getFirst().emit("\u001b]9;build done\u0007");
+        await(
+                () -> call(() -> terminalTab.getStyleClass().contains(TerminalPanel.NOTIFIED)),
+                "the editor tab's notification mark");
+        assertTrue(fx(() -> terminalTab.getStyleClass().contains(TerminalEditorTab.STYLE)));
+
+        fx(() -> {
+            editor.getSelectionModel().select(terminalTab);
+            return null;
+        });
+        assertFalse(fx(() -> terminalTab.getStyleClass().contains(TerminalPanel.BELL)), "looked at: unmarked");
+        assertFalse(fx(() -> terminalTab.getStyleClass().contains(TerminalPanel.NOTIFIED)));
+        assertFalse(fx(() -> tab.getStyleClass().contains(TerminalPanel.BELL)), "and so is the terminal's own tab");
+
+        // A bell while it is in view marks nothing.
+        shells.getFirst().emit("\u0007");
+        Thread.sleep(200);
+        assertFalse(fx(() -> terminalTab.getStyleClass().contains(TerminalPanel.BELL)));
+    }
+
+    @Test
+    void theEditorTabFollowsTheTerminalsTitle() throws Exception {
+        show((title, programs) -> true);
+        Tab tab = movedToEditor();
+        fx(() -> {
+            panel.rename(tab, "server");
+            return null;
+        });
+        assertEquals("server", fx(() -> editor.getTabs().getFirst().getText()));
+        fx(() -> {
+            panel.rename(tab, "");
+            return null;
+        });
+        assertFalse("server".equals(fx(() -> editor.getTabs().getFirst().getText())), "its shell's title again");
+    }
+
+    @Test
+    void theFindChordOpensFindOverTheEditorTerminalAndTheStripKeysAreLeftAlone() throws Exception {
+        show((title, programs) -> true);
+        fx(() -> {
+            panel.newTerminal(); // one left in the strip
+            return null;
+        });
+        Tab moved = movedToEditor();
+        TerminalView view = fx(panel::viewsForTest).get(1);
+        boolean mac = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .startsWith("mac");
+
+        fx(() -> {
+            Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.F, !mac, !mac, false, mac));
+            return null;
+        });
+        assertTrue(fx(() -> panel.findBar().isShowing()), "the find bar opened");
+        assertTrue(fx(() -> within(panel.findBar(), moved.getContent())), "over the terminal in the editor");
+
+        // Ctrl+PageDown in the editor's terminal is not the strip's next-tab: the strip keeps its selection.
+        Tab stripSelected = fx(panel::activeTab);
+        fx(() -> {
+            Event.fireEvent(
+                    view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_DOWN, false, true, false, false));
+            return null;
+        });
+        assertSame(stripSelected, fx(panel::activeTab));
+        assertTrue(fx(() -> within(panel.findBar(), moved.getContent())), "the strip's selection left it where it is");
+
+        // Back in the panel, the find bar it had closes rather than following it.
+        fx(() -> {
+            panel.moveToPanel(moved);
+            return null;
+        });
+        assertFalse(fx(() -> panel.findBar().isShowing()));
+
+        // And moved out again with the find bar open over it, likewise.
+        fx(() -> {
+            panel.find(moved);
+            panel.moveToEditor(moved);
+            return null;
+        });
+        assertFalse(fx(() -> panel.findBar().isShowing()));
+    }
+
+    @Test
+    void closingTheFindBarOverAnEditorTerminalGivesItTheKeyboard() throws Exception {
+        show((title, programs) -> true);
+        Tab moved = movedToEditor();
+        TerminalView view = fx(panel::viewsForTest).getFirst();
+        fx(() -> {
+            panel.find(moved);
+            return null;
+        });
+        assertTrue(fx(() -> panel.findBar().isShowing()));
+        fx(() -> {
+            panel.findBar().close();
+            return null;
+        });
+        await(() -> call(view::isFocused), "the terminal's focus");
+        assertSame(moved, fx(panel::currentTab));
+    }
+
+    @Test
+    void aLostConnectionInTheEditorOffersReconnectThere() throws Exception {
+        show((title, programs) -> true);
+        Tab moved = movedToEditor();
+        shells.getFirst().emit("last words\r\n");
+        shells.getFirst().dropConnection();
+        await(() -> call(() -> panel.showsReconnect(moved)), "the banner");
+        assertEquals(1, fx(() -> editor.getTabs().size()), "the tab stays");
+        fx(() -> {
+            panel.focus(moved);
+            return null;
+        });
+        await(
+                () -> call(() -> stage.getScene().getFocusOwner() instanceof javafx.scene.control.Button b
+                        && within(b, moved.getContent())),
+                "Reconnect to have the keyboard");
+    }
+
+    @Test
+    void movesThatDoNotApplyDoNothing() throws Exception {
+        show((title, programs) -> true);
+        fx(() -> {
+            panel.newTerminal();
+            return null;
+        });
+        Tab inPanel = fx(panel::activeTab);
+        Tab moved = movedToEditor();
+
+        fx(() -> {
+            panel.moveToPanel(inPanel); // not in the editor
+            panel.moveToEditor(moved); // already there
+            panel.editorTabClosed(inPanel); // not an editor tab
+            return null;
+        });
+        assertEquals(1, fx(panel::terminalCount));
+        assertEquals(1, fx(() -> editor.getTabs().size()));
+        assertTrue(shells.stream().noneMatch(FakeConnector::wasClosed));
+
+        // Without an editor to go to, nothing moves and the tab menu does not offer it.
+        fx(() -> {
+            panel.setEditorHost(null);
+            panel.moveToEditor(inPanel);
+            return null;
+        });
+        assertEquals(1, fx(panel::terminalCount));
+        javafx.scene.control.MenuItem toEditor = fx(() -> {
+            var menu = inPanel.getContextMenu();
+            menu.getOnShowing().handle(null);
+            return menu.getItems().getLast();
+        });
+        assertFalse(fx(toEditor::isVisible));
+    }
+
     // ---------------------------------------------------------------- helpers
 
     /** A new terminal, moved into the editor. */
@@ -263,6 +433,7 @@ class TerminalEditorTabFxTest {
                 public void open(Tab tab) {
                     TerminalEditorTab content = new TerminalEditorTab(tab, () -> panel.focus(tab));
                     Tab editorTab = new Tab(content.title(), content.node());
+                    content.attach(editorTab, () -> editorTab.setText(content.title()));
                     shown.put(tab, editorTab);
                     editor.getTabs().add(editorTab);
                     editor.getSelectionModel().select(editorTab);

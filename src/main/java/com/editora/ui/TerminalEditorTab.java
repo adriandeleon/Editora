@@ -31,9 +31,7 @@ final class TerminalEditorTab implements TabContent {
             }
         };
         frame.getStyleClass().add("terminal-editor-frame");
-        if (terminal.getContent() != null) {
-            frame.getChildren().setAll(terminal.getContent()); // takes it out of the panel's strip
-        }
+        frame.getChildren().setAll(terminal.getContent()); // takes it out of the panel's strip
     }
 
     /** The terminal panel's tab this one shows. */
