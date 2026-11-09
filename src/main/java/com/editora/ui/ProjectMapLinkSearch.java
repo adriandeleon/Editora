@@ -179,6 +179,27 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         });
     }
 
+    /**
+     * A card's problems (Map code browser gap 8): {@code file} lent to its running server for as long as the card
+     * shows {@code text}, its diagnostics told to {@code problems} as the editor gets them. Null when no server runs
+     * for it. FX thread.
+     */
+    @Override
+    public @Nullable Runnable watchProblems(
+            Path file, String text, Consumer<List<com.editora.text.LspDiagnostic>> problems) {
+        LspManager servers = lsp;
+        Runnable loan = servers == null ? null : lend(servers, file, text);
+        if (servers == null || loan == null) {
+            return null;
+        }
+        Runnable unwatch = servers.watchDiagnostics(file, problems);
+        problems.accept(servers.diagnosticsOf(file));
+        return () -> {
+            unwatch.run();
+            loan.run();
+        };
+    }
+
     /** {@code file} lent to its running server, or null when none runs for it. FX thread. */
     private static @Nullable Runnable lend(LspManager servers, Path file, String text) {
         try {

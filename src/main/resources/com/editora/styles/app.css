@@ -1757,6 +1757,16 @@
 .project-map-preview-transient .project-map-preview-title {
     -fx-font-style: italic;
 }
+/* The mouse resting on a card's text: the problems there, coloured by severity, above the documentation. */
+.project-map-hover-problem {
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-hover-problem:error {
+    -fx-text-fill: -color-danger-fg;
+}
+.project-map-hover-problem:warning {
+    -fx-text-fill: -color-warning-fg;
+}
 .project-map-preview-title {
     -fx-font-size: 11px;
     -fx-font-weight: bold;

@@ -6,6 +6,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The LSP hover card's size and keys ({@link LspCoordinator}'s Show Documentation): as wide as its code needs, no
@@ -25,6 +26,9 @@ final class HoverCard {
 
     /** Widest a hover popup's text column gets. */
     static final double MAX_WIDTH = 560;
+
+    /** How far below the mouse pointer a popup shown for it starts. */
+    static final double MOUSE_GAP = 16;
 
     /** A man page's width: man lays its text out for 80 columns. */
     static final int MAN_COLUMNS = 80;
@@ -132,6 +136,19 @@ final class HoverCard {
      * editor's Show Documentation and a Project Map card's Quick Documentation both show it.
      */
     static javafx.stage.Popup show(CodeArea area, javafx.scene.Node content, String markdown, Runnable onHidden) {
+        return show(area, content, markdown, onHidden, null);
+    }
+
+    /**
+     * As {@link #show(CodeArea, javafx.scene.Node, String, Runnable)}, under the screen point {@code mouse} rather
+     * than at the caret when it is given (the mouse resting on a Project Map card's text).
+     */
+    static javafx.stage.Popup show(
+            CodeArea area,
+            javafx.scene.Node content,
+            String markdown,
+            Runnable onHidden,
+            javafx.geometry.@Nullable Point2D mouse) {
         // In a scroll pane no taller than part of the window: a command's hover from bash-language-server is
         // its whole man page (8 KB for `ls`), which made a popup thousands of pixels tall with most of it
         // off screen and out of reach.
@@ -187,7 +204,11 @@ final class HoverCard {
             onHidden.run();
         });
 
-        LspPopups.showAtCaret(popup, area);
+        if (mouse == null) {
+            LspPopups.showAtCaret(popup, area);
+        } else {
+            popup.show(area, mouse.getX(), mouse.getY() + MOUSE_GAP); // below the pointer, not under it
+        }
         scroll.setVvalue(0); // from its first line, whatever layout scrolled to (HTML review B8)
         return popup;
     }

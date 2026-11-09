@@ -517,7 +517,45 @@ final class MapCards {
         public void hierarchy(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {
             showHierarchy(card, kind, line, column, atPlace);
         }
+
+        @Override
+        public void documentation(ProjectMapPreview card, int line, int column, Consumer<@Nullable String> answer) {
+            showDocumentation(card, line, column, answer);
+        }
+
+        @Override
+        public @Nullable Runnable watchProblems(
+                ProjectMapPreview card,
+                Path file,
+                String text,
+                Consumer<java.util.List<com.editora.text.LspDiagnostic>> problems) {
+            MapCardLinks.Source source = links.source();
+            return source == null ? null : source.watchProblems(file, text, problems);
+        }
+
+        @Override
+        public void say(String message) {
+            host.status(message);
+        }
     };
+
+    /**
+     * The server's documentation from {@code card} at the file's 0-based {@code line} and {@code column}, for the
+     * mouse resting there: given to {@code answer} once, null when there is none; nothing is said either way.
+     */
+    private void showDocumentation(ProjectMapPreview card, int line, int column, Consumer<@Nullable String> answer) {
+        MapCardLinks.Request request = linksRequest(card, MapCardLinks.Kind.DEFINITION, line, column, true);
+        MapCardLinks.Source source = links.source();
+        Path root = host.root();
+        if (request == null || source == null || root == null) {
+            answer.accept(null);
+            return;
+        }
+        source.hover(
+                root,
+                request,
+                hover -> answer.accept(disposed || !cardTouches.containsKey(card) ? null : hover.markdown()));
+    }
 
     /**
      * The code was followed from {@code from} to {@code to}: both are stops of the Map's history (Back from {@code to}

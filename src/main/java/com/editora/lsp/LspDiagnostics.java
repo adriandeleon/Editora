@@ -75,6 +75,42 @@ final class LspDiagnostics {
      */
     final Map<String, List<org.eclipse.lsp4j.Diagnostic>> rawDiagnostics = new ConcurrentHashMap<>();
 
+    /**
+     * The diagnostics last delivered for each <b>managed document URI</b> (an editor's open document or one lent to a
+     * server), as the editor was given them; released with {@link #rawDiagnostics}. What a Project Map card shows
+     * for its file before the next publish (Map code browser gap 8).
+     */
+    final Map<String, List<LspDiagnostic>> shownDiagnostics = new ConcurrentHashMap<>();
+
+    /** Who watches a document's diagnostics, by managed document URI (see {@link LspManager#watchDiagnostics}). */
+    final Map<String, List<Consumer<List<LspDiagnostic>>>> watchers = new ConcurrentHashMap<>();
+
+    /**
+     * Gives {@code mapped} — {@code file}'s diagnostics, under the managed {@code documentUri} or null — to the
+     * manager's callback and to whoever watches the document, and keeps them for a watcher still to come. FX thread.
+     */
+    private void deliver(Path file, @Nullable String documentUri, @Nullable List<LspDiagnostic> given) {
+        List<LspDiagnostic> mapped = given == null ? List.of() : given;
+        if (documentUri != null) {
+            shownDiagnostics.put(documentUri, mapped);
+        }
+        m.onDiagnostics.accept(file, mapped);
+        List<Consumer<List<LspDiagnostic>>> watching =
+                watchers.get(documentUri != null ? documentUri : LspManager.uri(file));
+        if (watching != null) {
+            for (Consumer<List<LspDiagnostic>> watcher : List.copyOf(watching)) {
+                watcher.accept(mapped);
+            }
+        }
+    }
+
+    /** Forgets what was kept for {@code documentUri}: its document closed everywhere in this window. */
+    void forget(String documentUri) {
+        rawDiagnostics.remove(documentUri);
+        shownDiagnostics.remove(documentUri);
+        diagnosticRequestGeneration.remove(documentUri);
+    }
+
     /** The retained raw diagnostics for {@code file}. */
     List<org.eclipse.lsp4j.Diagnostic> rawDiagnosticsFor(Path file) {
         return rawDiagnostics.getOrDefault(LspManager.uri(file), List.of());
@@ -141,7 +177,7 @@ final class LspDiagnostics {
                             // never publishes, so without this it was always asked with an empty context and offered
                             // no quick fix for a diagnostic the editor was showing.
                             rawDiagnostics.put(documentUri, raw);
-                            m.onDiagnostics.accept(file, mapped);
+                            deliver(file, documentUri, mapped);
                         }
                     });
                 });
@@ -196,7 +232,7 @@ final class LspDiagnostics {
                     || !m.sessionsByRoot.containsValue(source)
                     || sourceUri != null
                             && !java.util.Objects.equals(diagnosticRequestGeneration.get(sourceUri), generation)
-                    || sourceUri != null && m.sessionByDocUri.get(sourceUri) != source
+                    || sourceUri != null && !m.manages(sourceUri, source)
                     || acceptedVersion != null
                             && !java.util.Objects.equals(acceptedVersion, source.documentVersion(sourceUri))) {
                 return;
@@ -204,7 +240,7 @@ final class LspDiagnostics {
             if (sourceUri != null) {
                 rawDiagnostics.put(sourceUri, raw);
             }
-            m.onDiagnostics.accept(file, mapped);
+            deliver(file, sourceUri, mapped);
         });
     }
 
@@ -215,8 +251,12 @@ final class LspDiagnostics {
     }
 
     private @Nullable String managedDocumentUri(LanguageServerSession source, Path file, String reportedUri) {
-        if (m.sessionByDocUri.get(reportedUri) == source) {
+        if (m.manages(reportedUri, source)) {
             return reportedUri;
+        }
+        String own = LspManager.uri(file);
+        if (m.lentTo(own) == source) {
+            return own; // lent to the server for a Project Map card, which shows its problems (Map gap 8)
         }
         Path canonical = null;
         for (var entry : m.sessionByDocUri.entrySet()) {
