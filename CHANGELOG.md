@@ -34,6 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug C and C++ programs.** Editora now debugs C and C++ with CodeLLDB, the debugger it already uses for Rust:
+  - **F5 in a CMake project** configures a Debug build in `build/editora-debug`, builds it in the Debug console,
+    and debugs the program that holds the file.
+  - **F5 in a Make project** runs `make` and debugs the program it built.
+  - **F5 on a file outside a project** compiles it with `cc` or `c++ -g -O0`.
+  - **Trust:** CMake and Make run the project's code, so Editora asks to trust the folder first, as Maven and Cargo
+    do.
+  - **Values:** `std::string`, `std::vector` and `std::map` read as values.
+  - **A thrown C++ exception** stops the program where it was thrown.
+  - **Attach to Process** lists running Rust, C and C++ programs built with debug information, on Linux, and
+    attaches CodeLLDB by process id.
+  - **Settings:** *Settings → Debugging → Rust, C and C++* has a switch for C and C++.
 - **Call and type hierarchies as trees on the Project Map.** Call Hierarchy and Type Hierarchy, typed in a Map card
   or on a declaration row, now open a tree beside the card instead of one level of cards. The tree starts with the
   callers (or, for a type, its subtypes); open a row to see its own callers, one level at a time, as deep as you

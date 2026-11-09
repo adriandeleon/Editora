@@ -180,6 +180,13 @@ public final class DebugLanguages {
                     ExternalAdapter.Transport.ANNOUNCED_PORT,
                     DELVE_ANNOUNCEMENT));
 
+    /**
+     * CodeLLDB ({@code codelldb --port N}), the adapter of Rust and of C and C++: one program, found once
+     * ({@link DapManager#locateExternal}).
+     */
+    public static final ExternalAdapter CODELLDB = new ExternalAdapter(
+            List.of("codelldb", "--port", ExternalAdapter.PORT), ExternalAdapter.Transport.PORT_ARGUMENT, null);
+
     /** CodeLLDB's "stop when Rust panics" exception filter. */
     public static final String RUST_PANIC_FILTER = "rust_panic";
 
@@ -204,13 +211,36 @@ public final class DebugLanguages {
             null,
             false,
             "debug.error.rustUnavailable",
-            new ExternalAdapter(
-                    List.of("codelldb", "--port", ExternalAdapter.PORT),
-                    ExternalAdapter.Transport.PORT_ARGUMENT,
-                    null));
+            CODELLDB);
+
+    /** CodeLLDB's "stop when a C++ exception is thrown" filter. */
+    public static final String CPP_THROW_FILTER = "cpp_throw";
+
+    /**
+     * C and C++, on CodeLLDB. Editora builds the program first — with CMake, Make, or the C or C++ compiler for a lone
+     * file — and launches the executable it made. A thrown C++ exception stops it ({@link #CPP_THROW_FILTER}), as
+     * CodeLLDB itself has it on.
+     */
+    public static final DebugLanguage CPP = new DebugLanguage(
+            "cpp",
+            "C/C++",
+            Set.of("c", "cpp"),
+            Kind.EXTERNAL,
+            "lldb",
+            "lldb",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(filter(CPP_THROW_FILTER, "C++: on throw", true), filter("cpp_catch", "C++: on catch", false)),
+            null,
+            null,
+            false,
+            "debug.error.cppUnavailable",
+            CODELLDB);
 
     private static final List<DebugLanguage> ALL =
-            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST);
+            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP);
 
     /** Every profile, in the order the Settings page lists them. */
     public static List<DebugLanguage> all() {

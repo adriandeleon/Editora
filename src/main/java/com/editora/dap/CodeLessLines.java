@@ -30,7 +30,7 @@ public final class CodeLessLines {
         String lang = language == null ? "" : language;
         return switch (lang) {
             case "python" -> own.startsWith("#");
-            case "java", "javascript", "typescript", "go", "rust" -> cStyleCommentOnly(lines, line);
+            case "java", "javascript", "typescript", "go", "rust", "c", "cpp" -> cStyleCommentOnly(lines, line);
             default -> false;
         };
     }

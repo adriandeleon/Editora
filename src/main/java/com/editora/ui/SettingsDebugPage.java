@@ -98,6 +98,12 @@ final class SettingsDebugPage {
             config.getSettings().setDebugSuspendAllThreads(now);
             w.apply();
         });
+        debugCppCheck = new CheckBox(tr("settings.debug.enableCpp"));
+        debugCppCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setCppDebugEnabled(now);
+            w.apply();
+            refreshDebugStatus();
+        });
         debugExceptionTypesField = new TextField();
         debugExceptionTypesField.setPromptText(tr("settings.debug.exceptionTypes.prompt"));
         w.commitOnEnterOrBlur(
@@ -150,6 +156,8 @@ final class SettingsDebugPage {
     private CheckBox debugShowToStringCheck;
     private CheckBox debugSuspendAllThreadsCheck;
     private TextField debugExceptionTypesField;
+    /** C and C++ debugging, on the Rust card: they run on the same CodeLLDB. */
+    private CheckBox debugCppCheck;
     /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
     TextField nodePathField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -236,6 +244,14 @@ final class SettingsDebugPage {
                         tr("settings.debug.exceptionTypes.hint"),
                         debugExceptionTypesField,
                         "debug java exception breakpoint class type filter caught uncaught");
+            }
+            if ("rust".equals(dbg.id())) {
+                w.checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugCppCheck,
+                        tr("settings.debug.enableCpp.hint"),
+                        "debug c cpp c++ cmake make gcc clang codelldb native");
             }
             if ("javascript".equals(dbg.id())) {
                 // The one Node.js setting lives on Build Tools, editable with debugging off (review E102).
@@ -418,6 +434,7 @@ final class SettingsDebugPage {
         debugShowToStringCheck.setSelected(settings.isDebugShowToString());
         debugSuspendAllThreadsCheck.setSelected(settings.isDebugSuspendAllThreads());
         debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
+        debugCppCheck.setSelected(settings.isCppDebugEnabled());
         nodePathField.setText(settings.getNodePath());
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             CheckBox enable = debugEnableChecks.get(dbg.id());

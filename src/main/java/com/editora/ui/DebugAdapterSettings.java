@@ -128,6 +128,18 @@ final class DebugAdapterSettings {
                     "codelldb",
                     "codelldb",
                     "status.debug.rustOff",
+                    (s, scope) -> tr("status.debug.codelldbMissing")),
+            // C and C++ run on the same CodeLLDB: its path is the one Rust's card sets.
+            new Binding(
+                    DebugLanguages.CPP,
+                    Settings::isCppDebugEnabled,
+                    Settings::setCppDebugEnabled,
+                    Settings::getRustDebugPath,
+                    Settings::setRustDebugPath,
+                    "settings.debug.rustPath",
+                    "codelldb",
+                    "codelldb",
+                    "status.debug.cppOff",
                     (s, scope) -> tr("status.debug.codelldbMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */

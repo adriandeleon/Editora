@@ -373,7 +373,7 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   logpoint, a watch on `total`, step-into, and set-value. `samples/run/hello.java` is the Java
   equivalent for a first breakpoint.
 
-## debug/ — Java, Clojure, Go and Rust debugging (breakpoints, stepping, values, threads)
+## debug/ — Java, Clojure, Go, Rust, C and C++ debugging (breakpoints, stepping, values, threads)
 
 - `samples/debug/java/pom.xml` — a standalone **Java 25 Maven** project (not a `<module>` of the root
   pom) built to try every breakpoint kind on, in ~220 lines across six classes. Open the folder as a
@@ -458,6 +458,23 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
     through a stacked discount, so the call stack shows two `apply` frames.
   - `samples/debug/rust/src/restock.rs` — three named threads (`restock-1…3`): the **Threads** view, and a
     **hit-count** breakpoint on a line that runs 480 times.
+
+- `samples/debug/cpp/CMakeLists.txt` — the same shelf as a standalone **CMake C++** project (five files,
+  ~150 lines), for debugging C++ on CodeLLDB (Settings → Debugging → Rust, C and C++; Install there fetches
+  CodeLLDB). Open `src/main.cpp` and press F5: Editora configures a Debug build in `build/editora-debug`
+  (after asking to trust the folder), builds it in the Debug console, then stops at your breakpoints, with
+  `std::string`, `std::vector` and `std::map` shown as values. The `crash` program argument throws,
+  which stops the debugger where it was thrown.
+  - `samples/debug/cpp/src/main.cpp` — the entry point: a first plain breakpoint, Step Into `checkout`,
+    and a caught `std::invalid_argument` for a word argument.
+  - `samples/debug/cpp/src/shelf.cpp` — the `checkout` loop: a **watch** on `total`, a **logpoint**, a
+    **conditional** breakpoint (`item.sku == "C-2"`) and a `std::map` that grows.
+  - `samples/debug/cpp/src/pricing.cpp` — `apply` **recurses** through a stacked discount (`std::unique_ptr`).
+  - `samples/debug/cpp/src/restock.cpp` — three threads: the **Threads** view, and a **hit-count** breakpoint
+    on a line that runs 480 times.
+  - `samples/debug/cpp/src/shelf.hpp` — the shared declarations (F5 here builds the project too).
+- `samples/debug/c/tally.c` — a **lone C file**: F5 compiles it with `cc -g -O0`, no project needed;
+  a struct array, Step Into / Step Out on `subtotal`, a watch on `total`.
 
 ## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup + tests
 

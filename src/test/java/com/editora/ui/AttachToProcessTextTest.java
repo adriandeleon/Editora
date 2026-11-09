@@ -42,4 +42,17 @@ class AttachToProcessTextTest {
         assertEquals(java.util.List.of(), DebugCoordinator.goToolDirs(java.util.List.of("go")), "found on the PATH");
         assertEquals(java.util.List.of(), DebugCoordinator.goToolDirs(java.util.List.of()));
     }
+
+    @Test
+    void aNativeProgramIsAttachedByCodelldb() {
+        var app = new LocalProcesses.Target(9, LocalProcesses.Kind.NATIVE, "app", "", 0);
+        assertEquals(
+                tr("debug.attachProcess.byPidLldb", tr("debug.attachProcess.kind.native")),
+                DebugCoordinator.processDetail(app));
+        var rust = new LocalProcesses.Target(9, LocalProcesses.Kind.RUST, "shelf", "", 0);
+        assertEquals(
+                tr("debug.attachProcess.byPidLldb", tr("debug.attachProcess.kind.rust")),
+                DebugCoordinator.processDetail(rust));
+        assertEquals("", DebugCoordinator.startFlag(LocalProcesses.Kind.NATIVE));
+    }
 }

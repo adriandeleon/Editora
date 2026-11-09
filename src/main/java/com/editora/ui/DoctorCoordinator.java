@@ -795,7 +795,7 @@ final class DoctorCoordinator {
                     return dlv != null ? base.ok(dlv) : base.missing("doctor.tip.missing", "dlv");
                 }));
             }
-            if (s.isRustDebugEnabled()) {
+            if (s.isRustDebugEnabled() || s.isCppDebugEnabled()) {
                 String codelldbPath = scope.debugTool("rust", s.getRustDebugPath());
                 // Its Install is on Settings → Debugging → Rust, where Settings… leads.
                 DoctorCheck codelldb = DoctorCheck.checking("debug.rust", "debug", tr("doctor.label.codelldb"), "")

@@ -11,11 +11,12 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** A Go program is told by its own section; another program, or another file, is not one. */
-class GoBinariesTest {
+class ProgramFilesTest {
 
     /** A 64-bit little-endian ELF file with sections named {@code names} (the name table last). */
     static byte[] elf(List<String> names) {
@@ -70,37 +71,56 @@ class GoBinariesTest {
 
     @Test
     void anElfProgramWithGosBuildInfoIsGo(@TempDir Path dir) throws Exception {
-        assertTrue(GoBinaries.isGo(Files.write(dir.resolve("go"), elf(List.of(".text", ".go.buildinfo", ".data")))));
-        assertTrue(GoBinaries.isGo(Files.write(dir.resolve("old"), elf(List.of(".text", ".gopclntab")))), "Go < 1.18");
-        assertFalse(GoBinaries.isGo(Files.write(dir.resolve("c"), elf(List.of(".text", ".data", ".bss")))));
+        assertTrue(ProgramFiles.isGo(Files.write(dir.resolve("go"), elf(List.of(".text", ".go.buildinfo", ".data")))));
+        assertTrue(
+                ProgramFiles.isGo(Files.write(dir.resolve("old"), elf(List.of(".text", ".gopclntab")))), "Go < 1.18");
+        assertFalse(ProgramFiles.isGo(Files.write(dir.resolve("c"), elf(List.of(".text", ".data", ".bss")))));
     }
 
     @Test
     void aMachOProgramWithGosBuildInfoIsGo(@TempDir Path dir) throws Exception {
-        assertTrue(GoBinaries.isGo(Files.write(dir.resolve("go"), machO(List.of("__data", "__go_buildinfo")))));
-        assertFalse(GoBinaries.isGo(Files.write(dir.resolve("c"), machO(List.of("__data", "__bss")))));
+        assertTrue(ProgramFiles.isGo(Files.write(dir.resolve("go"), machO(List.of("__data", "__go_buildinfo")))));
+        assertFalse(ProgramFiles.isGo(Files.write(dir.resolve("c"), machO(List.of("__data", "__bss")))));
     }
 
     @Test
     void anythingElseIsNot(@TempDir Path dir) throws Exception {
-        assertFalse(GoBinaries.isGo(Files.writeString(dir.resolve("script"), "#!/bin/sh\necho .go.buildinfo\n")));
-        assertFalse(GoBinaries.isGo(Files.write(dir.resolve("empty"), new byte[0])));
-        assertFalse(GoBinaries.isGo(dir.resolve("missing")));
+        assertFalse(ProgramFiles.isGo(Files.writeString(dir.resolve("script"), "#!/bin/sh\necho .go.buildinfo\n")));
+        assertFalse(ProgramFiles.isGo(Files.write(dir.resolve("empty"), new byte[0])));
+        assertFalse(ProgramFiles.isGo(dir.resolve("missing")));
         byte[] cut = elf(List.of(".go.buildinfo"));
         assertFalse(
-                GoBinaries.isGo(Files.write(dir.resolve("cut"), java.util.Arrays.copyOf(cut, 80))),
+                ProgramFiles.isGo(Files.write(dir.resolve("cut"), java.util.Arrays.copyOf(cut, 80))),
                 "section headers past its end");
         byte[] wild = elf(List.of(".go.buildinfo"));
         ByteBuffer.wrap(wild).order(ByteOrder.LITTLE_ENDIAN).putShort(0x3C, (short) 60000);
-        assertFalse(GoBinaries.isGo(Files.write(dir.resolve("wild"), wild)), "an absurd section count");
-        assertFalse(GoBinaries.isGo(dir), "a folder");
+        assertFalse(ProgramFiles.isGo(Files.write(dir.resolve("wild"), wild)), "an absurd section count");
+        assertFalse(ProgramFiles.isGo(dir), "a folder");
     }
 
     @Test
     void thisJavaIsNotGo() {
         String java = ProcessHandle.current().info().command().orElse("");
         if (!java.isEmpty()) {
-            assertFalse(GoBinaries.isGo(Path.of(java)));
+            assertFalse(ProgramFiles.isGo(Path.of(java)));
         }
+    }
+
+    @Test
+    void aNativeProgramWithDebugInformationIsToldAndRustsFromIt(@TempDir Path dir) throws Exception {
+        assertEquals(
+                ProgramFiles.Kind.NATIVE,
+                ProgramFiles.kind(Files.write(dir.resolve("c"), elf(List.of(".text", ".debug_info", ".debug_line")))));
+        assertEquals(
+                ProgramFiles.Kind.RUST,
+                ProgramFiles.kind(
+                        Files.write(dir.resolve("r"), elf(List.of(".text", ".debug_info", ".debug_gdb_scripts")))));
+        assertEquals(
+                ProgramFiles.Kind.GO,
+                ProgramFiles.kind(Files.write(dir.resolve("g"), elf(List.of(".debug_info", ".go.buildinfo")))),
+                "Go before native: Delve debugs it");
+        assertEquals(null, ProgramFiles.kind(Files.write(dir.resolve("stripped"), elf(List.of(".text", ".data")))));
+        assertEquals(List.of(), List.copyOf(ProgramFiles.sections(dir.resolve("missing"))));
+        assertTrue(ProgramFiles.sections(dir.resolve("c")).contains(".debug_line"));
     }
 }
