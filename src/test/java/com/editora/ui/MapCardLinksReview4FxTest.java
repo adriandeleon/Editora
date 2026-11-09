@@ -343,16 +343,16 @@ class MapCardLinksReview4FxTest {
                         "the status says why");
             });
 
-            // Picking a listed place with still no room keeps it listed.
+            // Picking a place without a card in the chip's list, with still no room, keeps it on the chip.
+            FxTestSupport.runOnFx(() -> set.chip.fire());
+            waitForFx(() -> set.list != null && !set.list.places().isEmpty());
             FxTestSupport.runOnFx(() -> {
-                set.chip.fire();
-                javafx.scene.control.ContextMenu menu = javafx.stage.Window.getWindows().stream()
-                        .filter(window -> window instanceof javafx.scene.control.ContextMenu && window.isShowing())
-                        .map(window -> (javafx.scene.control.ContextMenu) window)
+                MapResultsList list = set.list;
+                MapResultsList.Place waiting = list.places().stream()
+                        .filter(place -> set.more.contains(place.group()))
                         .findFirst()
                         .orElseThrow();
-                menu.hide();
-                menu.getItems().getFirst().fire();
+                assertFalse(list.openPlaceForTest(waiting), "no room");
                 assertEquals(8 - fit, set.more.size(), "no room: it stays listed");
                 assertEquals(tr("project.map.links.noRoom"), h.last());
             });

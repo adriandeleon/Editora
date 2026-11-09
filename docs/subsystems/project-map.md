@@ -432,6 +432,23 @@ opens in the editor (`FileActions.openWorkspaceSymbol`). With no server that ans
 for a declarations-by-name query instead and says so. A command a card does not run goes on to the Map window's own
 handler: `KeyDispatcher.HANDLED_COMMANDS` is asked from the focused node outwards until one runs the command.
 
+**An answer's list** (Map code browser gap 7, `MapResultsList`). The "+N more" chip opens every place of its answer
+— References, Callers, Implementations, Subtypes — as a list beside the card asked from, as IntelliJ's Find Usages
+and VS Code's References view list them: grouped by file (the file's project path in bold, how many places it
+holds), each place a row with its line number and its line's text (stripped, cut at `MAX_TEXT` 160; the lines of at
+most `MAX_FILES_READ` 300 files read off the FX thread, the rows shown at once and their text filled in). The places
+are in the order the cards open — the groups as ranked, each group's in line order (`MapResultsList.placesOf`, a
+place belonging to the innermost declaration group that holds it, else its file's; one row per line). A filter
+field keeps the places whose project path or text holds what is typed (any case), and **Tests** (on by default)
+leaves out the places in test files and folders when cleared (`MapCardLinks.linksLooksLikeTest`); the header says
+how many are shown ("12 of 40 in 5 files"). A place whose group has a card of this answer is in the accent. Enter or
+a double-click opens a place: its group's card, opened with its edge as a chip pick did (or the one already open),
+at that very place with the name selected, the keyboard following (Back returns); with no room it stays listed and
+the status says so. Down or Enter in the filter goes to the first place. The list belongs to its answer (`EdgeSet.list`):
+asked again, or the card closing or stepping, takes it away. It and a hierarchy tree share `MapSideColumn` — the
+frame, title, ×, Escape, following the card and taking a side — and a card has one of them at a time: showing one
+closes the other (`MapCardLinks.closeSideColumns`).
+
 **Hierarchy trees** (Map code browser gap 4, `MapHierarchyTree`). The cards answer one level of a hierarchy; a
 tree goes as deep as the reader opens it. Call Hierarchy (`lsp.callHierarchy`) and Type Hierarchy
 (`lsp.typeHierarchy`) typed in a card or on a declaration row, and the card and declaration-row menus' **Show Call
@@ -489,7 +506,7 @@ column" never applies to them: `columnRulePlacement` only checks `MapCardLinks.p
 beside its source for `besideSource` to take when it is placed. Each is joined to it by an **edge**: a line from the result card to the card asked from with an
 arrow at that end, and a label at its middle — "calls", "references", or "by name" (the line dashed), with "· N"
 for more than one place. The rest are listed by a **"+N more"** chip on the card's top edge (under the card when
-there is no room above it); picking one opens its card with its edge. The chip is kept above every card: it is
+there is no room above it); it opens the answer's list (below). The chip is kept above every card: it is
 raised once the result cards open and whenever any card rises (`MapCardLinks.linksRaiseChips`, C3), and the status
 says "N more listed by the card's “+N more” button". While an answer opens its cards, the card it was asked from
 and its other result cards are never the ones evicted for it; a place that finds no room (the other cards pinned)
@@ -1587,6 +1604,10 @@ The focused coverage lives in:
 - `ProjectMapCardMovesFxTest` / `MapCardMovesTest` for moving inside a card: Go to Line in file and declaration
   cards, its bar's Enter and Escape and the menu item, matching bracket and Beginning / End of Defun, a file card's
   Alt+Page Up / Down through its outline (and the wait for it), a file with no outline, and the uses wash;
+- `MapResultsListTest` / `MapCardLinksFxTest.placesWithNoOutlineOpenTheirFilesAtThePlaceAndTheChipListsEveryPlace` /
+  `ProjectMapLinksFxTest` / `MapCardLinksReview4FxTest` for an answer's list: a place's group, the places' order and
+  text, the filter and Tests; the chip's list of 209 files' places with their text, the filter, a place opened with
+  its edge, the list going with its answer; callers by name listed and opened; a place with no room kept listed;
 - `MapHistoryTest.aClosedCardsStopKeepsItsLineSoBackOpensItAgain` /
   `ProjectMapNavigationFxTest.aGoToFromAPreviewCardOpensWhereItStoodAndBackOpensItAgain` for preview cards: a Go to
   result is a preview in italics, the next Go to from it opens where it stood and closes it, the result kept as the
