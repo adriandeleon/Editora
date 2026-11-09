@@ -1,0 +1,40 @@
+{
+  // Debug: Start Configuration… lists these, as VS Code's Run and Debug view does.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // CodeLLDB, with a CMake build first (the "build" task of tasks.json).
+      "name": "shelf (CodeLLDB)",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/vscode/shelf",
+      "args": ["${input:limit}"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build"
+    },
+    {
+      // GDB's own DAP mode (GDB 14 or later).
+      "name": "shelf (GDB)",
+      "type": "gdb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/vscode/shelf",
+      "args": ["crash"],
+      "preLaunchTask": "build"
+    },
+    {
+      // Microsoft's C/C++ extension's form: Editora runs it on GDB.
+      "name": "shelf (cppdbg)",
+      "type": "cppdbg",
+      "request": "launch",
+      "MIMode": "gdb",
+      "program": "${workspaceFolder}/build/vscode/shelf",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "environment": [{ "name": "SHELF_LOG", "value": "1" }],
+      "preLaunchTask": "build"
+    }
+  ],
+  "inputs": [
+    { "id": "limit", "type": "pickString", "description": "How many items to check out", "options": ["2", "6", "8"] }
+  ]
+}

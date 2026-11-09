@@ -2238,6 +2238,14 @@ final class WindowCommandRegistrar {
                         "debug.stepOut", () -> host.debugCoordinator().ifDebug(host.dapManager()::stepOut)));
         host.registry()
                 .register(Command.of(
+                        "debug.startConfiguration",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::startLaunchConfiguration)));
+        host.registry()
+                .register(Command.of(
+                        "debug.editCustomAdapters",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editCustomAdapters)));
+        host.registry()
+                .register(Command.of(
                         "debug.stepOverInstruction",
                         () -> host.debugCoordinator()
                                 .ifDebug(() -> host.debugCoordinator().stepInstruction(false))));

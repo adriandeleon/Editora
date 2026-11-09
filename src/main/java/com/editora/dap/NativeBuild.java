@@ -313,6 +313,20 @@ public final class NativeBuild {
         return ExternalAdapter.launchRequest("lldb", program.toString(), args, cwd.toString(), Map.of(), false, extra);
     }
 
+    /**
+     * GDB's DAP {@code launch} request for native {@code program} with {@code args}, in {@code cwd}
+     * (C and C++'s debugger set to GDB). Its output comes as the adapter's output events.
+     */
+    public static Map<String, Object> gdbLaunch(Path program, List<String> args, Path cwd) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", "gdb");
+        m.put("request", "launch");
+        m.put("program", program.toString());
+        m.put("args", List.copyOf(args));
+        m.put("cwd", cwd.toString());
+        return m;
+    }
+
     /** CodeLLDB's {@code attach} request for process {@code pid} of this machine, of {@code language} (cpp, rust). */
     public static Map<String, Object> attach(long pid, String language) {
         Map<String, Object> m = new LinkedHashMap<>();

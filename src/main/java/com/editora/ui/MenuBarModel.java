@@ -321,6 +321,7 @@ final class MenuBarModel {
                                         // No "Debug: Continue": Start / Continue above does it, and its prefixed
                                         // title read unevenly among the bare rows (review 3, choice 5).
                                         List.of(
+                                                "debug.startConfiguration",
                                                 "debug.pause",
                                                 "debug.stepOver",
                                                 "debug.stepInto",
@@ -351,6 +352,7 @@ final class MenuBarModel {
                                                 "debug.threads",
                                                 "debug.showDisassembly",
                                                 "debug.showMemory",
+                                                "debug.editCustomAdapters",
                                                 "debug.muteBreakpoints",
                                                 SEPARATOR,
                                                 "debug.exceptions.caught",

@@ -29,6 +29,11 @@ class ExternalAdapterTest {
                 codelldb.argv("/opt/codelldb/adapter/codelldb", 4711));
         ExternalAdapter lldb = new ExternalAdapter(List.of("lldb-dap"), ExternalAdapter.Transport.STDIO, null);
         assertEquals(List.of("lldb-dap"), lldb.argv(null, -1));
+        ExternalAdapter net = new ExternalAdapter(
+                List.of("netcoredbg", "--server=" + ExternalAdapter.PORT),
+                ExternalAdapter.Transport.PORT_ARGUMENT,
+                null);
+        assertEquals(List.of("netcoredbg", "--server=4711"), net.argv("", 4711), "a port inside an argument");
     }
 
     @Test
@@ -154,5 +159,20 @@ class ExternalAdapterTest {
                 List.of(Path.of("/g/bin"), Path.of("/a", "bin"), Path.of("/b", "bin"), home.resolve("go/bin")),
                 DapManager.goBinDirs(Map.of("GOBIN", "/g/bin", "GOPATH", "/a" + sep + "/b"), home));
         assertEquals(List.of(home.resolve("go/bin")), DapManager.goBinDirs(Map.of(), home));
+    }
+
+    @Test
+    void aLaunchJsonConfigurationIsLaidOverThePlannedLaunchButForTheConsole() {
+        Map<String, Object> planned =
+                Map.of("type", "python", "program", "/a.py", "console", "internalConsole", "cwd", "/");
+        assertEquals(planned, DapManager.overlay(planned, null));
+        Map<String, Object> out = DapManager.overlay(
+                planned,
+                Map.of("type", "debugpy", "program", "/b.py", "console", "integratedTerminal", "env", Map.of()));
+        assertEquals("python", out.get("type"), "the adapter Editora started");
+        assertEquals("/b.py", out.get("program"), "the configuration wins");
+        assertEquals("internalConsole", out.get("console"), "Editora's console");
+        assertEquals(Map.of(), out.get("env"));
+        assertEquals("/", out.get("cwd"));
     }
 }

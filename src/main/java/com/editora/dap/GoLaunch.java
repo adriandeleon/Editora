@@ -120,7 +120,7 @@ public final class GoLaunch {
      * {@code __debug_bin…} in the package — which Delve deletes when it ends normally, but not when Stop ends it, and
      * which a file tree, a watcher and {@code git status} all see meanwhile.
      */
-    static String debugBinary() {
+    public static String debugBinary() {
         String name = "editora-dlv-"
                 + Long.toUnsignedString(
                         java.util.concurrent.ThreadLocalRandom.current().nextLong(), 36)

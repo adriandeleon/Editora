@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 163;
+    public static final int SCHEMA_VERSION = 164;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -905,6 +905,10 @@ public class Settings {
     private String rustDebugPath = "";
     /** C and C++ debugging (CodeLLDB, the one Rust's path names): on by default. */
     private boolean cppDebugEnabled = true;
+    /** C and C++'s debugger: {@code codelldb} (the default, Rust's) or {@code gdb} (GDB's own DAP mode). */
+    private String cppDebugger = "codelldb";
+    /** GDB ({@code gdb}, 14 or later, for its DAP mode); blank = {@code gdb} on the PATH. */
+    private String gdbPath = "";
     /**
      * Language Server Protocol support (code intelligence through each language's server): on by default since
      * 0.27.1. Each server self-gates on being installed, and the install banner offers the missing ones. Off, a new
@@ -3834,6 +3838,22 @@ public class Settings {
 
     public void setCppDebugEnabled(boolean cppDebugEnabled) {
         this.cppDebugEnabled = cppDebugEnabled;
+    }
+
+    public String getCppDebugger() {
+        return "gdb".equals(cppDebugger) ? "gdb" : "codelldb";
+    }
+
+    public void setCppDebugger(String cppDebugger) {
+        this.cppDebugger = "gdb".equals(cppDebugger) ? "gdb" : "codelldb";
+    }
+
+    public String getGdbPath() {
+        return gdbPath == null ? "" : gdbPath;
+    }
+
+    public void setGdbPath(String gdbPath) {
+        this.gdbPath = gdbPath == null ? "" : gdbPath;
     }
 
     public String getJavaLspCommand() {
