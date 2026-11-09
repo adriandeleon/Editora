@@ -366,8 +366,26 @@ local of an enclosing scope first (`index.JsLocals`), then the nearest declarati
 project's files of the language, nearest the card's file first, within the name match's budget. A server that fails
 falls back the same way. What only a server answers — type definition, implementations, super method, type
 hierarchy, callees — says so instead ("This needs a language server for the file…", or "The language server does not
-answer this request."). A result in a library (a `jdt://` class file) has no card: the status says to open the file
-in the editor to follow it there.
+answer this request.").
+
+**Library cards** (Map code browser gap 5). A result in the JDK or a dependency — a `jdt://contents/<archive>/
+<package>/<Class>.class` class file, which jdtls gives for a definition, a caller, a supertype and the rest — opens as
+a card like any other. `ProjectMapLinkSearch.withLibrary` asks the asked file's server for each class's source
+(`java/classFileContents`, attached or decompiled, as the editor's library tabs do; at most
+`MAX_LIBRARY_CLASSES` 6 classes an answer), keeping the asked file lent until then, since the loan is how that server
+is found. `MapLibrarySources.write` puts the source in a read-only `<archive>/<package folders>/<Class>.java` under a
+folder of this run's own (`editora-map-library-*` in the temp folder, removed when Editora exits), and remembers which
+class each file is. A definition's line is moved past its Javadoc (`JavadocSkip.declarationLine`), as the editor does.
+The card is then an ordinary card of that file: highlighted, outlined (so a member's declaration card opens), found
+in. Its status says "Library source from java.base, read-only". Its **Open**, and Open Narrowed, open the editor's
+library tab of the class at that line (`ProjectMapView.openLibrary`, through `FileActions.openWorkspaceSymbol` as Go
+to Symbol opens a library symbol), never the copy. The folder is outside every project, so the orphan check never
+closes a library card for a folder of the map. Code navigation typed in a library card matches by name in the
+project, since no server holds the copy. A class whose source cannot be had is left out; when nothing else was
+found the status says the result is in a library, as before.
+
+A card a hierarchy tree's row opened is kept while the card the tree was asked from is open, as an answer's result
+cards are (`MapCardLinks.treeOpened`, `isResult`), so a folder of the map closing does not close it.
 
 **In the editor.** The card menu's **In the Editor** submenu keeps Go to Definition, Find Usages, Go to
 Implementation, Type Hierarchy and Call Hierarchy that open the card's file in the editor at the place right-clicked
@@ -1553,6 +1571,10 @@ The focused coverage lives in:
 - `ProjectMapCardMovesFxTest` / `MapCardMovesTest` for moving inside a card: Go to Line in file and declaration
   cards, its bar's Enter and Escape and the menu item, matching bracket and Beginning / End of Defun, a file card's
   Alt+Page Up / Down through its outline (and the wait for it), a file with no outline, and the uses wash;
+- `MapLibrarySourcesTest` / `ProjectMapNavigationFxTest.aDefinitionInALibraryOpensItsSourceAsACardWhoseOpenIsTheLibraryTab`
+  for library cards: a class file URI's parts and file, safe names, the read-only copy written again when its source
+  changes, the folder's removal; a JDK definition as a card past its Javadoc, read-only and outside the project, its
+  status, Back, and Open going to the library tab with the class's URI and the asked file;
 - `MapHierarchyTreeTest` / `ProjectMapNavigationFxTest` for hierarchy trees: turning, the question a row asks,
   recursion by file and line, a row's text, the menus' items; Type Hierarchy typed in a card as a tree of subtypes,
   a row opened as a card with Back returning, ⇄ asking the supertypes and saying there are none; Call Hierarchy one
