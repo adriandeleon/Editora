@@ -181,7 +181,7 @@ class ProjectMapNavReviewFxTest {
             FxTestSupport.runOnFx(() -> {
                 FxTestSupport.invoke(h.surface(), "repaint");
                 assertInView(h.surface(), h.item(140), "a revealed row that had to be loaded");
-                List<Path> history = FxTestSupport.field(h.view(), "selectionHistory");
+                List<Path> history = h.view().historyPlaces();
                 assertEquals(h.item(140), history.getLast(), "and it is part of the history");
             });
 

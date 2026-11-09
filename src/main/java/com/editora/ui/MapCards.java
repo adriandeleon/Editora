@@ -169,6 +169,20 @@ final class MapCards {
         default List<javafx.scene.control.MenuItem> viewsCardMenu(ProjectMapPreview card) {
             return List.of();
         }
+
+        /**
+         * The code was followed from card {@code from}, its caret at {@code fromCaret} before the step, to card {@code
+         * to} (or a place further along {@code from}): both are stops of the Map's Back/Forward history.
+         */
+        default void followed(ProjectMapPreview from, int fromCaret, ProjectMapPreview to) {}
+
+        /** Back ({@code back}) or Forward typed in {@code card}, along the Map's history; false with nowhere to go. */
+        default boolean historyStep(ProjectMapPreview card, boolean back) {
+            return false;
+        }
+
+        /** {@code card} closed: its stops in the Map's history become their places. */
+        default void cardClosed(ProjectMapPreview card) {}
     }
 
     /**
@@ -443,16 +457,7 @@ final class MapCards {
 
     // --- Following the code from card to card (Map code navigation) --------------------------------------
 
-    /** How many steps Back and Forward remember. */
-    static final int TRAIL_LIMIT = 50;
-
-    /** A place the code was followed from: a card and its caret then. */
-    private record TrailStop(ProjectMapPreview card, int caret) {}
-
-    private final java.util.ArrayDeque<TrailStop> backTrail = new java.util.ArrayDeque<>();
-    private final java.util.ArrayDeque<TrailStop> forwardTrail = new java.util.ArrayDeque<>();
-
-    /** What a card's code navigation does: asks {@link #links}, shows Quick Documentation, walks the trail. */
+    /** What a card's code navigation does: asks {@link #links}, shows Quick Documentation, walks the Map's history. */
     private final ProjectMapPreview.LinkActions cardNavigation = new ProjectMapPreview.LinkActions() {
         @Override
         public void show(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {
@@ -466,13 +471,14 @@ final class MapCards {
 
         @Override
         public boolean step(ProjectMapPreview card, boolean back) {
-            return trailStep(card, back);
+            return host.historyStep(card, back);
         }
     };
 
     /**
-     * The code was followed from {@code from} to {@code to}: where {@code from}'s caret was is remembered for Back (a
-     * new step forgets the Forward ones), and the keyboard goes to {@code to}, brought into view once it is laid out.
+     * The code was followed from {@code from} to {@code to}: both are stops of the Map's history (Back from {@code to}
+     * returns to {@code from}, its caret where it was), and the keyboard goes to {@code to}, brought into view once it
+     * is laid out.
      */
     private void followed(ProjectMapPreview from, ProjectMapPreview to) {
         followed(from, from.caretOffset(), to);
@@ -483,11 +489,7 @@ final class MapCards {
         if (disposed) {
             return;
         }
-        backTrail.push(new TrailStop(from, fromCaret));
-        while (backTrail.size() > TRAIL_LIMIT) {
-            backTrail.removeLast();
-        }
-        forwardTrail.clear();
+        host.followed(from, fromCaret, to);
         if (to == from) {
             return; // its caret moves to the place; the keyboard is in it already
         }
@@ -499,33 +501,31 @@ final class MapCards {
         });
     }
 
-    /**
-     * Back (or Forward) from {@code current}: the newest remembered card still open, its caret where it was, brought
-     * into view with the keyboard in it; {@code current} and its caret are remembered the other way. False, and the
-     * status says so, when there is nowhere to go.
-     */
-    boolean trailStep(ProjectMapPreview current, boolean back) {
-        java.util.ArrayDeque<TrailStop> from = back ? backTrail : forwardTrail;
-        java.util.ArrayDeque<TrailStop> to = back ? forwardTrail : backTrail;
-        while (!from.isEmpty()) {
-            TrailStop stop = from.pop();
-            if (!cardTouches.containsKey(stop.card())) {
-                continue; // closed since
-            }
-            to.push(new TrailStop(current, current.caretOffset()));
-            stop.card().restoreCaret(stop.caret());
-            if (stop.card() != current) {
-                bringIntoView(stop.card());
-            }
-            return true;
-        }
-        host.status(tr(back ? "project.map.links.trail.noBack" : "project.map.links.trail.noForward"));
-        return false;
+    /** Whether {@code card} is open on the Map. */
+    boolean isOpen(ProjectMapPreview card) {
+        return cardTouches.containsKey(card);
     }
 
-    /** The cards Back would go to, newest first. For tests. */
-    List<ProjectMapPreview> backTrailForTest() {
-        return backTrail.stream().map(TrailStop::card).toList();
+    /** The place {@code card} is open under: its file, or its declaration's path; null for a card of no file. */
+    @Nullable
+    Path placeOf(ProjectMapPreview card) {
+        Path file = card.path();
+        return file == null ? null : cardKeyOf(card, file);
+    }
+
+    /**
+     * Back or Forward to a stop on {@code card}: its caret put back at {@code caret} (a negative one left where it is),
+     * the card brought into view with the keyboard in it.
+     */
+    void goToStop(ProjectMapPreview card, int caret) {
+        if (!isOpen(card)) {
+            return;
+        }
+        if (caret >= 0) {
+            card.restoreCaret(caret);
+        }
+        bringIntoView(card);
+        card.focusContent();
     }
 
     /** Show References / Callers as Cards from a declaration row: its card opens and asks. */
@@ -2328,8 +2328,7 @@ final class MapCards {
         cardsGitRequests.remove(preview);
         closeCardNotes(preview);
         closeCardStructure(preview);
-        backTrail.removeIf(stop -> stop.card() == preview);
-        forwardTrail.removeIf(stop -> stop.card() == preview);
+        host.cardClosed(preview);
         // Its edges, and the edge to it from the card it was found from; the result cards it opened go with it.
         List<ProjectMapPreview> results = links.cardClosed(preview);
         CardAttachment views = viewsAttachments.remove(preview);
@@ -2365,9 +2364,8 @@ final class MapCards {
         pinnedCards.clear();
         pickedCards.clear();
         cardsGitRequests.clear();
-        backTrail.clear();
-        forwardTrail.clear();
         List<ProjectMapPreview> open = List.copyOf(previews.values());
+        open.forEach(host::cardClosed);
         previews.clear();
         List<CardAttachment> stuck = allAttachments();
         stickyNotes.clear();

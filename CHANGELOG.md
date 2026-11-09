@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Setup:** Delve is found on the PATH or where `go install` puts it. *Settings → Debugging → Go* turns Go
     debugging on or off, sets Delve's path, and installs Delve with `go install`. The Doctor checks for it.
   - **Build output:** Delve's build goes to the temporary folder, not your package.
+- **One Back and Forward on the Project Map.** The Map kept two histories: Alt+Left / Alt+Right and the ‹ ›
+  buttons went back through the rows you visited, while Back typed in a card went back through the cards you followed
+  the code through, and neither knew about the other. Now both are one history. Back and Forward on the map, typed in
+  a card, or picked from the buttons' menu go through the rows you visited and the cards you followed in the order you
+  visited them. A card comes back with its caret where you left it. If you closed the card since, Back goes to its row
+  instead of skipping it. The menu says which line each card stop was at, and Back and Forward typed anywhere on the
+  Map now stay on the Map instead of moving the editor.
 - **Move around inside a Project Map card.** Go to Line, the matching bracket and Beginning / End of Defun, typed in
   a card with your keymap's keys, now move the card's caret instead of the editor's. Go to Line opens a small bar
   under the card's title, numbered as the file numbers its lines, so a declaration card's lines keep their file

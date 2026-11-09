@@ -616,16 +616,14 @@ class ProjectMapDataFxTest {
             waitForFx(() -> !contains(surface, z));
             FxTestSupport.runOnFx(() -> {
                 FxTestSupport.call(surface, "select", new Class<?>[] {Path.class}, y);
-                assertTrue(FxTestSupport.<List<Path>>field(mapView, "selectionHistory")
-                        .contains(z));
+                assertTrue(mapView.historyPlaces().contains(z));
                 FxTestSupport.<Button>field(mapView, "backButton").fire();
             });
             waitForFx(() -> !(boolean) FxTestSupport.field(mapView, "loadInFlight")
                     && mapView.expandedDirectories().contains(c));
             FxTestSupport.runOnFx(() -> {
                 assertNull(FxTestSupport.field(mapView, "pendingSelection"), "must not stay armed for a dead path");
-                assertFalse(FxTestSupport.<List<Path>>field(mapView, "selectionHistory")
-                        .contains(z));
+                assertFalse(mapView.historyPlaces().contains(z));
                 assertEquals(y, FxTestSupport.field(surface, "selected"));
                 assertTrue(mapView.expandedDirectories().containsAll(Set.of(a, b)));
             });

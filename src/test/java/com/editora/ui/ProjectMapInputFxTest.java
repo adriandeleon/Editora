@@ -468,7 +468,7 @@ class ProjectMapInputFxTest {
     void historyFoldsARunOfSiblingMovesIsCappedAndAColumnCloseLeavesAnUnrelatedSelection() throws Exception {
         try (Harness h = open()) {
             FxTestSupport.runOnFx(() -> {
-                List<Path> history = FxTestSupport.field(h.view(), "selectionHistory");
+                List<Path> history = h.view().historyPlaces();
                 select(h.surface(), h.readme());
                 select(h.surface(), h.file(0));
                 int before = history.size();
@@ -506,7 +506,7 @@ class ProjectMapInputFxTest {
             FxTestSupport.runOnFx(() -> h.view().revealPath(h.file(4)));
             waitForFx(() -> h.file(4).equals(selected(h.surface())));
             FxTestSupport.runOnFx(() -> {
-                List<Path> history = FxTestSupport.field(h.view(), "selectionHistory");
+                List<Path> history = h.view().historyPlaces();
                 closeButtonOf(h.surface(), h.a()).fire();
                 assertEquals(h.a(), selected(h.surface()), "a selection under the closed branch moves to its folder");
                 assertEquals(h.a(), history.getLast(), "and that move is part of the history");
@@ -760,7 +760,7 @@ class ProjectMapInputFxTest {
         MapWindow w = window(keymap);
         FxTestSupport.runOnFx(() -> {
             String in = keymap + ": ";
-            List<Path> history = FxTestSupport.field(w.view(), "selectionHistory");
+            List<Path> history = w.view().historyPlaces();
             int tabs = w.tabs().getTabs().size();
 
             // History: Alt+Left / Alt+Right. No keymap binds them, so the dispatcher swallowed them.

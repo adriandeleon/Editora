@@ -343,11 +343,14 @@ place on the card asked from itself (a definition further down the same file car
 lines) opens no card: the card's caret moves there, the name selected. The result card selects the asked name at
 the place (`MapCardLinks.markOf`) — the result's own name for a type definition, a supertype or a subtype.
 
-**Back and Forward** (`nav.back` / `nav.forward`: Ctrl+Alt+Left / Right in the CUA and IntelliJ keymaps, `M-,` in Emacs) typed in a card walk the
-cards the code was followed through, not the editor's trail: each step that led to a card (or moved a card's caret)
-remembers the card it left and its caret (`MapCards.TrailStop`, at most `TRAIL_LIMIT` 50); Back brings that card into
-view with its caret where it was and remembers the current card for Forward; a new step forgets the Forward ones;
-closed cards are skipped and dropped. With nowhere to go the status line says so ("No earlier card to go back to.").
+**Back and Forward** (`nav.back` / `nav.forward`: Ctrl+Alt+Left / Right in the CUA and IntelliJ keymaps, `M-,` in
+Emacs) typed in a card walk the Map's one history (`MapHistory`, below with the map's Alt+Left / Alt+Right), never the
+editor's: each step that led to a card (or moved a card's caret) is a stop for the card it left, with its caret then,
+and one for the card it went to. Back brings a card into view with its caret where it was and the keyboard in it; the
+caret of the stop it leaves is kept for Forward; a new step forgets the Forward stops. A card with no language server
+leaves the keys to the map (`ProjectMapView.historyCommand`, the view's `KeyDispatcher.HANDLED_COMMANDS`), which steps
+from the focused card the same way. With nowhere to go the status line says so ("Nothing earlier on the Map to go back
+to.").
 
 **Quick Documentation** (`lsp.hover`, and the card menu's item at the place right-clicked) asks the running server's
 hover with the file lent, as linked cards do (`MapCardLinks.Source.hover`), and shows it at the card's caret in the
@@ -693,12 +696,26 @@ swallowed as an unbound `Alt` chord. The surface always consumes them; the dispa
 claimed `Alt` chord that comes back unconsumed, so none reaches the native menu. The shared Project
 search field claims `Ctrl-N` / `Ctrl-P` the same way.
 
-Back/Forward is a history of places, at most 100 (`HistoryHead`). A place is a file opened or previewed, a
-search landing, a reveal, a breadcrumb jump or a row picked with the pointer; it is never replaced. A run of
+Back/Forward is one history (`MapHistory`, at most 100 stops; Map code browser gap 3): the places of the map and the
+cards the code was followed through, in the order they were visited. Before it, the map's Alt+Left / Alt+Right and the
+‹ › buttons walked the places and Back typed in a card walked a separate card trail, each blind to the other. A stop is
+a place — a row's path, a declaration card's made-up path — and, when the code was followed through a card, that
+card and its caret. Alt+Left / Alt+Right on the map, the ‹ › buttons and their menu, and `nav.back` / `nav.forward`
+typed on the map or in a card all walk it. A card's stop on its own row's place is that place (`MapHistory.samePlace`:
+the row it was opened from, or the file of the declaration it shows), so Back does not stop twice at one place; Go to
+File or Symbol picked in a card reveals its row without a stop of its own. A closed card's stop becomes its place
+(`MapHistory.cardClosed`; two of one place in a row are kept once), so Back reveals its row instead of skipping it.
+Back from a card the history has no stop for (the keyboard was put there by hand) adds one, so Forward returns to it.
+The workspace keeps the places only (a card's stop as its place).
+
+A place is a file opened or previewed, a
+search landing, a reveal, a breadcrumb jump or a row picked with the pointer; it is never replaced (`MapHistory.Head`).
+A run of
 keyboard steps — sibling moves, Left/Right/Backspace to a parent or child, Home/End, type-ahead — is one entry, the
 row it leads to, so Back returns to where the run started rather than retracing each row; a run that ends where
 it started folds away. The landings a query makes as it is typed are one entry too (its last); a match stepped to
-is a place. Back and Forward have a menu of the places ("name — folder", the current one ticked). Closing a column moves the selection to that
+is a place. Back and Forward have a menu of the stops ("name — folder", a card's stop with the line its caret was on,
+the current one ticked). Closing a column moves the selection to that
 column's folder only when the selection was inside the closed branch.
 
 The bottom-left zoom bar is icon buttons (each with a tooltip and accessible name) around the current
@@ -1516,6 +1533,11 @@ The focused coverage lives in:
 - `ProjectMapCardMovesFxTest` / `MapCardMovesTest` for moving inside a card: Go to Line in file and declaration
   cards, its bar's Enter and Escape and the menu item, matching bracket and Beginning / End of Defun, a file card's
   Alt+Page Up / Down through its outline (and the wait for it), a file with no outline, and the uses wash;
+- `MapHistoryTest` / `ProjectMapGotoFxTest.backAndForwardWalkTheMapsPlacesAndItsCardsAsOneHistory` for the one
+  Back/Forward history: runs and landings folding, cards followed as stops with their carets, a card's stop on its
+  row's place, Back from a card the history has no stop for, closed cards as their places, dead places, restore and
+  the bound; and on the Map, Alt+Left from a card's stop, `nav.forward` / `nav.back` on the map and in a card, the
+  menu's line, and a closed card's row revealed;
 - `ProjectMapWindowReviewFxTest` for the pinned root in the No Project window, the Map returning with its
   project, cards and row states across a close and reopen, the theme mirror, a maximized window, New Folder
   and Rename from the Map, an unreadable folder's status line, Reveal Active File and its option, a card's

@@ -125,7 +125,7 @@ class ProjectMapBearingsReview3FxTest {
         }
 
         List<Path> history() {
-            return FxTestSupport.field(view, "selectionHistory");
+            return view.historyPlaces();
         }
 
         @Override

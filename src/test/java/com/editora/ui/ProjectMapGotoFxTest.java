@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -127,7 +128,7 @@ class ProjectMapGotoFxTest {
         waitFor(() -> "area".equals(found.editor().getSelectedText()), "its name selected");
         FxTestSupport.runOnFx(() -> {
             assertEquals(1, fake.workspaceSymbols.size(), "asked the card's server");
-            assertEquals(List.of(source), cards.backTrailForTest(), "Back goes to the card it was typed in");
+            assertEquals(List.of(source), view.history.cardsBack(), "Back goes to the card it was typed in");
             assertTrue(found.runMarkerCommand("nav.back"));
             assertEquals(3, source.editor().getCurrentParagraph(), "its caret where it was");
         });
@@ -156,7 +157,7 @@ class ProjectMapGotoFxTest {
         FxTestSupport.runOnFx(() -> pressEnter(overlayField(panel)));
         waitFor(() -> cards.codeCard(shape) != null, "the file's card");
         FxTestSupport.runOnFx(() -> {
-            assertEquals(List.of(source), cards.backTrailForTest());
+            assertEquals(List.of(source), view.history.cardsBack());
             assertFalse(panel.mapWindow().overlayHost().isShowing(), "the finder closed");
         });
         assertEquals(List.of(), editorOpened, "nothing opened in the editor");
@@ -164,6 +165,68 @@ class ProjectMapGotoFxTest {
         // A file outside the Map's root is not the Map's to show.
         Path outside = Files.writeString(temp.resolve("Elsewhere.java"), "class Elsewhere {}\n");
         assertFalse(FxTestSupport.callOnFx(() -> view.showOnMap(null, outside, -1, null)));
+    }
+
+    @Test
+    void backAndForwardWalkTheMapsPlacesAndItsCardsAsOneHistory() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Path shape = Files.writeString(src.resolve("Shape.java"), SHAPE);
+        Path use = Files.writeString(src.resolve("Use.java"), USE);
+        ProjectPanel panel = openPanel();
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        MapSurface surface = FxTestSupport.field(view, "surface");
+        @SuppressWarnings("unchecked")
+        Predicate<String> mapCommands = (Predicate<String>) view.getProperties().get(KeyDispatcher.HANDLED_COMMANDS);
+        FxTestSupport.runOnFx(() -> view.revealPath(use));
+        waitFor(() -> use.equals(surface.selectedPath()), "Use.java selected on the map");
+        ProjectMapPreview source = openCard(cards, use);
+        FxTestSupport.runOnFx(() -> {
+            source.editor().moveTo(3, 4);
+            assertTrue(view.showOnMap(source, shape, -1, null), "Go to File typed in the card");
+        });
+        waitFor(() -> cards.codeCard(shape) != null, "Shape.java's card");
+        ProjectMapPreview target = FxTestSupport.callOnFx(() -> cards.codeCard(shape));
+        FxTestSupport.runOnFx(() -> {
+            int at = view.history.index();
+            assertEquals(List.of(source), view.history.cardsBack());
+            assertEquals(use, view.historyPlaces().get(at - 1), "Use.java's card stands on its row's place: one stop");
+            assertEquals(shape, view.historyPlaces().get(at));
+            String sourceLabel = tr("project.map.history.cardEntry", view.historyLabel(use), "4");
+            assertTrue(
+                    view.historyMenu().getItems().stream().anyMatch(item -> sourceLabel.equals(item.getText())),
+                    "the menu says the line a card's stop is at");
+
+            // Back on the map (Alt+Left, the ‹ button): the card the code came from, its caret where it was.
+            target.editor().moveTo(2, 3);
+            surface.requestFocus();
+            view.moveHistory(-1);
+            assertEquals(3, source.editor().getCurrentParagraph());
+            assertEquals(4, source.editor().getCaretColumn());
+            // Forward typed on the map (nav.forward): the card it went to, its caret kept from when Back left it.
+            source.editor().moveTo(1, 0);
+            assertTrue(mapCommands.test("nav.forward"), "the map's own Forward, not the editor's");
+            assertEquals(2, target.editor().getCurrentParagraph());
+            // Back typed in a card walks the same history (a card with no language server leaves it to the map).
+            target.editor().requestFocus();
+            assertFalse(target.runMarkerCommand("nav.back"), "no server: not the card's own");
+            assertTrue(mapCommands.test("nav.back"));
+            assertEquals(1, source.editor().getCurrentParagraph(), "where the caret was when Forward left it");
+            assertFalse(mapCommands.test("file.find"), "only Back and Forward");
+
+            // A closed card's stop is its place: Forward reveals its row.
+            FxTestSupport.invokeWith(cards, "closePreview", ProjectMapPreview.class, target);
+            source.editor().requestFocus();
+            assertTrue(mapCommands.test("nav.forward"));
+            assertTrue(view.history.cardsBack().contains(source));
+        });
+        waitFor(() -> shape.equals(surface.selectedPath()), "Shape.java's row selected");
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(null, cards.codeCard(shape), "the closed card stays closed");
+            assertFalse(view.history.canGoForward());
+            assertTrue(view.history.canGoBack());
+        });
+        assertEquals(List.of(), editorOpened, "nothing opened in the editor");
     }
 
     @Test
@@ -209,7 +272,7 @@ class ProjectMapGotoFxTest {
                 FxTestSupport.callOnFx(() -> placeCards(cards, shape).getFirst());
         FxTestSupport.runOnFx(() -> {
             assertNotNull(declaration.range(), "the declaration's own card: " + declaration.title());
-            assertEquals(List.of(), cards.backTrailForTest(), "picked on the map: no card to go back to");
+            assertEquals(List.of(), view.history.cardsBack(), "picked on the map: no card to go back to");
         });
         // No Structure column holds it, yet the Map's next check for cards whose rows went away keeps it: its file's
         // folder is still open.
