@@ -1354,7 +1354,10 @@ reads every process's command line (`ProcessHandle.Info`; on Windows, where othe
 that way, `Win32_Process` through PowerShell) and lists the Java, Node.js and Python ones: a JVM whose
 `-agentlib:jdwp` / `-Xrunjdwp` has `server=y` and a fixed `address` (a wildcard host is this machine; `server=n` or
 `address=0` cannot be attached to), a Node.js with `--inspect`, `--inspect-brk` or `--inspect-wait` (default 9229;
-`--inspect-port` alone does not listen), and a Python under `-m debugpy --listen`. A JVM is attached through the
+`--inspect-port` alone does not listen), and a Python under `-m debugpy --listen` (or debugpy run by its folder,
+`python …/debugpy --listen`). debugpy's own helpers are left out (`debugpyPart`): `--listen` starts its adapter as
+`python …/debugpy/adapter --for-server …`, which would otherwise be listed as a Python not started for debugging, and
+an editor's `-m debugpy.adapter` / `debugpy.launcher` are not programs either. A JVM is attached through the
 ordinary Java attach (`attachTo`, from the active Java tab or the first open one, and remembered for Reattach), a
 Node.js through `startJsAttach`, and a Python through the new `DapManager.startPythonAttach`: `debugpy --listen` runs
 debugpy's own adapter on that port, so the session connects to it over the socket (`DapClient.connect`) and sends
@@ -1367,7 +1370,10 @@ reads every process's command line (`ProcessHandle.Info`; on Windows, where othe
 that way, `Win32_Process` through PowerShell) and lists the Java, Node.js and Python ones: a JVM whose
 `-agentlib:jdwp` / `-Xrunjdwp` has `server=y` and a fixed `address` (a wildcard host is this machine; `server=n` or
 `address=0` cannot be attached to), a Node.js with `--inspect`, `--inspect-brk` or `--inspect-wait` (default 9229;
-`--inspect-port` alone does not listen), and a Python under `-m debugpy --listen`. A JVM is attached through the
+`--inspect-port` alone does not listen), and a Python under `-m debugpy --listen` (or debugpy run by its folder,
+`python …/debugpy --listen`). debugpy's own helpers are left out (`debugpyPart`): `--listen` starts its adapter as
+`python …/debugpy/adapter --for-server …`, which would otherwise be listed as a Python not started for debugging, and
+an editor's `-m debugpy.adapter` / `debugpy.launcher` are not programs either. A JVM is attached through the
 ordinary Java attach (`attachTo`, from the active Java tab or the first open one, and remembered for Reattach), a
 Node.js through `startJsAttach`, and a Python through the new `DapManager.startPythonAttach`: `debugpy --listen` runs
 debugpy's own adapter on that port, so the session connects to it over the socket (`DapClient.connect`) and sends
