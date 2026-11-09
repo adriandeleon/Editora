@@ -2943,6 +2943,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     openNarrowed.accept(file, block);
                     raiseEditorWindow();
                 });
+        // A library card's Open: the editor's library tab, as Go to Symbol opens a JDK or dependency symbol.
+        mapView.setOpenLibrary((library, line) -> {
+            FileActions actions = fileActions;
+            if (actions != null) {
+                String name =
+                        com.editora.lsp.LspManager.classFileTitle(library.uri()).replaceFirst("\\.class$", "");
+                actions.openWorkspaceSymbol(
+                        library.anchor(),
+                        new com.editora.lsp.LspManager.WorkspaceSymbolMatch(
+                                name, "", "class", null, line, 0, library.uri()));
+                raiseEditorWindow();
+            }
+        });
     }
 
     /** The language server's outline of an open buffer, for the Map's structure columns. */

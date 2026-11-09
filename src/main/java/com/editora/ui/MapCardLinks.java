@@ -389,6 +389,11 @@ final class MapCardLinks {
     private @Nullable EdgeSet filling;
     /** The hierarchy trees, by the card they were asked from (one each). */
     private final Map<ProjectMapPreview, MapHierarchyTree> trees = new IdentityHashMap<>();
+    /**
+     * The cards a hierarchy tree's rows opened, by the card the tree was asked from: kept while that card is open, as
+     * an answer's result cards are, so no folder closing on the map closes them.
+     */
+    private final Map<ProjectMapPreview, Set<ProjectMapPreview>> treeOpened = new IdentityHashMap<>();
     /** A hierarchy tree's levels waiting for their files' outlines. */
     private final List<LevelWaiting> levels = new ArrayList<>();
 
@@ -873,6 +878,7 @@ final class MapCardLinks {
             }
         }
         placeBeside.values().removeIf(from -> from == card);
+        treeOpened.values().forEach(opened -> opened.remove(card));
         return results;
     }
 
@@ -896,6 +902,7 @@ final class MapCardLinks {
     /** Ends the questions asked from {@code card}: their edge sets go; the result cards they opened are returned. */
     private List<ProjectMapPreview> linksEndQuestions(ProjectMapPreview card) {
         asked.remove(card);
+        treeOpened.remove(card);
         MapHierarchyTree tree = trees.remove(card);
         if (tree != null) {
             tree.dispose(); // about the declaration it showed: closed with it, or gone with what it showed
@@ -945,6 +952,7 @@ final class MapCardLinks {
         sets.clear();
         trees.values().forEach(MapHierarchyTree::dispose);
         trees.clear();
+        treeOpened.clear();
         levels.forEach(waiting -> waiting.timeout.stop());
         levels.clear();
         asked.clear();
@@ -1087,6 +1095,11 @@ final class MapCardLinks {
             return;
         }
         cards.touch(from);
+        if (card != from) {
+            treeOpened
+                    .computeIfAbsent(from, ignored -> java.util.Collections.newSetFromMap(new IdentityHashMap<>()))
+                    .add(card);
+        }
         cards.follow(from, card); // where from's caret was, for Back, before the place moves a caret
         card.linksRevealPlace(group.line(), markOf(kind, group, name));
     }
@@ -1095,6 +1108,11 @@ final class MapCardLinks {
     boolean isResult(@Nullable Region card) {
         if (card == null) {
             return false;
+        }
+        for (Set<ProjectMapPreview> opened : treeOpened.values()) {
+            if (opened.contains(card)) {
+                return true;
+            }
         }
         for (Map<Kind, EdgeSet> of : sets.values()) {
             for (EdgeSet set : of.values()) {
