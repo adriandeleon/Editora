@@ -335,7 +335,7 @@ final class ProjectMapView extends VBox {
         setSpacing(4);
 
         cards = new MapCards(cardsHost(), structure, canvasHost);
-        history = new MapHistory<>(cards::isOpen, ProjectMapPreview::caretOffset);
+        history = new MapHistory<>(cards::isOpen, ProjectMapPreview::caretOffset, ProjectMapPreview::fileLineAt);
         // Back and Forward typed on the map walk its history, not the editor's (a card's own handler is asked first).
         getProperties()
                 .put(com.editora.command.KeyDispatcher.HANDLED_COMMANDS, (Predicate<String>) this::historyCommand);
@@ -3991,6 +3991,8 @@ final class ProjectMapView extends VBox {
             ProjectMapPreview card = stop.card();
             if (card != null) {
                 cards.goToStop(card, stop.caret());
+            } else if (stop.line() >= 0 && (card = cards.reopenStop(stop.place(), stop.line())) != null) {
+                history.reopened(card); // a card closed since (a preview another Go to replaced): open again
             } else {
                 revealPath(stop.place());
             }

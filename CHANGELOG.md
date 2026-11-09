@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Following code on the Project Map no longer piles up cards.** Like an editor's preview tab, a card opened by Go
+  to Definition (or Declaration, Type Definition, Super Method) is a preview, with its title in italics. The next Go
+  to from it opens where it stood and replaces it, so a chain of steps keeps one card in view. Pin, drag or resize a
+  preview to keep it. Back now reopens a card that was closed, at the line you were on, instead of only selecting
+  its row.
 - **Follow the code into libraries on the Project Map.** Go to Definition, callers, supertypes and the other Map
   navigation that lands in the JDK or a dependency now opens that class's source as a card, as the editor's library
   tabs do, instead of only a status note. The card is highlighted, outlined and searchable like any other, and says
