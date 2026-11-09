@@ -37,14 +37,28 @@ public final class DapModels {
             int line,
             int column,
             @Nullable String sourceUri,
-            String hint) {
+            String hint,
+            @Nullable String instructionPointer) {
         /**
          * {@code hint}: {@link #HINT_SUBTLE} for a frame the adapter de-emphasizes (js-debug's {@code skipFiles}:
          * Node's own modules), {@link #HINT_LABEL} for a row that only labels the stack (an {@code await} between
          * async frames), {@link #HINT_FOLD} for the row standing for frames folded away; "" otherwise.
+         * {@code instructionPointer}: DAP's {@code instructionPointerReference}, the memory reference the Disassembly
+         * view is read from — null when the adapter reports none (every adapter but native ones and Delve).
          */
         public StackFrameInfo {
             hint = hint == null ? "" : hint;
+        }
+
+        public StackFrameInfo(
+                int id,
+                String name,
+                @Nullable Path file,
+                int line,
+                int column,
+                @Nullable String sourceUri,
+                String hint) {
+            this(id, name, file, line, column, sourceUri, hint, null);
         }
 
         public StackFrameInfo(
@@ -58,7 +72,7 @@ public final class DapModels {
 
         /** This frame at another (0-based) line — the line it is shown on in an edited document. */
         public StackFrameInfo atLine(int newLine) {
-            return new StackFrameInfo(id, name, file, newLine, column, sourceUri, hint);
+            return new StackFrameInfo(id, name, file, newLine, column, sourceUri, hint, instructionPointer);
         }
     }
 
@@ -70,6 +84,26 @@ public final class DapModels {
 
     /** {@link StackFrameInfo#hint} of the row standing for folded frames; its {@code line} is how many. */
     public static final String HINT_FOLD = "fold";
+
+    /**
+     * One machine instruction of the Disassembly view: its {@code address} (as the adapter writes it,
+     * {@code 0x0000555555555139}), its bytes ({@code ""} when not given), its text ({@code mov eax, dword ptr [rbp -
+     * 0x4]}), the symbol it is in ({@code ""} when not given), and the source line it was compiled from ({@code file}
+     * and 0-based {@code line}; null and -1 when not known).
+     */
+    public record Instruction(
+            String address,
+            String bytes,
+            String text,
+            String symbol,
+            @Nullable Path file,
+            int line) {}
+
+    /**
+     * Memory read from the program: {@code data} from {@code address} on; the {@code unreadable} bytes after it could
+     * not be read (an unmapped page).
+     */
+    public record MemoryBlock(String address, byte[] data, int unreadable) {}
 
     /** A variable scope of a stack frame (e.g. "Local", "Static"); {@code variablesReference} fetches its
      *  variables. */

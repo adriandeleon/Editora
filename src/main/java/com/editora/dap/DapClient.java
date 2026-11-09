@@ -654,6 +654,8 @@ public final class DapClient implements IDebugProtocolClient {
         a.setSupportsRunInTerminalRequest(runInTerminal);
         // Lets the adapter report indexedVariables/namedVariables, so a huge array is fetched page by page.
         a.setSupportsVariablePaging(true);
+        // Lets it give a value's address (memoryReference), which the Memory view reads from.
+        a.setSupportsMemoryReferences(true);
         return a;
     }
 
@@ -1391,7 +1393,8 @@ public final class DapClient implements IDebugProtocolClient {
                             f.getLine() - 1, // back to 0-based line
                             f.getColumn(),
                             sourceUri(f.getSource()),
-                            frameHint(f)));
+                            frameHint(f),
+                            f.getInstructionPointerReference()));
                 }
             }
             return out;
@@ -1696,23 +1699,131 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<Void> next(int threadId) {
+        return next(threadId, false);
+    }
+
+    /** Step Over; {@code instruction}: one machine instruction, when the adapter steps that finely. */
+    public CompletableFuture<Void> next(int threadId, boolean instruction) {
         DapClient session = target(threadId);
         if (session != this) {
-            return session.next(threadId);
+            return session.next(threadId, instruction);
         }
         NextArguments a = new NextArguments();
         a.setThreadId(threadId);
+        if (instruction && supportsInstructionStepping()) {
+            a.setGranularity(org.eclipse.lsp4j.debug.SteppingGranularity.INSTRUCTION);
+        }
         return timed(server().next(a));
     }
 
     public CompletableFuture<Void> stepIn(int threadId) {
+        return stepIn(threadId, false);
+    }
+
+    /** Step Into; {@code instruction}: one machine instruction, when the adapter steps that finely. */
+    public CompletableFuture<Void> stepIn(int threadId, boolean instruction) {
         DapClient session = target(threadId);
         if (session != this) {
-            return session.stepIn(threadId);
+            return session.stepIn(threadId, instruction);
         }
         StepInArguments a = new StepInArguments();
         a.setThreadId(threadId);
+        if (instruction && supportsInstructionStepping()) {
+            a.setGranularity(org.eclipse.lsp4j.debug.SteppingGranularity.INSTRUCTION);
+        }
         return timed(server().stepIn(a));
+    }
+
+    /** Whether the adapter steps one machine instruction at a time when asked ({@code supportsSteppingGranularity}). */
+    public boolean supportsInstructionStepping() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsSteppingGranularity());
+    }
+
+    /** Whether the adapter disassembles ({@code supportsDisassembleRequest}: CodeLLDB, Delve). */
+    public boolean supportsDisassemble() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsDisassembleRequest());
+    }
+
+    /** Whether the adapter reads the program's memory ({@code supportsReadMemoryRequest}). */
+    public boolean supportsReadMemory() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsReadMemoryRequest());
+    }
+
+    /**
+     * {@code count} instructions around {@code memoryReference} (a frame's instruction pointer), from
+     * {@code instructionOffset} instructions before or after it, with their symbols and source lines.
+     */
+    public CompletableFuture<List<DapModels.Instruction>> disassemble(
+            String memoryReference, int instructionOffset, int count) {
+        DapClient session = target();
+        if (session != this) {
+            return session.disassemble(memoryReference, instructionOffset, count);
+        }
+        org.eclipse.lsp4j.debug.DisassembleArguments a = new org.eclipse.lsp4j.debug.DisassembleArguments();
+        a.setMemoryReference(memoryReference);
+        a.setOffset(0);
+        a.setInstructionOffset(instructionOffset);
+        a.setInstructionCount(count);
+        a.setResolveSymbols(true);
+        return timed(server().disassemble(a)).thenApply(r -> {
+            List<DapModels.Instruction> out = new ArrayList<>();
+            if (r == null || r.getInstructions() == null) {
+                return out;
+            }
+            for (org.eclipse.lsp4j.debug.DisassembledInstruction i : r.getInstructions()) {
+                Integer line = i.getLine();
+                out.add(new DapModels.Instruction(
+                        i.getAddress() == null ? "" : i.getAddress(),
+                        i.getInstructionBytes() == null ? "" : i.getInstructionBytes(),
+                        i.getInstruction() == null ? "" : i.getInstruction(),
+                        i.getSymbol() == null ? "" : i.getSymbol(),
+                        i.getLocation() == null ? null : sourcePath(i.getLocation(), paths),
+                        line == null ? -1 : line - 1));
+            }
+            return out;
+        });
+    }
+
+    /** {@code count} bytes of the program's memory at {@code memoryReference} + {@code offset}. */
+    public CompletableFuture<DapModels.MemoryBlock> readMemory(String memoryReference, long offset, int count) {
+        DapClient session = target();
+        if (session != this) {
+            return session.readMemory(memoryReference, offset, count);
+        }
+        org.eclipse.lsp4j.debug.ReadMemoryArguments a = new org.eclipse.lsp4j.debug.ReadMemoryArguments();
+        a.setMemoryReference(memoryReference);
+        a.setOffset((int) offset);
+        a.setCount(count);
+        return timed(server().readMemory(a)).thenApply(r -> {
+            String data = r == null ? null : r.getData();
+            byte[] bytes = data == null || data.isEmpty()
+                    ? new byte[0]
+                    : java.util.Base64.getDecoder().decode(data);
+            Integer unreadable = r == null ? null : r.getUnreadableBytes();
+            return new DapModels.MemoryBlock(
+                    r == null || r.getAddress() == null ? memoryReference : r.getAddress(),
+                    bytes,
+                    unreadable == null ? 0 : unreadable);
+        });
+    }
+
+    /**
+     * The memory reference of {@code expression}'s value in frame {@code frameId} (an array's, a pointer's), or null
+     * when the adapter gives none.
+     */
+    public CompletableFuture<@Nullable String> memoryReferenceOf(String expression, int frameId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.memoryReferenceOf(expression, frameId);
+        }
+        org.eclipse.lsp4j.debug.EvaluateArguments a = new org.eclipse.lsp4j.debug.EvaluateArguments();
+        a.setExpression(expression);
+        a.setFrameId(frameId);
+        a.setContext("watch");
+        return timed(server().evaluate(a)).thenApply(r -> r == null ? null : r.getMemoryReference());
     }
 
     public CompletableFuture<Void> stepOut(int threadId) {

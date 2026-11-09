@@ -4751,6 +4751,13 @@
 }
 /* Threads view: the shown thread bold, a suspended thread's state in the accent colour. */
 .debug-panel .debug-threads-toggle { -fx-font-size: 11px; -fx-padding: 1 6 1 6; }
+/* Disassembly and Memory views: monospaced, the instruction the frame is at marked as the editor marks its line. */
+.debug-panel .debug-disassembly-list .label,
+.debug-panel .debug-memory-rows .list-cell { -fx-font-family: "JetBrains Mono", "Consolas", monospace; }
+.debug-panel .debug-disassembly-address,
+.debug-panel .debug-disassembly-symbol,
+.debug-panel .debug-disassembly-source { -fx-opacity: 0.65; }
+.debug-panel .debug-disassembly-list .list-cell.debug-disassembly-current { -fx-background-color: rgba(210, 153, 34, 0.32); }
 .debug-panel .debug-thread-shown { -fx-font-weight: bold; }
 .debug-panel .debug-thread-paused { -fx-fill: -color-accent-fg; }
 /* Rich frame cells: frame name + muted ":line, File" location (IntelliJ-style). */

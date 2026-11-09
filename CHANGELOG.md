@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Disassembly and Memory views.** For C, C++, Rust and Go, the Debug window's third area now has *Disassembly* and
+  *Memory* beside the *Console*, as VS Code, Visual Studio and IntelliJ have:
+  - **Disassembly** shows the machine instructions around the selected frame, marks the one it is at, and labels each
+    run of instructions with its source line; double-click one to open that line.
+  - **Instruction steps:** while the Disassembly list has the keyboard, Step Over and Step Into step one instruction
+    at a time. *Debug: Step Over Instruction* and *Step Into Instruction* do it from anywhere.
+  - **Memory** shows the program's memory as hex and text, 256 bytes at a time, from an address or an expression.
+    *View Memory* in a variable's menu opens it at that variable.
 - **Debug C and C++ programs.** Editora now debugs C and C++ with CodeLLDB, the debugger it already uses for Rust:
   - **F5 in a CMake project** configures a Debug build in `build/editora-debug`, builds it in the Debug console,
     and debugs the program that holds the file.

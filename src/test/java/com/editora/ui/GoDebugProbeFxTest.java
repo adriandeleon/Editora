@@ -215,6 +215,16 @@ class GoDebugProbeFxTest {
             assertEquals(main, inGoroutine.frames().getFirst().file().toRealPath());
             List<DapModels.ThreadInfo> threads = onFx(manager::threads);
             assertTrue(threads.size() > 1, "every goroutine is a thread: " + threads);
+            // Delve disassembles, reads memory and steps by instruction: the Disassembly and Memory views.
+            String ip = inGoroutine.frames().getFirst().instructionPointer();
+            assertTrue(ip != null, "a Go frame has an instruction pointer");
+            assertTrue(FxTestSupport.callOnFx(manager::supportsDisassemble));
+            assertTrue(FxTestSupport.callOnFx(manager::supportsReadMemory));
+            assertTrue(FxTestSupport.callOnFx(manager::supportsInstructionStepping));
+            List<DapModels.Instruction> around = onFx(cb -> manager.disassemble(ip, -5, 20, cb));
+            int at = DebugDisassemblyView.indexOf(around, ip);
+            assertEquals(5, at, "the instruction pointer after the five before it: " + around);
+            assertEquals(14, around.get(at).line(), "on the breakpoint's line");
 
             // Now the breakpoint at the sum, alone: the goroutines' one is taken away.
             DapModels.FileBreakpoints atTheSum =

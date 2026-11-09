@@ -103,6 +103,17 @@ public final class FakeDebugAdapter implements AutoCloseable {
     public volatile boolean restartFrame;
 
     /**
+     * When set (before the client connects), sessions advertise {@code disassemble}, {@code readMemory} and stepping
+     * by instruction, as CodeLLDB and Delve: the default frame has instruction pointer {@link #LOW_LEVEL_IP}, each
+     * instruction is 4 bytes, memory reads as {@code hello} then zeros, and an expression's value has memory reference
+     * {@code 0x2000} ({@code noaddress} has none).
+     */
+    public volatile boolean lowLevel;
+
+    /** The default frame's instruction pointer when {@link #lowLevel}. */
+    public static final String LOW_LEVEL_IP = "0x1000";
+
+    /**
      * When set (before the client connects), sessions advertise function and data breakpoints, as java-debug, and
      * {@code dataBreakpointInfo} names the field {@code count} of every container {@code demo.Args#count}.
      */
@@ -499,6 +510,11 @@ public final class FakeDebugAdapter implements AutoCloseable {
             if (restartFrame) {
                 capabilities.setSupportsRestartFrame(true);
             }
+            if (lowLevel) {
+                capabilities.setSupportsDisassembleRequest(true);
+                capabilities.setSupportsReadMemoryRequest(true);
+                capabilities.setSupportsSteppingGranularity(true);
+            }
             if (stepInTargets) {
                 capabilities.setSupportsStepInTargetsRequest(true);
             }
@@ -714,6 +730,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             frame.setId(1);
             frame.setName(first && multiSession ? "root" : "debuggee");
             frame.setLine(frameLine);
+            if (lowLevel) {
+                frame.setInstructionPointerReference(LOW_LEVEL_IP);
+            }
             if (framePath != null) {
                 org.eclipse.lsp4j.debug.Source source = new org.eclipse.lsp4j.debug.Source();
                 source.setPath(framePath);
@@ -725,6 +744,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         @Override
         public CompletableFuture<Void> next(NextArguments args) {
+            nexts.add(args);
             record("next");
             return stepResult();
         }
@@ -891,6 +911,66 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             org.eclipse.lsp4j.debug.EvaluateResponse response = new org.eclipse.lsp4j.debug.EvaluateResponse();
             response.setResult("val(" + args.getExpression() + ")");
+            if (lowLevel && !args.getExpression().equals("noaddress")) {
+                response.setMemoryReference("0x2000");
+            }
+            return CompletableFuture.completedFuture(response);
+        }
+
+        /** Every {@code next} request, in arrival order (its granularity). */
+        public final List<NextArguments> nexts = new CopyOnWriteArrayList<>();
+
+        /** Every {@code disassemble} request, in arrival order. */
+        public final List<org.eclipse.lsp4j.debug.DisassembleArguments> disassembles = new CopyOnWriteArrayList<>();
+
+        /** Every {@code readMemory} request, in arrival order. */
+        public final List<org.eclipse.lsp4j.debug.ReadMemoryArguments> memoryReads = new CopyOnWriteArrayList<>();
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.DisassembleResponse> disassemble(
+                org.eclipse.lsp4j.debug.DisassembleArguments args) {
+            disassembles.add(args);
+            record("disassemble");
+            long base = Long.decode(args.getMemoryReference());
+            int from = args.getInstructionOffset() == null ? 0 : args.getInstructionOffset();
+            org.eclipse.lsp4j.debug.DisassembledInstruction[] out =
+                    new org.eclipse.lsp4j.debug.DisassembledInstruction[args.getInstructionCount()];
+            for (int i = 0; i < out.length; i++) {
+                org.eclipse.lsp4j.debug.DisassembledInstruction d =
+                        new org.eclipse.lsp4j.debug.DisassembledInstruction();
+                d.setAddress(String.format("0x%08x", base + (long) (from + i) * 4));
+                d.setInstruction("nop " + (from + i));
+                d.setSymbol("main");
+                if (framePath != null) {
+                    org.eclipse.lsp4j.debug.Source source = new org.eclipse.lsp4j.debug.Source();
+                    source.setPath(framePath);
+                    d.setLocation(source);
+                    d.setLine(frameLine + (from + i) / 4); // four instructions a line
+                }
+                out[i] = d;
+            }
+            org.eclipse.lsp4j.debug.DisassembleResponse response = new org.eclipse.lsp4j.debug.DisassembleResponse();
+            response.setInstructions(out);
+            return CompletableFuture.completedFuture(response);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.ReadMemoryResponse> readMemory(
+                org.eclipse.lsp4j.debug.ReadMemoryArguments args) {
+            memoryReads.add(args);
+            record("readMemory");
+            if (args.getMemoryReference().equals("0xdead")) {
+                return refused("Cannot access memory at address 0xdead");
+            }
+            byte[] data = new byte[args.getCount()];
+            byte[] hello = "hello".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            if (args.getOffset() == null || args.getOffset() == 0) {
+                System.arraycopy(hello, 0, data, 0, Math.min(hello.length, data.length));
+            }
+            org.eclipse.lsp4j.debug.ReadMemoryResponse response = new org.eclipse.lsp4j.debug.ReadMemoryResponse();
+            long at = Long.decode(args.getMemoryReference()) + (args.getOffset() == null ? 0 : args.getOffset());
+            response.setAddress(String.format("0x%x", at));
+            response.setData(java.util.Base64.getEncoder().encodeToString(data));
             return CompletableFuture.completedFuture(response);
         }
 
