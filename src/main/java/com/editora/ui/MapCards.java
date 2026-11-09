@@ -370,6 +370,17 @@ final class MapCards {
             }
 
             @Override
+            public boolean keeps(ProjectMapPreview card) {
+                ProjectMapCardStructure column = cardStructures.get(card);
+                return pinnedCards.contains(card) || card.userArranged() || column != null && column.shown();
+            }
+
+            @Override
+            public void close(ProjectMapPreview card) {
+                closePreview(card);
+            }
+
+            @Override
             public CardAttachment.@Nullable Side structureSide(ProjectMapPreview card) {
                 ProjectMapCardStructure column = cardStructures.get(card);
                 return column != null && column.shown() ? column.side() : null;
@@ -544,6 +555,28 @@ final class MapCards {
     Path placeOf(ProjectMapPreview card) {
         Path file = card.path();
         return file == null ? null : cardKeyOf(card, file);
+    }
+
+    /**
+     * Back or Forward to a stop whose card was closed since (Map code browser gap 6): the card of {@code key} — a
+     * file, or a declaration of an outlined file — opened again with its caret at the file's 0-based {@code line} and
+     * the keyboard in it. Null when it cannot be (a declaration no longer in its file's outline, every card pinned).
+     */
+    @Nullable
+    ProjectMapPreview reopenStop(Path key, int line) {
+        ProjectMapPreview card = viewsOpenCard(key);
+        if (card == null) {
+            return null;
+        }
+        card.linksRevealPlace(line, null);
+        touchCard(card, true);
+        card.focusContent();
+        javafx.application.Platform.runLater(() -> {
+            if (!disposed && isOpen(card) && card.getWidth() > 0) {
+                bringIntoView(card);
+            }
+        });
+        return card;
     }
 
     /**
@@ -2903,6 +2936,12 @@ final class MapCards {
             double minimumHeight,
             double parentWidth,
             double parentHeight) {
+        double[] replacing = links.takePlace(path);
+        if (replacing != null) {
+            // A Go to result replacing the preview it was found from (gap 6): where that card stood, as it was drawn.
+            links.besideSource(path); // placed: no longer to go beside its source
+            return new ProjectMapPreview.Placement(replacing[0], replacing[1], replacing[2], replacing[3], false);
+        }
         Site site = host.site(path);
         Site linked = links.besideSource(path); // a result card goes beside the card it was found from
         // Beside a file card's Structure column when asked for from there, or when its row is not on the map.

@@ -44,9 +44,15 @@ final class MapHistory<C> {
 
     /**
      * A stop: a place on the Map — a row's path, a declaration's made-up path for a declaration card — and, when the
-     * code was followed through a card, that card and its caret's offset then ({@code -1}: leave the caret).
+     * code was followed through a card, that card and its caret's offset then ({@code -1}: leave the caret). Once that
+     * card is closed, {@code line} is the file's 0-based line its caret was on, so Back opens the card there again
+     * (Map code browser gap 6); {@code -1} for a row's place.
      */
-    record Stop<C>(Path place, @Nullable C card, int caret) {}
+    record Stop<C>(Path place, @Nullable C card, int caret, int line) {
+        Stop(Path place, @Nullable C card, int caret) {
+            this(place, card, caret, -1);
+        }
+    }
 
     private final List<Stop<C>> stops = new ArrayList<>();
     private final List<Path> places = new java.util.AbstractList<>() {
@@ -62,6 +68,7 @@ final class MapHistory<C> {
     };
     private final Predicate<C> open;
     private final ToIntFunction<C> caretOf;
+    private final java.util.function.ToIntBiFunction<C, Integer> lineOf;
     private int index = -1;
     private Head head = Head.PLACE;
 
@@ -70,8 +77,14 @@ final class MapHistory<C> {
      * @param caretOf a card's caret offset now (kept on its stop when the history moves on from it)
      */
     MapHistory(Predicate<C> open, ToIntFunction<C> caretOf) {
+        this(open, caretOf, (card, caret) -> -1);
+    }
+
+    /** @param lineOf the file's 0-based line of a card's caret offset (kept on its stops when the card closes) */
+    MapHistory(Predicate<C> open, ToIntFunction<C> caretOf, java.util.function.ToIntBiFunction<C, Integer> lineOf) {
         this.open = open;
         this.caretOf = caretOf;
+        this.lineOf = lineOf;
     }
 
     // --- recording --------------------------------------------------------------------------------------------
@@ -194,12 +207,20 @@ final class MapHistory<C> {
         Stop<C> stop = stops.get(target);
         C card = stop.card();
         if (card != null && !open.test(card)) {
-            stop = new Stop<>(stop.place(), null, -1); // closed since: its place
+            stop = new Stop<>(stop.place(), null, -1, stop.line()); // closed since: its place
             stops.set(target, stop);
         }
         index = target;
         head = Head.PLACE;
         return stop;
+    }
+
+    /** Back or Forward opened {@code card} again for the current stop, whose card was closed: the stop is on it again. */
+    void reopened(C card) {
+        Stop<C> current = current();
+        if (current != null && current.card() == null) {
+            stops.set(index, new Stop<>(current.place(), card, -1));
+        }
     }
 
     /** The current stop's card, when it is open: its caret now is where Back or Forward returns to. */
@@ -214,15 +235,17 @@ final class MapHistory<C> {
     // --- upkeep -----------------------------------------------------------------------------------------------
 
     /**
-     * {@code card} closed: its stops become their places, and a place now twice in a row is kept once — Back still
-     * goes there, revealing its row.
+     * {@code card} closed: its stops become their places, each with the line its caret was on — Back opens the card
+     * there again — and the same place at the same line twice in a row is kept once.
      */
     void cardClosed(C card) {
         boolean changed = false;
+        int now = caretOf.applyAsInt(card);
         for (int at = 0; at < stops.size(); at++) {
             Stop<C> stop = stops.get(at);
             if (stop.card() == card) {
-                stops.set(at, new Stop<>(stop.place(), null, -1));
+                int caret = stop.caret() >= 0 ? stop.caret() : now;
+                stops.set(at, new Stop<>(stop.place(), null, -1, Math.max(-1, lineOf.applyAsInt(card, caret))));
                 changed = true;
             }
         }
@@ -232,7 +255,10 @@ final class MapHistory<C> {
         for (int at = stops.size() - 1; at > 0; at--) {
             Stop<C> stop = stops.get(at);
             Stop<C> before = stops.get(at - 1);
-            if (stop.card() == null && before.card() == null && PathKeys.samePath(stop.place(), before.place())) {
+            if (stop.card() == null
+                    && before.card() == null
+                    && stop.line() == before.line()
+                    && PathKeys.samePath(stop.place(), before.place())) {
                 stops.remove(at);
                 if (index >= at) {
                     index--;

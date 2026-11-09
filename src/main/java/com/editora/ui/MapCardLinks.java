@@ -363,6 +363,17 @@ final class MapCardLinks {
          */
         default void follow(ProjectMapPreview from, ProjectMapPreview to) {}
 
+        /**
+         * Whether {@code card} is kept rather than replaced by the next Go to from it while a preview: pinned, moved or
+         * resized by the user, or its Structure column out.
+         */
+        default boolean keeps(ProjectMapPreview card) {
+            return true;
+        }
+
+        /** Closes {@code card} (a preview another Go to replaced). */
+        default void close(ProjectMapPreview card) {}
+
         /** The side {@code card}'s Structure column stands on, or null while it has none: a hierarchy tree goes past it. */
         default CardAttachment.@Nullable Side structureSide(ProjectMapPreview card) {
             return null;
@@ -394,6 +405,13 @@ final class MapCardLinks {
      * an answer's result cards are, so no folder closing on the map closes them.
      */
     private final Map<ProjectMapPreview, Set<ProjectMapPreview>> treeOpened = new IdentityHashMap<>();
+    /**
+     * Go to results that are previews (Map code browser gap 6): the next Go to from one, while nothing keeps it, opens
+     * its result where it stands and closes it, so following the code does not leave a card per step.
+     */
+    private final Set<ProjectMapPreview> previewCards = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    /** Where the result of a Go to from a preview goes, by its key: that preview's bounds as drawn. */
+    private final Map<Path, double[]> takePlace = new HashMap<>();
     /** A hierarchy tree's levels waiting for their files' outlines. */
     private final List<LevelWaiting> levels = new ArrayList<>();
 
@@ -429,6 +447,9 @@ final class MapCardLinks {
         Path root = cards.root();
         if (answering == null || root == null || !cards.isOpen(from)) {
             return;
+        }
+        if (!request.kind().goesTo()) {
+            keepCard(from); // asked something else: a card the reader works with, not a preview
         }
         long id = ++requestSequence;
         asked.computeIfAbsent(from, ignored -> new java.util.EnumMap<>(Kind.class))
@@ -581,9 +602,15 @@ final class MapCardLinks {
         int opened = 0;
         boolean refused = false;
         ProjectMapPreview first = null;
+        // A Go to from a preview opens its result where the preview stands, and closes the preview (gap 6).
+        boolean replacing = kind.goesTo() && reusable(from);
         for (Group group : groups) {
             if (opened < MAX_CARDS && !refused) {
+                if (replacing && opened == 0 && cards.card(group.key()) == null) {
+                    takePlace.put(group.key(), MapCards.drawnBounds(from));
+                }
                 Opened done = set.open(group);
+                takePlace.remove(group.key());
                 if (done == Opened.OPENED) {
                     if (first == null && !set.edges.isEmpty()) {
                         first = set.edges.getLast().target;
@@ -598,16 +625,70 @@ final class MapCardLinks {
             }
         }
         set.updateChip();
+        String replaced = "";
         if (kind.goesTo() && first != null) {
+            boolean fresh = set.owned.contains(first);
+            if (fresh) {
+                previewCards.add(first);
+                first.setPreview(true);
+            }
             cards.follow(from, first); // the keyboard follows the code: F12 again goes on from there
+            if (replacing && fresh && set.edges.size() == 1 && set.more.isEmpty()) {
+                // The preview gives way: its result is the answer of the card the preview was found from, if any.
+                set.owned.remove(first);
+                EdgeSet holder = ownerOf(from);
+                if (holder != null) {
+                    holder.owned.add(first);
+                }
+                cards.close(from);
+                replaced = " " + tr("project.map.links.previewReplaced");
+            }
         }
         int total = groups.stream().mapToInt(Group::count).sum();
         String summary = foundText(kind, total, waiting.name, groups.size(), set.more.size());
         String note = waiting.answer.note();
         String partial = waiting.answer.partial() ? " " + tr("project.map.links.partial") : "";
         String noRoom = refused ? " " + tr("project.map.links.noRoom") : "";
-        cards.status((note == null ? "" : note + " ") + summary + noRoom + partial);
+        cards.status((note == null ? "" : note + " ") + summary + noRoom + partial + replaced);
         cards.connectorsMoved();
+    }
+
+    /** Whether a Go to from {@code card} replaces it: a preview nothing keeps, asked nothing else, with no tree. */
+    private boolean reusable(ProjectMapPreview card) {
+        if (!previewCards.contains(card) || cards.keeps(card) || trees.containsKey(card)) {
+            return false;
+        }
+        Map<Kind, EdgeSet> of = sets.get(card);
+        return of == null || of.keySet().stream().allMatch(Kind::goesTo);
+    }
+
+    /** {@code card} is no preview any more: the next Go to from it opens beside it. */
+    void keepCard(ProjectMapPreview card) {
+        if (previewCards.remove(card)) {
+            card.setPreview(false);
+        }
+    }
+
+    /** Whether {@code card} is a preview a Go to from it may replace. */
+    boolean isPreview(ProjectMapPreview card) {
+        return previewCards.contains(card);
+    }
+
+    /** Where the Go to result of {@code key} goes when it replaces a preview, as drawn; null otherwise. Takes it. */
+    double @Nullable [] takePlace(Path key) {
+        return takePlace.remove(key);
+    }
+
+    /** The answer that opened {@code card}, or null. */
+    private @Nullable EdgeSet ownerOf(ProjectMapPreview card) {
+        for (Map<Kind, EdgeSet> of : sets.values()) {
+            for (EdgeSet set : of.values()) {
+                if (set.owned.contains(card)) {
+                    return set;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -879,6 +960,7 @@ final class MapCardLinks {
         }
         placeBeside.values().removeIf(from -> from == card);
         treeOpened.values().forEach(opened -> opened.remove(card));
+        previewCards.remove(card);
         return results;
     }
 
@@ -953,6 +1035,8 @@ final class MapCardLinks {
         trees.values().forEach(MapHierarchyTree::dispose);
         trees.clear();
         treeOpened.clear();
+        previewCards.clear();
+        takePlace.clear();
         levels.forEach(waiting -> waiting.timeout.stop());
         levels.clear();
         asked.clear();
@@ -978,6 +1062,7 @@ final class MapCardLinks {
             return;
         }
         closeHierarchy(from);
+        keepCard(from);
         MapHierarchyTree tree = new MapHierarchyTree(
                 from,
                 canvasHost,
