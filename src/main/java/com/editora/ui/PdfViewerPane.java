@@ -9,7 +9,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 import javafx.application.Platform;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -18,6 +20,8 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.ScrollEvent;
+import javafx.scene.input.ZoomEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -32,12 +36,14 @@ import org.apache.pdfbox.rendering.PDFRenderer;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
+import static com.editora.ui.ProjectMapView.wheelAction;
 
 /**
  * A read-only PDF viewer that lives in an editor tab ({@link TabContent}) — so opening a {@code .pdf}
  * renders its pages via Apache PDFBox (already a dependency, for PDF export) instead of dumping the binary
  * bytes into the hex viewer. A top bar navigates pages ({@code ◀ Page N of M ▶}) and zooms (out / in /
- * fit-to-window / actual-size); {@code Ctrl}+wheel zooms too. Pages are rasterized <b>one at a time, off the
+ * fit-to-window / actual-size). The mouse wheel and a touchpad pinch zoom around the pointer, as on the Project
+ * Map; Shift+wheel pans across, Alt+wheel pans down, and dragging pans. Pages are rasterized <b>one at a time, off the
  * FX thread</b>, on a single daemon thread (PDFBox's {@code PDDocument} is not thread-safe, so all document
  * access is serialized there) — so only the current page's image is held, bounding the Prism texture pool.
  * {@link #dispose()} closes the document + drops the image when the tab closes.
@@ -68,6 +74,7 @@ public final class PdfViewerPane implements TabContent {
     private final BorderPane root = new BorderPane();
     private final ImageView imageView = new ImageView();
     private final ScrollPane scroll = new ScrollPane();
+    private final StackPane holder = new StackPane(imageView);
     private final Label zoomLabel = new Label();
     private final Label pageLabel = new Label();
     private final Button prevButton = button("◀", tr("pdfviewer.prevPage"), () -> showPage(this.currentPage - 1));
@@ -111,7 +118,6 @@ public final class PdfViewerPane implements TabContent {
     private void build() {
         imageView.setPreserveRatio(true);
         imageView.setSmooth(true);
-        StackPane holder = new StackPane(imageView);
         holder.getStyleClass().add("pdf-viewer-holder");
         holder.setPadding(new Insets(12));
         holder.minWidthProperty()
@@ -123,12 +129,8 @@ public final class PdfViewerPane implements TabContent {
         scroll.setContent(holder);
         scroll.setPannable(true);
         scroll.viewportBoundsProperty().addListener((o, w, n) -> relayout());
-        scroll.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
-            if (e.isShortcutDown() || e.isControlDown()) {
-                setZoom(e.getDeltaY() >= 0 ? zoom * ZOOM_STEP : zoom / ZOOM_STEP);
-                e.consume();
-            }
-        });
+        scroll.addEventFilter(ScrollEvent.SCROLL, this::onWheel);
+        scroll.addEventFilter(ZoomEvent.ZOOM, this::onPinch);
         root.setCenter(scroll);
         toolbar = buildToolbar();
         root.setTop(toolbar);
@@ -304,6 +306,105 @@ public final class PdfViewerPane implements TabContent {
         fitMode = false;
         zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
         apply();
+    }
+
+    /**
+     * The wheel zooms around the pointer (faster with the shortcut key held), like the Project Map: Shift pans
+     * across, Alt pans down, a mostly-horizontal touchpad swipe pans across, and scroll inertia is ignored.
+     */
+    private void onWheel(ScrollEvent e) {
+        double deltaX = e.getDeltaX();
+        double deltaY = e.getDeltaY();
+        // Some platforms report Shift+wheel as a horizontal delta already; take whichever axis moved.
+        double wheel = deltaY != 0 ? deltaY : deltaX;
+        switch (wheelAction(deltaX, deltaY, e.isShiftDown(), e.isAltDown(), e.isInertia())) {
+            case PAN_X -> panBy(e.isShiftDown() ? wheel : deltaX, 0);
+            case PAN_Y -> panBy(0, wheel);
+            case ZOOM -> {
+                if (image != null) {
+                    zoomAround(
+                            zoom * Math.exp(wheelZoomExponent(deltaY, e.isShortcutDown())),
+                            e.getSceneX(),
+                            e.getSceneY());
+                }
+            }
+            case NONE -> {}
+        }
+        e.consume();
+    }
+
+    /** A touchpad or touch-screen pinch zooms around the gesture's centre. */
+    private void onPinch(ZoomEvent e) {
+        double factor = e.getZoomFactor();
+        if (image != null && Double.isFinite(factor) && factor > 0) {
+            zoomAround(zoom * factor, e.getSceneX(), e.getSceneY());
+        }
+        e.consume();
+    }
+
+    /**
+     * How far one wheel event zooms, as an exponent of {@code e}: proportional to the delta so a touchpad's
+     * small steps zoom smoothly, capped so one coarse wheel notch can't jump. Same speeds as the Project Map.
+     * Pure — tested.
+     */
+    static double wheelZoomExponent(double deltaY, boolean fast) {
+        double speed = fast ? 0.004 : 0.0025;
+        return Math.max(-0.45, Math.min(0.45, deltaY * speed));
+    }
+
+    /** Scrolls the page by a wheel delta in pixels (a positive delta moves toward the top / left). */
+    private void panBy(double dx, double dy) {
+        Bounds view = scroll.getViewportBounds();
+        double extraW = holder.getWidth() - view.getWidth();
+        double extraH = holder.getHeight() - view.getHeight();
+        if (extraW > 0 && dx != 0) {
+            scroll.setHvalue(clamp01(scroll.getHvalue() - dx / extraW));
+        }
+        if (extraH > 0 && dy != 0) {
+            scroll.setVvalue(clamp01(scroll.getVvalue() - dy / extraH));
+        }
+    }
+
+    /** Zooms to {@code requested}, keeping the point of the page under the scene point {@code (sx, sy)} still. */
+    private void zoomAround(double requested, double sx, double sy) {
+        double next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, requested));
+        if (next == zoom && !fitMode) {
+            return;
+        }
+        Bounds view = scroll.getViewportBounds();
+        Point2D inHolder = holder.sceneToLocal(sx, sy);
+        Point2D inImage = imageView.sceneToLocal(sx, sy);
+        Bounds img = imageView.getLayoutBounds();
+        // Where the pointer sits in the viewport, and which fraction of the page it is over (clamped, so a
+        // pointer in the margin pivots on the page's nearest edge).
+        double viewX = inHolder.getX() - scrollOffset(scroll.getHvalue(), holder.getWidth(), view.getWidth());
+        double viewY = inHolder.getY() - scrollOffset(scroll.getVvalue(), holder.getHeight(), view.getHeight());
+        double fx = img.getWidth() > 0 ? clamp01(inImage.getX() / img.getWidth()) : 0.5;
+        double fy = img.getHeight() > 0 ? clamp01(inImage.getY() / img.getHeight()) : 0.5;
+
+        setZoom(next);
+        scroll.applyCss();
+        scroll.layout();
+
+        Bounds after = imageView.getBoundsInParent();
+        Bounds newView = scroll.getViewportBounds();
+        double extraW = holder.getWidth() - newView.getWidth();
+        double extraH = holder.getHeight() - newView.getHeight();
+        if (extraW > 0) {
+            scroll.setHvalue(clamp01((after.getMinX() + fx * after.getWidth() - viewX) / extraW));
+        }
+        if (extraH > 0) {
+            scroll.setVvalue(clamp01((after.getMinY() + fy * after.getHeight() - viewY) / extraH));
+        }
+    }
+
+    /** The pixels a {@link ScrollPane} with value {@code value} (0–1) has scrolled its content by. */
+    private static double scrollOffset(double value, double content, double view) {
+        return Math.max(0, content - view) * value;
+    }
+
+    private static double clamp01(double v) {
+        return Double.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
     }
 
     private void apply() {
