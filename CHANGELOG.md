@@ -34,6 +34,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run VS Code's launch.json configurations.** *Debug: Start Configuration…* lists the configurations of the
+  project's `.vscode/launch.json` and starts the one you pick as VS Code would:
+  - **Supported types:** `lldb` (with its `cargo` build), `gdb`, `cppdbg`, `go` (with `exec` for a binary you built),
+    `debugpy`, `node` and `java`.
+  - **Variables:** VS Code's variables (`${workspaceFolder}`, `${file}`, `${env:…}` and the rest) are filled in.
+    Its `inputs` ask for their values.
+  - **`preLaunchTask`:** a shell or process command from `tasks.json` runs first.
+  - **Remembered:** the configuration you started last is listed first.
+- **GDB as the C and C++ debugger.** *Settings → Debugging → Rust, C and C++* can switch C and C++ from CodeLLDB to
+  GDB, using GDB's own debug-adapter mode (GDB 14 or later).
+- **Debug adapters of your own.** *Debug: Edit Debug Adapters* opens `debug-adapters.json`, where any program that
+  speaks the Debug Adapter Protocol can be declared: lldb-dap, netcoredbg, a language's own. Give its command, how it
+  talks, the file types it debugs, and what F5 sends it. A launch.json configuration can use it by its type, and a
+  trusted project can bring its own in `.editora/debug-adapters.json`.
 - **Disassembly and Memory views.** For C, C++, Rust and Go, the Debug window's third area now has *Disassembly* and
   *Memory* beside the *Console*, as VS Code, Visual Studio and IntelliJ have:
   - **Disassembly** shows the machine instructions around the selected frame, marks the one it is at, and labels each

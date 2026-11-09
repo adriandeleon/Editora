@@ -44,7 +44,7 @@ public record ExternalAdapter(
         if ((transport == Transport.ANNOUNCED_PORT) != (announcement != null)) {
             throw new IllegalArgumentException("an announced port, and only that, needs the announcement's pattern");
         }
-        if ((transport == Transport.PORT_ARGUMENT) != command.contains(PORT)) {
+        if ((transport == Transport.PORT_ARGUMENT) != command.stream().anyMatch(w -> w.contains(PORT))) {
             throw new IllegalArgumentException("a port argument, and only that, has " + PORT + " in its command");
         }
     }

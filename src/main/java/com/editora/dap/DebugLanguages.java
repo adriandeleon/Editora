@@ -242,6 +242,42 @@ public final class DebugLanguages {
     private static final List<DebugLanguage> ALL =
             List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP);
 
+    /**
+     * GDB's own DAP mode ({@code gdb -i dap}, GDB 14 and later), over its standard streams: C and C++'s other debugger
+     * (Settings → Debugging's choice, and launch.json's {@code gdb} and {@code cppdbg}). Not a language of its own, so
+     * not among {@link #all}.
+     */
+    public static final DebugLanguage GDB = new DebugLanguage(
+            "gdb",
+            "GDB",
+            Set.of("c", "cpp"),
+            Kind.EXTERNAL,
+            "gdb",
+            "gdb",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(),
+            null,
+            null,
+            false,
+            "debug.error.gdbUnavailable",
+            new ExternalAdapter(List.of("gdb", "-q", "-i", "dap"), ExternalAdapter.Transport.STDIO, null));
+
+    /** The user's own adapters ({@link CustomAdapters}): found by id and by language after the built-in ones. */
+    private static volatile List<DebugLanguage> custom = List.of();
+
+    /** Sets the user's own adapters (a launch reads them again from {@code debug-adapters.json}). */
+    public static void setCustom(List<DebugLanguage> adapters) {
+        custom = List.copyOf(adapters);
+    }
+
+    /** The user's own adapters. */
+    public static List<DebugLanguage> custom() {
+        return custom;
+    }
+
     /** Every profile, in the order the Settings page lists them. */
     public static List<DebugLanguage> all() {
         return ALL;
@@ -250,6 +286,14 @@ public final class DebugLanguages {
     /** The profile of adapter language {@code id} ({@code javascript}, not {@code typescript}), or null. */
     public static @Nullable DebugLanguage byId(@Nullable String id) {
         for (DebugLanguage l : ALL) {
+            if (l.id().equals(id)) {
+                return l;
+            }
+        }
+        if (GDB.id().equals(id)) {
+            return GDB;
+        }
+        for (DebugLanguage l : custom) {
             if (l.id().equals(id)) {
                 return l;
             }
@@ -263,6 +307,11 @@ public final class DebugLanguages {
             return null;
         }
         for (DebugLanguage l : ALL) {
+            if (l.editorLanguages().contains(languageId)) {
+                return l;
+            }
+        }
+        for (DebugLanguage l : custom) {
             if (l.editorLanguages().contains(languageId)) {
                 return l;
             }

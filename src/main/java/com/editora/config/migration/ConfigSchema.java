@@ -382,7 +382,10 @@ public enum ConfigSchema {
                     Map.entry(161, (Migration) ConfigMigrations::identity),
                     // v162→163: + cppDebugEnabled (on) — C and C++ debugging on CodeLLDB. Additive: absent is the
                     // default.
-                    Map.entry(162, (Migration) ConfigMigrations::identity)),
+                    Map.entry(162, (Migration) ConfigMigrations::identity),
+                    // v163→164: + cppDebugger ("codelldb") and gdbPath ("") — GDB's DAP mode as C and C++'s other
+                    // debugger. Additive: absent is the default.
+                    Map.entry(163, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

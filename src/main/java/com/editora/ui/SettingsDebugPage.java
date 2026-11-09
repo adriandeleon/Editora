@@ -98,6 +98,32 @@ final class SettingsDebugPage {
             config.getSettings().setDebugSuspendAllThreads(now);
             w.apply();
         });
+        debugCppDebuggerCombo = new ComboBox<>();
+        debugCppDebuggerCombo.getItems().setAll("codelldb", "gdb");
+        debugCppDebuggerCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String key) {
+                return key == null ? "" : tr("settings.debug.cppDebugger." + key);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        debugCppDebuggerCombo.valueProperty().addListener((obs, was, now) -> {
+            if (w.loading || now == null) {
+                return;
+            }
+            config.getSettings().setCppDebugger(now);
+            w.apply();
+        });
+        debugGdbPathField = new TextField();
+        debugGdbPathField.setPromptText("gdb");
+        w.commitOnEnterOrBlur(debugGdbPathField, () -> config.getSettings().getGdbPath(), now -> {
+            config.getSettings().setGdbPath(now.strip());
+            w.apply();
+        });
         debugCppCheck = new CheckBox(tr("settings.debug.enableCpp"));
         debugCppCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setCppDebugEnabled(now);
@@ -158,6 +184,10 @@ final class SettingsDebugPage {
     private TextField debugExceptionTypesField;
     /** C and C++ debugging, on the Rust card: they run on the same CodeLLDB. */
     private CheckBox debugCppCheck;
+    /** C and C++'s debugger: CodeLLDB or GDB. */
+    private ComboBox<String> debugCppDebuggerCombo;
+    /** GDB's path, for its DAP mode. */
+    private TextField debugGdbPathField;
     /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
     TextField nodePathField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -252,6 +282,21 @@ final class SettingsDebugPage {
                         debugCppCheck,
                         tr("settings.debug.enableCpp.hint"),
                         "debug c cpp c++ cmake make gcc clang codelldb native");
+                w.controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.cppDebugger"),
+                        tr("settings.debug.cppDebugger.hint"),
+                        debugCppDebuggerCombo,
+                        "debug c cpp c++ gdb lldb codelldb debugger dap");
+                debugGdbPathField.setPrefWidth(SettingsWindow.PATH_FIELD_WIDTH);
+                w.controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.gdbPath"),
+                        null,
+                        debugGdbPathField,
+                        "debug gdb path dap c cpp");
             }
             if ("javascript".equals(dbg.id())) {
                 // The one Node.js setting lives on Build Tools, editable with debugging off (review E102).
@@ -435,6 +480,8 @@ final class SettingsDebugPage {
         debugSuspendAllThreadsCheck.setSelected(settings.isDebugSuspendAllThreads());
         debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
         debugCppCheck.setSelected(settings.isCppDebugEnabled());
+        debugCppDebuggerCombo.setValue(settings.getCppDebugger());
+        debugGdbPathField.setText(settings.getGdbPath());
         nodePathField.setText(settings.getNodePath());
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             CheckBox enable = debugEnableChecks.get(dbg.id());

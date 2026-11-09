@@ -1156,6 +1156,75 @@ CodeLLDB has it, sent as the profile's default: see **External adapters**).
 `NativeDebugWindowFxTest` drives the window against a Make project whose recipe writes a stand-in program, with a
 stand-in `codelldb`.
 
+**launch.json.** *Debug: Start Configuration…* (`DebugCoordinator.startLaunchConfiguration`) lists the configurations
+of the project's `.vscode/launch.json`, else the nearest one above the active file (`LaunchJson.find`). The one started
+last comes first.
+
+[`dap/LaunchJson`](../../src/main/java/com/editora/dap/LaunchJson.java) reads launch.json and tasks.json as VS Code
+does:
+- comments and trailing commas;
+- whole numbers as `long`;
+- each configuration's `linux`, `osx` and `windows` part laid over it (`forPlatform`);
+- VS Code's variables (`substitute`): `${workspaceFolder}`, the `${file…}` family, `${relativeFile}`,
+  `${lineNumber}`, `${selectedText}`, `${env:X}`, `${userHome}` and `${pathSeparator}`.
+
+`${input:id}` asks a `pickString` (a picker) or a `promptString`, once per start, before anything runs.
+`${command:…}` and `${config:…}` are VS Code's own commands and settings, so they're refused with a message.
+
+A `preLaunchTask` runs as a before-launch step when its `tasks.json` task is a plain `shell` (`sh -c` / `cmd /c`) or
+`process` command (`LaunchJson.taskArgv`). Any other task type, or one with `dependsOn`, is said rather than guessed.
+
+[`dap/LaunchRoute`](../../src/main/java/com/editora/dap/LaunchRoute.java) sends each `type` to its debugger. Only
+the fields VS Code reads itself are left out (`name`, its tasks, `console`, `presentation` …):
+
+| `type` | Debugger | How |
+| --- | --- | --- |
+| `lldb` | CodeLLDB | as written, the Rust or C/C++ profile by `sourceLanguages`. Its `cargo` field runs `cargo <args>`, then the executable its JSON messages name, narrowed by `filter`, becomes `program` (`LaunchRoute.cargoExecutable`). |
+| `gdb` | GDB's DAP mode | `program`, `args`, `cwd`, `env`, `stopAtBeginningOfMainSubprogram`; attach by `pid`. |
+| `cppdbg` | GDB, or CodeLLDB with `MIMode: lldb` | its fields told in the target's own: the `environment` list becomes `env`, `stopAtEntry` the entry stop, `processId` the `pid`. |
+| `go` | Delve | as written, `output` in the temporary folder when not given; `mode: remote` is not supported. |
+| `debugpy`, `python` | debugpy | laid over the launch Editora plans for the program (`DapManager.startConfigured` → `overlay`, which keeps Editora's console); an attach connects to `connect`. |
+| `node`, `pwa-node` | vscode-js-debug | as Python; an attach to `address` / `port`. |
+| `java` | java-debug | a transient run configuration (`LaunchRoute.javaRunConfiguration`: `mainClass`, `projectName`, quoted `args` and `vmArgs`, `cwd`, `env`); a `mainClass` that is a `.java` file debugs that file. |
+| a user's adapter | it | as written. |
+
+Anything else is said (`status.debug.launchUnsupported`).
+
+**GDB.** `DebugLanguages.GDB` is GDB's own DAP mode: `gdb -q -i dap`, GDB 14 or later, over stdio. The program's
+output comes as output events. It isn't among `all()`, since it's not a language. It's C and C++'s other debugger:
+`Settings.cppDebugger` set to `gdb`, with `gdbPath`. F5's native build then launches with `NativeBuild.gdbLaunch`, and
+`debugEffectiveFor("cpp")` checks GDB is found.
+
+**The user's own adapters.** [`dap/CustomAdapters`](../../src/main/java/com/editora/dap/CustomAdapters.java) reads
+`debug-adapters.json`: the config folder's, then a trusted project's `.editora/debug-adapters.json`, whose adapters
+replace those of the same type (`merge`). *Debug: Edit Debug Adapters* opens the user's, written with an example the
+first time.
+
+Each entry has:
+- a `type`, which may not be one of Editora's own types;
+- a `command`;
+- a `transport`: `stdio`, `port` (`{port}` anywhere in an argument) or `announce` (an `announce` pattern whose group
+  is the port);
+- `languages`;
+- an optional `name` and `adapterID`;
+- a `launch` template for F5.
+
+Each becomes a `DebugLanguage` profile on the external-adapter path (`DebugLanguages.setCustom`), found by id and by
+language after the built-in ones. Its program is looked for by `configureExternal`, and one that can't be read is said
+in the status bar. `debugEffectiveFor` looks a profile up by adapter id when no language names it.
+
+`LaunchJsonProbeFxTest` drives the real debuggers:
+- CodeLLDB with a `preLaunchTask` that compiles the program;
+- `gdb` and `cppdbg` on GDB;
+- a user's adapter (GDB again);
+- F5 on GDB;
+- Delve's `exec` mode on a built binary;
+- CodeLLDB's `cargo` field;
+- debugpy and js-debug configurations with their `args` and `env`.
+
+`LaunchJsonWindowFxTest` drives the picker, a `pickString` input, a task, F5's `launch` template, and each message,
+against stand-in adapters.
+
 **Disassembly and Memory views.** The Debug window's third area holds three views, chosen by toggles in its header:
 Console, Disassembly and Memory (`DebugPanel.showArea`). They work with adapters that advertise them, which are
 CodeLLDB and Delve:

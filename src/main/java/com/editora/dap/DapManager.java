@@ -1899,6 +1899,23 @@ public final class DapManager {
      * names the session, picks the interpreter and anchors the breakpoints.
      */
     private void startProgram(Path file, String language, PythonLaunch.@Nullable Target module) {
+        startProgram(file, language, module, null);
+    }
+
+    /**
+     * Debugs a launch.json configuration of debugpy or vscode-js-debug for {@code file} (its program, or the file it
+     * was started from): the launch Editora plans for the file — interpreter or Node.js, folder, console — with
+     * {@code configured} laid over it, so what the configuration says wins. Restart repeats it.
+     */
+    public void startConfigured(Path file, String language, Map<String, Object> configured) {
+        startProgram(file, language, null, Map.copyOf(configured));
+    }
+
+    private void startProgram(
+            Path file,
+            String language,
+            PythonLaunch.@Nullable Target module,
+            @Nullable Map<String, Object> configured) {
         if (!readyProgram(file, language)) {
             return;
         }
@@ -1907,7 +1924,7 @@ public final class DapManager {
             listener.onError(tr("debug.error.noAdapter"));
             return;
         }
-        restartAction = () -> startProgram(file, language, module);
+        restartAction = () -> startProgram(file, language, module, configured);
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
@@ -1921,7 +1938,7 @@ public final class DapManager {
                     if (remote) {
                         startRemoteStdio(file, spec, bps, filters, epoch, module);
                     } else {
-                        startStdio(file, spec, bps, filters, epoch, module);
+                        startStdio(file, spec, bps, filters, epoch, module, configured);
                     }
                 } else if (spec.kind() == DapServerRegistry.Kind.JVM && !remote) {
                     startJvm(file, spec, bps, filters, epoch);
@@ -1937,7 +1954,7 @@ public final class DapManager {
                     if (remote) {
                         startRemoteSocket(file, spec, bps, filters, epoch);
                     } else {
-                        startSocket(file, spec, bps, filters, epoch);
+                        startSocket(file, spec, bps, filters, epoch, configured);
                     }
                 } else {
                     fail(epoch, tr("debug.error.transport", language));
@@ -1949,6 +1966,24 @@ public final class DapManager {
     }
 
     // --- An external adapter: its own program, started by its command ----------------------------------
+
+    /**
+     * {@code planned} with a launch.json configuration laid over it ({@code configured} wins), but for how the
+     * program's console is reached — Editora's ({@code console}, {@code outputCapture}) — and its {@code type},
+     * which the adapter Editora started has. {@code planned} as it is when nothing is configured. Pure.
+     */
+    static Map<String, Object> overlay(Map<String, Object> planned, @Nullable Map<String, Object> configured) {
+        if (configured == null) {
+            return planned;
+        }
+        Map<String, Object> out = new java.util.LinkedHashMap<>(planned);
+        configured.forEach((k, v) -> {
+            if (!java.util.Set.of("type", "console", "outputCapture").contains(k)) {
+                out.put(k, v);
+            }
+        });
+        return out;
+    }
 
     /** How long an {@link ExternalAdapter.Transport#ANNOUNCED_PORT} adapter has to say where it listens. */
     static final java.time.Duration ANNOUNCE_TIMEOUT = java.time.Duration.ofSeconds(15);
@@ -2056,6 +2091,11 @@ public final class DapManager {
         }
         out.add(home.resolve("go").resolve("bin"));
         return out;
+    }
+
+    /** Whether {@link #configureExternal} found {@code language}'s adapter (GDB's, a user's own). */
+    public boolean isExternalLocated(DebugLanguage language) {
+        return enabled && externalLocated.containsKey(language.id());
     }
 
     /** {@code command} as an executable file: itself when it is a path, else found on the PATH; null when neither. */
@@ -2417,7 +2457,8 @@ public final class DapManager {
             List<DapModels.FileBreakpoints> bps,
             @Nullable List<String> filters,
             long epoch,
-            PythonLaunch.@Nullable Target module)
+            PythonLaunch.@Nullable Target module,
+            @Nullable Map<String, Object> configured)
             throws Exception {
         HostPython program = planProgram(file, com.editora.process.ExecTargets.forPath(file), true);
         HostPython adapter = probe(program.argv(List.of("-c", "import debugpy")), debugpyDir, program.env())
@@ -2446,8 +2487,10 @@ public final class DapManager {
         // The plan's PYTHONPATH (project root, src/, the user's) when it set one; else the user's own, or "" —
         // never the adapter's, which carries Editora's debugpy folder.
         String inherited = System.getenv("PYTHONPATH");
-        Map<String, Object> launch = PythonLaunch.request(
-                target, program, List.of(), inherited == null ? "" : inherited, File.pathSeparator, console);
+        Map<String, Object> launch = overlay(
+                PythonLaunch.request(
+                        target, program, List.of(), inherited == null ? "" : inherited, File.pathSeparator, console),
+                configured);
         attachStdio(proc, spec, bps, filters, epoch, DapPaths.LOCAL, launch, console, stderr);
     }
 
@@ -2620,7 +2663,8 @@ public final class DapManager {
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
             @Nullable List<String> filters,
-            long epoch)
+            long epoch,
+            @Nullable Map<String, Object> configured)
             throws Exception {
         Path server = jsServer;
         if (server == null) {
@@ -2694,8 +2738,17 @@ public final class DapManager {
             env = JsLaunch.colourEnvironment(System.getenv("NO_COLOR")); // as Run (review D104)
         }
         boolean clientConsole = programConsole;
-        Map<String, Object> launch = JsLaunch.request(
-                spec.launchType(), program, cwd.toString(), workspace.toString(), runtime, args, clientConsole, env);
+        Map<String, Object> launch = overlay(
+                JsLaunch.request(
+                        spec.launchType(),
+                        program,
+                        cwd.toString(),
+                        workspace.toString(),
+                        runtime,
+                        args,
+                        clientConsole,
+                        env),
+                configured);
         jsClientConsole = clientConsole;
         // The command line that runs is printed when js-debug asks Editora to start it (startDebuggee): js-debug may
         // run another file than the one planned — a .ts source's compiled output (review D106).

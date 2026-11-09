@@ -456,6 +456,9 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
     `parse_quantity` returning an error; two tests for **Debug Test at Caret**.
   - `samples/debug/rust/src/pricing.rs` — a `match` hit once per big item, and `apply`, which **recurses**
     through a stacked discount, so the call stack shows two `apply` frames.
+  - `samples/debug/rust/.vscode/launch.json` — **Debug: Start Configuration…** with CodeLLDB's `cargo`
+    field: a `cargo build` of the program (its `crash` argument panics), and a `cargo test --no-run` test
+    binary run on one test, named through a `promptString` input.
   - `samples/debug/rust/src/restock.rs` — three named threads (`restock-1…3`): the **Threads** view, and a
     **hit-count** breakpoint on a line that runs 480 times.
 
@@ -473,6 +476,9 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   - `samples/debug/cpp/src/restock.cpp` — three threads: the **Threads** view, and a **hit-count** breakpoint
     on a line that runs 480 times.
   - `samples/debug/cpp/src/shelf.hpp` — the shared declarations (F5 here builds the project too).
+  - `samples/debug/cpp/.vscode/launch.json` + `samples/debug/cpp/.vscode/tasks.json` — **Debug: Start
+    Configuration…**: the same program on CodeLLDB (with a `pickString` input for its argument), on GDB's
+    DAP mode (`"type": "gdb"`), and as Microsoft's `cppdbg` form; each builds first with the `build` task.
 - `samples/debug/c/tally.c` — a **lone C file**: F5 compiles it with `cc -g -O0`, no project needed;
   a struct array, Step Into / Step Out on `subtotal`, a watch on `total`.
 

@@ -339,6 +339,8 @@ jobs:
           CODELLDB_SHA256: 1cd7f386598022b51a5b93b9ffa23e812b23f519cfe1833384ec4bef4bfd1be1
         run: |
           cargo --version
+          command -v gdb || sudo apt-get install -y --no-install-recommends gdb
+          gdb --version | head -1
           cmake --version | head -1
           cc --version | head -1
           curl -fsSL -o /tmp/codelldb.vsix "https://github.com/vadimcn/codelldb/releases/download/${CODELLDB_VERSION}/codelldb-linux-x64.vsix"
@@ -371,8 +373,10 @@ jobs:
       # values), a Make project, an attach to a running native program, and a window's F5 on a CMake project.
       # DisassemblyMemoryProbeFxTest: on CodeLLDB, a C frame's instructions disassembled around its instruction
       # pointer, Step Over Instruction, a C string's memory; and in a window the Disassembly and Memory views fill.
+      # LaunchJsonProbeFxTest: launch.json configurations on CodeLLDB (a preLaunchTask, its cargo field), GDB (gdb,
+      # cppdbg, F5 with C/C++ set to GDB), a user's own adapter, Delve's exec mode, and debugpy's with args and env.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

@@ -485,6 +485,9 @@ final class DebugCoordinator {
         com.editora.dap.DebugLanguage profile =
                 com.editora.dap.DebugLanguages.forLanguage(language); // TS: JavaScript's
         if (profile == null) {
+            profile = com.editora.dap.DebugLanguages.byId(language); // an adapter's id (a user's own: not a language)
+        }
+        if (profile == null) {
             return false;
         }
         if (profile.availability() == com.editora.dap.DebugLanguage.Availability.JAVA_DEBUG_PLUGIN) {
@@ -497,8 +500,18 @@ final class DebugCoordinator {
         // Metals' have nothing to install: the tool (groovy, kotlinc, clojure or lein), or Metals for a build's Scala
         // file, is checked when the session starts.
         DebugAdapterSettings.Binding settings = DebugAdapterSettings.of(profile.id());
+        if (profile == com.editora.dap.DebugLanguages.CPP && gdbForCpp()) {
+            // C and C++ on GDB: its switch is C/C++'s, its adapter GDB's own DAP mode.
+            return host.settings().isCppDebugEnabled()
+                    && dapManager.isExternalLocated(com.editora.dap.DebugLanguages.GDB);
+        }
         return (settings == null || settings.isEnabled(host.settings()))
                 && dapManager.isLanguageAvailable(profile.id());
+    }
+
+    /** Whether C and C++ are debugged on GDB (Settings → Debugging), not CodeLLDB. */
+    private boolean gdbForCpp() {
+        return "gdb".equals(host.settings().getCppDebugger());
     }
 
     /**
@@ -746,6 +759,10 @@ final class DebugCoordinator {
                 on && s.isRustDebugEnabled(),
                 scope.debugTool("rust", s.getRustDebugPath()),
                 found -> applyGating());
+        // GDB's DAP mode: C and C++'s other debugger, and launch.json's gdb / cppdbg.
+        dapManager.configureExternal(
+                com.editora.dap.DebugLanguages.GDB, on, scope.debugTool("gdb", s.getGdbPath()), found -> applyGating());
+        loadCustomAdapters(on);
         // C and C++: the same CodeLLDB as Rust's.
         dapManager.configureExternal(
                 com.editora.dap.DebugLanguages.CPP,
@@ -1916,6 +1933,510 @@ final class DebugCoordinator {
         return 0;
     }
 
+    // --- launch.json and the user's own adapters ------------------------------------------------------
+
+    /** The user's own adapters ({@code debug-adapters.json}), by type, with what F5 sends each. */
+    private java.util.Map<String, com.editora.dap.CustomAdapters.Adapter> customAdapters = java.util.Map.of();
+
+    /** The launch.json configuration last started, by launch.json: the picker offers it first. */
+    private final java.util.Map<Path, String> lastConfiguration = new java.util.HashMap<>();
+
+    /** The user's {@code debug-adapters.json}: the config folder's (null without one). */
+    private @Nullable Path userAdaptersFile() {
+        Path config = host.configDir();
+        return config == null ? null : config.resolve("debug-adapters.json");
+    }
+
+    /**
+     * Reads the user's own adapters — the config folder's {@code debug-adapters.json}, then a trusted project's
+     * {@code .editora/debug-adapters.json}, whose adapters replace those of the same type — and looks for each one's
+     * program. One that cannot be read is said in the status bar.
+     */
+    private void loadCustomAdapters(boolean on) {
+        List<List<com.editora.dap.CustomAdapters.Adapter>> files = new ArrayList<>();
+        List<String> problems = new ArrayList<>();
+        List<Path> paths = new ArrayList<>();
+        Path user = userAdaptersFile();
+        if (user != null) {
+            paths.add(user);
+        }
+        Path project = ops.projectRoot();
+        if (project != null && host.projectScope().trusted()) {
+            paths.add(project.resolve(".editora").resolve("debug-adapters.json"));
+        }
+        for (Path p : paths) {
+            if (!java.nio.file.Files.isRegularFile(p)) {
+                continue;
+            }
+            try {
+                var parsed = com.editora.dap.CustomAdapters.parse(java.nio.file.Files.readString(p));
+                files.add(parsed.adapters());
+                parsed.problems().forEach(problem -> problems.add(p.getFileName() + ": " + problem));
+            } catch (java.io.IOException e) {
+                problems.add(p + ": " + e.getMessage());
+            }
+        }
+        List<com.editora.dap.CustomAdapters.Adapter> adapters = com.editora.dap.CustomAdapters.merge(files);
+        java.util.Map<String, com.editora.dap.CustomAdapters.Adapter> byType = new java.util.LinkedHashMap<>();
+        adapters.forEach(a -> byType.put(a.profile().id(), a));
+        customAdapters = byType;
+        com.editora.dap.DebugLanguages.setCustom(adapters.stream()
+                .map(com.editora.dap.CustomAdapters.Adapter::profile)
+                .toList());
+        for (var a : adapters) {
+            dapManager.configureExternal(a.profile(), on, "", found -> applyGating());
+        }
+        if (!problems.isEmpty()) {
+            host.setStatus(tr("status.debug.customAdaptersInvalid", String.join("; ", problems)));
+        }
+    }
+
+    /** Debug: Edit Debug Adapters: the user's {@code debug-adapters.json}, written with an example the first time. */
+    void editCustomAdapters() {
+        Path file = userAdaptersFile();
+        if (file == null) {
+            return;
+        }
+        try {
+            if (!java.nio.file.Files.exists(file)) {
+                java.nio.file.Files.createDirectories(file.getParent());
+                java.nio.file.Files.writeString(file, com.editora.dap.CustomAdapters.EXAMPLE);
+            }
+        } catch (java.io.IOException e) {
+            host.setStatus(tr("debug.error.startFailed", e.getMessage()));
+            return;
+        }
+        ops.openPath(file);
+    }
+
+    /** F5 on a file of one of the user's own adapters' languages: its {@code launch} template, variables put in. */
+    private void debugCustomFile(EditorBuffer b, Path path, com.editora.dap.DebugLanguage profile, List<String> args) {
+        com.editora.dap.CustomAdapters.Adapter adapter = customAdapters.get(profile.id());
+        if (adapter == null || adapter.launch().isEmpty()) {
+            host.setStatus(tr("status.debug.customNoLaunch", profile.displayName()));
+            return;
+        }
+        Path root = ops.projectRoot();
+        Path workspace = root != null && path.toAbsolutePath().startsWith(root.toAbsolutePath())
+                ? root
+                : java.util.Objects.requireNonNullElse(path.toAbsolutePath().getParent(), path);
+        java.util.Map<String, Object> request = new java.util.LinkedHashMap<>();
+        request.put("type", profile.id());
+        request.put("request", "launch");
+        try {
+            Object body = com.editora.dap.LaunchJson.substitute(
+                    adapter.launch(),
+                    launchContext(workspace, b, java.util.Map.of()),
+                    java.util.Map.of(),
+                    new java.util.HashMap<>());
+            if (body instanceof java.util.Map<?, ?> m) {
+                m.forEach((k, v) -> request.put(String.valueOf(k), v));
+            }
+        } catch (com.editora.dap.LaunchJson.LaunchJsonException e) {
+            host.setStatus(tr("status.debug.launchVariable", e.getMessage()));
+            return;
+        } catch (com.editora.dap.LaunchJson.Cancelled e) {
+            return;
+        }
+        if (!request.containsKey("args") && !args.isEmpty()) {
+            request.put("args", args);
+        }
+        startExternalSession(path, profile, request, String.valueOf(path.getFileName()));
+    }
+
+    /** What VS Code's variables stand for: {@code workspace}, the active file and its caret, the answered inputs. */
+    private com.editora.dap.LaunchJson.Context launchContext(
+            Path workspace, @Nullable EditorBuffer b, java.util.Map<String, String> answers) {
+        Path file = b == null ? null : b.getPath();
+        int line = b == null ? 1 : caretLine(b) + 1;
+        String selected = b == null ? "" : b.getFocusedArea().getSelectedText();
+        return new com.editora.dap.LaunchJson.Context(
+                workspace,
+                file,
+                line,
+                selected,
+                System.getenv(),
+                Path.of(System.getProperty("user.home", "")),
+                in -> answers.get(in.id()));
+    }
+
+    /** Starts {@code request} on external adapter {@code profile}, anchored at {@code anchor}; Restart repeats it. */
+    private void startExternalSession(
+            Path anchor, com.editora.dap.DebugLanguage profile, java.util.Map<String, Object> request, String label) {
+        ops.openToolWindow();
+        nameSession(label);
+        Runnable start = () -> withClosedBreakpoints(() -> dapManager.startExternal(anchor, profile, request));
+        relaunch = start;
+        start.run();
+    }
+
+    /**
+     * Debug: Start Configuration: the configurations of the project's {@code .vscode/launch.json} (or the nearest one
+     * above the active file), picked from a list — the one started last first — and started as VS Code starts them.
+     */
+    void startLaunchConfiguration() {
+        EditorBuffer b = host.activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        Path launchJson = com.editora.dap.LaunchJson.find(ops.projectRoot(), file);
+        if (launchJson == null) {
+            host.setStatus(tr("status.debug.noLaunchJson"));
+            return;
+        }
+        com.editora.dap.LaunchJson.File parsed;
+        try {
+            parsed = com.editora.dap.LaunchJson.parse(java.nio.file.Files.readString(launchJson));
+        } catch (java.io.IOException | com.editora.dap.LaunchJson.LaunchJsonException e) {
+            host.setStatus(tr("status.debug.launchJsonInvalid", launchJson, e.getMessage()));
+            return;
+        }
+        if (parsed.configurations().isEmpty()) {
+            host.setStatus(tr("status.debug.noConfigurations", launchJson));
+            return;
+        }
+        List<com.editora.dap.LaunchJson.Configuration> configs = new ArrayList<>(parsed.configurations());
+        String last = lastConfiguration.get(launchJson);
+        configs.sort(java.util.Comparator.comparing(c -> !c.name().equals(last)));
+        Path vscode = launchJson.toAbsolutePath().getParent();
+        Path workspace = vscode == null || vscode.getParent() == null ? launchJson : vscode.getParent();
+        QuickOpen<com.editora.dap.LaunchJson.Configuration> picker = new QuickOpen<>(
+                tr("debug.launchJson.title"),
+                tr("debug.launchJson.prompt"),
+                () -> configs,
+                com.editora.dap.LaunchJson.Configuration::name,
+                c -> c.type() + " · " + c.request(),
+                c -> {
+                    if (c != null) {
+                        lastConfiguration.put(launchJson, c.name());
+                        runLaunchConfiguration(launchJson, workspace, parsed, c, b);
+                    }
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /** Runs configuration {@code c}: asks its inputs, then {@link #resolveAndRun}. */
+    void runLaunchConfiguration(
+            Path launchJson,
+            Path workspace,
+            com.editora.dap.LaunchJson.File parsed,
+            com.editora.dap.LaunchJson.Configuration c,
+            @Nullable EditorBuffer b) {
+        java.util.Map<String, Object> body = com.editora.dap.LaunchJson.forPlatform(
+                c.body(), com.editora.dap.LaunchJson.osKey(System.getProperty("os.name", "")));
+        askInputs(
+                parsed.inputs(),
+                com.editora.dap.LaunchJson.inputsUsed(body),
+                0,
+                new java.util.LinkedHashMap<>(),
+                answers -> resolveAndRun(launchJson, workspace, c.name(), body, answers, b));
+    }
+
+    /** Asks inputs {@code ids} from {@code index} on, one after another, then hands the answers to {@code done}. */
+    private void askInputs(
+            java.util.Map<String, com.editora.dap.LaunchJson.Input> inputs,
+            List<String> ids,
+            int index,
+            java.util.Map<String, String> answers,
+            Consumer<java.util.Map<String, String>> done) {
+        if (index >= ids.size()) {
+            done.accept(answers);
+            return;
+        }
+        String id = ids.get(index);
+        com.editora.dap.LaunchJson.Input in = inputs.get(id);
+        if (in == null) {
+            host.setStatus(tr("status.debug.launchVariable", "${input:" + id + "}"));
+            return;
+        }
+        String title = in.description().isBlank() ? id : in.description();
+        Consumer<String> next = value -> {
+            answers.put(id, value);
+            askInputs(inputs, ids, index + 1, answers, done);
+        };
+        if ("pickString".equals(in.type()) && !in.options().isEmpty()) {
+            QuickOpen<String> pick = new QuickOpen<>(title, title, in::options, o -> o, o -> "", o -> {
+                if (o != null) {
+                    next.accept(o);
+                }
+            });
+            pick.setOverlayHost(host.overlayHost());
+            pick.show(host.window());
+        } else {
+            host.promptText(title, title, in.defaultValue(), next);
+        }
+    }
+
+    /**
+     * Puts the variables in, runs the {@code preLaunchTask} (a plain {@code tasks.json} command), and starts the
+     * configuration on its debugger ({@link com.editora.dap.LaunchRoute}).
+     */
+    private void resolveAndRun(
+            Path launchJson,
+            Path workspace,
+            String name,
+            java.util.Map<String, Object> raw,
+            java.util.Map<String, String> answers,
+            @Nullable EditorBuffer b) {
+        java.util.Map<String, Object> body;
+        try {
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> substituted =
+                    (java.util.Map<String, Object>) com.editora.dap.LaunchJson.substitute(
+                            raw,
+                            launchContext(workspace, b, answers),
+                            java.util.Map.of(),
+                            new java.util.HashMap<>(answers));
+            body = substituted == null ? raw : substituted;
+        } catch (com.editora.dap.LaunchJson.LaunchJsonException e) {
+            host.setStatus(tr("status.debug.launchVariable", e.getMessage()));
+            return;
+        } catch (com.editora.dap.LaunchJson.Cancelled e) {
+            return;
+        }
+        Runnable start = () -> startRoute(workspace, name, body, b);
+        if (!(body.get("preLaunchTask") instanceof String task) || task.isBlank()) {
+            start.run();
+            return;
+        }
+        List<String> argv = preLaunchTask(launchJson, workspace, task, b, answers);
+        if (argv == null) {
+            return; // said
+        }
+        if (beforeLaunch.isActive() || pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(task, argv, "status.run.preLaunchTask"),
+                workspace,
+                java.util.Map.of(),
+                beforeLaunchConsole(),
+                () -> Platform.runLater(start));
+    }
+
+    /** The command line of {@code tasks.json}'s task {@code label}; null when it cannot be run here (said). */
+    private @Nullable List<String> preLaunchTask(
+            Path launchJson,
+            Path workspace,
+            String label,
+            @Nullable EditorBuffer b,
+            java.util.Map<String, String> answers) {
+        Path tasksJson = launchJson.resolveSibling("tasks.json");
+        try {
+            com.editora.dap.LaunchJson.File tasks =
+                    com.editora.dap.LaunchJson.parse(java.nio.file.Files.readString(tasksJson));
+            java.util.Map<String, Object> task = com.editora.dap.LaunchJson.task(tasks, label);
+            if (task == null) {
+                host.setStatus(tr("status.debug.taskMissing", label));
+                return null;
+            }
+            Object resolved = com.editora.dap.LaunchJson.substitute(
+                    com.editora.dap.LaunchJson.forPlatform(
+                            task, com.editora.dap.LaunchJson.osKey(System.getProperty("os.name", ""))),
+                    launchContext(workspace, b, answers),
+                    tasks.inputs(),
+                    new java.util.HashMap<>(answers));
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> t = (java.util.Map<String, Object>) resolved;
+            List<String> argv =
+                    t == null ? null : com.editora.dap.LaunchJson.taskArgv(t, java.io.File.pathSeparatorChar == ';');
+            if (argv == null) {
+                host.setStatus(tr("status.debug.taskUnsupported", label));
+            }
+            return argv;
+        } catch (java.io.IOException e) {
+            host.setStatus(tr("status.debug.taskMissing", label));
+        } catch (com.editora.dap.LaunchJson.LaunchJsonException e) {
+            host.setStatus(tr("status.debug.launchVariable", e.getMessage()));
+        } catch (com.editora.dap.LaunchJson.Cancelled e) {
+            // asked and cancelled: nothing runs
+        }
+        return null;
+    }
+
+    /** Starts a resolved configuration on the debugger its type names. */
+    private void startRoute(Path workspace, String name, java.util.Map<String, Object> body, @Nullable EditorBuffer b) {
+        java.util.Map<String, com.editora.dap.DebugLanguage> own = new java.util.LinkedHashMap<>();
+        customAdapters.forEach((type, a) -> own.put(type, a.profile()));
+        com.editora.dap.LaunchRoute.Route route = com.editora.dap.LaunchRoute.of(body, own);
+        Path active = b == null ? null : b.getPath();
+        Path program = body.get("program") instanceof String p && !p.isBlank() ? Path.of(p) : null;
+        Path anchor = active != null ? active : program != null ? program : workspace;
+        com.editora.dap.DebugLanguage profile = route.profile();
+        switch (route.kind()) {
+            case UNSUPPORTED -> host.setStatus(tr("status.debug.launchUnsupported", name, route.reason()));
+            case JAVA -> debugJavaConfiguration(name, body, workspace);
+            case DEBUGPY -> {
+                if (!debugEffectiveFor("python")) {
+                    host.setStatus(unavailableMessage("python", null));
+                } else if (route.attach()) {
+                    String[] where = attachAddress(body, 5678);
+                    ops.openToolWindow();
+                    nameSession(name);
+                    relaunch = null;
+                    withClosedBreakpoints(
+                            () -> dapManager.startPythonAttach(anchor, where[0], Integer.parseInt(where[1])));
+                } else {
+                    ops.openToolWindow();
+                    nameSession(name);
+                    Path file = program != null ? program : anchor;
+                    relaunch = null;
+                    withClosedBreakpoints(() -> dapManager.startConfigured(file, "python", route.request()));
+                }
+            }
+            case JS_DEBUG -> {
+                if (!debugEffectiveFor("javascript")) {
+                    host.setStatus(unavailableMessage("javascript", null));
+                } else if (route.attach()) {
+                    String[] where = attachAddress(body, com.editora.dap.JsLaunch.DEFAULT_INSPECTOR_PORT);
+                    ops.openToolWindow();
+                    nameSession(name);
+                    relaunch = null;
+                    withClosedBreakpoints(() -> dapManager.startJsAttach(
+                            where[0],
+                            Integer.parseInt(where[1]),
+                            name,
+                            workspace,
+                            List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
+                            true));
+                } else {
+                    ops.openToolWindow();
+                    nameSession(name);
+                    Path file = program != null ? program : anchor;
+                    relaunch = null;
+                    withClosedBreakpoints(() -> dapManager.startConfigured(file, "javascript", route.request()));
+                }
+            }
+            case DELVE, CODELLDB, GDB, CUSTOM -> {
+                if (profile == null) {
+                    return;
+                }
+                // GDB and the user's own adapters are ready when their program was found; Delve and CodeLLDB as F5
+                // finds them (their language's switch too).
+                boolean byProgram = route.kind() == com.editora.dap.LaunchRoute.Kind.GDB
+                        || route.kind() == com.editora.dap.LaunchRoute.Kind.CUSTOM;
+                boolean ready = byProgram
+                        ? debugSupportEnabled() && dapManager.isExternalLocated(profile)
+                        : debugEffectiveFor(profile.editorLanguages().iterator().next());
+                if (!ready) {
+                    host.setStatus(
+                            route.kind() == com.editora.dap.LaunchRoute.Kind.GDB
+                                    ? tr("status.debug.gdbMissing")
+                                    : byProgram
+                                            ? tr("debug.error.customUnavailable")
+                                            : unavailableMessage(profile.id(), null));
+                    return;
+                }
+                java.util.Map<String, Object> request = new java.util.LinkedHashMap<>(route.request());
+                if (route.kind() == com.editora.dap.LaunchRoute.Kind.DELVE
+                        && !route.attach()
+                        && !request.containsKey("output")) {
+                    request.put("output", com.editora.dap.GoLaunch.debugBinary()); // not __debug_bin in the package
+                }
+                if (route.kind() == com.editora.dap.LaunchRoute.Kind.CODELLDB
+                        && request.get("cargo") instanceof java.util.Map<?, ?> cargo) {
+                    cargoThenStart(workspace, name, anchor, profile, request, cargo);
+                    return;
+                }
+                startExternalSession(anchor, profile, request, name);
+            }
+        }
+    }
+
+    /** {@code host:port} an attach configuration names ({@code connect: {host, port}}, or {@code address} / {@code port}). */
+    static String[] attachAddress(java.util.Map<String, Object> body, int defaultPort) {
+        Object connect = body.get("connect");
+        java.util.Map<?, ?> where = connect instanceof java.util.Map<?, ?> m ? m : body;
+        Object host = where.get("host") != null ? where.get("host") : where.get("address");
+        Object port = where.get("port");
+        String p = port instanceof Number n ? String.valueOf(n.longValue()) : port == null ? "" : String.valueOf(port);
+        return new String[] {
+            host == null || String.valueOf(host).isBlank() ? "127.0.0.1" : String.valueOf(host),
+            p.matches("\\d+") ? p : String.valueOf(defaultPort)
+        };
+    }
+
+    /**
+     * CodeLLDB's {@code cargo} field, as its VS Code extension runs it: {@code cargo <args>} (after the folder's
+     * trust), then the executable its JSON messages name — the one {@code filter} ({@code name}, {@code kind})
+     * picks — becomes the {@code program}.
+     */
+    private void cargoThenStart(
+            Path workspace,
+            String name,
+            Path anchor,
+            com.editora.dap.DebugLanguage profile,
+            java.util.Map<String, Object> request,
+            java.util.Map<?, ?> cargo) {
+        List<String> cargoArgv = ops.buildExecutable(com.editora.build.BuildTool.CARGO, workspace);
+        if (cargoArgv == null) {
+            return; // not trusted
+        }
+        List<String> args = new ArrayList<>();
+        if (cargo.get("args") instanceof List<?> l) {
+            l.forEach(a -> args.add(String.valueOf(a)));
+        }
+        java.util.Map<?, ?> filter = cargo.get("filter") instanceof java.util.Map<?, ?> f ? f : java.util.Map.of();
+        List<String> build = new ArrayList<>(cargoArgv);
+        build.addAll(args);
+        List<String> json = new ArrayList<>(build);
+        json.add("--message-format=json");
+        if (beforeLaunch.isActive() || pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(name, build, "status.run.cargoBuild"),
+                workspace,
+                java.util.Map.of(),
+                beforeLaunchConsole(),
+                () -> Thread.ofVirtual().name("editora-cargo-artifacts").start(() -> {
+                    var listed = com.editora.dap.RustLaunch.listArtifacts(workspace, json, CARGO_LIST_TIMEOUT);
+                    Platform.runLater(() -> {
+                        Path exe = listed.ok()
+                                ? com.editora.dap.LaunchRoute.cargoExecutable(
+                                        com.editora.dap.RustLaunch.artifacts(listed.out()),
+                                        args.contains("test"),
+                                        filter.get("name") instanceof String n ? n : null,
+                                        filter.get("kind") instanceof String k ? k : null)
+                                : null;
+                        if (exe == null) {
+                            host.setStatus(tr("status.debug.cargoNoArtifact", name));
+                            return;
+                        }
+                        java.util.Map<String, Object> resolved = new java.util.LinkedHashMap<>(request);
+                        resolved.remove("cargo");
+                        resolved.put("program", exe.toString());
+                        startExternalSession(anchor, profile, resolved, name);
+                    });
+                }));
+    }
+
+    /**
+     * A {@code java} configuration as a run configuration of this window ({@code mainClass}, {@code projectName},
+     * {@code args}, {@code vmArgs}, {@code cwd}, {@code env}), debugged as one is; a {@code mainClass} that is a
+     * {@code .java} file debugs that file.
+     */
+    private void debugJavaConfiguration(String name, java.util.Map<String, Object> body, Path workspace) {
+        String mainClass = body.get("mainClass") instanceof String m ? m : "";
+        if (mainClass.endsWith(".java")) {
+            Path file = Path.of(mainClass);
+            ops.openPath(file);
+            EditorBuffer opened = ops.bufferForPath(file);
+            if (opened != null) {
+                launchBuffer(opened);
+            }
+            return;
+        }
+        if (mainClass.isBlank()) {
+            host.setStatus(tr("status.debug.launchUnsupported", name, "a Java configuration without a mainClass"));
+            return;
+        }
+        debugConfig(com.editora.dap.LaunchRoute.javaRunConfiguration(name, body, workspace));
+    }
+
     // --- Disassembly and Memory views ---------------------------------------------------------------------
 
     /** Instructions shown before and after the instruction pointer. */
@@ -2638,10 +3159,14 @@ final class DebugCoordinator {
                     host.setStatus(tr("status.debug.nativeNoProgram", path.getFileName()));
                     return;
                 }
-                java.util.Map<String, Object> launch =
-                        com.editora.dap.NativeBuild.launch(exe, args, plan.root(), terminal);
+                boolean gdb = gdbForCpp();
+                java.util.Map<String, Object> launch = gdb
+                        ? com.editora.dap.NativeBuild.gdbLaunch(exe, args, plan.root())
+                        : com.editora.dap.NativeBuild.launch(exe, args, plan.root(), terminal);
+                com.editora.dap.DebugLanguage profile =
+                        gdb ? com.editora.dap.DebugLanguages.GDB : com.editora.dap.DebugLanguages.CPP;
                 ops.openToolWindow();
-                withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.CPP, launch));
+                withClosedBreakpoints(() -> dapManager.startExternal(path, profile, launch));
             });
         });
     }
@@ -2800,6 +3325,11 @@ final class DebugCoordinator {
         }
         if ("cpp".equals(language)) {
             debugNativeFile(b, path, fileArgs);
+            return;
+        }
+        com.editora.dap.DebugLanguage own = com.editora.dap.DebugLanguages.forLanguage(b.getLanguage());
+        if (own != null && com.editora.dap.DebugLanguages.custom().contains(own)) {
+            debugCustomFile(b, path, own, fileArgs);
             return;
         }
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
@@ -3105,6 +3635,9 @@ final class DebugCoordinator {
         String id = language == null ? "" : DapServerRegistry.adapterLanguage(language);
         if ("java".equals(id)) {
             return javaUnavailableMessage();
+        }
+        if ("cpp".equals(id) && gdbForCpp() && host.settings().isCppDebugEnabled()) {
+            return tr("status.debug.gdbMissing");
         }
         DebugAdapterSettings.Binding settings = DebugAdapterSettings.of(id);
         if (settings == null || settings.offKey() == null || settings.missing() == null) {
