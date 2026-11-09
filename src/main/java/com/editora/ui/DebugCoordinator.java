@@ -6105,6 +6105,23 @@ final class DebugCoordinator {
     private final javafx.scene.control.ContextMenu gutterMenu = new javafx.scene.control.ContextMenu();
 
     /**
+     * Whether the editor menu offers Debug File of its own for a file of {@code language}: one that Run File can't
+     * run ({@code runnable} false; a runnable file has Debug File beside Run File) but Debug can. That is a classic
+     * Java main class outside a Maven or Gradle project ({@code inJavaProject} false), and any Go or Rust file,
+     * which Delve or Cargo builds for the debugger. Pure.
+     */
+    static boolean offersOwnDebugFile(String language, boolean runnable, boolean inJavaProject) {
+        if (runnable) {
+            return false;
+        }
+        return switch (language) {
+            case "java" -> !inJavaProject;
+            case "go", "rust" -> true;
+            default -> false;
+        };
+    }
+
+    /**
      * The editor's right-click debugger items (review C10): Toggle / Edit Breakpoint on a debuggable file, and while
      * paused Run to Cursor, Show Value and Add to Watches for the name at the click. Empty when debugging is off.
      */
@@ -6113,15 +6130,17 @@ final class DebugCoordinator {
         if (!debugSupportEnabled() || !isDebuggableBuffer(b)) {
             return items;
         }
-        if (!b.isRunnable()
-                && b.getPath() != null
-                && "java".equals(b.getLanguage())
-                && JavaProjectRoot.find(b.getPath()) == null
+        Path menuPath = b.getPath();
+        if (menuPath != null
+                && offersOwnDebugFile(
+                        b.getLanguage(),
+                        b.isRunnable(),
+                        "java".equals(b.getLanguage()) && JavaProjectRoot.find(menuPath) != null)
                 // Not while this file is being debugged or built for it: it offered a second launch of it (review 2
                 // C110). Another file's live launch is replaced only after asking (review 3, C202).
-                && !launchLiveFor(b.getPath())) {
-            // A classic main class in a plain folder has no Run File / Debug File entry of its own (those are
-            // for runnable files); Debug was then only in the Run menu and the palette.
+                && !launchLiveFor(menuPath)) {
+            // Debug File sits beside Run File for a runnable file; a file Run File can't run but Debug can gets
+            // it here, or Debug was only in the Run menu and the palette.
             javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
             debugFile.setGraphic(Icons.debug());
             debugFile.setOnAction(e -> debugFile(b));

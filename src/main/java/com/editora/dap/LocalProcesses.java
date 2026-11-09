@@ -269,7 +269,13 @@ public final class LocalProcesses {
     /** {@code --inspect}, {@code --inspect-brk}, {@code --inspect-wait}, {@code --inspect-port}, each {@code =[host:]port}. */
     private static final Pattern NODE_INSPECT = Pattern.compile("--inspect(-brk|-wait|-port)?(?:=(.*))?");
 
-    private static Target python(long pid, List<String> args) {
+    /**
+     * A Python program: listening for a debugger when it runs under {@code debugpy --listen}, whether debugpy is
+     * named as a module ({@code -m debugpy}) or by its folder ({@code python …/debugpy --listen 5678 app.py}). Null
+     * for debugpy's own helper processes, its adapter and launcher: {@code debugpy --listen} starts an adapter
+     * ({@code python …/debugpy/adapter --for-server …}) that is not a program to attach to.
+     */
+    private static @Nullable Target python(long pid, List<String> args) {
         String host = "localhost";
         int port = 0;
         String name = "python";
@@ -278,6 +284,9 @@ public final class LocalProcesses {
             String a = args.get(i);
             if (a.equals("-m") && i + 1 < args.size()) {
                 String module = args.get(++i);
+                if (DEBUGPY_HELPER_MODULES.contains(module)) {
+                    return null;
+                }
                 if (module.equals("debugpy")) {
                     debugpy = true;
                 } else {
@@ -300,11 +309,48 @@ public final class LocalProcesses {
                 name = "-c";
                 break;
             } else if (!a.startsWith("-")) {
+                String script = debugpyPart(a);
+                if (script != null) {
+                    if (!script.isEmpty()) {
+                        return null; // debugpy's adapter or launcher
+                    }
+                    debugpy = true; // python …/debugpy: the package run by its folder, as -m debugpy
+                    continue;
+                }
                 name = fileName(a); // the script
                 break;
             }
         }
         return new Target(pid, Kind.PYTHON, name, host, port);
+    }
+
+    /** debugpy's helper modules, which run beside a debugged program and are never one. */
+    private static final java.util.Set<String> DEBUGPY_HELPER_MODULES =
+            java.util.Set.of("debugpy.adapter", "debugpy.launcher");
+
+    /**
+     * What a script path names inside debugpy: {@code ""} for the debugpy package itself ({@code …/debugpy} or its
+     * {@code __main__.py}), {@code "adapter"} or {@code "launcher"} for those helpers (a folder or its
+     * {@code __main__.py}), null for any other script. Pure.
+     */
+    static @Nullable String debugpyPart(String path) {
+        List<String> parts = new ArrayList<>(List.of(path.replace('\\', '/').split("/+")));
+        parts.removeIf(String::isEmpty);
+        if (!parts.isEmpty() && parts.getLast().equals("__main__.py")) {
+            parts.removeLast();
+        }
+        if (parts.isEmpty()) {
+            return null;
+        }
+        if (parts.getLast().equals("debugpy")) {
+            return "";
+        }
+        if (parts.size() >= 2
+                && parts.get(parts.size() - 2).equals("debugpy")
+                && (parts.getLast().equals("adapter") || parts.getLast().equals("launcher"))) {
+            return parts.getLast();
+        }
+        return null;
     }
 
     /**

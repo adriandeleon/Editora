@@ -86,11 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Back returns to where you were; Escape closes the tree. Card and declaration-row menus have *Show Call
   Hierarchy* and *Show Type Hierarchy*; *Show Callers as Cards* and the other card items are unchanged.
 - **Debug Rust programs.** Editora now debugs Rust with CodeLLDB, as VS Code does with rust-analyzer:
-  - **F5 in a Cargo package** builds with Cargo in the Debug console, then debugs the program Cargo built. In an
-    `examples/` file it debugs that example.
+  - **F5 in a Cargo package**, or *Debug File* in the editor's right-click menu, builds with Cargo in the Debug
+    console, then debugs the program Cargo built. In an `examples/` file it debugs that example.
   - **In a `#[test]` function**, F5 and *Debug Test at Caret* debug that test alone. Outside a test, an
     integration-test file debugs all its tests.
-  - **Values** are shown as Rust values: a `String` reads as its text, and a `Vec` or a map expands to its items.
+  - **Values** are shown as Rust values: a `String` reads as its text, and a `Vec` or a `HashMap` expands to its
+    items.
   - **A panic** stops the program where it happened.
   - **Debugging features:** breakpoints (with conditions, hit counts and logpoints), stepping, Variables, Watches
     and the Threads view all work.
@@ -98,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Install button that fetches CodeLLDB's pinned release and checks its checksum. A CodeLLDB already installed in
     VS Code is found too. The Doctor checks for it.
 - **Debug Go programs.** Editora now debugs Go with Delve, as VS Code's Go extension does:
-  - **F5 on a Go file** debugs its package, or the file alone outside a module.
+  - **F5 on a Go file**, or *Debug File* in the editor's right-click menu, debugs its package, or the file alone
+    outside a module.
   - **In a `_test.go` file**, F5 and *Debug Test at Caret* run the test function the caret is in (a benchmark on
     its own), or every test of the package.
   - **Attach to Process** lists running Go programs and attaches by process id. *Stop* leaves the program running.
@@ -161,9 +163,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Attach to Process.** *Debug: Attach to Process…* (Run menu, and the last row of the Attach picker) lists the
   Java, Node.js and Python programs running on this machine — those listening for a debugger first: a JVM started
   with the JDWP agent (`-agentlib:jdwp=…,server=y,address=5005`), a Node.js started with `--inspect`, a Python
-  under `python -m debugpy --listen`. Picking one attaches the right debugger; Stop detaches and the program runs
-  on. A program started without debugging says what to start it with. **Python programs can now be attached to**
-  (debugpy's `--listen`), and a Java attach is remembered for *Debug: Reattach*.
+  under `python -m debugpy --listen` (or `python …/debugpy --listen`; debugpy's own adapter and launcher processes
+  are left out). Picking one attaches the right debugger; Stop detaches and the program runs on. A program started
+  without debugging says what to start it with. **Python programs can now be attached to** (debugpy's `--listen`),
+  and a Java attach is remembered for *Debug: Reattach*.
 - **Exception card.** When the program stops on an exception, a card opens under the line that threw it, as
   Visual Studio's Exception Helper and VS Code's exception widget do: whether the program catches it, its type and
   message, the exceptions that caused it and the stack trace when the debugger sends them (Python and
