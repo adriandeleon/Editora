@@ -140,7 +140,7 @@ class ProjectMapNavigationFxTest {
                     set.labelsForTest().stream().map(Label::getText).toList());
             assertTrue(definition.range() != null, "the declaration's own card: " + definition.title());
             assertTrue(definition.isFocusWithin() || definition.editor().isFocused(), "the keyboard followed");
-            assertEquals(List.of(source), cards.backTrailForTest(), "Back goes to the card it came from");
+            assertEquals(List.of(source), view.history.cardsBack(), "Back goes to the card it came from");
             assertFalse(manager.isManaged(use), "no editor holds the file");
         });
         assertEquals(List.of(), editorOpened, "nothing opened in the editor");
@@ -268,7 +268,7 @@ class ProjectMapNavigationFxTest {
                     List.of("calls"),
                     set.labelsForTest().stream().map(Label::getText).toList());
             assertEquals(2, cards.previews.size(), "twice() is on the card asked from: no card of its own");
-            assertEquals(List.of(), cards.backTrailForTest(), "a list of calls: the keyboard stays");
+            assertEquals(List.of(), view.history.cardsBack(), "a list of calls: the keyboard stays");
         });
 
         // From the command palette: asked in the card the Map's keyboard was last in.

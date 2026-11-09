@@ -58,8 +58,8 @@ import static com.editora.i18n.Messages.tr;
  */
 final class ProjectMapView extends VBox {
 
-    /** Selections kept for Back/Forward; the oldest are dropped beyond this. */
-    static final int MAX_SELECTION_HISTORY = 100;
+    /** Stops kept for Back/Forward; the oldest are dropped beyond this. */
+    static final int MAX_SELECTION_HISTORY = MapHistory.LIMIT;
 
     private static final double LOADING_NOTICE_MILLIS = 200;
 
@@ -234,7 +234,8 @@ final class ProjectMapView extends VBox {
     private final Label loadingLabel = new Label(tr("project.map.loading"));
     private final javafx.animation.PauseTransition loadingDelay =
             new javafx.animation.PauseTransition(Duration.millis(LOADING_NOTICE_MILLIS));
-    private final List<Path> selectionHistory = new ArrayList<>();
+    /** Back and Forward: the Map's places and the cards the code was followed through, in one list. */
+    final MapHistory<ProjectMapPreview> history;
 
     @Nullable
     Path root;
@@ -268,29 +269,11 @@ final class ProjectMapView extends VBox {
     private Map<Path, GitFileStatus> gitStatus = Map.of();
     private Set<Path> gitChangedDirectories = Set.of();
     private Runnable onExpandedChanged = () -> {};
-    private int historyIndex = -1;
     private boolean navigatingHistory;
-    /** What the newest history entry is: a place, or where a run of steps or of search landings has got to. */
-    private HistoryHead historyHead = HistoryHead.PLACE;
     /** Set while the search lands on its first match by itself, so that landing is recorded as one. */
     private boolean historySearchLanding;
     /** Whether the search's current landing is its own (the first match of a typed query), not a step to a match. */
     private boolean historySearchAuto;
-
-    /**
-     * How the newest Back/Forward entry got there (Project Map review 3 B5). History records places — a file
-     * opened or previewed, a search landing, a reveal, a breadcrumb jump, a row picked with the pointer — and a
-     * run of keyboard steps (sibling, parent and child moves, Home/End, type-ahead) is one entry, the row the run
-     * leads to. The landings the search makes as a query is typed are one entry too, its last.
-     */
-    enum HistoryHead {
-        /** A place: never replaced; the next entry goes after it. */
-        PLACE,
-        /** Where a run of keyboard steps has got to: the next step replaces it. */
-        STEP,
-        /** Where the search landed by itself: the next such landing replaces it. */
-        LANDING
-    }
 
     private Runnable onClearSearch = () -> {};
     private Runnable onLeaveMap = () -> {};
@@ -351,6 +334,10 @@ final class ProjectMapView extends VBox {
         setSpacing(4);
 
         cards = new MapCards(cardsHost(), structure, canvasHost);
+        history = new MapHistory<>(cards::isOpen, ProjectMapPreview::caretOffset);
+        // Back and Forward typed on the map walk its history, not the editor's (a card's own handler is asked first).
+        getProperties()
+                .put(com.editora.command.KeyDispatcher.HANDLED_COMMANDS, (Predicate<String>) this::historyCommand);
         previews = cards.previews;
         notePreviews = cards.notePreviews;
         cardStructures = cards.cardStructures;
@@ -1084,8 +1071,7 @@ final class ProjectMapView extends VBox {
         Path remembered = mapLoader.setRoot(normalized); // what was open there last time comes back
         clearSearchState();
         wasCapped = false;
-        selectionHistory.clear();
-        historyIndex = -1;
+        history.clear();
         pendingSelection = normalized;
         setOutputEnabled(false);
         orientation.setRoot(normalized);
@@ -1184,13 +1170,17 @@ final class ProjectMapView extends VBox {
         state.setSelected(selectedRelative == null ? "" : selectedRelative);
         List<String> places = new ArrayList<>();
         int index = -1;
-        for (int i = 0; i < selectionHistory.size(); i++) {
-            String relative = bearingsRelative(current, selectionHistory.get(i));
-            if (relative != null) {
-                places.add(relative);
-                if (i <= historyIndex) {
-                    index = places.size() - 1;
-                }
+        List<Path> historyPlaces = history.places();
+        for (int i = 0; i < historyPlaces.size(); i++) {
+            String relative = bearingsRelative(current, historyPlaces.get(i));
+            if (relative == null) {
+                continue;
+            }
+            if (places.isEmpty() || !places.getLast().equals(relative)) {
+                places.add(relative); // a card's stop on a row's place is that place once
+            }
+            if (i <= history.index()) {
+                index = places.size() - 1;
             }
         }
         state.setHistory(places);
@@ -1290,13 +1280,7 @@ final class ProjectMapView extends VBox {
                 index = places.size() - 1;
             }
         }
-        if (!places.isEmpty()) {
-            selectionHistory.clear();
-            selectionHistory.addAll(places.subList(Math.max(0, places.size() - MAX_SELECTION_HISTORY), places.size()));
-            historyIndex = Math.clamp(
-                    index - Math.max(0, places.size() - MAX_SELECTION_HISTORY), 0, selectionHistory.size() - 1);
-            historyHead = HistoryHead.PLACE;
-        }
+        history.restore(places, index);
         Path selected = bearingsResolve(current, stored.getSelected());
         viewsRestoredSelection = null;
         if (selected != null && bearingsExists(selected)) {
@@ -2614,9 +2598,23 @@ final class ProjectMapView extends VBox {
                 || !normalized.startsWith(currentRoot)) {
             return false;
         }
-        revealPath(normalized);
-        if (!java.nio.file.Files.isDirectory(normalized)) {
-            historyMarkPlace(normalized);
+        boolean file = !java.nio.file.Files.isDirectory(normalized);
+        if (from != null && file) {
+            // Picked in a card: the history's stops are that card and the card the place opens in, not the row the
+            // place is revealed at between them (one Back returns to the card it was typed in).
+            navigatingHistory = true;
+            try {
+                revealPath(normalized);
+            } finally {
+                navigatingHistory = false;
+            }
+        } else {
+            revealPath(normalized);
+        }
+        if (file) {
+            if (from == null) {
+                historyMarkPlace(normalized);
+            }
             cards.openPlaceCard(from, normalized, line, name == null ? null : followName(name));
         }
         return true;
@@ -3175,7 +3173,8 @@ final class ProjectMapView extends VBox {
                 surface.setSelected(pendingSelection);
                 if (searching() && pendingSelection.equals(searchSelected) && !navigatingHistory) {
                     // The search's landing, loaded first: a place in the history like one that was loaded (B5).
-                    recordSelection(pendingSelection, historySearchAuto ? HistoryHead.LANDING : HistoryHead.PLACE);
+                    recordSelection(
+                            pendingSelection, historySearchAuto ? MapHistory.Head.LANDING : MapHistory.Head.PLACE);
                 }
                 // A search's first match, a reveal or a history step that had to be loaded is brought into
                 // view as one that was already loaded is (E1). A restored selection keeps its restored view (A1).
@@ -3292,27 +3291,9 @@ final class ProjectMapView extends VBox {
         wasCapped = loaded.capped();
     }
 
-    /** Removes a path that no longer resolves from the selection history, keeping the index on the selection. */
+    /** Removes a path that no longer resolves from the history, keeping it on the selection. */
     private void dropHistory(Path dead) {
-        boolean removed = false;
-        for (int index = selectionHistory.size() - 1; index >= 0; index--) {
-            if (com.editora.config.PathKeys.samePath(selectionHistory.get(index), dead)) {
-                selectionHistory.remove(index);
-                removed = true;
-            }
-        }
-        if (!removed) {
-            return;
-        }
-        Path current = surface.selectedPath();
-        int nearest = -1;
-        for (int index = 0; index < selectionHistory.size(); index++) {
-            if (com.editora.config.PathKeys.samePath(selectionHistory.get(index), current)
-                    && (nearest < 0 || Math.abs(index - historyIndex) < Math.abs(nearest - historyIndex))) {
-                nearest = index;
-            }
-        }
-        historyIndex = nearest >= 0 ? nearest : Math.min(historyIndex, selectionHistory.size() - 1);
+        history.drop(dead, surface.selectedPath());
     }
 
     private void activate(ProjectMapModel.Entry entry) {
@@ -3509,8 +3490,8 @@ final class ProjectMapView extends VBox {
             recordSelection(
                     path,
                     surface.movingSibling
-                            ? HistoryHead.STEP
-                            : historySearchLanding ? HistoryHead.LANDING : HistoryHead.PLACE);
+                            ? MapHistory.Head.STEP
+                            : historySearchLanding ? MapHistory.Head.LANDING : MapHistory.Head.PLACE);
         }
         updateNavigation();
         resultsFollowSelection(path);
@@ -3579,6 +3560,27 @@ final class ProjectMapView extends VBox {
     /** What the cards need of the map: the surface's rows, layout, zoom and colours, and the view's actions. */
     private MapCards.Host cardsHost() {
         return new MapCards.Host() {
+            @Override
+            public void followed(ProjectMapPreview from, int fromCaret, ProjectMapPreview to) {
+                Path fromPlace = cards.placeOf(from);
+                Path toPlace = cards.placeOf(to);
+                if (fromPlace != null && toPlace != null) {
+                    history.followed(from, fromPlace, fromCaret, to, toPlace);
+                    updateNavigation();
+                }
+            }
+
+            @Override
+            public boolean historyStep(ProjectMapPreview card, boolean back) {
+                return ProjectMapView.this.historyStep(card, back);
+            }
+
+            @Override
+            public void cardClosed(ProjectMapPreview card) {
+                history.cardClosed(card);
+                updateNavigation();
+            }
+
             @Override
             public double @Nullable [] rowBox(Path path) {
                 MapSurface.NodeBox box = surface.nodeBox(path);
@@ -3822,44 +3824,14 @@ final class ProjectMapView extends VBox {
     }
 
     private void recordSelection(Path path) {
-        recordSelection(path, HistoryHead.PLACE);
+        recordSelection(path, MapHistory.Head.PLACE);
     }
 
-    /**
-     * Appends a selection to the Back/Forward history, as a place or as the head of a run (see {@link
-     * HistoryHead}): a step replaces a step head and a landing a landing head, so Back does not retrace every
-     * keystroke; a run that comes back to the entry before it folds away. A place is never replaced, and the list
-     * is capped at {@link #MAX_SELECTION_HISTORY}.
-     */
-    private void recordSelection(Path path, HistoryHead kind) {
+    /** Records a selection in the Back/Forward history as a place or as the head of a run (see {@link MapHistory}). */
+    private void recordSelection(Path path, MapHistory.Head kind) {
         Path normalized = ProjectMapModel.normalize(path);
-        if (normalized == null) {
+        if (normalized == null || !history.record(normalized, kind)) {
             return;
-        }
-        if (historyIndex >= 0 && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex), normalized)) {
-            if (kind == HistoryHead.PLACE && historyIndex == selectionHistory.size() - 1) {
-                historyHead = HistoryHead.PLACE; // the run's row became a place: the next step goes after it
-            }
-            return;
-        }
-        boolean atHead = historyIndex == selectionHistory.size() - 1;
-        if (!atHead) {
-            selectionHistory.subList(historyIndex + 1, selectionHistory.size()).clear();
-        }
-        if (kind != HistoryHead.PLACE && atHead && historyHead == kind && historyIndex >= 0) {
-            selectionHistory.set(historyIndex, normalized);
-            if (historyIndex > 0
-                    && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex - 1), normalized)) {
-                selectionHistory.remove(historyIndex--); // the run came back to where it started
-                historyHead = HistoryHead.PLACE;
-            }
-        } else {
-            selectionHistory.add(normalized);
-            if (selectionHistory.size() > MAX_SELECTION_HISTORY) {
-                selectionHistory.removeFirst();
-            }
-            historyIndex = selectionHistory.size() - 1;
-            historyHead = kind;
         }
         updateNavigation();
         bearingsChanged();
@@ -3871,7 +3843,7 @@ final class ProjectMapView extends VBox {
      */
     private void historyMarkPlace(@Nullable Path path) {
         if (path != null && !navigatingHistory) {
-            recordSelection(path, HistoryHead.PLACE);
+            recordSelection(path, MapHistory.Head.PLACE);
         }
     }
 
@@ -3895,20 +3867,35 @@ final class ProjectMapView extends VBox {
         event.consume();
     }
 
-    /** The history as menu items (review 3 B5): each place's name and the folder it is in, the newest first. */
+    /**
+     * The history as menu items (review 3 B5): each place's name and the folder it is in, the newest first; a stop on
+     * a card says the line its caret was on.
+     */
     ContextMenu historyMenu() {
         ContextMenu menu = new ContextMenu();
         menu.getStyleClass().add("project-map-history-menu");
-        for (int index = selectionHistory.size() - 1; index >= 0; index--) {
-            Path place = selectionHistory.get(index);
+        List<MapHistory.Stop<ProjectMapPreview>> stops = history.stops();
+        for (int index = stops.size() - 1; index >= 0; index--) {
+            MapHistory.Stop<ProjectMapPreview> stop = stops.get(index);
             int target = index;
-            CheckMenuItem item = new CheckMenuItem(historyLabel(place));
+            CheckMenuItem item = new CheckMenuItem(historyLabel(stop));
             item.setMnemonicParsing(false);
-            item.setSelected(index == historyIndex);
-            item.setOnAction(event -> historyJumpTo(target));
+            item.setSelected(index == history.index());
+            item.setOnAction(event -> historyGo(history.jump(target)));
             menu.getItems().add(item);
         }
         return menu;
+    }
+
+    /** A stop's label: its place's, and on an open card the line its caret was on ("name — folder, line 12"). */
+    String historyLabel(MapHistory.Stop<ProjectMapPreview> stop) {
+        String label = historyLabel(stop.place());
+        ProjectMapPreview card = stop.card();
+        if (card == null || !cards.isOpen(card)) {
+            return label;
+        }
+        int caret = stop.caret() >= 0 ? stop.caret() : card.caretOffset();
+        return tr("project.map.history.cardEntry", label, String.valueOf(card.fileLineAt(caret) + 1));
     }
 
     /** A history entry's label: its name, then the project-relative folder it is in ("name — folder"). */
@@ -3933,24 +3920,74 @@ final class ProjectMapView extends VBox {
         return relative.isEmpty() ? name : tr("project.map.history.entry", name, relative);
     }
 
+    /** Back ({@code delta} -1) or Forward (+1) on the map: Alt+←/→, the ‹ › buttons, Back typed on the map. */
     void moveHistory(int delta) {
-        historyJumpTo(historyIndex + delta);
+        if (!historyGo(history.step(delta, null, null))) {
+            historyNowhere(delta < 0);
+        }
     }
 
-    /** Goes to the history's entry {@code target}, as that many Back or Forward presses would. */
-    private void historyJumpTo(int target) {
-        if (target < 0 || target >= selectionHistory.size() || target == historyIndex) {
-            return;
+    /**
+     * Back ({@code back}) or Forward typed in {@code card}: the same history, the card's caret kept on its stop. False,
+     * and the status line says so, when there is nowhere to go.
+     */
+    boolean historyStep(ProjectMapPreview card, boolean back) {
+        if (historyGo(history.step(back ? -1 : 1, card, cards.placeOf(card)))) {
+            return true;
         }
-        historyIndex = target;
-        historyHead = HistoryHead.PLACE;
+        historyNowhere(back);
+        return false;
+    }
+
+    private void historyNowhere(boolean back) {
+        onStatus.accept(tr(back ? "project.map.history.noBack" : "project.map.history.noForward"));
+    }
+
+    /**
+     * Goes to {@code stop}, now the history's current one: a card still open comes into view with its caret where it
+     * was and the keyboard in it; any other stop's place is revealed. False for none.
+     */
+    private boolean historyGo(MapHistory.@Nullable Stop<ProjectMapPreview> stop) {
+        if (stop == null) {
+            return false;
+        }
         navigatingHistory = true;
         try {
-            revealPath(selectionHistory.get(target));
+            ProjectMapPreview card = stop.card();
+            if (card != null) {
+                cards.goToStop(card, stop.caret());
+            } else {
+                revealPath(stop.place());
+            }
         } finally {
             navigatingHistory = false;
         }
         updateNavigation();
+        bearingsChanged();
+        return true;
+    }
+
+    /**
+     * {@code nav.back} and {@code nav.forward} typed on the map, or in a card that leaves them to it: the Map's Back and
+     * Forward, from the card the keyboard is in. False for any other command.
+     */
+    private boolean historyCommand(String commandId) {
+        boolean back = ProjectMapPreview.BACK_COMMAND.equals(commandId);
+        if (!back && !ProjectMapPreview.FORWARD_COMMAND.equals(commandId)) {
+            return false;
+        }
+        ProjectMapPreview card = focusedCard();
+        if (card != null) {
+            historyStep(card, back);
+        } else {
+            moveHistory(back ? -1 : 1);
+        }
+        return true;
+    }
+
+    /** The places of the history, the oldest first. For tests. */
+    List<Path> historyPlaces() {
+        return history.places();
     }
 
     void revealPath(Path path) {
@@ -3987,8 +4024,8 @@ final class ProjectMapView extends VBox {
     }
 
     private void updateNavigation() {
-        backButton.setDisable(historyIndex <= 0);
-        forwardButton.setDisable(historyIndex < 0 || historyIndex >= selectionHistory.size() - 1);
+        backButton.setDisable(!history.canGoBack());
+        forwardButton.setDisable(!history.canGoForward());
         // A "+N more" or stub row is not a place: the trail ends at its folder, never at a "…" crumb.
         Path selected = surface.selectedEntry()
                 .map(entry -> entry.isPlaceholder() ? entry.parent() : entry.path())

@@ -286,7 +286,7 @@ final class ProjectMapPreview extends StackPane {
         /** Quick Documentation at the file's 0-based {@code line} and {@code column}. */
         default void hover(ProjectMapPreview card, int line, int column) {}
 
-        /** Back ({@code back}) or Forward along the cards the code was followed through; false when there is none. */
+        /** Back ({@code back}) or Forward along the Map's one history; false when there is nowhere to go. */
         default boolean step(ProjectMapPreview card, boolean back) {
             return false;
         }
@@ -295,7 +295,7 @@ final class ProjectMapPreview extends StackPane {
     /** Quick Documentation typed in a card: the server's hover at the card's caret. */
     static final String HOVER_COMMAND = "lsp.hover";
 
-    /** Back and Forward typed in a card: along the cards the code was followed through (not the editor's trail). */
+    /** Back and Forward typed in a card: along the Map's one history (not the editor's trail). */
     static final String BACK_COMMAND = "nav.back";
 
     static final String FORWARD_COMMAND = "nav.forward";
@@ -882,7 +882,7 @@ final class ProjectMapPreview extends StackPane {
     /**
      * The code navigation typed in the card, answered on the Map: Go to Definition, Declaration, Type Definition,
      * Implementation, Super Method, Find Usages, Call and Type Hierarchy as cards, Quick Documentation as a popup,
-     * Back and Forward along the cards followed. False without {@link LinkActions} or for any other command.
+     * Back and Forward along the Map's history. False without {@link LinkActions} or for any other command.
      */
     private boolean navigateRunsCommand(String commandId) {
         LinkActions links = linkActions;
@@ -2546,6 +2546,12 @@ final class ProjectMapPreview extends StackPane {
     /** The file's 0-based line the card's caret is on. */
     int caretFileLine() {
         return fileLine(editor.getCurrentParagraph());
+    }
+
+    /** The file's 0-based line of the card's text offset {@code offset} (clamped to the text). */
+    int fileLineAt(int offset) {
+        int at = Math.max(0, Math.min(offset, editor.getLength()));
+        return fileLine(editor.offsetToPosition(at, TwoDimensional.Bias.Forward).getMajor());
     }
 
     /**
