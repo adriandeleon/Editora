@@ -264,28 +264,32 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
             failed.accept(why);
         };
         Consumer<List<LspManager.HierarchyNode>> nodesFound = nodes -> {
-            release.run();
             List<MapCardLinks.Hit> hits = new ArrayList<>();
+            List<Library> library = new ArrayList<>();
             for (LspManager.HierarchyNode node : nodes) {
                 Path from = node.file();
-                if (from != null) { // a library's caller or type has no file on the map
+                String uri = node.libraryUri();
+                if (from != null) {
                     hits.add(new MapCardLinks.Hit(from, node.line(), node.col(), node.calls(), node.name()));
+                } else if (uri != null) { // a JDK or dependency caller or type: its source as a card
+                    library.add(new Library(uri, node.line(), node.col(), node.calls(), node.name()));
                 }
             }
-            String note = hits.isEmpty() && !nodes.isEmpty() ? tr("project.map.links.inLibrary") : null;
-            answer.accept(new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, note, name));
+            withLibrary(servers, file, release, hits, library, nodes.size(), name, answer);
         };
         Consumer<List<LspManager.Target>> targetsFound = targets -> {
-            release.run();
             List<MapCardLinks.Hit> hits = new ArrayList<>();
+            List<Library> library = new ArrayList<>();
             for (LspManager.Target target : targets) {
                 Path to = target.file();
+                String uri = target.classFileUri();
                 if (to != null) {
                     hits.add(new MapCardLinks.Hit(to, target.line(), target.character(), 1, null));
+                } else if (uri != null) {
+                    library.add(new Library(uri, target.line(), target.character(), 1, null));
                 }
             }
-            String note = hits.isEmpty() && !targets.isEmpty() ? tr("project.map.links.inLibrary") : null;
-            answer.accept(new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, note, name));
+            withLibrary(servers, file, release, hits, library, targets.size(), name, answer);
         };
         int line = at.line();
         int column = at.column();
@@ -324,6 +328,77 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
             case SUPER_METHOD -> servers.superMethodAt(file, null, line, column, targetsFound, failedThenReleased);
         }
         return true;
+    }
+
+    /** A place the server answered in a JDK or dependency class: its {@code jdt://} URI and where in it. */
+    private record Library(
+            String uri,
+            int line,
+            int column,
+            int count,
+            @Nullable String name) {}
+
+    /** How many library classes one answer fetches the source of. */
+    static final int MAX_LIBRARY_CLASSES = 6;
+
+    /**
+     * The server's answer, its library places included (Map code browser gap 5): each class's source is asked of
+     * {@code anchor}'s server, as the editor's library tabs ask it, and written for a card of its own
+     * ({@link MapLibrarySources}), at most {@link #MAX_LIBRARY_CLASSES} classes; a definition's line is moved past its
+     * Javadoc, as the editor does. Places whose source cannot be had are left out, and the note says so when nothing
+     * else was found. {@code found} is how many places the server gave in all. The asked file stays lent until then:
+     * its loan is how the server that gave the classes is found; {@code release} ends it.
+     */
+    private void withLibrary(
+            LspManager servers,
+            Path anchor,
+            Runnable release,
+            List<MapCardLinks.Hit> hits,
+            List<Library> library,
+            int found,
+            @Nullable String name,
+            Consumer<MapCardLinks.Answer> answer) {
+        java.util.Map<String, List<Library>> byClass = new java.util.LinkedHashMap<>();
+        for (Library place : library) {
+            if (MapLibrarySources.showable(place.uri())
+                    && (byClass.containsKey(place.uri()) || byClass.size() < MAX_LIBRARY_CLASSES)) {
+                byClass.computeIfAbsent(place.uri(), uri -> new ArrayList<>()).add(place);
+            }
+        }
+        List<MapCardLinks.Hit> all = new ArrayList<>(hits);
+        Runnable done = () -> {
+            release.run();
+            String note = all.isEmpty() && found > 0 ? tr("project.map.links.inLibrary") : null;
+            answer.accept(new MapCardLinks.Answer(all, MapCardLinks.Via.SERVER, false, note, name));
+        };
+        if (byClass.isEmpty()) {
+            done.run();
+            return;
+        }
+        int[] waiting = {byClass.size()};
+        byClass.forEach((uri, places) -> servers.classFileContents(anchor, uri, source -> {
+            if (source == null) {
+                if (--waiting[0] == 0) {
+                    done.run();
+                }
+                return;
+            }
+            run(() -> {
+                Path written = MapLibrarySources.write(uri, anchor, source);
+                ui.execute(() -> {
+                    if (written != null) {
+                        for (Library place : places) {
+                            int line = com.editora.lsp.JavadocSkip.declarationLine(source, place.line());
+                            int column = line == place.line() ? place.column() : 0;
+                            all.add(new MapCardLinks.Hit(written, line, column, place.count(), place.name()));
+                        }
+                    }
+                    if (--waiting[0] == 0) {
+                        done.run();
+                    }
+                });
+            });
+        }));
     }
 
     /** Whether {@code file}'s running server answers {@code kind} (a definition: every server does). */

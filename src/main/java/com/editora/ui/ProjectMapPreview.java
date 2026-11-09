@@ -1303,6 +1303,10 @@ final class ProjectMapPreview extends StackPane {
         if (colouredLines > 0) {
             parts.add(tr("project.map.preview.partlyColoured", colouredLines));
         }
+        MapLibrarySources.Library library = MapLibrarySources.of(path);
+        if (library != null) {
+            parts.add(tr("project.map.preview.library", library.where())); // a JDK or dependency class, read-only
+        }
         if (unsaved && fromBuffer) {
             parts.add(tr("project.map.preview.unsaved"));
         }

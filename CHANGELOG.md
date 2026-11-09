@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Attach to Process** lists running Rust, C and C++ programs built with debug information, on Linux, and
     attaches CodeLLDB by process id.
   - **Settings:** *Settings → Debugging → Rust, C and C++* has a switch for C and C++.
+- **Follow the code into libraries on the Project Map.** Go to Definition, callers, supertypes and the other Map
+  navigation that lands in the JDK or a dependency now opens that class's source as a card, as the editor's library
+  tabs do, instead of only a status note. The card is highlighted, outlined and searchable like any other, and says
+  it is library source. Its Open opens the editor's library tab of that class.
 - **Call and type hierarchies as trees on the Project Map.** Call Hierarchy and Type Hierarchy, typed in a Map card
   or on a declaration row, now open a tree beside the card instead of one level of cards. The tree starts with the
   callers (or, for a type, its subtypes); open a row to see its own callers, one level at a time, as deep as you
@@ -247,6 +251,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     that had remote images on keeps loading them.
 
 ### Fixed
+
+- **A Project Map card opened from a hierarchy tree no longer closes on its own.** When its file's folder was not
+  open on the map, the next folder change could close it. It now stays while the card the tree was asked from is
+  open, as other result cards do.
 
 - **The build trust prompt names the project's build command, not yours.** In a folder not yet trusted, the
   build trust prompt listed the command set in your own Settings as if the project's `.editora/settings.json` ran

@@ -306,6 +306,7 @@ final class ProjectMapView extends VBox {
     final ProjectMapStructure structure;
 
     private java.util.function.BiConsumer<Path, Integer> onOpenAt = (file, line) -> {};
+    private java.util.function.BiConsumer<MapLibrarySources.Library, Integer> onOpenLibrary = (library, line) -> {};
     private java.util.function.BiConsumer<Path, com.editora.text.FoldRegions.Region> onOpenNarrowed =
             (file, block) -> {};
 
@@ -3482,6 +3483,24 @@ final class ProjectMapView extends VBox {
         onOpenNarrowed = openNarrowed == null ? (file, block) -> {} : openNarrowed;
     }
 
+    /**
+     * Where a library card's Open goes (Map code browser gap 5): the editor's library tab of the class, at a 0-based
+     * line — never the Map's read-only copy of its source.
+     */
+    void setOpenLibrary(java.util.function.BiConsumer<MapLibrarySources.Library, Integer> open) {
+        onOpenLibrary = open == null ? (library, line) -> {} : open;
+    }
+
+    /** Opens {@code file}'s library tab at {@code line} when it is a library card's file; false for any other file. */
+    private boolean openLibrary(Path file, int line) {
+        MapLibrarySources.Library library = MapLibrarySources.of(file);
+        if (library == null) {
+            return false;
+        }
+        onOpenLibrary.accept(library, line);
+        return true;
+    }
+
     /** The language server's outline of an open buffer, when the editor has one (see ProjectMapStructure). */
     void setServerSymbols(Function<Path, java.util.@Nullable List<com.editora.lsp.SymbolNode>> symbols) {
         structure.setServerSymbols(symbols);
@@ -3723,17 +3742,23 @@ final class ProjectMapView extends VBox {
 
             @Override
             public void openFile(Path file) {
-                onOpenFile.accept(file);
+                if (!openLibrary(file, 0)) {
+                    onOpenFile.accept(file);
+                }
             }
 
             @Override
             public void openAt(Path file, int line) {
-                onOpenAt.accept(file, line);
+                if (!openLibrary(file, line)) {
+                    onOpenAt.accept(file, line);
+                }
             }
 
             @Override
             public void openNarrowed(Path file, com.editora.text.FoldRegions.Region block) {
-                onOpenNarrowed.accept(file, block);
+                if (!openLibrary(file, block.startLine())) {
+                    onOpenNarrowed.accept(file, block);
+                }
             }
 
             @Override

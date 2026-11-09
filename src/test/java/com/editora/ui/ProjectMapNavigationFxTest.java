@@ -254,6 +254,77 @@ class ProjectMapNavigationFxTest {
     }
 
     @Test
+    void aDefinitionInALibraryOpensItsSourceAsACardWhoseOpenIsTheLibraryTab() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Path use = Files.writeString(src.resolve("Use.java"), USE);
+        FakeLanguageServer fake = startServer(new ServerCapabilities(), true);
+        String uri = "jdt://contents/java.base/java.util/ArrayList.class?=demo/%5C/jrt-fs.jar%60java.base";
+        String source = String.join(
+                "\n",
+                "package java.util;",
+                "",
+                "/**",
+                " * Resizable array.",
+                " */",
+                "public class ArrayList<E> {",
+                "    public int size() {",
+                "        return 0;",
+                "    }",
+                "}",
+                "");
+        fake.definitionResponse = List.of(new Location(uri, range(2, 0))); // jdtls points at the Javadoc
+        fake.rawHandler =
+                raw -> raw.method().equals("java/classFileContents") ? new com.google.gson.JsonPrimitive(source) : null;
+
+        ProjectPanel panel = openPanel();
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        List<MapLibrarySources.Library> opened = new CopyOnWriteArrayList<>();
+        List<Integer> openedAt = new CopyOnWriteArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            view.setLinkSource(new ProjectMapLinkSearch(manager, panel.projectIndex()));
+            view.setOpenLibrary((library, line) -> {
+                opened.add(library);
+                openedAt.add(line);
+            });
+        });
+        ProjectMapPreview from = openCard(cards, use);
+        FxTestSupport.runOnFx(() -> {
+            from.editor().moveTo(4, 22);
+            assertTrue(from.runMarkerCommand("lsp.gotoDefinition"));
+        });
+        waitFor(() -> libraryCard(cards) != null, "the library class's card");
+        ProjectMapPreview library = FxTestSupport.callOnFx(() -> libraryCard(cards));
+        waitFor(() -> library.editor().getLength() > 0, "its source shown");
+        FxTestSupport.runOnFx(() -> {
+            Path file = library.path();
+            assertEquals("ArrayList.java", file.getFileName().toString());
+            assertFalse(file.startsWith(root), "outside the project: no folder of the map closes it");
+            assertFalse(Files.isWritable(file), "a read-only copy");
+            assertTrue(library.editor().getText().contains("public class ArrayList<E>"));
+            Label status = FxTestSupport.field(library, "status");
+            assertTrue(status.getText().contains(tr("project.map.preview.library", "java.base")), status.getText());
+            assertTrue(view.history.cardsBack().contains(from), "Back returns to the card asked from");
+            assertEquals(List.of(), editorOpened, "nothing opened in the editor");
+
+            FxTestSupport.<javafx.scene.control.Button>field(library, "open").fire();
+            assertEquals(1, opened.size(), "Open: the editor's library tab, not the copy");
+            assertEquals(uri, opened.getFirst().uri());
+            assertEquals(use, opened.getFirst().anchor(), "asked of the server that gave it");
+            assertEquals(List.of(), editorOpened, "and never the copy");
+            assertTrue(openedAt.getFirst() >= 0);
+        });
+    }
+
+    /** The open card of a library class's source, or null. */
+    private static @org.jspecify.annotations.Nullable ProjectMapPreview libraryCard(MapCards cards) {
+        return cards.previews.values().stream()
+                .filter(card -> MapLibrarySources.of(card.path()) != null)
+                .findFirst()
+                .orElse(null);
+    }
+
+    @Test
     void callHierarchyIsATreeOpenedALevelAtATimeThatMarksRecursion() throws Exception {
         Path src = Files.createDirectories(root.resolve("src"));
         Files.writeString(src.resolve("Shape.java"), SHAPE);
@@ -340,6 +411,14 @@ class ProjectMapNavigationFxTest {
             assertTrue(cards.previews.keySet().stream()
                     .anyMatch(key -> ProjectMapStructure.isSymbolPath(key)
                             && key.toString().contains("twice")));
+            ProjectMapPreview twiceCard = cards.previews.entrySet().stream()
+                    .filter(entry -> entry.getKey().toString().contains("twice"))
+                    .map(Map.Entry::getValue)
+                    .findFirst()
+                    .orElseThrow();
+            assertTrue(
+                    cards.links.isResult(twiceCard),
+                    "kept while the card asked from is open, though no folder of the map shows its row");
         });
         FxTestSupport.runOnFx(() -> {
             MapHierarchyTree tree = cards.links.hierarchy(source);
@@ -542,9 +621,16 @@ class ProjectMapNavigationFxTest {
     // --- helpers ------------------------------------------------------------------------------------
 
     private FakeLanguageServer startServer(ServerCapabilities capabilities) throws Exception {
+        return startServer(capabilities, false);
+    }
+
+    /** {@code raw}: the fake also answers jdtls's own requests ({@code java/classFileContents}, …). */
+    private FakeLanguageServer startServer(ServerCapabilities capabilities, boolean raw) throws Exception {
         Path open = Files.writeString(root.resolve("Open.java"), "class Open {}\n");
         manager = new LspManager((f, d) -> {}, (t, m) -> {});
-        List<FakeLanguageServer> fakes = LspTestHooks.useFakeSessions(manager, capabilities);
+        List<FakeLanguageServer> fakes = raw
+                ? LspTestHooks.useFakeSessionsWithRawRequests(manager, capabilities)
+                : LspTestHooks.useFakeSessions(manager, capabilities);
         manager.configure(true, Map.of("java", "jdtls"));
         manager.openDocument(open, root, "java", "class Open {}\n"); // an editor tab: the server runs
         return fakes.getFirst();
