@@ -302,8 +302,8 @@ final class MapResultsList extends MapSideColumn {
             items.add(fileItem);
         }
         if (items.isEmpty()) {
-            items.add(new TreeItem<>(Row.message(
-                    places.isEmpty() ? tr("project.map.places.reading") : tr("project.map.places.none"))));
+            items.add(new TreeItem<>(
+                    Row.message(places.isEmpty() ? tr("project.map.places.reading") : tr("project.map.places.none"))));
         }
         tree.getRoot().getChildren().setAll(items);
         count.setText(
