@@ -2516,6 +2516,11 @@ final class ProjectMapView extends VBox {
             item.setOnAction(event -> cards.showLinks(entry, kind));
             items.add(item);
         }
+        for (MapCardLinks.Kind kind : MapCardLinks.HIERARCHY_MENU_KINDS) {
+            MenuItem item = new MenuItem(MapCardLinks.hierarchyMenuLabel(kind));
+            item.setOnAction(event -> cards.showHierarchy(entry, kind));
+            items.add(item);
+        }
         return items;
     }
 
@@ -2539,7 +2544,8 @@ final class ProjectMapView extends VBox {
 
     private boolean rowNavigation(String commandId) {
         List<MapCardLinks.Kind> kinds = MapCardLinks.NAVIGATION_COMMANDS.get(commandId);
-        if (kinds == null || !cards.linksAvailable()) {
+        MapCardLinks.Kind hierarchy = MapCardLinks.HIERARCHY_COMMANDS.get(commandId);
+        if (kinds == null && hierarchy == null || !cards.linksAvailable()) {
             return false;
         }
         ProjectMapModel.Entry entry =
@@ -2547,7 +2553,11 @@ final class ProjectMapView extends VBox {
         if (entry == null) {
             return false;
         }
-        kinds.forEach(kind -> cards.showLinks(entry, kind));
+        if (hierarchy != null) {
+            cards.showHierarchy(entry, hierarchy);
+        } else if (kinds != null) {
+            kinds.forEach(kind -> cards.showLinks(entry, kind));
+        }
         return true;
     }
 

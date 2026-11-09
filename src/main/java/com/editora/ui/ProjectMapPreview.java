@@ -286,6 +286,12 @@ final class ProjectMapPreview extends StackPane {
         /** Quick Documentation at the file's 0-based {@code line} and {@code column}. */
         default void hover(ProjectMapPreview card, int line, int column) {}
 
+        /**
+         * {@code kind}'s hierarchy (Call or Type Hierarchy) of what stands at the file's 0-based {@code line} and
+         * {@code column} — with {@code atPlace} false, a declaration card's declaration — as a tree beside the card.
+         */
+        default void hierarchy(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {}
+
         /** Back ({@code back}) or Forward along the Map's one history; false when there is nowhere to go. */
         default boolean step(ProjectMapPreview card, boolean back) {
             return false;
@@ -887,10 +893,11 @@ final class ProjectMapPreview extends StackPane {
     private boolean navigateRunsCommand(String commandId) {
         LinkActions links = linkActions;
         java.util.List<MapCardLinks.Kind> kinds = MapCardLinks.NAVIGATION_COMMANDS.get(commandId);
+        MapCardLinks.Kind hierarchy = MapCardLinks.HIERARCHY_COMMANDS.get(commandId);
         boolean back = BACK_COMMAND.equals(commandId);
         boolean step = back || FORWARD_COMMAND.equals(commandId);
         boolean hover = HOVER_COMMAND.equals(commandId);
-        if (links == null || path == null || disposed || kinds == null && !step && !hover) {
+        if (links == null || path == null || disposed || kinds == null && hierarchy == null && !step && !hover) {
             return false;
         }
         if (step) {
@@ -904,6 +911,8 @@ final class ProjectMapPreview extends StackPane {
         int column = editor.getCaretColumn();
         if (hover) {
             links.hover(this, line, column);
+        } else if (hierarchy != null) {
+            links.hierarchy(this, hierarchy, line, column, true);
         } else if (kinds != null) {
             kinds.forEach(kind -> links.show(this, kind, line, column, true));
         }
@@ -2351,6 +2360,14 @@ final class ProjectMapPreview extends StackPane {
                     && kind != MapCardLinks.Kind.CALLERS
                     && kind != MapCardLinks.Kind.CALLEES;
             item.setOnAction(ignored -> actions.show(this, kind, line, column, atPlace));
+            items.add(item);
+        }
+        for (MapCardLinks.Kind kind : MapCardLinks.HIERARCHY_MENU_KINDS) {
+            MenuItem item = new MenuItem(MapCardLinks.hierarchyMenuLabel(kind));
+            item.setDisable(!text);
+            // A call hierarchy of a declaration card is its declaration's, as its callers are; a type's from the place.
+            boolean atPlace = kind != MapCardLinks.Kind.CALLERS;
+            item.setOnAction(ignored -> actions.hierarchy(this, kind, line, column, atPlace));
             items.add(item);
         }
         MenuItem hover = new MenuItem(tr("project.map.links.hover.show"));

@@ -368,6 +368,12 @@ final class MapCards {
             public void follow(ProjectMapPreview from, ProjectMapPreview to) {
                 followed(from, to);
             }
+
+            @Override
+            public CardAttachment.@Nullable Side structureSide(ProjectMapPreview card) {
+                ProjectMapCardStructure column = cardStructures.get(card);
+                return column != null && column.shown() ? column.side() : null;
+            }
         };
     }
 
@@ -402,6 +408,28 @@ final class MapCards {
         if (request != null) {
             touchCard(card, true);
             links.show(card, request);
+        }
+    }
+
+    /**
+     * {@code kind}'s hierarchy asked from {@code card} (Call or Type Hierarchy): of what stands at the file's 0-based
+     * {@code line} and {@code column} — with {@code atPlace} false, a declaration card's declaration — as a tree beside
+     * it.
+     */
+    void showHierarchy(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {
+        MapCardLinks.Request request = linksRequest(card, kind, line, column, atPlace);
+        if (request != null) {
+            touchCard(card, true);
+            links.showHierarchy(card, request);
+        }
+    }
+
+    /** Show Call / Type Hierarchy from a declaration row: its card opens and shows the hierarchy beside it. */
+    void showHierarchy(ProjectMapModel.Entry symbolRow, MapCardLinks.Kind kind) {
+        ProjectMapPreview card = previewSymbol(symbolRow, null);
+        ProjectMapPreview.Range shown = card == null ? null : card.range();
+        if (card != null && shown != null) {
+            showHierarchy(card, kind, shown.line(), -1, false);
         }
     }
 
@@ -472,6 +500,11 @@ final class MapCards {
         @Override
         public boolean step(ProjectMapPreview card, boolean back) {
             return host.historyStep(card, back);
+        }
+
+        @Override
+        public void hierarchy(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {
+            showHierarchy(card, kind, line, column, atPlace);
         }
     };
 

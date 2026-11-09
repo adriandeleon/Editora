@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Call and type hierarchies as trees on the Project Map.** Call Hierarchy and Type Hierarchy, typed in a Map card
+  or on a declaration row, now open a tree beside the card instead of one level of cards. The tree starts with the
+  callers (or, for a type, its subtypes); open a row to see its own callers, one level at a time, as deep as you
+  want. It works with a language server and, for callers, without one by matching names. A function that calls
+  itself through others is marked as recursive instead of repeating forever. The ⇄ button turns the tree the other
+  way (callers ⇄ callees, subtypes ⇄ supertypes). Enter or a double-click opens that row's declaration as a card,
+  and Back returns to where you were; Escape closes the tree. Card and declaration-row menus have *Show Call
+  Hierarchy* and *Show Type Hierarchy*; *Show Callers as Cards* and the other card items are unchanged.
 - **Debug Go programs.** Editora now debugs Go with Delve, as VS Code's Go extension does:
   - **F5 on a Go file** debugs its package, or the file alone outside a module.
   - **In a `_test.go` file**, F5 and *Debug Test at Caret* run the test function the caret is in (a benchmark on

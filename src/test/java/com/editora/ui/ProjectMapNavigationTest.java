@@ -29,11 +29,12 @@ class ProjectMapNavigationTest {
                 MapCardLinks.NAVIGATION_COMMANDS.get("lsp.peekDefinition"),
                 "a card is already a peek");
         assertEquals(
-                List.of(MapCardLinks.Kind.SUPERTYPES, MapCardLinks.Kind.SUBTYPES),
-                MapCardLinks.NAVIGATION_COMMANDS.get("lsp.typeHierarchy"),
-                "both ways");
+                MapCardLinks.Kind.SUBTYPES,
+                MapCardLinks.HIERARCHY_COMMANDS.get("lsp.typeHierarchy"),
+                "a tree, the subtypes first");
         assertEquals(List.of(MapCardLinks.Kind.REFERENCES), MapCardLinks.NAVIGATION_COMMANDS.get("lsp.findReferences"));
-        assertEquals(List.of(MapCardLinks.Kind.CALLERS), MapCardLinks.NAVIGATION_COMMANDS.get("lsp.callHierarchy"));
+        assertEquals(MapCardLinks.Kind.CALLERS, MapCardLinks.HIERARCHY_COMMANDS.get("lsp.callHierarchy"));
+        assertNull(MapCardLinks.NAVIGATION_COMMANDS.get("lsp.callHierarchy"), "not cards");
         assertEquals(
                 List.of(MapCardLinks.Kind.CALLEES),
                 MapCardLinks.NAVIGATION_COMMANDS.get(MapCardLinks.CALLEES_COMMAND),

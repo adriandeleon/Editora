@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -190,9 +191,25 @@ class ProjectMapNavigationFxTest {
         FxTestSupport.runOnFx(() -> view.setLinkSource(new ProjectMapLinkSearch(manager, panel.projectIndex())));
         ProjectMapPreview source = openCard(cards, shape);
 
+        // Type Hierarchy typed in a card: the subtypes as a tree beside it, not cards.
+        int[] prepared = {0};
         FxTestSupport.runOnFx(() -> {
             source.editor().moveTo(2, 18);
             assertTrue(source.runMarkerCommand("lsp.typeHierarchy"));
+        });
+        waitFor(() -> treeRows(cards, source).stream().anyMatch(row -> row.startsWith("Circle")), "the subtype's row");
+        FxTestSupport.runOnFx(() -> {
+            MapHierarchyTree tree = cards.links.hierarchy(source);
+            assertNotNull(tree);
+            assertEquals(MapCardLinks.Kind.SUBTYPES, tree.kind(), "the subtypes first");
+            assertEquals(Map.of(), cards.links.setsForTest(source), "no cards of its own");
+            assertEquals(
+                    tr("project.map.hierarchy.title.subtypes", "Shape"),
+                    tree.tree().getAccessibleText());
+            tree.tree()
+                    .getSelectionModel()
+                    .select(tree.tree().getRoot().getChildren().getFirst());
+            assertTrue(tree.openSelected(), "Enter on a row: its declaration's card");
         });
         waitFor(() -> resultCards(cards, circle).size() == 1, "the subtype's card");
         waitFor(
@@ -200,13 +217,19 @@ class ProjectMapNavigationFxTest {
                         .equals(resultCards(cards, circle).getFirst().editor().getSelectedText()),
                 "the subtype's own name selected");
         FxTestSupport.runOnFx(() -> {
-            MapCardLinks.EdgeSet subtypes = cards.links.setsForTest(source).get(MapCardLinks.Kind.SUBTYPES);
-            assertNotNull(subtypes, "Type Hierarchy asks for the subtypes");
-            assertEquals(
-                    List.of("extends"),
-                    subtypes.labelsForTest().stream().map(Label::getText).toList());
-            assertTrue(fake.typeHierarchyPrepares.size() >= 2, "and the supertypes, both ways");
+            assertTrue(view.history.cardsBack().contains(source), "Back returns to the card asked from");
+            MapHierarchyTree tree = cards.links.hierarchy(source);
+            prepared[0] = fake.typeHierarchyPrepares.size();
+            tree.turn();
+            assertEquals(MapCardLinks.Kind.SUPERTYPES, tree.kind(), "⇄: the other way");
         });
+        waitFor(() -> fake.typeHierarchyPrepares.size() > prepared[0], "asked again, for the supertypes");
+        waitFor(
+                () -> treeRows(cards, source).size() == 1
+                        && treeRows(cards, source)
+                                .getFirst()
+                                .endsWith(MapCardLinks.noneText(MapCardLinks.Kind.SUPERTYPES, "Shape")),
+                "no supertypes, said in the tree");
 
         FxTestSupport.runOnFx(() -> {
             assertTrue(cards.codeCard(shape) == source, "open before the hover");
@@ -227,6 +250,191 @@ class ProjectMapNavigationFxTest {
                             false));
             assertFalse(source.hoverShown(), "Escape closes it first");
             assertTrue(cards.codeCard(shape) == source, "and leaves the card open");
+        });
+    }
+
+    @Test
+    void callHierarchyIsATreeOpenedALevelAtATimeThatMarksRecursion() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Files.writeString(src.resolve("Shape.java"), SHAPE);
+        Path use = Files.writeString(src.resolve("Use.java"), USE);
+        ServerCapabilities capabilities = new ServerCapabilities();
+        capabilities.setCallHierarchyProvider(true);
+        FakeLanguageServer fake = startServer(capabilities);
+        fake.callHierarchyResponse = List.of(callItem("total", use, 3, 11));
+        // Whatever is asked, twice() calls it: one level down twice() is its own caller.
+        fake.incomingCallsResponse = List.of(
+                new org.eclipse.lsp4j.CallHierarchyIncomingCall(callItem("twice", use, 7, 11), List.of(range(4, 30))));
+
+        ProjectPanel panel = openPanel();
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        FxTestSupport.runOnFx(() -> view.setLinkSource(new ProjectMapLinkSearch(manager, panel.projectIndex())));
+        ProjectMapPreview source = openCard(cards, use);
+        FxTestSupport.runOnFx(() -> {
+            source.editor().requestFocus();
+            source.editor().moveTo(3, 12);
+            assertTrue(source.runMarkerCommand("lsp.callHierarchy"), "typed in a card: the card's");
+        });
+        waitFor(() -> treeRows(cards, source).stream().anyMatch(row -> row.startsWith("twice")), "the caller's row");
+        FxTestSupport.runOnFx(() -> {
+            MapHierarchyTree tree = cards.links.hierarchy(source);
+            assertEquals(MapCardLinks.Kind.CALLERS, tree.kind());
+            assertEquals(1, fake.incomingCallRequests.size(), "one level asked");
+            assertTrue(
+                    tree.tree().isFocused() || tree.contains(source.getScene().getFocusOwner()), "the keyboard in it");
+            assertTrue(cards.links.allAttachments().contains(tree), "placement keeps clear of it");
+            assertEquals(
+                    tree.side() == CardAttachment.Side.OVER ? 0 : MapHierarchyTree.WIDTH + MapHierarchyTree.GAP,
+                    tree.reserved(tree.side()),
+                    "what stands beside the card goes past it");
+            tree.tree().getRoot().getChildren().getFirst().setExpanded(true);
+        });
+        waitFor(
+                () -> {
+                    MapHierarchyTree tree = cards.links.hierarchy(source);
+                    var twice = tree.tree().getRoot().getChildren().getFirst();
+                    return !twice.getChildren().isEmpty()
+                            && twice.getChildren().getFirst().getValue().recursive();
+                },
+                "twice() under itself, marked");
+        FxTestSupport.runOnFx(() -> {
+            MapHierarchyTree tree = cards.links.hierarchy(source);
+            var again =
+                    tree.tree().getRoot().getChildren().getFirst().getChildren().getFirst();
+            assertTrue(again.isLeaf(), "not asked again");
+            assertEquals(2, fake.incomingCallRequests.size(), "the next level asked when opened");
+            assertEquals(
+                    tr(
+                            "project.map.hierarchy.recursive",
+                            MapHierarchyTree.rowText(again.getValue().group())),
+                    again.getValue().text());
+
+            tree.tree().getSelectionModel().select(tree.tree().getRoot());
+            assertFalse(tree.openSelected(), "the root is the card asked from");
+            tree.tree().getSelectionModel().select(again);
+            assertTrue(tree.openSelected(), "a recursive row still opens its declaration");
+            for (CardAttachment.Side side : CardAttachment.Side.values()) {
+                double[] at = tree.boundsAt(side);
+                assertEquals(MapHierarchyTree.WIDTH * source.mapScale(), at[2], 0.01, side.name());
+            }
+            assertTrue(tree.contains(tree.tree()));
+            assertFalse(tree.contains(source));
+            assertNotNull(tree.bounds());
+            assertEquals(source, tree.card());
+            tree.raise();
+            // Enter on a row opens it, as a double-click does.
+            tree.tree()
+                    .getSelectionModel()
+                    .select(tree.tree().getRoot().getChildren().getFirst());
+            tree.tree()
+                    .fireEvent(new javafx.scene.input.KeyEvent(
+                            javafx.scene.input.KeyEvent.KEY_PRESSED,
+                            "",
+                            "",
+                            javafx.scene.input.KeyCode.ENTER,
+                            false,
+                            false,
+                            false,
+                            false));
+            assertTrue(cards.previews.keySet().stream()
+                    .anyMatch(key -> ProjectMapStructure.isSymbolPath(key)
+                            && key.toString().contains("twice")));
+        });
+        FxTestSupport.runOnFx(() -> {
+            MapHierarchyTree tree = cards.links.hierarchy(source);
+            // Escape closes it, the keyboard back in the card.
+            tree.tree()
+                    .fireEvent(new javafx.scene.input.KeyEvent(
+                            javafx.scene.input.KeyEvent.KEY_PRESSED,
+                            "",
+                            "",
+                            javafx.scene.input.KeyCode.ESCAPE,
+                            false,
+                            false,
+                            false,
+                            false));
+            assertEquals(null, cards.links.hierarchy(source));
+            assertTrue(tree.disposed());
+            tree.dispose(); // twice: nothing more
+            assertEquals(null, tree.bounds());
+            assertEquals(
+                    0,
+                    tree.reserved(CardAttachment.Side.LEFT) + tree.reserved(CardAttachment.Side.RIGHT),
+                    "gone: takes no room");
+
+            // From the card's menu, and closed with its card.
+            assertTrue(source.runMarkerCommand("lsp.callHierarchy"));
+            assertNotNull(cards.links.hierarchy(source));
+            MapHierarchyTree shown = cards.links.hierarchy(source);
+            FxTestSupport.invokeWith(cards, "closePreview", ProjectMapPreview.class, source);
+            assertTrue(shown.disposed(), "closed with its card");
+        });
+    }
+
+    @Test
+    void withoutAServerTheCallersTreeGoesDeeperByName() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Path chain = Files.writeString(
+                src.resolve("Chain.java"),
+                String.join(
+                        "\n",
+                        "package demo;",
+                        "",
+                        "class Chain {",
+                        "    void top() {",
+                        "        mid();",
+                        "    }",
+                        "",
+                        "    void mid() {",
+                        "        low();",
+                        "    }",
+                        "",
+                        "    void low() {",
+                        "        mid();",
+                        "    }",
+                        "}",
+                        ""));
+        ProjectPanel panel = openPanel();
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        FxTestSupport.runOnFx(() -> view.setLinkSource(new ProjectMapLinkSearch(manager, panel.projectIndex())));
+        ProjectMapPreview source = openCard(cards, chain);
+        FxTestSupport.runOnFx(() -> {
+            source.editor().moveTo(11, 10); // on low's name
+            assertTrue(source.runMarkerCommand("lsp.callHierarchy"));
+        });
+        waitFor(() -> treeRows(cards, source).stream().anyMatch(row -> row.startsWith("mid")), "low's caller, mid()");
+        FxTestSupport.runOnFx(() -> {
+            MapHierarchyTree tree = cards.links.hierarchy(source);
+            assertEquals(1, treeRows(cards, source).size(), "mid() alone calls low()");
+            tree.tree().getRoot().getChildren().getFirst().setExpanded(true);
+        });
+        waitFor(
+                () -> {
+                    var mid = cards.links
+                            .hierarchy(source)
+                            .tree()
+                            .getRoot()
+                            .getChildren()
+                            .getFirst();
+                    return mid.getChildren().size() == 2
+                            && mid.getChildren().stream()
+                                    .noneMatch(item -> item.getValue().message());
+                },
+                "mid()'s own callers, by name");
+        FxTestSupport.runOnFx(() -> {
+            var mid =
+                    cards.links.hierarchy(source).tree().getRoot().getChildren().getFirst();
+            List<String> callers = mid.getChildren().stream()
+                    .map(item -> item.getValue().text())
+                    .toList();
+            assertTrue(callers.stream().anyMatch(text -> text.startsWith("top")), callers.toString());
+            var low = mid.getChildren().stream()
+                    .filter(item -> item.getValue().text().contains("low"))
+                    .findFirst()
+                    .orElseThrow();
+            assertTrue(low.getValue().recursive(), "low() calls mid(), which calls low(): the root again");
         });
     }
 
@@ -368,6 +576,17 @@ class ProjectMapNavigationFxTest {
                 .filter(entry -> ProjectMapStructure.isSymbolPath(entry.getKey())
                         && entry.getKey().startsWith(under))
                 .map(Map.Entry::getValue)
+                .toList();
+    }
+
+    /** The texts of the first level of {@code card}'s hierarchy tree; none without one. */
+    private static List<String> treeRows(MapCards cards, ProjectMapPreview card) {
+        MapHierarchyTree tree = cards.links.hierarchy(card);
+        if (tree == null || tree.tree().getRoot() == null) {
+            return List.of();
+        }
+        return tree.tree().getRoot().getChildren().stream()
+                .map(item -> item.getValue().text())
                 .toList();
     }
 

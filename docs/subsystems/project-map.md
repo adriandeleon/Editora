@@ -322,7 +322,7 @@ the column it goes back to the card; the card menu's **Show / Hide this preview'
 code navigation typed in a card, whatever keys the keymap gives it, is answered with cards beside the card, never
 in the editor: Go to Definition and Peek Definition (F12, Alt+F12 in the CUA and VS Code keymaps), Go to Declaration,
 Go to Type Definition, Go to Implementation, Go to Super Method, Find Usages (Shift+F12), Call Hierarchy (the callers)
-and Type Hierarchy (supertypes and subtypes, both asked). **Show Callees as Cards** (`projectMap.showCallees`, the
+and Type Hierarchy, which open a hierarchy tree beside the card (below, `MapCardLinks.HIERARCHY_COMMANDS`). **Show Callees as Cards** (`projectMap.showCallees`, the
 Map's own command with no default key, and an item of the card and declaration-row menus) asks the other way: the
 server's outgoing calls (`callHierarchy/outgoingCalls`, `Kind.CALLEES`), each callee's declaration a card, labelled
 "calls" from the card asked from, with its call sites counted; a callee the card already shows (further down the
@@ -401,6 +401,26 @@ editor holds (`LspDocumentSymbols.workspaceSession`) — seeded with the card's 
 opens in the editor (`FileActions.openWorkspaceSymbol`). With no server that answers, it puts `@` in the Map's search
 for a declarations-by-name query instead and says so. A command a card does not run goes on to the Map window's own
 handler: `KeyDispatcher.HANDLED_COMMANDS` is asked from the focused node outwards until one runs the command.
+
+**Hierarchy trees** (Map code browser gap 4, `MapHierarchyTree`). The cards answer one level of a hierarchy; a
+tree goes as deep as the reader opens it. Call Hierarchy (`lsp.callHierarchy`) and Type Hierarchy
+(`lsp.typeHierarchy`) typed in a card or on a declaration row, and the card and declaration-row menus' **Show Call
+Hierarchy** and **Show Type Hierarchy**, show a tree stuck beside the card asked from (a `CardAttachment` of
+`MapCardLinks`, one per card, `trees`): on the side away from the card's Structure column when it has room, over the
+card's right edge when neither side has. Its root is the declaration asked about (a declaration card's own for Show
+Call Hierarchy from its menu; the place for the typed commands and Show Type Hierarchy); its rows are the callers
+first, or the subtypes. Each level is one `MapCardLinks.Source.find` of the same kind, grouped and ranked as the cards
+are (`MapCardLinks.askLevel`: the first files' outlines waited for, `LevelWaiting`), so a language server answers it
+when one runs and the callers are matched by name without one. A row is asked about when it is first opened
+(`MapHierarchyTree.requestOf`: the same kind at its declaration's name; a place matched by name outside every
+declaration is a use, not a declaration, and cannot be opened). A row whose declaration is already above it — its
+file and line (`sameDeclaration`) — is marked "(recursive)" and not asked again. **⇄** turns the tree the other way
+(callers ⇄ callees, subtypes ⇄ supertypes; `opposite`), asking its root again; an answer to the earlier direction is
+dropped. Enter or a double-click opens the row's declaration card beside the card asked from, at the place (the call
+in a caller), the keyboard following (`MapCards.followed`, so Back returns); with every other card pinned the status
+says there is no room. Escape or × closes the tree, the keyboard back in its card. It moves and zooms with its card,
+other cards are placed clear of it (`reserved`, `bounds`), and it closes with the card, when the card steps to
+another declaration, and with every card (a root change).
 
 **Linked reference cards** (explore position 5, `MapCardLinks`, `ProjectMapLinkSearch`). A code card's menu and a
 declaration row's menu (the Map's Structure columns and a card's) have **Show References as Cards** and **Show
@@ -1533,6 +1553,10 @@ The focused coverage lives in:
 - `ProjectMapCardMovesFxTest` / `MapCardMovesTest` for moving inside a card: Go to Line in file and declaration
   cards, its bar's Enter and Escape and the menu item, matching bracket and Beginning / End of Defun, a file card's
   Alt+Page Up / Down through its outline (and the wait for it), a file with no outline, and the uses wash;
+- `MapHierarchyTreeTest` / `ProjectMapNavigationFxTest` for hierarchy trees: turning, the question a row asks,
+  recursion by file and line, a row's text, the menus' items; Type Hierarchy typed in a card as a tree of subtypes,
+  a row opened as a card with Back returning, ⇄ asking the supertypes and saying there are none; Call Hierarchy one
+  level at a time with recursion marked, Escape and closing with the card; and the callers by name, two levels deep;
 - `MapHistoryTest` / `ProjectMapGotoFxTest.backAndForwardWalkTheMapsPlacesAndItsCardsAsOneHistory` for the one
   Back/Forward history: runs and landings folding, cards followed as stops with their carets, a card's stop on its
   row's place, Back from a card the history has no stop for, closed cards as their places, dead places, restore and
