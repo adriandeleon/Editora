@@ -15,7 +15,20 @@ class DapServerRegistryTest {
     @Test
     void languageIdsForDebugAreJavaPythonJavascriptGroovyKotlinClojureScalaAndGo() {
         assertEquals(
-                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go", "rust", "cpp"),
+                Set.of(
+                        "java",
+                        "python",
+                        "javascript",
+                        "groovy",
+                        "kotlin",
+                        "clojure",
+                        "scala",
+                        "go",
+                        "rust",
+                        "cpp",
+                        "csharp",
+                        "ruby",
+                        "php"),
                 DapServerRegistry.languageIdsForDebug());
     }
 
@@ -46,7 +59,8 @@ class DapServerRegistryTest {
         assertTrue(DapServerRegistry.isDebuggable("groovy"));
         assertTrue(DapServerRegistry.isDebuggable("typescript")); // review D2: Node runs .ts, source maps
         assertTrue(DapServerRegistry.isDebuggable("typescriptreact"));
-        assertFalse(DapServerRegistry.isDebuggable("ruby"));
+        assertTrue(DapServerRegistry.isDebuggable("ruby"));
+        assertFalse(DapServerRegistry.isDebuggable("zig"));
         assertFalse(DapServerRegistry.isDebuggable(null));
     }
 
@@ -93,7 +107,7 @@ class DapServerRegistryTest {
 
     @Test
     void specForUnsupportedIsNull() {
-        assertNull(DapServerRegistry.specFor("ruby"));
+        assertNull(DapServerRegistry.specFor("zig"));
     }
 
     @Test

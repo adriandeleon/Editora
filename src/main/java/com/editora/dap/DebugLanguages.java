@@ -239,8 +239,102 @@ public final class DebugLanguages {
             "debug.error.cppUnavailable",
             CODELLDB);
 
+    /** netcoredbg's "stop on an exception user code does not handle" filter. */
+    public static final String CSHARP_USER_UNHANDLED_FILTER = "user-unhandled";
+
+    /**
+     * C#, on Samsung's netcoredbg ({@code netcoredbg --interpreter=vscode}, MIT) over its standard streams. Editora
+     * builds the project — or a lone file, a .NET 10 file-based app — with {@code dotnet build} first and launches the
+     * assembly it made; the program's output arrives as output events. An exception user code does not handle stops it,
+     * as in Visual Studio.
+     */
+    public static final DebugLanguage CSHARP = new DebugLanguage(
+            "csharp",
+            "C#",
+            Set.of("csharp"),
+            Kind.EXTERNAL,
+            "coreclr",
+            "coreclr",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(
+                    filter(CSHARP_USER_UNHANDLED_FILTER, "C#: user-unhandled exceptions", true),
+                    filter("all", "C#: all exceptions", false)),
+            null,
+            null,
+            false,
+            "debug.error.csharpUnavailable",
+            new ExternalAdapter(List.of("netcoredbg", "--interpreter=vscode"), ExternalAdapter.Transport.STDIO, null));
+
+    /**
+     * What rdbg prints once it listens: {@code DEBUGGER: Debugger can attach via TCP/IP (127.0.0.1:41234)} (an IPv6
+     * address in brackets).
+     */
+    public static final java.util.regex.Pattern RDBG_ANNOUNCEMENT =
+            java.util.regex.Pattern.compile("Debugger can attach via TCP/IP \\(\\S*:(\\d+)\\)");
+
+    /**
+     * Ruby, on the debug gem's {@code rdbg} (Ruby 3.1 and later ship it): the program runs under rdbg, which opens a
+     * port it picks and announces, stops at load until the breakpoints are set, then goes on ({@code configurationDone}).
+     * The program's words follow the command ({@code -- ruby script.rb …}): see {@link DapManager#startExternal(
+     * java.nio.file.Path, DebugLanguage, java.util.Map, List)}.
+     */
+    public static final DebugLanguage RUBY = new DebugLanguage(
+            "ruby",
+            "Ruby",
+            Set.of("ruby"),
+            Kind.EXTERNAL,
+            "rdbg",
+            "rdbg",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(
+                    filter("any", "Ruby: any raised exception", false),
+                    filter("RuntimeError", "Ruby: RuntimeError", false)),
+            null,
+            null,
+            false,
+            "debug.error.rubyUnavailable",
+            new ExternalAdapter(
+                    List.of("rdbg", "--command", "--open", "--stop-at-load", "--host=127.0.0.1", "--port=0"),
+                    ExternalAdapter.Transport.ANNOUNCED_PORT,
+                    RDBG_ANNOUNCEMENT));
+
+    /**
+     * PHP, on Xdebug through vscode-php-debug ({@code phpDebug.js}, MIT), which runs on Node.js over its standard
+     * streams: it listens for Xdebug on a port it picks, starts {@code php} with Xdebug told to connect there, and
+     * passes the program's output on as output events. Xdebug itself is PHP's extension ({@code php-xdebug}).
+     */
+    public static final DebugLanguage PHP = new DebugLanguage(
+            "php",
+            "PHP",
+            Set.of("php"),
+            Kind.EXTERNAL,
+            "php",
+            "php",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(
+                    filter("Exception", "PHP: exceptions", false),
+                    filter("Error", "PHP: errors", false),
+                    filter("Warning", "PHP: warnings", false),
+                    filter("Notice", "PHP: notices", false),
+                    filter("Deprecated", "PHP: deprecations", false),
+                    filter("*", "PHP: everything", false)),
+            null,
+            null,
+            false,
+            "debug.error.phpUnavailable",
+            new ExternalAdapter(List.of("phpDebug.js"), ExternalAdapter.Transport.STDIO, null));
+
     private static final List<DebugLanguage> ALL =
-            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP);
+            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP, CSHARP, RUBY, PHP);
 
     /**
      * GDB's own DAP mode ({@code gdb -i dap}, GDB 14 and later), over its standard streams: C and C++'s other debugger

@@ -12,6 +12,10 @@ class DebugFileEntryTest {
     void goAndRustFilesGetOneSinceRunFileCannotRunThem() {
         assertTrue(DebugCoordinator.offersOwnDebugFile("go", false, false));
         assertTrue(DebugCoordinator.offersOwnDebugFile("rust", false, false));
+        for (String language : java.util.List.of("c", "cpp", "csharp", "ruby", "php")) {
+            assertTrue(DebugCoordinator.offersOwnDebugFile(language, false, false), language);
+        }
+        assertFalse(DebugCoordinator.offersOwnDebugFile("python", false, false), "Run File runs it");
     }
 
     @Test

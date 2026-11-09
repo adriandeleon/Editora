@@ -2052,6 +2052,15 @@ public final class DapManager {
                     .map(Path::toString)
                     .orElse(onPath);
         }
+        InstalledAdapter installed = installedAdapter(language);
+        if (installed != null) {
+            // In Editora's install, a VS Code extension, or named by its path; else the program on the PATH.
+            Path home = Path.of(System.getProperty("user.home", ""));
+            String onPath = installed.program() && (command == null || command.isBlank())
+                    ? locateExecutable(installed.file())
+                    : null;
+            return installed.locate(command, home).map(Path::toString).orElse(onPath);
+        }
         String asked = command == null || command.isBlank() ? external.command().getFirst() : command.strip();
         String found = locateExecutable(asked);
         if (found != null || asked.indexOf('/') >= 0 || asked.indexOf('\\') >= 0) {
@@ -2059,9 +2068,11 @@ public final class DapManager {
         }
         // `go install` puts Delve in the Go bin folder, which may not have been there when Editora read its PATH.
         boolean windows = java.io.File.pathSeparatorChar == ';';
-        for (Path dir : DebugLanguages.GO.equals(language)
-                ? goBinDirs(System.getenv(), Path.of(System.getProperty("user.home", "")))
-                : List.<Path>of()) {
+        Path home = Path.of(System.getProperty("user.home", ""));
+        List<Path> toolDirs = DebugLanguages.GO.equals(language)
+                ? goBinDirs(System.getenv(), home)
+                : DebugLanguages.RUBY.equals(language) ? gemUserBinDirs(home) : List.of();
+        for (Path dir : toolDirs) {
             String inDir = locateExecutable(
                     dir.resolve(windows ? asked + ".exe" : asked).toString());
             if (inDir != null) {
@@ -2069,6 +2080,14 @@ public final class DapManager {
             }
         }
         return null;
+    }
+
+    /** The installable adapter {@code language} runs on (C#'s netcoredbg), or null when it has none. */
+    static @Nullable InstalledAdapter installedAdapter(DebugLanguage language) {
+        if (DebugLanguages.CSHARP.equals(language)) {
+            return InstalledAdapter.NETCOREDBG;
+        }
+        return DebugLanguages.PHP.equals(language) ? InstalledAdapter.PHP_DEBUG : null;
     }
 
     /**
@@ -2090,6 +2109,32 @@ public final class DapManager {
             }
         }
         out.add(home.resolve("go").resolve("bin"));
+        return out;
+    }
+
+    /**
+     * Where {@code gem install --user-install} puts programs: {@code ~/.local/share/gem/ruby/<version>/bin} (Ruby 3.3's
+     * XDG folder) and {@code ~/.gem/ruby/<version>/bin}, the newest version first. Lists folders.
+     */
+    static List<Path> gemUserBinDirs(Path home) {
+        List<Path> out = new ArrayList<>();
+        for (Path base : List.of(
+                home.resolve(".local").resolve("share").resolve("gem").resolve("ruby"),
+                home.resolve(".gem").resolve("ruby"))) {
+            if (!Files.isDirectory(base)) {
+                continue;
+            }
+            try (java.util.stream.Stream<Path> versions = Files.list(base)) {
+                versions.filter(Files::isDirectory)
+                        .sorted(java.util.Comparator.comparing(
+                                        (Path v) -> v.getFileName().toString(),
+                                        (a, b) -> DebugAdapterLocator.compareVersions(a, b))
+                                .reversed())
+                        .forEach(v -> out.add(v.resolve("bin")));
+            } catch (java.io.IOException | RuntimeException e) {
+                // unreadable: skip
+            }
+        }
         return out;
     }
 
@@ -2117,6 +2162,15 @@ public final class DapManager {
      * on). Restart starts it all again; Stop ends the adapter with the program it ran.
      */
     public void startExternal(Path file, DebugLanguage language, Map<String, Object> launch) {
+        startExternal(file, language, launch, List.of());
+    }
+
+    /**
+     * As {@link #startExternal(Path, DebugLanguage, Map)}, with {@code adapterTail} after the adapter's command: the
+     * program, for an adapter that is the debugged program itself (Ruby's {@code rdbg … -- ruby script.rb}), which
+     * then runs in the request's {@code cwd}.
+     */
+    public void startExternal(Path file, DebugLanguage language, Map<String, Object> launch, List<String> adapterTail) {
         if (managerClosed) {
             return;
         }
@@ -2132,7 +2186,8 @@ public final class DapManager {
         if (client != null) {
             stop(); // one session at a time
         }
-        restartAction = () -> startExternal(file, language, launch);
+        List<String> tail = List.copyOf(adapterTail);
+        restartAction = () -> startExternal(file, language, launch, tail);
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
@@ -2141,7 +2196,7 @@ public final class DapManager {
         String executable = externalLocated.get(language.id());
         startupTask = io.submit(() -> {
             try {
-                runExternal(file, language, external, executable, bps, filters, epoch, launch);
+                runExternal(file, language, external, executable, bps, filters, epoch, launch, tail);
             } catch (Exception e) {
                 fail(epoch, tr("debug.error.startFailed", msg(e)));
             }
@@ -2156,11 +2211,21 @@ public final class DapManager {
             List<DapModels.FileBreakpoints> bps,
             @Nullable List<String> filters,
             long epoch,
-            Map<String, Object> launch)
+            Map<String, Object> launch,
+            List<String> programTail)
             throws Exception {
         int port = external.transport() == ExternalAdapter.Transport.PORT_ARGUMENT ? freePort() : -1;
-        ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(external.argv(executable, port)));
+        List<String> argv = new ArrayList<>(external.argv(executable, port));
+        argv.addAll(programTail);
+        if (argv.getFirst().endsWith(".js")) {
+            argv.addFirst(adapterNode()); // a Node.js adapter (vscode-php-debug), on the Node.js Settings names
+        }
+        ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(argv));
         ProcessRunner.applyUserEnv(pb);
+        if (!programTail.isEmpty() && launch.get("env") instanceof Map<?, ?> env) {
+            // the adapter is the program: the configuration's environment is its own
+            env.forEach((k, v) -> pb.environment().put(String.valueOf(k), v == null ? "" : String.valueOf(v)));
+        }
         List<String> first = externalPathDirs.getOrDefault(language.id(), List.of());
         if (!first.isEmpty()) {
             Map<String, String> env = pb.environment();
@@ -2170,7 +2235,7 @@ public final class DapManager {
                     .orElse("PATH");
             env.put(key, pathWithFirst(first, env.get(key), java.io.File.pathSeparator));
         }
-        Path cwd = Files.isDirectory(file) ? file : file.getParent();
+        Path cwd = adapterFolder(file, launch, !programTail.isEmpty());
         if (cwd != null && Files.isDirectory(cwd)) {
             pb.directory(cwd.toFile());
         }
@@ -2183,6 +2248,7 @@ public final class DapManager {
             com.editora.process.ProcessRegistry.killTree(proc);
             return;
         }
+        programAdapter = programTail.isEmpty() ? null : new ProgramAdapter(epoch, proc);
         boolean attach = "attach".equals(launch.get("request"));
         DapClient c = new DapClient(sessionHost(epoch));
         c.setPaths(DapPaths.LOCAL);
@@ -2262,6 +2328,24 @@ public final class DapManager {
     }
 
     /**
+     * The folder an external adapter starts in: the request's {@code cwd} when the adapter is the program itself
+     * ({@code programRuns}), else {@code file}'s folder (or {@code file}, a folder). Pure but for the folder check.
+     */
+    static @Nullable Path adapterFolder(Path file, Map<String, Object> launch, boolean programRuns) {
+        if (programRuns && launch.get("cwd") instanceof String c && !c.isBlank()) {
+            try {
+                Path dir = Path.of(c);
+                if (Files.isDirectory(dir)) {
+                    return dir;
+                }
+            } catch (java.nio.file.InvalidPathException e) {
+                // not a folder: the file's
+            }
+        }
+        return Files.isDirectory(file) ? file : file.getParent();
+    }
+
+    /**
      * Reads {@code proc}'s output until it announces its port (passing the lines before it to the console), then
      * passes the rest on as the program's output — Delve writes its debuggee's there. -1 when it ends, or says
      * nothing, within {@link #ANNOUNCE_TIMEOUT}.
@@ -2313,6 +2397,69 @@ public final class DapManager {
                 "dap-external-adapter-stdout");
         t.setDaemon(true);
         t.start();
+    }
+
+    /**
+     * Attaches to a program that is its own debug adapter and listens on this machine's {@code port} (Ruby under
+     * {@code rdbg --open}): the client talks DAP to it directly and sends {@code attach}. Stop detaches; the program
+     * runs on.
+     */
+    public void startPortAttach(Path anchor, DebugLanguage language, int port, Map<String, Object> attach) {
+        if (managerClosed) {
+            return;
+        }
+        if (!enabled) {
+            listener.onError(tr("debug.error.disabled"));
+            return;
+        }
+        if (client != null) {
+            stop(); // one session at a time
+        }
+        restartAction = () -> startPortAttach(anchor, language, port, attach);
+        debugFile = anchor;
+        long epoch = beginSession();
+        setState(State.STARTING);
+        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<String> filters = filtersFor(language.id());
+        startupTask = io.submit(() -> {
+            try {
+                if (!isCurrent(epoch)) {
+                    return;
+                }
+                DapClient c = new DapClient(sessionHost(epoch));
+                c.setPaths(DapPaths.LOCAL);
+                c.setBreakpoints(bps);
+                c.setExceptionFilters(filters);
+                c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
+                if (!publishClient(epoch, c)) {
+                    c.dispose();
+                    return;
+                }
+                onOutput(epoch, tr("debug.console.attaching", "127.0.0.1:" + port) + "\n", COMMAND_CATEGORY);
+                c.connect(port, language.adapterId()).whenComplete((caps, e) -> {
+                    if (e != null) {
+                        fail(epoch, tr("debug.error.adapterConnect", language.displayName(), msg(e)));
+                        return;
+                    }
+                    if (!isCurrent(epoch)) {
+                        c.dispose();
+                        return;
+                    }
+                    c.attach(attach).whenComplete((v, ae) -> {
+                        if (ae != null) {
+                            fail(epoch, tr("debug.error.attachFailed", msg(ae)));
+                        }
+                    });
+                    Platform.runLater(() -> {
+                        if (isCurrent(epoch, c)) {
+                            setState(State.RUNNING);
+                        }
+                    });
+                });
+            } catch (Exception e) {
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
+            }
+        });
     }
 
     /**
@@ -4728,7 +4875,29 @@ public final class DapManager {
     /** The inspector's lines dropped from this session's output (reset per session). */
     private volatile JsLaunch.InspectorNoise jsNoise = new JsLaunch.InspectorNoise();
 
+    /** An external adapter that is the debugged program itself (Ruby's rdbg), for session {@code epoch}. */
+    private record ProgramAdapter(long epoch, Process process) {}
+
+    private volatile @Nullable ProgramAdapter programAdapter;
+
+    /** How long a program that is its own adapter has to exit after it says it terminated. */
+    static final long PROGRAM_ADAPTER_EXIT_GRACE_MILLIS = 3_000;
+
     private void onTerminated(long epoch) {
+        ProgramAdapter self = programAdapter;
+        if (self != null && self.epoch() == epoch && self.process().isAlive()) {
+            // rdbg says terminated before Ruby has flushed its standard output and exited: the session ends once
+            // the program has (bounded), and its last output is in, rather than killing it with that output unread.
+            self.process()
+                    .onExit()
+                    .completeOnTimeout(self.process(), PROGRAM_ADAPTER_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)
+                    .thenRun(() -> Platform.runLater(() -> {
+                        if (isCurrent(epoch)) {
+                            whenOutputQuiet(epoch, System.nanoTime(), () -> endSession(epoch));
+                        }
+                    }));
+            return;
+        }
         Platform.runLater(() -> {
             Debuggee program = debuggee;
             if (isCurrent(epoch) && program != null && program.isRunning()) {

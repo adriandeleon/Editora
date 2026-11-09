@@ -126,6 +126,10 @@ class LaunchJsonTest {
         assertThrows(
                 LaunchJson.LaunchJsonException.class, () -> LaunchJson.substitute("${file}", noFile, inputs, answers));
         assertEquals("plain", LaunchJson.substitute("plain", noFile, inputs, answers));
+        assertEquals(
+                "client_port=${port}",
+                LaunchJson.substitute("client_port=${port}", noFile, inputs, answers),
+                "vscode-php-debug's own variable is left for it");
         assertNull(LaunchJson.substitute(null, noFile, inputs, answers));
         assertEquals(
                 List.of("level", "name"),
@@ -197,5 +201,20 @@ class LaunchJsonTest {
         LaunchJson.File rust = LaunchJson.parse(Files.readString(Path.of("samples/debug/rust/.vscode/launch.json")));
         assertEquals(2, rust.configurations().size());
         assertTrue(rust.configurations().getFirst().body().containsKey("cargo"));
+        LaunchJson.File cs = LaunchJson.parse(Files.readString(Path.of("samples/debug/csharp/.vscode/launch.json")));
+        assertEquals(
+                LaunchRoute.Kind.NETCOREDBG,
+                LaunchRoute.of(cs.configurations().getFirst().body(), Map.of()).kind());
+        LaunchJson.File csTasks =
+                LaunchJson.parse(Files.readString(Path.of("samples/debug/csharp/.vscode/tasks.json")));
+        assertEquals(
+                "dotnet",
+                LaunchJson.taskArgv(LaunchJson.task(csTasks, "build"), false).getFirst());
+        LaunchJson.File rb = LaunchJson.parse(Files.readString(Path.of("samples/debug/ruby/.vscode/launch.json")));
+        assertEquals(
+                List.of(LaunchRoute.Kind.RDBG, LaunchRoute.Kind.RDBG),
+                rb.configurations().stream()
+                        .map(conf -> LaunchRoute.of(conf.body(), Map.of()).kind())
+                        .toList());
     }
 }

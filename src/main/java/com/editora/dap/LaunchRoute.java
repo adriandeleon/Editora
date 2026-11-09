@@ -29,6 +29,12 @@ public final class LaunchRoute {
         DEBUGPY,
         /** vscode-js-debug ({@code node}, {@code pwa-node}). */
         JS_DEBUG,
+        /** netcoredbg ({@code coreclr}). */
+        NETCOREDBG,
+        /** rdbg ({@code rdbg}): a launch runs the script under it; an attach connects to its {@code debugPort}. */
+        RDBG,
+        /** vscode-php-debug ({@code php}). */
+        PHP_DEBUG,
         /** java-debug, through a run configuration ({@code java}). */
         JAVA,
         /** An adapter of the user's ({@link CustomAdapters}). */
@@ -93,6 +99,29 @@ public final class LaunchRoute {
                 request.put("type", "pwa-node");
                 return new Route(Kind.JS_DEBUG, DebugLanguages.JAVASCRIPT, request, attach, "");
             }
+            case "coreclr" -> {
+                request.put("type", "coreclr");
+                return new Route(Kind.NETCOREDBG, DebugLanguages.CSHARP, request, attach, "");
+            }
+            case "rdbg" -> {
+                if (attach && rdbgPort(body) < 0) {
+                    return unsupported(body, "an rdbg attach without a TCP debugPort");
+                }
+                if (!attach && text(body.get("script")).isBlank()) {
+                    return unsupported(body, "an rdbg launch without a script");
+                }
+                request.put("localfs", true);
+                return new Route(Kind.RDBG, DebugLanguages.RUBY, request, attach, "");
+            }
+            case "php" -> {
+                if (attach) {
+                    return unsupported(body, "a PHP attach (Xdebug connects to a launch: \"Listen for Xdebug\")");
+                }
+                return new Route(Kind.PHP_DEBUG, DebugLanguages.PHP, request, false, "");
+            }
+            case "dotnet" -> {
+                return unsupported(body, "C# Dev Kit's \"dotnet\" (use \"coreclr\" with the built program)");
+            }
             case "java" -> {
                 if (attach) {
                     return unsupported(body, "a Java attach from launch.json (use Debug: Attach)");
@@ -111,6 +140,51 @@ public final class LaunchRoute {
 
     private static Route unsupported(Map<String, Object> body, String what) {
         return new Route(Kind.UNSUPPORTED, null, without(body), false, what);
+    }
+
+    /**
+     * What follows rdbg's command for an {@code rdbg} launch: {@code --}, its {@code command} ({@code ruby} unless it
+     * names another, as {@code bundle exec ruby} or {@code rake}; {@code bundle exec} first with {@code useBundler}),
+     * the {@code script} and its {@code args}.
+     */
+    public static List<String> rdbgTail(Map<String, Object> body) {
+        List<String> out = new java.util.ArrayList<>(List.of("--"));
+        String command = text(body.get("command")).strip();
+        List<String> words = command.isEmpty() ? List.of("ruby") : List.of(command.split("\\s+"));
+        if (Boolean.TRUE.equals(body.get("useBundler")) && !"bundle".equals(words.getFirst())) {
+            out.addAll(List.of("bundle", "exec"));
+        }
+        out.addAll(words);
+        out.add(text(body.get("script")));
+        if (body.get("args") instanceof List<?> args) {
+            args.forEach(a -> out.add(String.valueOf(a)));
+        } else if (body.get("args") instanceof String args && !args.isBlank()) {
+            out.addAll(List.of(args.strip().split("\\s+")));
+        }
+        return out;
+    }
+
+    /**
+     * The port of an rdbg attach's {@code debugPort} ({@code 12345} or {@code localhost:12345}), on this machine; -1
+     * for a socket path, another host, or none.
+     */
+    public static int rdbgPort(Map<String, Object> body) {
+        Object raw = body.get("debugPort");
+        String s = raw instanceof Number n
+                ? String.valueOf(n.intValue())
+                : text(raw).strip();
+        int colon = s.lastIndexOf(':');
+        String host = colon < 0 ? "" : s.substring(0, colon);
+        if (!host.isEmpty()
+                && !List.of("localhost", "127.0.0.1", "::1", "[::1]").contains(host)) {
+            return -1;
+        }
+        try {
+            int port = Integer.parseInt(colon < 0 ? s : s.substring(colon + 1));
+            return port > 0 && port < 65536 ? port : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     /** {@code body} without what only VS Code reads. */

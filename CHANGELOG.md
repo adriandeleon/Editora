@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other answers asked from a card come back with their edges and their "+N more" list, without asking the language
   server again. Each card comes back with its caret and scroll position. This holds for working sets and for the
   Map you see again after a restart.
+- **Debug C#, Ruby and PHP.** F5 now debugs these three languages, each with its own card under *Settings →
+  Debugging*, where *Install…* fetches its debugger:
+  - **C#** runs on netcoredbg. Editora builds the project with `dotnet build` in the Debug console, then stops at your
+    breakpoints. A lone `.cs` file works too, as a .NET 10 file-based app. An exception your code does not handle
+    stops it, as in Visual Studio.
+  - **Ruby** runs under rdbg, the debugger Ruby 3.1 and later ship.
+  - **PHP** runs with Xdebug, through the PHP Debug adapter VS Code uses. PHP needs the Xdebug extension, and the
+    adapter runs on Node.js.
+  - **launch.json:** *Debug: Start Configuration…* also runs `coreclr`, `rdbg` (including attaching to
+    `rdbg --open`) and `php` configurations.
+  - **Samples:** `samples/debug/csharp`, `samples/debug/ruby` and `samples/debug/php`, the same shelf as the other
+    languages' samples.
 - **Problems on Project Map cards.** A code card underlines its file's errors and warnings as the editor does, while
   a language server runs for the file, and its status counts them. A declaration card shows only its declaration's.
   Next Problem and Previous Problem typed in a card go through the card's problems. Resting the mouse on a card's text

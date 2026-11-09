@@ -35,7 +35,13 @@ class ExceptionFilterCatalogTest {
         for (String jvm : List.of("groovy", "kotlin", "clojure", "scala")) {
             assertEquals(List.of("caught", "uncaught*"), ids(jvm), jvm + ": the JVM adapter stops on uncaught");
         }
-        assertEquals(List.of(), ids("ruby"), "an adapter Editora does not know declares its own");
+        assertEquals(List.of("user-unhandled*", "all"), ids("csharp"), "netcoredbg stops on user-unhandled");
+        assertEquals(List.of("any", "RuntimeError"), ids("ruby"), "rdbg stops on none");
+        assertEquals(
+                List.of("Exception", "Error", "Warning", "Notice", "Deprecated", "*"),
+                ids("php"),
+                "Xdebug stops on none");
+        assertEquals(List.of(), ids("zig"), "an adapter Editora does not know declares its own");
         assertEquals(List.of(), ids(null));
     }
 
@@ -46,9 +52,10 @@ class ExceptionFilterCatalogTest {
         assertEquals("raised", ExceptionFilterCatalog.caughtFilter("python"));
         assertEquals("all", ExceptionFilterCatalog.caughtFilter("javascript"));
         assertNull(ExceptionFilterCatalog.caughtFilter("ruby"));
+        assertNull(ExceptionFilterCatalog.caughtFilter("zig"));
         assertNull(ExceptionFilterCatalog.caughtFilter(null));
         assertEquals("uncaught", ExceptionFilterCatalog.uncaughtFilter("python"));
-        assertNull(ExceptionFilterCatalog.uncaughtFilter("ruby"), "no filters at all: no Uncaught toggle either");
+        assertNull(ExceptionFilterCatalog.uncaughtFilter("zig"), "no filters at all: no Uncaught toggle either");
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.editora.config.Settings;
 import com.editora.dap.DapServerRegistry;
 import com.editora.dap.DebugLanguage;
 import com.editora.dap.DebugLanguages;
+import com.editora.install.InstallCatalog;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -140,7 +141,40 @@ final class DebugAdapterSettings {
                     "codelldb",
                     "codelldb",
                     "status.debug.cppOff",
-                    (s, scope) -> tr("status.debug.codelldbMissing")));
+                    (s, scope) -> tr("status.debug.codelldbMissing")),
+            new Binding(
+                    DebugLanguages.CSHARP,
+                    Settings::isCsharpDebugEnabled,
+                    Settings::setCsharpDebugEnabled,
+                    Settings::getCsharpDebugPath,
+                    Settings::setCsharpDebugPath,
+                    "settings.debug.csharpPath",
+                    "netcoredbg",
+                    InstallCatalog.NETCOREDBG_STEP,
+                    "status.debug.csharpOff",
+                    (s, scope) -> tr("status.debug.netcoredbgMissing")),
+            new Binding(
+                    DebugLanguages.RUBY,
+                    Settings::isRubyDebugEnabled,
+                    Settings::setRubyDebugEnabled,
+                    Settings::getRubyDebugPath,
+                    Settings::setRubyDebugPath,
+                    "settings.debug.rubyPath",
+                    "rdbg",
+                    InstallCatalog.RDBG_STEP,
+                    "status.debug.rubyOff",
+                    (s, scope) -> tr("status.debug.rdbgMissing")),
+            new Binding(
+                    DebugLanguages.PHP,
+                    Settings::isPhpDebugEnabled,
+                    Settings::setPhpDebugEnabled,
+                    Settings::getPhpDebugPath,
+                    Settings::setPhpDebugPath,
+                    "settings.debug.phpPath",
+                    "php-debug",
+                    InstallCatalog.PHP_DEBUG_STEP,
+                    "status.debug.phpOff",
+                    (s, scope) -> tr("status.debug.phpDebugMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {
