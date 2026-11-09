@@ -72,6 +72,33 @@ Debug can run a program in a tab instead of their consoles.
   killing every descendant. A program (Run in Terminal) is ended as console Run ends one, `killTree`: TERM to
   its tree, KILL to what ignored it; its streams stay open until it is gone, so its last words are shown.
 
+## Terminals in the editor
+
+`terminal.moveToEditor` (a tab's menu, the palette, the Window menu) shows a terminal as an editor tab, as IntelliJ's
+Move to Editor does; `terminal.moveToToolWindow` (the editor tab's menu, the palette) puts it back.
+
+- **One set of books.** The panel `Tab` stays the terminal's identity: its shell, title, folder, program, close
+  question and find bar are all the panel's, keyed by that tab. A moved tab leaves the `TabPane` (under
+  `reordering`, so nothing is released) for the panel's `inEditor` set, and only its content node is re-parented into
+  a `TerminalEditorTab` (a `TabContent`). Nothing restarts either way.
+- **The content carries the keys.** `KeyDispatcher.SHELL_KEYS` and the copy/paste/find filter are on each tab's
+  content (`TerminalPanel.newContent`), not only the panel, so they go with it. The strip's own chords (next tab, move
+  tab) are left to the editor there.
+- **Closing goes through the panel.** `TerminalPanel.remove` replaces every `tabs.getTabs().remove(tab)`: a tab in
+  the editor is released and its editor tab removed through `EditorHost.close`. The editor tab's ✕, its menu,
+  `closeTab` (Ctrl+W) and the batch closes call `TerminalCoordinator.requestClose`, which asks what the panel asks.
+  Any other removal (`disposeViewerTab`: Close All, the window) ends the shell through `editorTabClosed`.
+- **What follows the tab:** `busyTabs`, title numbering and `shutdown` cover `inEditor` too; a bell or notification
+  checks `EditorHost.isShowing` and the marks are mirrored onto the editor tab (`.terminal-editor-tab`).
+- **Which terminal a command means:** `currentTab()`, the editor terminal holding the keyboard, else the panel's
+  selected tab (rename, close, find, New Terminal Here). The frame's `requestFocus` focuses the shell, since every
+  page-tab path ends in it (`TabFocus.focusPage`).
+- **The tool window** hides when its last tab moves out (`onLastClosed`) and starts a fresh shell when next shown.
+  `moveToToolWindow` adds the tab back before showing the window, so it does not start one.
+- **Not kept:** like the panel's, editor terminals are not restored with the session.
+- **Tests:** `TerminalEditorTabFxTest` (stand-in shells and editor: both moves keep the shell; every close path ends
+  it) and `TerminalToolWindowFxTest` (the commands in a real window, the same pid back in the tool window).
+
 ## Terminals in a container or a WSL distribution
 
 A container's mounted folder and a `\\wsl.localhost` folder are paths of this machine that `ExecTargets` maps to a

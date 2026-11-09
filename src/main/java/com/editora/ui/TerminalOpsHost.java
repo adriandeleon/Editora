@@ -62,4 +62,20 @@ final class TerminalOpsHost implements TerminalCoordinator.Ops {
             mc.openAndGoto(file, Math.max(0, line - 1), Math.max(0, column - 1));
         }
     }
+
+    @Override
+    public void openEditorTab(TerminalEditorTab terminal) {
+        mc.openTerminalEditorTab(terminal);
+    }
+
+    @Override
+    public void closeEditorTab(javafx.scene.control.Tab tab) {
+        mc.editorArea.remove(tab);
+    }
+
+    @Override
+    public @Nullable TerminalEditorTab selectedEditorTerminal() {
+        javafx.scene.control.Tab tab = mc.editorArea.selectedTab();
+        return tab != null && tab.getUserData() instanceof TerminalEditorTab terminal ? terminal : null;
+    }
 }

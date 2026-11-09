@@ -983,6 +983,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         doctorCoordinator.runChecks();
     }
 
+    /**
+     * Shows a terminal moved out of the Terminal tool window as an editor tab, selected, with the keyboard. Its menu
+     * acts on the terminal: Rename, Move to Terminal Tool Window, Close. A close asks what the panel would ask.
+     */
+    void openTerminalEditorTab(TerminalEditorTab terminal) {
+        Tab tab = addContentTab(terminal, true);
+        terminal.attach(tab, () -> tabHeaders.contentHeader(tab, terminal));
+        tab.setOnCloseRequest(e -> {
+            e.consume(); // closed by the terminal panel once it may be
+            terminalCoordinator.requestClose(terminal);
+        });
+        MenuItem rename = new MenuItem(tr("terminal.tab.rename"), Icons.edit());
+        rename.setOnAction(e -> terminalCoordinator.rename(terminal));
+        MenuItem back = new MenuItem(tr("terminal.tab.moveToToolWindow"), Icons.dock());
+        back.setOnAction(e -> terminalCoordinator.moveToToolWindow(terminal));
+        MenuItem close = new MenuItem(tr("menu.close"), Icons.closeTab());
+        close.setOnAction(e -> terminalCoordinator.requestClose(terminal));
+        tab.setContextMenu(new ContextMenu(rename, back, new javafx.scene.control.SeparatorMenuItem(), close));
+    }
+
     /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
     public void setHostServices(javafx.application.HostServices hostServices) {
         this.hostServices = hostServices;
@@ -1382,6 +1402,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             pdf.dispose();
         } else if (tab.getUserData() instanceof PrReviewPane pr) {
             github.onReviewPaneClosed(pr); // drop it from the coordinator's per-PR map (no resource to release)
+        } else if (tab.getUserData() instanceof TerminalEditorTab terminal) {
+            terminalCoordinator.editorTabClosed(terminal); // its shell ends, unless it went back to the panel
         }
     }
 
@@ -4081,6 +4103,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Closes a single tab, confirming first if it is pinned and/or has unsaved changes. */
     void closeTab(Tab tab) {
+        if (tab != null && tab.getUserData() instanceof TerminalEditorTab terminal) {
+            terminalCoordinator.requestClose(terminal); // its shell's own question, which may ask the host first
+            return;
+        }
         if (tab != null && closes.confirmClose(tab)) {
             rememberClosed(tab);
             editorArea.remove(tab);
@@ -4139,6 +4165,10 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void closeTabs(List<Tab> targets) {
         for (Tab tab : targets) {
+            if (tab.getUserData() instanceof TerminalEditorTab terminal) {
+                terminalCoordinator.requestClose(terminal); // asks when its shell is running something
+                continue;
+            }
             EditorBuffer buffer = bufferOf(tab);
             if (buffer == null) {
                 if (!closes.confirmClose(tab)) {
