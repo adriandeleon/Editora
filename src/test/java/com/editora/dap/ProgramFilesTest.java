@@ -123,4 +123,83 @@ class ProgramFilesTest {
         assertEquals(List.of(), List.copyOf(ProgramFiles.sections(dir.resolve("missing"))));
         assertTrue(ProgramFiles.sections(dir.resolve("c")).contains(".debug_line"));
     }
+
+    /** A 32-bit big-endian ELF file with sections named {@code names} (the name table last). */
+    static byte[] elf32BigEndian(List<String> names) {
+        java.io.ByteArrayOutputStream table = new java.io.ByteArrayOutputStream();
+        table.write(0);
+        List<String> all = new java.util.ArrayList<>(names);
+        all.add(".shstrtab");
+        int[] offsets = new int[all.size()];
+        for (int i = 0; i < all.size(); i++) {
+            offsets[i] = table.size();
+            table.writeBytes(all.get(i).getBytes(StandardCharsets.US_ASCII));
+            table.write(0);
+        }
+        byte[] strings = table.toByteArray();
+        int namesAt = 64;
+        int shoff = namesAt + strings.length;
+        int count = all.size() + 1;
+        ByteBuffer b = ByteBuffer.allocate(shoff + count * 40).order(ByteOrder.BIG_ENDIAN);
+        b.put(new byte[] {0x7f, 'E', 'L', 'F', 1, 2, 1});
+        b.putInt(0x20, shoff);
+        b.putShort(0x2E, (short) 40);
+        b.putShort(0x30, (short) count);
+        b.putShort(0x32, (short) (count - 1));
+        b.put(namesAt, strings);
+        for (int i = 0; i < all.size(); i++) {
+            int h = shoff + (i + 1) * 40;
+            b.putInt(h, offsets[i]);
+            if (i == all.size() - 1) {
+                b.putInt(h + 0x10, namesAt);
+                b.putInt(h + 0x14, strings.length);
+            }
+        }
+        return b.array();
+    }
+
+    @Test
+    void a32BitBigEndianElfIsReadAndRustsOtherSectionTellsIt(@TempDir Path dir) throws Exception {
+        assertEquals(
+                ProgramFiles.Kind.RUST,
+                ProgramFiles.kind(Files.write(dir.resolve("r32"), elf32BigEndian(List.of(".debug_info", ".rustc")))));
+        assertEquals(
+                ProgramFiles.Kind.NATIVE,
+                ProgramFiles.kind(Files.write(dir.resolve("c32"), elf32BigEndian(List.of(".text", ".debug_info")))));
+    }
+
+    @Test
+    void headersThatSayNothingSensibleNameNoSections(@TempDir Path dir) throws Exception {
+        byte[] noHeaders = elf(List.of(".debug_info"));
+        ByteBuffer.wrap(noHeaders).order(ByteOrder.LITTLE_ENDIAN).putLong(0x28, 0);
+        assertTrue(ProgramFiles.sections(Files.write(dir.resolve("noshoff"), noHeaders))
+                .isEmpty());
+        byte[] badIndex = elf(List.of(".debug_info"));
+        ByteBuffer.wrap(badIndex).order(ByteOrder.LITTLE_ENDIAN).putShort(0x3E, (short) 999);
+        assertTrue(ProgramFiles.sections(Files.write(dir.resolve("badindex"), badIndex))
+                .isEmpty());
+        byte[] smallEntries = elf(List.of(".debug_info"));
+        ByteBuffer.wrap(smallEntries).order(ByteOrder.LITTLE_ENDIAN).putShort(0x3A, (short) 8);
+        assertTrue(ProgramFiles.sections(Files.write(dir.resolve("small"), smallEntries))
+                .isEmpty());
+        assertTrue(
+                ProgramFiles.sections(Files.write(dir.resolve("text"), new byte[40]))
+                        .isEmpty(),
+                "neither format");
+
+        byte[] noCommands = machO(List.of("__go_buildinfo"));
+        ByteBuffer.wrap(noCommands).order(ByteOrder.LITTLE_ENDIAN).putInt(16, 0);
+        assertTrue(ProgramFiles.sections(Files.write(dir.resolve("m0"), noCommands))
+                .isEmpty());
+        byte[] tinyCommand = machO(List.of("__go_buildinfo"));
+        ByteBuffer.wrap(tinyCommand).order(ByteOrder.LITTLE_ENDIAN).putInt(36, 4);
+        assertTrue(ProgramFiles.sections(Files.write(dir.resolve("m1"), tinyCommand))
+                .isEmpty());
+        byte[] otherCommand = machO(List.of("__go_buildinfo"));
+        ByteBuffer.wrap(otherCommand).order(ByteOrder.LITTLE_ENDIAN).putInt(32, 0x1b);
+        assertTrue(
+                ProgramFiles.sections(Files.write(dir.resolve("m2"), otherCommand))
+                        .isEmpty(),
+                "not a segment");
+    }
 }

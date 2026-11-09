@@ -158,4 +158,68 @@ class NativeBuildTest {
         assertEquals(42L, attach.get("pid"));
         assertEquals(List.of("rust"), attach.get("sourceLanguages"));
     }
+
+    @Test
+    void headersAndNamesWithoutExtensions(@TempDir Path dir) {
+        for (String h : List.of("a.hh", "a.hxx", "a.h++", "A.HPP")) {
+            assertTrue(NativeBuild.isHeader(Path.of(h)), h);
+        }
+        assertFalse(NativeBuild.isHeader(Path.of("Makefile")));
+        NativeBuild.Plan plain = NativeBuild.plan(dir.resolve("prog"), false, null, null, dir.resolve("out"));
+        assertTrue(plain.output().getFileName().toString().startsWith("prog-"));
+        assertEquals("prog", plain.sessionName());
+    }
+
+    @Test
+    void aCmakeReplyThatSaysTooLittleNamesNoExecutable(@TempDir Path dir) throws Exception {
+        Path build = dir.resolve("build");
+        Path reply = Files.createDirectories(build.resolve(".cmake/api/v1/reply"));
+        Path file = dir.resolve("main.cpp");
+        assertNull(NativeBuild.cmakeExecutable(build, file), "no index yet");
+        Files.writeString(reply.resolve("error-1.json"), "{}");
+        assertNull(NativeBuild.cmakeExecutable(build, file), "no index-*.json among the files");
+        Path index = reply.resolve("index-1.json");
+        Files.writeString(index, "{\"objects\":[{\"kind\":\"cache\",\"jsonFile\":\"c.json\"}]}");
+        assertNull(NativeBuild.cmakeExecutable(build, file), "no code model asked for");
+        Files.writeString(index, "{\"objects\":[{\"kind\":\"codemodel\",\"jsonFile\":\"cm.json\"}]}");
+        Files.writeString(reply.resolve("cm.json"), "{\"paths\":{\"source\":\"/s\"},\"configurations\":[]}");
+        assertNull(NativeBuild.cmakeExecutable(build, file), "no configuration");
+        Files.writeString(reply.resolve("cm.json"), "not json");
+        assertNull(NativeBuild.cmakeExecutable(build, file), "a reply that does not parse");
+
+        com.google.gson.JsonObject noArtifacts = com.google.gson.JsonParser.parseString("{\"type\":\"EXECUTABLE\"}")
+                .getAsJsonObject();
+        com.google.gson.JsonObject emptyArtifacts = com.google.gson.JsonParser.parseString(
+                        "{\"type\":\"EXECUTABLE\",\"artifacts\":[]}")
+                .getAsJsonObject();
+        com.google.gson.JsonObject noSources = com.google.gson.JsonParser.parseString(
+                        "{\"type\":\"EXECUTABLE\",\"artifacts\":[{\"path\":\"app\"}]}")
+                .getAsJsonObject();
+        assertEquals(
+                build.resolve("app"),
+                NativeBuild.pickTarget(List.of(noArtifacts, emptyArtifacts, noSources), dir, build, file),
+                "the only executable with an artifact");
+        assertNull(NativeBuild.pickTarget(List.of(noSources, noSources), dir, build, file), "two to choose from");
+    }
+
+    @Test
+    void makesProgramMayBeAWindowsOneAndAPartialMagicIsNoProgram(@TempDir Path dir) throws Exception {
+        Path exe = Files.write(dir.resolve("shelf.exe"), new byte[] {'M', 'Z', 0, 0});
+        assertTrue(exe.toFile().setExecutable(true));
+        Path other = Files.write(dir.resolve("zzz"), ELF);
+        assertTrue(other.toFile().setExecutable(true));
+        assertEquals(exe, NativeBuild.makeExecutable(dir, dir.resolve("shelf.c")), "named after the file, with .exe");
+        assertEquals(exe, NativeBuild.makeExecutable(dir, dir.resolve("shelf")), "a file without an extension");
+        for (byte[] near : List.of(
+                new byte[] {0x7f, 'E', 'L', 'X'},
+                new byte[] {0x7f, 'E', 'X', 'F'},
+                new byte[] {0x7f, 'X', 'L', 'F'},
+                new byte[] {(byte) 0xcf, (byte) 0xfa, (byte) 0xed, 0},
+                new byte[] {(byte) 0xcf, (byte) 0xfa, 0, 0},
+                new byte[] {(byte) 0xcf, 0, 0, 0},
+                new byte[] {'M', 'X', 0, 0})) {
+            assertFalse(NativeBuild.isNativeProgram(Files.write(dir.resolve("near"), near)));
+        }
+        assertFalse(NativeBuild.isNativeProgram(dir.resolve("missing")));
+    }
 }
