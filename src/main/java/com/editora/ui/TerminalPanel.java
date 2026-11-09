@@ -208,13 +208,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         getChildren().addAll(tabs, emptyStart, newTab);
         updateEmpty();
 
-        // The shell owns the keyboard; Editora keeps only what TerminalKeys lets through.
-        BiPredicate<String, String> reachesEditora =
-                (token, command) -> TerminalKeys.reachesEditora(token, command, config.ideCommands(), MAC);
+        // The shell owns the keyboard; Editora keeps only what TerminalKeys lets through. Set on the panel and on
+        // each tab's content, which is where the rule is found once a tab has moved into the editor.
         getProperties().put(KeyDispatcher.SHELL_KEYS, reachesEditora);
-        // Copy and Paste are the terminal's own chords. A filter here runs before the view's, which would
-        // otherwise encode Ctrl+Shift+C as ^C.
-        addEventFilter(KeyEvent.KEY_PRESSED, this::onClipboardKey);
 
         tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             if (now != null) {
@@ -224,38 +220,28 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                     shown.repaint(); // not painted while its tab was in the background
                 }
             }
-            if (findBar.isShowing()) {
+            // The find bar follows the selection here, unless it is over a terminal in the editor.
+            if (findBar.isShowing() && (findTab == null || !inEditor.contains(findTab))) {
                 placeFindBar(now);
             }
             if (!quiet) {
                 focusActive();
             }
         });
-        findBar.setOnClose(this::focusActive);
+        findBar.setOnClose(() -> {
+            Tab was = findTab;
+            if (was != null && inEditor.contains(was)) {
+                focus(was);
+            } else {
+                focusActive();
+            }
+        });
         tabs.getTabs().addListener((ListChangeListener<Tab>) change -> {
             if (reordering) {
                 return; // a move is a remove and an add: nothing closed
             }
             while (change.next()) {
-                for (Tab removed : change.getRemoved()) {
-                    java.util.function.IntConsumer killed = programExits.remove(removed);
-                    if (killed != null) {
-                        killed.accept(-1); // its tab closed under it: the program ends with it
-                    }
-                    dirs.remove(removed);
-                    titles.remove(removed);
-                    names.remove(removed);
-                    runKeys.remove(removed);
-                    programNames.remove(removed);
-                    TerminalView pending = connecting.remove(removed);
-                    if (pending != null) {
-                        pending.close(); // its connector is closed when it arrives
-                    }
-                    TerminalView view = views.remove(removed);
-                    if (view != null) {
-                        view.close();
-                    }
-                }
+                change.getRemoved().forEach(this::release);
             }
             updateEmpty();
             refreshTitles();
@@ -267,6 +253,208 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             Platform.runLater(() -> installTabDrag(0));
             if (!hasTerminals() && !shuttingDown && change.getList().isEmpty()) {
                 onLastClosed.run();
+            }
+        });
+    }
+
+    /** Which keys a focused terminal lets through to Editora (see {@link KeyDispatcher#SHELL_KEYS}). */
+    private final BiPredicate<String, String> reachesEditora =
+            (token, command) -> TerminalKeys.reachesEditora(token, command, config.ideCommands(), MAC);
+
+    /**
+     * A tab's content: the terminal's ground, its key rule, and the filter for the terminal's own chords. Copy and
+     * Paste are the terminal's: the filter runs before the view's, which would otherwise encode Ctrl+Shift+C as ^C.
+     * It is the content's rather than the panel's so it goes with a tab moved into the editor.
+     */
+    private StackPane newContent(Tab tab) {
+        StackPane content = new StackPane();
+        content.getStyleClass().add("terminal-content");
+        content.setStyle(groundStyle());
+        content.getProperties().put(KeyDispatcher.SHELL_KEYS, reachesEditora);
+        content.addEventFilter(KeyEvent.KEY_PRESSED, e -> onClipboardKey(tab, content, e));
+        tab.setContent(content);
+        return content;
+    }
+
+    /** Ends a closed tab's shell (or program) and forgets it. */
+    private void release(Tab removed) {
+        java.util.function.IntConsumer killed = programExits.remove(removed);
+        if (killed != null) {
+            killed.accept(-1); // its tab closed under it: the program ends with it
+        }
+        dirs.remove(removed);
+        titles.remove(removed);
+        names.remove(removed);
+        runKeys.remove(removed);
+        programNames.remove(removed);
+        TerminalView pending = connecting.remove(removed);
+        if (pending != null) {
+            pending.close(); // its connector is closed when it arrives
+        }
+        TerminalView view = views.remove(removed);
+        if (view != null) {
+            view.close();
+        }
+        if (findTab == removed) {
+            findBar.close();
+            findTab = null;
+        }
+    }
+
+    // ---------------------------------------------------------------- terminals in the editor
+
+    /**
+     * Where a tab moved into the editor is shown. The tab keeps its place in this panel's books (its shell, title,
+     * folder, program, close question); only its content is shown in an editor tab instead of the strip here.
+     */
+    interface EditorHost {
+        /** Shows {@code tab}'s content in a new editor tab, selected and focused. */
+        void open(Tab tab);
+
+        /** Removes {@code tab}'s editor tab: its shell ended or it was closed, or it went back to the panel. */
+        void close(Tab tab);
+
+        /** Whether {@code tab}'s editor tab is the one shown in its group of a window on screen. */
+        boolean isShowing(Tab tab);
+    }
+
+    private @Nullable EditorHost editorHost;
+
+    /** Tabs shown in the editor rather than this panel, in the order they moved there. */
+    private final java.util.Set<Tab> inEditor = new java.util.LinkedHashSet<>();
+
+    void setEditorHost(@Nullable EditorHost editorHost) {
+        this.editorHost = editorHost;
+    }
+
+    /** Whether {@code tab} is shown in the editor. */
+    boolean isInEditor(Tab tab) {
+        return inEditor.contains(tab);
+    }
+
+    /**
+     * Moves {@code tab} from the strip here into an editor tab, shell and all: nothing restarts, and what it printed
+     * stays. The panel hides when it was the last one here, as when the last tab closes.
+     */
+    void moveToEditor(Tab tab) {
+        if (editorHost == null || !tabs.getTabs().contains(tab)) {
+            return;
+        }
+        if (findTab == tab) {
+            findBar.close();
+            findTab = null;
+        }
+        reordering = true; // a move, not a close: the shell stays
+        try {
+            tabs.getTabs().remove(tab);
+        } finally {
+            reordering = false;
+        }
+        inEditor.add(tab);
+        updateEmpty();
+        refreshTitles();
+        if (tabs.getTabs().isEmpty() && !shuttingDown) {
+            onLastClosed.run();
+        }
+        editorHost.open(tab);
+    }
+
+    /** Moves a tab shown in the editor back to the end of the strip here, selected. */
+    void moveToPanel(Tab tab) {
+        if (!inEditor.remove(tab)) {
+            return;
+        }
+        if (findTab == tab) {
+            findBar.close();
+            findTab = null;
+        }
+        if (editorHost != null) {
+            editorHost.close(tab); // the editor tab goes; this tab is no longer in inEditor, so its shell stays
+        }
+        tabs.getTabs().add(tab);
+        tabs.getSelectionModel().select(tab);
+        refreshTitles();
+        focusActive();
+    }
+
+    /** Its editor tab was closed some way other than through this panel (Close All, the window): end its shell. */
+    void editorTabClosed(Tab tab) {
+        if (inEditor.remove(tab)) {
+            release(tab);
+            refreshTitles();
+        }
+    }
+
+    /** Closes {@code tab} wherever it is shown: its shell ends and its tab goes. */
+    private void remove(Tab tab) {
+        if (inEditor.remove(tab)) {
+            release(tab);
+            if (editorHost != null) {
+                editorHost.close(tab);
+            }
+            refreshTitles();
+        } else {
+            tabs.getTabs().remove(tab);
+        }
+    }
+
+    /** Whether {@code tab} is still open, here or in the editor. */
+    private boolean owns(Tab tab) {
+        return tabs.getTabs().contains(tab) || inEditor.contains(tab);
+    }
+
+    /** Every open tab: the strip's in order, then those in the editor. */
+    private List<Tab> allTabs() {
+        List<Tab> all = new ArrayList<>(tabs.getTabs());
+        all.addAll(inEditor);
+        return all;
+    }
+
+    /** Whether {@code tab} is where the user can see it: selected in the shown panel, or its editor tab shown. */
+    private boolean inView(Tab tab) {
+        if (inEditor.contains(tab)) {
+            return editorHost != null && editorHost.isShowing(tab);
+        }
+        return tab.isSelected() && isVisible() && getScene() != null;
+    }
+
+    /** Whether any terminal is open, in the panel or in the editor. */
+    boolean hasAnyTerminals() {
+        return !tabs.getTabs().isEmpty() || !inEditor.isEmpty();
+    }
+
+    /**
+     * The tab the terminal commands act on: one in the editor that has the keyboard, else the panel's selected tab.
+     */
+    @Nullable
+    Tab currentTab() {
+        for (Tab tab : inEditor) {
+            Node content = tab.getContent();
+            var scene = content == null ? null : content.getScene();
+            for (Node n = scene == null ? null : scene.getFocusOwner(); n != null; n = n.getParent()) {
+                if (n == content) {
+                    return tab;
+                }
+            }
+        }
+        return activeTab();
+    }
+
+    /** Gives the keyboard to {@code tab}'s terminal (its reconnect button while it offers one). */
+    void focus(Tab tab) {
+        Platform.runLater(() -> {
+            TerminalView view = views.get(tab);
+            if (view == null) {
+                if (connecting.containsKey(tab)) {
+                    focusWhenStarted = tab;
+                }
+                return;
+            }
+            Node reconnect = tab.getContent() == null ? null : tab.getContent().lookup(".terminal-lost-banner .button");
+            if (reconnect != null) {
+                reconnect.requestFocus();
+            } else {
+                view.requestFocus();
             }
         });
     }
@@ -288,8 +476,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
      * tab's starting folder when the shell has said nothing.
      */
     void newTerminalHere() {
-        Tab tab = activeTab();
-        TerminalView view = activeView();
+        Tab tab = currentTab();
+        TerminalView view = tab == null ? null : views.get(tab);
         if (tab == null || view == null) {
             newTerminal();
             return;
@@ -376,10 +564,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         Tab tab = new Tab(dir == null ? tr("toolwindow.terminal") : targetLabel.apply(dir));
         // The view paints its own grid; the wrapper fills the strip a whole number of rows leaves below it
         // with the same ground. Only the content: the tab strip keeps the window theme's colours.
-        StackPane content = new StackPane();
-        content.getStyleClass().add("terminal-content");
-        content.setStyle(groundStyle());
-        tab.setContent(content);
+        newContent(tab);
         Label target = new Label(targetLabel.apply(dir));
         target.getStyleClass().add("terminal-target-chip");
         tab.setGraphic(target);
@@ -436,10 +621,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         Tab tab = new Tab(title);
         String runKey = title + "\u0000" + (dir == null ? "" : Vfs.toStorableString(dir));
         runKeys.put(tab, runKey);
-        StackPane content = new StackPane(view);
-        content.getStyleClass().add("terminal-content");
-        content.setStyle(groundStyle());
-        tab.setContent(content);
+        StackPane content = newContent(tab);
+        content.getChildren().add(view);
         Label target = new Label(targetLabel.apply(dir));
         target.getStyleClass().add("terminal-target-chip");
         tab.setGraphic(target);
@@ -519,7 +702,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 e -> {
                     connecting.remove(tab);
                     view.close();
-                    tabs.getTabs().remove(tab); // tells its starter: the program ended without a code
+                    remove(tab); // tells its starter: the program ended without a code
                     onError.accept(tr("terminal.startFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
                 });
     }
@@ -543,7 +726,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 if (view.getSession() != null) {
                     view.getSession().terminate();
                 } else if (connecting.get(tab) == view) {
-                    tabs.getTabs().remove(tab); // still connecting: it never starts, and its starter is told
+                    remove(tab); // still connecting: it never starts, and its starter is told
                 }
             }
         };
@@ -653,7 +836,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                     content.getChildren().remove(note);
                     view.close();
                     if (!views.containsKey(tab)) {
-                        tabs.getTabs().remove(tab); // a new tab whose shell never came
+                        remove(tab); // a new tab whose shell never came
                     }
                     onError.accept(tr("terminal.startFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
                 });
@@ -689,7 +872,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
      */
     private void refreshTitles() {
         Map<String, Integer> seen = new java.util.HashMap<>();
-        for (Tab tab : tabs.getTabs()) {
+        for (Tab tab : allTabs()) {
             Supplier<String> title = titles.get(tab);
             if (title == null) {
                 continue;
@@ -707,7 +890,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
      */
     private void markBell(Tab tab, TerminalView view) {
         view.setOnBell(() -> {
-            if (!tab.isSelected() || !isVisible() || getScene() == null) {
+            if (!inView(tab)) {
                 if (!tab.getStyleClass().contains(BELL)) {
                     tab.getStyleClass().add(BELL);
                 }
@@ -728,16 +911,18 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
      */
     private void markNotifications(Tab tab, TerminalView view) {
         view.setOnNotify((title, body, post) -> {
-            boolean inView = tab.isSelected() && isVisible() && getScene() != null;
+            boolean inView = inView(tab);
             if (!inView && !tab.getStyleClass().contains(NOTIFIED)) {
                 tab.getStyleClass().add(NOTIFIED);
             }
             if (!post || !config.notifications()) {
                 return;
             }
+            var scene = tab.getContent() == null ? null : tab.getContent().getScene();
             boolean focused = inView
-                    && getScene().getWindow() != null
-                    && getScene().getWindow().isFocused();
+                    && scene != null
+                    && scene.getWindow() != null
+                    && scene.getWindow().isFocused();
             if (!focused) {
                 // Untitled, it is named after the tab, which is how the user knows which terminal spoke.
                 DesktopNotifier.post(title.isEmpty() ? tab.getText() : title, body);
@@ -754,7 +939,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             return; // replaced by a reconnect, or already gone
         }
         if (view.getSession() == null || !view.getSession().lostConnection()) {
-            tabs.getTabs().remove(tab);
+            remove(tab);
             return;
         }
         Label message = new Label(tr("terminal.connectionLost"));
@@ -773,7 +958,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         javafx.scene.layout.VBox column = new javafx.scene.layout.VBox(banner, view);
         javafx.scene.layout.VBox.setVgrow(view, javafx.scene.layout.Priority.ALWAYS);
         content.getChildren().setAll(column);
-        if (tab.isSelected()) {
+        if (inView(tab)) {
             Platform.runLater(reconnect::requestFocus);
         }
     }
@@ -790,7 +975,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Closes the selected tab, asking first if its shell is running something. */
     void closeActive() {
-        Tab tab = tabs.getSelectionModel().getSelectedItem();
+        Tab tab = currentTab();
         if (tab != null) {
             requestClose(tab);
         }
@@ -800,6 +985,10 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     void shutdown() {
         shuttingDown = true;
         tabs.getTabs().clear();
+        for (Tab tab : List.copyOf(inEditor)) {
+            inEditor.remove(tab);
+            release(tab); // the window is closing: its editor tabs go with it
+        }
     }
 
     private boolean shuttingDown;
@@ -855,7 +1044,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     private void focusIfAsked(Tab tab, TerminalView view) {
         if (focusWhenStarted == tab) {
             focusWhenStarted = null;
-            if (tab.isSelected()) {
+            if (inEditor.contains(tab) ? inView(tab) : tab.isSelected()) {
                 view.requestFocus();
             }
         }
@@ -966,14 +1155,14 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     void requestClose(Tab tab) {
         TerminalView view = views.get(tab);
         if (view == null || !config.confirmClose() || view.getSession() == null) {
-            tabs.getTabs().remove(tab);
+            remove(tab);
             return;
         }
         if (programNames.containsKey(tab)) {
             // A program tab: its program is what closing ends, while it runs; once it ended there is nothing to ask.
             if (!programExits.containsKey(tab)
                     || closeGuard.confirm(tab.getText(), new ArrayList<>(List.of(programNames.get(tab))))) {
-                tabs.getTabs().remove(tab);
+                remove(tab);
             }
             return;
         }
@@ -986,7 +1175,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         String stored = dirs.getOrDefault(tab, "");
         Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
         if (remote <= 0 || dir == null) {
-            tabs.getTabs().remove(tab);
+            remove(tab);
             return;
         }
         if (!asking.add(tab)) {
@@ -1002,7 +1191,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             List<String> answer = programs;
             Platform.runLater(() -> {
                 asking.remove(tab);
-                if (tabs.getTabs().contains(tab) && views.get(tab) == view) {
+                if (owns(tab) && views.get(tab) == view) {
                     closeUnlessDeclined(tab, answer);
                 }
             });
@@ -1011,7 +1200,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     private void closeUnlessDeclined(Tab tab, List<String> programs) {
         if (programs.isEmpty() || closeGuard.confirm(tab.getText(), new ArrayList<>(programs))) {
-            tabs.getTabs().remove(tab);
+            remove(tab);
         }
     }
 
@@ -1023,7 +1212,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     List<String> busyTabs(java.time.Duration remoteWait) {
         List<String> busy = new ArrayList<>();
         Map<Tab, java.util.concurrent.CompletableFuture<List<String>>> remoteAnswers = new LinkedHashMap<>();
-        for (Tab tab : tabs.getTabs()) {
+        for (Tab tab : allTabs()) {
             TerminalView view = views.get(tab);
             if (view == null || view.getSession() == null) {
                 continue;
@@ -1078,34 +1267,19 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         return asking.contains(tab);
     }
 
-    private void onClipboardKey(KeyEvent e) {
-        TerminalView view = activeView();
+    private void onClipboardKey(Tab tab, Node content, KeyEvent e) {
+        TerminalView view = views.get(tab);
         if (view == null) {
             return;
         }
         // Typed in the find bar, these are the field's: Paste pastes the query, not into the shell.
-        for (Node n = e.getTarget() instanceof Node t ? t : null; n != null && n != this; n = n.getParent()) {
+        for (Node n = e.getTarget() instanceof Node t ? t : null; n != null && n != content; n = n.getParent()) {
             if (n == findBar) {
                 return;
             }
         }
-        if (TerminalKeys.isMoveTabRight(e)) {
-            moveActive(1);
-            e.consume();
-            return;
-        }
-        if (TerminalKeys.isMoveTabLeft(e)) {
-            moveActive(-1);
-            e.consume();
-            return;
-        }
-        if (TerminalKeys.isNextTab(e)) {
-            selectNext(true);
-            e.consume();
-            return;
-        }
-        if (TerminalKeys.isPreviousTab(e)) {
-            selectNext(false);
+        // The strip's own keys (next tab, move tab) are the editor's for a terminal in the editor.
+        if (!inEditor.contains(tab) && stripKey(e)) {
             e.consume();
             return;
         }
@@ -1116,7 +1290,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             view.paste();
             e.consume();
         } else if (TerminalKeys.isFind(e, MAC)) {
-            find();
+            find(tab);
             e.consume();
         } else if (TerminalKeys.isPreviousPrompt(e, MAC)) {
             view.previousPrompt();
@@ -1125,6 +1299,22 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             view.nextPrompt();
             e.consume();
         }
+    }
+
+    /** Runs the strip's tab-switching and tab-moving chords; true when {@code e} was one. */
+    private boolean stripKey(KeyEvent e) {
+        if (TerminalKeys.isMoveTabRight(e)) {
+            moveActive(1);
+        } else if (TerminalKeys.isMoveTabLeft(e)) {
+            moveActive(-1);
+        } else if (TerminalKeys.isNextTab(e)) {
+            selectNext(true);
+        } else if (TerminalKeys.isPreviousTab(e)) {
+            selectNext(false);
+        } else {
+            return false;
+        }
+        return true;
     }
 
     /** Every tab's started view, in tab order; for tests. */
@@ -1157,12 +1347,17 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         refreshTitles();
     }
 
-    /** Asks for a new name for the selected tab ({@code terminal.rename}). */
+    /** Asks for a new name for the current tab ({@code terminal.rename}). */
     void renameActive() {
-        Tab tab = activeTab();
+        Tab tab = currentTab();
         if (tab != null) {
-            renamer.accept(names.getOrDefault(tab, tab.getText()), name -> rename(tab, name));
+            askRename(tab);
         }
+    }
+
+    /** Asks for a new name for {@code tab}. */
+    void askRename(Tab tab) {
+        renamer.accept(names.getOrDefault(tab, tab.getText()), name -> rename(tab, name));
     }
 
     /** Moves the selected tab one place left ({@code -1}) or right, keeping it selected. */
@@ -1199,7 +1394,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     /** A tab's own menu (right-click on its header): the tab it acts on is the clicked one. */
     private javafx.scene.control.ContextMenu tabMenu(Tab tab) {
         MenuItem rename = new MenuItem(tr("terminal.tab.rename"), Icons.edit());
-        rename.setOnAction(e -> renamer.accept(names.getOrDefault(tab, tab.getText()), name -> rename(tab, name)));
+        rename.setOnAction(e -> askRename(tab));
         MenuItem newTab = new MenuItem(tr("terminal.new"), Icons.plus());
         newTab.setOnAction(e -> newTerminal());
         MenuItem close = new MenuItem(tr("menu.close"), Icons.closeTab());
@@ -1218,6 +1413,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         moveLeft.setOnAction(e -> moveTabBy(tab, -1));
         MenuItem moveRight = new MenuItem(tr("terminal.tab.moveRight"), Icons.chevronRight());
         moveRight.setOnAction(e -> moveTabBy(tab, 1));
+        MenuItem toEditor = new MenuItem(tr("terminal.tab.moveToEditor"), Icons.openInTab());
+        toEditor.setOnAction(e -> moveToEditor(tab));
         javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu(
                 rename,
                 newTab,
@@ -1227,9 +1424,11 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 closeRight,
                 new javafx.scene.control.SeparatorMenuItem(),
                 moveLeft,
-                moveRight);
+                moveRight,
+                toEditor);
         // Per show: how many tabs there are, and where this one sits, change after the menu is built.
         menu.setOnShowing(e -> {
+            toEditor.setVisible(editorHost != null);
             int at = tabs.getTabs().indexOf(tab);
             int count = tabs.getTabs().size();
             closeOthers.setDisable(count < 2);
@@ -1335,13 +1534,24 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Opens the find bar over the selected tab, seeded with a one-line selection. */
     void find() {
-        TerminalView view = activeView();
+        Tab tab = currentTab();
+        if (tab != null) {
+            find(tab);
+        }
+    }
+
+    /** Opens the find bar over {@code tab}, seeded with a one-line selection. */
+    void find(Tab tab) {
+        TerminalView view = views.get(tab);
         if (view == null) {
             return;
         }
-        placeFindBar(activeTab());
+        placeFindBar(tab);
         findBar.open(view, view.selectedText());
     }
+
+    /** The tab the find bar is over, or null. */
+    private @Nullable Tab findTab;
 
     TerminalFindBar findBar() {
         return findBar;
@@ -1353,6 +1563,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             old.getChildren().remove(findBar);
         }
         TerminalView view = tab == null ? null : views.get(tab);
+        findTab = view == null ? null : tab;
         if (view == null) {
             findBar.close();
             return;

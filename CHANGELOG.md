@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A terminal can be an editor tab.** Move to Editor, in a terminal tab's menu or the palette (Terminal: Move to
+  Editor, also in the Window menu), shows the terminal as an editor tab beside your files, as IntelliJ's terminal
+  does; its shell keeps running and keeps what it printed. The editor tab's menu renames it, closes it or puts it back
+  with Move to Terminal Tool Window. Closing it asks first when its shell is running something, as in the tool window,
+  and a window close lists it with the others. With no terminal open, Move to Editor opens a new one in the editor.
+
 - **Debug C and C++ programs.** Editora now debugs C and C++ with CodeLLDB, the debugger it already uses for Rust:
   - **F5 in a CMake project** configures a Debug build in `build/editora-debug`, builds it in the Debug console,
     and debugs the program that holds the file.

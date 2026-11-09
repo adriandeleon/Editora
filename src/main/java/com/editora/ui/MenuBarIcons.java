@@ -169,6 +169,8 @@ final class MenuBarIcons {
         add("palette.show", Icons::palette);
         add("tool.terminal", Icons::terminal);
         add("terminal.new", Icons::plus);
+        add("terminal.moveToEditor", Icons::openInTab);
+        add("terminal.moveToToolWindow", Icons::dock);
         add("file.openTerminal", Icons::terminal);
         add("view.debugLog", Icons::fileSheet); // not the Terminal tool window's own glyph
         add("help.about", Icons::about);

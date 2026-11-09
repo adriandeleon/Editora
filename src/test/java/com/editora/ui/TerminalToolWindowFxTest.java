@@ -120,6 +120,51 @@ class TerminalToolWindowFxTest {
         }
     }
 
+    @Test
+    void moveToEditorAndBackKeepsTheShellAndClosingTheWindowEndsIt() throws Exception {
+        try (FxWindowFixture fx = FxWindowFixture.create()) {
+            CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+            TerminalCoordinator terminals = fx.controller.terminalCoordinator;
+            ToolWindow window = fx.controller.terminalToolWindow;
+            ToolWindowManager toolWindows = FxTestSupport.field(fx.controller, "toolWindows");
+
+            FxTestSupport.runOnFx(() -> registry.run("terminal.new"));
+            await(() -> FxTestSupport.callOnFx(() -> terminals.panel().activeView() != null), "the shell");
+            long pid = FxTestSupport.callOnFx(
+                    () -> terminals.panel().activeView().getSession().pid());
+
+            FxTestSupport.runOnFx(() -> registry.run("terminal.moveToEditor"));
+            TerminalEditorTab shown = FxTestSupport.callOnFx(() -> fx.controller.editorArea.selectedTab() != null
+                            && fx.controller.editorArea.selectedTab().getUserData() instanceof TerminalEditorTab t
+                    ? t
+                    : null);
+            assertTrue(shown != null, "the terminal is the selected editor tab");
+            assertFalse(FxTestSupport.callOnFx(() -> toolWindows.isOpen(window)), "the emptied tool window hid");
+            assertEquals(0, (int) FxTestSupport.callOnFx(() -> terminals.panel().terminalCount()));
+            assertTrue(FxTestSupport.callOnFx(terminals::hasTerminals), "the terminal commands stay enabled");
+            assertTrue(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "the same shell runs on");
+
+            FxTestSupport.runOnFx(() -> registry.run("terminal.moveToToolWindow"));
+            assertTrue(FxTestSupport.callOnFx(() -> toolWindows.isOpen(window)), "back in the tool window");
+            assertEquals(1, (int) FxTestSupport.callOnFx(() -> terminals.panel().terminalCount()), "no second shell");
+            assertEquals(pid, (long) FxTestSupport.callOnFx(
+                    () -> terminals.panel().activeView().getSession().pid()));
+            assertFalse(
+                    FxTestSupport.callOnFx(() -> fx.controller.editorArea.tabs().stream()
+                            .anyMatch(t -> t.getUserData() instanceof TerminalEditorTab)),
+                    "its editor tab went");
+
+            // Moved again, it ends with the window like any other shell.
+            FxTestSupport.runOnFx(() -> registry.run("terminal.moveToEditor"));
+            fx.dispose();
+            var process = ProcessHandle.of(pid);
+            if (process.isPresent()) {
+                process.get().onExit().get(10, TimeUnit.SECONDS);
+            }
+            assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "shell ended");
+        }
+    }
+
     private static void await(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {

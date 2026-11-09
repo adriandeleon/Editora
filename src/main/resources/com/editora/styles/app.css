@@ -6038,6 +6038,15 @@
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
 }
+/* The same marks on a terminal moved into the editor (TerminalEditorTab mirrors them onto its editor tab). */
+.tab.terminal-editor-tab.terminal-bell .tab-title {
+    -fx-text-fill: -color-warning-fg;
+    -fx-font-weight: bold;
+}
+.tab.terminal-editor-tab.terminal-notified .tab-title {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
 /* The scrollback bar, coloured from the terminal palette rather than the control theme: TerminalView sets
    -terminal-thumb / -terminal-thumb-hover on the bar itself (Termina's rules). */
 .terminal-scroll-bar {
