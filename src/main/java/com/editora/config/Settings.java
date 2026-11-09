@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 165;
+    public static final int SCHEMA_VERSION = 166;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -875,6 +875,8 @@ public class Settings {
      * all (java-debug's {@code suspendAllThreads}; IntelliJ's "Suspend: All"). Off stops only the thread that hit it.
      */
     private boolean debugSuspendAllThreads = false;
+    /** Debug History: how many stops a session keeps to go back to (0 = none). In memory only, never saved. */
+    private int debugHistoryStops = 200;
     /**
      * Java debugging: the exception classes the exception breakpoints are limited to, separated by commas
      * (e.g. {@code java.lang.IllegalStateException}); blank = every exception.
@@ -3597,6 +3599,17 @@ public class Settings {
     public void setDebugShowToString(boolean debugShowToString) {
         this.debugShowToString = debugShowToString;
     }
+
+    public int getDebugHistoryStops() {
+        return Math.max(0, Math.min(debugHistoryStops, MAX_DEBUG_HISTORY_STOPS));
+    }
+
+    public void setDebugHistoryStops(int debugHistoryStops) {
+        this.debugHistoryStops = Math.max(0, Math.min(debugHistoryStops, MAX_DEBUG_HISTORY_STOPS));
+    }
+
+    /** The most stops Debug History may keep. */
+    public static final int MAX_DEBUG_HISTORY_STOPS = 5_000;
 
     public boolean isDebugSuspendAllThreads() {
         return debugSuspendAllThreads;

@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug History: go back to an earlier stop.** The Debug window keeps each stop of a session as it was: the call
+  stack, the values you looked at, your watches, inline values and pinned values. Back and Forward in the Debug
+  toolbar (or *Debug: Back*, *Debug: Forward* and *Debug: Show History…*) show an earlier stop read-only, with its
+  line marked grey in the editor and the values that changed since the stop before marked as usual. *Show Value
+  History* on a variable lists its value at every stop and goes back to the one you pick. The stops are kept in
+  memory only (200 by default, *Settings → Debugging → History*), and after the session ends you can still read them
+  until the next one starts. Values nobody opened at a stop were never fetched, so they cannot be shown later.
+
 - **Debug C#, Ruby and PHP.** F5 now debugs these three languages, each with its own card under *Settings →
   Debugging*, where *Install…* fetches its debugger:
   - **C#** runs on netcoredbg. Editora builds the project with `dotnet build` in the Debug console, then stops at your

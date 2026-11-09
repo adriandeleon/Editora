@@ -387,4 +387,44 @@ final class DebugPanelText {
             return List.copyOf(entries);
         }
     }
+
+    /** The toolbar's name of an earlier stop shown: {@code Stop 4 · 12:01:05}. */
+    static String historyLabel(DebugHistory.Stop stop) {
+        return tr("debugpanel.history.label", stop.number, HISTORY_TIME.format(stop.time));
+    }
+
+    /**
+     * The banner over an earlier stop: which stop, when, why and where it stopped, and that its values are as they
+     * were then.
+     */
+    static String historyBanner(DebugHistory.Stop stop) {
+        DapModels.StackFrameInfo top = stop.top();
+        String where = top == null
+                ? ""
+                : frameName(top.name())
+                        + (top.file() == null
+                                ? ""
+                                : " (" + DebugValues.sourceName(top.file()) + ":" + (top.line() + 1) + ")");
+        String reason = stop.reason.isBlank() ? tr("debugpanel.history.paused") : stop.reason;
+        return tr("debugpanel.history.banner", stop.number, HISTORY_TIME.format(stop.time), reason, where);
+    }
+
+    /** A stop's line in the history list: why and where it stopped. */
+    static String historyEntry(DebugHistory.Stop stop) {
+        DapModels.StackFrameInfo top = stop.top();
+        String where = top == null
+                ? ""
+                : frameName(top.name())
+                        + (top.file() == null
+                                ? ""
+                                : " — " + DebugValues.sourceName(top.file()) + ":" + (top.line() + 1));
+        return tr(
+                "debugpanel.history.entry",
+                stop.number,
+                stop.reason.isBlank() ? tr("debugpanel.history.paused") : stop.reason,
+                where);
+    }
+
+    private static final java.time.format.DateTimeFormatter HISTORY_TIME =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
 }
