@@ -16,9 +16,7 @@ import java.util.function.Function;
 import javafx.scene.Node;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
-import javafx.scene.control.MenuItem;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
@@ -51,8 +49,6 @@ final class MapCardLinks {
     static final Duration OUTLINE_WAIT = Duration.seconds(4);
     /** How wide a result card opens at most, unzoomed: six of them fit around the card they were found from. */
     static final double CARD_WIDTH = 460;
-    /** Groups the "+N more" chip's menu lists. */
-    static final int MAX_MORE_ITEMS = 200;
 
     /**
      * What is asked for: the editor's code navigation, answered as cards on the Map. A kind that {@link #leads}
@@ -599,6 +595,8 @@ final class MapCardLinks {
             return;
         }
         EdgeSet set = replaceSet(from, kind, waiting.answer.via(), waiting.name);
+        set.hits = waiting.answer.hits();
+        set.groups = groups;
         int opened = 0;
         boolean refused = false;
         ProjectMapPreview first = null;
@@ -930,6 +928,12 @@ final class MapCardLinks {
     List<CardAttachment> attachments(ProjectMapPreview card) {
         Map<Kind, EdgeSet> of = sets.get(card);
         List<CardAttachment> all = new ArrayList<>(of == null ? List.of() : of.values());
+        if (of != null) {
+            of.values().stream()
+                    .map(set -> set.list)
+                    .filter(java.util.Objects::nonNull)
+                    .forEach(all::add);
+        }
         MapHierarchyTree tree = trees.get(card);
         if (tree != null) {
             all.add(tree);
@@ -941,6 +945,11 @@ final class MapCardLinks {
     List<CardAttachment> allAttachments() {
         List<CardAttachment> all = new ArrayList<>();
         sets.values().forEach(of -> all.addAll(of.values()));
+        sets.values()
+                .forEach(of -> of.values().stream()
+                        .map(set -> set.list)
+                        .filter(java.util.Objects::nonNull)
+                        .forEach(all::add));
         all.addAll(trees.values());
         return all;
     }
@@ -993,6 +1002,7 @@ final class MapCardLinks {
         Map<Kind, EdgeSet> of = sets.remove(card);
         if (of != null) {
             for (EdgeSet set : of.values()) {
+                set.closeList();
                 set.owned.stream()
                         .filter(result -> result != card && cards.isOpen(result) && !results.contains(result))
                         .forEach(results::add);
@@ -1061,7 +1071,7 @@ final class MapCardLinks {
         if (source == null || root == null || !cards.isOpen(from)) {
             return;
         }
-        closeHierarchy(from);
+        closeSideColumns(from); // one column beside a card: the tree replaces a list
         keepCard(from);
         MapHierarchyTree tree = new MapHierarchyTree(
                 from,
@@ -1080,6 +1090,23 @@ final class MapCardLinks {
         tree.show(structure != CardAttachment.Side.LEFT); // past the card's Structure column
         cards.touch(from);
         cards.connectorsMoved();
+    }
+
+    /** Takes away what stands beside {@code card}: its hierarchy tree and its answers' lists. */
+    private void closeSideColumns(ProjectMapPreview card) {
+        closeHierarchy(card);
+        Map<Kind, EdgeSet> of = sets.get(card);
+        if (of != null) {
+            of.values().forEach(EdgeSet::closeList);
+        }
+    }
+
+    /** The list of {@code card}'s answer of {@code kind}, or null. For tests. */
+    @Nullable
+    MapResultsList list(ProjectMapPreview card, Kind kind) {
+        Map<Kind, EdgeSet> of = sets.get(card);
+        EdgeSet set = of == null ? null : of.get(kind);
+        return set == null ? null : set.list;
     }
 
     /** Takes {@code from}'s hierarchy tree away, if it has one. */
@@ -1264,6 +1291,14 @@ final class MapCardLinks {
         final @Nullable String name;
         final List<Edge> edges = new ArrayList<>();
         final List<Group> more = new ArrayList<>();
+        /** Every place of the answer, and its groups as ranked: what its list shows (gap 7). */
+        List<Hit> hits = List.of();
+
+        List<Group> groups = List.of();
+        /** The list of every place, shown by the chip, or null. */
+        @Nullable
+        MapResultsList list;
+
         final Button chip = new Button();
         /** The result cards this answer opened (not those open before it): they close with its card (C11). */
         final Set<ProjectMapPreview> owned = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -1278,7 +1313,7 @@ final class MapCardLinks {
             chip.setVisible(false);
             chip.setFocusTraversable(true);
             chip.setMnemonicParsing(false);
-            chip.setOnAction(event -> showMore());
+            chip.setOnAction(event -> showList());
             canvasHost.getChildren().add(chip);
         }
 
@@ -1360,34 +1395,75 @@ final class MapCardLinks {
             cards.connectorsMoved();
         }
 
-        /** The chip's menu: every group without a card; choosing one opens its card with its edge. */
-        private void showMore() {
-            ContextMenu menu = new ContextMenu();
-            Path root = cards.root();
-            for (Group group : more.subList(0, Math.min(more.size(), MAX_MORE_ITEMS))) {
-                MenuItem item = new MenuItem(tr(
-                        "project.map.links.moreItem",
-                        group.label(),
-                        relative(root, group.file()),
-                        group.line() + 1,
-                        group.count()));
-                item.setMnemonicParsing(false);
-                item.setOnAction(event -> {
-                    more.remove(group);
-                    if (open(group) == Opened.REFUSED) {
-                        more.addFirst(group); // no room: it stays listed (C4)
-                        cards.status(tr("project.map.links.noRoom"));
-                    }
-                    updateChip();
-                });
-                menu.getItems().add(item);
+        /**
+         * The chip's list (gap 7): every place of the answer, grouped by file with its line's text, filtered, beside
+         * the card asked from — replacing that card's other side column. Picking a place opens its card there.
+         */
+        void showList() {
+            if (!cards.isOpen(from)) {
+                return;
             }
-            if (more.size() > MAX_MORE_ITEMS) {
-                MenuItem rest = new MenuItem(tr("project.map.links.moreLeft", more.size() - MAX_MORE_ITEMS));
-                rest.setDisable(true);
-                menu.getItems().add(rest);
+            closeSideColumns(from);
+            MapResultsList shown = new MapResultsList(
+                    from,
+                    canvasHost,
+                    cards.root(),
+                    name == null || name.isBlank() ? tr("project.map.hierarchy.unnamed") : name,
+                    this::openPlace,
+                    group -> edges.stream().anyMatch(edge -> edge.group.key().equals(group.key())),
+                    () -> {
+                        closeList();
+                        from.focusContent();
+                    },
+                    () -> cards.touch(from),
+                    cards::connectorsMoved);
+            list = shown;
+            shown.show(cards.structureSide(from) != CardAttachment.Side.LEFT);
+            shown.show(hits, groups, javafx.application.Platform::runLater);
+            cards.touch(from);
+            cards.connectorsMoved();
+        }
+
+        /** Takes the list away, if shown. */
+        void closeList() {
+            MapResultsList shown = list;
+            list = null;
+            if (shown != null) {
+                shown.dispose();
+                cards.connectorsMoved();
             }
-            menu.show(chip, javafx.geometry.Side.BOTTOM, 0, 0);
+        }
+
+        /**
+         * A place picked in the list: its group's card — opened with its edge, or the one already open — at that very
+         * place, the keyboard following. False when there is no room (every other card pinned): it stays listed.
+         */
+        boolean openPlace(MapResultsList.Place place) {
+            Group group = place.group();
+            if (!cards.isOpen(from)) {
+                return false;
+            }
+            ProjectMapPreview card = edges.stream()
+                    .filter(edge -> edge.group.key().equals(group.key()) && cards.isOpen(edge.target))
+                    .map(edge -> edge.target)
+                    .findFirst()
+                    .orElse(null);
+            if (card == null) {
+                int before = edges.size();
+                Opened done = open(group);
+                if (done == Opened.REFUSED) {
+                    cards.status(tr("project.map.links.noRoom"));
+                    return false;
+                }
+                more.remove(group);
+                updateChip();
+                card = done == Opened.OPENED && edges.size() > before ? edges.getLast().target : from;
+            }
+            card.linksRevealPlace(place.line(), markOf(kind, group, name));
+            if (card != from) {
+                cards.follow(from, card);
+            }
+            return true;
         }
 
         @Override
@@ -1482,6 +1558,7 @@ final class MapCardLinks {
             if (filling == this) {
                 filling = null;
             }
+            closeList();
             canvasHost.getChildren().remove(chip);
             edges.forEach(edge -> {
                 canvasHost.getChildren().remove(edge.label);

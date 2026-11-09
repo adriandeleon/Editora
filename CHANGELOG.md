@@ -48,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   speaks the Debug Adapter Protocol can be declared: lldb-dap, netcoredbg, a language's own. Give its command, how it
   talks, the file types it debugs, and what F5 sends it. A launch.json configuration can use it by its type, and a
   trusted project can bring its own in `.editora/debug-adapters.json`.
+- **See every reference on the Project Map as a list.** Show References, Callers, Implementations or Subtypes as
+  Cards opens six cards; the "+N more" chip used to list the rest by name only. It now opens a list beside the card
+  with every place, grouped by file, each with its line's text. Type to filter by file or text, and clear *Tests* to
+  leave out test files. Enter or a double-click opens a place as a card at that very line.
 - **Disassembly and Memory views.** For C, C++, Rust and Go, the Debug window's third area now has *Disassembly* and
   *Memory* beside the *Console*, as VS Code, Visual Studio and IntelliJ have:
   - **Disassembly** shows the machine instructions around the selected frame, marks the one it is at, and labels each
