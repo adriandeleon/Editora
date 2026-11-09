@@ -191,4 +191,17 @@ class LocalProcessesTest {
         assertEquals(List.of(go, idle), LocalProcesses.sorted(List.of(idle, go)), "attachable first");
         assertNull(LocalProcesses.classify(5, "/usr/local/bin/server", List.of()), "not told by its command line");
     }
+
+    @Test
+    void rustAndNativeProgramsAreAttachedByProcessId() {
+        for (LocalProcesses.Kind kind : List.of(LocalProcesses.Kind.RUST, LocalProcesses.Kind.NATIVE)) {
+            var t = new LocalProcesses.Target(7, kind, "app", "", 0);
+            assertTrue(t.attachable(), kind.toString());
+            assertTrue(kind.byPid());
+        }
+        assertFalse(LocalProcesses.Kind.JAVA.byPid());
+        assertEquals(LocalProcesses.Kind.GO, LocalProcesses.programKind(ProgramFiles.Kind.GO));
+        assertEquals(LocalProcesses.Kind.RUST, LocalProcesses.programKind(ProgramFiles.Kind.RUST));
+        assertEquals(LocalProcesses.Kind.NATIVE, LocalProcesses.programKind(ProgramFiles.Kind.NATIVE));
+    }
 }

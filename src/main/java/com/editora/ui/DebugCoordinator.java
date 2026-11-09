@@ -84,6 +84,15 @@ final class DebugCoordinator {
             return List.of(tool.commandExample());
         }
 
+        /**
+         * Whether a build may run the code of {@code root} — a CMake or Make project, which has no build tool of its
+         * own here — after asking, as a build tool's first build does ({@code items}: what will run, one line
+         * each); false when the user declined.
+         */
+        default boolean trustBuild(Path root, List<String> items) {
+            return true;
+        }
+
         void toggleToolWindow();
 
         void setToolWindowAvailable(boolean available);
@@ -647,13 +656,20 @@ final class DebugCoordinator {
 
     /** Streams a before-launch build into the Debug console and keeps Stop usable while it runs. */
     private BeforeLaunchStep.Console beforeLaunchConsole() {
+        return beforeLaunchConsole(true);
+    }
+
+    /** As {@link #beforeLaunchConsole()}; not {@code fresh}: a later step of the same build, which keeps the output. */
+    private BeforeLaunchStep.Console beforeLaunchConsole(boolean fresh) {
         announceStart = true; // a step's status would outlive it (review 2, A105)
         return new BeforeLaunchStep.Console() {
             @Override
             public void started(String commandLine) {
                 ops.openToolWindow();
                 panel().setPreparing(true);
-                panel().clearConsole(); // a new launch: the previous session's output is not this one's
+                if (fresh) {
+                    panel().clearConsole(); // a new launch: the previous session's output is not this one's
+                }
                 consoleStarted = true;
                 panel().appendOutput("$ " + commandLine + "\n", "console");
             }
@@ -719,6 +735,12 @@ final class DebugCoordinator {
         dapManager.configureExternal(
                 com.editora.dap.DebugLanguages.RUST,
                 on && s.isRustDebugEnabled(),
+                scope.debugTool("rust", s.getRustDebugPath()),
+                found -> applyGating());
+        // C and C++: the same CodeLLDB as Rust's.
+        dapManager.configureExternal(
+                com.editora.dap.DebugLanguages.CPP,
+                on && s.isCppDebugEnabled(),
                 scope.debugTool("rust", s.getRustDebugPath()),
                 found -> applyGating());
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
@@ -2354,6 +2376,106 @@ final class DebugCoordinator {
         withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.RUST, launch));
     }
 
+    /**
+     * Debugs C or C++ file {@code path} on CodeLLDB: built first — its CMake project's Debug build, its Make project's
+     * default goal (each after the folder's trust: their build files are code), or the file alone by the C or C++
+     * compiler — then the executable that made is launched ({@link com.editora.dap.NativeBuild}).
+     */
+    private void debugNativeFile(EditorBuffer b, Path path, List<String> args) {
+        Path cmake = com.editora.dap.NativeBuild.cmakeRoot(path);
+        Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(path) : null;
+        com.editora.dap.NativeBuild.Plan plan =
+                com.editora.dap.NativeBuild.plan(path, "cpp".equals(b.getLanguage()), cmake, make, nativeOutputDir());
+        if (plan == null) {
+            host.setStatus(tr("status.debug.nativeHeaderAlone", path.getFileName()));
+            return;
+        }
+        if (plan.tool() != com.editora.dap.NativeBuild.Tool.COMPILER) {
+            String buildFile = plan.tool() == com.editora.dap.NativeBuild.Tool.CMAKE ? "CMakeLists.txt" : "Makefile";
+            String key = plan.tool() == com.editora.dap.NativeBuild.Tool.CMAKE
+                    ? "dialog.trust.item.cmake"
+                    : "dialog.trust.item.make";
+            if (!ops.trustBuild(plan.root(), List.of(tr(key, buildFile)))) {
+                return; // not trusted: nothing is built
+            }
+        }
+        nameSession(plan.sessionName());
+        relaunch = () -> startNative(path, plan, args);
+        startNative(path, plan, args);
+    }
+
+    /** Where a lone C or C++ file's program is compiled to: the config folder's cache, else the temporary folder. */
+    private Path nativeOutputDir() {
+        Path config = host.configDir();
+        return config != null
+                ? config.resolve("cache").resolve("native-debug")
+                : Path.of(System.getProperty("java.io.tmpdir"), "editora-native-debug");
+    }
+
+    /** Saves the project's C and C++ files, runs {@code plan}'s build steps in the Debug console, then launches. */
+    private void startNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args) {
+        saveBuffersUnder(plan.root(), "c");
+        saveBuffersUnder(plan.root(), "cpp");
+        if (beforeLaunch.isActive() || pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        try {
+            if (plan.buildDir() != null) {
+                com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
+            }
+            if (plan.output() != null && plan.output().getParent() != null) {
+                java.nio.file.Files.createDirectories(plan.output().getParent());
+            }
+        } catch (java.io.IOException e) {
+            host.setStatus(tr("debug.error.startFailed", e.getMessage()));
+            return;
+        }
+        boolean terminal = host.settings().isDebugProgramConsole();
+        runNativeSteps(path, plan, 0, () -> launchNative(path, plan, args, terminal));
+        updateDebugAvailability();
+    }
+
+    /** Runs {@code plan}'s build step {@code index} and those after it, then {@code then}; a failed one ends it. */
+    private void runNativeSteps(Path path, com.editora.dap.NativeBuild.Plan plan, int index, Runnable then) {
+        if (index >= plan.steps().size()) {
+            then.run();
+            return;
+        }
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(
+                        String.valueOf(path.getFileName()), plan.steps().get(index), "status.run.nativeBuild"),
+                plan.root(),
+                java.util.Map.of(),
+                beforeLaunchConsole(index == 0),
+                // after the step has ended: the next one is not refused as "still running"
+                () -> Platform.runLater(() -> runNativeSteps(path, plan, index + 1, then)));
+    }
+
+    /** Finds the executable {@code plan} built (off the FX thread) and launches it, or says there is none. */
+    private void launchNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args, boolean terminal) {
+        Thread.ofVirtual().name("editora-native-executable").start(() -> {
+            Path exe = switch (plan.tool()) {
+                case CMAKE ->
+                    plan.buildDir() == null ? null : com.editora.dap.NativeBuild.cmakeExecutable(plan.buildDir(), path);
+                case MAKE -> com.editora.dap.NativeBuild.makeExecutable(plan.root(), path);
+                case COMPILER -> plan.output();
+            };
+            boolean there = exe != null && java.nio.file.Files.isRegularFile(exe);
+            Platform.runLater(() -> {
+                if (!there || exe == null) {
+                    host.setStatus(tr("status.debug.nativeNoProgram", path.getFileName()));
+                    return;
+                }
+                java.util.Map<String, Object> launch =
+                        com.editora.dap.NativeBuild.launch(exe, args, plan.root(), terminal);
+                ops.openToolWindow();
+                withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.CPP, launch));
+            });
+        });
+    }
+
     /** Saves the edited buffers of {@code language} under {@code root}: a build reads them from disk. */
     private void saveBuffersUnder(@Nullable Path root, String language) {
         host.forEachBuffer(other -> {
@@ -2504,6 +2626,10 @@ final class DebugCoordinator {
         }
         if ("rust".equals(language)) {
             debugRustFile(b, path, fileArgs);
+            return;
+        }
+        if ("cpp".equals(language)) {
+            debugNativeFile(b, path, fileArgs);
             return;
         }
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
@@ -3866,8 +3992,12 @@ final class DebugCoordinator {
     /** A row's second line: which debugger, and where it listens — or what to start the program with. Pure. */
     static String processDetail(com.editora.dap.LocalProcesses.Target t) {
         String kind = tr("debug.attachProcess.kind." + t.kind().name().toLowerCase(java.util.Locale.ROOT));
-        if (t.kind() == com.editora.dap.LocalProcesses.Kind.GO) {
-            return tr("debug.attachProcess.byPid", kind);
+        if (t.kind().byPid()) {
+            return tr(
+                    t.kind() == com.editora.dap.LocalProcesses.Kind.GO
+                            ? "debug.attachProcess.byPid"
+                            : "debug.attachProcess.byPidLldb",
+                    kind);
         }
         return t.attachable()
                 ? tr("debug.attachProcess.listening", kind, t.address())
@@ -3880,7 +4010,7 @@ final class DebugCoordinator {
             case JAVA -> "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005";
             case NODE -> "--inspect";
             case PYTHON -> "-m debugpy --listen 5678";
-            case GO -> "";
+            case GO, RUST, NATIVE -> "";
         };
     }
 
@@ -3931,7 +4061,30 @@ final class DebugCoordinator {
                 withClosedBreakpoints(() -> dapManager.startPythonAttach(anchor, t.host(), t.port()));
             }
             case GO -> attachToGo(t.pid(), t.name());
+            case RUST -> attachToNative(t.pid(), t.name(), com.editora.dap.DebugLanguages.RUST);
+            case NATIVE -> attachToNative(t.pid(), t.name(), com.editora.dap.DebugLanguages.CPP);
         }
+    }
+
+    /**
+     * Attaches CodeLLDB to native program {@code pid} of this machine (Rust's or C and C++'s, {@code language}): Stop
+     * detaches and leaves it running. The session is anchored at the active file of that language, else the project.
+     */
+    private void attachToNative(long pid, String name, com.editora.dap.DebugLanguage language) {
+        if (!debugEffectiveFor(language.id())) {
+            host.setStatus(unavailableMessage(language.id(), null));
+            return;
+        }
+        EditorBuffer b = host.activeBuffer();
+        Path active = b != null && language.editorLanguages().contains(b.getLanguage()) ? b.getPath() : null;
+        Path root = ops.projectRoot();
+        Path anchor = active != null ? active : root != null ? root : Path.of(System.getProperty("user.home"));
+        java.util.Map<String, Object> attach = com.editora.dap.NativeBuild.attach(pid, language.id());
+        ops.openToolWindow();
+        nameSession(name + " (" + pid + ")");
+        Runnable start = () -> withClosedBreakpoints(() -> dapManager.startExternal(anchor, language, attach));
+        relaunch = start; // attaches again
+        start.run();
     }
 
     /**

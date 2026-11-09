@@ -51,6 +51,21 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public boolean trustBuild(Path root, List<String> items) {
+        if (mc.config.getTrustStore().isTrusted(root)) {
+            return true;
+        }
+        TrustPrompts.Prompt prompt = TrustPrompts.buildProject(
+                mc.stage, root, new com.editora.build.BuildTrust.Summary(root, null, "", items));
+        if (prompt.alert().showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) != prompt.trust()) {
+            return false;
+        }
+        mc.config.getTrustStore().trust(root);
+        mc.saveTrustDecision();
+        return true;
+    }
+
+    @Override
     public void toggleToolWindow() {
         mc.toolWindows.toggle(mc.debugToolWindow);
     }

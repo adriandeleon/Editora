@@ -16,8 +16,9 @@ import org.jspecify.annotations.Nullable;
  * The programs on this machine Debug: Attach to Process can attach to (Visual Studio's and IntelliJ's process
  * pickers): a JVM started with the JDWP agent listening ({@code -agentlib:jdwp=…,server=y,address=5005}), a Node.js
  * started with its inspector ({@code --inspect}), a Python waiting for debugpy ({@code -m debugpy --listen 5678}), and
- * a Go program, which Delve attaches to by its process id. The same kinds of process started without debugging are
- * listed too, so the picker can say what to add. A Go program is told by its executable ({@link GoBinaries}), not its
+ * a Go program, which Delve attaches to by its process id, and a Rust or other native program built with debug
+ * information, which CodeLLDB attaches to so. The same kinds of process started without debugging are
+ * listed too, so the picker can say what to add. A Go program is told by its executable ({@link ProgramFiles}), not its
  * command line; not on Windows.
  *
  * <p>Read from each process's command line ({@link ProcessHandle.Info}); Windows does not give another process's
@@ -33,7 +34,16 @@ public final class LocalProcesses {
         JAVA,
         NODE,
         PYTHON,
-        GO
+        GO,
+        /** A Rust program built with debug information: CodeLLDB attaches by process id. */
+        RUST,
+        /** A native program (C, C++, …) built with debug information: CodeLLDB attaches by process id. */
+        NATIVE;
+
+        /** Whether a debugger attaches to it by process id, with no port of its own. */
+        public boolean byPid() {
+            return this == GO || this == RUST || this == NATIVE;
+        }
     }
 
     /**
@@ -45,7 +55,7 @@ public final class LocalProcesses {
 
         /** Whether a debugger can attach to it: at a known address, or a Go program by its process id. */
         public boolean attachable() {
-            return port > 0 || kind == Kind.GO;
+            return port > 0 || kind.byPid();
         }
 
         /** {@code host:port}, as Attach takes it; {@code ""} when it has none. */
@@ -59,7 +69,8 @@ public final class LocalProcesses {
         long self = ProcessHandle.current().pid();
         List<Target> out = new ArrayList<>();
         Map<Long, String> windows = isWindows() ? windowsCommandLines() : Map.of();
-        Map<String, Boolean> goPrograms = new java.util.HashMap<>(); // one read per program file, not per process
+        // One read per program file, not per process; null: nothing a debugger attaches to by process id.
+        Map<String, java.util.Optional<ProgramFiles.Kind>> programs = new java.util.HashMap<>();
         ProcessHandle.allProcesses().forEach(p -> {
             if (p.pid() == self) {
                 return;
@@ -76,8 +87,9 @@ public final class LocalProcesses {
                     }
                 }
                 Target t = classify(p.pid(), command, args);
-                if (t == null && isGoProgram(command, goPrograms)) {
-                    t = new Target(p.pid(), Kind.GO, fileName(command), "", 0);
+                Kind byPid = t == null ? programKind(command, programs) : null;
+                if (byPid != null) {
+                    t = new Target(p.pid(), byPid, fileName(command), "", 0);
                 }
                 if (t != null) {
                     out.add(t);
@@ -89,12 +101,27 @@ public final class LocalProcesses {
         return sorted(out);
     }
 
-    /** Whether {@code command} (an absolute program path) is a Go program, read once per path into {@code seen}. */
-    private static boolean isGoProgram(String command, Map<String, Boolean> seen) {
+    /**
+     * What {@code command} (an absolute program path) is to a debugger attaching by process id — Go, or Rust or
+     * another native program with debug information — read once per path into {@code seen}; null for neither.
+     */
+    private static @Nullable Kind programKind(String command, Map<String, java.util.Optional<ProgramFiles.Kind>> seen) {
         if (command.isEmpty() || isWindows() || !command.startsWith("/")) {
-            return false;
+            return null;
         }
-        return seen.computeIfAbsent(command, c -> GoBinaries.isGo(java.nio.file.Path.of(c)));
+        ProgramFiles.Kind kind = seen.computeIfAbsent(
+                        command, c -> java.util.Optional.ofNullable(ProgramFiles.kind(java.nio.file.Path.of(c))))
+                .orElse(null);
+        return kind == null ? null : programKind(kind);
+    }
+
+    /** The picker's kind of a program file's kind. Pure. */
+    static Kind programKind(ProgramFiles.Kind kind) {
+        return switch (kind) {
+            case GO -> Kind.GO;
+            case RUST -> Kind.RUST;
+            case NATIVE -> Kind.NATIVE;
+        };
     }
 
     /** Attachable first, then by kind and name. Pure. */

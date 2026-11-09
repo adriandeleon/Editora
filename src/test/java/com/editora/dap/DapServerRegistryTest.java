@@ -15,7 +15,7 @@ class DapServerRegistryTest {
     @Test
     void languageIdsForDebugAreJavaPythonJavascriptGroovyKotlinClojureScalaAndGo() {
         assertEquals(
-                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go", "rust"),
+                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go", "rust", "cpp"),
                 DapServerRegistry.languageIdsForDebug());
     }
 

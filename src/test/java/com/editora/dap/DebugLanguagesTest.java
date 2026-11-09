@@ -20,7 +20,7 @@ class DebugLanguagesTest {
     @Test
     void everyLanguageAndWhatServesIt() {
         assertEquals(
-                List.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go", "rust"),
+                List.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala", "go", "rust", "cpp"),
                 List.copyOf(DebugLanguages.ids()));
         assertEquals(DebugLanguages.ids(), DapServerRegistry.languageIdsForDebug());
         for (String ts : List.of("typescript", "javascriptreact", "typescriptreact", "javascript")) {
@@ -36,9 +36,9 @@ class DebugLanguagesTest {
             assertSame(l, DebugLanguages.byId(l.id()));
             assertTrue(l.editorLanguages().contains(l.id()), l.id());
             assertEquals(
-                    l == DebugLanguages.GO || l == DebugLanguages.RUST,
+                    l == DebugLanguages.GO || l == DebugLanguages.RUST || l == DebugLanguages.CPP,
                     l.external() != null,
-                    l.id() + ": Go's and Rust's adapters are started by the generic path");
+                    l.id() + ": Go's, Rust's and C/C++'s adapters are started by the generic path");
         }
     }
 
@@ -141,5 +141,16 @@ class DebugLanguagesTest {
         assertEquals(List.of(DebugLanguages.RUST_PANIC_FILTER), ExternalAdapterFilters.defaults(DebugLanguages.RUST));
         assertEquals(List.of(), ExternalAdapterFilters.defaults(DebugLanguages.GO));
         assertFalse(DapManager.debuggableOnHost("rust"));
+    }
+
+    @Test
+    void cAndCppAreOneProfileOnRustsCodelldbAndStopOnAThrow() {
+        assertSame(DebugLanguages.CPP, DebugLanguages.forLanguage("c"));
+        assertSame(DebugLanguages.CPP, DebugLanguages.forLanguage("cpp"));
+        assertEquals("cpp", DapServerRegistry.adapterLanguage("c"));
+        assertSame(DebugLanguages.CODELLDB, DebugLanguages.CPP.external());
+        assertSame(DebugLanguages.CODELLDB, DebugLanguages.RUST.external(), "one CodeLLDB, found once");
+        assertEquals(List.of(DebugLanguages.CPP_THROW_FILTER), ExternalAdapterFilters.defaults(DebugLanguages.CPP));
+        assertFalse(DapManager.debuggableOnHost("cpp"));
     }
 }

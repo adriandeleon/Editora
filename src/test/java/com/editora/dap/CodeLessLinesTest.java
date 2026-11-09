@@ -73,4 +73,12 @@ class CodeLessLinesTest {
         assertFalse(CodeLessLines.isCodeLess(rs, 1, "rust"));
         assertFalse(CodeLessLines.isCodeLess(rs, 3, "rust"));
     }
+
+    @Test
+    void cAndCppCommentLinesHaveNoCode() {
+        String c = "/* a header */\nint main(void) {\n    // a comment\n    return 0;\n}\n";
+        assertTrue(CodeLessLines.isCodeLess(c, 0, "c"));
+        assertTrue(CodeLessLines.isCodeLess(c, 2, "cpp"));
+        assertFalse(CodeLessLines.isCodeLess(c, 3, "c"));
+    }
 }

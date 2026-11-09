@@ -55,6 +55,7 @@ Thumbs.db
 # file, so generated output is never mistaken for an undocumented committed sample.
 /samples/build-tools/cargo/Cargo.lock
 /samples/debug/rust/Cargo.lock
+/samples/debug/cpp/build/
 /samples/build-tools/gradle/.gradle/
 /samples/build-tools/gradle/build/
 /samples/build-tools/go/go-demo
