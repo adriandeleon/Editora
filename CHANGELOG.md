@@ -39,7 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does; its shell keeps running and keeps what it printed. The editor tab's menu renames it, closes it or puts it back
   with Move to Terminal Tool Window. Closing it asks first when its shell is running something, as in the tool window,
   and a window close lists it with the others. With no terminal open, Move to Editor opens a new one in the editor.
-
+- **Disassembly and Memory views.** For C, C++, Rust and Go, the Debug window's third area now has *Disassembly* and
+  *Memory* beside the *Console*, as VS Code, Visual Studio and IntelliJ have:
+  - **Disassembly** shows the machine instructions around the selected frame, marks the one it is at, and labels each
+    run of instructions with its source line; double-click one to open that line.
+  - **Instruction steps:** while the Disassembly list has the keyboard, Step Over and Step Into step one instruction
+    at a time. *Debug: Step Over Instruction* and *Step Into Instruction* do it from anywhere.
+  - **Memory** shows the program's memory as hex and text, 256 bytes at a time, from an address or an expression.
+    *View Memory* in a variable's menu opens it at that variable.
+- **Following code on the Project Map no longer piles up cards.** Like an editor's preview tab, a card opened by Go
+  to Definition (or Declaration, Type Definition, Super Method) is a preview, with its title in italics. The next Go
+  to from it opens where it stood and replaces it, so a chain of steps keeps one card in view. Pin, drag or resize a
+  preview to keep it. Back now reopens a card that was closed, at the line you were on, instead of only selecting
+  its row.
 - **Debug C and C++ programs.** Editora now debugs C and C++ with CodeLLDB, the debugger it already uses for Rust:
   - **F5 in a CMake project** configures a Debug build in `build/editora-debug`, builds it in the Debug console,
     and debugs the program that holds the file.

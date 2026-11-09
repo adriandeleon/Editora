@@ -100,6 +100,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Start a debug session when idle, or continue when suspended (the green play button). */
         void start();
 
+        /** Whether a variable's memory can be shown: the session's adapter reads memory. */
+        default boolean canViewMemory() {
+            return false;
+        }
+
+        /** A variable's View Memory: the Memory view at {@code expression}'s value. */
+        default void viewMemory(String expression) {}
+
         /** The call stack's context menu for {@code frame} of {@code frames} (Restart Frame); empty: no menu. */
         default List<javafx.scene.control.MenuItem> stackMenuItems(
                 DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
@@ -753,8 +761,32 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         VBox.setVgrow(variables, Priority.ALWAYS);
 
         VirtualizedScrollPane<CodeArea> consoleScroll = new VirtualizedScrollPane<>(console);
-        VBox consoleBox = new VBox(2, sectionLabel("debugpanel.console"), consoleScroll, evalInput);
+        VBox consoleContent = new VBox(2, consoleScroll, evalInput);
         VBox.setVgrow(consoleScroll, Priority.ALWAYS);
+        // Console | Disassembly | Memory share the third area, as tabs (VS Code and IntelliJ show them as views).
+        javafx.scene.control.ToggleGroup lowLevel = new javafx.scene.control.ToggleGroup();
+        for (javafx.scene.control.ToggleButton tab : List.of(consoleTab, disassemblyTab, memoryTab)) {
+            tab.setToggleGroup(lowLevel);
+            tab.getStyleClass().addAll("debug-threads-toggle", "small", "debug-area-tab");
+            tab.setFocusTraversable(false);
+        }
+        consoleTab.setSelected(true);
+        lowLevel.selectedToggleProperty().addListener((o, was, now) -> {
+            if (now == null) {
+                was.setSelected(true); // one of the three is always shown
+                return;
+            }
+            showArea(now == disassemblyTab ? AREA_DISASSEMBLY : now == memoryTab ? AREA_MEMORY : AREA_CONSOLE);
+        });
+        disassembly.setVisible(false);
+        memory.setVisible(false);
+        javafx.scene.layout.StackPane consoleArea =
+                new javafx.scene.layout.StackPane(consoleContent, disassembly, memory);
+        consoleContentNode = consoleContent;
+        HBox consoleHeader = new HBox(4, consoleTab, disassemblyTab, memoryTab);
+        consoleHeader.setAlignment(Pos.CENTER_LEFT);
+        VBox consoleBox = new VBox(2, consoleHeader, consoleArea);
+        VBox.setVgrow(consoleArea, Priority.ALWAYS);
         javafx.scene.control.ContextMenu consoleMenu = new javafx.scene.control.ContextMenu();
         javafx.scene.control.MenuItem clear = new javafx.scene.control.MenuItem(tr("debugpanel.clearConsole"));
         clear.setGraphic(Icons.remove());
@@ -779,6 +811,61 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         getChildren().addAll(toolbar, main);
         setState(DapManager.State.INACTIVE);
+    }
+
+    /** The third area's views. */
+    static final String AREA_CONSOLE = "console";
+
+    static final String AREA_DISASSEMBLY = "disassembly";
+    static final String AREA_MEMORY = "memory";
+
+    private final javafx.scene.control.ToggleButton consoleTab =
+            new javafx.scene.control.ToggleButton(tr("debugpanel.console"));
+    private final javafx.scene.control.ToggleButton disassemblyTab =
+            new javafx.scene.control.ToggleButton(tr("debugpanel.disassembly"));
+    private final javafx.scene.control.ToggleButton memoryTab =
+            new javafx.scene.control.ToggleButton(tr("debugpanel.memory"));
+    private final DebugDisassemblyView disassembly = new DebugDisassemblyView();
+    private final DebugMemoryView memory = new DebugMemoryView();
+    private javafx.scene.@Nullable Node consoleContentNode;
+
+    /** Told which view of the third area is now shown ({@link #AREA_DISASSEMBLY} …), to fill it. */
+    private Consumer<String> onAreaShown = area -> {};
+
+    void setOnAreaShown(Consumer<String> onAreaShown) {
+        this.onAreaShown = onAreaShown;
+    }
+
+    /** Shows the third area's {@code area} view: the console, the Disassembly or the Memory view. */
+    void showArea(String area) {
+        javafx.scene.control.ToggleButton tab = switch (area) {
+            case AREA_DISASSEMBLY -> disassemblyTab;
+            case AREA_MEMORY -> memoryTab;
+            default -> consoleTab;
+        };
+        if (!tab.isSelected()) {
+            tab.setSelected(true); // comes back here through the group's listener
+            return;
+        }
+        if (consoleContentNode != null) {
+            consoleContentNode.setVisible(tab == consoleTab);
+        }
+        disassembly.setVisible(tab == disassemblyTab);
+        memory.setVisible(tab == memoryTab);
+        onAreaShown.accept(area);
+    }
+
+    /** Which view of the third area is shown. */
+    String shownArea() {
+        return disassemblyTab.isSelected() ? AREA_DISASSEMBLY : memoryTab.isSelected() ? AREA_MEMORY : AREA_CONSOLE;
+    }
+
+    DebugDisassemblyView disassemblyView() {
+        return disassembly;
+    }
+
+    DebugMemoryView memoryView() {
+        return memory;
     }
 
     /** Narrower than this (docked at a side), the three areas are stacked instead of laid side by side. */
@@ -1828,6 +1915,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 toWatches.setGraphic(Icons.newFile());
                 toWatches.setOnAction(e -> addWatchPrompt(expression));
                 menu.getItems().add(toWatches);
+                if (actions.canViewMemory()) {
+                    // VS Code's View Binary Data, Visual Studio's Memory window at a variable.
+                    javafx.scene.control.MenuItem viewMemory =
+                            new javafx.scene.control.MenuItem(tr("debugpanel.viewMemory"));
+                    viewMemory.setOnAction(e -> actions.viewMemory(expression));
+                    menu.getItems().add(viewMemory);
+                }
                 if (row.parentRef() > 0 && actions.canWatchField()) {
                     // IntelliJ's and VS Code's "Break When Value Changes": a watchpoint on the field this row is
                     javafx.scene.control.MenuItem watchField =

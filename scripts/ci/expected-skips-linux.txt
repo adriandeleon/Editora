@@ -48,6 +48,7 @@ com.editora.ui.JsDebugProbeFxTest
 com.editora.ui.GoDebugProbeFxTest
 com.editora.ui.RustDebugProbeFxTest
 com.editora.ui.NativeDebugProbeFxTest
+com.editora.ui.DisassemblyMemoryProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

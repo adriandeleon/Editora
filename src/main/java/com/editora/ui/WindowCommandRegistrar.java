@@ -2229,13 +2229,33 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::setSelectedValue)));
         host.registry()
                 .register(Command.of(
-                        "debug.stepOver", () -> host.debugCoordinator().ifDebug(host.dapManager()::stepOver)));
+                        "debug.stepOver", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepOver)));
         host.registry()
                 .register(Command.of(
-                        "debug.stepInto", () -> host.debugCoordinator().ifDebug(host.dapManager()::stepInto)));
+                        "debug.stepInto", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepInto)));
         host.registry()
                 .register(Command.of(
                         "debug.stepOut", () -> host.debugCoordinator().ifDebug(host.dapManager()::stepOut)));
+        host.registry()
+                .register(Command.of(
+                        "debug.stepOverInstruction",
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().stepInstruction(false))));
+        host.registry()
+                .register(Command.of(
+                        "debug.stepIntoInstruction",
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().stepInstruction(true))));
+        host.registry()
+                .register(Command.of(
+                        "debug.showDisassembly",
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().showLowLevelView(DebugPanel.AREA_DISASSEMBLY))));
+        host.registry()
+                .register(Command.of(
+                        "debug.showMemory",
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().showLowLevelView(DebugPanel.AREA_MEMORY))));
         host.registry()
                 .register(Command.of(
                         "debug.toggleBreakpoint",

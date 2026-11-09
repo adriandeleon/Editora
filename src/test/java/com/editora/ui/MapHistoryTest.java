@@ -127,6 +127,26 @@ class MapHistoryTest {
     }
 
     @Test
+    void aClosedCardsStopKeepsItsLineSoBackOpensItAgain() {
+        MapHistory<String> lines =
+                new MapHistory<>(open::contains, card -> carets.getOrDefault(card, 0), (card, caret) -> caret / 10);
+        lines.record(use, MapHistory.Head.PLACE);
+        lines.followed("A", use, 42, "B", shape);
+        carets.put("B", 75);
+        open.remove("A");
+        lines.cardClosed("A");
+        assertEquals(new MapHistory.Stop<>(use, null, -1, 4), lines.stops().get(0), "the line its caret was on");
+        open.remove("B");
+        lines.cardClosed("B");
+        assertEquals(new MapHistory.Stop<>(shape, null, -1, 7), lines.stops().get(1), "where the caret is now");
+        assertEquals(new MapHistory.Stop<>(use, null, -1, 4), lines.step(-1, null, null));
+        lines.reopened("C");
+        assertEquals(new MapHistory.Stop<>(use, "C", -1), lines.stops().get(0), "on the card opened again");
+        lines.reopened("A");
+        assertEquals("C", lines.stops().get(0).card(), "only a stop with no card");
+    }
+
+    @Test
     void aCardsPlaceIsItsRowsOrItsDeclarationsFiles() {
         assertTrue(MapHistory.samePlace(use, use));
         assertTrue(MapHistory.samePlace(shape, area), "the file row a declaration card is opened from");

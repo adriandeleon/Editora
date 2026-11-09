@@ -3877,6 +3877,99 @@ public final class DapManager {
         step(DapClient::stepOut);
     }
 
+    /** Step Over one machine instruction (the Disassembly view's step), where the adapter steps that finely. */
+    public void stepOverInstruction() {
+        step((c, threadId) -> c.next(threadId, true));
+    }
+
+    /** Step Into one machine instruction (into a call), where the adapter steps that finely. */
+    public void stepIntoInstruction() {
+        step((c, threadId) -> c.stepIn(threadId, true));
+    }
+
+    /** Whether the session's adapter steps one machine instruction at a time. */
+    public boolean supportsInstructionStepping() {
+        DapClient c = client;
+        return c != null && c.supportsInstructionStepping();
+    }
+
+    /** Whether the session's adapter disassembles (CodeLLDB, Delve). */
+    public boolean supportsDisassemble() {
+        DapClient c = client;
+        return c != null && c.supportsDisassemble();
+    }
+
+    /** Whether the session's adapter reads the program's memory. */
+    public boolean supportsReadMemory() {
+        DapClient c = client;
+        return c != null && c.supportsReadMemory();
+    }
+
+    /**
+     * {@code count} instructions around {@code memoryReference} from {@code instructionOffset} on (to {@code cb} on the
+     * FX thread; empty when the adapter could not, or the session ended).
+     */
+    public void disassemble(
+            String memoryReference, int instructionOffset, int count, Consumer<List<DapModels.Instruction>> cb) {
+        DapClient c = client;
+        if (c == null || !c.supportsDisassemble()) {
+            cb.accept(List.of());
+            return;
+        }
+        c.disassemble(memoryReference, instructionOffset, count)
+                .whenComplete((list, e) -> Platform.runLater(() -> {
+                    if (client == c) {
+                        cb.accept(e != null || list == null ? List.of() : list);
+                    }
+                }));
+    }
+
+    /**
+     * {@code count} bytes at {@code memoryReference} + {@code offset} (to {@code cb} on the FX thread; null when they
+     * could not be read, with why to {@code failed}).
+     */
+    public void readMemory(
+            String memoryReference,
+            long offset,
+            int count,
+            Consumer<DapModels.MemoryBlock> cb,
+            Consumer<String> failed) {
+        DapClient c = client;
+        if (c == null || !c.supportsReadMemory()) {
+            failed.accept("");
+            return;
+        }
+        c.readMemory(memoryReference, offset, count)
+                .whenComplete((block, e) -> Platform.runLater(() -> {
+                    if (client != c) {
+                        return;
+                    }
+                    if (e != null || block == null) {
+                        failed.accept(e == null ? "" : msg(e));
+                    } else {
+                        cb.accept(block);
+                    }
+                }));
+    }
+
+    /**
+     * The memory reference of {@code expression}'s value in frame {@code frameId} (to {@code cb} on the FX thread; null
+     * when it has none or could not be evaluated).
+     */
+    public void memoryReferenceOf(String expression, int frameId, Consumer<@Nullable String> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(null);
+            return;
+        }
+        c.memoryReferenceOf(expression, frameId)
+                .whenComplete((ref, e) -> Platform.runLater(() -> {
+                    if (client == c) {
+                        cb.accept(e != null ? null : ref);
+                    }
+                }));
+    }
+
     /**
      * Sends a step for the current thread. Once the adapter <em>acknowledges</em> it the thread is running
      * again until the next stop, exactly as after {@link #resume()}: leaving the state SUSPENDED kept the

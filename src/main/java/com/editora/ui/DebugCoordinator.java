@@ -409,6 +409,15 @@ final class DebugCoordinator {
             }
             built.setPlainValueColours(plainValueColours()); // values legible on mixed themes (C111)
             built.setState(dapManager.state()); // a session may already be running (the window opened mid-session)
+            built.setOnAreaShown(area -> refreshLowLevelViews());
+            built.disassemblyView().setOnOpenSource(this::openSourceLine);
+            built.memoryView().setOnGo(this::memoryGo);
+            built.memoryView().setOnPage(direction -> {
+                if (memoryReference != null) {
+                    memoryOffset += (long) direction * DebugMemoryView.PAGE;
+                    readMemory();
+                }
+            });
             debugPanel = built;
             refreshExceptionToggles();
             built.setBreakpointsMuted(breakpointsMuted); // the state line says so from the start
@@ -1665,12 +1674,25 @@ final class DebugCoordinator {
 
             @Override
             public void stepOver() {
-                dapManager.stepOver();
+                DebugCoordinator.this.stepOver();
             }
 
             @Override
             public void stepInto() {
-                dapManager.stepInto();
+                DebugCoordinator.this.stepInto();
+            }
+
+            @Override
+            public boolean canViewMemory() {
+                return dapManager.supportsReadMemory();
+            }
+
+            @Override
+            public void viewMemory(String expression) {
+                ops.openToolWindow();
+                panel().memoryView().setAddressText(expression);
+                panel().showArea(DebugPanel.AREA_MEMORY);
+                memoryGo(expression);
             }
 
             @Override
@@ -1702,6 +1724,7 @@ final class DebugCoordinator {
                     applyInlineValues(frame, scopes);
                 });
                 pinnedValues.refresh(frame.id()); // every pinned value, evaluated in this frame
+                refreshLowLevelViews(); // the Disassembly view follows the frame; Memory is read again
             }
 
             @Override
@@ -1891,6 +1914,153 @@ final class DebugCoordinator {
             }
         }
         return 0;
+    }
+
+    // --- Disassembly and Memory views ---------------------------------------------------------------------
+
+    /** Instructions shown before and after the instruction pointer. */
+    static final int DISASSEMBLY_BEFORE = 40;
+
+    static final int DISASSEMBLY_COUNT = 120;
+
+    /** The Memory view's memory reference (an address, or one an expression's value has), or null before any. */
+    private @Nullable String memoryReference;
+
+    /** The Memory view's offset from {@link #memoryReference}: its paging. */
+    private long memoryOffset;
+
+    /**
+     * Step Over (F10, the toolbar): one machine instruction while the Disassembly view has the keyboard, as in VS
+     * Code; one line otherwise.
+     */
+    void stepOver() {
+        if (debugPanel != null && debugPanel.disassemblyView().hasFocus() && dapManager.supportsInstructionStepping()) {
+            dapManager.stepOverInstruction();
+        } else {
+            dapManager.stepOver();
+        }
+    }
+
+    /** Step Into: as {@link #stepOver}, one instruction (into a call) while the Disassembly view has the keyboard. */
+    void stepInto() {
+        if (debugPanel != null && debugPanel.disassemblyView().hasFocus() && dapManager.supportsInstructionStepping()) {
+            dapManager.stepIntoInstruction();
+        } else {
+            dapManager.stepInto();
+        }
+    }
+
+    /** Debug: Step Over Instruction (and Into): one machine instruction, wherever the keyboard is. */
+    void stepInstruction(boolean into) {
+        if (!dapManager.supportsInstructionStepping()) {
+            host.setStatus(tr("status.debug.noInstructionStepping"));
+            return;
+        }
+        if (into) {
+            dapManager.stepIntoInstruction();
+        } else {
+            dapManager.stepOverInstruction();
+        }
+    }
+
+    /** Debug: Show Disassembly / Show Memory: the Debug window's view, filled for the frame shown. */
+    void showLowLevelView(String area) {
+        ops.openToolWindow();
+        panel().showArea(area);
+    }
+
+    /** Fills the Disassembly or Memory view, when shown, for the stop and frame shown. */
+    private void refreshLowLevelViews() {
+        if (debugPanel == null) {
+            return;
+        }
+        DebugPanel p = debugPanel;
+        String area = p.shownArea();
+        if (dapManager.state() != DapManager.State.SUSPENDED) {
+            if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
+                p.disassemblyView().setMessage(tr("debugpanel.disassembly.idle"));
+            }
+            return;
+        }
+        if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
+            DapModels.StackFrameInfo frame = shownFrame;
+            String ip = frame == null ? null : frame.instructionPointer();
+            if (!dapManager.supportsDisassemble()) {
+                p.disassemblyView().setMessage(tr("debugpanel.disassembly.unsupported"));
+            } else if (ip == null) {
+                p.disassemblyView().setMessage(tr("debugpanel.disassembly.noPointer"));
+            } else {
+                dapManager.disassemble(ip, -DISASSEMBLY_BEFORE, DISASSEMBLY_COUNT, list -> {
+                    if (shownFrame == frame) {
+                        p.disassemblyView().show(list, ip);
+                    }
+                });
+            }
+        } else if (DebugPanel.AREA_MEMORY.equals(area)) {
+            if (!dapManager.supportsReadMemory()) {
+                p.memoryView().setMessage(tr("debugpanel.memory.unsupported"));
+            } else if (memoryReference != null) {
+                readMemory();
+            }
+        }
+    }
+
+    /** The Memory view at {@code text}: an address as typed, else the address of the expression's value. */
+    private void memoryGo(String text) {
+        DebugMemoryView view = panel().memoryView();
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        if (dapManager.state() != DapManager.State.SUSPENDED) {
+            view.setMessage(tr("debugpanel.memory.idle"));
+            return;
+        }
+        if (!dapManager.supportsReadMemory()) {
+            view.setMessage(tr("debugpanel.memory.unsupported"));
+            return;
+        }
+        String literal = DebugMemoryView.literalAddress(text);
+        if (literal != null) {
+            memoryReference = literal;
+            memoryOffset = 0;
+            readMemory();
+            return;
+        }
+        dapManager.memoryReferenceOf(text, debugFrameId, ref -> {
+            if (ref == null) {
+                view.setMessage(tr("debugpanel.memory.noAddress", text));
+                return;
+            }
+            memoryReference = ref;
+            memoryOffset = 0;
+            readMemory();
+        });
+    }
+
+    /** Reads a page at the Memory view's reference and offset into it. */
+    private void readMemory() {
+        String ref = memoryReference;
+        if (ref == null || debugPanel == null) {
+            return;
+        }
+        DebugMemoryView view = debugPanel.memoryView();
+        dapManager.readMemory(
+                ref,
+                memoryOffset,
+                DebugMemoryView.PAGE,
+                view::show,
+                why -> view.setMessage(tr("debugpanel.memory.failed", ref, why)));
+    }
+
+    /** Opens {@code file} at 0-based {@code line}: a double-clicked instruction's source line. */
+    private void openSourceLine(Path file, int line) {
+        ops.openPath(file);
+        EditorBuffer b = ops.bufferForPath(file);
+        if (b != null && line >= 0) {
+            int first = b.getBreakpointManager().regionFirstLine();
+            b.getFocusedArea().moveTo(Math.max(0, line - first), 0);
+            b.getFocusedArea().requestFollowCaret();
+        }
     }
 
     /** Opens the frame's file and paints the execution-line highlight there. */

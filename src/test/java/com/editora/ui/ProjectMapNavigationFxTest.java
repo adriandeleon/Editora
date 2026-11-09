@@ -325,6 +325,88 @@ class ProjectMapNavigationFxTest {
     }
 
     @Test
+    void aGoToFromAPreviewCardOpensWhereItStoodAndBackOpensItAgain() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Path a = Files.writeString(src.resolve("A.java"), caller("A", "B"));
+        Path b = Files.writeString(src.resolve("B.java"), caller("B", "C"));
+        Path c = Files.writeString(src.resolve("C.java"), "package demo;\n\nclass C {\n    void go() {\n    }\n}\n");
+        FakeLanguageServer fake = startServer(new ServerCapabilities());
+        // Go to Definition from A's call: B.go(); from B's: C.go().
+        fake.definitionHandler = params -> {
+            String uri = params.getTextDocument().getUri();
+            Path to = uri.endsWith("A.java") ? b : uri.endsWith("B.java") ? c : null;
+            return to == null ? List.of() : List.of(new Location(LspTestHooks.uri(to), range(3, 9)));
+        };
+        ProjectPanel panel = openPanel();
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        FxTestSupport.runOnFx(() -> view.setLinkSource(new ProjectMapLinkSearch(manager, panel.projectIndex())));
+        ProjectMapPreview first = openCard(cards, a);
+        FxTestSupport.runOnFx(() -> {
+            caretOn(first, "go();");
+            assertTrue(first.runMarkerCommand("lsp.gotoDefinition"));
+        });
+        waitFor(() -> openUnder(cards, b) != null, "B's card");
+        ProjectMapPreview second = FxTestSupport.callOnFx(() -> openUnder(cards, b));
+        waitFor(() -> second.editor().getText().contains("C()"), "B's text");
+        double[] stood = FxTestSupport.callOnFx(() -> MapCards.drawnBounds(second));
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(cards.links.isPreview(first), "a card opened by the reader is no preview");
+            assertTrue(cards.links.isPreview(second), "a Go to result is");
+            assertTrue(second.getStyleClass().contains("project-map-preview-transient"), "its title in italics");
+            caretOn(second, "go();");
+            assertTrue(second.runMarkerCommand("lsp.gotoDefinition"));
+        });
+        waitFor(() -> openUnder(cards, c) != null, "C's card");
+        ProjectMapPreview third = FxTestSupport.callOnFx(() -> openUnder(cards, c));
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(cards.isOpen(second), "the preview gave way");
+            double[] at = MapCards.drawnBounds(third);
+            assertEquals(stood[0], at[0], 1, "where it stood");
+            assertEquals(stood[1], at[1], 1);
+            assertTrue(cards.links.isPreview(third));
+            assertTrue(cards.links.isResult(third), "the answer of the card the preview was found from");
+            assertTrue(cards.isOpen(first));
+            assertEquals(List.of(), editorOpened);
+
+            // Back from C: B again, opened where the history left it.
+            view.moveHistory(-1);
+        });
+        waitFor(() -> openUnder(cards, b) != null, "B opened again by Back");
+        ProjectMapPreview again = FxTestSupport.callOnFx(() -> openUnder(cards, b));
+        waitFor(() -> again.editor().getText().contains("C()"), "B's text again");
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(cards.links.isPreview(again), "opened by Back: a card of the reader's");
+            assertTrue(view.history.cardsBack().contains(first), "and A still behind it");
+            // Kept: a Go to from it opens beside it.
+            caretOn(again, "go();");
+            assertTrue(again.runMarkerCommand("lsp.gotoDefinition"));
+        });
+        waitFor(() -> fake.definitions.size() == 3, "asked a third time");
+        FxTestSupport.runOnFx(() -> assertTrue(cards.isOpen(again), "no preview: it stays"));
+    }
+
+    private static String caller(String name, String callee) {
+        return "package demo;\n\nclass " + name + " {\n    void go() {\n        new " + callee + "().go();\n    }\n}\n";
+    }
+
+    /** Puts {@code card}'s caret on the start of {@code text} in it. */
+    private static void caretOn(ProjectMapPreview card, String text) {
+        int at = card.editor().getText().indexOf(text);
+        assertTrue(at >= 0, text + " in " + card.editor().getText());
+        card.editor().moveTo(at);
+    }
+
+    /** The open card of {@code file} or of a declaration in it, or null. */
+    private static @org.jspecify.annotations.Nullable ProjectMapPreview openUnder(MapCards cards, Path file) {
+        return cards.previews.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith(file))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+
+    @Test
     void callHierarchyIsATreeOpenedALevelAtATimeThatMarksRecursion() throws Exception {
         Path src = Files.createDirectories(root.resolve("src"));
         Files.writeString(src.resolve("Shape.java"), SHAPE);

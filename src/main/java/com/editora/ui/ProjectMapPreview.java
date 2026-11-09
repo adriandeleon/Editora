@@ -452,6 +452,8 @@ final class ProjectMapPreview extends StackPane {
     private boolean growLeft;
     /** The user dragged the card, so nothing may move it for them again. */
     private boolean userMoved;
+    /** The user dragged, resized or moved the card by key: a preview that was is kept (gap 6). */
+    private boolean arranged;
     /** The user resized the card, so it keeps that size. */
     private boolean userSized;
     /** The text in the editor, kept to tell a real change from a refresh that changes nothing. */
@@ -1154,6 +1156,7 @@ final class ProjectMapPreview extends StackPane {
     /** One keyboard move or resize step; the card then keeps its place or size, as after a drag. */
     private void moveOrResizeBy(double[] step) {
         double scale = mapScale();
+        arranged = true;
         if (step[0] != 0 || step[1] != 0) {
             userMoved = true;
             relocate(getLayoutX() + step[0], getLayoutY() + step[1]);
@@ -2564,6 +2567,30 @@ final class ProjectMapPreview extends StackPane {
         onDeclarationMove = callback == null ? direction -> {} : callback;
     }
 
+    /**
+     * Whether the card is a preview (Map code browser gap 6): a Go to result the next Go to from it replaces. Its title
+     * is in italics, and its title's tooltip says how to keep it.
+     */
+    void setPreview(boolean preview) {
+        if (preview) {
+            if (!getStyleClass().contains("project-map-preview-transient")) {
+                getStyleClass().add("project-map-preview-transient");
+            }
+        } else {
+            getStyleClass().remove("project-map-preview-transient");
+        }
+    }
+
+    /** Whether it is a preview (see {@link #setPreview}). */
+    boolean preview() {
+        return getStyleClass().contains("project-map-preview-transient");
+    }
+
+    /** Whether the user moved or resized the card: a preview that was is kept. */
+    boolean userArranged() {
+        return arranged;
+    }
+
     /** The file's 0-based line the card's caret is on. */
     int caretFileLine() {
         return fileLine(editor.getCurrentParagraph());
@@ -3129,6 +3156,7 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         relocate(dragLayoutX + event.getScreenX() - dragScreenX, dragLayoutY + event.getScreenY() - dragScreenY);
+        arranged = true;
         event.consume();
     }
 
@@ -3154,6 +3182,7 @@ final class ProjectMapPreview extends StackPane {
         double maxWidth = Math.max(1, unzoomedRoom(parent.getWidth(), scale));
         double maxHeight = Math.max(1, unzoomedRoom(parent.getHeight(), scale));
         preferredWidth = boundedSize(resizeWidth + (event.getScreenX() - resizeScreenX) / scale, MIN_WIDTH, maxWidth);
+        arranged = true;
         preferredHeight =
                 boundedSize(resizeHeight + (event.getScreenY() - resizeScreenY) / scale, MIN_HEIGHT, maxHeight);
         resize(preferredWidth, preferredHeight);
