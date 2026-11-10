@@ -124,6 +124,30 @@ class DebugPanelThreadsFxTest {
     }
 
     @Test
+    void theThreadsToggleKeepsItsPlaceWhenClicked() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            DebugPanel panel = stopped(actions());
+            javafx.scene.Scene scene = new javafx.scene.Scene(new javafx.scene.layout.StackPane(panel), 1600, 400);
+            scene.getStylesheets().add(Themes.stylesheetFor("Editora Light"));
+            scene.getStylesheets()
+                    .add(DebugPanelThreadsFxTest.class
+                            .getResource("/com/editora/styles/app.css")
+                            .toExternalForm());
+            javafx.scene.control.ToggleButton toggle = FxTestSupport.field(panel, "threadsToggle");
+            scene.getRoot().applyCss();
+            scene.getRoot().layout();
+            javafx.geometry.Bounds before = toggle.localToScene(toggle.getBoundsInLocal());
+
+            panel.showThreadsView(true);
+            scene.getRoot().applyCss();
+            scene.getRoot().layout();
+            javafx.geometry.Bounds after = toggle.localToScene(toggle.getBoundsInLocal());
+            assertEquals(before.getMinY(), after.getMinY(), 0.5, "the toggle did not move up");
+            assertEquals(before.getMaxX(), after.getMaxX(), 0.5, "nor sideways");
+        });
+    }
+
+    @Test
     void eachThreadOffersWhatItsStateAllows() throws Exception {
         FxTestSupport.runOnFx(() -> {
             DebugPanel panel = stopped(actions());
