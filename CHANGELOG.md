@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A declaration's history as a card on the Project Map.** *Declaration History* in a declaration card's menu, or
+  in a Structure row's, opens a card beside it that lists every commit that changed that method, class or field,
+  newest first. Under the list, *Changes* shows what the picked commit changed in it, and *Blame* shows who last
+  changed each of its lines. Enter or a double click opens the commit's diff of the file in the editor.
 - **Recording breakpoints.** A breakpoint can record instead of stopping: each time it is hit, Debug History keeps the
   stop (the call stack, the frame's values, your watches) and the program goes on, without the editor jumping to it.
   Back, Forward and *Show Value History* then read the recorded stops as any other. Set one with *Debug: Toggle

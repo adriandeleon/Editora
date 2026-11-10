@@ -1878,6 +1878,59 @@
 .project-map-note-preview-empty {
     -fx-text-fill: -color-fg-muted;
 }
+/* The Project Map's History card (gap 12): a declaration's commits over the picked one's diff, or its lines' blame. */
+.project-map-history-card .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-history-card .label.project-map-history-summary,
+.project-map-history-card .label.project-map-history-detail,
+.project-map-history-card .label.project-map-history-by,
+.project-map-history-card .label.project-map-history-placeholder {
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-history-card .label.project-map-history-detail {
+    -fx-font-size: 11px;
+}
+.project-map-history-card .list-cell:selected .label.project-map-history-detail,
+.project-map-history-card .list-cell:selected .label.project-map-history-by {
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-history-card .label.project-map-history-subject {
+    -fx-font-weight: bold;
+}
+.project-map-history-card .split-pane,
+.project-map-history-card .list-view {
+    -fx-background-color: -color-bg-default;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.project-map-history-card .project-map-history-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted transparent -color-border-muted transparent;
+    -fx-border-width: 1 0 1 0;
+}
+.project-map-history-card .project-map-history-code .list-cell,
+.project-map-history-card .project-map-history-code .list-cell .label {
+    -fx-font-family: "JetBrains Mono", "Consolas", monospace;
+    -fx-font-size: 12px;
+    -fx-padding: 0 6 0 6;
+}
+.project-map-history-card .project-map-history-diff .list-cell.project-map-history-added {
+    -fx-background-color: -color-success-subtle;
+}
+.project-map-history-card .project-map-history-diff .list-cell.project-map-history-removed {
+    -fx-background-color: -color-danger-subtle;
+}
+.project-map-history-card .project-map-history-diff .list-cell.project-map-history-hunk {
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-history-card .project-map-history-blame .list-cell.project-map-history-picked {
+    -fx-background-color: -color-accent-subtle;
+}
+.project-map-history-card .project-map-history-code .list-cell:selected {
+    -fx-background-color: -color-accent-muted;
+}
 /* The Project Map's Overview card (review 3 B4): a code card's frame, with headed sections of short text and links. */
 .project-map-overview-scroll,
 .project-map-overview-scroll > .viewport,
