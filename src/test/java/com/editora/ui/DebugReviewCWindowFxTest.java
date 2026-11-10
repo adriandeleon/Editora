@@ -483,7 +483,8 @@ class DebugReviewCWindowFxTest {
                 List.of(
                         DebugPanelText.bareTitle(tr("command.debug.toggleBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")),
-                        DebugPanelText.bareTitle(tr("command.debug.toggleTemporaryBreakpoint"))),
+                        DebugPanelText.bareTitle(tr("command.debug.toggleTemporaryBreakpoint")),
+                        DebugPanelText.bareTitle(tr("command.debug.toggleRecordingBreakpoint"))),
                 idle);
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             FakeDebugAdapter.Session session = connect(adapter, util);

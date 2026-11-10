@@ -5067,6 +5067,8 @@
 .breakpoint-marker.breakpoint-conditional { -fx-fill: #b8860b; }
 .breakpoint-marker.breakpoint-logpoint { -fx-fill: #1f6feb; }
 .breakpoint-marker.breakpoint-disabled { -fx-fill: -color-fg-muted; -fx-opacity: 0.85; }
+/* A recording breakpoint (Debug History keeps the stop, the program goes on): purple, with a ring over it. */
+.breakpoint-marker.breakpoint-recording { -fx-fill: #8957e5; }
 .breakpoint-condition-mark { -fx-fill: white; }
 /* While a debug session is live: a breakpoint the adapter has not bound (its class is not loaded yet, or
    the line has no code) is a hollow ring; one it refused, or whose condition it cannot evaluate, an amber one.

@@ -95,7 +95,7 @@ final class ClosedFileBreakpoints {
                 for (Breakpoint bp : bps) {
                     if (bp.enabled()) {
                         out2.add(new DapModels.LineBreakpoint(
-                                bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
+                                bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition(), 0, bp.records()));
                     }
                 }
             }

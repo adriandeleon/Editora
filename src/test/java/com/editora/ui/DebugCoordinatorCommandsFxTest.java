@@ -2213,5 +2213,18 @@ class DebugCoordinatorCommandsFxTest {
                 List.of(4),
                 armed.get(0).breakpoints().stream().map(lb -> lb.line()).toList());
         assertEquals(List.of(), DebugCoordinator.closedFileBreakpoints(null, null, p -> true, p -> null));
+        // A recording breakpoint in a closed file is sent recording, read or not.
+        Map<String, List<Breakpoint>> recording = Map.of(closed.toString(), List.of(at(4).withRecording(true)));
+        assertTrue(DebugCoordinator.closedFileBreakpoints(recording, java.util.Set.of(), p -> true, p -> null)
+                .getFirst()
+                .breakpoints()
+                .getFirst()
+                .recording());
+        assertTrue(DebugCoordinator.closedFileBreakpoints(
+                        recording, java.util.Set.of(), p -> true, p -> List.of("a", "b", "c", "d", "e", "f"))
+                .getFirst()
+                .breakpoints()
+                .getFirst()
+                .recording());
     }
 }

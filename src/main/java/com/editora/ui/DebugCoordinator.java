@@ -1452,6 +1452,7 @@ final class DebugCoordinator {
                     panel().setState(state);
                 }
                 if (state == DapManager.State.STARTING) {
+                    recordedStops = 0; // the recording breakpoints' limit is per session
                     nameSession(sessionLabel); // ending the replaced session cleared it
                     refreshExceptionToggles(); // the session's language decides what Caught / Uncaught mean
                     sessionAnnounced = !announceStart;
@@ -1529,7 +1530,15 @@ final class DebugCoordinator {
                 // Selects the first frame that has source to show → selectFrame highlights + loads vars. A step
                 // that went into library code shows that code (B5): the user asked to go there.
                 int shown = frameToShow(reason, frames, DebugCoordinator.this::hasSource);
+                // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
+                // is not taken to it (recordAndContinue).
+                boolean recording = recordingHit(reason, frames);
+                quietStop = recording ? stopSerial : -1;
                 panel().setCallStack(frames, shown);
+                if (recording) {
+                    recordAndContinue(frames.getFirst());
+                    return;
+                }
                 removeTemporaryBreakpointHit(reason, frames);
                 if (shown > 0) {
                     // A JDK or library frame jdtls can show is "library code", not "no source" (review 2, B107).
@@ -1763,6 +1772,9 @@ final class DebugCoordinator {
                 }
                 debugFrameId = frame.id(); // the hover evaluator's frame context
                 shownFrame = frame;
+                if (quietStop == stopSerial) {
+                    return; // a recording breakpoint's stop: kept, not shown (recordAndContinue)
+                }
                 highlightFrame(frame);
                 noteChangedSinceLaunch(frame);
                 dapManager.scopes(frame.id(), scopes -> {
@@ -2051,6 +2063,137 @@ final class DebugCoordinator {
                 });
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());
+    }
+
+    // --- recording breakpoints: record the stop, then go on ------------------------------------------
+
+    /** The stop a recording breakpoint made, whose frame is not shown in the editor; -1 for none. */
+    private int quietStop = -1;
+
+    /** Stops recorded by recording breakpoints this session. */
+    int recordedStops;
+
+    /** A session records at most this many stops; the next hit stops as a plain breakpoint does, and says why. */
+    static final int MAX_RECORDED_STOPS = 500;
+
+    /**
+     * Whether the program stopped ({@code reason}) on a recording breakpoint at the top frame's line, as the adapter
+     * was told the breakpoints (open files' and closed ones'), and can record it: Debug History keeps stops and the
+     * session has not reached {@link #MAX_RECORDED_STOPS}. Says why when it stops instead.
+     */
+    private boolean recordingHit(String reason, List<DapModels.StackFrameInfo> frames) {
+        if (!"breakpoint".equals(reason) || frames.isEmpty()) {
+            return false;
+        }
+        DapModels.StackFrameInfo top = frames.getFirst();
+        Path file = top.file();
+        if (file == null || !recordingBreakpointAt(file, top.line())) {
+            return false;
+        }
+        if (panel().history().capacity() == 0) {
+            host.setStatus(tr("status.debug.recordingHistoryOff"));
+            return false;
+        }
+        if (recordedStops >= MAX_RECORDED_STOPS) {
+            host.setStatus(tr("status.debug.recordingLimit", MAX_RECORDED_STOPS));
+            return false;
+        }
+        return true;
+    }
+
+    /** Whether a recording breakpoint was sent for 0-based line {@code line} of {@code file}. */
+    private boolean recordingBreakpointAt(Path file, int line) {
+        String wanted = key(file);
+        List<DapModels.FileBreakpoints> sent = new ArrayList<>(sentBreakpoints.values());
+        sent.addAll(closedBreakpoints);
+        for (DapModels.FileBreakpoints fb : sent) {
+            if (fb.file() != null && key(fb.file()).equals(wanted)) {
+                for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
+                    if (lb.line() == line && lb.recording()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A recording breakpoint's stop: the top frame's local values, its inline values and the watches are kept in Debug
+     * History (the stop itself is already recorded with its call stack), then the program goes on. A stop the user
+     * acts on first (a step, Stop) or another stop meanwhile is left as it is.
+     */
+    private void recordAndContinue(DapModels.StackFrameInfo top) {
+        recordedStops++;
+        int serial = stopSerial;
+        DebugPanel panel = panel();
+        DebugHistory.Stop stop = panel.history().last();
+        Runnable goOn = () -> {
+            if (serial != stopSerial || dapManager.state() != DapManager.State.SUSPENDED) {
+                return;
+            }
+            if (stop != null) {
+                panel.appendNotice(tr("debug.console.recorded", stop.number, DebugPanelText.historyWhere(stop)));
+            }
+            dapManager.resume();
+        };
+        dapManager.scopes(top.id(), scopes -> {
+            DapModels.ScopeInfo locals =
+                    scopes.stream().filter(sc -> !sc.expensive()).findFirst().orElse(null);
+            if (locals == null || serial != stopSerial) {
+                recordWatches(top, serial, goOn);
+                return;
+            }
+            dapManager.variables(locals.variablesReference(), vars -> {
+                if (serial != stopSerial) {
+                    return;
+                }
+                DebugHistory history = panel.history();
+                Map<String, String> inline = new LinkedHashMap<>();
+                for (DapModels.VariableInfo v : vars) {
+                    history.record(
+                            0,
+                            List.of(locals.name(), v.name()),
+                            v.value(),
+                            v.type() == null ? "" : v.type(),
+                            v.variablesReference() > 0);
+                    if (inline.size() < MAX_INLINE_VALUES) {
+                        inline.put(v.name(), DebugValues.display(v.value()));
+                    }
+                }
+                Path file = top.file();
+                if (file != null) {
+                    history.recordInline(0, file, top.line(), inline);
+                }
+                recordWatches(top, serial, goOn);
+            });
+        });
+    }
+
+    /** Evaluates the watches in {@code top} one after another into the newest stop, then runs {@code then}. */
+    private void recordWatches(DapModels.StackFrameInfo top, int serial, Runnable then) {
+        List<String> watches = new ArrayList<>(panel().getWatches());
+        recordWatch(top, serial, watches, 0, then);
+    }
+
+    private void recordWatch(DapModels.StackFrameInfo top, int serial, List<String> watches, int index, Runnable then) {
+        if (index >= watches.size() || serial != stopSerial) {
+            then.run();
+            return;
+        }
+        String expr = watches.get(index);
+        dapManager.evaluateFull(expr, top.id(), "watch", r -> {
+            if (serial == stopSerial && r != null && !r.failed()) {
+                panel().history()
+                        .record(
+                                0,
+                                List.of(tr("debugpanel.watches"), expr),
+                                r.result(),
+                                r.type() == null ? "" : r.type(),
+                                r.variablesReference() > 0);
+            }
+            recordWatch(top, serial, watches, index + 1, then);
+        });
     }
 
     private void clearDebugEditorSurfaces() {
@@ -5529,6 +5672,8 @@ final class DebugCoordinator {
         enabled.setSelected(bp.enabled());
         CheckBox temporary = new CheckBox(tr("dialog.debug.breakpointTemporary"));
         temporary.setSelected(bp.temporary());
+        CheckBox recording = new CheckBox(tr("dialog.debug.breakpointRecording"));
+        recording.setSelected(bp.recording());
 
         GridPane grid = new GridPane();
         grid.setHgap(8);
@@ -5544,7 +5689,7 @@ final class DebugCoordinator {
         grid.add(logMessage, 1, 2);
         grid.add(new Label(tr("dialog.debug.hitConditionLabel")), 0, 3);
         grid.add(hitCondition, 1, 3);
-        grid.add(new javafx.scene.layout.HBox(16, enabled, temporary), 1, 4);
+        grid.add(new javafx.scene.layout.HBox(16, enabled, temporary, recording), 1, 4);
         grid.add(note(tr("dialog.debug.logMessageHint")), 1, 5);
         GridPane.setHgrow(condition, Priority.ALWAYS);
         GridPane.setHgrow(logMessage, Priority.ALWAYS);
@@ -5565,6 +5710,7 @@ final class DebugCoordinator {
                     mgr.setHitCondition(line, hitCondition.getText().trim());
                     mgr.setEnabled(line, enabled.isSelected());
                     mgr.setTemporary(line, temporary.isSelected());
+                    mgr.setRecording(line, recording.isSelected());
                 },
                 null,
                 false);
@@ -6261,6 +6407,34 @@ final class DebugCoordinator {
     }
 
     /**
+     * Debug: Toggle Recording Breakpoint — a breakpoint on the caret line whose stops Debug History keeps while the
+     * program goes on, as Visual Studio's tracepoints and IntelliJ's non-suspending breakpoints log. On a line with a
+     * recording breakpoint it removes it; on one with an ordinary breakpoint it makes that one record.
+     */
+    void toggleRecordingBreakpointAtCaret() {
+        EditorBuffer b = breakpointBuffer();
+        if (b == null) {
+            return;
+        }
+        int line = b.getFocusedArea().getCurrentParagraph();
+        if (!breakpointAllowed(b, line)) {
+            return;
+        }
+        var mgr = b.getBreakpointManager();
+        Breakpoint bp = mgr.get(line);
+        if (bp != null && bp.recording()) {
+            b.toggleBreakpoint(line);
+            return;
+        }
+        if (bp == null) {
+            b.toggleBreakpoint(line);
+        }
+        mgr.setRecording(line, true);
+        b.refreshGutterLine(line);
+        host.setStatus(tr("status.debug.recordingAdded", line + 1));
+    }
+
+    /**
      * The program stopped on a breakpoint: when it is a temporary one, it is removed, which also takes it out of the
      * live session. Waits for the stopped file's buffer to load: the stop may have just opened it.
      */
@@ -6450,6 +6624,8 @@ final class DebugCoordinator {
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
         items.add(
                 menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
+        items.add(
+                menuItem("debug.toggleRecordingBreakpoint", breakpointGlyph(), this::toggleRecordingBreakpointAtCaret));
         if (LambdaBreakpoints.caretLineHasLambdas(b)) {
             items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
         }
