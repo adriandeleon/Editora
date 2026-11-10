@@ -1477,6 +1477,12 @@ n: …` to the console and resumes. A session records at most `MAX_RECORDED_STOP
 off, the breakpoint stops and says why. *Debug: Toggle Recording Breakpoint* and the breakpoint form's *Record and
 continue* set it; the gutter draws it purple with a ring. `RecordingBreakpointsWindowFxTest` (a fake adapter) and the
 `…Recording` tests of `DebugHistoryProbeFxTest` cover it.
+**Add Logpoint** (`DebugCoordinator.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
+(`FoldManager.setBreakpointShiftClick` → `EditorBuffer.setGutterLogpointClick`; unset, a Shift+click toggles like a
+plain click) open a one-field form for the log message, with the `{expression}` completion of the full form. OK is
+disabled while the message is blank, so it never leaves a breakpoint that stops; the breakpoint is created only on OK,
+and on a line that has one only its message changes. A method breakpoint's mark ignores the Shift+click.
+`DebugReviewCWindowFxTest.shiftClickingTheGutterOrAddLogpointMakesTheLineALogpoint` covers it.
 **Lambda breakpoints** ([`ui/LambdaBreakpoints`](../../src/main/java/com/editora/ui/LambdaBreakpoints.java),
 [`editor/debug/JavaLambdas`](../../src/main/java/com/editora/editor/debug/JavaLambdas.java)) are line breakpoints
 that also, or only, stop inside lambdas of their line: `Breakpoint.lambdas` holds their numbers on the line (from 1,

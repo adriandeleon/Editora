@@ -172,6 +172,8 @@ public final class FoldManager {
     private IntFunction<String> breakpointTooltip = i -> null;
     /** Invoked when the user clicks the breakpoint strip on a line (toggles the breakpoint). */
     private IntConsumer onBreakpointToggle = i -> {};
+    /** Invoked when the user Shift+clicks the breakpoint strip on a line (adds or edits a logpoint there). */
+    private IntConsumer onBreakpointShiftClick = i -> onBreakpointToggle.accept(i);
     /** Whether the debugger is stopped on a line (draws the execution arrow in its breakpoint strip). */
     private IntPredicate isExecutionLine = i -> false;
     /** A right-click on a line's breakpoint glyph. */
@@ -806,6 +808,14 @@ public final class FoldManager {
             java.util.function.BiConsumer<Integer, javafx.scene.input.ContextMenuEvent> onMenu) {
         this.isExecutionLine = isExecutionLine == null ? i -> false : isExecutionLine;
         this.onBreakpointMenu = onMenu == null ? (i, e) -> {} : onMenu;
+    }
+
+    /**
+     * Handles a Shift+click on a line's breakpoint strip — IntelliJ's gesture for a logpoint, a breakpoint that logs
+     * and does not suspend. Unset ({@code null}), a Shift+click toggles a breakpoint as a plain click does.
+     */
+    public void setBreakpointShiftClick(@Nullable IntConsumer onShiftClick) {
+        this.onBreakpointShiftClick = onShiftClick == null ? i -> onBreakpointToggle.accept(i) : onShiftClick;
     }
 
     /** Supplies the hover text of a line's breakpoint glyph ({@code null} = none). */
@@ -1752,7 +1762,7 @@ public final class FoldManager {
             ownPointer(bpSlot);
             bpSlot.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY) {
-                    onBreakpointToggle.accept(idx);
+                    (e.isShiftDown() ? onBreakpointShiftClick : onBreakpointToggle).accept(idx);
                     e.consume();
                 }
             });

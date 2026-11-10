@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Add Logpoint in one step.** Shift+click the breakpoint gutter on a line, as in IntelliJ, or use *Debug: Add
+  Logpoint…* (in the editor's right-click *Breakpoints* submenu, the Run menu and the palette; `C-c C-d g` in the
+  Emacs keymap). It asks only for the message to log, with `{expression}` for a value. OK makes the line a logpoint,
+  which logs each time the line runs and never suspends. On a line that already has a breakpoint it edits that
+  one's message and keeps its condition and hit count. Before, a logpoint took the full *Edit Breakpoint* form.
 - **Project Map cards read like the editor.** Code cards now show the language server's semantic highlighting and
   inlay hints, and pin the headers of the class or method you have scrolled into, as the editor does. Each follows
   its editor setting.

@@ -653,6 +653,10 @@ public class EditorBuffer implements TabContent {
     /** Handles a breakpoint-strip click; default toggles. The controller overrides to persist + re-send. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBreakpointClick =
             (buffer, line) -> buffer.toggleBreakpoint(line);
+    /** Handles a Shift+click on the breakpoint strip; default does what a plain click does. The controller asks
+     *  for a log message and makes the line a logpoint. */
+    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterLogpointClick =
+            (buffer, line) -> buffer.gutterBreakpointClick.accept(buffer, line);
     /** A right-click on a breakpoint's gutter glyph (the controller shows Edit / Disable / Remove). */
     private BreakpointGutterMenu gutterBreakpointMenu = (buffer, line, e) -> {};
     /** Personal Notes for this buffer (inline marker + highlight + hover). */
@@ -886,6 +890,7 @@ public class EditorBuffer implements TabContent {
                 breakpoints::hasGlyph, // a line breakpoint, or a method breakpoint's / field watchpoint's mark
                 breakpoints::glyphClasses,
                 line -> gutterBreakpointClick.accept(this, line));
+        folds.setBreakpointShiftClick(line -> gutterLogpointClick.accept(this, line)); // IntelliJ's logpoint gesture
         folds.setBreakpointTooltip(breakpoints::glyphTooltip);
         folds.setDebugGutterHooks(
                 i -> executionLine.isMarked(area, i), (l, e) -> gutterBreakpointMenu.show(this, l, e));
@@ -4202,6 +4207,13 @@ public class EditorBuffer implements TabContent {
     public void setGutterBreakpointClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
         if (handler != null) {
             this.gutterBreakpointClick = handler;
+        }
+    }
+
+    /** Sets the breakpoint-strip Shift+click handler ({@code (buffer, line)}) — the controller adds a logpoint. */
+    public void setGutterLogpointClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
+        if (handler != null) {
+            this.gutterLogpointClick = handler;
         }
     }
 

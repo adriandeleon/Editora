@@ -5164,6 +5164,8 @@
 }
 /* Toggle Breakpoint's dot in the editor's right-click menu (review 2 C110). */
 .debug-menu-breakpoint { -fx-fill: -state-red; }
+/* Add Logpoint's diamond beside it: the gutter logpoint's blue. */
+.debug-menu-logpoint { -fx-fill: #1f6feb; }
 /* The Run console's stdin field (compact, like the Debug evaluate field). */
 .run-panel .run-input {
     -fx-font-size: 12px;

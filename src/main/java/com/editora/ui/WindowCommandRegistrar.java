@@ -2316,6 +2316,10 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleFieldWatchpoint)));
         host.registry()
                 .register(Command.of(
+                        "debug.addLogpoint",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addLogpointAtCaret)));
+        host.registry()
+                .register(Command.of(
                         "debug.editBreakpoint",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editBreakpointAtCaret)));
         host.registry()

@@ -271,6 +271,7 @@ class MenuBarModelTest {
                 "debug.mainClass",
                 "debug.toggleBreakpoint",
                 "debug.toggleBreakpointEnabled",
+                "debug.addLogpoint",
                 "debug.editBreakpoint",
                 "debug.breakpoints",
                 "debug.muteBreakpoints",
