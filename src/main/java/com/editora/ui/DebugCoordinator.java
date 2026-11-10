@@ -327,6 +327,12 @@ final class DebugCoordinator {
         memberBreakpoints.setOnChanged(memberMarks::refreshAll);
         lambdaBreakpoints = new LambdaBreakpoints(host);
         pinnedValues = new PinnedValues(host, ops, dapManager);
+        // Each stop's pinned values are kept with it in Debug History.
+        pinnedValues.setOnPainted((b, shown) -> {
+            if (debugPanel != null && b.getPath() != null) {
+                debugPanel.recordPins(b.getPath(), shown);
+            }
+        });
     }
 
     /** Values pinned to lines. */
@@ -403,6 +409,7 @@ final class DebugCoordinator {
             built.setWatches(ops.debugWatches());
             built.setChordLookup(id -> java.util.Objects.requireNonNullElse(ops.chordFor(id), ""));
             built.setSourceCheck(this::hasSource);
+            built.history().setCapacity(host.settings().getDebugHistoryStops());
             built.setOnWatchesChanged(() -> ops.persistDebugWatches(new ArrayList<>(built.getWatches())));
             if (consoleFontFamily != null) {
                 built.setConsoleFont(consoleFontFamily, consoleFontSize);
@@ -787,6 +794,9 @@ final class DebugCoordinator {
                 on && s.isCppDebugEnabled(),
                 scope.debugTool("rust", s.getRustDebugPath()),
                 found -> applyGating());
+        if (debugPanel != null) {
+            debugPanel.history().setCapacity(s.getDebugHistoryStops()); // fewer forgets the oldest now
+        }
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         dapManager.setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dapManager.setProgramTerminal(
@@ -1510,6 +1520,7 @@ final class DebugCoordinator {
                 List<DapModels.StackFrameInfo> frames = currentLines(stopFrames);
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
+                panel().setStoppedThread(threadId); // Debug History keys this stop's frames by it
                 // The frame that threw: its line is drawn red while it is the one shown (review C13).
                 exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
                         ? frames.get(firstFrameWithSource(frames, DebugCoordinator.this::hasSource))
@@ -1842,6 +1853,22 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void showHistoryFrame(DebugHistory.Stop stop, int frame) {
+                DebugCoordinator.this.showHistoryFrame(stop, frame);
+            }
+
+            @Override
+            public void leaveHistory() {
+                DebugCoordinator.this.leaveHistory();
+            }
+
+            @Override
+            public void pickValueHistory(
+                    String title, List<DebugHistory.Seen> seen, java.util.function.IntConsumer go) {
+                DebugCoordinator.this.pickValueHistory(title, seen, go);
+            }
+
+            @Override
             public boolean refreshValues() {
                 DapModels.StackFrameInfo frame = shownFrame;
                 if (frame == null || dapManager.state() != DapManager.State.SUSPENDED) {
@@ -1881,6 +1908,13 @@ final class DebugCoordinator {
                 }
                 values.put(v.name(), DebugValues.display(v.value())); // a function: its first line (review D9)
             }
+            if (debugPanel != null && debugPanel.viewing() != null) {
+                return; // an earlier stop is shown: its own values are painted
+            }
+            Path file = frame.file();
+            if (debugPanel != null && file != null) {
+                debugPanel.recordInlineValues(frame, file, frame.line(), values);
+            }
             EditorBuffer b = ops.bufferForPath(frame.file());
             if (b == null) {
                 return;
@@ -1894,6 +1928,129 @@ final class DebugCoordinator {
             b.setInlineValues(values, frame.line() - b.getBreakpointManager().regionFirstLine());
             b.setDebugHoverActive(true);
         });
+    }
+
+    // --- Debug History: an earlier stop in the editor ---------------------------------------------
+
+    /**
+     * Shows frame {@code index} of earlier stop {@code stop} in the editor: its line marked grey, the inline values and
+     * pinned values it showed then. Nothing is asked of the adapter, and hovering evaluates nothing.
+     */
+    private void showHistoryFrame(DebugHistory.Stop stop, int index) {
+        DapModels.StackFrameInfo frame = stop.frames.get(index);
+        clearExecHighlight();
+        if (debugValuesBuffer != null) {
+            debugValuesBuffer.setInlineValues(null, -1);
+            debugValuesBuffer.setDebugHoverActive(false);
+            debugValuesBuffer = null;
+        }
+        pinnedValues.showRecorded(stop.pins());
+        if (frame.file() == null || !hasSource(frame)) {
+            host.setStatus(tr("status.debug.noSource", frame.name()));
+            return;
+        }
+        Node keepFocus = debugPanelFocusOwner();
+        ops.openPath(frame.file());
+        EditorBuffer b = ops.bufferForPath(frame.file());
+        if (keepFocus != null) {
+            Platform.runLater(keepFocus::requestFocus);
+        }
+        if (b == null) {
+            return;
+        }
+        execHighlightBuffer = b;
+        ops.afterBufferLoad(b, () -> {
+            if (execHighlightBuffer != b || debugPanel == null || debugPanel.viewing() != stop) {
+                return; // another stop or frame, or back to the live one, meanwhile
+            }
+            int first = b.getBreakpointManager().regionFirstLine();
+            b.setExecutionLine(frame.line() - first);
+            b.setExecutionLineHistory(true);
+            DebugHistory.Inline inline = stop.inline(index);
+            if (inline != null) {
+                b.setInlineValues(inline.values(), inline.line() - first);
+                debugValuesBuffer = b;
+            }
+        });
+    }
+
+    /** Back from an earlier stop: the live stop's line, inline and pinned values; nothing once the session ended. */
+    private void leaveHistory() {
+        clearExecHighlight();
+        pinnedValues.clear();
+        DapModels.StackFrameInfo frame = shownFrame;
+        if (dapManager.state() == DapManager.State.SUSPENDED && frame != null) {
+            highlightFrame(frame);
+            dapManager.scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
+            pinnedValues.refresh(frame.id());
+        } else {
+            clearDebugEditorSurfaces();
+        }
+    }
+
+    /** Show Value History: a value's stops, newest first; a pick goes back to that stop. */
+    private void pickValueHistory(String title, List<DebugHistory.Seen> seen, java.util.function.IntConsumer go) {
+        if (seen.isEmpty()) {
+            host.setStatus(tr("status.debug.noValueHistory"));
+            return;
+        }
+        List<DebugHistory.Seen> newestFirst = new java.util.ArrayList<>(seen);
+        java.util.Collections.reverse(newestFirst);
+        QuickOpen<DebugHistory.Seen> picker = new QuickOpen<>(
+                title,
+                tr("debugpanel.history.valueHistoryPrompt"),
+                () -> newestFirst,
+                v -> tr("debugpanel.history.seen", v.stop(), DebugValues.display(v.value())),
+                v -> v.time().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+                        + (v.changed() ? " · " + tr("debugpanel.history.changed") : ""),
+                v -> {
+                    if (v != null) {
+                        go.accept(v.stop());
+                    }
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /** Debug: Back (History). */
+    void historyBack() {
+        if (debugPanel != null) {
+            ops.openToolWindow();
+            debugPanel.historyBack();
+        }
+    }
+
+    /** Debug: Forward (History). */
+    void historyForward() {
+        if (debugPanel != null) {
+            debugPanel.historyForward();
+        }
+    }
+
+    /** Debug: Show History…: every stop kept, newest first; a pick goes back to it. */
+    void showHistory() {
+        List<DebugHistory.Stop> stops =
+                debugPanel == null ? List.of() : debugPanel.history().stops();
+        if (stops.isEmpty()) {
+            host.setStatus(tr("status.debug.noHistory"));
+            return;
+        }
+        List<DebugHistory.Stop> newestFirst = new java.util.ArrayList<>(stops);
+        java.util.Collections.reverse(newestFirst);
+        QuickOpen<DebugHistory.Stop> picker = new QuickOpen<>(
+                tr("debugpanel.history.title"),
+                tr("debugpanel.history.prompt"),
+                () -> newestFirst,
+                DebugPanelText::historyEntry,
+                st -> st.time.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")),
+                st -> {
+                    if (st != null && debugPanel != null) {
+                        ops.openToolWindow();
+                        debugPanel.viewStop(st.number, -1);
+                    }
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
     }
 
     private void clearDebugEditorSurfaces() {

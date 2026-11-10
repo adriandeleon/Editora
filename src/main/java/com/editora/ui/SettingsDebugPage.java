@@ -118,6 +118,26 @@ final class SettingsDebugPage {
             config.getSettings().setCppDebugger(now);
             w.apply();
         });
+        debugHistoryCombo = new ComboBox<>();
+        debugHistoryCombo.getItems().setAll(0, 50, 200, 1000, 5000);
+        debugHistoryCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(Integer stops) {
+                return stops == null ? "" : stops == 0 ? tr("settings.debug.historyStops.off") : String.valueOf(stops);
+            }
+
+            @Override
+            public Integer fromString(String label) {
+                return Integer.valueOf(label);
+            }
+        });
+        debugHistoryCombo.valueProperty().addListener((obs, was, now) -> {
+            if (w.loading || now == null) {
+                return;
+            }
+            config.getSettings().setDebugHistoryStops(now);
+            w.apply();
+        });
         debugGdbPathField = new TextField();
         debugGdbPathField.setPromptText("gdb");
         w.commitOnEnterOrBlur(debugGdbPathField, () -> config.getSettings().getGdbPath(), now -> {
@@ -186,6 +206,9 @@ final class SettingsDebugPage {
     private CheckBox debugCppCheck;
     /** C and C++'s debugger: CodeLLDB or GDB. */
     private ComboBox<String> debugCppDebuggerCombo;
+    /** Debug History: the stops a session keeps. */
+    private ComboBox<Integer> debugHistoryCombo;
+
     /** GDB's path, for its DAP mode. */
     private TextField debugGdbPathField;
     /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
@@ -224,6 +247,15 @@ final class SettingsDebugPage {
             String words = "debug python javascript program console input stdin terminal tab tty screen keys";
             w.checkRow(programs, Category.DEBUG, check, tr("settings.debug." + key + ".hint"), words);
         }
+        Card historyCard = w.card(p, tr("settings.debug.history"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), historyCard.box());
+        w.controlRow(
+                historyCard,
+                Category.DEBUG,
+                tr("settings.debug.historyStops"),
+                tr("settings.debug.historyStops.hint"),
+                debugHistoryCombo,
+                "debug history back forward stops time travel earlier values remember");
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             Card c = w.card(p, tr(dbg.sectionKey()));
             SettingsDependents.bind(debugCheck.selectedProperty(), c.box());
@@ -542,6 +574,12 @@ final class SettingsDebugPage {
         debugCppCheck.setSelected(settings.isCppDebugEnabled());
         debugCppDebuggerCombo.setValue(settings.getCppDebugger());
         debugGdbPathField.setText(settings.getGdbPath());
+        int stops = settings.getDebugHistoryStops();
+        if (!debugHistoryCombo.getItems().contains(stops)) {
+            debugHistoryCombo.getItems().add(stops); // a value set in settings.json
+            debugHistoryCombo.getItems().sort(Integer::compare);
+        }
+        debugHistoryCombo.setValue(stops);
         nodePathField.setText(settings.getNodePath());
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             CheckBox enable = debugEnableChecks.get(dbg.id());

@@ -1438,6 +1438,29 @@ info colour, `◆ `); `clearDebugEditorSurfaces` clears them when the program ru
 (selection or `DebugExpressions.atCaret`, else a prompt; again unpins) and `debug.unpinLine`; the value popup's
 Pin to Line pins its expression to the line it opened for (`DebugValuePopup.lineAbove`). The opt-in
 `PinnedValuesProbeFxTest` checks two pins against java-debug across two stops.
+**Debug History** ([`ui/DebugHistory`](../../src/main/java/com/editora/ui/DebugHistory.java), "time travel lite") keeps
+each stop as it was shown, so the Debug window can go back to it after the program has run on. Nothing is asked of
+the adapter for it: no DAP adapter Editora drives supports `stepBack`, and an earlier stop's values cannot be fetched
+again. A stop (`DebugHistory.Stop`) is recorded when the call stack of a new suspension arrives
+(`DebugPanel.setCallStack` after `setState(SUSPENDED)`) and holds:
+- the frames, the frame selected, the stop reason, thread and time;
+- per frame, the rows the Variables tree showed (`noteValue`, the hook that also feeds `DebugValueChanges`): each
+  row's path of names, value, type and whether it had children (at most `MAX_ROWS` a frame);
+- the inline values painted for a frame (`DebugCoordinator.applyInlineValues` → `recordInlineValues`), the pinned
+  values painted per file (`PinnedValues.setOnPainted` → `recordPins`) and the exception summary.
+
+The ring keeps `Settings.debugHistoryStops` stops (200 by default, 0 = none; Settings → Debugging → History), in
+memory only. A new session clears it, so after Stop the last session's stops can still be read. Back (`debug.historyBack`,
+the toolbar's ‹), Forward (`debug.historyForward`, ›) and Show History (`debug.showHistory`, a list of the stops) put the
+panel in history mode: the stop's own call stack, a read-only tree rebuilt from the rows
+(`DebugPanel.historyTree`: a row with children nobody opened says so), a banner with Back to the live stop, and
+changed-value marks against the stop before (`DebugHistory.changed`). The editor shows the stop's line grey
+(`ExecutionLine.HISTORY_STYLE`), its inline values and pinned values (`PinnedValues.showRecorded`), and hovering
+evaluates nothing. Forward from the last kept stop, a step or Continue, or a new stop return to the live state
+(`leaveHistory`). Show Value History on a Variables row lists the row's value at each kept stop of the same frame
+(`DebugHistory.valueHistory`, the frame told apart by `DebugValueChanges.frameKey`); picking one goes back to that stop.
+`DebugHistoryPanelFxTest` and `DebugHistoryWindowFxTest` (a fake adapter) cover the panel and editor;
+`DebugHistoryProbeFxTest`, opt-in, drives debugpy, js-debug and java-debug.
 **Lambda breakpoints** ([`ui/LambdaBreakpoints`](../../src/main/java/com/editora/ui/LambdaBreakpoints.java),
 [`editor/debug/JavaLambdas`](../../src/main/java/com/editora/editor/debug/JavaLambdas.java)) are line breakpoints
 that also, or only, stop inside lambdas of their line: `Breakpoint.lambdas` holds their numbers on the line (from 1,

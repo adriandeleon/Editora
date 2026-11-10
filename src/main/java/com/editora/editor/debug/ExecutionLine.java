@@ -37,6 +37,9 @@ public final class ExecutionLine {
     /** Added beside {@link #STYLE} while the stop is on an exception: the line turns red (review C13). */
     static final String EXCEPTION_STYLE = "exec-exception";
 
+    /** Added beside {@link #STYLE} while it marks an earlier stop's line (Debug History): drawn grey. */
+    static final String HISTORY_STYLE = "exec-history";
+
     /** Lines of context kept above a revealed execution line that was out of view, at the least. */
     static final int MIN_CONTEXT = 3;
 
@@ -204,10 +207,26 @@ public final class ExecutionLine {
         area.setParagraphStyle(at, style);
     }
 
+    /** Draws the marked line as an earlier stop's (grey), not the live one's. */
+    public void setHistory(CodeArea area, boolean history) {
+        int at = markedLine(area);
+        if (at < 0 || styleOf(area, at).contains(HISTORY_STYLE) == history) {
+            return;
+        }
+        List<String> style = new ArrayList<>(styleOf(area, at));
+        if (history) {
+            style.add(HISTORY_STYLE);
+        } else {
+            style.remove(HISTORY_STYLE);
+        }
+        area.setParagraphStyle(at, style);
+    }
+
     private static void unmark(CodeArea area, int index) {
         List<String> style = new ArrayList<>(styleOf(area, index));
         style.remove(STYLE);
         style.remove(EXCEPTION_STYLE);
+        style.remove(HISTORY_STYLE);
         area.setParagraphStyle(index, style);
     }
 

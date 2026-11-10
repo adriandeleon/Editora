@@ -388,7 +388,10 @@ public enum ConfigSchema {
                     Map.entry(163, (Migration) ConfigMigrations::identity),
                     // v164→165: + csharpDebugEnabled/Path, rubyDebugEnabled/Path, phpDebugEnabled/Path (on, "") — C#
                     // on netcoredbg, Ruby on rdbg, PHP on Xdebug. Additive: absent is the default.
-                    Map.entry(164, (Migration) ConfigMigrations::identity)),
+                    Map.entry(164, (Migration) ConfigMigrations::identity),
+                    // v165→166: + debugHistoryStops (200) — Debug History's stops kept per session. Additive: absent
+                    // is the default.
+                    Map.entry(165, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

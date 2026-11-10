@@ -2242,6 +2242,18 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::startLaunchConfiguration)));
         host.registry()
                 .register(Command.of(
+                        "debug.historyBack",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::historyBack)));
+        host.registry()
+                .register(Command.of(
+                        "debug.historyForward",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::historyForward)));
+        host.registry()
+                .register(Command.of(
+                        "debug.showHistory",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showHistory)));
+        host.registry()
+                .register(Command.of(
                         "debug.editCustomAdapters",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editCustomAdapters)));
         host.registry()
