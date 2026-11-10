@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 166;
+    public static final int SCHEMA_VERSION = 167;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -875,6 +875,12 @@ public class Settings {
      * all (java-debug's {@code suspendAllThreads}; IntelliJ's "Suspend: All"). Off stops only the thread that hit it.
      */
     private boolean debugSuspendAllThreads = false;
+    /**
+     * Python debugging: a subprocess the program starts ({@code multiprocessing}, {@code subprocess} running Python)
+     * is debugged too, in a session of its own (debugpy's {@code subProcess}). Off, subprocesses run without the
+     * debugger, as before.
+     */
+    private boolean debugPythonSubprocesses = true;
     /** Debug History: how many stops a session keeps to go back to (0 = none). In memory only, never saved. */
     private int debugHistoryStops = 200;
     /**
@@ -3610,6 +3616,14 @@ public class Settings {
 
     /** The most stops Debug History may keep. */
     public static final int MAX_DEBUG_HISTORY_STOPS = 5_000;
+
+    public boolean isDebugPythonSubprocesses() {
+        return debugPythonSubprocesses;
+    }
+
+    public void setDebugPythonSubprocesses(boolean debugPythonSubprocesses) {
+        this.debugPythonSubprocesses = debugPythonSubprocesses;
+    }
 
     public boolean isDebugSuspendAllThreads() {
         return debugSuspendAllThreads;

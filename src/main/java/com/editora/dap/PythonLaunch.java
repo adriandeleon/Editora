@@ -16,9 +16,10 @@ import org.jspecify.annotations.Nullable;
  *       (the executable), {@code pythonArgs} (its own arguments, such as {@code -X dev}) and {@code env} (an
  *       {@code env NAME=value …} prefix). Handed the whole command, debugpy ran the program with {@code env}
  *       and waited forever for a launcher that never started.</li>
- *   <li>{@code subProcess: false}: a child Python process ({@code multiprocessing}, a pool) runs without the
- *       debugger. With debugpy's default ({@code true}) every child waited for a debugger to attach through
- *       a request Editora does not serve, so the program hung.</li>
+ *   <li>{@code subProcess: false} here: a child Python process ({@code multiprocessing}, a pool) runs without the
+ *       debugger. A local launch turns it on when the window debugs subprocesses (Settings → Debugging → Python):
+ *       debugpy then asks for each child with {@code startDebugging}, which the window answers with a session of
+ *       its own ({@code DapManager.startPythonChild}). A host's launch keeps it off: a child's port is the host's.</li>
  *   <li>{@code PYTHONPATH} is the project root and its {@code src/} folder (when given), then the user's own
  *       {@code PYTHONPATH} — always set, so the folder Editora puts on the <em>adapter's</em> path to find
  *       debugpy does not leak into the program and its children.</li>

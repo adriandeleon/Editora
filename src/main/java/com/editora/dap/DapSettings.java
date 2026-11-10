@@ -29,6 +29,10 @@ final class DapSettings {
     Path debugpyDir;
 
     boolean pythonAvailable;
+
+    /** A Python program's subprocesses are debugged, each in a session of its own (debugpy's {@code subProcess}). */
+    boolean pythonSubprocesses = true;
+
     boolean jsEnabled;
     /** The configured dapDebugServer.js path or folder ("" ⇒ found by itself). */
     String jsPath = "";

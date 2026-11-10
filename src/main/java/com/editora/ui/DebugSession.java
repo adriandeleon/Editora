@@ -30,6 +30,10 @@ final class DebugSession {
 
     // --- the launch -------------------------------------------------------------------------------------
 
+    /** The session whose program started this one's (a Python subprocess), or null for a session of its own. */
+    @Nullable
+    DebugSession parent;
+
     /** The compound whose launch this session runs, or null ({@link DebugCompound#holds} says whether it still does). */
     @Nullable
     DebugCompound compound;

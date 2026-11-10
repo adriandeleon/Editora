@@ -1251,9 +1251,10 @@ class DapManagerSessionFxTest {
         assertEquals(script.getParent().toString(), session.launchArgs.get("cwd"));
         assertEquals(python, session.launchArgs.get("python"), "the debuggee runs on the configured interpreter");
         assertEquals(List.of("--verbose", "in put"), session.launchArgs.get("args"));
-        assertFalse(
-                Boolean.TRUE.equals(session.initializeArgs.getSupportsStartDebuggingRequest()),
-                "a stdio adapter has no second connection to offer a child session");
+        // Subprocesses are debugged (the default): debugpy names a port of its own for each one, asked for with
+        // startDebugging, which the window answers with a session of its own.
+        assertTrue(Boolean.TRUE.equals(session.initializeArgs.getSupportsStartDebuggingRequest()));
+        assertEquals(true, session.launchArgs.get("subProcess"));
         assertTrue(session.configured.await(10, TimeUnit.SECONDS));
         assertEquals(script.toString(), session.breakpoints.get(0).getSource().getPath());
         assertEquals(

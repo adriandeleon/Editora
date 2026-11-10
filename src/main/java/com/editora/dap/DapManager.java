@@ -155,6 +155,13 @@ public final class DapManager {
          * was already running, under whatever started it.
          */
         default void onDebuggeeRuntime(List<String> runtime, @Nullable Path where, Map<String, String> env) {}
+
+        /**
+         * The program started a subprocess that the adapter can debug in a session of its own (debugpy's
+         * {@code startDebugging}): {@code configuration} is what to attach that session with
+         * ({@link #startPythonChild}). Only for a launch that asked for its subprocesses.
+         */
+        default void onChildSession(Map<String, Object> configuration) {}
     }
 
     private final LspManager lsp;
@@ -418,6 +425,11 @@ public final class DapManager {
      */
     public void setProgramConsole(boolean programConsole) {
         shared.programConsole = programConsole;
+    }
+
+    /** Whether a Python launch debugs its subprocesses too, each in a session of its own; from the next launch on. */
+    public void setPythonSubprocesses(boolean on) {
+        shared.pythonSubprocesses = on;
     }
 
     /** The Debugging setting's Node.js for JavaScript sessions ("" = automatic). */
@@ -2559,6 +2571,73 @@ public final class DapManager {
     }
 
     /**
+     * Debugs a subprocess of a Python session in this (new) manager: attaches to the port debugpy named for it in
+     * {@code configuration} ({@link Listener#onChildSession}), anchored at the parent's file {@code anchor}. Stop
+     * detaches: the subprocess runs on, and ends with its program.
+     */
+    public void startPythonChild(@Nullable Path anchor, Map<String, Object> configuration) {
+        if (managerClosed) {
+            return;
+        }
+        int port = configuration.get("connect") instanceof Map<?, ?> connect && connect.get("port") instanceof Number n
+                ? n.intValue()
+                : -1;
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("python");
+        if (spec == null || port <= 0) {
+            listener.onError(tr("debug.error.noAdapter"));
+            return;
+        }
+        if (client != null) {
+            stop(); // one session at a time
+        }
+        restartAction = null; // a subprocess is the program's to start again, not this session's
+        debugFile = anchor;
+        long epoch = beginSession();
+        setState(State.STARTING);
+        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
+        List<String> filters = filtersFor("python");
+        Map<String, Object> attach = new java.util.LinkedHashMap<>(configuration);
+        startupTask = io.submit(() -> {
+            try {
+                if (!isCurrent(epoch)) {
+                    return;
+                }
+                DapClient c = new DapClient(sessionHost(epoch));
+                c.setPaths(DapPaths.LOCAL);
+                c.setBreakpoints(bps);
+                c.setExceptionFilters(filters);
+                c.setTerminateOnDisconnect(false);
+                if (!publishClient(epoch, c)) {
+                    c.dispose();
+                    return;
+                }
+                c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
+                    if (e != null) {
+                        fail(epoch, tr("debug.error.debugpyConnect", msg(e)));
+                        return;
+                    }
+                    if (!isCurrent(epoch)) {
+                        c.dispose();
+                        return;
+                    }
+                    c.attach(attach).whenComplete((v, ae) -> {
+                        if (ae != null) {
+                            fail(epoch, tr("debug.error.attachFailed", msg(ae)));
+                        }
+                    });
+                    fx(() -> {
+                        if (isCurrent(epoch, c)) {
+                            setState(State.RUNNING);
+                        }
+                    });
+                });
+            } catch (Exception e) {
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
+            }
+        });
+    }
+
+    /**
      * Debugs a pytest run ({@code python -m pytest args}) in {@code cwd}, anchored at test file {@code anchor}.
      * When the interpreter has no pytest, {@code unittestArgs} (non-empty) run under {@code python -m unittest}
      * instead; otherwise the session ends saying pytest is missing for that interpreter.
@@ -2659,10 +2738,12 @@ public final class DapManager {
         // The plan's PYTHONPATH (project root, src/, the user's) when it set one; else the user's own, or "" —
         // never the adapter's, which carries Editora's debugpy folder.
         String inherited = System.getenv("PYTHONPATH");
-        Map<String, Object> launch = overlay(
-                PythonLaunch.request(
-                        target, program, List.of(), inherited == null ? "" : inherited, File.pathSeparator, console),
-                configured);
+        Map<String, Object> planned = PythonLaunch.request(
+                target, program, List.of(), inherited == null ? "" : inherited, File.pathSeparator, console);
+        if (shared.pythonSubprocesses) {
+            planned.put("subProcess", true); // each subprocess a session of its own (onChildSession)
+        }
+        Map<String, Object> launch = overlay(planned, configured);
         attachStdio(proc, spec, bps, filters, epoch, DapPaths.LOCAL, launch, console, stderr);
     }
 
@@ -2774,6 +2855,17 @@ public final class DapManager {
         c.setBreakpoints(bps);
         c.setExceptionFilters(filters);
         c.setRunsDebuggee(runsDebuggee);
+        if (Boolean.TRUE.equals(launch.get("subProcess")) && paths == DapPaths.LOCAL) {
+            // debugpy asks for each subprocess with startDebugging, naming a port of its own to attach a session to.
+            c.setChildSessions(configuration -> {
+                fx(() -> {
+                    if (isCurrent(epoch, c)) {
+                        listener.onChildSession(configuration);
+                    }
+                });
+                return java.util.concurrent.CompletableFuture.completedFuture(null);
+            });
+        }
         if (!publishClient(epoch, c)) {
             com.editora.process.ProcessRegistry.killTree(proc);
             c.dispose();
