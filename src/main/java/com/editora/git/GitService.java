@@ -1135,6 +1135,120 @@ public final class GitService {
         }
     }
 
+    /**
+     * A permalink: the web address of a file, its lines or a folder at the HEAD commit, on the remote the branch
+     * tracks (else {@code origin}, else the first). {@code pushed}: whether that commit is on the upstream yet (the link
+     * works once it is). {@code status} says why there is none, or that the lines asked were all uncommitted and the
+     * link is to the whole file.
+     */
+    public record Permalink(Status status, String url, boolean pushed) {
+        /** Whether there is a link, and why not. */
+        public enum Status {
+            OK,
+            /** The lines asked for are not in HEAD: the link is to the whole file. */
+            NEW_LINES,
+            NO_REPOSITORY,
+            NO_COMMIT,
+            /** No remote, or none on a web host. */
+            NO_REMOTE,
+            /** The file is not in HEAD. */
+            UNTRACKED
+        }
+
+        static Permalink none(Status status) {
+            return new Permalink(status, "", false);
+        }
+    }
+
+    /**
+     * The permalink of {@code target} — a file, with its 0-based lines {@code startLine..endLine} on disk (mapped to
+     * HEAD's when it has uncommitted edits; a negative {@code startLine} for the whole file), or a folder — posted on
+     * the FX thread.
+     */
+    public void permalink(Path target, int startLine, int endLine, Consumer<Permalink> onResult) {
+        boolean queued = submit(exec, () -> {
+            Permalink link = readPermalink(target, startLine, endLine);
+            Platform.runLater(() -> onResult.accept(link));
+        });
+        if (!queued) {
+            Platform.runLater(() -> onResult.accept(Permalink.none(Permalink.Status.NO_REPOSITORY)));
+        }
+    }
+
+    /** {@link #permalink}'s read, on the calling thread. */
+    Permalink readPermalink(Path target, int startLine, int endLine) {
+        boolean folder = Files.isDirectory(target);
+        Path dir = folder ? target : target.toAbsolutePath().getParent();
+        if (dir == null || !mayBeRepository(dir) || !gitAvailable(dir)) {
+            return Permalink.none(Permalink.Status.NO_REPOSITORY);
+        }
+        Path root = resolveRoot(target);
+        if (root == null) {
+            return Permalink.none(Permalink.Status.NO_REPOSITORY);
+        }
+        HeadCommit head = headCommitNow(root);
+        if (head == null) {
+            return Permalink.none(Permalink.Status.NO_COMMIT);
+        }
+        ProcessRunner.Result listed = git(root, QUICK, "remote", "-v");
+        List<GitRemotes.Remote> remotes = listed.ok() ? GitRemotes.parse(listed.out()) : List.of();
+        String url = permalinkRemote(remotes, head.upstream());
+        GitWebLinks.Repo repo = url == null ? null : GitWebLinks.repo(url);
+        if (repo == null) {
+            return Permalink.none(Permalink.Status.NO_REMOTE);
+        }
+        Path absolute = target.toAbsolutePath().normalize();
+        if (!absolute.startsWith(root)) {
+            try {
+                absolute = absolute.toRealPath(); // the repository's top level is a real path (a /tmp link on macOS)
+            } catch (IOException | RuntimeException gone) {
+                return Permalink.none(Permalink.Status.NO_REPOSITORY);
+            }
+        }
+        if (!absolute.startsWith(root)) {
+            return Permalink.none(Permalink.Status.NO_REPOSITORY);
+        }
+        String rel = root.relativize(absolute).toString().replace('\\', '/');
+        if (folder) {
+            return new Permalink(Permalink.Status.OK, GitWebLinks.folderUrl(repo, head.hash(), rel), head.pushed());
+        }
+        if (!git(root, QUICK, GitSafety.LITERAL_PATHSPECS, "cat-file", "-e", "HEAD:" + rel)
+                .ok()) {
+            return Permalink.none(Permalink.Status.UNTRACKED);
+        }
+        if (startLine < 0) {
+            return new Permalink(
+                    Permalink.Status.OK, GitWebLinks.fileUrl(repo, head.hash(), rel, -1, -1), head.pushed());
+        }
+        int[] atHead = linesAtHead(dir, target, startLine, Math.max(startLine, endLine));
+        if (atHead == null) {
+            return new Permalink(
+                    Permalink.Status.NEW_LINES, GitWebLinks.fileUrl(repo, head.hash(), rel, -1, -1), head.pushed());
+        }
+        return new Permalink(
+                Permalink.Status.OK, GitWebLinks.fileUrl(repo, head.hash(), rel, atHead[0], atHead[1]), head.pushed());
+    }
+
+    /**
+     * The URL of the remote a permalink names: the one the branch's upstream ({@code origin/main}) is on, else {@code
+     * origin}, else the first; null with none. Pure.
+     */
+    static @Nullable String permalinkRemote(List<GitRemotes.Remote> remotes, String upstream) {
+        if (remotes.isEmpty()) {
+            return null;
+        }
+        String wanted = upstream.contains("/") ? upstream.substring(0, upstream.indexOf('/')) : "origin";
+        for (String name : List.of(wanted, "origin")) {
+            for (GitRemotes.Remote remote : remotes) {
+                if (remote.name().equals(name) && !remote.fetchUrl().isEmpty()) {
+                    return remote.fetchUrl();
+                }
+            }
+        }
+        GitRemotes.Remote first = remotes.get(0);
+        return first.fetchUrl().isEmpty() ? first.pushUrl() : first.fetchUrl();
+    }
+
     /** {@link #lineHistory}'s read, on the calling thread. */
     LineHistory.Result readLineHistory(Path dir, Path file, int startLine, int endLine, int max) {
         if (!mayBeRepository(dir) || !gitAvailable(dir)) {

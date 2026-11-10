@@ -324,6 +324,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         /** Opens commit {@code hash}'s diff of the repository-relative {@code path} in the repository at {@code root}. */
         default void gitOpenCommitFile(Path root, String hash, String path, @Nullable String previousPath) {}
+
+        /** The permalink of a file (its lines) or folder at HEAD; on the FX thread, none when Git is off. */
+        default void gitPermalink(
+                Path target,
+                int startLine,
+                int endLine,
+                java.util.function.Consumer<com.editora.git.GitService.Permalink> found) {
+            found.accept(new com.editora.git.GitService.Permalink(
+                    com.editora.git.GitService.Permalink.Status.NO_REPOSITORY, "", false));
+        }
     }
 
     /** Bookmark/note state and actions shared by the classic tree and Canvas map. */
@@ -3093,6 +3103,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             public void openCommitFile(Path root, String hash, String path, @Nullable String previousPath) {
                 actions.gitOpenCommitFile(root, hash, path, previousPath);
                 raiseEditorWindow();
+            }
+
+            @Override
+            public void copyPermalink(Path target, int startLine, int endLine) {
+                actions.gitPermalink(target, startLine, endLine, link -> mapStatusLine.show(GitPermalinks.copy(link)));
             }
         };
     }

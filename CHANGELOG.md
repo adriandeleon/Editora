@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Copy Permalink.** *Git: Copy Permalink* (in Git → History) copies the web address of the current file at the
+  HEAD commit, with the selected lines (or the caret's line) marked, ready to paste in a chat or an issue. On the
+  Project Map it is in a code card's menu and in a file's or folder's menu. It works with GitHub, GitLab, Bitbucket,
+  Gitea, Forgejo, Codeberg, sourcehut and Azure DevOps remotes, and keeps the right lines when the file has unsaved
+  or uncommitted edits above them. The status bar says when HEAD is not pushed yet.
 - **Debug compounds: several programs started together.** A launch.json `compounds` entry now appears in *Debug:
   Start Configuration* and starts each of its configurations in a session of its own, in order. Its `preLaunchTask`
   runs first, and with `stopAll`, stopping one stops them all. A project can also have compounds of its own saved run

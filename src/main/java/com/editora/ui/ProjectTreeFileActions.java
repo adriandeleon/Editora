@@ -218,6 +218,20 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
     }
 
     @Override
+    public void gitPermalink(
+            Path target,
+            int startLine,
+            int endLine,
+            java.util.function.Consumer<com.editora.git.GitService.Permalink> found) {
+        if (git.isEnabled()) {
+            git.service().permalink(target, startLine, endLine, found);
+        } else {
+            found.accept(new com.editora.git.GitService.Permalink(
+                    com.editora.git.GitService.Permalink.Status.NO_REPOSITORY, "", false));
+        }
+    }
+
+    @Override
     public void gitBlame(
             Path root,
             Path file,

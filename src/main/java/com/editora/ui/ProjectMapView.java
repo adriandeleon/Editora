@@ -2572,6 +2572,11 @@ final class ProjectMapView extends VBox {
         if (!entry.isSymbol() && surface.notedPaths.contains(entry.path())) {
             items.add(mapMenuItem("project.map.menu.personalNotes", () -> cardsShowNotes(entry.path())));
         }
+        FollowCode code = followCode;
+        if (code != null && (entry.isFile() || entry.directory())) {
+            // The file's or folder's web address at HEAD (Map code browser round 2).
+            items.add(mapMenuItem("project.map.permalink.copy", () -> code.copyPermalink(entry.path(), -1, -1)));
+        }
         if (entry.directory()
                 || entry.isFile() && ProjectMapImports.languageOf(entry.path().toString()) != null) {
             // What uses it and what it uses, as a card (gap 14).
@@ -2965,6 +2970,9 @@ final class ProjectMapView extends VBox {
          * before the commit when it moved) in the repository at {@code root}, in the editor window.
          */
         default void openCommitFile(Path root, String hash, String path, @Nullable String previousPath) {}
+
+        /** Copy Permalink of a file (its lines), or a folder, at HEAD (Map code browser round 2). */
+        default void copyPermalink(Path target, int startLine, int endLine) {}
     }
 
     private @Nullable FollowCode followCode;
@@ -3030,6 +3038,11 @@ final class ProjectMapView extends VBox {
                             public void openCommitFile(
                                     Path root, String hash, String path, @Nullable String previousPath) {
                                 code.openCommitFile(root, hash, path, previousPath);
+                            }
+
+                            @Override
+                            public void copyPermalink(Path target, int startLine, int endLine) {
+                                code.copyPermalink(target, startLine, endLine);
                             }
                         });
     }
