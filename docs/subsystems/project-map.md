@@ -1053,6 +1053,28 @@ was moved to, an opening from a menu included. One Dependencies card is open at 
 moves, resizes and zooms as the other cards, Escape in it closes it, and it is not kept in working sets. It shares its
 frame with the History card (`MapFloatingCard`).
 
+**Code metrics as a card** (Map code browser gap 15, `ProjectMapMetricsCard`). **Code Metrics** in a folder's row
+menu and ⋯ → **Project Code Metrics** open the Code Metrics card on that folder or the project, where its card would
+open. It lists the folder's files at any depth (**Files**) or its parts — its subfolders, their files summed, and its
+own files (**Parts**) — with their lines of **Code** (not blank, not only a comment), **Comments** (lines that are only
+a comment, block comments and Python docstrings included), **Complexity** (decision points — `if`, loops, `case`,
+`catch`, `&&` and `||`, the conditional operator, and each language's own such as `elif`, `unless`, `and`/`or` —
+counted outside comments and strings: a cyclomatic complexity less one per function), **Changes** (the commits of the
+last 90 days, the history "Show recent changes" reads, `ProjectMapActivity`, which the open card asks for) and
+**Hotspot**: complexity times changes, each against the most of any row, 0–100 — code both complex and often changed,
+where bugs and work gather. The hottest come first (with no history, the most complex), any column sorts, and hot
+cells are tinted; at most `MAX_ROWS` (1,000) are listed. The summary gives the folder's totals and its code by
+language (the four largest). `ProjectMapMetrics` measures each file (pure; 28 languages by extension, each with its
+comment syntax and decision words), and `MapMetricsIndex` reads the project as the Dependencies card's does — the two
+share `MapFileReader`: the Map search's file list, at most 20,000 files of 512 KB, a worker of their own, and only the
+files changed since the last reading read again. Editora's own 4,500 sources are measured in about a second.
+
+Enter or a double-click on a file opens its card; on a part, the card moves into it, and **‹** or Backspace goes back.
+A row's menu has **Open as Card** or **Look Inside**, **Show on Map** and **Dependencies** (the Dependencies card on
+it). One Code Metrics card is open at a time: asking again moves it; it moves, resizes and zooms as the other cards,
+and Escape closes it. The cards there is one of share their setup (`MapCards.adoptSoloCard` / `dropSoloCard`) and
+their bar's toggles (`MapStayOnToggle`).
+
 **Searching the files' text** (Map code browser gap 10). A query that starts with `%` (VS Code's quick-search
 sigil) searches what the files say rather than their names: `%needle` runs the window's Find in Files over the
 Map's folder (`ProjectPanel.searchMapText` → `FileActions.searchText` → `SearchCoordinator.mapTextSearch`, on a
@@ -1764,6 +1786,11 @@ The focused coverage lives in:
   busiest parts kept; the card opened Inside from ⋯, Around from a folder's row menu and beside a file card from its
   menu, a cell's and a node's import lines and one opened as a card, moving onto a part and Back, Refresh after an
   edit, a file whose imports are not read, the summaries, Escape and zoom;
+- `ProjectMapMetricsTest` and `MapMetricsCardFxTest` for the Code Metrics card: lines, comments (block, line,
+  trailing, docstrings) and decision points per language, outside strings and comments; totals and languages, rows by
+  file and by part with and without history, the hotspot score; the card opened from ⋯ and from a folder's row menu,
+  the hottest first once history comes, Parts and looking inside, Back, a row's menu and Enter and a double-click
+  opening a file's card, Refresh after an edit, the summaries, heat and Escape;
 - `MapCardSpatialKeysFxTest` for Ctrl+Shift+arrows: the nearest card that way (straight ahead first, one mostly to
   the side left out, ties by centre), the map moved only as far as a card is out of view, which keys move; moving
   between three cards and from the map's selected row, the status with no card that way, and a card partly out of

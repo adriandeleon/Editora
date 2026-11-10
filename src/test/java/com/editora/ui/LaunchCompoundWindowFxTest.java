@@ -121,10 +121,14 @@ class LaunchCompoundWindowFxTest {
         FxTestSupport.runOnFx(
                 () -> debug.runLaunchCompound(launch, parsed.compounds().getFirst(), none));
 
-        FakeDebugAdapter.Session server = adapter.awaitSession();
-        server.awaitRequest("launch");
-        FakeDebugAdapter.Session client = adapter.awaitSession();
-        client.awaitRequest("launch");
+        // Both start at once: they reach the adapter in either order.
+        FakeDebugAdapter.Session one = adapter.awaitSession();
+        one.awaitRequest("launch");
+        FakeDebugAdapter.Session two = adapter.awaitSession();
+        two.awaitRequest("launch");
+        boolean oneIsServer = String.valueOf(one.launchArgs.get("script")).endsWith("server.rb");
+        FakeDebugAdapter.Session server = oneIsServer ? one : two;
+        FakeDebugAdapter.Session client = oneIsServer ? two : one;
         await("two sessions", () -> call(() -> debug.sessions().size()) == 2);
         List<DebugSession> both = call(() -> debug.sessions().all());
         assertEquals(

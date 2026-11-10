@@ -230,6 +230,8 @@ final class MapCards {
     private @Nullable ProjectMapHistoryCard historyCard;
     /** The Dependencies card, when open (gap 14): one at a time, not counted against the limit. */
     private @Nullable ProjectMapDependencyCard dependencyCard;
+    /** The Code Metrics card, when open (gap 15): one at a time, not counted against the limit. */
+    private @Nullable ProjectMapMetricsCard metricsCard;
     /** Changes or Blame: what the last History card showed, and the next one opens with. */
     private ProjectMapHistoryCard.Mode historyMode = ProjectMapHistoryCard.Mode.CHANGES;
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
@@ -1006,7 +1008,7 @@ final class MapCards {
 
     /** The cards there is one of at most — the Overview, the History and the Dependencies card — that are open. */
     private List<Region> soloCards() {
-        List<Region> solo = new ArrayList<>(3);
+        List<Region> solo = new ArrayList<>(4);
         if (overviewCard != null) {
             solo.add(overviewCard);
         }
@@ -1015,6 +1017,9 @@ final class MapCards {
         }
         if (dependencyCard != null) {
             solo.add(dependencyCard);
+        }
+        if (metricsCard != null) {
+            solo.add(metricsCard);
         }
         return solo;
     }
@@ -1031,19 +1036,10 @@ final class MapCards {
         boolean created = card == null;
         if (card == null) {
             ProjectMapDependencyCard made = new ProjectMapDependencyCard();
-            made.setOnClose(this::closeDependencyCard);
-            made.setOnActivate(() -> touchCard(made, true));
-            made.setOnEscape(() -> {
-                closeDependencyCard();
-                host.focusMap();
-            });
             made.setOnOpen((file, line) -> openPlaceCard(null, file, line, null));
-            made.setMapScale(host.zoom());
             setUp.accept(made);
-            installPreviewListeners(made);
             dependencyCard = made;
-            cardTouches.put(made, ++cardTouchSequence);
-            canvasHost.getChildren().add(made);
+            adoptSoloCard(made, this::closeDependencyCard);
             card = made;
         }
         card.show(root, rel, folder);
@@ -1073,11 +1069,74 @@ final class MapCards {
 
     private void closeDependencyCard() {
         ProjectMapDependencyCard card = dependencyCard;
+        dependencyCard = null;
+        dropSoloCard(card);
+    }
+
+    /**
+     * Opens the Code Metrics card (gap 15) on the folder {@code rel} of the project at {@code root} ({@code ""}: the
+     * project), where a card of that folder would open, or moves the open one onto it and brings it up. {@code setUp}
+     * is called once, on a new card, to give it its actions.
+     */
+    ProjectMapMetricsCard openMetricsCard(Path root, String rel, Consumer<ProjectMapMetricsCard> setUp) {
+        ProjectMapMetricsCard card = metricsCard;
+        boolean created = card == null;
+        if (card == null) {
+            ProjectMapMetricsCard made = new ProjectMapMetricsCard();
+            made.setOnOpen(file -> openPlaceCard(null, file, -1, null));
+            setUp.accept(made);
+            metricsCard = made;
+            adoptSoloCard(made, this::closeMetricsCard);
+            card = made;
+        }
+        card.show(root, rel);
+        if (created) {
+            card.place(besidePlacement(
+                    card,
+                    null,
+                    rel.isEmpty() ? root : root.resolve(rel),
+                    ProjectMapMetricsCard.DEFAULT_WIDTH,
+                    ProjectMapMetricsCard.DEFAULT_HEIGHT,
+                    ProjectMapMetricsCard.MIN_WIDTH,
+                    ProjectMapMetricsCard.MIN_HEIGHT));
+            repaintPreviewConnectors();
+        }
+        touchCard(card, true);
+        return card;
+    }
+
+    /** The open Code Metrics card, or null. */
+    @Nullable
+    ProjectMapMetricsCard metricsCard() {
+        return metricsCard;
+    }
+
+    private void closeMetricsCard() {
+        ProjectMapMetricsCard card = metricsCard;
+        metricsCard = null;
+        dropSoloCard(card);
+    }
+
+    /** A new card there is one of at a time joins the map: {@code close} closes it (its button, Escape). */
+    private void adoptSoloCard(MapFloatingCard made, Runnable close) {
+        made.setOnClose(close);
+        made.setOnActivate(() -> touchCard(made, true));
+        made.setOnEscape(() -> {
+            close.run();
+            host.focusMap();
+        });
+        made.setMapScale(host.zoom());
+        installPreviewListeners(made);
+        cardTouches.put(made, ++cardTouchSequence);
+        canvasHost.getChildren().add(made);
+    }
+
+    /** A card there is one of at a time leaves the map (nothing for null); the keyboard goes back to the map. */
+    private void dropSoloCard(@Nullable Region card) {
         if (card == null) {
             return;
         }
         boolean focused = focusReturnsFrom(card);
-        dependencyCard = null;
         cardTouches.remove(card);
         canvasHost.getChildren().remove(card);
         repaintPreviewConnectors();
@@ -1101,18 +1160,9 @@ final class MapCards {
         boolean created = history == null;
         if (history == null) {
             ProjectMapHistoryCard made = new ProjectMapHistoryCard();
-            made.setOnClose(this::closeHistoryCard);
-            made.setOnActivate(() -> touchCard(made, true));
-            made.setOnEscape(() -> {
-                closeHistoryCard();
-                host.focusMap();
-            });
             made.setOnModeChanged(mode -> historyMode = mode);
-            made.setMapScale(host.zoom());
-            installPreviewListeners(made);
             historyCard = made;
-            cardTouches.put(made, ++cardTouchSequence);
-            canvasHost.getChildren().add(made);
+            adoptSoloCard(made, this::closeHistoryCard);
             history = made;
         }
         ProjectMapHistoryCard shown = history;
@@ -1263,15 +1313,8 @@ final class MapCards {
 
     private void closeHistoryCard() {
         ProjectMapHistoryCard card = historyCard;
-        if (card == null) {
-            return;
-        }
-        boolean focused = focusReturnsFrom(card);
         historyCard = null;
-        cardTouches.remove(card);
-        canvasHost.getChildren().remove(card);
-        repaintPreviewConnectors();
-        focusReturnToMap(focused);
+        dropSoloCard(card);
     }
 
     /** Every open card, the most recently used first. */
@@ -1292,12 +1335,13 @@ final class MapCards {
         ProjectMapDependencyCard dependencies = dependencyCard;
         Path dependencyRoot = dependencies == null ? null : dependencies.root();
         if (dependencies != null && dependencyRoot != null) {
-            String rel = dependencies.subject();
             open.add(new OpenCard(
-                    rel.isEmpty() ? dependencyRoot : dependencyRoot.resolve(rel),
-                    dependencies,
-                    dependencies.title(),
-                    false));
+                    dependencyRoot.resolve(dependencies.subject()), dependencies, dependencies.title(), false));
+        }
+        ProjectMapMetricsCard metrics = metricsCard;
+        Path metricsRoot = metrics == null ? null : metrics.root();
+        if (metrics != null && metricsRoot != null) {
+            open.add(new OpenCard(metricsRoot.resolve(metrics.subject()), metrics, metrics.title(), false));
         }
         open.sort(java.util.Comparator.comparingLong((OpenCard card) -> cardTouches.getOrDefault(card.node(), 0L))
                 .reversed());
@@ -1522,6 +1566,8 @@ final class MapCards {
             closeHistoryCard();
         } else if (card == dependencyCard) {
             closeDependencyCard();
+        } else if (card == metricsCard) {
+            closeMetricsCard();
         }
     }
 
@@ -2770,9 +2816,7 @@ final class MapCards {
             // A pinned card never goes (Map explore round, position 7).
             // Nor, while an answer opens its result cards, the card it was asked from or its other results (C4).
             Region oldest = oldestCard(card -> card != keep
-                    && card != overviewCard
-                    && card != historyCard
-                    && card != dependencyCard
+                    && !soloCards().contains(card) // the Overview, History, Dependencies, Code Metrics
                     && !pinnedCards.contains(card)
                     && !links.linksKeepsWhileOpening(card));
             if (oldest instanceof ProjectMapPreview code && cardStructures.containsKey(code)) {
@@ -3003,6 +3047,7 @@ final class MapCards {
         closeOverviewCard();
         closeHistoryCard();
         closeDependencyCard();
+        closeMetricsCard();
         List<ProjectMapNotePreview> openNotes = List.copyOf(notePreviews.values());
         notePreviews.clear();
         for (ProjectMapNotePreview preview : openNotes) {
@@ -3193,11 +3238,10 @@ final class MapCards {
         if (overviewCard != null) {
             overviewCard.constrainTo(width, height);
         }
-        if (historyCard != null) {
-            historyCard.constrainTo(width, height);
-        }
-        if (dependencyCard != null) {
-            dependencyCard.constrainTo(width, height);
+        for (Region solo : soloCards()) {
+            if (solo instanceof MapFloatingCard floating) {
+                floating.constrainTo(width, height); // the History, Dependencies and Code Metrics cards
+            }
         }
     }
 

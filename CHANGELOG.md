@@ -39,7 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs first, and with `stopAll`, stopping one stops them all. A project can also have compounds of its own saved run
   configurations: make them in *Debug: Edit Compounds…* and start them with *Debug: Start Compound…*. A launch.json
   configuration started while a session runs is now debugged beside it, as in VS Code, instead of replacing it.
-
+- **Code metrics and hotspots on the Project Map.** *Code Metrics* in a folder's menu on the Map, or *Project Code
+  Metrics* in the ⋯ menu, opens a card listing the folder's files, or its subfolders added up, with their lines of
+  code and comments, their complexity and their commits of the last 90 days. A hotspot score marks code that is both
+  complex and often changed, the hottest first; any column sorts. The summary gives the folder's totals and its code
+  by language. Enter opens a file's card or looks inside a subfolder.
 - **Debug several programs at once.** Start debugging another file while a session runs (F5 or *Debug File*) and
   Editora asks whether to *Debug Both*, *Stop and Debug* the new file instead, or cancel. Each session gets a tab in
   the Debug window with its own console, call stack, variables and Debug History. The toolbar, F-keys, the
