@@ -84,11 +84,10 @@ final class ClosedFileBreakpoints {
                         lines.size(),
                         i -> i >= 0 && i < lines.size() ? lines.get(i) : "",
                         BreakpointManager.MAX_REANCHOR_SCAN);
-                boolean java =
-                        p.getFileName() != null && p.getFileName().toString().endsWith(".java");
+                String language = com.editora.editor.debug.LineFunctions.languageOf(p);
                 for (Breakpoint bp : anchored.values()) {
                     if (bp.enabled()) {
-                        out2.addAll(BreakpointTargets.of(bp, bp.line(), lines.get(bp.line()), java));
+                        out2.addAll(BreakpointTargets.of(bp, bp.line(), lines.get(bp.line()), language));
                     }
                 }
             } else {

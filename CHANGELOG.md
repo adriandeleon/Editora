@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lambda breakpoints in JavaScript and TypeScript.** *Debug: Toggle Lambda Breakpoint* now works on arrow
+  functions and inline function expressions too: the breakpoint stops inside the function each time its body runs,
+  not once when the line runs. Pick which functions of the line it stops in from the breakpoint's gutter menu, as in
+  Java.
+
 - **Debug Python subprocesses.** A process your Python program starts (`multiprocessing`, a Python subprocess) is now
   debugged too, in a session of its own beside the program's. Its breakpoints stop, and the Debug window shows it
   when it stops. Stopping the program stops its subprocesses, and a subprocess's tab goes once it ends. Turn it off
@@ -377,6 +382,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     that had remote images on keeps loading them.
 
 ### Fixed
+
+- **A breakpoint could be missed at the very start of a JavaScript program.** Debugging told js-debug to run the
+  program before js-debug had placed the breakpoints, so one near the start (a breakpoint inside an arrow function
+  most often) was sometimes passed by. Editora now waits for the breakpoints to be placed first, as VS Code does.
 
 - **A Project Map card opened from a hierarchy tree no longer closes on its own.** When its file's folder was not
   open on the map, the next folder change could close it. It now stays while the card the tree was asked from is

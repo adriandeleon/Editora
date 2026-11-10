@@ -479,5 +479,7 @@ jobs:
       # PyrightProbeFxTest: Pyright analyses with the project venv, tags hints, organizes imports once.
       # AttachToProcessProbeFxTest#aNode*: a Node.js started with --inspect is found by Attach to Process and attached.
       # DebugHistoryProbeFxTest#javascript*: on js-debug, a loop's stops are kept and read back, and recorded.
+      # JsColumnBreakpointsProbeFxTest: on js-debug, a lambda breakpoint on an arrow function stops inside it each
+      # time it runs; made a line breakpoint, it stops on the line only.
       - name: Test the TypeScript server, JavaScript debugging and Pyright
-        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript* -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
