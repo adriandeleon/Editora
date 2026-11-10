@@ -296,7 +296,7 @@ class JavaCodeChangesProbeFxTest {
             await(w, "add's first line", 300, () -> topFrame(w).line() == ADD_FIRST_LINE);
             FxTestSupport.runOnFx(() -> w.registry().run("debug.stepOver"));
             await(w, "add's second line", 300, () -> topFrame(w).line() == ADD_FIRST_LINE + 1);
-            await(w, "the frame to be shown", 100, () -> FxTestSupport.field(w.debug(), "shownFrame") != null);
+            await(w, "the frame to be shown", 100, () -> w.debug().s().shownFrame != null);
 
             FxTestSupport.runOnFx(() -> w.registry().run("debug.restartFrame"));
 

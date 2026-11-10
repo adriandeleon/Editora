@@ -221,7 +221,7 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
 
     @Override
     public com.editora.dap.DapManager dapManager() {
-        return mc.dapManager;
+        return mc.focusedDap();
     }
 
     @Override

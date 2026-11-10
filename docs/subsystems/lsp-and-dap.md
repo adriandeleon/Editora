@@ -1372,8 +1372,13 @@ sources) plays js-debug's handshake over real sockets in the default suite; the 
 ### DapManager & the java-debug bundle
 
 [`dap/DapManager`](../../src/main/java/com/editora/dap/DapManager.java) is the UI facade (mirrors
-`LspManager`+`RunService`). It owns the single active session (one debug session at a time, like Run)
-and dispatches `startLaunch(file, language, picker)`. Adapter `output` events reach the console through
+`LspManager`+`RunService`). One manager debugs one session at a time and dispatches
+`startLaunch(file, language, picker)`. What a window's sessions share — the Debugging settings, where detection
+found each adapter, the exception filters chosen per language, the breakpoints supplier, member breakpoints, hex
+values — lives in [`dap/DapSettings`](../../src/main/java/com/editora/dap/DapSettings.java), not in the manager:
+`newSession()` makes another manager for the same window on the same `DapSettings`, so a setting changed through
+any of them reaches the next session of every one. Launch settings (program and JVM arguments, environment, the
+Python plan, the JavaScript program) and the listener stay the manager's own. Adapter `output` events reach the console through
 [`dap/DapOutputPump`](../../src/main/java/com/editora/dap/DapOutputPump.java), which mirrors the Run
 console's pump: a bounded queue, one scheduled drain at a time, a bounded slice per drain with neighbouring
 events joined into one append, and a "truncated" notice when the debuggee outruns the UI; the queue is
@@ -1681,7 +1686,13 @@ LSP (restarting jdtls when it changed), async-detects python/js, and gates each 
 gutter. `debugEffectiveFor(language)` gates start (java = the jdtls server enabled + available + plugin
 found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable + detected adapter).
 `DapManager` stays a `MainController` field (built on `lspManager`) and is passed in, mirroring the
-`lspManager`/`LspCoordinator` split.
+`lspManager`/`LspCoordinator` split. The coordinator holds it as the first session of
+[`ui/DebugSessions`](../../src/main/java/com/editora/ui/DebugSessions.java): `s()` is the focused
+[`ui/DebugSession`](../../src/main/java/com/editora/ui/DebugSession.java) — its manager (`dap()`) and what the
+coordinator keeps about that session (the launch in progress, its relaunch, the breakpoints sent to it and its
+answers, the stop shown, the exception card's stop, the Memory view's address, recording-breakpoint stops, code
+replace) — and every debug command, the execution line, inline values, hovers and pins act on it. A window has one
+session for now; `MainController.focusedDap()` is what the palette, Jump to Line and the test runner ask.
 
 The Variables tree marks a value that changed since the previous stop
 ([`ui/DebugValueChanges`](../../src/main/java/com/editora/ui/DebugValueChanges.java)). Values are recorded as rows

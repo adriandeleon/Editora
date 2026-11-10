@@ -31,7 +31,8 @@ final class PinnedValues {
 
     private final CoordinatorHost host;
     private final DebugCoordinator.Ops ops;
-    private final DapManager dapManager;
+    /** The focused debug session's manager. */
+    private final java.util.function.Supplier<DapManager> dapManager;
 
     /** The frame the shown values were evaluated in, or -1 (nothing shown). */
     private int frameId = -1;
@@ -43,7 +44,7 @@ final class PinnedValues {
     private final java.util.Set<EditorBuffer> painted =
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
-    PinnedValues(CoordinatorHost host, DebugCoordinator.Ops ops, DapManager dapManager) {
+    PinnedValues(CoordinatorHost host, DebugCoordinator.Ops ops, java.util.function.Supplier<DapManager> dapManager) {
         this.host = host;
         this.ops = ops;
         this.dapManager = dapManager;
@@ -134,7 +135,7 @@ final class PinnedValues {
     void refresh(int frameId) {
         this.frameId = frameId;
         int asked = ++generation;
-        if (dapManager.state() != DapManager.State.SUSPENDED || frameId < 0) {
+        if (dapManager.get().state() != DapManager.State.SUSPENDED || frameId < 0) {
             return;
         }
         List<EditorBuffer> buffers = new ArrayList<>();
@@ -161,7 +162,7 @@ final class PinnedValues {
                     }
                     pending[0]++;
                     int line = p.line();
-                    requests.add(() -> dapManager.evaluateFull(expr, frameId, "watch", r -> {
+                    requests.add(() -> dapManager.get().evaluateFull(expr, frameId, "watch", r -> {
                         if (asked != generation) {
                             return; // a newer stop or frame took over
                         }

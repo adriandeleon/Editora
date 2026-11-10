@@ -158,6 +158,9 @@ public final class DapManager {
     }
 
     private final LspManager lsp;
+    /** The settings this window's managers share ({@link #newSession}). */
+    private final DapSettings shared;
+
     private Listener listener = noopListener();
 
     private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
@@ -166,33 +169,6 @@ public final class DapManager {
         return t;
     });
 
-    private boolean enabled;
-    private String pluginPath = "";
-    private List<String> bundlePaths = List.of();
-
-    // Python (debugpy, stdio) + JavaScript (vscode-js-debug, socket) — the standalone adapters.
-    private boolean pythonEnabled;
-    private String pythonCommand = ""; // interpreter exe (blank ⇒ python3 on PATH)
-    private @Nullable Path debugpyDir; // resolved PYTHONPATH dir for debugpy (null ⇒ rely on interpreter)
-    private boolean pythonAvailable;
-    private boolean jsEnabled;
-    private String jsPath = ""; // configured dapDebugServer.js path/dir (blank ⇒ auto-detect)
-    private @Nullable Path jsServer; // resolved dapDebugServer.js (null ⇒ not found)
-    private boolean jsAvailable;
-
-    /**
-     * The external adapters detection found, by adapter language: the executable each is started with (a configured
-     * path, or the command found on the PATH). See {@link #configureExternal}.
-     */
-    private final Map<String, String> externalLocated = new java.util.concurrent.ConcurrentHashMap<>();
-
-    /**
-     * Folders put first on an external adapter's PATH, by adapter language: the Go toolchain Settings names, which
-     * Delve builds the program with. Empty: the adapter finds its tools on the PATH Editora's processes get.
-     */
-    private final Map<String, List<String>> externalPathDirs = new java.util.concurrent.ConcurrentHashMap<>();
-    /** The Debugging setting's Node.js ("" = automatic), see {@link com.editora.run.NodeRuntimes}. */
-    private volatile String nodePath = "";
     /** The window's project root for the next JavaScript launch (its package root and workspace folder). */
     private volatile @Nullable Path jsProjectRoot;
     /** The current session is vscode-js-debug's (read on adapter threads to clean up what it prints). */
@@ -248,23 +224,37 @@ public final class DapManager {
 
     private record SourceAlias(long epoch, Path original, Path compiled) {}
 
-    /** Whether a Java launch asks the adapter to let Editora start the program (see {@link #setProgramConsole}). */
-    private boolean programConsole;
     /** The program of the current session when Editora started it, else null (FX thread). */
     private @Nullable Debuggee debuggee;
     /** How long a program may take to exit once the adapter has reported the session over, before it is killed. */
     private static final long DEBUGGEE_EXIT_GRACE_MILLIS = 3_000;
 
-    private Supplier<List<DapModels.FileBreakpoints>> breakpointsSupplier = List::of;
-    /** The exception filters chosen per adapter language; a language with none starts with the adapter's defaults. */
-    private final Map<String, List<String>> exceptionChoices = new java.util.HashMap<>();
     /** The adapter language of the current (or last) session: {@code java}, {@code python} or {@code javascript}. */
     private String sessionLanguage = "java";
 
     private @Nullable Runnable restartAction;
 
     public DapManager(LspManager lsp) {
+        this(lsp, new DapSettings());
+    }
+
+    private DapManager(LspManager lsp, DapSettings shared) {
         this.lsp = lsp;
+        this.shared = shared;
+    }
+
+    /**
+     * A manager for another session of the same window, beside this one: it shares this one's settings, adapter
+     * locations, exception choices and breakpoints, and starts with no session, no listener and no launch
+     * settings of its own (program arguments, environment and the like are set for each launch).
+     */
+    public DapManager newSession() {
+        return new DapManager(lsp, shared);
+    }
+
+    /** Whether {@code other} is a manager of the same window ({@link #newSession}), sharing these settings. */
+    public boolean sharesSettingsWith(DapManager other) {
+        return other.shared == shared;
     }
 
     public void setListener(Listener listener) {
@@ -273,7 +263,7 @@ public final class DapManager {
 
     /** Supplies all open buffers' breakpoints (sent to the adapter on the {@code initialized} event). */
     public void setBreakpointsSupplier(Supplier<List<DapModels.FileBreakpoints>> supplier) {
-        this.breakpointsSupplier = supplier == null ? List::of : supplier;
+        shared.breakpointsSupplier = supplier == null ? List::of : supplier;
     }
 
     /**
@@ -282,11 +272,11 @@ public final class DapManager {
      */
     public void setExceptionFilters(String language, List<String> filters) {
         if (filters == null) {
-            exceptionChoices.remove(language);
+            shared.exceptionChoices.remove(language);
         } else {
-            exceptionChoices.put(language, List.copyOf(filters));
+            shared.exceptionChoices.put(language, List.copyOf(filters));
         }
-        if (client != null && language.equals(sessionLanguage) && !exceptionsMuted) {
+        if (client != null && language.equals(sessionLanguage) && !shared.exceptionsMuted) {
             client.setExceptionFilters(filters == null ? null : List.copyOf(filters));
         }
     }
@@ -302,10 +292,10 @@ public final class DapManager {
         sessionLanguage = language;
         jsSession = "javascript".equals(language);
         reportedConditionErrors.clear();
-        if (exceptionsMuted) {
+        if (shared.exceptionsMuted) {
             return List.of();
         }
-        List<String> chosen = exceptionChoices.get(language);
+        List<String> chosen = shared.exceptionChoices.get(language);
         DebugLanguage l = DebugLanguages.byId(language);
         if (chosen == null && l != null && l.kind() == DapServerRegistry.Kind.EXTERNAL) {
             // An external adapter may name its filters only once it knows the program's language — after
@@ -315,20 +305,17 @@ public final class DapManager {
         return chosen;
     }
 
-    /** Mute Breakpoints also mutes the exception stops (review 2, B109), as IntelliJ's Mute does. */
-    private boolean exceptionsMuted;
-
     /**
      * Mutes or restores the exception stops: a live session is told at once (no filters while muted, the chosen
      * ones — or the adapter's defaults — after); the next session starts that way. The choices themselves stay.
      */
     public void setExceptionsMuted(boolean muted) {
-        if (exceptionsMuted == muted) {
+        if (shared.exceptionsMuted == muted) {
             return;
         }
-        exceptionsMuted = muted;
+        shared.exceptionsMuted = muted;
         if (client != null) {
-            List<String> chosen = exceptionChoices.get(sessionLanguage);
+            List<String> chosen = shared.exceptionChoices.get(sessionLanguage);
             client.setExceptionFilters(muted ? List.of() : chosen);
         }
     }
@@ -355,21 +342,18 @@ public final class DapManager {
 
     /** The exception filters chosen per language (a language not listed uses its adapter's defaults). */
     public Map<String, List<String>> exceptionChoices() {
-        return new java.util.LinkedHashMap<>(exceptionChoices);
+        return new java.util.LinkedHashMap<>(shared.exceptionChoices);
     }
 
     /** The exception filters in force for {@code language}: the chosen ones, else the adapter's defaults. */
     public List<String> exceptionFiltersFor(String language) {
-        List<String> chosen = exceptionChoices.get(language);
+        List<String> chosen = shared.exceptionChoices.get(language);
         return chosen != null ? chosen : DapClient.defaultExceptionFilters(exceptionFilterOptions(language));
     }
 
-    /** Where a program Editora starts runs instead of the Debug console (a Terminal tab); null for the console. */
-    private @Nullable ProgramTerminal programTerminal;
-
     /** Takes effect at the next launch; see {@link ProgramTerminal}. */
     public void setProgramTerminal(@Nullable ProgramTerminal programTerminal) {
-        this.programTerminal = programTerminal;
+        shared.programTerminal = programTerminal;
     }
 
     /**
@@ -382,12 +366,12 @@ public final class DapManager {
      * An attach, and the Python and JavaScript adapters, are not affected either way.
      */
     public void setProgramConsole(boolean programConsole) {
-        this.programConsole = programConsole;
+        shared.programConsole = programConsole;
     }
 
     /** The Debugging setting's Node.js for JavaScript sessions ("" = automatic). */
     public void setNodePath(String nodePath) {
-        this.nodePath = nodePath == null ? "" : nodePath.strip();
+        shared.nodePath = nodePath == null ? "" : nodePath.strip();
     }
 
     /** Node.js arguments before the program for the next JavaScript launch ({@code --test} for a test file). */
@@ -448,44 +432,37 @@ public final class DapManager {
             String pythonCommand,
             boolean jsEnabled,
             String jsPath) {
-        this.enabled = enabled;
-        this.pluginPath = javaPluginPath == null ? "" : javaPluginPath;
-        this.bundlePaths = enabled ? locate() : List.of();
-        this.pythonEnabled = pythonEnabled;
-        this.pythonCommand = pythonCommand == null ? "" : pythonCommand;
-        this.jsEnabled = jsEnabled;
-        this.jsPath = jsPath == null ? "" : jsPath;
+        shared.enabled = enabled;
+        shared.pluginPath = javaPluginPath == null ? "" : javaPluginPath;
+        shared.bundlePaths = enabled ? locate() : List.of();
+        shared.pythonEnabled = pythonEnabled;
+        shared.pythonCommand = pythonCommand == null ? "" : pythonCommand;
+        shared.jsEnabled = jsEnabled;
+        shared.jsPath = jsPath == null ? "" : jsPath;
         // The python/js adapter locations are deliberately NOT resolved here. Locating them walks the VS
         // Code / mason / plugin directories, and the only caller (DebugCoordinator.applySupport) follows
         // this immediately with detectPython/detectJs, which relocate them off-thread and assign these very
         // fields. Resolving here as well duplicated that walk on the FX thread during startup — measured at
         // ~30-50 ms on the path to first paint, for values not read until a debug session actually launches.
         // Only the clearing has to happen synchronously: with the feature off, detect* never runs to null it.
-        if (!enabled || !pythonEnabled) {
-            this.debugpyDir = null;
-            this.pythonAvailable = false;
+        if (!shared.enabled || !shared.pythonEnabled) {
+            shared.debugpyDir = null;
+            shared.pythonAvailable = false;
         }
-        if (!enabled || !jsEnabled) {
-            this.jsServer = null;
-            this.jsAvailable = false;
+        if (!shared.enabled || !shared.jsEnabled) {
+            shared.jsServer = null;
+            shared.jsAvailable = false;
         }
     }
 
     /** The located java-debug plugin jar(s) — for {@code LspManager.setDebugBundles}. Empty when not found. */
     public List<String> bundlePaths() {
-        return bundlePaths;
+        return shared.bundlePaths;
     }
-
-    /**
-     * Set when the running jdtls already advertises the java-debug commands — some distributions (e.g.
-     * Homebrew's jdtls) ship and auto-load the plugin, so there is no jar for {@link #locate()} to find and
-     * nothing to inject, yet debugging works. Pushed by the controller from the LSP capabilities (#711).
-     */
-    private volatile boolean serverProvidesJavaDebug;
 
     /** Records whether the running Java server itself provides the debug commands (see the field doc). */
     public void setServerProvidesJavaDebug(boolean provided) {
-        this.serverProvidesJavaDebug = provided;
+        shared.serverProvidesJavaDebug = provided;
     }
 
     /**
@@ -495,7 +472,7 @@ public final class DapManager {
      * debugging was off, and Settings said "not found" for a jdtls that ships it.
      */
     public boolean isJavaDebugInstalled() {
-        return serverProvidesJavaDebug || !locate().isEmpty();
+        return shared.serverProvidesJavaDebug || !locate().isEmpty();
     }
 
     /** Whether Java debugging can run: we located a bundle to inject, <b>or</b> jdtls already provides it. */
@@ -504,7 +481,7 @@ public final class DapManager {
     }
 
     private boolean javaDebugUsable() {
-        return enabled && (!bundlePaths.isEmpty() || serverProvidesJavaDebug);
+        return shared.enabled && (!shared.bundlePaths.isEmpty() || shared.serverProvidesJavaDebug);
     }
 
     /** Whether a usable debug adapter is available for {@code language} (after detection). */
@@ -518,16 +495,16 @@ public final class DapManager {
             case LOCATED -> located(l);
             // Editora's own adapter, or Metals': nothing to install, only the debugging switch (the tool, or Metals
             // running, is checked when the session starts).
-            case BUILT_IN -> enabled;
+            case BUILT_IN -> shared.enabled;
         };
     }
 
     /** Whether detection found {@code l}'s adapter (debugpy, vscode-js-debug, an external adapter's command). */
     private boolean located(DebugLanguage l) {
         return switch (l.id()) {
-            case "python" -> pythonAvailable;
-            case "javascript" -> jsAvailable;
-            default -> enabled && externalLocated.containsKey(l.id());
+            case "python" -> shared.pythonAvailable;
+            case "javascript" -> shared.jsAvailable;
+            default -> shared.enabled && shared.externalLocated.containsKey(l.id());
         };
     }
 
@@ -536,7 +513,7 @@ public final class DapManager {
         io.submit(() -> {
             List<String> found = locate();
             Platform.runLater(() -> {
-                this.bundlePaths = enabled ? found : List.of();
+                shared.bundlePaths = shared.enabled ? found : List.of();
                 onResult.accept(!found.isEmpty());
             });
         });
@@ -562,11 +539,11 @@ public final class DapManager {
     private void detectPython(Consumer<Boolean> onResult, boolean installedOnly) {
         io.submit(() -> {
             Path dir = DebugAdapterLocator.locateDebugpy("", home()).orElse(null);
-            boolean on = enabled && pythonEnabled;
+            boolean on = shared.enabled && shared.pythonEnabled;
             boolean installed = (on || installedOnly) && probeDebugpy(dir);
             Platform.runLater(() -> {
-                this.debugpyDir = dir;
-                this.pythonAvailable = on && installed;
+                shared.debugpyDir = dir;
+                shared.pythonAvailable = on && installed;
                 onResult.accept(installedOnly ? installed : on && installed);
             });
         });
@@ -578,19 +555,19 @@ public final class DapManager {
      */
     public void detectJs(Consumer<Boolean> onResult) {
         io.submit(() -> {
-            Path server =
-                    DebugAdapterLocator.locateJsDebugServer(jsPath, home()).orElse(null);
-            boolean ok = enabled && jsEnabled && server != null && probeNode(adapterNode());
+            Path server = DebugAdapterLocator.locateJsDebugServer(shared.jsPath, home())
+                    .orElse(null);
+            boolean ok = shared.enabled && shared.jsEnabled && server != null && probeNode(adapterNode());
             Platform.runLater(() -> {
-                this.jsServer = server;
-                this.jsAvailable = ok;
+                shared.jsServer = server;
+                shared.jsAvailable = ok;
                 onResult.accept(ok);
             });
         });
     }
 
     private List<String> locate() {
-        return DebugAdapterLocator.locate(pluginPath, home())
+        return DebugAdapterLocator.locate(shared.pluginPath, home())
                 .map(p -> List.of(p.toString()))
                 .orElse(List.of());
     }
@@ -601,13 +578,13 @@ public final class DapManager {
 
     /** Test seam: debugpy found in {@code dir} (a folder holding a {@code debugpy} package), detection done. */
     void setPythonAdapterForTest(Path dir) {
-        this.debugpyDir = dir;
-        this.pythonAvailable = true;
+        shared.debugpyDir = dir;
+        shared.pythonAvailable = true;
     }
 
     /** Runs {@code <python> -c "import debugpy"} (debugpyDir on PYTHONPATH); true on a clean exit. */
     private boolean probeDebugpy(@Nullable Path dir) {
-        List<String> interp = DapServerRegistry.interpreterArgv("python", pythonCommand);
+        List<String> interp = DapServerRegistry.interpreterArgv("python", shared.pythonCommand);
         if (interp.isEmpty()) {
             return false;
         }
@@ -629,7 +606,7 @@ public final class DapManager {
 
     /** Finds {@link JsDebugInstall} off the FX thread and delivers it on the FX thread. */
     public void detectJsInstalled(Consumer<JsDebugInstall> onResult) {
-        String configured = jsPath;
+        String configured = shared.jsPath;
         io.submit(() -> {
             Path server =
                     DebugAdapterLocator.locateJsDebugServer(configured, home()).orElse(null);
@@ -645,7 +622,7 @@ public final class DapManager {
 
     /** The Node.js the settings name (or {@code node} on PATH) — what runs js-debug when no file is involved. */
     private String adapterNode() {
-        return com.editora.run.NodeRuntimes.resolveLocal(null, null, "", nodePath)
+        return com.editora.run.NodeRuntimes.resolveLocal(null, null, "", shared.nodePath)
                 .executable();
     }
 
@@ -810,7 +787,7 @@ public final class DapManager {
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor(language);
         startupTask = io.submit(() -> {
             try {
@@ -1280,7 +1257,7 @@ public final class DapManager {
         }
         boolean hostPlugin = file != null
                 && !com.editora.process.ExecTargets.runsHere(file)
-                && enabled
+                && shared.enabled
                 && com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null;
         if (!javaDebugUsable() && !hostPlugin) {
             listener.onError(tr("debug.error.javaUnavailable"));
@@ -1753,12 +1730,9 @@ public final class DapManager {
         return l == null || l.isEmpty() ? null : l.get(0);
     }
 
-    /** What java-debug is told before each Java session (step filters, statics, exception types). */
-    private JavaDebugSettings javaDebugSettings = JavaDebugSettings.defaults();
-
     /** Sets the java-debug settings the next Java session starts with (FX thread). */
     public void setJavaDebugSettings(JavaDebugSettings settings) {
-        this.javaDebugSettings = settings == null ? JavaDebugSettings.defaults() : settings;
+        shared.javaDebugSettings = settings == null ? JavaDebugSettings.defaults() : settings;
     }
 
     private void startDebugSessionAndConnect(
@@ -1768,7 +1742,7 @@ public final class DapManager {
         }
         // java-debug keeps one set of settings per jdtls: give it this session's before the session starts. A
         // failure (an older java-debug) is no reason not to debug, on its defaults as before.
-        lsp.executeCommand(file, JavaDebugSettings.COMMAND, List.of(javaDebugSettings.toJson()), (r, e) -> {
+        lsp.executeCommand(file, JavaDebugSettings.COMMAND, List.of(shared.javaDebugSettings.toJson()), (r, e) -> {
             if (e != null) {
                 LOG.log(Level.FINE, "java-debug settings were not applied", e);
             }
@@ -1800,13 +1774,13 @@ public final class DapManager {
             lspLease = lsp.retain(file);
             DapClient c = new DapClient(sessionHost(epoch));
             c.setPaths(pathsFor(file));
-            if (!attach && programConsole) {
+            if (!attach && shared.programConsole) {
                 c.setRunsDebuggee(true);
                 LaunchConfig.inClientConsole(args);
             } else if (!attach) {
                 wrapForExitCode(file, args, epoch);
             }
-            c.setBreakpoints(adapterBreakpoints(breakpointsSupplier.get())); // snapshot on the FX thread
+            c.setBreakpoints(adapterBreakpoints(shared.breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(filtersFor("java"));
             if (!publishClient(epoch, c)) {
                 c.dispose();
@@ -1929,7 +1903,7 @@ public final class DapManager {
         long epoch = beginSession();
         setState(State.STARTING);
         // Snapshot UI state on the FX thread before going off it.
-        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor(language);
         startupTask = io.submit(() -> {
             try {
@@ -2002,9 +1976,9 @@ public final class DapManager {
         io.submit(() -> {
             String found = on ? locateExternal(language, command) : null;
             if (found == null) {
-                externalLocated.remove(language.id());
+                shared.externalLocated.remove(language.id());
             } else {
-                externalLocated.put(language.id(), found);
+                shared.externalLocated.put(language.id(), found);
             }
             if (onDone != null) {
                 Platform.runLater(() -> onDone.accept(found != null));
@@ -2017,7 +1991,7 @@ public final class DapManager {
      * (Go: the folder of the {@code go} Settings names, so that Delve builds with it).
      */
     public void setExternalPathDirs(String languageId, List<String> dirs) {
-        externalPathDirs.put(languageId, List.copyOf(dirs));
+        shared.externalPathDirs.put(languageId, List.copyOf(dirs));
     }
 
     /** {@code path} with {@code first} before its own folders, none twice. Pure. */
@@ -2140,7 +2114,7 @@ public final class DapManager {
 
     /** Whether {@link #configureExternal} found {@code language}'s adapter (GDB's, a user's own). */
     public boolean isExternalLocated(DebugLanguage language) {
-        return enabled && externalLocated.containsKey(language.id());
+        return shared.enabled && shared.externalLocated.containsKey(language.id());
     }
 
     /** {@code command} as an executable file: itself when it is a path, else found on the PATH; null when neither. */
@@ -2174,7 +2148,7 @@ public final class DapManager {
         if (managerClosed) {
             return;
         }
-        if (!enabled) {
+        if (!shared.enabled) {
             listener.onError(tr("debug.error.disabled"));
             return;
         }
@@ -2191,9 +2165,9 @@ public final class DapManager {
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor(language.id());
-        String executable = externalLocated.get(language.id());
+        String executable = shared.externalLocated.get(language.id());
         startupTask = io.submit(() -> {
             try {
                 runExternal(file, language, external, executable, bps, filters, epoch, launch, tail);
@@ -2226,7 +2200,7 @@ public final class DapManager {
             // the adapter is the program: the configuration's environment is its own
             env.forEach((k, v) -> pb.environment().put(String.valueOf(k), v == null ? "" : String.valueOf(v)));
         }
-        List<String> first = externalPathDirs.getOrDefault(language.id(), List.of());
+        List<String> first = shared.externalPathDirs.getOrDefault(language.id(), List.of());
         if (!first.isEmpty()) {
             Map<String, String> env = pb.environment();
             String key = env.keySet().stream()
@@ -2254,7 +2228,7 @@ public final class DapManager {
         c.setPaths(DapPaths.LOCAL);
         c.setBreakpoints(bps);
         c.setExceptionFilters(filters);
-        c.setRunsDebuggee(programConsole);
+        c.setRunsDebuggee(shared.programConsole);
         if (attach) {
             c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
         }
@@ -2408,7 +2382,7 @@ public final class DapManager {
         if (managerClosed) {
             return;
         }
-        if (!enabled) {
+        if (!shared.enabled) {
             listener.onError(tr("debug.error.disabled"));
             return;
         }
@@ -2419,7 +2393,7 @@ public final class DapManager {
         debugFile = anchor;
         long epoch = beginSession();
         setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor(language.id());
         startupTask = io.submit(() -> {
             try {
@@ -2473,7 +2447,7 @@ public final class DapManager {
         if (managerClosed) {
             return;
         }
-        if (!enabled) {
+        if (!shared.enabled) {
             listener.onError(tr("debug.error.disabled"));
             return;
         }
@@ -2489,7 +2463,7 @@ public final class DapManager {
         debugFile = anchor;
         long epoch = beginSession();
         setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor("python");
         startupTask = io.submit(() -> {
             try {
@@ -2568,7 +2542,7 @@ public final class DapManager {
         if (managerClosed) {
             return false;
         }
-        if (!enabled) {
+        if (!shared.enabled) {
             listener.onError(tr("debug.error.disabled"));
             return false;
         }
@@ -2608,15 +2582,15 @@ public final class DapManager {
             @Nullable Map<String, Object> configured)
             throws Exception {
         HostPython program = planProgram(file, com.editora.process.ExecTargets.forPath(file), true);
-        HostPython adapter = probe(program.argv(List.of("-c", "import debugpy")), debugpyDir, program.env())
+        HostPython adapter = probe(program.argv(List.of("-c", "import debugpy")), shared.debugpyDir, program.env())
                 ? program
-                : HostPython.parse(DapServerRegistry.interpreterArgv("python", pythonCommand));
+                : HostPython.parse(DapServerRegistry.interpreterArgv("python", shared.pythonCommand));
         List<String> cmd = ProcessRunner.resolveExecutable(adapter.argv(spec.adapterArgs())); // -m debugpy.adapter
         ProcessBuilder pb = new ProcessBuilder(cmd);
         ProcessRunner.applyUserEnv(pb);
         pb.environment().putAll(adapter.env());
-        if (debugpyDir != null) {
-            prependPythonPath(pb, debugpyDir);
+        if (shared.debugpyDir != null) {
+            prependPythonPath(pb, shared.debugpyDir);
         }
         if (module != null && "pytest".equals(module.module())) {
             module = pytestOrFallback(module, program, epoch, argv -> probe(argv, null, program.env()));
@@ -2626,7 +2600,7 @@ public final class DapManager {
         }
         Process proc = BusyExecutable.start(pb);
         AdapterStderr stderr = AdapterStderr.drain(proc); // DAP is on stdin/stdout; an undrained PIPE deadlocks
-        boolean console = programConsole;
+        boolean console = shared.programConsole;
         PythonLaunch.Target target =
                 module != null ? module : PythonLaunch.Target.script(file.toString(), programArgs, cwdOf(file));
         // What runs, first in the console (muted): which Python, in which venv, with which arguments.
@@ -2681,7 +2655,7 @@ public final class DapManager {
                 List.of(),
                 firstLine,
                 asked != null ? asked.projectChoice() : pythonProjectChoice,
-                asked != null ? asked.setting() : local ? pythonCommand : "");
+                asked != null ? asked.setting() : local ? shared.pythonCommand : "");
         com.editora.run.PythonRunPlan.Host host = pythonHost != null
                 ? pythonHost
                 : local
@@ -2813,7 +2787,7 @@ public final class DapManager {
             long epoch,
             @Nullable Map<String, Object> configured)
             throws Exception {
-        Path server = jsServer;
+        Path server = shared.jsServer;
         if (server == null) {
             fail(epoch, tr("debug.error.jsNotFound"));
             return;
@@ -2855,7 +2829,7 @@ public final class DapManager {
             }
         } else {
             com.editora.run.NodeRuntimes.NodeRuntime resolved =
-                    com.editora.run.NodeRuntimes.resolveLocal(file, projectRoot, "", nodePath);
+                    com.editora.run.NodeRuntimes.resolveLocal(file, projectRoot, "", shared.nodePath);
             String version = nodeVersion(resolved.executable());
             String problem = JsLaunch.launchProblemKey(file.getFileName().toString(), version);
             if (problem != null) {
@@ -2884,7 +2858,7 @@ public final class DapManager {
                     : cwd;
             env = JsLaunch.colourEnvironment(System.getenv("NO_COLOR")); // as Run (review D104)
         }
-        boolean clientConsole = programConsole;
+        boolean clientConsole = shared.programConsole;
         Map<String, Object> launch = overlay(
                 JsLaunch.request(
                         spec.launchType(),
@@ -3274,7 +3248,7 @@ public final class DapManager {
         if (managerClosed) {
             return;
         }
-        if (!enabled) {
+        if (!shared.enabled) {
             listener.onError(tr("debug.error.disabled"));
             return;
         }
@@ -3290,14 +3264,14 @@ public final class DapManager {
         debugFile = cwd;
         long epoch = beginSession();
         setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor("javascript");
         Map<String, Object> attach =
                 LaunchConfig.nodeAttach(spec.launchType(), name, host, port, skipFiles, continueOnAttach);
         jsClientConsole = false;
         startupTask = io.submit(() -> {
             try {
-                Path server = jsServer;
+                Path server = shared.jsServer;
                 if (server == null) {
                     fail(epoch, tr("debug.error.jsNotFound"));
                     return;
@@ -3427,7 +3401,7 @@ public final class DapManager {
         if (!debuggableOnHost(language)) {
             return tr("debug.error.remoteLanguage");
         }
-        if ("python".equals(language) ? !pythonEnabled : !jsEnabled) {
+        if ("python".equals(language) ? !shared.pythonEnabled : !shared.jsEnabled) {
             return "python".equals(language) ? tr("debug.error.remotePythonOff") : tr("debug.error.remoteJsOff");
         }
         if (!com.editora.process.ExecTargets.forPath(file).isAvailable()) {
@@ -3446,7 +3420,7 @@ public final class DapManager {
         if (tool != null && !tool.isBlank()) {
             return DapServerRegistry.tokenize(tool);
         }
-        List<String> configured = DapServerRegistry.interpreterArgv("python", pythonCommand);
+        List<String> configured = DapServerRegistry.interpreterArgv("python", shared.pythonCommand);
         if (!configured.isEmpty()
                 && configured.get(0).indexOf('/') < 0
                 && configured.get(0).indexOf('\\') < 0) {
@@ -3927,7 +3901,7 @@ public final class DapManager {
             return;
         }
         tempBreakpointFile = file;
-        c.sendSetBreakpoints(adapterBreakpoint(withTempLine(breakpointsSupplier.get(), file, line)));
+        c.sendSetBreakpoints(adapterBreakpoint(withTempLine(shared.breakpointsSupplier.get(), file, line)));
         resume();
     }
 
@@ -3948,7 +3922,7 @@ public final class DapManager {
             return;
         }
         List<Path> muted = new ArrayList<>();
-        for (DapModels.FileBreakpoints fb : breakpointsSupplier.get()) {
+        for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
             if (fb.file() != null
                     && !fb.breakpoints().isEmpty()
                     && !com.editora.config.PathKeys.samePath(fb.file(), file)) {
@@ -3957,7 +3931,7 @@ public final class DapManager {
             }
         }
         forceRunMuted = List.copyOf(muted);
-        if (!memberBreakpoints.isEmpty()) {
+        if (!shared.memberBreakpoints.isEmpty()) {
             forceRunMutedMembers = true; // method entries and field writes on the way must not stop it either
             c.setMemberBreakpoints(List.of());
         }
@@ -4039,13 +4013,13 @@ public final class DapManager {
         forceRunMuted = List.of();
         DapClient c = client;
         if (c != null && forceRunMutedMembers) {
-            c.setMemberBreakpoints(memberBreakpoints);
+            c.setMemberBreakpoints(shared.memberBreakpoints);
         }
         forceRunMutedMembers = false;
         if (c != null && !muted.isEmpty()) {
             for (Path file : muted) {
                 List<DapModels.LineBreakpoint> real = new ArrayList<>();
-                for (DapModels.FileBreakpoints fb : breakpointsSupplier.get()) {
+                for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
                     if (com.editora.config.PathKeys.samePath(fb.file(), file)) {
                         real.addAll(fb.breakpoints());
                     }
@@ -4057,7 +4031,7 @@ public final class DapManager {
             return;
         }
         List<DapModels.LineBreakpoint> real = new ArrayList<>();
-        for (DapModels.FileBreakpoints fb : breakpointsSupplier.get()) {
+        for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
             if (com.editora.config.PathKeys.samePath(fb.file(), f)) {
                 real.addAll(fb.breakpoints());
             }
@@ -4405,11 +4379,8 @@ public final class DapManager {
         lazyValues.clear();
     }
 
-    /** Numbers in hexadecimal in Variables, watches, hover and inline values; for this window's sessions. */
-    private volatile boolean hexValues;
-
     public boolean hexValues() {
-        return hexValues;
+        return shared.hexValues;
     }
 
     /**
@@ -4417,7 +4388,7 @@ public final class DapManager {
      * fetches the values again. FX thread.
      */
     public void setHexValues(boolean on) {
-        hexValues = on;
+        shared.hexValues = on;
         DapClient c = client;
         if (c != null) {
             c.setHexValues(on);
@@ -4608,18 +4579,15 @@ public final class DapManager {
                 }));
     }
 
-    /** The method breakpoints and field watchpoints every session starts with (see {@link #setMemberBreakpoints}). */
-    private volatile List<DapModels.MemberBreakpoint> memberBreakpoints = List.of();
-
     /**
      * The method breakpoints and field watchpoints in force: the next session starts with them, and a live one is
      * sent them at once. Empty while breakpoints are muted.
      */
     public void setMemberBreakpoints(List<DapModels.MemberBreakpoint> breakpoints) {
-        memberBreakpoints = breakpoints == null ? List.of() : List.copyOf(breakpoints);
+        shared.memberBreakpoints = breakpoints == null ? List.of() : List.copyOf(breakpoints);
         DapClient c = client;
         if (c != null && state != State.INACTIVE) {
-            c.setMemberBreakpoints(memberBreakpoints);
+            c.setMemberBreakpoints(shared.memberBreakpoints);
         }
     }
 
@@ -4967,7 +4935,7 @@ public final class DapManager {
         programStartedEpoch = epoch;
         // A Node.js program's stdout and stderr share one pipe: two pipes read by two threads reordered its lines
         // (review D102). Java and Python keep their red stderr.
-        Debuggee program = new Debuggee(programTerminal, programTitle(), jsSession);
+        Debuggee program = new Debuggee(shared.programTerminal, programTitle(), jsSession);
         try {
             // The adapter names the folder as its machine does: on a remote file's host, a path there.
             Path file = debugFile;
@@ -5251,8 +5219,8 @@ public final class DapManager {
             if (!isCurrent(epoch)) {
                 return false;
             }
-            candidate.setMemberBreakpoints(memberBreakpoints); // sent on its initialized event
-            candidate.setHexValues(hexValues);
+            candidate.setMemberBreakpoints(shared.memberBreakpoints); // sent on its initialized event
+            candidate.setHexValues(shared.hexValues);
             client = candidate;
             return true;
         }

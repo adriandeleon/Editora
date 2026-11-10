@@ -130,15 +130,7 @@ class ScalaMetalsProbeFxTest {
             });
 
             DapManager manager = FxTestSupport.field(c, "dapManager");
-            FxTestSupport.runOnFx(() -> {
-                try {
-                    var f = DapManager.class.getDeclaredField("enabled");
-                    f.setAccessible(true);
-                    f.set(manager, true);
-                } catch (ReflectiveOperationException e) {
-                    throw new AssertionError(e);
-                }
-            });
+            FxTestSupport.runOnFx(() -> com.editora.dap.DapTestSettings.set(manager, "enabled", true));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(main, 1));
             await(
                     "Main.scala to be active",
