@@ -45,6 +45,23 @@ class SimpleModeContextMenusFxTest {
                 EditorBuffer buffer = (EditorBuffer) FxTestSupport.call(c, "activeBuffer", new Class<?>[] {});
                 List<String> full = editorMenu(buffer);
                 assertTrue(full.contains(tr("editmenu.addBookmark")), full.toString());
+                assertEquals(
+                        List.of(
+                                tr("editmenu.cut"),
+                                tr("editmenu.copy"),
+                                tr("editmenu.paste"),
+                                "-",
+                                tr("editmenu.undo"),
+                                tr("editmenu.redo"),
+                                "-",
+                                tr("editmenu.selectAll"),
+                                "-"),
+                        full.subList(0, 9),
+                        "the editing items lead the full menu too");
+                assertFalse(full.getLast().equals("-"), "no trailing separator: " + full);
+                for (int i = 1; i < full.size(); i++) {
+                    assertFalse(full.get(i).equals("-") && full.get(i - 1).equals("-"), "doubled separator: " + full);
+                }
 
                 c.chrome.toggleSimpleMode();
                 assertEquals(
@@ -87,6 +104,38 @@ class SimpleModeContextMenusFxTest {
                         editorMenu(buffer).contains("Toggle Breakpoint (test)"),
                         "Simple mode keeps the editing actions only");
                 c.chrome.toggleSimpleMode();
+            });
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    @Test
+    void editorMenuGroupsTheBreakpointActionsInOneSubmenu(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("script.py"), "x = 1\nprint(x)\n");
+        FxWindowFixture fx = open(dir, file);
+        try {
+            FxTestSupport.runOnFx(() -> {
+                MainController c = fx.controller;
+                fx.shared.getSettings().setDebugSupport(true);
+                EditorBuffer buffer = (EditorBuffer) FxTestSupport.call(c, "activeBuffer", new Class<?>[] {});
+                List<String> menu = editorMenu(buffer);
+                assertFalse(
+                        menu.contains(DebugPanelText.bareTitle(tr("command.debug.toggleBreakpoint"))),
+                        "no flat breakpoint rows: " + menu);
+                assertTrue(
+                        menu.contains(tr("editmenu.breakpoints")
+                                + List.of(
+                                        DebugPanelText.bareTitle(tr("command.debug.toggleBreakpoint")),
+                                        DebugPanelText.bareTitle(tr("command.debug.toggleTemporaryBreakpoint")),
+                                        DebugPanelText.bareTitle(tr("command.debug.toggleRecordingBreakpoint")),
+                                        DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")),
+                                        DebugPanelText.bareTitle(tr("command.debug.toggleBreakpointEnabled")),
+                                        "-",
+                                        DebugPanelText.bareTitle(tr("command.debug.breakpoints")),
+                                        DebugPanelText.bareTitle(tr("command.debug.muteBreakpoints")))),
+                        menu.toString());
+                assertEquals(tr("editmenu.cut"), menu.getFirst(), "the editing items still lead");
             });
         } finally {
             fx.dispose();

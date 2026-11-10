@@ -1427,6 +1427,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         : tr("project.map.status.searchingHost", host));
     }
 
+    /** Where the Map's code cards read which of the editor's reading aids to show (round 2). */
+    void setMapCardAids(java.util.function.Supplier<MapCardAids> aids) {
+        mapView.setCardAids(aids);
+    }
+
+    /** The editor's settings changed: the Map's code cards follow them. */
+    void applyMapCardAids() {
+        mapView.applyCardAids();
+    }
+
     /** Where the Map's {@code @name} queries look declarations up; without one they find none. */
     void setMapSymbolSearch(ProjectMapSymbolSearch.@Nullable Source source) {
         mapSymbols = source;

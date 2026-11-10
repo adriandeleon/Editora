@@ -19,10 +19,11 @@ import org.jspecify.annotations.Nullable;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * A buffer's right-click menu, built on each request for the view that was clicked: Run/Debug for the file,
- * test, main class or {@code .http} request there, the debugger and build-tool items, the language-server
- * submenu, AI actions, spelling suggestions, the markup submenus, Toggle Comment, the editing items, plugin
- * items, bookmarks and notes; trimmed to the editing items in Simple UI mode. The {@code ContextMenu} popup is
+ * A buffer's right-click menu, built on each request for the view that was clicked: the editing items first
+ * (Cut/Copy/Paste, Undo/Redo, Select All), then Run/Debug for the file, test, main class or {@code .http}
+ * request there, the debugger items (the Breakpoints submenu), the language-server submenu, the build-tool
+ * items, AI actions, spelling suggestions, the markup submenus, Toggle Comment, plugin items, bookmarks and
+ * notes; trimmed to the editing items in Simple UI mode. The {@code ContextMenu} popup is
  * created on the first right-click.
  */
 final class BufferContextMenu {
@@ -81,6 +82,10 @@ final class BufferContextMenu {
             // First, and for every item below: one position the menu is about (and the caret moved to a
             // right-click outside the selection), so Paste, Run Test, the LSP items and Add Bookmark agree.
             ContextMenuTarget at = ContextMenuTarget.resolve(a, e, b::collapseCarets);
+            // The editing items lead — Cut/Copy/Paste, Undo/Redo, Select All — so they sit in the same place on
+            // every file, whatever the file-type, debugger and language-server items below them add up to.
+            items.addAll(standardMenuItems());
+            items.add(new SeparatorMenuItem());
             // A JUnit test file runs/debugs the method there (or the class from its declaration)
             // rather than offering generic "Run File"; anything else runnable keeps that generic action.
             // Simple UI mode keeps the editing actions only: no Run/Debug, language-server, build, AI, markup,
@@ -89,12 +94,17 @@ final class BufferContextMenu {
                     simpleMenu ? null : b.runGutter.testTargetAt(at.line(), false);
             if (testTarget != null) {
                 boolean method = testTarget.methodName() != null;
-                MenuItem runTests = new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests"));
+                MenuItem runTests = MenuChords.tag(
+                        new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests")),
+                        method ? "test.runAtCaret" : "test.runClassAtCaret");
                 runTests.setGraphic(FoldManager.runGlyph("test-run-marker")); // blue, matching the test gutter ▶
                 runTests.setOnAction(ev -> b.runGutter.testRunHandler.accept(testTarget));
                 MenuItem debugTest =
                         new MenuItem(tr(method ? "testrunner.menu.debugTest" : "testrunner.menu.debugClass"));
                 debugTest.setGraphic(MenuIcons.debug());
+                if (method) {
+                    MenuChords.tag(debugTest, "test.debugAtCaret");
+                }
                 debugTest.setOnAction(ev -> b.runGutter.testDebugHandler.accept(testTarget));
                 items.addAll(java.util.List.of(runTests, debugTest));
                 items.add(new SeparatorMenuItem());
@@ -122,7 +132,7 @@ final class BufferContextMenu {
                         HttpVariableFixes.menuItems(b.httpVariableFixesAt(a, at.offset()))); // "Use environment dev"
                 items.add(new SeparatorMenuItem());
             } else if (!simpleMenu && b.runGutter.runnable && b.runGutter.runHandler != null && !b.isHttpFile()) {
-                MenuItem run = new MenuItem(tr("command.file.run"));
+                MenuItem run = MenuChords.tag(new MenuItem(tr("command.file.run")), "file.run");
                 run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
                 run.setOnAction(ev -> {
                     Runnable handler = b.runGutter.runHandler;
@@ -188,9 +198,9 @@ final class BufferContextMenu {
             }
             items.addAll(b.spell.menuItems(at.offset(), contextMenu.getItems()));
             // One submenu per markup language, the way the LSP and build-tool actions are already grouped:
-            // eight flat "Typst: …" entries pushed cut/copy/paste and the spelling suggestions down the menu
-            // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
-            // top level above — they are the actions you reach for without reading the menu.
+            // eight flat "Typst: …" entries pushed the spelling suggestions down the menu and made the
+            // file-type actions indistinguishable from the editing ones. Run/Debug stay at the top level
+            // above — they are the actions you reach for without reading the menu.
             if (!simpleMenu && b.canFormatMarkdown()) {
                 items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(b, b.typstImagePasteHandler)));
                 items.add(new SeparatorMenuItem());
@@ -199,13 +209,12 @@ final class BufferContextMenu {
                 items.add(new SeparatorMenuItem());
             }
             if (b.supportsComments()) {
-                MenuItem comment = new MenuItem(tr("editmenu.toggleComment"));
+                MenuItem comment = MenuChords.tag(new MenuItem(tr("editmenu.toggleComment")), "edit.toggleComment");
                 comment.setGraphic(MenuIcons.comment());
                 comment.setOnAction(ev -> b.toggleComment());
                 items.add(comment);
                 items.add(new SeparatorMenuItem());
             }
-            items.addAll(standardMenuItems());
             // Print / Export to PDF stay in Simple mode, as on its File menu; the controller already leaves out the
             // External Tools and plugin items there.
             if (menuContributor != null) { // plugin-contributed items
@@ -220,7 +229,9 @@ final class BufferContextMenu {
                 items.add(new SeparatorMenuItem());
                 int clickedLine = at.line();
                 boolean marked = b.bookmarks.isBookmarked(clickedLine);
-                MenuItem bookmark = new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark"));
+                MenuItem bookmark = MenuChords.tag(
+                        new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark")),
+                        "bookmarks.toggle");
                 bookmark.setGraphic(MenuIcons.bookmark());
                 bookmark.setOnAction(ev -> b.bookmarkToggleRequest.accept(b, clickedLine));
                 items.add(bookmark);
@@ -228,15 +239,35 @@ final class BufferContextMenu {
             if (b.path != null && b.notesEnabled && !simpleMenu) {
                 items.add(new SeparatorMenuItem());
                 boolean hasSelection = a.getSelection().getLength() > 0;
-                MenuItem addNote = new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote"));
+                MenuItem addNote = MenuChords.tag(
+                        new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote")), "notes.add");
                 addNote.setGraphic(MenuIcons.note());
                 addNote.setOnAction(ev -> b.addNoteHandler.accept(b));
                 items.add(addNote);
             }
-            contextMenu.getItems().setAll(items);
+            contextMenu.getItems().setAll(tidySeparators(items));
             contextMenu.show(a, at.screenX(), at.screenY());
             e.consume();
         });
+    }
+
+    /**
+     * Drops the separators each group adds around itself where they would show as a leading, trailing or doubled
+     * line — groups come and go per file and per click, so only the assembled menu knows which are needed.
+     */
+    private static List<MenuItem> tidySeparators(List<MenuItem> items) {
+        List<MenuItem> out = new java.util.ArrayList<>(items.size());
+        for (MenuItem item : items) {
+            boolean separator = item instanceof SeparatorMenuItem;
+            if (separator && (out.isEmpty() || out.getLast() instanceof SeparatorMenuItem)) {
+                continue;
+            }
+            out.add(item);
+        }
+        while (!out.isEmpty() && out.getLast() instanceof SeparatorMenuItem) {
+            out.removeLast();
+        }
+        return out;
     }
 
     /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
@@ -250,8 +281,8 @@ final class BufferContextMenu {
     }
 
     /**
-     * Simple UI mode trims the right-click menu, as it trims the menu bar, to Toggle Comment, the spelling
-     * suggestions, Cut/Copy/Paste, Undo/Redo, Select All and Print / Export to PDF; the preview menu loses
+     * Simple UI mode trims the right-click menu, as it trims the menu bar, to Cut/Copy/Paste, Undo/Redo,
+     * Select All, the spelling suggestions, Toggle Comment and Print / Export to PDF; the preview menu loses
      * its extra export formats (see {@link PreviewMenu}). Read on each right-click,
      * so a toggle applies to the next one.
      */
@@ -286,10 +317,12 @@ final class BufferContextMenu {
     /** AI selection actions, grouped under one row while the effective enabled-and-connected gate is on. */
     private Menu aiActionsMenu() {
         boolean hasSelection = menuView.getSelection().getLength() > 0;
-        MenuItem explain = new MenuItem(tr("command.ai.explainSelection"), MenuIcons.explain());
+        MenuItem explain = MenuChords.tag(
+                new MenuItem(tr("command.ai.explainSelection"), MenuIcons.explain()), "ai.explainSelection");
         explain.setDisable(!hasSelection);
         explain.setOnAction(e -> b.requestExplainSelection());
-        MenuItem rewrite = new MenuItem(tr("command.ai.rewriteSelection"), MenuIcons.rewrite());
+        MenuItem rewrite = MenuChords.tag(
+                new MenuItem(tr("command.ai.rewriteSelection"), MenuIcons.rewrite()), "ai.rewriteSelection");
         rewrite.setDisable(!hasSelection || !b.isEditable());
         rewrite.setOnAction(e -> b.requestRewriteSelection());
         Menu menu = new Menu(tr("editmenu.aiActions"), MenuIcons.ai());
@@ -350,7 +383,8 @@ final class BufferContextMenu {
             }
         }
         if (lspFormatAvailable) {
-            MenuItem format = new MenuItem(MenuTitles.of(tr("command.lsp.formatDocument")));
+            MenuItem format =
+                    MenuChords.tag(new MenuItem(MenuTitles.of(tr("command.lsp.formatDocument"))), "lsp.formatDocument");
             format.setGraphic(MenuIcons.code());
             format.setOnAction(e -> lspFormatAction.run()); // whole-document — no caret positioning needed
             items.add(format);
@@ -364,7 +398,8 @@ final class BufferContextMenu {
     }
 
     private MenuItem lspItem(String titleKey, Node icon, int offset, Runnable action) {
-        MenuItem item = new MenuItem(MenuTitles.of(tr(titleKey)));
+        MenuItem item =
+                MenuChords.tag(new MenuItem(MenuTitles.of(tr(titleKey))), titleKey.substring("command.".length()));
         item.setGraphic(icon);
         item.setOnAction(e -> {
             menuView.moveTo(offset); // in the view that was right-clicked
@@ -376,28 +411,28 @@ final class BufferContextMenu {
     /** Typst inline-format actions for the right-click menu (Typst buffers only). Typst has no native
      *  strikethrough/task/pipe-table, so the set is bold/emphasis/raw/link/bullet. */
     private List<MenuItem> typstMenuItems() {
-        MenuItem bold = new MenuItem(tr("command.typst.bold"));
+        MenuItem bold = MenuChords.tag(new MenuItem(tr("command.typst.bold")), "typst.bold");
         bold.setGraphic(MenuIcons.bold());
         bold.setOnAction(e -> b.formatInline("*"));
-        MenuItem emph = new MenuItem(tr("command.typst.emph"));
+        MenuItem emph = MenuChords.tag(new MenuItem(tr("command.typst.emph")), "typst.emph");
         emph.setGraphic(MenuIcons.italic());
         emph.setOnAction(e -> b.formatInline("_"));
-        MenuItem raw = new MenuItem(tr("command.typst.raw"));
+        MenuItem raw = MenuChords.tag(new MenuItem(tr("command.typst.raw")), "typst.raw");
         raw.setGraphic(MenuIcons.code());
         raw.setOnAction(e -> b.formatInline("`"));
-        MenuItem link = new MenuItem(tr("command.typst.link"));
+        MenuItem link = MenuChords.tag(new MenuItem(tr("command.typst.link")), "typst.link");
         link.setGraphic(MenuIcons.link());
         link.setOnAction(e -> b.formatLinkFromClipboard());
-        MenuItem bullet = new MenuItem(tr("command.typst.bulletList"));
+        MenuItem bullet = MenuChords.tag(new MenuItem(tr("command.typst.bulletList")), "typst.bulletList");
         bullet.setGraphic(MenuIcons.bulletList());
         bullet.setOnAction(e -> b.formatBulletList());
-        MenuItem table = new MenuItem(tr("command.typst.insertTable"));
+        MenuItem table = MenuChords.tag(new MenuItem(tr("command.typst.insertTable")), "typst.insertTable");
         table.setGraphic(MenuIcons.table());
         table.setOnAction(e -> b.insertTypstTableInteractive());
-        MenuItem outline = new MenuItem(tr("command.typst.outline"));
+        MenuItem outline = MenuChords.tag(new MenuItem(tr("command.typst.outline")), "typst.outline");
         outline.setGraphic(MenuIcons.bulletList());
         outline.setOnAction(e -> b.insertTypstOutline());
-        MenuItem image = new MenuItem(tr("command.typst.insertImage"));
+        MenuItem image = MenuChords.tag(new MenuItem(tr("command.typst.insertImage")), "typst.insertImage");
         image.setGraphic(MenuIcons.download());
         image.setOnAction(e -> {
             if (b.typstImagePasteHandler != null) {
@@ -407,8 +442,9 @@ final class BufferContextMenu {
         return List.of(bold, emph, raw, link, bullet, table, outline, image);
     }
 
-    private static MenuItem tableItem(String key, Node icon, Runnable action) {
-        MenuItem mi = new MenuItem(tr(key));
+    /** An editing row titled by {@code key} that does what command {@code commandId} does (its chord shows). */
+    private static MenuItem tableItem(String key, String commandId, Node icon, Runnable action) {
+        MenuItem mi = MenuChords.tag(new MenuItem(tr(key)), commandId);
         mi.setGraphic(icon);
         mi.setOnAction(e -> action.run());
         return mi;
@@ -428,29 +464,29 @@ final class BufferContextMenu {
                 carets != null ? carets.anySelection() : view.getSelection().getLength() > 0;
         boolean editable = b.isEditable();
         boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
-        MenuItem cut = tableItem("editmenu.cut", MenuIcons.cut(), () -> {
+        MenuItem cut = tableItem("editmenu.cut", "edit.cut", MenuIcons.cut(), () -> {
             if (!b.multiCaretCut()) {
                 view.cut();
             }
         });
         cut.setDisable(!canCopy || !editable);
-        MenuItem copy = tableItem("editmenu.copy", MenuIcons.copy(), () -> {
+        MenuItem copy = tableItem("editmenu.copy", "edit.copy", MenuIcons.copy(), () -> {
             if (!b.multiCaretCopy()) {
                 view.copy();
             }
         });
         copy.setDisable(!canCopy);
-        MenuItem paste = tableItem("editmenu.paste", MenuIcons.paste(), () -> {
+        MenuItem paste = tableItem("editmenu.paste", "edit.paste", MenuIcons.paste(), () -> {
             if (!b.multiCaretPaste()) {
                 view.paste();
             }
         });
         paste.setDisable(!hasClipboardText || !editable);
-        MenuItem undo = tableItem("editmenu.undo", MenuIcons.undo(), () -> b.undoOrRedo(view, false));
+        MenuItem undo = tableItem("editmenu.undo", "edit.undo", MenuIcons.undo(), () -> b.undoOrRedo(view, false));
         undo.setDisable(!view.isUndoAvailable());
-        MenuItem redo = tableItem("editmenu.redo", MenuIcons.redo(), () -> b.undoOrRedo(view, true));
+        MenuItem redo = tableItem("editmenu.redo", "edit.redo", MenuIcons.redo(), () -> b.undoOrRedo(view, true));
         redo.setDisable(!view.isRedoAvailable());
-        MenuItem selectAll = tableItem("editmenu.selectAll", MenuIcons.selectAll(), view::selectAll);
+        MenuItem selectAll = tableItem("editmenu.selectAll", "edit.selectAll", MenuIcons.selectAll(), view::selectAll);
         return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
     }
 

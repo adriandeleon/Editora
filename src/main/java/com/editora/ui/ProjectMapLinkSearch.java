@@ -200,6 +200,35 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         };
     }
 
+    /** Semantic tokens of a file a card lent to its running server (round 2); none when no server holds it. */
+    @Override
+    public void semanticTokens(
+            Path file, int lineCount, int lastLineLength, Consumer<List<com.editora.text.SemanticToken>> tokens) {
+        LspManager servers = lsp;
+        if (servers == null || !servers.isManaged(file) || !servers.supportsSemanticTokens(file)) {
+            tokens.accept(List.of());
+            return;
+        }
+        servers.requestSemanticTokens(file, 0, Math.max(0, lineCount - 1), lineCount, lastLineLength, tokens);
+    }
+
+    /** Inlay hints of a file a card lent to its running server (round 2); none when no server holds it. */
+    @Override
+    public void inlayHints(
+            Path file,
+            int startLine,
+            int endLine,
+            int lineCount,
+            int lastLineLength,
+            Consumer<List<LspManager.InlayHintSpan>> hints) {
+        LspManager servers = lsp;
+        if (servers == null || !servers.isManaged(file) || !servers.supportsInlayHints(file)) {
+            hints.accept(List.of());
+            return;
+        }
+        servers.requestInlayHints(file, startLine, endLine, lineCount, lastLineLength, hints);
+    }
+
     /**
      * Usage counts for a file's declarations (Map code browser gap 11): {@code file} lent to its running server while
      * it answers — its references code lens when it has one, else its references counted for the first {@link

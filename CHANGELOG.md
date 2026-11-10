@@ -38,7 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   functions and inline function expressions too: the breakpoint stops inside the function each time its body runs,
   not once when the line runs. Pick which functions of the line it stops in from the breakpoint's gutter menu, as in
   Java.
-
+- **Project Map cards read like the editor.** Code cards now show the language server's semantic highlighting and
+  inlay hints, and pin the headers of the class or method you have scrolled into, as the editor does. Each follows
+  its editor setting.
+- **Right-click menus show keybindings.** An item that does what a command does now shows that command's shortcut
+  at its right edge, in the same small periwinkle type as the menu bar: the editor menu (Run, the LSP, Markdown
+  and Typst submenus, the debugger items, Toggle Comment, Cut/Copy/Paste, Undo/Redo, Select All, bookmarks and
+  notes), the editor tab menu, the preview menus and the Copy/Select All of the output consoles. Chords come from
+  the active keymap, Emacs sequences such as `C-x C-s` included, and follow a keymap switch on the next right-click.
 - **Debug Python subprocesses.** A process your Python program starts (`multiprocessing`, a Python subprocess) is now
   debugged too, in a session of its own beside the program's. Its breakpoints stop, and the Debug window shows it
   when it stops. Stopping the program stops its subprocesses, and a subprocess's tab goes once it ends. Turn it off
@@ -320,6 +327,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The editor's right-click menu opens with the editing items.** Cut, Copy and Paste, then Undo and Redo, then
+  Select All now come first, in the same place on every file, with Run and Debug, the debugger, LSP, build, AI,
+  spelling, markup, comment, plugin, bookmark and note items below them. The breakpoint actions — Toggle, Temporary,
+  Recording and Lambda breakpoints, Edit Breakpoint and Enable / Disable — move into one **Breakpoints** submenu,
+  which also offers the Breakpoints list and Mute Breakpoints.
 - **The Commit window says when a clean tree still has commits to push.** Below "Nothing to commit — working tree
   clean" it now adds "2 commits to push to origin/main" and a Push button, instead of leaving the small `↑2` in the
   header as the only sign. A branch with no upstream keeps the header's `↑ publish` alone.

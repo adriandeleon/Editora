@@ -7287,7 +7287,7 @@ final class DebugCoordinator {
     }
 
     /**
-     * The editor's right-click debugger items (review C10): Toggle / Edit Breakpoint on a debuggable file, and while
+     * The editor's right-click debugger items (review C10): the Breakpoints submenu on a debuggable file, and while
      * paused Run to Cursor, Show Value and Add to Watches for the name at the click. Empty when debugging is off.
      */
     List<javafx.scene.control.MenuItem> editorMenuItems(EditorBuffer b) {
@@ -7311,16 +7311,7 @@ final class DebugCoordinator {
             debugFile.setOnAction(e -> debugFile(b));
             items.add(debugFile);
         }
-        // Icons like the rest of the editor menu (review 2 C110).
-        items.add(menuItem("debug.toggleBreakpoint", breakpointGlyph(), this::toggleBreakpointAtCaret));
-        items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
-        items.add(
-                menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
-        items.add(
-                menuItem("debug.toggleRecordingBreakpoint", breakpointGlyph(), this::toggleRecordingBreakpointAtCaret));
-        if (LambdaBreakpoints.caretLineHasLambdas(b)) {
-            items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
-        }
+        items.add(breakpointsMenu(b));
         if (dap().state() == DapManager.State.SUSPENDED) {
             items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
             items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));
@@ -7344,9 +7335,43 @@ final class DebugCoordinator {
         return items;
     }
 
+    /**
+     * The editor menu's <b>Breakpoints</b> submenu: every breakpoint action for the right-clicked line (the caret is
+     * there by now), then the list and Mute Breakpoints. One row instead of four to six flat ones, which pushed the
+     * rest of the menu down on every debuggable file — the shape of the LSP and AI submenus.
+     */
+    private javafx.scene.control.Menu breakpointsMenu(EditorBuffer b) {
+        javafx.scene.control.Menu menu =
+                new javafx.scene.control.Menu(tr("editmenu.breakpoints"), breakpointGlyph()); // icons: review 2 C110
+        var items = menu.getItems();
+        items.add(menuItem("debug.toggleBreakpoint", breakpointGlyph(), this::toggleBreakpointAtCaret));
+        items.add(
+                menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
+        items.add(
+                menuItem("debug.toggleRecordingBreakpoint", breakpointGlyph(), this::toggleRecordingBreakpointAtCaret));
+        if (LambdaBreakpoints.caretLineHasLambdas(b)) {
+            items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
+        }
+        items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
+        javafx.scene.control.MenuItem flip =
+                menuItem("debug.toggleBreakpointEnabled", Icons.check(), this::toggleBreakpointEnabledAtCaret);
+        flip.setDisable(b.getBreakpointManager().get(b.getFocusedArea().getCurrentParagraph()) == null);
+        items.add(flip);
+        items.add(new javafx.scene.control.SeparatorMenuItem());
+        items.add(menuItem("debug.breakpoints", Icons.outline(), this::showBreakpoints));
+        javafx.scene.control.CheckMenuItem mute =
+                new javafx.scene.control.CheckMenuItem(DebugPanelText.bareTitle(tr("command.debug.muteBreakpoints")));
+        mute.setGraphic(Icons.hidden());
+        mute.setSelected(breakpointsMuted);
+        mute.setOnAction(e -> toggleMuteBreakpoints());
+        items.add(mute);
+        return menu;
+    }
+
     private static javafx.scene.control.MenuItem menuItem(String commandId, @Nullable Node icon, Runnable action) {
         javafx.scene.control.MenuItem item =
                 new javafx.scene.control.MenuItem(DebugPanelText.bareTitle(tr("command." + commandId)));
+        com.editora.editor.MenuChords.tag(item, commandId);
         item.setGraphic(icon);
         item.setOnAction(e -> action.run());
         return item;
