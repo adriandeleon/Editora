@@ -2054,6 +2054,35 @@
 .project-map-deps-card .list-cell:selected .label.project-map-deps-where {
     -fx-text-fill: -color-fg-default;
 }
+/* The Project Map's Code Metrics card (gap 15): a folder's files with their sizes, complexity, changes and hotspots. */
+.project-map-metrics-card .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-metrics-card .label.project-map-metrics-summary,
+.project-map-metrics-card .label.project-map-metrics-empty {
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-metrics-card .project-map-metrics-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted transparent -color-border-muted transparent;
+    -fx-border-width: 1 0 1 0;
+}
+.project-map-metrics-table {
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+    -fx-font-size: 12px;
+}
+.project-map-metrics-table .project-map-metrics-number {
+    -fx-alignment: center-right;
+}
+.project-map-metrics-table .table-cell.project-map-metrics-heat-1 { -fx-background-color: -color-warning-subtle; }
+.project-map-metrics-table .table-cell.project-map-metrics-heat-2 { -fx-background-color: -color-warning-muted; }
+.project-map-metrics-table .table-cell.project-map-metrics-heat-3 { -fx-background-color: -color-danger-subtle; }
+.project-map-metrics-table .table-cell.project-map-metrics-heat-4 {
+    -fx-background-color: -color-danger-muted;
+    -fx-font-weight: bold;
+}
 /* The Project Map's Overview card (review 3 B4): a code card's frame, with headed sections of short text and links. */
 .project-map-overview-scroll,
 .project-map-overview-scroll > .viewport,

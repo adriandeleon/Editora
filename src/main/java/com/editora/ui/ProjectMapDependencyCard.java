@@ -72,11 +72,11 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
 
     private final Button back = new Button("‹");
     private final ToggleGroup views = new ToggleGroup();
-    private final ToggleButton aroundButton = new StayOnButton(tr("project.map.deps.around"));
-    private final ToggleButton insideButton = new StayOnButton(tr("project.map.deps.inside"));
+    private final ToggleButton aroundButton = new MapStayOnToggle(tr("project.map.deps.around"));
+    private final ToggleButton insideButton = new MapStayOnToggle(tr("project.map.deps.inside"));
     private final ToggleGroup groupings = new ToggleGroup();
-    private final ToggleButton filesButton = new StayOnButton(tr("project.map.deps.files"));
-    private final ToggleButton foldersButton = new StayOnButton(tr("project.map.deps.folders"));
+    private final ToggleButton filesButton = new MapStayOnToggle(tr("project.map.deps.files"));
+    private final ToggleButton foldersButton = new MapStayOnToggle(tr("project.map.deps.folders"));
     private final Button refresh = new Button();
     private final Label summary = new Label();
     private final GraphPane graph = new GraphPane();
@@ -952,21 +952,6 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             setGraphic(box);
             setTooltip(new Tooltip(item.from() + "\n" + item.to()));
             setAccessibleText(text + ", " + item.text());
-        }
-    }
-
-    /** A toggle that stays on when pressed again, so one of its group always is. */
-    private static final class StayOnButton extends ToggleButton {
-        StayOnButton(String text) {
-            super(text);
-            setMnemonicParsing(false);
-        }
-
-        @Override
-        public void fire() {
-            if (!isSelected()) {
-                super.fire();
-            }
         }
     }
 }

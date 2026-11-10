@@ -958,6 +958,11 @@ final class Icons {
                 + "-1.5 1.5");
     }
 
+    /** Three bars rising from a baseline — the Map's Code Metrics card. */
+    static Node metrics() {
+        return line("M2 13.5h12M3.5 13.5v-4h2.5v4M7 13.5V6h2.5v7.5M10.5 13.5V3h2.5v10.5");
+    }
+
     /** One box joined to two on its right — the Map's Dependencies card. */
     static Node dependencies() {
         return line("M1.5 6.5h4v3h-4zM10.5 2.5h4v3h-4zM10.5 10.5h4v3h-4zM5.5 8c2.5 0 2.5-4 5-4M5.5 8c2.5 0 2.5 4 5 4");

@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Code metrics and hotspots on the Project Map.** *Code Metrics* in a folder's menu on the Map, or *Project Code
+  Metrics* in the ⋯ menu, opens a card listing the folder's files, or its subfolders added up, with their lines of
+  code and comments, their complexity and their commits of the last 90 days. A hotspot score marks code that is both
+  complex and often changed, the hottest first; any column sorts. The summary gives the folder's totals and its code
+  by language. Enter opens a file's card or looks inside a subfolder.
 - **Dependencies on the Project Map.** *Dependencies* in a folder's or source file's menu on the Map, or in a code
   card's menu, and *Project Dependencies* in the ⋯ menu open a card that shows what a file or folder uses of the
   project and what uses it, file by file or folder by folder, with what is on both sides marked. For a folder,
