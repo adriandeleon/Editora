@@ -225,7 +225,6 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Turn exception breakpoints on caught ({@code caught}) or uncaught exceptions on or off. */
         default void toggleExceptions(boolean caught) {}
 
-        /** Whether numbers are shown in hexadecimal. */
         /**
          * The Debug window went back to frame {@code frame} of earlier stop {@code stop}: the editor shows that stop's
          * line, inline and pinned values (Debug History).
@@ -238,6 +237,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Show Value History: lists {@code seen} under {@code title}; a pick goes back to that stop. */
         default void pickValueHistory(String title, List<DebugHistory.Seen> seen, java.util.function.IntConsumer go) {}
 
+        /** Whether numbers are shown in hexadecimal. */
         default boolean hexValues() {
             return false;
         }
