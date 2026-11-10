@@ -5,8 +5,11 @@ import java.util.Base64;
 import java.util.List;
 import java.util.function.Consumer;
 
+import javafx.scene.Cursor;
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
+import javafx.scene.control.TreeCell;
+import javafx.scene.control.TreeView;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -92,6 +96,65 @@ class DebugValuePopupThemeFxTest {
                             s.getStyleClass().contains("editor-area"),
                             "the editor's own rules must not reach the popup");
                 }
+            });
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                popup.hide();
+                stage.close();
+            });
+        }
+    }
+
+    /** The tree's rows click (expand, select): a hand over them, not the editor's I-beam showing through. */
+    @Test
+    void theTreeRowsShowAHandCursor() throws Exception {
+        DebugValuePopup.Source objects = new DebugValuePopup.Source() {
+            @Override
+            public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
+                cb.accept(new DapModels.EvalResult("Item@44", 9, "Item"));
+            }
+
+            @Override
+            public void children(
+                    int ref, String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
+                cb.accept(List.of(
+                        new DapModels.VariableInfo("name", "\"Eraser\"", "String", 0),
+                        new DapModels.VariableInfo("quantity", "25", "int", 0)));
+            }
+
+            @Override
+            public void addWatch(String expression) {}
+        };
+        Object[] made = FxTestSupport.callOnFx(() -> {
+            CodeArea area = new CodeArea("item\n");
+            Scene scene = new Scene(new StackPane(area), 600, 300);
+            scene.getStylesheets()
+                    .add(getClass().getResource("/com/editora/styles/app.css").toExternalForm());
+            Stage stage = new Stage();
+            stage.setScene(scene);
+            stage.show();
+            return new Object[] {area, stage, new DebugValuePopup(objects)};
+        });
+        CodeArea area = (CodeArea) made[0];
+        Stage stage = (Stage) made[1];
+        DebugValuePopup popup = (DebugValuePopup) made[2];
+        try {
+            FxTestSupport.runOnFx(() -> {
+                popup.show(area, "item", stage.getX() + 20, stage.getY() + 40, true);
+                assertTrue(popup.isShowing());
+                TreeView<DebugPanel.VarRow> tree = popup.tree();
+                tree.getScene().getRoot().applyCss();
+                tree.layout();
+                List<TreeCell<?>> filled = tree.lookupAll(".tree-cell").stream()
+                        .<TreeCell<?>>map(n -> (TreeCell<?>) n)
+                        .filter(c -> !c.isEmpty())
+                        .toList();
+                assertFalse(filled.isEmpty(), "the popup shows the object's rows");
+                for (TreeCell<?> cell : filled) {
+                    assertEquals(Cursor.HAND, cell.getCursor(), "row " + cell.getIndex());
+                }
+                StackPane popupRoot = FxTestSupport.field(popup, "root");
+                assertEquals(Cursor.DEFAULT, popupRoot.getCursor());
             });
         } finally {
             FxTestSupport.runOnFx(() -> {

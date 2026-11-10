@@ -5110,6 +5110,10 @@
     -fx-text-fill: -color-fg-default;
 }
 .debug-value-popup .debug-vars { -fx-background-color: transparent; }
+/* The popup sits over the editor: an arrow over it rather than the editor's I-beam, and a hand over the tree's
+   rows, which expand and select on click. */
+.debug-value-popup { -fx-cursor: default; }
+.debug-value-popup .debug-vars .tree-cell:filled { -fx-cursor: hand; }
 /* The exception card under the line that threw: the title red when the program does not catch it. */
 .debug-exception-card { -fx-padding: 8; -fx-spacing: 4; }
 .debug-exception-card .debug-exception-title { -fx-font-weight: bold; -fx-text-fill: -color-fg-muted; }
