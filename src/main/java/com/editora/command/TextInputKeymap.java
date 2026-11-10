@@ -123,7 +123,7 @@ public final class TextInputKeymap {
      * those untypable in every picker and prompt. The same rule as {@link KeyDispatcher#handleTyped}. Pure —
      * tested.
      */
-    static boolean swallowTyped(boolean pressHandled, boolean mac, boolean commandDown, boolean controlDown) {
+    public static boolean swallowTyped(boolean pressHandled, boolean mac, boolean commandDown, boolean controlDown) {
         return pressHandled || (mac && (commandDown || controlDown));
     }
 

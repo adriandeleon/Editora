@@ -1443,6 +1443,31 @@ info colour, `◆ `); `clearDebugEditorSurfaces` clears them when the program ru
 (selection or `DebugExpressions.atCaret`, else a prompt; again unpins) and `debug.unpinLine`; the value popup's
 Pin to Line pins its expression to the line it opened for (`DebugValuePopup.lineAbove`). The opt-in
 `PinnedValuesProbeFxTest` checks two pins against java-debug across two stops.
+**Evaluating expressions** follows IntelliJ's Evaluate Expression. Three surfaces evaluate with DAP context `repl`
+(a method call runs; `DebugPanel.Actions.evaluateCode` → `DapManager.evaluateFull`, which counts a `repl` evaluation
+as a console one, so a Step meanwhile is refused rather than queued) and keep the result's `variablesReference`:
+- the **evaluate field at the top of Variables** (`DebugPanel.evaluateBar`): its result is the tree's first row
+  (`Kind.RESULT`, built by `lazyItem`, so its fields get Set Value, Go to Index and Add to Watches), kept across the
+  B205 refresh that follows a successful evaluation and dropped on any state change. Its fields are not noted for
+  changed-value marks or Debug History (`underResult`);
+- the **Evaluate window** ([`ui/DebugEvaluateWindow`](../../src/main/java/com/editora/ui/DebugEvaluateWindow.java),
+  `debug.evaluate`): non-modal, opened with the selection or `DebugExpressions.atCaret`, its result a tree loaded by
+  [`ui/DebugValueTree`](../../src/main/java/com/editora/ui/DebugValueTree.java) (shared with the hover popup). The
+  coordinator keeps every window it opened and reuses a closed one; a state change leaves their results to read but not
+  to expand (`sessionChanged`);
+- **Quick Evaluate** (Alt+click, `DebugHover.quickEvaluate`): the selection clicked in (as it was at the press) or
+  `DebugIdentifiers.quickExpressionAt` — the name chain plus a call's argument list — shown by the value popup's
+  `showEvaluated`, which also shows a failure.
+
+Both fields are a [`ui/DebugExpressionField`](../../src/main/java/com/editora/ui/DebugExpressionField.java): a
+RichTextFX area highlighted with the stopped frame's grammar (`setLanguageFile`, loaded off the FX thread), the
+configured keymap's motion and editing through [`ui/CodeFieldKeymap`](../../src/main/java/com/editora/ui/CodeFieldKeymap.java)
+(the `CodeArea` counterpart of `TextInputKeymap`), completion through `DebugCompletion` (now over a `TextField` or a
+`CodeArea`), one line where Enter evaluates or several (Shift+Enter, or text with a line break) where Ctrl+Enter does.
+Every field walks one history (`DebugPanelText.History(shared)`: one list, a place of its own), persisted as the
+workspace's `debugEvaluateHistory`. Watches can be paused (`debugPausedWatches`, `ValueNote.PAUSED`): listed, not
+evaluated at each stop, with Evaluate Once for the stop shown. `DebugPanelEvaluateFxTest`, `DebugEvaluateWindowFxTest`,
+`DebugExpressionFieldFxTest` and `QuickEvaluateFxTest` cover them with fake adapters.
 **Debug History** ([`ui/DebugHistory`](../../src/main/java/com/editora/ui/DebugHistory.java), "time travel lite") keeps
 each stop as it was shown, so the Debug window can go back to it after the program has run on. Nothing is asked of
 the adapter for it: no DAP adapter Editora drives supports `stepBack`, and an earlier stop's values cannot be fetched

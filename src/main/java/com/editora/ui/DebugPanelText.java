@@ -325,6 +325,7 @@ final class DebugPanelText {
             case NO_TO_STRING_AFTER_PAUSE -> tr("debugpanel.note.afterPause");
             case TO_STRING_FAILED -> tr("debugpanel.note.toStringFailed");
             case LOADING -> tr("debugpanel.note.loading");
+            case PAUSED -> tr("debugpanel.note.paused");
         };
     }
 
@@ -341,34 +342,52 @@ final class DebugPanelText {
      */
     static final class History {
         static final int MAX = 100;
-        private final List<String> entries = new ArrayList<>();
-        /** Where Up/Down is: entries.size() = not browsing. */
+        private final List<String> entries;
+
+        History() {
+            entries = new ArrayList<>();
+        }
+
+        /**
+         * A history over {@code shared}'s entries with a browsing position of its own: the evaluate fields of the
+         * Debug window and the Evaluate window each walk the one list of expressions.
+         */
+        History(History shared) {
+            entries = shared.entries;
+        }
+
+        /** Where Up/Down is, while {@link #browsing}. */
         private int cursor;
+
+        /** Up was pressed since the last {@link #add} and Down has not come back past the newest entry. */
+        private boolean browsing;
 
         private String draft = "";
 
         void add(String expression) {
+            browsing = false;
+            draft = "";
             if (expression == null || expression.isBlank()) {
                 return;
             }
-            if (entries.isEmpty() || !entries.getLast().equals(expression)) {
-                entries.add(expression);
-                if (entries.size() > MAX) {
-                    entries.removeFirst();
-                }
+            entries.remove(expression); // once, as the newest: a repeated expression is not listed twice
+            entries.add(expression);
+            if (entries.size() > MAX) {
+                entries.removeFirst();
             }
-            cursor = entries.size();
-            draft = "";
         }
 
         /** The older entry to show for Up from {@code current}, or null when there is none. */
         @Nullable
         String up(String current) {
-            if (cursor == 0 || entries.isEmpty()) {
-                return null;
-            }
-            if (cursor == entries.size()) {
+            if (!browsing) {
+                browsing = true;
                 draft = current == null ? "" : current;
+                cursor = entries.size();
+            }
+            cursor = Math.min(cursor, entries.size()); // another field's history may have changed meanwhile
+            if (cursor == 0) {
+                return null;
             }
             return entries.get(--cursor);
         }
@@ -376,16 +395,58 @@ final class DebugPanelText {
         /** The newer entry for Down (the typed draft past the newest), or null when not browsing. */
         @Nullable
         String down() {
-            if (cursor >= entries.size()) {
+            if (!browsing) {
                 return null;
             }
             cursor++;
-            return cursor == entries.size() ? draft : entries.get(cursor);
+            if (cursor >= entries.size()) {
+                browsing = false;
+                return draft;
+            }
+            return entries.get(cursor);
         }
 
         List<String> entries() {
             return List.copyOf(entries);
         }
+    }
+
+    /**
+     * Whether a key walks a one-line evaluate field's history: {@code TRUE} for the older entry (Up, {@code M-p}, the
+     * keymap's line-up — Emacs {@code C-p}), {@code FALSE} for the newer, null for any other key. A one-line field has
+     * no lines to move through, so the keys that would move a line walk the history, as in a shell. Pure.
+     */
+    static @Nullable Boolean historyKey(
+            javafx.scene.input.KeyCode code,
+            boolean control,
+            boolean alt,
+            boolean meta,
+            boolean shift,
+            @Nullable String command) {
+        boolean plain = !control && !alt && !meta && !shift;
+        boolean altOnly = alt && !control && !meta && !shift;
+        if (plain && code == javafx.scene.input.KeyCode.UP || altOnly && code == javafx.scene.input.KeyCode.P) {
+            return Boolean.TRUE;
+        }
+        if (plain && code == javafx.scene.input.KeyCode.DOWN || altOnly && code == javafx.scene.input.KeyCode.N) {
+            return Boolean.FALSE;
+        }
+        if ("nav.lineUp".equals(command)) {
+            return Boolean.TRUE;
+        }
+        return "nav.lineDown".equals(command) ? Boolean.FALSE : null;
+    }
+
+    private static final java.util.regex.Pattern SIMPLE_PATH = java.util.regex.Pattern.compile(
+            "[\\p{L}_$][\\p{L}\\p{N}_$]*(\\s*\\.\\s*[\\p{L}_$][\\p{L}\\p{N}_$]*|\\[\\d+])*");
+
+    /**
+     * {@code expression} as the start of a longer path: a name chain as it is ({@code obj.items}), anything else in
+     * parentheses — a field of the watch {@code a + b} is {@code (a + b).x}, not {@code a + b.x}. Pure.
+     */
+    static String pathRoot(String expression) {
+        String e = expression == null ? "" : expression.strip();
+        return e.isEmpty() || SIMPLE_PATH.matcher(e).matches() ? e : "(" + e + ")";
     }
 
     /** The toolbar's name of an earlier stop shown: {@code Stop 4 · 12:01:05}. */

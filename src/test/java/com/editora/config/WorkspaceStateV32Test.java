@@ -29,7 +29,7 @@ class WorkspaceStateV32Test {
                 "Server",
                 config.getWorkspaceState().getRunConfigurations().getFirst().name());
         assertEquals(WorkspaceState.SCHEMA_VERSION, config.getWorkspaceState().getSchemaVersion());
-        assertEquals(32, ConfigSchema.WORKSPACE.currentVersion());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, ConfigSchema.WORKSPACE.currentVersion());
     }
 
     @Test

@@ -2205,6 +2205,10 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.evaluate",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::evaluateExpression)));
+        host.registry()
+                .register(Command.of(
+                        "debug.focusEvaluate",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::focusEvaluate)));
         host.registry()
                 .register(Command.of(

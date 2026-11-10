@@ -47,7 +47,25 @@ final class DebugCompletion {
         void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb);
     }
 
-    private final TextField field;
+    /** The field completed in: a plain {@link TextField} or an expression {@link org.fxmisc.richtext.CodeArea}. */
+    interface Input {
+        javafx.scene.Node node();
+
+        javafx.beans.value.ObservableValue<String> textProperty();
+
+        String text();
+
+        int caret();
+
+        void replace(String text, int caret);
+
+        /** Where the caret is on screen (approximately for a text field); null when not shown. */
+        @Nullable
+        Bounds caretOnScreen();
+    }
+
+    private final Input field;
+    private final javafx.scene.Node node;
     private final Source source;
     private final CompletionPopup popup = new CompletionPopup();
     private final Tooltip note = new Tooltip();
@@ -61,13 +79,14 @@ final class DebugCompletion {
 
     private final EventHandler<KeyEvent> keys = this::onKey;
 
-    private DebugCompletion(TextField field, Source source) {
+    private DebugCompletion(Input field, Source source) {
         this.field = field;
+        this.node = field.node();
         this.source = source;
         note.getStyleClass().add("debug-value-tooltip");
         noteTimer.setOnFinished(e -> note.hide());
         popup.setOnAccept(this::accept);
-        field.addEventFilter(KeyEvent.KEY_TYPED, e -> typedDot = ".".equals(e.getCharacter()));
+        node.addEventFilter(KeyEvent.KEY_TYPED, e -> typedDot = ".".equals(e.getCharacter()));
         field.textProperty().addListener((o, was, now) -> {
             if (typedDot) {
                 typedDot = false;
@@ -76,25 +95,118 @@ final class DebugCompletion {
                 Platform.runLater(() -> ask(false));
             }
         });
-        field.focusedProperty().addListener((o, was, now) -> {
+        node.focusedProperty().addListener((o, was, now) -> {
             if (!now) {
                 hide();
             }
         });
-        field.sceneProperty().addListener((o, was, now) -> watch(now));
-        watch(field.getScene());
+        node.sceneProperty().addListener((o, was, now) -> watch(now));
+        watch(node.getScene());
     }
 
     /** Adds completion to {@code field}. */
     static DebugCompletion attach(TextField field, Source source) {
-        DebugCompletion completion = new DebugCompletion(field, source);
-        field.getProperties().put(DebugCompletion.class, completion);
+        return attach(textFieldInput(field), source);
+    }
+
+    /** Adds completion to an expression {@code area}. */
+    static DebugCompletion attach(org.fxmisc.richtext.CodeArea area, Source source) {
+        return attach(codeAreaInput(area), source);
+    }
+
+    private static DebugCompletion attach(Input input, Source source) {
+        DebugCompletion completion = new DebugCompletion(input, source);
+        input.node().getProperties().put(DebugCompletion.class, completion);
         return completion;
     }
 
     /** The completion attached to {@code field}, or null. */
-    static @Nullable DebugCompletion of(TextField field) {
+    static @Nullable DebugCompletion of(javafx.scene.Node field) {
         return field.getProperties().get(DebugCompletion.class) instanceof DebugCompletion c ? c : null;
+    }
+
+    private static Input textFieldInput(TextField field) {
+        return new Input() {
+            @Override
+            public javafx.scene.Node node() {
+                return field;
+            }
+
+            @Override
+            public javafx.beans.value.ObservableValue<String> textProperty() {
+                return field.textProperty();
+            }
+
+            @Override
+            public String text() {
+                return field.getText() == null ? "" : field.getText();
+            }
+
+            @Override
+            public int caret() {
+                return field.getCaretPosition();
+            }
+
+            @Override
+            public void replace(String text, int caret) {
+                field.setText(text);
+                field.positionCaret(caret);
+            }
+
+            @Override
+            public @Nullable Bounds caretOnScreen() {
+                // Approximately: the text before the caret measured in the field's font.
+                Bounds b = field.localToScreen(field.getBoundsInLocal());
+                if (b == null) {
+                    return null;
+                }
+                Text measure = new Text(text().substring(0, Math.min(caret(), text().length())));
+                measure.setFont(field.getFont());
+                double x = Math.min(
+                        b.getMaxX() - 40,
+                        b.getMinX() + 8 + measure.getLayoutBounds().getWidth());
+                return new BoundingBox(Math.max(b.getMinX(), x), b.getMinY(), 1, b.getHeight());
+            }
+        };
+    }
+
+    private static Input codeAreaInput(org.fxmisc.richtext.CodeArea area) {
+        return new Input() {
+            @Override
+            public javafx.scene.Node node() {
+                return area;
+            }
+
+            @Override
+            public javafx.beans.value.ObservableValue<String> textProperty() {
+                return area.textProperty();
+            }
+
+            @Override
+            public String text() {
+                return area.getText();
+            }
+
+            @Override
+            public int caret() {
+                return area.getCaretPosition();
+            }
+
+            @Override
+            public void replace(String text, int caret) {
+                area.replaceText(text);
+                area.moveTo(Math.clamp(caret, 0, area.getLength()));
+            }
+
+            @Override
+            public @Nullable Bounds caretOnScreen() {
+                Bounds caret = area.getCaretBounds().orElse(null);
+                if (caret != null) {
+                    return caret;
+                }
+                return area.localToScreen(area.getBoundsInLocal());
+            }
+        };
     }
 
     private void watch(Scene scene) {
@@ -124,7 +236,7 @@ final class DebugCompletion {
     }
 
     private void onKey(KeyEvent e) {
-        if (!field.isFocused() || field.isDisabled()) {
+        if (!node.isFocused() || node.isDisabled()) {
             return;
         }
         if (e.getCode() == KeyCode.SPACE && e.isControlDown() && !e.isAltDown() && !e.isShiftDown()) {
@@ -151,7 +263,7 @@ final class DebugCompletion {
 
     /** Asks the adapter; {@code explicit} (Ctrl+Space) says so when there is nothing to show. */
     private void ask(boolean explicit) {
-        if (!field.isFocused()) {
+        if (!node.isFocused()) {
             return;
         }
         if (!source.paused()) {
@@ -161,11 +273,11 @@ final class DebugCompletion {
             }
             return;
         }
-        String text = field.getText() == null ? "" : field.getText();
-        int caret = field.getCaretPosition();
+        String text = field.text();
+        int caret = field.caret();
         int asked = ++request;
         source.complete(text, caret, targets -> {
-            if (asked != request || !field.isFocused()) {
+            if (asked != request || !node.isFocused() || node.getScene() == null) {
                 return;
             }
             List<Completion> items = items(targets);
@@ -178,7 +290,7 @@ final class DebugCompletion {
             }
             note.hide();
             popup.setQuery(DebugCompletionText.prefix(text, caret));
-            popup.show(field.getScene().getWindow(), caretBounds(), items, 0);
+            popup.show(node.getScene().getWindow(), caretBounds(), items, 0);
         });
     }
 
@@ -215,11 +327,10 @@ final class DebugCompletion {
             hide();
             return;
         }
-        DebugCompletionText.Edit edit = DebugCompletionText.apply(
-                field.getText(), field.getCaretPosition(), t, DebugCompletionText.hasParameters(t.label()));
+        DebugCompletionText.Edit edit =
+                DebugCompletionText.apply(field.text(), field.caret(), t, DebugCompletionText.hasParameters(t.label()));
         hide();
-        field.setText(edit.text());
-        field.positionCaret(edit.caret());
+        field.replace(edit.text(), edit.caret());
     }
 
     void hide() {
@@ -229,23 +340,16 @@ final class DebugCompletion {
 
     private void say(String message) {
         note.setText(message);
-        Bounds b = field.localToScreen(field.getBoundsInLocal());
-        if (b != null && field.getScene() != null) {
-            note.show(field, b.getMinX(), b.getMaxY() + 2);
+        Bounds b = node.localToScreen(node.getBoundsInLocal());
+        if (b != null && node.getScene() != null) {
+            note.show(node, b.getMinX(), b.getMaxY() + 2);
             noteTimer.playFromStart();
         }
     }
 
-    /** Where the caret is on screen, approximately: the text before it measured in the field's font. */
+    /** Where the caret is on screen. */
     private Bounds caretBounds() {
-        Bounds b = field.localToScreen(field.getBoundsInLocal());
-        if (b == null) {
-            return new BoundingBox(0, 0, 0, 0);
-        }
-        Text measure = new Text(field.getText().substring(0, Math.min(field.getCaretPosition(), field.getLength())));
-        measure.setFont(field.getFont());
-        double x = Math.min(
-                b.getMaxX() - 40, b.getMinX() + 8 + measure.getLayoutBounds().getWidth());
-        return new BoundingBox(Math.max(b.getMinX(), x), b.getMinY(), 1, b.getHeight());
+        Bounds b = field.caretOnScreen();
+        return b == null ? new BoundingBox(0, 0, 0, 0) : b;
     }
 }

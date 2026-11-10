@@ -5039,6 +5039,36 @@
     -fx-font-size: 12px;
     -fx-padding: 3 6 3 6;
 }
+/* The evaluate field over Variables and the Evaluate window's Expression (DebugExpressionField): a small code editor
+   with the editor's highlighting, framed as a text field. Its font is set from code (the editor's), as the console's. */
+.debug-panel .debug-expression-frame {
+    -fx-padding: 1;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+}
+.debug-panel .debug-expression-frame:focus-within { -fx-border-color: -color-accent-emphasis; }
+.debug-panel .debug-expression {
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+}
+.debug-panel .debug-expression .content { -fx-padding: 3 6 3 6; }
+.debug-panel .debug-expression:disabled { -fx-opacity: 0.6; }
+.debug-panel .debug-expression-placeholder { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 0 6; }
+.debug-panel .debug-evaluate-bar { -fx-padding: 0 0 2 0; }
+.debug-panel .debug-eval-expand:selected { -fx-background-color: -color-accent-subtle; -fx-background-radius: 3; }
+/* The evaluation's row at the top of Variables (and the Evaluate window's result): its expression set apart. */
+.debug-panel .debug-result-name { -fx-font-weight: bold; }
+/* The Evaluate window. */
+.debug-evaluate-window { -fx-background-color: -color-bg-default; }
+.debug-evaluate-window .debug-eval-keys,
+.debug-evaluate-window .debug-eval-context { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
+.debug-evaluate-window .debug-eval-result {
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+}
+/* Quick Evaluate's failure, in the value popup: the adapter's reason, drawn as an error. */
+.debug-value-popup .debug-value-line:failed { -fx-text-fill: -color-danger-fg; }
 /* Thread selector over the frames list. */
 .debug-panel .debug-threads {
     -fx-font-size: 12px;

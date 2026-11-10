@@ -170,7 +170,9 @@ public final class DapModels {
         /** {@code toString()} threw (or gave nothing). */
         TO_STRING_FAILED,
         /** A click asked for a {@link #NOT_LOADED} row and the answer has not come yet (the Variables tree only). */
-        LOADING
+        LOADING,
+        /** A watch the user paused: shown, not evaluated at each stop (Resume Watch, or Evaluate Once). */
+        PAUSED
     }
 
     /** Where execution is currently suspended (top frame), used to highlight + jump the editor. */

@@ -168,6 +168,27 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public List<String> debugPausedWatches() {
+        return mc.config.getWorkspaceState().getDebugPausedWatches();
+    }
+
+    @Override
+    public void persistDebugPausedWatches(List<String> paused) {
+        mc.config.getWorkspaceState().setDebugPausedWatches(new java.util.ArrayList<>(paused));
+    }
+
+    @Override
+    public List<String> debugEvaluateHistory() {
+        return mc.config.getWorkspaceState().getDebugEvaluateHistory();
+    }
+
+    @Override
+    public void persistDebugEvaluateHistory(List<String> history) {
+        mc.config.getWorkspaceState().setDebugEvaluateHistory(new java.util.ArrayList<>(history));
+        mc.config.save();
+    }
+
+    @Override
     public void openLibraryFrame(Path anchor, String uri, int line0, java.util.function.Consumer<EditorBuffer> opened) {
         mc.lspCoordinator.openLibraryFrame(anchor, uri, line0, opened);
     }

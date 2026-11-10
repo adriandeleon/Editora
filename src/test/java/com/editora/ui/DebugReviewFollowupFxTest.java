@@ -137,6 +137,7 @@ class DebugReviewFollowupFxTest {
                 eval.fireEvent(new javafx.event.ActionEvent());
                 eval.setText("x");
                 eval.fireEvent(key(KeyCode.UP, false, false));
+                eval.fireEvent(new KeyEvent(KeyEvent.KEY_RELEASED, "", "", KeyCode.UP, false, false, false, false));
                 assertEquals("count", eval.getText());
 
                 // Typing a "." asks by itself.

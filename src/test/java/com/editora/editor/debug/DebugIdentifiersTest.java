@@ -74,4 +74,18 @@ class DebugIdentifiersTest {
         assertEquals(List.of("p"), DebugIdentifiers.matchesIn("print(p.x)", Set.of("p", "x")));
         assertEquals(List.of("x", "self"), DebugIdentifiers.matchesIn("x = self . x", Set.of("x", "self")));
     }
+
+    @Test
+    void quickEvaluateTakesACallWithItsArguments() {
+        String line = "total = list.get(i + 1) + size(\"a)\", n)";
+        assertEquals("list.get(i + 1)", DebugIdentifiers.quickExpressionAt(line, line.indexOf("get") + 1));
+        assertEquals("list", DebugIdentifiers.quickExpressionAt(line, line.indexOf("list") + 1), "the object alone");
+        assertEquals(
+                "size(\"a)\", n)",
+                DebugIdentifiers.quickExpressionAt(line, line.indexOf("size")),
+                "a parenthesis in a string does not close the call");
+        assertEquals("total", DebugIdentifiers.quickExpressionAt(line, 2));
+        assertEquals("f", DebugIdentifiers.quickExpressionAt("x = f(a, ", 4), "a call not closed on the line");
+        assertEquals(null, DebugIdentifiers.quickExpressionAt(line, line.indexOf('+')));
+    }
 }

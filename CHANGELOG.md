@@ -34,6 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Evaluate expressions as IntelliJ does.** The Debug window has an evaluate field at the top of Variables. Its result
+  is the first row, and an object's fields open under it, with Copy Value, Set Value and Add to Watches on them. A
+  button beside the field adds the expression to Watches. *Debug: Evaluate Expression* (Alt+F8 in the IntelliJ keymap,
+  `C-c C-d x` in Emacs, and in the editor's right-click menu while paused) now opens an Evaluate window, which you can
+  keep beside the editor or open several of. It starts with the selection or the expression at the caret, and its
+  result is a tree too. Both fields are small code editors: highlighted in the language you are stopped in, with your
+  keymap's keys (Emacs `C-a`, `M-f`, `C-k`, `C-y`…), completion and a history kept between sessions (Up / Down,
+  `M-p` / `M-n`). Shift+Enter turns a field into a code fragment of several lines, evaluated with Ctrl+Enter.
+  **Alt+click** on an expression while paused evaluates it at once, a method call with its arguments included, or the
+  selection when you click in it. Watches can be paused (listed but not evaluated at each stop), evaluated once, and
+  removed all at once. The Debug console's input field also takes your keymap's keys now. *Debug: Focus Evaluate
+  Field* goes to the field in Variables, which *Debug: Evaluate Expression* used to do for the console's field.
 - **Project Map cards read like the editor.** Code cards now show the language server's semantic highlighting and
   inlay hints, and pin the headers of the class or method you have scrolled into, as the editor does. Each follows
   its editor setting.
