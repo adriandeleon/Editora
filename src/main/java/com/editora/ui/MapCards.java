@@ -183,6 +183,9 @@ final class MapCards {
 
         /** {@code card} closed: its stops in the Map's history become their places. */
         default void cardClosed(ProjectMapPreview card) {}
+
+        /** A file card's Dependencies: the Map's Dependencies card opens on its file, beside it (gap 14). */
+        default void showDependencies(ProjectMapPreview card, Path file) {}
     }
 
     /**
@@ -225,6 +228,8 @@ final class MapCards {
     private @Nullable ProjectMapOverviewCard overviewCard;
     /** The declaration History card, when open (gap 12): one at a time, not counted against the limit. */
     private @Nullable ProjectMapHistoryCard historyCard;
+    /** The Dependencies card, when open (gap 14): one at a time, not counted against the limit. */
+    private @Nullable ProjectMapDependencyCard dependencyCard;
     /** Changes or Blame: what the last History card showed, and the next one opens with. */
     private ProjectMapHistoryCard.Mode historyMode = ProjectMapHistoryCard.Mode.CHANGES;
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
@@ -999,16 +1004,84 @@ final class MapCards {
         focusReturnToMap(focused);
     }
 
-    /** The cards there is one of at most — the Overview and the History card — that are open. */
+    /** The cards there is one of at most — the Overview, the History and the Dependencies card — that are open. */
     private List<Region> soloCards() {
-        List<Region> solo = new ArrayList<>(2);
+        List<Region> solo = new ArrayList<>(3);
         if (overviewCard != null) {
             solo.add(overviewCard);
         }
         if (historyCard != null) {
             solo.add(historyCard);
         }
+        if (dependencyCard != null) {
+            solo.add(dependencyCard);
+        }
         return solo;
+    }
+
+    /**
+     * Opens the Dependencies card (gap 14) on {@code rel} of the project at {@code root} — a folder ({@code ""}: the
+     * project) or a file — beside {@code beside} when given (the file's card it was asked from), else where a card of
+     * {@code root.resolve(rel)} would open; or moves the open one onto it and brings it up. {@code setUp} is called once,
+     * on a new card, to give it its actions.
+     */
+    ProjectMapDependencyCard openDependencyCard(
+            Path root, String rel, boolean folder, @Nullable Region beside, Consumer<ProjectMapDependencyCard> setUp) {
+        ProjectMapDependencyCard card = dependencyCard;
+        boolean created = card == null;
+        if (card == null) {
+            ProjectMapDependencyCard made = new ProjectMapDependencyCard();
+            made.setOnClose(this::closeDependencyCard);
+            made.setOnActivate(() -> touchCard(made, true));
+            made.setOnEscape(() -> {
+                closeDependencyCard();
+                host.focusMap();
+            });
+            made.setOnOpen((file, line) -> openPlaceCard(null, file, line, null));
+            made.setMapScale(host.zoom());
+            setUp.accept(made);
+            installPreviewListeners(made);
+            dependencyCard = made;
+            cardTouches.put(made, ++cardTouchSequence);
+            canvasHost.getChildren().add(made);
+            card = made;
+        }
+        card.show(root, rel, folder);
+        if (created || beside != null) {
+            Path at = rel.isEmpty() ? root : root.resolve(rel);
+            card.place(besidePlacement(
+                    card,
+                    beside,
+                    at,
+                    ProjectMapDependencyCard.DEFAULT_WIDTH,
+                    ProjectMapDependencyCard.DEFAULT_HEIGHT,
+                    ProjectMapDependencyCard.MIN_WIDTH,
+                    ProjectMapDependencyCard.MIN_HEIGHT));
+        }
+        touchCard(card, true);
+        if (created) {
+            repaintPreviewConnectors();
+        }
+        return card;
+    }
+
+    /** The open Dependencies card, or null. */
+    @Nullable
+    ProjectMapDependencyCard dependencyCard() {
+        return dependencyCard;
+    }
+
+    private void closeDependencyCard() {
+        ProjectMapDependencyCard card = dependencyCard;
+        if (card == null) {
+            return;
+        }
+        boolean focused = focusReturnsFrom(card);
+        dependencyCard = null;
+        cardTouches.remove(card);
+        canvasHost.getChildren().remove(card);
+        repaintPreviewConnectors();
+        focusReturnToMap(focused);
     }
 
     /**
@@ -1083,30 +1156,48 @@ final class MapCards {
      */
     private ProjectMapPreview.Placement historyPlacement(
             ProjectMapHistoryCard history, ProjectMapPreview card, Path file) {
-        double width = canvasHost.getWidth();
-        double height = canvasHost.getHeight();
-        double scale = cardScale(history);
-        List<double[]> obstacles = new ArrayList<>(cardsTaken(history));
-        obstacles.addAll(host.chrome());
-        double[] spot = historySpot(
-                drawnBounds(card),
-                ProjectMapHistoryCard.DEFAULT_WIDTH * scale,
-                ProjectMapHistoryCard.DEFAULT_HEIGHT * scale,
-                ProjectMapHistoryCard.MIN_WIDTH * scale,
-                ProjectMapHistoryCard.MIN_HEIGHT * scale,
-                width,
-                height,
-                obstacles);
+        return besidePlacement(
+                history,
+                card,
+                file,
+                ProjectMapHistoryCard.DEFAULT_WIDTH,
+                ProjectMapHistoryCard.DEFAULT_HEIGHT,
+                ProjectMapHistoryCard.MIN_WIDTH,
+                ProjectMapHistoryCard.MIN_HEIGHT);
+    }
+
+    /**
+     * Where a card {@code width × height} (at least {@code minimumWidth × minimumHeight}, unzoomed) opens beside {@code
+     * source}: as {@link #historySpot} finds; with no source, or no room beside it, as any card of {@code file} is
+     * placed ({@link #previewPlacement}). The map is not panned.
+     */
+    private ProjectMapPreview.Placement besidePlacement(
+            MapFloatingCard card,
+            @Nullable Region source,
+            Path file,
+            double width,
+            double height,
+            double minimumWidth,
+            double minimumHeight) {
+        double parentWidth = canvasHost.getWidth();
+        double parentHeight = canvasHost.getHeight();
+        double scale = cardScale(card);
+        double[] spot = null;
+        if (source != null) {
+            List<double[]> obstacles = new ArrayList<>(cardsTaken(card));
+            obstacles.addAll(host.chrome());
+            spot = historySpot(
+                    drawnBounds(source),
+                    width * scale,
+                    height * scale,
+                    minimumWidth * scale,
+                    minimumHeight * scale,
+                    parentWidth,
+                    parentHeight,
+                    obstacles);
+        }
         if (spot == null) {
-            return previewPlacement(
-                    history,
-                    file,
-                    ProjectMapHistoryCard.DEFAULT_WIDTH,
-                    ProjectMapHistoryCard.DEFAULT_HEIGHT,
-                    ProjectMapHistoryCard.MIN_WIDTH,
-                    ProjectMapHistoryCard.MIN_HEIGHT,
-                    width,
-                    height);
+            return previewPlacement(card, file, width, height, minimumWidth, minimumHeight, parentWidth, parentHeight);
         }
         return new ProjectMapPreview.Placement(spot[0], spot[1], spot[2] / scale, spot[3] / scale);
     }
@@ -1197,6 +1288,16 @@ final class MapCards {
         Path historyFile = history == null ? null : history.file();
         if (history != null && historyFile != null) {
             open.add(new OpenCard(historyFile, history, history.title(), false));
+        }
+        ProjectMapDependencyCard dependencies = dependencyCard;
+        Path dependencyRoot = dependencies == null ? null : dependencies.root();
+        if (dependencies != null && dependencyRoot != null) {
+            String rel = dependencies.subject();
+            open.add(new OpenCard(
+                    rel.isEmpty() ? dependencyRoot : dependencyRoot.resolve(rel),
+                    dependencies,
+                    dependencies.title(),
+                    false));
         }
         open.sort(java.util.Comparator.comparingLong((OpenCard card) -> cardTouches.getOrDefault(card.node(), 0L))
                 .reversed());
@@ -1399,8 +1500,8 @@ final class MapCards {
             note.focusContent();
         } else if (card instanceof ProjectMapOverviewCard overview) {
             overview.focusContent();
-        } else if (card instanceof ProjectMapHistoryCard history) {
-            history.focusContent();
+        } else if (card instanceof MapFloatingCard floating) {
+            floating.focusContent(); // the History card, the Dependencies card
         }
     }
 
@@ -1419,6 +1520,8 @@ final class MapCards {
             closeOverviewCard();
         } else if (card == historyCard) {
             closeHistoryCard();
+        } else if (card == dependencyCard) {
+            closeDependencyCard();
         }
     }
 
@@ -1543,10 +1646,11 @@ final class MapCards {
             cards.add(overview);
             overview.setMapScale(zoom);
         }
-        ProjectMapHistoryCard history = historyCard;
-        if (history != null) {
-            cards.add(history);
-            history.setMapScale(zoom);
+        for (Region solo : soloCards()) {
+            if (solo instanceof MapFloatingCard floating) {
+                cards.add(floating); // the History card, the Dependencies card
+                floating.setMapScale(zoom);
+            }
         }
         for (Region card : cards) {
             card.relocate(x + (card.getLayoutX() - fromX) * ratio, y + (card.getLayoutY() - fromY) * ratio);
@@ -1995,6 +2099,12 @@ final class MapCards {
         preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
         preview.setFollowActions(followActions);
+        preview.setOnDependencies(() -> {
+            Path shown = preview.path();
+            if (shown != null) {
+                host.showDependencies(preview, shown);
+            }
+        });
         preview.setLinkActions(links.available() ? cardNavigation : null);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
@@ -2662,6 +2772,7 @@ final class MapCards {
             Region oldest = oldestCard(card -> card != keep
                     && card != overviewCard
                     && card != historyCard
+                    && card != dependencyCard
                     && !pinnedCards.contains(card)
                     && !links.linksKeepsWhileOpening(card));
             if (oldest instanceof ProjectMapPreview code && cardStructures.containsKey(code)) {
@@ -2777,7 +2888,7 @@ final class MapCards {
             if (current instanceof ProjectMapPreview
                     || current instanceof ProjectMapNotePreview
                     || current instanceof ProjectMapOverviewCard
-                    || current instanceof ProjectMapHistoryCard
+                    || current instanceof MapFloatingCard
                     || current.getStyleClass().contains("project-map-sticky-note")
                     || current.getStyleClass().contains("project-map-card-structure")
                     || current.getStyleClass().contains("project-map-link-more")) {
@@ -2891,6 +3002,7 @@ final class MapCards {
         }
         closeOverviewCard();
         closeHistoryCard();
+        closeDependencyCard();
         List<ProjectMapNotePreview> openNotes = List.copyOf(notePreviews.values());
         notePreviews.clear();
         for (ProjectMapNotePreview preview : openNotes) {
@@ -3083,6 +3195,9 @@ final class MapCards {
         }
         if (historyCard != null) {
             historyCard.constrainTo(width, height);
+        }
+        if (dependencyCard != null) {
+            dependencyCard.constrainTo(width, height);
         }
     }
 
@@ -3852,8 +3967,8 @@ final class MapCards {
         if (card instanceof ProjectMapOverviewCard overview) {
             return overview.mapScale();
         }
-        if (card instanceof ProjectMapHistoryCard history) {
-            return history.mapScale();
+        if (card instanceof MapFloatingCard floating) {
+            return floating.mapScale(); // the History card, the Dependencies card
         }
         return card instanceof ProjectMapNotePreview note ? note.mapScale() : 1;
     }

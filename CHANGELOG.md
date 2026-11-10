@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dependencies on the Project Map.** *Dependencies* in a folder's or source file's menu on the Map, or in a code
+  card's menu, and *Project Dependencies* in the ⋯ menu open a card that shows what a file or folder uses of the
+  project and what uses it, file by file or folder by folder, with what is on both sides marked. For a folder,
+  *Inside* shows how its parts use each other as a matrix ordered so that cycles stand out. Press anything to see the
+  import lines behind it and open them; Enter moves the card onto it, and Backspace goes back. It reads the files'
+  imports in Java, Kotlin, Groovy, Scala, C#, PHP, Python, JavaScript, TypeScript, Go, Rust, C, C++, Ruby and Dart,
+  without a build or a language server.
 - **Move between Project Map cards with the keyboard.** Ctrl+Shift+arrows move the keyboard to the nearest card in
   that direction, from a card or from the map's selected row. The map only moves when that card is partly out of
   view.

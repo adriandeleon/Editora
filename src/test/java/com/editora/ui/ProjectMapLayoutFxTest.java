@@ -762,6 +762,7 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.flow.menu"), // the flow selector moved here (Map explore, 17)
                             tr("project.map.revealActiveFile"), // review 3, E9
                             tr("project.map.overview.open"), // the Overview card (review 3 B4)
+                            tr("project.map.deps.projectMenu"), // the Dependencies card (gap 14)
                             tr("project.map.openCards"), // the open cards' list (review 3, C10)
                             tr("project.map.collapseAll"), // Map explore, 13
                             tr("project.map.workingSets"), // named views (Map explore, views)

@@ -8,7 +8,6 @@ import java.util.function.Consumer;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
-import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
@@ -20,15 +19,11 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
-import javafx.scene.input.MouseEvent;
-import javafx.scene.input.ScrollEvent;
-import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.transform.Scale;
 
 import com.editora.git.BlameParser;
 import com.editora.git.GitFormat;
@@ -45,7 +40,7 @@ import static com.editora.i18n.Messages.tr;
  * one is open at a time: asking for another declaration's history fills it again. Enter or a double click on a commit,
  * or on a line in Blame, opens that commit's diff of the file in the editor window.
  */
-final class ProjectMapHistoryCard extends StackPane {
+final class ProjectMapHistoryCard extends MapFloatingCard {
 
     static final double DEFAULT_WIDTH = 480;
     static final double DEFAULT_HEIGHT = 540;
@@ -65,10 +60,6 @@ final class ProjectMapHistoryCard extends StackPane {
     /** One of the declaration's lines as it is now, with the commit that last changed it (null: not known yet). */
     record BlameRow(int line, String text, BlameParser.@Nullable BlameLine blame) {}
 
-    private final BorderPane frame = new BorderPane();
-    private final HBox titleBar = new HBox(7);
-    private final Label title = new Label();
-    private final Button close = new Button("×");
     private final Label summary = new Label();
     private final ListView<LineHistory.Commit> commits = new ListView<>();
     private final ToggleGroup modes = new ToggleGroup();
@@ -78,12 +69,7 @@ final class ProjectMapHistoryCard extends StackPane {
     private final ListView<String> diff = new ListView<>();
     private final ListView<BlameRow> blame = new ListView<>();
     private final StackPane lower = new StackPane();
-    private final Region resizeGrip = new Region();
-    private final Scale mapZoom = new Scale(1, 1, 0, 0);
 
-    private Runnable onClose = () -> setVisible(false);
-    private Runnable onActivate = () -> {};
-    private Runnable onEscape = () -> onClose.run();
     private Consumer<LineHistory.Commit> onOpenCommit = commit -> {};
     private Consumer<Mode> onModeChanged = mode -> {};
 
@@ -98,39 +84,8 @@ final class ProjectMapHistoryCard extends StackPane {
     /** Bumped by each {@link #show}: an answer for an earlier declaration is dropped. */
     private long shown;
 
-    private boolean placed;
-    private double preferredWidth = DEFAULT_WIDTH;
-    private double preferredHeight = DEFAULT_HEIGHT;
-    private double dragScreenX;
-    private double dragScreenY;
-    private double dragLayoutX;
-    private double dragLayoutY;
-    private double resizeScreenX;
-    private double resizeScreenY;
-    private double resizeWidth;
-    private double resizeHeight;
-
     ProjectMapHistoryCard() {
-        getStyleClass().addAll("project-map-preview", "project-map-history-card");
-        getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setManaged(false);
-        setVisible(false);
-        title.getStyleClass().add("project-map-preview-title");
-        title.setMinWidth(0);
-        title.setMnemonicParsing(false);
-        title.setGraphic(Icons.gitLog());
-        HBox.setHgrow(title, Priority.ALWAYS);
-        close.getStyleClass().add("project-map-preview-button");
-        close.setMinWidth(Region.USE_PREF_SIZE);
-        close.setTooltip(new Tooltip(tr("project.map.preview.close")));
-        close.setAccessibleText(tr("project.map.preview.close"));
-        close.setOnAction(event -> onClose.run());
-        titleBar.getStyleClass().add("project-map-preview-header");
-        titleBar.setAlignment(Pos.CENTER_LEFT);
-        titleBar.getChildren().setAll(title, close);
-        titleBar.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
-        titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
-
+        super("project-map-history-card", Icons.gitLog(), MIN_WIDTH, MIN_HEIGHT);
         summary.getStyleClass().add("project-map-history-summary");
         summary.setWrapText(true);
         summary.setMnemonicParsing(false);
@@ -203,43 +158,7 @@ final class ProjectMapHistoryCard extends StackPane {
         VBox body = new VBox(summary, split);
         VBox.setVgrow(split, Priority.ALWAYS);
         summary.setPadding(new Insets(6, 10, 6, 10));
-        frame.getStyleClass().add("project-map-preview-frame");
-        frame.setTop(titleBar);
         frame.setCenter(body);
-        resizeGrip.getStyleClass().add("project-map-preview-resize");
-        resizeGrip.setCursor(Cursor.SE_RESIZE);
-        resizeGrip.addEventHandler(MouseEvent.MOUSE_PRESSED, this::resizePressed);
-        resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
-        getChildren().addAll(frame, resizeGrip);
-        getTransforms().add(mapZoom);
-        addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
-            toFront();
-            onActivate.run();
-        });
-        focusWithinProperty().addListener((obs, was, within) -> {
-            if (within) {
-                toFront();
-                onActivate.run();
-            }
-        });
-        addEventFilter(ScrollEvent.SCROLL, event -> onActivate.run());
-        getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, ProjectMapPreview.GEOMETRY_KEYS);
-        addEventFilter(KeyEvent.KEY_PRESSED, event -> {
-            double[] step = ProjectMapPreview.geometryStep(event);
-            if (step != null) {
-                moveOrResizeBy(step);
-                event.consume();
-                return;
-            }
-            if (event.getCode() == KeyCode.ESCAPE
-                    && !event.isShiftDown()
-                    && !event.isControlDown()
-                    && !event.isAltDown()
-                    && !event.isMetaDown()) {
-                onEscape.run();
-                event.consume();
-            }
-        });
     }
 
     /**
@@ -432,10 +351,6 @@ final class ProjectMapHistoryCard extends StackPane {
         return openBlamed(blame.getSelectionModel().getSelectedItem());
     }
 
-    String title() {
-        return title.getText();
-    }
-
     String summaryText() {
         return summary.getText();
     }
@@ -477,18 +392,6 @@ final class ProjectMapHistoryCard extends StackPane {
         return history;
     }
 
-    void setOnClose(Runnable action) {
-        onClose = action;
-    }
-
-    void setOnActivate(Runnable action) {
-        onActivate = action;
-    }
-
-    void setOnEscape(Runnable action) {
-        onEscape = action;
-    }
-
     /** What Open Commit, Enter or a double click on a commit does: its diff of the file opens in the editor. */
     void setOnOpenCommit(Consumer<LineHistory.Commit> action) {
         onOpenCommit = action;
@@ -500,49 +403,9 @@ final class ProjectMapHistoryCard extends StackPane {
     }
 
     /** Moves the keyboard into the card: its list of commits. */
+    @Override
     void focusContent() {
         commits.requestFocus();
-    }
-
-    /** Places the card and shows it. */
-    void place(ProjectMapPreview.Placement placement) {
-        setVisible(true);
-        resizeRelocate(placement.x(), placement.y(), placement.width(), placement.height());
-        preferredWidth = placement.width();
-        preferredHeight = placement.height();
-        placed = true;
-        toFront();
-    }
-
-    boolean placed() {
-        return placed;
-    }
-
-    void constrainTo(double width, double height) {
-        if (!placed || width <= 0 || height <= 0) {
-            return;
-        }
-        resize(
-                ProjectMapPreview.boundedSize(
-                        preferredWidth, MIN_WIDTH, ProjectMapPreview.unzoomedRoom(width, mapScale())),
-                ProjectMapPreview.boundedSize(
-                        preferredHeight, MIN_HEIGHT, ProjectMapPreview.unzoomedRoom(height, mapScale())));
-    }
-
-    void setMapScale(double scale) {
-        mapZoom.setX(scale);
-        mapZoom.setY(scale);
-    }
-
-    double mapScale() {
-        return mapZoom.getX();
-    }
-
-    @Override
-    protected void layoutChildren() {
-        frame.resizeRelocate(0, 0, getWidth(), getHeight());
-        double grip = 18;
-        resizeGrip.resizeRelocate(Math.max(0, getWidth() - grip), Math.max(0, getHeight() - grip), grip, grip);
     }
 
     // --- rows -----------------------------------------------------------------------------------------------
@@ -714,72 +577,5 @@ final class ProjectMapHistoryCard extends StackPane {
             setAccessibleText(blameLabel(item, now));
             setTooltip(line == null || line.uncommitted() ? null : new Tooltip(line.summary()));
         }
-    }
-
-    // --- moving and sizing (as the Overview card) -----------------------------------------------------------
-
-    private void moveOrResizeBy(double[] step) {
-        double scale = mapScale();
-        if (step[0] != 0 || step[1] != 0) {
-            relocate(getLayoutX() + step[0], getLayoutY() + step[1]);
-        } else if (getParent() instanceof Region parent) {
-            preferredWidth = ProjectMapPreview.boundedSize(
-                    getWidth() + step[2] / scale,
-                    MIN_WIDTH,
-                    Math.max(1, ProjectMapPreview.unzoomedRoom(parent.getWidth(), scale)));
-            preferredHeight = ProjectMapPreview.boundedSize(
-                    getHeight() + step[3] / scale,
-                    MIN_HEIGHT,
-                    Math.max(1, ProjectMapPreview.unzoomedRoom(parent.getHeight(), scale)));
-            resize(preferredWidth, preferredHeight);
-        }
-        ProjectMapPreview.announceGeometry(this, scale);
-    }
-
-    private void dragPressed(MouseEvent event) {
-        if (event.getTarget() instanceof Button || event.getButton() != MouseButton.PRIMARY) {
-            return;
-        }
-        dragScreenX = event.getScreenX();
-        dragScreenY = event.getScreenY();
-        dragLayoutX = getLayoutX();
-        dragLayoutY = getLayoutY();
-        event.consume();
-    }
-
-    private void dragged(MouseEvent event) {
-        if (!event.isPrimaryButtonDown()) {
-            return;
-        }
-        relocate(dragLayoutX + event.getScreenX() - dragScreenX, dragLayoutY + event.getScreenY() - dragScreenY);
-        event.consume();
-    }
-
-    private void resizePressed(MouseEvent event) {
-        if (event.getButton() != MouseButton.PRIMARY) {
-            return;
-        }
-        resizeScreenX = event.getScreenX();
-        resizeScreenY = event.getScreenY();
-        resizeWidth = getWidth();
-        resizeHeight = getHeight();
-        event.consume();
-    }
-
-    private void resized(MouseEvent event) {
-        if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
-            return;
-        }
-        double scale = mapScale();
-        preferredWidth = ProjectMapPreview.boundedSize(
-                resizeWidth + (event.getScreenX() - resizeScreenX) / scale,
-                MIN_WIDTH,
-                Math.max(1, ProjectMapPreview.unzoomedRoom(parent.getWidth(), scale)));
-        preferredHeight = ProjectMapPreview.boundedSize(
-                resizeHeight + (event.getScreenY() - resizeScreenY) / scale,
-                MIN_HEIGHT,
-                Math.max(1, ProjectMapPreview.unzoomedRoom(parent.getHeight(), scale)));
-        resize(preferredWidth, preferredHeight);
-        event.consume();
     }
 }
