@@ -293,6 +293,7 @@ final class MenuBarModel {
                                 "debug.attachToProcess",
                                 "debug.reattach",
                                 "debug.stop",
+                                "debug.stopAll",
                                 "debug.restart",
                                 "debug.toggleBreakpoint",
                                 submenu("menubar.run.debugger"),

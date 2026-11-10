@@ -46,8 +46,9 @@ class DebugPanelFocusRetentionFxTest {
 
     private boolean focusWithinDebugPanel() throws Exception {
         return FxTestSupport.callOnFx(() -> {
-            DebugPanel panel =
-                    FxTestSupport.field(FxTestSupport.field(fx.controller, "debugCoordinator"), "debugPanel");
+            DebugPanel panel = FxTestSupport.<DebugCoordinator>field(fx.controller, "debugCoordinator")
+                    .s()
+                    .panel;
             Stage stage = FxTestSupport.field(fx.controller, "stage");
             Node owner = stage.getScene() == null ? null : stage.getScene().getFocusOwner();
             for (Node n = owner; n != null; n = n.getParent()) {

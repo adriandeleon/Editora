@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug several programs at once.** Start debugging another file while a session runs (F5 or *Debug File*) and
+  Editora asks whether to *Debug Both*, *Stop and Debug* the new file instead, or cancel. Each session gets a tab in
+  the Debug window with its own console, call stack, variables and Debug History. The toolbar, F-keys, the
+  execution line, inline values and hovers follow the session shown, and a session that stops is shown by itself.
+  Breakpoints, Mute and exception settings apply to every session. *Stop All* (in the tab strip, the Run menu and
+  *Debug: Stop All Sessions*) ends them all. An ended session keeps its tab and output until you close it.
+
 - **Move between Project Map cards with the keyboard.** Ctrl+Shift+arrows move the keyboard to the nearest card in
   that direction, from a card or from the map's selected row. The map only moves when that card is partly out of
   view.
