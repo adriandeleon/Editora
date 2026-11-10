@@ -4984,6 +4984,12 @@
 }
 /* Threads view: the shown thread bold, a suspended thread's state in the accent colour. */
 .debug-panel .debug-threads-toggle { -fx-font-size: 11px; -fx-padding: 1 6 1 6; }
+/* Several debug sessions: one tab each above the shown session's panel (DebugSessionsView). */
+.debug-sessions-strip { -fx-padding: 3 6 1 6; }
+.debug-sessions-strip .debug-threads-toggle { -fx-font-size: 11px; -fx-padding: 1 6 1 6; }
+.debug-sessions-strip .debug-session-ended { -fx-opacity: 0.7; }
+.debug-sessions-strip .debug-session-close { -fx-font-size: 11px; -fx-padding: 0 4 0 2; }
+.debug-sessions-strip .debug-session-stop-all { -fx-font-size: 11px; -fx-padding: 1 8 1 8; }
 /* Disassembly and Memory views: monospaced, the instruction the frame is at marked as the editor marks its line. */
 .debug-panel .debug-disassembly-list .label,
 .debug-panel .debug-memory-rows .list-cell { -fx-font-family: "JetBrains Mono", "Consolas", monospace; }

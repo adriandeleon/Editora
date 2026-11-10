@@ -2143,6 +2143,9 @@ final class WindowCommandRegistrar {
                         Command.of("debug.stop", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stop)));
         host.registry()
                 .register(Command.of(
+                        "debug.stopAll", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stopAll)));
+        host.registry()
+                .register(Command.of(
                         "debug.restart", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restart)));
         host.registry()
                 .register(Command.of(

@@ -1009,7 +1009,8 @@ class DebugCoordinatorCommandsFxTest {
             return false; // "Cancel": a running program is not ended by a key pressed in another tab
         };
         FxTestSupport.runOnFx(() -> debug.debugStart());
-        assertEquals(List.of(tr("dialog.debug.retargetContent", "Args.java", "Other.java")), asked);
+        // A running session can be kept beside the new one: the question offers Debug Both.
+        assertEquals(List.of(tr("dialog.debug.retargetBothQuestion", "Args.java", "Other.java")), asked);
         assertEquals(1, first.disconnected.getCount(), "declined: the running session goes on");
         debug.confirmRetarget = question -> true;
         FxTestSupport.runOnFx(() -> debug.debugStart());

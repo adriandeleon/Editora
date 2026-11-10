@@ -55,7 +55,9 @@ final class BreakpointsPicker {
 
     private final CoordinatorHost host;
     private final DebugCoordinator.Ops ops;
-    private final DapManager dapManager;
+    /** Every debug session's manager: a change is sent to each live one. */
+    private final java.util.function.Supplier<List<DapManager>> managers;
+
     private final Runnable toggleMute;
     private final java.util.function.BooleanSupplier muted;
     private final @Nullable MemberBreakpointCommands members;
@@ -76,9 +78,19 @@ final class BreakpointsPicker {
             Runnable toggleMute,
             java.util.function.BooleanSupplier muted,
             @Nullable MemberBreakpointCommands members) {
+        this(host, ops, () -> List.of(dapManager), toggleMute, muted, members);
+    }
+
+    BreakpointsPicker(
+            CoordinatorHost host,
+            DebugCoordinator.Ops ops,
+            java.util.function.Supplier<List<DapManager>> managers,
+            Runnable toggleMute,
+            java.util.function.BooleanSupplier muted,
+            @Nullable MemberBreakpointCommands members) {
         this.host = host;
         this.ops = ops;
-        this.dapManager = dapManager;
+        this.managers = managers;
         this.toggleMute = toggleMute;
         this.muted = muted;
         this.members = members;
@@ -344,7 +356,7 @@ final class BreakpointsPicker {
         }
         ops.saveBreakpoints();
         ops.breakpointsStored(map, e.key());
-        if (dapManager.isActive() && !muted.getAsBoolean()) {
+        if (!muted.getAsBoolean()) {
             List<DapModels.LineBreakpoint> lines = new ArrayList<>();
             for (Breakpoint bp : list) {
                 if (bp.enabled()) {
@@ -352,7 +364,11 @@ final class BreakpointsPicker {
                             bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
                 }
             }
-            dapManager.updateBreakpoints(new DapModels.FileBreakpoints(e.file(), lines));
+            for (DapManager each : managers.get()) {
+                if (each.isActive()) {
+                    each.updateBreakpoints(new DapModels.FileBreakpoints(e.file(), lines));
+                }
+            }
         }
     }
 }

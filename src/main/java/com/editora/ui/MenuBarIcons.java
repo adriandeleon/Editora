@@ -129,6 +129,7 @@ final class MenuBarIcons {
         add("debug.stepInto", Icons::debugStepInto);
         add("debug.stepOut", Icons::debugStepOut);
         add("debug.stop", Icons::debugStop);
+        add("debug.stopAll", Icons::debugStop);
         add("test.run", Icons::testResults);
         add("test.rerunFailed", Icons::refresh);
         add("git.commit", Icons::git);

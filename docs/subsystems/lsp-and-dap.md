@@ -1687,12 +1687,31 @@ gutter. `debugEffectiveFor(language)` gates start (java = the jdtls server enabl
 found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable + detected adapter).
 `DapManager` stays a `MainController` field (built on `lspManager`) and is passed in, mirroring the
 `lspManager`/`LspCoordinator` split. The coordinator holds it as the first session of
-[`ui/DebugSessions`](../../src/main/java/com/editora/ui/DebugSessions.java): `s()` is the focused
-[`ui/DebugSession`](../../src/main/java/com/editora/ui/DebugSession.java) — its manager (`dap()`) and what the
-coordinator keeps about that session (the launch in progress, its relaunch, the breakpoints sent to it and its
-answers, the stop shown, the exception card's stop, the Memory view's address, recording-breakpoint stops, code
-replace) — and every debug command, the execution line, inline values, hovers and pins act on it. A window has one
-session for now; `MainController.focusedDap()` is what the palette, Jump to Line and the test runner ask.
+[`ui/DebugSessions`](../../src/main/java/com/editora/ui/DebugSessions.java). Each
+[`ui/DebugSession`](../../src/main/java/com/editora/ui/DebugSession.java) has its manager, its own `DebugPanel`
+(console, call stack, variables, Debug History) and what the coordinator keeps about it: the launch in progress, its
+relaunch, the breakpoints sent to it and its answers, the stop shown, the exception card's stop, the Memory view's
+address, recording-breakpoint stops, code replace, the text its files were launched from.
+
+**Several sessions.** F5 or Debug File in another file while a session runs asks *Debug Both*, *Stop and Debug* or
+Cancel (`askRetarget`; Debug Both only beside a session that has started, since a window runs one before-launch step
+or build at a time). Debug Both makes a session on `DapManager.newSession()` — the same `DapSettings` — and focuses it
+(`openSession`). The same file asked again is not debugged twice: the session debugging it is shown and says so.
+`s()` is the session being handled: `inSession(session, …)` sets it for the duration of a call, and otherwise it is
+the focused one. Everything a session's manager hands the FX thread runs as that session's: its listener and its
+panel's `Actions` are proxies that wrap each call in `inSession` (`inSessionProxy`), and `DapManager.fx()` runs every
+reply through `setCallbackWrapper`. Launch steps that finish later carry the session that started them —
+`BeforeLaunchStep.setContext`, `later()`/`laterIn()`, `startOffFx`, `asThisSession` for the jdtls build — so a tab
+clicked meanwhile does not launch into the wrong session. Only the focused session (`shown()`) marks the editor
+(execution line, inline values, exception card, breakpoint states, pins) and the status bar's debug state; a session
+that stops, other than on a recording breakpoint, is focused (`focusSession`), which takes the last one's marks off
+the editor and puts the new one's on. Breakpoint changes, Mute, hex values, exception filters and member breakpoints
+go to every session. The tool window's content is `DebugSessionsView`: the focused session's panel under a strip of
+tabs, shown with two or more sessions — each its file and state, a × on one that has ended, Stop All while two are
+live (`debug.stopAll`). An ended session keeps its tab and output until closed; past `DebugSessions.MAX_SESSIONS` a
+new one takes the place of the oldest ended one. `MainController.focusedDap()` is what the palette, Jump to Line and
+the test runner ask. `SeveralDebugSessionsWindowFxTest` drives two sessions on the fake adapter;
+`SeveralSessionsProbeFxTest` two debugpy sessions.
 
 The Variables tree marks a value that changed since the previous stop
 ([`ui/DebugValueChanges`](../../src/main/java/com/editora/ui/DebugValueChanges.java)). Values are recorded as rows

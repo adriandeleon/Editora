@@ -24,7 +24,17 @@ final class DebugSession {
         this.dap = dap;
     }
 
+    /** This session's Debug panel: its console, call stack, variables and Debug History; null until built. */
+    @Nullable
+    DebugPanel panel;
+
     // --- the launch -------------------------------------------------------------------------------------
+
+    /** The text each file of the session was launched from (see {@link LaunchedLines}). */
+    final LaunchedLines launchedLines = new LaunchedLines();
+
+    /** Files the console already said were changed since the session started. */
+    final Set<String> changedNoticed = new HashSet<>();
 
     /**
      * The session start waiting for {@code DebugCoordinator.withClosedBreakpoints}'s file reads, else null. Stop and a

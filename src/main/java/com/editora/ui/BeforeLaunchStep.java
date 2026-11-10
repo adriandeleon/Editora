@@ -70,6 +70,18 @@ final class BeforeLaunchStep {
         this.interactive = interactive;
     }
 
+    /**
+     * Asked once as each step starts: how its console lines, its end and the launch after it run — the debug window
+     * runs them as the session that started the step, whichever one is shown by then. Identity by default.
+     */
+    private java.util.function.Supplier<java.util.function.UnaryOperator<Runnable>> context =
+            java.util.function.UnaryOperator::identity;
+
+    /** Sets {@link #context}. */
+    void setContext(java.util.function.Supplier<java.util.function.UnaryOperator<Runnable>> context) {
+        this.context = context;
+    }
+
     /** Whether a before-launch command is in flight — the owner is busy and its Stop control applies. */
     boolean isActive() {
         return active;
@@ -181,6 +193,7 @@ final class BeforeLaunchStep {
             host.setStatus(tr("status.run.busy"));
             return;
         }
+        java.util.function.UnaryOperator<Runnable> in = context.get();
         active = true;
         stopRequested = false;
         String[] lastLine = {""};
@@ -201,32 +214,38 @@ final class BeforeLaunchStep {
                         firstError[0] = line;
                     }
                 }
-                console.output(line, stderr);
+                in.apply(() -> console.output(line, stderr)).run();
             }
 
             @Override
             public void onExit(int code) {
                 active = false;
-                console.ended(code, null);
-                if (stopRequested) {
-                    host.setStatus(tr(command.statusKey() + "Stopped", command.name()));
-                } else if (code == 0) {
-                    then.run();
-                } else {
-                    // Surface the tool's own output: "before-launch failed" alone tells the user nothing
-                    // about which step or why.
-                    host.setStatus(tr(
-                            command.statusKey() + "Failed",
-                            command.name(),
-                            failureDetail(firstError[0], lastLine[0], code)));
-                }
+                in.apply(() -> {
+                            console.ended(code, null);
+                            if (stopRequested) {
+                                host.setStatus(tr(command.statusKey() + "Stopped", command.name()));
+                            } else if (code == 0) {
+                                then.run();
+                            } else {
+                                // Surface the tool's own output: "before-launch failed" alone tells the user
+                                // nothing about which step or why.
+                                host.setStatus(tr(
+                                        command.statusKey() + "Failed",
+                                        command.name(),
+                                        failureDetail(firstError[0], lastLine[0], code)));
+                            }
+                        })
+                        .run();
             }
 
             @Override
             public void onError(String message) {
                 active = false;
-                console.ended(-1, message);
-                host.setStatus(tr(command.statusKey() + "Failed", command.name(), message));
+                in.apply(() -> {
+                            console.ended(-1, message);
+                            host.setStatus(tr(command.statusKey() + "Failed", command.name(), message));
+                        })
+                        .run();
             }
         });
         if (!interactive) {
