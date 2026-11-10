@@ -273,6 +273,12 @@ final class ProjectMapPreview extends StackPane {
          * before the commit when it moved) in the repository at {@code root}, in the editor window.
          */
         default void openCommitFile(Path root, String hash, String path, @Nullable String previousPath) {}
+
+        /**
+         * Copy Permalink: the web address of {@code target} — a file, its 0-based lines {@code startLine..endLine}
+         * marked (none for a negative {@code startLine}), or a folder — at the HEAD commit, on the clipboard.
+         */
+        default void copyPermalink(Path target, int startLine, int endLine) {}
     }
 
     /** The editor commands a card and a declaration row follow the code with, in their menus' order (C12). */
@@ -2869,6 +2875,11 @@ final class ProjectMapPreview extends StackPane {
         }
         items.add(history);
         items.add(annotate);
+        // The web address of what the card shows, at HEAD: its selected lines, else its declaration, else the caret's.
+        MenuItem permalink = new MenuItem(tr("project.map.permalink.copy"));
+        int[] lines = permalinkLines();
+        permalink.setOnAction(ignored -> actions.copyPermalink(file, lines[0], lines[1]));
+        items.add(permalink);
         Runnable dependencies = onDependencies;
         if (dependencies != null && ProjectMapImports.languageOf(file.toString()) != null) {
             // What uses the file and what it uses, as a card on the Map beside this one (gap 14).
@@ -2877,6 +2888,23 @@ final class ProjectMapPreview extends StackPane {
             items.add(uses);
         }
         return items;
+    }
+
+    /**
+     * The file's 0-based lines Copy Permalink marks: the selected ones, else the declaration a declaration card shows,
+     * else the caret's.
+     */
+    int[] permalinkLines() {
+        if (editor.getSelection().getLength() > 0) {
+            int[] lines = GitPermalinks.selectedLines(editor);
+            return new int[] {fileLine(lines[0]), fileLine(lines[1])};
+        }
+        Range shown = range;
+        if (shown != null && !symbolMissing) {
+            return new int[] {shown.startLine(), shown.endLine()};
+        }
+        int caret = fileLine(editor.getCurrentParagraph());
+        return new int[] {caret, caret};
     }
 
     /** Show References as Cards and Show Callers as Cards, at {@link #followAt} (Project Map linked cards). */

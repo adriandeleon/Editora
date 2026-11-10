@@ -573,6 +573,23 @@ final class GitCoordinator {
         blame.showCommitAtCaret();
     }
 
+    /**
+     * Git: Copy Permalink — the web address of the active file at the HEAD commit, the selected lines (or the caret's)
+     * marked, on the clipboard; the status bar says what was copied, or why nothing was.
+     */
+    void copyPermalink() {
+        EditorBuffer b = host.activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (b == null || file == null) {
+            host.setStatus(tr("status.git.permalink.noFile"));
+            return;
+        }
+        int[] lines = GitPermalinks.selectedLines(b.getArea());
+        int start = lines[0];
+        int end = lines[1];
+        service.permalink(file, start, end, link -> host.setStatus(GitPermalinks.copy(link)));
+    }
+
     void onGutterBlameClick(EditorBuffer buffer, int line) {
         blame.onGutterClick(buffer, line);
     }

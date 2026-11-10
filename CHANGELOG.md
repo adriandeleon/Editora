@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Copy Permalink.** *Git: Copy Permalink* (in Git → History) copies the web address of the current file at the
+  HEAD commit, with the selected lines (or the caret's line) marked, ready to paste in a chat or an issue. On the
+  Project Map it is in a code card's menu and in a file's or folder's menu. It works with GitHub, GitLab, Bitbucket,
+  Gitea, Forgejo, Codeberg, sourcehut and Azure DevOps remotes, and keeps the right lines when the file has unsaved
+  or uncommitted edits above them. The status bar says when HEAD is not pushed yet.
 - **Code metrics and hotspots on the Project Map.** *Code Metrics* in a folder's menu on the Map, or *Project Code
   Metrics* in the ⋯ menu, opens a card listing the folder's files, or its subfolders added up, with their lines of
   code and comments, their complexity and their commits of the last 90 days. A hotspot score marks code that is both

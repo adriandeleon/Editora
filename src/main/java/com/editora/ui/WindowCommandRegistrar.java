@@ -2863,6 +2863,8 @@ final class WindowCommandRegistrar {
                         Command.of("git.fileHistory", () -> host.git().ifEnabled(host.gitWindows()::showFileHistory)));
         host.registry().register(Command.of("git.toggleBlame", host.git()::toggleBlame));
         host.registry()
+                .register(Command.of("git.copyPermalink", () -> host.git().ifEnabled(host.git()::copyPermalink)));
+        host.registry()
                 .register(Command.of("git.blameShowCommit", () -> host.git().ifEnabled(host.git()::blameShowCommit)));
         // The active file's changes, worked on in the editor (GitHunkCoordinator).
         host.registry()

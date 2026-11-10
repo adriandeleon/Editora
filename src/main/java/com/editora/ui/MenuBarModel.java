@@ -463,6 +463,7 @@ final class MenuBarModel {
                                                 "git.log.search",
                                                 "git.log.toggleAllBranches",
                                                 "git.fileHistory",
+                                                "git.copyPermalink",
                                                 SEPARATOR,
                                                 "git.toggleBlame",
                                                 "git.blamePreviousRevision")),

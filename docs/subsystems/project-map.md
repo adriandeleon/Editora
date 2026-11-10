@@ -303,7 +303,16 @@ status reads "Last change: before this shallow clone's history" instead of namin
 C7, C8). Asked when a card opens, steps, follows a rename, and on every card refresh that is not the
 once-a-second poll; nothing outside a repository, with Git off (`ProjectTreeFileActions.gitLastChange`), or for an
 uncommitted file. The card menu adds **Annotate** (the editor's blame of the file, at a declaration card's
-declaration) beside **Show Git History**.
+declaration) beside **Show Git History**, and **Copy Permalink** (Map code browser round 2): the web address of the
+card's file at the HEAD commit on the clipboard, with its selected lines marked, else the declaration a declaration
+card shows, else the caret's line (`ProjectMapPreview.permalinkLines`, `GitPermalinks.selectedLines`). A file's or
+folder's row menu has it too, for the whole file or the folder. The address comes from `GitService.permalink`: the
+remote the branch tracks (else `origin`, else the first), its URL read by `GitWebLinks` — GitHub and GitHub
+Enterprise, GitLab, Bitbucket, Gitea, Forgejo and Codeberg, sourcehut and Azure DevOps, each in its own link form, any
+other host as GitHub writes them — and the file's lines on disk mapped to HEAD's, as for the last change; lines that
+are all uncommitted give the whole file's link. The status line says what was copied, that HEAD is not pushed yet
+(the link works once it is), or why there is none: no repository, no commit, no remote on a web host, or a file not
+committed. The editor has the same as **Git: Copy Permalink** (`git.copyPermalink`, in Git → History).
 
 An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
 looks for edits once a second while the Map is on screen and replaces only the range that changed (a buffer
@@ -1791,6 +1800,11 @@ The focused coverage lives in:
   file and by part with and without history, the hotspot score; the card opened from ⋯ and from a folder's row menu,
   the hottest first once history comes, Parts and looking inside, Back, a row's menu and Enter and a double-click
   opening a file's card, Refresh after an edit, the summaries, heat and Escape;
+- `GitWebLinksTest`, `GitServicePermalinkRepoTest` and `CopyPermalinkFxTest` for Copy Permalink: remote URLs in every
+  form (scp, ssh with a port, https with a user, Azure's) and each host's file, line and folder links; a real
+  repository's link at HEAD with lines mapped through uncommitted edits, all-new lines, untracked files, the
+  upstream's remote and whether HEAD is pushed, no repository, commit or remote; the editor command on a selection
+  and at the caret, a card's and a folder row's menu item, and the status line's words;
 - `MapCardSpatialKeysFxTest` for Ctrl+Shift+arrows: the nearest card that way (straight ahead first, one mostly to
   the side left out, ties by centre), the map moved only as far as a card is out of view, which keys move; moving
   between three cards and from the map's selected row, the status with no card that way, and a card partly out of
