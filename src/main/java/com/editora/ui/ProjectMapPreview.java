@@ -581,6 +581,8 @@ final class ProjectMapPreview extends StackPane {
     private java.util.function.@Nullable BiConsumer<Path, Integer> onOpenAt;
     /** A declaration card's Declaration History: the Map's History card opens beside it (gap 12). */
     private @Nullable Runnable onHistory;
+    /** Dependencies: the Map's Dependencies card opens on the card's file, beside it (gap 14). */
+    private @Nullable Runnable onDependencies;
 
     private @Nullable Runnable onOpenNarrowed;
 
@@ -1730,6 +1732,11 @@ final class ProjectMapPreview extends StackPane {
         return range;
     }
 
+    /** What Dependencies does: the Dependencies card opens on the card's file, beside it (gap 14). */
+    void setOnDependencies(Runnable callback) {
+        onDependencies = callback;
+    }
+
     /** What a declaration card's Declaration History does: its History card opens beside it (gap 12). */
     void setOnHistory(Runnable callback) {
         onHistory = callback;
@@ -2862,6 +2869,13 @@ final class ProjectMapPreview extends StackPane {
         }
         items.add(history);
         items.add(annotate);
+        Runnable dependencies = onDependencies;
+        if (dependencies != null && ProjectMapImports.languageOf(file.toString()) != null) {
+            // What uses the file and what it uses, as a card on the Map beside this one (gap 14).
+            MenuItem uses = new MenuItem(tr("project.map.deps.menu"), Icons.dependencies());
+            uses.setOnAction(ignored -> dependencies.run());
+            items.add(uses);
+        }
         return items;
     }
 

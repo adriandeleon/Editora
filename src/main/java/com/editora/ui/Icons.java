@@ -958,6 +958,11 @@ final class Icons {
                 + "-1.5 1.5");
     }
 
+    /** One box joined to two on its right — the Map's Dependencies card. */
+    static Node dependencies() {
+        return line("M1.5 6.5h4v3h-4zM10.5 2.5h4v3h-4zM10.5 10.5h4v3h-4zM5.5 8c2.5 0 2.5-4 5-4M5.5 8c2.5 0 2.5 4 5 4");
+    }
+
     /** Four panes of a dashboard — the Map's Project overview card. */
     static Node overview() {
         return line("M2.5 2.5h4.5v6H2.5zM9 2.5h4.5v3.5H9zM9 8h4.5v5.5H9zM2.5 10.5h4.5v3H2.5z");

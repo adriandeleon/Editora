@@ -1010,6 +1010,49 @@ One History card is open at a time: asking for another declaration's history fil
 earlier ask is dropped, and it opens in Changes or Blame as the last one was left. It moves, resizes and zooms as the
 other cards, Escape in it or on the map closes it, and it is not kept in working sets.
 
+**Dependencies as a card** (Map code browser gap 14, `ProjectMapDependencyCard`). **Dependencies** in a folder's or a
+source file's row menu, or in a code card's menu, and ⋯ → **Project Dependencies**, open the Dependencies card: on the
+row's folder or file where its card would open, beside the code card it was asked from (`MapCards.historySpot`, as the
+History card), and on the project as a card would. It says what of the project a file or folder uses and what uses it,
+read from the files' own import lines — no build and no language server (`ProjectMapImports`): `import`/`package` in
+Java, Kotlin, Groovy and Scala; `using`/`namespace` in C#; `use`/`namespace`/`require` in PHP; `import`/`from … import`
+in Python (absolute ones only from a folder Python would look in, so `import logging` is not a project's
+`tools/logging.py`); relative `import`/`export … from`/`require()`/`import()` in JavaScript and TypeScript, with their
+extensions, `index` files and the `@/`/`~/` aliases of a `src` folder; `import` in Go through the project's `go.mod`
+module paths, to every non-test file of the package; `mod`/`use crate::`/`self::`/`super::` in Rust; `#include "…"` in C,
+C++ and Objective-C (and `<a/b.h>` when the project has it); `require_relative`/`require` (under a `lib/`) in Ruby; and
+`import` in Dart. In the languages with packages, a type of the file's own package (or of a package it imports whole)
+counts when the file names it, a top-level type being one declared at the start of its line (a test's source in a
+string does not declare one). Imports of anything outside the project are left out.
+
+The project is read on a worker thread of its own (`MapDependencyIndex`): the Map search's file list (`.gitignore`d and
+dependency folders left out), at most `MAX_FILES` (20,000) source files of at most 512 KB, saying when there were more.
+Each opening or **Refresh** lists the project again and reads again only the files whose size or time changed, so a
+reading after an edit costs a look at each file's attributes; asked while reading, it reads once more after. Editora's
+own 4,500 sources read in about a second the first time.
+
+**Around** draws the subject in the middle, what uses it in a column on its left and what it uses on its right, joined
+to it by curves as thick as the uses are many, the most uses first (at most `MAX_NODES` 60 a side, then "+N more"); a
+file or folder on both sides is marked ⇄ and its curve dashed. **Files** and **Folders** draw each file, or each folder
+holding them; a file opens with files, a folder with folders, and the card keeps each choice. For a folder only what is
+outside it counts, and the summary says how many of its files were read. **Inside** (a folder) is a matrix of how its
+parts — its subfolders and its own files — use each other: row uses column, the count in the cell, darker for more.
+The parts are in an order where each uses only the parts below it (`ProjectMapDependencies.matrix`: Tarjan's strongly
+connected components, then the components layered, those nothing uses first), so a cell below the diagonal is a cycle,
+and every use between the parts of a cycle is marked red; the summary says how many cycles there are. A folder whose
+files are all in one subfolder shows that one's matrix (`src/main/java/com/acme` rather than `src`), and past
+`MAX_PARTS` (40) the parts with the fewest uses are left out, which the summary says. The project opens Inside, a file
+Around, another folder as the last one did.
+
+A press on a file, a folder or a cell lists the import lines behind it under the picture — each file's line that uses
+the other, with where it is — and Enter or a double-click on one opens that file's card at the line (`openPlaceCard`).
+Enter or a double-click on a file or folder of Around, or a row's name in Inside, moves the card onto it (a folder
+Inside, a file Around); its menu also has **Look Inside**, **Show on Map** and **Open as Card**, and a press on the
+subject in the middle shows it on the map. **‹** or Backspace goes back to where the card was, through every place it
+was moved to, an opening from a menu included. One Dependencies card is open at a time: asking again moves it. It
+moves, resizes and zooms as the other cards, Escape in it closes it, and it is not kept in working sets. It shares its
+frame with the History card (`MapFloatingCard`).
+
 **Searching the files' text** (Map code browser gap 10). A query that starts with `%` (VS Code's quick-search
 sigil) searches what the files say rather than their names: `%needle` runs the window's Find in Files over the
 Map's folder (`ProjectPanel.searchMapText` → `FileActions.searchText` → `SearchCoordinator.mapTextSearch`, on a
@@ -1713,6 +1756,14 @@ The focused coverage lives in:
   from its menu and from a Structure row's, its summary, diff and blame, a blamed line picking its commit, Enter and
   Open Commit opening the commit's diff, one card filled in turn and stale answers dropped, Escape and zoom, and its
   spot beside the card;
+- `ProjectMapImportsTest`, `ProjectMapDependenciesTest` and `MapDependencyCardFxTest` for the Dependencies card:
+  each language's imports resolved to the project's files (a package's types by name, a commented import and a type in
+  a test's string left out, a standard module not taken for a project file, extensions, indexes and aliases, Go
+  modules, Rust paths, includes), the import line kept; Around by file and by folder with what is on both sides, what
+  is behind a node, a folder's matrix layered with its cycle marked, the matrix starting where the files branch and the
+  busiest parts kept; the card opened Inside from ⋯, Around from a folder's row menu and beside a file card from its
+  menu, a cell's and a node's import lines and one opened as a card, moving onto a part and Back, Refresh after an
+  edit, a file whose imports are not read, the summaries, Escape and zoom;
 - `MapCardSpatialKeysFxTest` for Ctrl+Shift+arrows: the nearest card that way (straight ahead first, one mostly to
   the side left out, ties by centre), the map moved only as far as a card is out of view, which keys move; moving
   between three cards and from the map's selected row, the status with no card that way, and a card partly out of

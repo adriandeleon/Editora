@@ -1931,6 +1931,129 @@
 .project-map-history-card .project-map-history-code .list-cell:selected {
     -fx-background-color: -color-accent-muted;
 }
+/* The Project Map's Dependencies card (gap 14): what uses a file or folder and what it uses; a folder's parts' matrix. */
+.project-map-deps-card .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-deps-card .label.project-map-deps-summary,
+.project-map-deps-card .label.project-map-deps-empty,
+.project-map-deps-card .label.project-map-deps-more,
+.project-map-deps-card .label.project-map-deps-where {
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-deps-card .project-map-deps-bar,
+.project-map-deps-card .label.project-map-deps-why-title {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted transparent -color-border-muted transparent;
+    -fx-border-width: 1 0 1 0;
+}
+.project-map-deps-card .label.project-map-deps-why-title {
+    -fx-font-weight: bold;
+}
+.project-map-deps-card .split-pane,
+.project-map-deps-card .list-view,
+.project-map-deps-scroll,
+.project-map-deps-scroll > .viewport,
+.project-map-deps-graph,
+.project-map-deps-matrix {
+    -fx-background-color: -color-bg-default;
+    -fx-background-insets: 0;
+}
+.project-map-deps-card .split-pane,
+.project-map-deps-card .list-view,
+.project-map-deps-scroll {
+    -fx-padding: 0;
+}
+.project-map-deps-card .label.project-map-deps-side {
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-deps-edge {
+    -fx-stroke: -color-border-default;
+    -fx-fill: transparent;
+}
+.project-map-deps-edge.project-map-deps-mutual {
+    -fx-stroke: -color-warning-emphasis;
+    -fx-stroke-dash-array: 5 3;
+}
+.project-map-deps-node,
+.project-map-deps-subject {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 3 7 3 7;
+    -fx-font-size: 12px;
+}
+.project-map-deps-subject {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 1.5;
+    -fx-font-weight: bold;
+}
+.project-map-deps-node.project-map-deps-mutual {
+    -fx-border-color: -color-warning-emphasis;
+}
+.project-map-deps-node:hover,
+.project-map-deps-row:hover {
+    -fx-background-color: -color-accent-subtle;
+}
+.project-map-deps-node.project-map-deps-picked,
+.project-map-deps-row.project-map-deps-picked {
+    -fx-background-color: -color-accent-muted;
+}
+.project-map-deps-node .label.project-map-deps-count {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-deps-card .label.project-map-deps-column {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-deps-row {
+    -fx-font-size: 12px;
+    -fx-padding: 2 6 2 6;
+}
+.project-map-deps-cell {
+    -fx-padding: 0;
+    -fx-font-size: 10px;
+    -fx-background-radius: 3;
+    -fx-border-radius: 3;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-deps-cell.project-map-deps-weight-1 { -fx-background-color: -color-accent-subtle; }
+.project-map-deps-cell.project-map-deps-weight-2 { -fx-background-color: -color-accent-muted; }
+.project-map-deps-cell.project-map-deps-weight-3,
+.project-map-deps-cell.project-map-deps-weight-4 {
+    -fx-background-color: -color-accent-emphasis;
+    -fx-text-fill: -color-fg-on-emphasis;
+}
+.project-map-deps-cell.project-map-deps-cycle {
+    -fx-background-color: -color-danger-subtle;
+    -fx-border-color: -color-danger-emphasis;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-deps-cell.project-map-deps-picked,
+.project-map-deps-cell:focused {
+    -fx-border-color: -color-fg-default;
+    -fx-border-width: 1.5;
+}
+.project-map-deps-self {
+    -fx-background-color: -color-border-muted;
+    -fx-background-radius: 3;
+}
+.project-map-deps-blank {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 3;
+}
+.project-map-deps-card .label.project-map-deps-line {
+    -fx-font-family: "JetBrains Mono", "Consolas", monospace;
+    -fx-font-size: 11px;
+}
+.project-map-deps-card .list-cell:selected .label.project-map-deps-where {
+    -fx-text-fill: -color-fg-default;
+}
 /* The Project Map's Overview card (review 3 B4): a code card's frame, with headed sections of short text and links. */
 .project-map-overview-scroll,
 .project-map-overview-scroll > .viewport,

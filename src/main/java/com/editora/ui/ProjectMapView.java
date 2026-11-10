@@ -102,6 +102,10 @@ final class ProjectMapView extends VBox {
     private final CheckMenuItem layoutHideIgnoredOption = optionItem("project.map.layout.hideIgnored", false);
     /** "Project overview" (review 3 B4): opens the Overview card. */
     private final MenuItem layoutOverviewItem = new MenuItem(tr("project.map.overview.open"));
+    /** ⋯ → Project Dependencies: the Dependencies card on the whole project (gap 14). */
+    private final MenuItem dependenciesItem = new MenuItem(tr("project.map.deps.projectMenu"));
+    /** Which project file uses which, for the Dependencies card (gap 14). */
+    private final MapDependencyIndex dependencyIndex = new MapDependencyIndex();
 
     private Consumer<Boolean> onCompactRowsChanged = ignored -> {};
     private Consumer<Boolean> onHideIgnoredChanged = ignored -> {};
@@ -433,6 +437,7 @@ final class ProjectMapView extends VBox {
         followActiveFile.setGraphic(Icons.fileSelected());
         canvasFlowMenu.setGraphic(Icons.flow());
         layoutOverviewItem.setGraphic(Icons.overview());
+        dependenciesItem.setGraphic(Icons.dependencies());
         openCardsMenu.setGraphic(Icons.cards());
         canvasCollapseAllItem.setGraphic(Icons.collapseAll());
         workingSets.menu().setGraphic(Icons.layers());
@@ -455,6 +460,7 @@ final class ProjectMapView extends VBox {
                         new SeparatorMenuItem(),
                         revealActiveItem,
                         layoutOverviewItem,
+                        dependenciesItem,
                         openCardsMenu,
                         canvasCollapseAllItem,
                         workingSets.menu(),
@@ -491,6 +497,12 @@ final class ProjectMapView extends VBox {
             onHideIgnoredChanged.accept(selected);
         });
         layoutOverviewItem.setOnAction(event -> openOverview());
+        dependenciesItem.setOnAction(event -> {
+            Path current = root;
+            if (current != null) {
+                openDependencies(current, null);
+            }
+        });
         activity.setOnExplain(message -> onStatus.accept(message)); // why no heat shows (Map review 4 B11)
         activityRecentChangesOption.selectedProperty().addListener((obs, old, selected) -> {
             activity.setHeat(selected);
@@ -636,6 +648,7 @@ final class ProjectMapView extends VBox {
      */
     void setOverviewFileSource(@Nullable Function<Path, com.editora.search.ProjectFileList.@Nullable Snapshot> source) {
         orientation.setFileSource(source);
+        dependencyIndex.setFileSource(source);
     }
 
     /** Whether the Map search leaves ignored files out: its "no files match" banner then says so (review 3 A11). */
@@ -650,6 +663,45 @@ final class ProjectMapView extends VBox {
             return;
         }
         orientation.loadFacts(true, facts -> layoutShowOverview(current, facts));
+    }
+
+    /**
+     * Opens the Dependencies card (gap 14) on {@code path} — the project, a folder or a file of it — beside {@code
+     * beside} (the card it was asked from) when given, and reads the project's imports again for it: only the files
+     * changed since the last reading are read.
+     */
+    void openDependencies(Path path, @Nullable Region beside) {
+        Path current = root;
+        if (current == null || disposed) {
+            return;
+        }
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!normalized.startsWith(current)) {
+            return;
+        }
+        String rel = current.relativize(normalized).toString().replace('\\', '/');
+        boolean folder = rel.isEmpty() || java.nio.file.Files.isDirectory(normalized);
+        ProjectMapDependencyCard card = cards.openDependencyCard(current, rel, folder, beside, made -> {
+            made.setOnReveal(this::revealPath);
+            made.setOnRefresh(() -> readDependencies(made));
+        });
+        readDependencies(card);
+        card.focusContent();
+    }
+
+    private void readDependencies(ProjectMapDependencyCard card) {
+        card.setReading();
+        dependencyIndex.load(found -> {
+            if (cards.dependencyCard() == card) {
+                card.setDependencies(found);
+            }
+        });
+    }
+
+    /** The open Dependencies card, or null. */
+    @Nullable
+    ProjectMapDependencyCard dependencyCard() {
+        return cards.dependencyCard();
     }
 
     /** The open Overview card, or null. */
@@ -1112,6 +1164,7 @@ final class ProjectMapView extends VBox {
         pendingSelection = normalized;
         setOutputEnabled(false);
         orientation.setRoot(normalized);
+        dependencyIndex.setRoot(normalized);
         activity.setRoot(normalized);
         surface.resetForRoot();
         if (otherFileSystem) {
@@ -2444,6 +2497,11 @@ final class ProjectMapView extends VBox {
         if (!entry.isSymbol() && surface.notedPaths.contains(entry.path())) {
             items.add(mapMenuItem("project.map.menu.personalNotes", () -> cardsShowNotes(entry.path())));
         }
+        if (entry.directory()
+                || entry.isFile() && ProjectMapImports.languageOf(entry.path().toString()) != null) {
+            // What uses it and what it uses, as a card (gap 14).
+            items.add(mapMenuItem("project.map.deps.menu", () -> openDependencies(entry.path(), null)));
+        }
         Path closable = surface.closeTargetFor(entry);
         if (closable != null) {
             items.add(mapMenuItem("project.map.menu.closeColumn", () -> closeColumn(closable)));
@@ -2986,6 +3044,7 @@ final class ProjectMapView extends VBox {
         cards.dispose();
         usages.dispose();
         orientation.dispose();
+        dependencyIndex.dispose();
         activity.dispose();
         noMatchesDelay.stop();
         if (helpPopup != null) {
@@ -3743,6 +3802,11 @@ final class ProjectMapView extends VBox {
             @Override
             public boolean historyStep(ProjectMapPreview card, boolean back) {
                 return ProjectMapView.this.historyStep(card, back);
+            }
+
+            @Override
+            public void showDependencies(ProjectMapPreview card, Path file) {
+                openDependencies(file, card);
             }
 
             @Override
