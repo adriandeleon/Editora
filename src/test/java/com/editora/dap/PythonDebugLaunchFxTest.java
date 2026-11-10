@@ -207,7 +207,10 @@ class PythonDebugLaunchFxTest {
         assertEquals(file.toString(), launch.get("program").getAsString());
         assertEquals(project.resolve("tools").toString(), launch.get("cwd").getAsString(), "the script's folder");
         assertEquals(List.of("one", "two words"), strings(launch.getAsJsonArray("args")));
-        assertFalse(launch.get("subProcess").getAsBoolean(), "children run without the debugger, not hang");
+        assertTrue(launch.get("subProcess").getAsBoolean(), "each subprocess is debugged in a session of its own");
+        assertTrue(
+                logged("initialize").get("supportsStartDebuggingRequest").getAsBoolean(),
+                "which debugpy asks for with startDebugging");
         assertEquals("internalConsole", launch.get("console").getAsString());
         String pythonPath = launch.getAsJsonObject("env").get("PYTHONPATH").getAsString();
         assertTrue(
@@ -300,6 +303,22 @@ class PythonDebugLaunchFxTest {
         assertEquals(
                 project.resolve(".venv/bin/python").toString(),
                 launch.get("python").getAsString());
+    }
+
+    @Test
+    void withSubprocessesOffChildrenRunWithoutTheDebugger() throws Exception {
+        Path project = projectWithVenv();
+        Path file = Files.createDirectories(project.resolve("tools")).resolve("main.py");
+        Files.writeString(file, "a = 1\nprint(a)\n");
+        configure("", false);
+        onFx(() -> dap.setPythonSubprocesses(false));
+
+        debug(file, project, List.of());
+
+        assertFalse(logged("launch").get("subProcess").getAsBoolean(), "children run without the debugger");
+        assertFalse(
+                logged("initialize").get("supportsStartDebuggingRequest").getAsBoolean(),
+                "and debugpy is not offered startDebugging");
     }
 
     @Test

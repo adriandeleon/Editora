@@ -294,6 +294,9 @@ final class DebugCoordinator {
      */
     private static final Runnable HTTP_SCRIPT_ATTACH = () -> {};
 
+    /** {@link #relaunch} of a subprocess's session: its program starts it again, not Restart. */
+    private static final Runnable SUBPROCESS = () -> {};
+
     /**
      * The session whose event, reply, panel action or launch step is being handled ({@link #inSession}); else the
      * focused one, which the Debug window shows and the debug commands act on.
@@ -623,6 +626,16 @@ final class DebugCoordinator {
      * for it is its own. Past {@link DebugSessions#MAX_SESSIONS}, the oldest session that has ended makes room.
      */
     private DebugSession openSession() {
+        makeRoom();
+        DebugSession session = new DebugSession(sessions.focused().dap.newSession());
+        setUp(session);
+        sessions.add(session);
+        focusSession(session);
+        return session;
+    }
+
+    /** Past {@link DebugSessions#MAX_SESSIONS}, forgets the oldest session that has ended (and is not shown). */
+    private void makeRoom() {
         if (sessions.size() >= DebugSessions.MAX_SESSIONS) {
             for (DebugSession old : sessions.all()) {
                 if (old != sessions.focused() && !inSession(old, this::sessionLive)) {
@@ -632,11 +645,44 @@ final class DebugCoordinator {
                 }
             }
         }
-        DebugSession session = new DebugSession(sessions.focused().dap.newSession());
-        setUp(session);
-        sessions.add(session);
-        focusSession(session);
-        return session;
+    }
+
+    /**
+     * The program of the session being handled started a subprocess the adapter can debug ({@link
+     * DapManager.Listener#onChildSession}): a session of its own attaches to it, beside its parent, named as the
+     * adapter names it ("Subprocess 1234"). It is shown when it stops; its tab goes when it ends unless it is shown;
+     * stopping or ending the parent stops it.
+     */
+    private void openChildSession(java.util.Map<String, Object> configuration) {
+        DebugSession parent = s();
+        makeRoom();
+        DebugSession child = new DebugSession(parent.dap.newSession());
+        child.parent = parent;
+        setUp(child);
+        sessions.add(child);
+        Path anchor = parent.dap.debugFile();
+        String name =
+                configuration.get("name") instanceof String n && !n.isBlank() ? n : tr("debug.sessions.subprocess");
+        inSession(child, () -> {
+            nameSession(name);
+            s().relaunch = SUBPROCESS;
+            dap().startPythonChild(anchor, configuration);
+        });
+        refreshSessionTabs();
+    }
+
+    /** Stops the sessions of the subprocesses of the session being handled that are still live. */
+    private void stopChildren() {
+        DebugSession self = s();
+        for (DebugSession child : sessions.all()) {
+            if (child.parent == self && child != self) {
+                inSession(child, () -> {
+                    if (sessionLive()) {
+                        stopOne();
+                    }
+                });
+            }
+        }
     }
 
     /** Closes the tab of {@code session}, which has ended; a live one, or the window's last, stays. */
@@ -857,6 +903,7 @@ final class DebugCoordinator {
 
     /** Stops the session being handled: a before-launch build still running is what gets stopped; else the session. */
     private void stopOne() {
+        stopChildren(); // a program's subprocesses go with it
         s().closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
         if (beforeLaunchActive()) {
             beforeLaunch().stop();
@@ -921,6 +968,10 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.cannotRestartHttpScript"));
             return;
         }
+        if (again == SUBPROCESS) {
+            host.setStatus(tr("status.debug.cannotRestartSubprocess"));
+            return;
+        }
         if (again == null) {
             dap().restart();
             return;
@@ -931,7 +982,7 @@ final class DebugCoordinator {
 
     /** Whether Restart can do anything for the session there is: not for one attached to a build or test run. */
     boolean restartAvailable() {
-        return s().relaunch != ONE_SHOT_ATTACH && s().relaunch != HTTP_SCRIPT_ATTACH;
+        return s().relaunch != ONE_SHOT_ATTACH && s().relaunch != HTTP_SCRIPT_ATTACH && s().relaunch != SUBPROCESS;
     }
 
     /**
@@ -1116,6 +1167,7 @@ final class DebugCoordinator {
         int historyStops = s.getDebugHistoryStops();
         forEachPanel(panel -> panel.history().setCapacity(historyStops)); // fewer forgets the oldest now
         dap().setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
+        dap().setPythonSubprocesses(s.isDebugPythonSubprocesses()); // shared by every session, from its next launch
         dap().setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dap().setProgramTerminal(s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
         dap().setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
@@ -1770,7 +1822,13 @@ final class DebugCoordinator {
                     s().consoleStarted = false;
                 }
                 if (show) {
-                    panel().setRestartBlocked(restartAvailable() ? null : tr("status.debug.cannotRestartAttached"));
+                    panel().setRestartBlocked(
+                                    restartAvailable()
+                                            ? null
+                                            : tr(
+                                                    s().relaunch == SUBPROCESS
+                                                            ? "status.debug.cannotRestartSubprocess"
+                                                            : "status.debug.cannotRestartAttached"));
                     panel().setState(state);
                 }
                 if (state == DapManager.State.STARTING) {
@@ -1835,6 +1893,13 @@ final class DebugCoordinator {
                     // editor keeps it, and in the panel plain letters are debugger commands (review C2).
                     ops.openToolWindow();
                 }
+                if (state == DapManager.State.INACTIVE) {
+                    stopChildren(); // the program ended: its subprocesses' sessions with it
+                    DebugSession self = s();
+                    if (self.parent != null && !shown()) {
+                        later(() -> closeSession(self)); // an ended subprocess's tab goes, unless it is shown
+                    }
+                }
                 refreshSessionTabs();
             }
 
@@ -1895,6 +1960,11 @@ final class DebugCoordinator {
                 panel().setExitCode(code);
                 // What the status bar says now: an earlier "Stopped on <exception>" no longer holds (review C19).
                 host.setStatus(tr("run.exited", code));
+            }
+
+            @Override
+            public void onChildSession(java.util.Map<String, Object> configuration) {
+                openChildSession(configuration);
             }
 
             @Override

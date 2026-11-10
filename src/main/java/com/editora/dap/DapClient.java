@@ -554,7 +554,7 @@ public final class DapClient implements IDebugProtocolClient {
             server = launcher.getRemoteProxy();
             endpoint = launcher.getRemoteEndpoint(); // java-debug's own requests (redefineClasses)
             watchTransport(launcher.startListening());
-            return timed(server.initialize(initArgs(adapterId, false, runsDebuggee)))
+            return timed(server.initialize(initArgs(adapterId, childSessions != null, runsDebuggee)))
                     .thenApply(c -> {
                         this.capabilities = c;
                         return c;
@@ -637,9 +637,9 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     /**
-     * {@code startDebugging}: whether the adapter may ask for child sessions. Only declared for socket
-     * transports, where a child can connect to the same port; a stdio adapter has no second connection to
-     * offer, and declaring it would make debugpy route subprocesses through a request we could not serve.
+     * {@code startDebugging}: whether the adapter may ask for child sessions. Declared for socket transports, where a
+     * child can connect to the same port, and for a stdio adapter only with {@link #setChildSessions}: debugpy then
+     * names, for each subprocess, a port of its own to attach a session to.
      */
     private static InitializeRequestArguments initArgs(
             @Nullable String adapterId, boolean startDebugging, boolean runInTerminal) {
@@ -917,8 +917,34 @@ public final class DapClient implements IDebugProtocolClient {
      */
     @Override
     public CompletableFuture<Void> startDebugging(org.eclipse.lsp4j.debug.StartDebuggingRequestArguments args) {
+        java.util.function.Function<Map<String, Object>, CompletableFuture<Void>> own = childSessions;
+        if (root == null && own != null && args != null) {
+            // A session of its own for the child (debugpy's subprocesses): the window starts it.
+            Map<String, Object> configuration = new java.util.LinkedHashMap<>();
+            if (args.getConfiguration() != null) {
+                configuration.putAll(args.getConfiguration());
+            }
+            configuration.put(
+                    "request",
+                    args.getRequest() == org.eclipse.lsp4j.debug.StartDebuggingRequestArgumentsType.LAUNCH
+                            ? "launch"
+                            : "attach");
+            return own.apply(configuration);
+        }
         DapClient owner = root == null ? this : root;
         return owner.startChild(args);
+    }
+
+    /**
+     * Hands each child session the adapter asks for ({@code startDebugging}) to {@code handler}, which starts it as a
+     * session of its own, instead of this client opening it as a child of its own; null: as before. Set before
+     * connecting: it decides whether a stdio connection declares {@code supportsStartDebuggingRequest}.
+     */
+    private volatile java.util.function.@Nullable Function<Map<String, Object>, CompletableFuture<Void>> childSessions;
+
+    public void setChildSessions(
+            java.util.function.@Nullable Function<Map<String, Object>, CompletableFuture<Void>> handler) {
+        this.childSessions = handler;
     }
 
     private CompletableFuture<Void> startChild(org.eclipse.lsp4j.debug.StartDebuggingRequestArguments args) {
