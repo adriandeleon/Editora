@@ -597,6 +597,12 @@ final class ProjectMapPreview extends StackPane {
 
     private boolean loading;
     private boolean statPending;
+    /**
+     * A refresh came while a look at the disk or a read was under way: that look or read may have begun before the
+     * file changed, so the disk is looked at once more when it ends.
+     */
+    private boolean statAgain;
+
     private boolean missing;
     private @Nullable String editorConfigCharset;
     private @Nullable Stamp loadedStamp;
@@ -1954,11 +1960,15 @@ final class ProjectMapPreview extends StackPane {
         submitLatest(() -> {
             Loaded loaded = load(requestedPath, charset, whole);
             Platform.runLater(() -> {
-                if (requested == generation.get()) {
+                boolean latest = requested == generation.get();
+                if (latest) {
                     loading = false;
                 }
                 if (showLoaded(requested, requestedPath, loaded)) {
                     highlight(requested, requestedPath, loaded.text(), loaded.truncated());
+                }
+                if (latest && statAgain && !disposed && !fromBuffer && !statPending) {
+                    statDisk(); // a refresh came during the read: the file may have changed after it was read
                 }
             });
         });
@@ -2020,10 +2030,20 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         if (loading || statPending) {
+            statAgain = true;
             return;
         }
-        long requested = generation.get();
+        statDisk();
+    }
+
+    /** Off the FX thread, looks at the shown disk file's size and time; re-reads it when they changed. */
+    private void statDisk() {
         Path requestedPath = path;
+        if (requestedPath == null) {
+            return;
+        }
+        statAgain = false;
+        long requested = generation.get();
         statPending = true;
         runInBackground(() -> {
             Stamp current = stamp(requestedPath);
@@ -2037,6 +2057,8 @@ final class ProjectMapPreview extends StackPane {
                     setMissing(true);
                 } else if (missing || current != null && !current.equals(loadedStamp)) {
                     loadFromDisk(generation.incrementAndGet(), requestedPath); // equals path
+                } else if (statAgain && !fromBuffer) {
+                    statDisk(); // a refresh came after this look began: the file may have changed since
                 }
             });
         });
