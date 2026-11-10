@@ -1757,6 +1757,10 @@
 .project-map-preview-transient .project-map-preview-title {
     -fx-font-style: italic;
 }
+/* A declaration nothing uses (Map gap 11): its "no uses" in the warning colour, as an unused name stands out. */
+.project-map-card-structure-row:unused .project-map-usages {
+    -fx-text-fill: -color-warning-fg;
+}
 /* The mouse resting on a card's text: the problems there, coloured by severity, above the documentation. */
 .project-map-hover-problem {
     -fx-text-fill: -color-fg-default;

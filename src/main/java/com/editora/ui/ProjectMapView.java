@@ -174,6 +174,8 @@ final class ProjectMapView extends VBox {
     private final MapSurface surface = new MapSurface(this);
     /** The cards over the map, and what is stuck on them (see {@link MapCards}). */
     final MapCards cards;
+    /** How many times each shown declaration is used (Map code browser gap 11), drawn on its row. */
+    final MapUsageCounts usages;
     // The card manager's own maps, under the names the tests have long read them by.
     private final Map<Path, ProjectMapPreview> previews;
     private final Map<Path, ProjectMapNotePreview> notePreviews;
@@ -299,6 +301,9 @@ final class ProjectMapView extends VBox {
                 }
                 cards.flushConnectors();
                 bearingsChanged(); // a card moved, resized or came: remembered a moment later (B6)
+                if (usages != null) {
+                    usages.shown(usagesFiles(), ProjectMapView.this::usagesOutline); // a column opened or closed
+                }
             }
         }
     };
@@ -335,6 +340,8 @@ final class ProjectMapView extends VBox {
         setSpacing(4);
 
         cards = new MapCards(cardsHost(), structure, canvasHost);
+        usages = new MapUsageCounts(cards.links::source, file -> usagesFiles().contains(file), this::usagesChanged);
+        cards.setUsages(usages);
         history = new MapHistory<>(cards::isOpen, ProjectMapPreview::caretOffset, ProjectMapPreview::fileLineAt);
         // Back and Forward typed on the map walk its history, not the editor's (a card's own handler is asked first).
         getProperties()
@@ -2896,6 +2903,7 @@ final class ProjectMapView extends VBox {
         surface.dispose();
         trails.close();
         cards.dispose();
+        usages.dispose();
         orientation.dispose();
         activity.dispose();
         noMatchesDelay.stop();
@@ -3488,7 +3496,29 @@ final class ProjectMapView extends VBox {
         }
         searchResolveSymbol(); // a search landing on a declaration waited for this outline
         cards.outlineChanged(file);
+        if (structure.view(file).problem() != ProjectMapStructure.Problem.LOADING) {
+            usages.outlineChanged(file, usagesOutline(file)); // counted again once the outline settles (gap 11)
+        }
         bearingsRestoreDeclarations(file); // a declaration card of the last session waited for this outline
+    }
+
+    /** The files whose declarations are listed now: a Structure column of the Map's, or a card's (gap 11). */
+    private Set<Path> usagesFiles() {
+        Set<Path> files = new java.util.HashSet<>(structure.openFiles());
+        files.addAll(cards.structureColumnFiles());
+        return files;
+    }
+
+    /** {@code file}'s outline, or null while it has none. */
+    private @Nullable List<ProjectMapStructure.Node> usagesOutline(Path file) {
+        ProjectMapStructure.View view = structure.view(file);
+        return view.problem() == ProjectMapStructure.Problem.NONE ? view.roots() : null;
+    }
+
+    /** Usage counts came or went: the declaration rows are drawn again. */
+    private void usagesChanged() {
+        surface.repaint();
+        cards.usagesChanged();
     }
 
     /** Where the cards' editor font comes from: the editor window this Map belongs to. */

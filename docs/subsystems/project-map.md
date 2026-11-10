@@ -970,6 +970,18 @@ matching…" (review 3 B16). A folder
 match is selected and opened; a declaration match selects its file, opens the file's Structure column and
 selects the declaration once the outline is in (`showSearchMatch(match, true)` also opens its card).
 
+**Usage counts on declaration rows** (Map code browser gap 11, `MapUsageCounts`). A declaration row — in a Structure
+column of the Map's, and in a card's — says how many times the declaration is used ("12 uses", "1 use", "no uses"),
+before its line number, as the editor's code lens says it; a screen reader hears it with the row, and a card's row
+shows "no uses" in the warning colour. A file's counts are asked once its outline is shown, and again
+`MapUsageCounts.QUIET` (1.2 s) after the outline last changed, so typing does not ask on every keystroke
+(`ProjectMapView.structureChanged`; the layout pass asks for a column opened on an outline already held, and forgets
+a file no longer listed). They come from the running server (`MapCardLinks.Source.usages`, `ProjectMapLinkSearch`):
+the file is lent while it answers; its references code lens where it has one (jdtls always, TypeScript with code
+lenses on, rust-analyzer — the number its "N references" title starts with), else its references counted for the
+first `MAX_COUNTED` (40) declarations, one after another. Nothing starts a server: without one a row shows no count.
+An answer for an outline since changed, or a file since closed, is dropped.
+
 **Searching the files' text** (Map code browser gap 10). A query that starts with `%` (VS Code's quick-search
 sigil) searches what the files say rather than their names: `%needle` runs the window's Find in Files over the
 Map's folder (`ProjectPanel.searchMapText` → `FileActions.searchText` → `SearchCoordinator.mapTextSearch`, on a
@@ -1663,6 +1675,10 @@ The focused coverage lives in:
   `ProjectMapLinksFxTest` / `MapCardLinksReview4FxTest` for an answer's list: a place's group, the places' order and
   text, the filter and Tests; the chip's list of 209 files' places with their text, the filter, a place opened with
   its edge, the list going with its answer; callers by name listed and opened; a place with no room kept listed;
+- `MapUsageCountsFxTest` for usage counts: a lens title's number and which lenses count, an outline's declarations,
+  the ask a moment after the outline settles and the answers dropped, a Map Structure column's rows and a card's
+  saying a references lens's counts (and a screen reader hearing them), references counted without a lens, and
+  nothing without a server;
 - `MapTextSearchFxTest` for the text search: `%` parsed, smart case, a found line as a match (0-based, trimmed, cut,
   outside the folder left out), the strip's row; stepping opening each line's card as a preview the next replaces,
   Ctrl+Enter keeping one, Find in Folder… on a Map row limiting the search, Find in Files in the Map carrying the

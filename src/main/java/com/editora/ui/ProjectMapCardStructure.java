@@ -78,6 +78,9 @@ final class ProjectMapCardStructure implements CardAttachment {
 
     private final Label title = new Label(tr("project.map.cardStructure.title"), Icons.structure());
     private final TreeView<Row> tree = new TreeView<>(new TreeItem<>(Row.message("")));
+    /** How many times each declaration is used (gap 11); null: none shown. */
+    private @Nullable MapUsageCounts usages;
+
     private final Scale zoom = new Scale(1, 1, 0, 0);
     private final ChangeListener<Object> follow = (obs, old, now) -> layout();
     /** Declarations whose members are listed, by path: kept across outlines, as the Map keeps its open columns. */
@@ -715,6 +718,19 @@ final class ProjectMapCardStructure implements CardAttachment {
         return rows;
     }
 
+    /** Where the rows' usage counts come from (gap 11); null shows none. */
+    void setUsages(@Nullable MapUsageCounts counts) {
+        if (usages != counts) {
+            usages = counts;
+            tree.refresh();
+        }
+    }
+
+    /** The counts came or went: the rows say them. */
+    void usagesChanged() {
+        tree.refresh();
+    }
+
     /** The list itself. For tests. */
     TreeView<Row> tree() {
         return tree;
@@ -765,7 +781,10 @@ final class ProjectMapCardStructure implements CardAttachment {
         private final HBox name = new HBox();
 
         private final Label line = new Label();
-        private final HBox box = new HBox(5, name, line);
+        /** How many times the declaration is used, before its line (gap 11). */
+        private final Label uses = new Label();
+
+        private final HBox box = new HBox(5, name, uses, line);
         private final javafx.scene.shape.Rectangle nameClip = new javafx.scene.shape.Rectangle();
         private @Nullable String kind;
         private boolean hasKind;
@@ -788,6 +807,9 @@ final class ProjectMapCardStructure implements CardAttachment {
             name.setClip(nameClip); // the line number follows the name, as in the Structure window
             line.getStyleClass().add("project-map-card-structure-line");
             line.setMinWidth(Region.USE_PREF_SIZE);
+            uses.getStyleClass().addAll("project-map-card-structure-line", "project-map-usages");
+            uses.setMinWidth(Region.USE_PREF_SIZE);
+            uses.managedProperty().bind(uses.visibleProperty());
             box.setAlignment(Pos.CENTER_LEFT);
             addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
                 Row row = isEmpty() ? null : getItem();
@@ -849,7 +871,7 @@ final class ProjectMapCardStructure implements CardAttachment {
                 kind = symbol.kind();
                 Node icon = StructureIcons.forKind(kind);
                 icon.getStyleClass().add("project-map-card-structure-icon");
-                box.getChildren().setAll(icon, name, line);
+                box.getChildren().setAll(icon, name, uses, line);
             }
             if (item != shownRow || shownStyles != styles) {
                 // Rebuilt only when the row or the card's colours changed: a selection change runs this again
@@ -872,11 +894,18 @@ final class ProjectMapCardStructure implements CardAttachment {
                 name.applyCss();
             }
             line.setText(tr("structure.line", symbol.line() + 1));
-            tip.setText(symbol.label());
+            MapUsageCounts counts = usages;
+            Integer count = counts == null ? null : counts.count(symbol.file(), symbol.line());
+            uses.setVisible(count != null);
+            uses.setText(count == null ? "" : MapUsageCounts.text(count));
+            pseudoClassStateChanged(UNUSED, count != null && count == 0);
+            tip.setText(count == null ? symbol.label() : symbol.label() + " · " + MapUsageCounts.text(count));
             setTooltip(tip);
             setGraphic(box);
         }
     }
 
     private static final javafx.css.PseudoClass MESSAGE = javafx.css.PseudoClass.getPseudoClass("message");
+    /** A declaration nothing uses (gap 11). */
+    private static final javafx.css.PseudoClass UNUSED = javafx.css.PseudoClass.getPseudoClass("unused");
 }
