@@ -963,6 +963,12 @@ final class Icons {
         return line("M2 13.5h12M3.5 13.5v-4h2.5v4M7 13.5V6h2.5v7.5M10.5 13.5V3h2.5v10.5");
     }
 
+    /** A box with boxes on its four sides joined to it — the Map's Symbol Graph card. */
+    static Node symbolGraph() {
+        return line(
+                "M6 6.5h4v3H6zM1 7h2.5v2H1zM12.5 7H15v2h-2.5zM7 1h2v2H7zM7 13h2v2H7zM3.5 8H6M10 8h2.5M8 3v3.5M8 9.5V13");
+    }
+
     /** One box joined to two on its right — the Map's Dependencies card. */
     static Node dependencies() {
         return line("M1.5 6.5h4v3h-4zM10.5 2.5h4v3h-4zM10.5 10.5h4v3h-4zM5.5 8c2.5 0 2.5-4 5-4M5.5 8c2.5 0 2.5 4 5 4");
