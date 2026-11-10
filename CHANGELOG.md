@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Move between Project Map cards with the keyboard.** Ctrl+Shift+arrows move the keyboard to the nearest card in
+  that direction, from a card or from the map's selected row. The map only moves when that card is partly out of
+  view.
 - **A declaration's history as a card on the Project Map.** *Declaration History* in a declaration card's menu, or
   in a Structure row's, opens a card beside it that lists every commit that changed that method, class or field,
   newest first. Under the list, *Changes* shows what the picked commit changed in it, and *Blame* shows who last
