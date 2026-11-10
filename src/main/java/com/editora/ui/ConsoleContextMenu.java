@@ -21,14 +21,15 @@ final class ConsoleContextMenu {
     private ConsoleContextMenu() {}
 
     static void install(CodeArea area) {
-        MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
+        MenuItem selectAll =
+                com.editora.editor.MenuChords.tag(new MenuItem(tr("editmenu.selectAll")), "edit.selectAll");
         selectAll.setGraphic(Icons.selectAll());
         selectAll.setOnAction(e -> {
             area.selectAll();
             area.requestFocus();
         });
 
-        MenuItem copy = new MenuItem(tr("editmenu.copy"));
+        MenuItem copy = com.editora.editor.MenuChords.tag(new MenuItem(tr("editmenu.copy")), "edit.copy");
         copy.setGraphic(Icons.copy());
         copy.setOnAction(e -> copySelectionOrAll(area));
 
