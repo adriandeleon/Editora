@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Usage counts on Project Map declaration rows.** A method, class or field row in the Map's Structure columns and a
+  card's says how many times it is used ("12 uses", "no uses"), as the editor's code lens does. The counts come
+  from the language server already running for the file, and update a moment after you stop typing.
 - **Search the text of files on the Project Map.** Start the Map's search with `%` (`%needle`) to find text in the
   files instead of their names. The files that hold it stand out on the map. Each step through the lines found opens
   the card of the declaration that holds the line, with the text selected. That card is replaced by the next one
