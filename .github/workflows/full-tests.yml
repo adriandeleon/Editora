@@ -425,7 +425,8 @@ jobs:
       # and Forward show them, Show Value History follows i, and after Stop they can still be read; a recording
       # breakpoint runs the loop to its end with its five stops kept (its js-debug tests run in the Node job).
       # SeveralSessionsProbeFxTest: two Python programs stop at once on debugpy, each in its own session with its own
-      # values; continuing the one shown leaves the other paused, and Stop All ends both.
+      # values; continuing the one shown leaves the other paused, and Stop All ends both. A launch.json compound starts
+      # both, each in its own session, and one that ends by itself leaves the other.
       - name: Test compact Java language service and debugging
         run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 

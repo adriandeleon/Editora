@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug compounds: several programs started together.** A launch.json `compounds` entry now appears in *Debug:
+  Start Configuration* and starts each of its configurations in a session of its own, in order. Its `preLaunchTask`
+  runs first, and with `stopAll`, stopping one stops them all. A project can also have compounds of its own saved run
+  configurations: make them in *Debug: Edit Compounds…* and start them with *Debug: Start Compound…*. A launch.json
+  configuration started while a session runs is now debugged beside it, as in VS Code, instead of replacing it.
+
 - **Debug several programs at once.** Start debugging another file while a session runs (F5 or *Debug File*) and
   Editora asks whether to *Debug Both*, *Stop and Debug* the new file instead, or cancel. Each session gets a tab in
   the Debug window with its own console, call stack, variables and Debug History. The toolbar, F-keys, the

@@ -101,8 +101,11 @@ public class WorkspaceState {
      * <p>v30 → v31 added a {@code projectMapState} card's {@code caretLine}, {@code caretColumn}, {@code topLine} and
      * {@code answers} (the answers asked from it, with their edges: Map code browser gap 9), in the restart state and
      * in working sets. Additive; absent means a card at its top with no answers, as before.
+     *
+     * <p>v31 → v32 added {@code runCompounds} (run configurations debugged together, see {@link RunCompound}).
+     * Additive; absent means none, as before.
      */
-    public static final int SCHEMA_VERSION = 31;
+    public static final int SCHEMA_VERSION = 32;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -193,6 +196,9 @@ public class WorkspaceState {
     private Map<String, String> programArgs = new LinkedHashMap<>();
     /** Saved run/debug configurations for project main classes (this window's project). */
     private List<RunConfiguration> runConfigurations = new ArrayList<>();
+
+    /** Run configurations debugged together, each in a session of its own (v32). */
+    private List<RunCompound> runCompounds = new ArrayList<>();
 
     /** This project's deployments: the hosts and folders its run configurations can run on (v22). */
     private List<Deployment> deployments = new ArrayList<>();
@@ -553,6 +559,14 @@ public class WorkspaceState {
 
     public void setRunConfigurations(List<RunConfiguration> runConfigurations) {
         this.runConfigurations = runConfigurations == null ? new ArrayList<>() : runConfigurations;
+    }
+
+    public List<RunCompound> getRunCompounds() {
+        return runCompounds;
+    }
+
+    public void setRunCompounds(List<RunCompound> runCompounds) {
+        this.runCompounds = runCompounds == null ? new ArrayList<>() : new ArrayList<>(runCompounds);
     }
 
     public List<Deployment> getDeployments() {

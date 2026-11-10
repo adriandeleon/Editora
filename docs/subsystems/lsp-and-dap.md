@@ -1694,8 +1694,8 @@ relaunch, the breakpoints sent to it and its answers, the stop shown, the except
 address, recording-breakpoint stops, code replace, the text its files were launched from.
 
 **Several sessions.** F5 or Debug File in another file while a session runs asks *Debug Both*, *Stop and Debug* or
-Cancel (`askRetarget`; Debug Both only beside a session that has started, since a window runs one before-launch step
-or build at a time). Debug Both makes a session on `DapManager.newSession()` — the same `DapSettings` — and focuses it
+Cancel (`askRetarget`; Debug Both beside a session that has started — one still getting ready is replaced or kept, as
+before). Debug Both makes a session on `DapManager.newSession()` — the same `DapSettings` — and focuses it
 (`openSession`). The same file asked again is not debugged twice: the session debugging it is shown and says so.
 `s()` is the session being handled: `inSession(session, …)` sets it for the duration of a call, and otherwise it is
 the focused one. Everything a session's manager hands the FX thread runs as that session's: its listener and its
@@ -1712,6 +1712,24 @@ live (`debug.stopAll`). An ended session keeps its tab and output until closed; 
 new one takes the place of the oldest ended one. `MainController.focusedDap()` is what the palette, Jump to Line and
 the test runner ask. `SeveralDebugSessionsWindowFxTest` drives two sessions on the fake adapter;
 `SeveralSessionsProbeFxTest` two debugpy sessions.
+
+**Compounds.** A compound starts several configurations together, each in a session of its own, in the order it
+lists them: a launch.json `compounds` entry (`LaunchJson.Compound`: `configurations` by name or `{name, folder}`,
+`stopAll`, `preLaunchTask`), listed in *Debug: Start Configuration* beside the configurations, or one of the project's
+own [`config/RunCompound`](../../src/main/java/com/editora/config/RunCompound.java)s of saved run configurations
+(workspace state `runCompounds`, schema 32), made in `DebugCompoundsWindow` (*Debug: Edit Compounds…*). *Debug:
+Start Compound…* lists both. `runLaunchCompound` asks the `${input:…}` its configurations use (each once), runs the
+compound's `preLaunchTask` in the first session, then starts each configuration in its session
+(`sessionForLaunch` for the first: the focused session when it is free; `openSession` for the rest), with its own
+`preLaunchTask`; `debugRunCompound` does the same through `debugConfig`. A configuration named that is not there
+starts none. Each session joins a `DebugCompound`; with `stopAll`, `stop()` in one stops every session that still runs
+that compound's launch (`DebugCompound.holds`: its `runtimeGeneration` has not moved past that launch's end), while
+Stop All and a session that ends by itself stop only what they stop. Each session has its own `BeforeLaunchStep` and
+`RunService` (`beforeLaunch()`), so the sessions of a compound build at the same time. A launch.json configuration
+started while a session runs goes beside it (`sessionForLaunch`), as in VS Code. jdtls's answers to a manager
+(`executeCommand`, `buildJavaWorkspace`) come back through its callback wrapper too, so a Java launch that resolves
+its main class after another session was focused still starts in its own. `LaunchCompoundWindowFxTest` and
+`DebugCoordinatorCommandsFxTest` drive compounds on fake adapters, `SeveralSessionsProbeFxTest` on debugpy.
 
 The Variables tree marks a value that changed since the previous stop
 ([`ui/DebugValueChanges`](../../src/main/java/com/editora/ui/DebugValueChanges.java)). Values are recorded as rows
