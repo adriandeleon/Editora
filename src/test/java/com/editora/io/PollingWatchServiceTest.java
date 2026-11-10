@@ -73,6 +73,14 @@ class PollingWatchServiceTest {
             ws.register(dir, ALL);
             Path tmp = Files.writeString(dir.resolve("open.txt.tmp"), "v2");
             Files.setLastModifiedTime(tmp, Files.getLastModifiedTime(file)); // the same time, to the millisecond
+            // A save's temporary file is newer than the file it replaces. Written microseconds apart here, the two can
+            // fall in one tick of Windows' coarse clock and share a creation time, which no save does: say it outright
+            // (ignored where creation time cannot be set; the file key tells there).
+            java.time.Instant created = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class)
+                    .creationTime()
+                    .toInstant();
+            Files.getFileAttributeView(tmp, java.nio.file.attribute.BasicFileAttributeView.class)
+                    .setTimes(null, null, java.nio.file.attribute.FileTime.from(created.plusSeconds(1)));
             Files.move(
                     tmp,
                     file,
