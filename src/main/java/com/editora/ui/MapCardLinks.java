@@ -1400,10 +1400,10 @@ final class MapCardLinks {
     }
 
     /**
-     * One level of a hierarchy tree: {@code request}'s answer grouped by the declarations that hold its places, as
+     * One level of a hierarchy — for a hierarchy tree and the Symbol Graph card: {@code request}'s answer grouped by the declarations that hold its places, as
      * the cards are — once the outlines of its first files are read — ranked as the cards are, handed to {@code then}.
      */
-    private void askLevel(Request request, Consumer<MapHierarchyTree.Level> then) {
+    void askLevel(Request request, Consumer<MapHierarchyTree.Level> then) {
         Source answering = source;
         Path root = cards.root();
         if (answering == null || root == null) {

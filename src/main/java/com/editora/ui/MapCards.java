@@ -230,6 +230,8 @@ final class MapCards {
     private @Nullable ProjectMapHistoryCard historyCard;
     /** The Dependencies card, when open (gap 14): one at a time, not counted against the limit. */
     private @Nullable ProjectMapDependencyCard dependencyCard;
+    /** The Symbol Graph card, when open (round 2): one at a time, not counted against the limit. */
+    private @Nullable ProjectMapSymbolGraphCard symbolGraphCard;
     /** The Code Metrics card, when open (gap 15): one at a time, not counted against the limit. */
     private @Nullable ProjectMapMetricsCard metricsCard;
     /** Changes or Blame: what the last History card showed, and the next one opens with. */
@@ -527,6 +529,11 @@ final class MapCards {
         @Override
         public void hierarchy(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {
             showHierarchy(card, kind, line, column, atPlace);
+        }
+
+        @Override
+        public void symbolGraph(ProjectMapPreview card, int line, int column) {
+            showSymbolGraph(card, line, column, true);
         }
 
         @Override
@@ -1021,6 +1028,9 @@ final class MapCards {
         if (metricsCard != null) {
             solo.add(metricsCard);
         }
+        if (symbolGraphCard != null) {
+            solo.add(symbolGraphCard);
+        }
         return solo;
     }
 
@@ -1103,6 +1113,74 @@ final class MapCards {
         }
         touchCard(card, true);
         return card;
+    }
+
+    /**
+     * The Symbol Graph of what stands at the file's 0-based {@code line} and {@code column} of {@code card} — with
+     * {@code atPlace} false, a declaration card's declaration — beside the card (Map code browser round 2).
+     */
+    void showSymbolGraph(ProjectMapPreview card, int line, int column, boolean atPlace) {
+        MapCardLinks.Request request = linksRequest(card, MapCardLinks.Kind.CALLERS, line, column, atPlace);
+        if (request != null) {
+            touchCard(card, true);
+            openSymbolGraph(
+                    new ProjectMapSymbolGraphCard.Subject(
+                            request.file(), request.line(), request.column(), request.name(), request.text()),
+                    card);
+        }
+    }
+
+    /** Symbol Graph from a declaration row: its card opens, and the graph of its declaration beside it. */
+    void showSymbolGraph(ProjectMapModel.Entry symbolRow) {
+        ProjectMapPreview card = previewSymbol(symbolRow, null);
+        ProjectMapPreview.Range shown = card == null ? null : card.range();
+        if (card != null && shown != null) {
+            showSymbolGraph(card, shown.line(), -1, false);
+        }
+    }
+
+    /**
+     * Opens the Symbol Graph card on {@code subject}, beside {@code beside} when given — or moves the open one onto it
+     * (its last subject on its Back list) — and asks its four sides of the Map's code links.
+     */
+    ProjectMapSymbolGraphCard openSymbolGraph(ProjectMapSymbolGraphCard.Subject subject, @Nullable Region beside) {
+        ProjectMapSymbolGraphCard card = symbolGraphCard;
+        boolean created = card == null;
+        if (card == null) {
+            ProjectMapSymbolGraphCard made = new ProjectMapSymbolGraphCard();
+            made.setAsker(links::askLevel);
+            made.setOpener((file, line, name) -> openPlaceCard(null, file, line, name));
+            symbolGraphCard = made;
+            adoptSoloCard(made, this::closeSymbolGraphCard);
+            card = made;
+        }
+        card.show(subject);
+        if (created) {
+            card.place(besidePlacement(
+                    card,
+                    beside,
+                    subject.file(),
+                    ProjectMapSymbolGraphCard.DEFAULT_WIDTH,
+                    ProjectMapSymbolGraphCard.DEFAULT_HEIGHT,
+                    ProjectMapSymbolGraphCard.MIN_WIDTH,
+                    ProjectMapSymbolGraphCard.MIN_HEIGHT));
+            repaintPreviewConnectors();
+        }
+        touchCard(card, true);
+        card.focusContent();
+        return card;
+    }
+
+    /** The open Symbol Graph card, or null. */
+    @Nullable
+    ProjectMapSymbolGraphCard symbolGraphCard() {
+        return symbolGraphCard;
+    }
+
+    private void closeSymbolGraphCard() {
+        ProjectMapSymbolGraphCard card = symbolGraphCard;
+        symbolGraphCard = null;
+        dropSoloCard(card);
     }
 
     /** The open Code Metrics card, or null. */
@@ -1343,6 +1421,11 @@ final class MapCards {
         if (metrics != null && metricsRoot != null) {
             open.add(new OpenCard(metricsRoot.resolve(metrics.subject()), metrics, metrics.title(), false));
         }
+        ProjectMapSymbolGraphCard graph = symbolGraphCard;
+        ProjectMapSymbolGraphCard.Subject graphSubject = graph == null ? null : graph.subject();
+        if (graph != null && graphSubject != null) {
+            open.add(new OpenCard(graphSubject.file(), graph, graph.title(), false));
+        }
         open.sort(java.util.Comparator.comparingLong((OpenCard card) -> cardTouches.getOrDefault(card.node(), 0L))
                 .reversed());
         return open;
@@ -1568,6 +1651,8 @@ final class MapCards {
             closeDependencyCard();
         } else if (card == metricsCard) {
             closeMetricsCard();
+        } else if (card == symbolGraphCard) {
+            closeSymbolGraphCard();
         }
     }
 
@@ -3048,6 +3133,7 @@ final class MapCards {
         closeHistoryCard();
         closeDependencyCard();
         closeMetricsCard();
+        closeSymbolGraphCard();
         List<ProjectMapNotePreview> openNotes = List.copyOf(notePreviews.values());
         notePreviews.clear();
         for (ProjectMapNotePreview preview : openNotes) {
