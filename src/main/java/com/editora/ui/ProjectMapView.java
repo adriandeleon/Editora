@@ -2736,6 +2736,9 @@ final class ProjectMapView extends VBox {
             item.setOnAction(event -> cards.showHierarchy(entry, kind));
             items.add(item);
         }
+        MenuItem graph = new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph());
+        graph.setOnAction(event -> cards.showSymbolGraph(entry));
+        items.add(graph);
         return items;
     }
 
@@ -2834,6 +2837,9 @@ final class ProjectMapView extends VBox {
         }
         if (node instanceof ProjectMapMetricsCard) {
             return Icons.metrics();
+        }
+        if (node instanceof ProjectMapSymbolGraphCard) {
+            return Icons.symbolGraph();
         }
         Path file = node instanceof ProjectMapPreview code && code.path() != null ? code.path() : card.key();
         Path name = file.getFileName();

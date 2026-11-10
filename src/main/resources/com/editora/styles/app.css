@@ -2083,6 +2083,68 @@
     -fx-background-color: -color-danger-muted;
     -fx-font-weight: bold;
 }
+/* The Project Map's Symbol Graph card (round 2): a declaration with its callers, callees, supertypes, subtypes. */
+.project-map-graph-card .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-graph-card .label.project-map-graph-summary,
+.project-map-graph-card .label.project-map-graph-detail,
+.project-map-graph-card .label.project-map-graph-more {
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-graph-card .project-map-graph-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.project-map-graph-card .label.project-map-graph-detail {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+}
+.project-map-graph-card .label.project-map-graph-side {
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-graph-scroll,
+.project-map-graph-scroll > .viewport,
+.project-map-graph {
+    -fx-background-color: -color-bg-default;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.project-map-graph-edge {
+    -fx-stroke: -color-border-default;
+    -fx-fill: transparent;
+}
+.project-map-graph-node,
+.project-map-graph-subject {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 3 7 3 7;
+    -fx-font-size: 12px;
+}
+.project-map-graph-subject {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 1.5;
+    -fx-font-weight: bold;
+}
+.project-map-graph-node:hover,
+.project-map-graph-node:focused {
+    -fx-background-color: -color-accent-subtle;
+}
+.project-map-graph-node.project-map-graph-self {
+    -fx-border-style: dashed;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-graph-node .label.project-map-graph-count {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
 /* The Project Map's Overview card (review 3 B4): a code card's frame, with headed sections of short text and links. */
 .project-map-overview-scroll,
 .project-map-overview-scroll > .viewport,

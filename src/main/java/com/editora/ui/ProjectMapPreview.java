@@ -322,6 +322,9 @@ final class ProjectMapPreview extends StackPane {
          */
         default void hierarchy(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {}
 
+        /** The Symbol Graph of what stands at the file's 0-based {@code line} and {@code column}, as a card. */
+        default void symbolGraph(ProjectMapPreview card, int line, int column) {}
+
         /** Back ({@code back}) or Forward along the Map's one history; false when there is nowhere to go. */
         default boolean step(ProjectMapPreview card, boolean back) {
             return false;
@@ -2936,6 +2939,11 @@ final class ProjectMapPreview extends StackPane {
             item.setOnAction(ignored -> actions.hierarchy(this, kind, line, column, atPlace));
             items.add(item);
         }
+        // Its callers, callees, supertypes and subtypes around it, walked as in a code browser (round 2).
+        MenuItem graph = new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph());
+        graph.setDisable(!text);
+        graph.setOnAction(ignored -> actions.symbolGraph(this, line, column));
+        items.add(graph);
         MenuItem hover = new MenuItem(tr("project.map.links.hover.show"));
         hover.setDisable(!text);
         int[] at = followAt.clone();

@@ -39,7 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Typst submenus, the debugger items, Toggle Comment, Cut/Copy/Paste, Undo/Redo, Select All, bookmarks and
   notes), the editor tab menu, the preview menus and the Copy/Select All of the output consoles. Chords come from
   the active keymap, Emacs sequences such as `C-x C-s` included, and follow a keymap switch on the next right-click.
-
+- **Symbol Graph on the Project Map.** *Symbol Graph* in a code card's or a declaration's menu opens a card with the
+  method or class in the middle: what calls it on the left, what it calls on the right, the types it extends or
+  implements above, and those that extend or implement it below. Enter on any of them moves the graph there, so you
+  can walk the code; Backspace goes back. Press the middle to open its card.
 - **Copy Permalink.** *Git: Copy Permalink* (in Git → History) copies the web address of the current file at the
   HEAD commit, with the selected lines (or the caret's line) marked, ready to paste in a chat or an issue. On the
   Project Map it is in a code card's menu and in a file's or folder's menu. It works with GitHub, GitLab, Bitbucket,

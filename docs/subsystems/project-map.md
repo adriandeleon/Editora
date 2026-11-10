@@ -501,6 +501,22 @@ asked again, or the card closing or stepping, takes it away. It and a hierarchy 
 frame, title, ×, Escape, following the card and taking a side — and a card has one of them at a time: showing one
 closes the other (`MapCardLinks.closeSideColumns`).
 
+**The Symbol Graph** (Map code browser round 2, `ProjectMapSymbolGraphCard`). **Symbol Graph** in a code card's menu
+(at the place it was opened) or a declaration row's menu (its declaration; its card opens first) opens a card beside
+the card: the declaration in the middle, what calls it in a column on the left, what it calls on the right, the types
+it extends or implements in rows above and those that extend or implement it below, each joined to it by a curve —
+thicker for more calls, `×N` on a declaration that calls more than once. Each side is one level of the call or type
+hierarchy, asked as the hierarchy tree asks it (`MapCardLinks.askLevel`: the language server's, or the callers by
+name), all four at once; a type side with nothing is not drawn, so a method has no empty rows above and below it, and
+at most `MAX_NODES` (30) a side are drawn, then "+N more". The line above says where the declaration is and how many of
+each were found, or the server's note when none was. Enter or a double-click on a declaration moves the graph onto it
+(`subjectOf`, from `MapHierarchyTree.requestOf`; a place found by name outside any declaration cannot be asked about),
+so the reader walks the code as in Sourcetrail; a call the declaration makes to itself is marked and not walked; **‹**
+or Backspace goes back. A press shows where a declaration is below the graph; a press on the middle, or **Open as
+Card**, opens the declaration's card (`MapCards.openPlaceCard`). An answer for a declaration the graph has since left is
+dropped. One Symbol Graph card is open at a time: asking again moves it; it moves, resizes and zooms as the other cards,
+and Escape closes it.
+
 **Hierarchy trees** (Map code browser gap 4, `MapHierarchyTree`). The cards answer one level of a hierarchy; a
 tree goes as deep as the reader opens it. Call Hierarchy (`lsp.callHierarchy`) and Type Hierarchy
 (`lsp.typeHierarchy`) typed in a card or on a declaration row, and the card and declaration-row menus' **Show Call
@@ -1818,6 +1834,10 @@ The focused coverage lives in:
 - `MapCardSwitcherFxTest` for the card switcher: nothing to switch to, the open cards most recently used first
   starting on the one before the card in use, a pick bringing its card up with the keyboard in it, typing to filter,
   ⋯ → Open cards → Switch Card…, and each card's detail and icon;
+- `MapSymbolGraphFxTest` for the Symbol Graph: the four sides asked and drawn, the name taken from the answer, a
+  recursive call marked and not walked, a press, Enter walking with stale answers dropped, Back, opening from the
+  middle and a declaration's menu, types drawn only when there are some, more than fit, the server's note, and the
+  graph opened from a card through the Map's links with a server's answer, and Escape;
 - `MapCardSpatialKeysFxTest` for Ctrl+Shift+arrows: the nearest card that way (straight ahead first, one mostly to
   the side left out, ties by centre), the map moved only as far as a card is out of view, which keys move; moving
   between three cards and from the map's selected row, the status with no card that way, and a card partly out of
