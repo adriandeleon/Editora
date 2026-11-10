@@ -122,6 +122,7 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Row menu → **Close Other Branches** | Close every column, folder or Structure, that is not on the way to that row; a folder row keeps its own column. Offered while such a column is open |
 | Options (⋯) menu → **Collapse All** | Close every column but the first and the ones on the way to the selection (`ProjectMapView.canvasCloseOthers`, `MapLoader.canvasCloseOthers`); cards opened from the closed columns close with them. "Nothing to collapse" when only those are open |
 | Options (⋯) menu → **Open cards** | List the open cards, the most recently used first; one brings its card into the middle of the map area with the keyboard in it |
+| Ctrl+Shift+arrows | Move the keyboard to the nearest card that way, from a card or from the map's selected row; the map moves only as far as that card is out of view |
 | Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout, the open cards where they stand |
 | Options (⋯) menu → **PDF…** | Export the complete map layout and the open cards using the configured PDF page size; the map's names are searchable text |
 | Options (⋯) menu → **Export ▸ PNG…** | Save the map as it is on screen at 2× (cards and connectors, not the zoom bar, overview or notices), at most 8,192 px a side |
@@ -159,6 +160,15 @@ Open cards stay in map space, so navigating elsewhere takes them out of sight; t
 sight (note cards in the note colour), and counts the cards in its picture, so a card out of view brings it up. A
 press on a mark, or the card's item in the options menu's **Open cards**, pans the map until the card stands in the
 middle of the map area and puts the keyboard in it (`MapCards.bringIntoView`).
+
+Ctrl+Shift+arrows move the keyboard between cards by where they stand (Map code browser gap 13): from a card — or a
+Structure column or sticky note on one — or from the map's selected row (its middle with none), to the nearest card
+that way among those in sight (`MapCards.focusToward`). A card counts when its centre is past the start's that way
+by no less than it stands off to the side, so one mostly below is not "to the right"; the nearest has the smallest
+gap that way plus twice its offset across it, and the nearer centre breaks a tie (`MapCards.nearestToward`). The map
+is panned only as far as the card is out of view (`MapCards.revealCard`, `revealShift`), so moving between cards in
+sight keeps it still; with no card that way the status says so ("No card to the right") and the keyboard stays. The
+chords are claimed on the map area (`MapCards.TOWARD_KEYS`), so a keymap binding of them does not take them there.
 
 Code previews and note cards are placed by one path (`MapCards.previewPlacement` over
 `MapSurface.cardSite`): the spot that covers least. The candidates are after and before the row's column,
@@ -1703,6 +1713,10 @@ The focused coverage lives in:
   from its menu and from a Structure row's, its summary, diff and blame, a blamed line picking its commit, Enter and
   Open Commit opening the commit's diff, one card filled in turn and stale answers dropped, Escape and zoom, and its
   spot beside the card;
+- `MapCardSpatialKeysFxTest` for Ctrl+Shift+arrows: the nearest card that way (straight ahead first, one mostly to
+  the side left out, ties by centre), the map moved only as far as a card is out of view, which keys move; moving
+  between three cards and from the map's selected row, the status with no card that way, and a card partly out of
+  view brought in;
 - `MapTextSearchFxTest` for the text search: `%` parsed, smart case, a found line as a match (0-based, trimmed, cut,
   outside the folder left out), the strip's row; stepping opening each line's card as a preview the next replaces,
   Ctrl+Enter keeping one, Find in Folder… on a Map row limiting the search, Find in Files in the Map carrying the

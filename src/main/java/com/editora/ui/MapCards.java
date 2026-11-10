@@ -1208,6 +1208,161 @@ final class MapCards {
         return openCards().stream().filter(card -> card.node().isVisible()).toList();
     }
 
+    /** A way to move the keyboard between cards (Map code browser gap 13). */
+    enum Toward {
+        LEFT,
+        RIGHT,
+        UP,
+        DOWN
+    }
+
+    /** The keys that move the keyboard to the nearest card in their direction: Ctrl+Shift+arrows. */
+    static final Set<String> TOWARD_KEYS = Set.of("C-S-left", "C-S-right", "C-S-up", "C-S-down");
+
+    /** The way {@code event} moves the keyboard between cards — Ctrl+Shift with an arrow — or null. Pure. */
+    static @Nullable Toward toward(javafx.scene.input.KeyEvent event) {
+        if (event.getEventType() != javafx.scene.input.KeyEvent.KEY_PRESSED
+                || !event.isControlDown()
+                || !event.isShiftDown()
+                || event.isAltDown()
+                || event.isMetaDown()) {
+            return null;
+        }
+        return switch (event.getCode()) {
+            case LEFT -> Toward.LEFT;
+            case RIGHT -> Toward.RIGHT;
+            case UP -> Toward.UP;
+            case DOWN -> Toward.DOWN;
+            default -> null;
+        };
+    }
+
+    /**
+     * Moves the keyboard to the nearest card {@code toward} from where it is ({@code target}): from a card — or a
+     * Structure column or sticky note on one — from that; from the map itself, from {@code mapOrigin} (its selected
+     * row, {@code {x, y, w, h}}). The card is brought into view only as far as it is not in view already, so the map
+     * stays where it was when it is. With no card that way the status says so. Whether the key was used: false when
+     * the keyboard is in neither a card nor the map.
+     */
+    boolean focusToward(Node target, Toward toward, double @Nullable [] mapOrigin) {
+        Node from = null;
+        double[] origin = mapOrigin;
+        if (origin == null) {
+            from = canvasChildOf(target);
+            if (from == null) {
+                return false;
+            }
+            origin = drawnOf(from);
+        }
+        List<Region> candidates = new ArrayList<>();
+        List<double[]> boxes = new ArrayList<>();
+        for (OpenCard open : visibleCards()) {
+            if (open.node() != from) {
+                candidates.add(open.node());
+                boxes.add(drawnBounds(open.node()));
+            }
+        }
+        int nearest = nearestToward(origin, boxes, toward);
+        if (nearest < 0) {
+            host.status(tr(
+                    switch (toward) {
+                        case LEFT -> "project.map.status.noCardToward.left";
+                        case RIGHT -> "project.map.status.noCardToward.right";
+                        case UP -> "project.map.status.noCardToward.up";
+                        case DOWN -> "project.map.status.noCardToward.down";
+                    }));
+            return true;
+        }
+        revealCard(candidates.get(nearest));
+        return true;
+    }
+
+    /** The map area's child that holds {@code node} (a card, or what is stuck on one), or null. */
+    private @Nullable Node canvasChildOf(Node node) {
+        for (Node current = node; current != null; current = current.getParent()) {
+            if (current.getParent() == canvasHost) {
+                return current;
+            }
+        }
+        return null;
+    }
+
+    /** {@code node} as drawn, {@code {x, y, w, h}}: a card by its own size and zoom, anything else by its bounds. */
+    private static double[] drawnOf(Node node) {
+        if (node instanceof Region card && cardScale(card) != 1) {
+            return drawnBounds(card);
+        }
+        javafx.geometry.Bounds bounds = node.getBoundsInParent();
+        return new double[] {bounds.getMinX(), bounds.getMinY(), bounds.getWidth(), bounds.getHeight()};
+    }
+
+    /**
+     * The index of the box nearest {@code from} {@code toward}, among {@code boxes} ({@code {x, y, w, h}} each), or -1.
+     * A box counts when its centre lies past {@code from}'s that way, by no less than the box stands off to the side
+     * of {@code from} (a card mostly below is not "to the right"); the nearest is the one with the smallest gap
+     * along the way plus twice its offset across it (0 while the two overlap across it), so a card straight ahead
+     * beats a nearer one far to the side; the distance between centres breaks a tie. Pure.
+     */
+    static int nearestToward(double[] from, List<double[]> boxes, Toward toward) {
+        boolean horizontal = toward == Toward.LEFT || toward == Toward.RIGHT;
+        int sign = toward == Toward.RIGHT || toward == Toward.DOWN ? 1 : -1;
+        int a = horizontal ? 0 : 1; // along the way
+        int c = horizontal ? 1 : 0; // across it
+        double fromCentre = from[a] + from[a + 2] / 2;
+        int best = -1;
+        double bestScore = Double.MAX_VALUE;
+        double bestCentres = Double.MAX_VALUE;
+        for (int i = 0; i < boxes.size(); i++) {
+            double[] box = boxes.get(i);
+            double centre = box[a] + box[a + 2] / 2;
+            double ahead = (centre - fromCentre) * sign;
+            double across = Math.max(0, Math.max(box[c] - (from[c] + from[c + 2]), from[c] - (box[c] + box[c + 2])));
+            if (ahead <= 0.5 || ahead < across) {
+                continue; // not that way, or more to the side than that way
+            }
+            double gap = sign > 0 ? box[a] - (from[a] + from[a + 2]) : from[a] - (box[a] + box[a + 2]);
+            double score = Math.max(0, gap) + 2 * across;
+            double centres = Math.hypot(centre - fromCentre, (box[c] + box[c + 2] / 2) - (from[c] + from[c + 2] / 2));
+            if (score < bestScore - 0.5 || (Math.abs(score - bestScore) <= 0.5 && centres < bestCentres)) {
+                best = i;
+                bestScore = score;
+                bestCentres = centres;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Brings an open card into view with the keyboard in it, as {@link #bringIntoView} does, but moving the map only
+     * as far as the card is out of view (none when all of it is in view), so moving between cards keeps the map still.
+     */
+    void revealCard(Region card) {
+        if (disposed || !cardTouches.containsKey(card) || !card.isVisible()) {
+            return;
+        }
+        double[] drawn = drawnBounds(card);
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double dx = revealShift(drawn[0], drawn[2], canvasHost.getWidth(), margin);
+        double dy = revealShift(drawn[1], drawn[3], canvasHost.getHeight(), margin);
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            host.panBy(dx, dy);
+        }
+        touchCard(card, true);
+        focusCardContent(card);
+    }
+
+    /**
+     * How far a span at {@code start} of {@code size} must move to be in {@code 0..room} with {@code margin} to spare:
+     * 0 when it is, else just enough — its start in view first when it is longer than the room. Pure.
+     */
+    static double revealShift(double start, double size, double room, double margin) {
+        if (start < margin || size + margin * 2 > room) {
+            return margin - start;
+        }
+        double end = start + size;
+        return end > room - margin ? room - margin - end : 0;
+    }
+
     /** A card as drawn, {@code {x, y, w, h}} in the map area's pixels. */
     static double[] drawnBounds(Region card) {
         double scale = cardScale(card);
@@ -1233,6 +1388,11 @@ final class MapCards {
             host.panBy(dx, dy);
         }
         touchCard(card, true);
+        focusCardContent(card);
+    }
+
+    /** Moves the keyboard into {@code card}: its text, or its first control. */
+    private static void focusCardContent(Region card) {
         if (card instanceof ProjectMapPreview code) {
             code.focusContent();
         } else if (card instanceof ProjectMapNotePreview note) {
