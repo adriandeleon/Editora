@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Right-click menus show keybindings.** An item that does what a command does now shows that command's shortcut
+  at its right edge, in the same small periwinkle type as the menu bar: the editor menu (Run, the LSP, Markdown
+  and Typst submenus, the debugger items, Toggle Comment, Cut/Copy/Paste, Undo/Redo, Select All, bookmarks and
+  notes), the editor tab menu, the preview menus and the Copy/Select All of the output consoles. Chords come from
+  the active keymap, Emacs sequences such as `C-x C-s` included, and follow a keymap switch on the next right-click.
 - **Debug Python subprocesses.** A process your Python program starts (`multiprocessing`, a Python subprocess) is now
   debugged too, in a session of its own beside the program's. Its breakpoints stop, and the Debug window shows it
   when it stops. Stopping the program stops its subprocesses, and a subprocess's tab goes once it ends. Turn it off
