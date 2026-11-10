@@ -19,10 +19,11 @@ import org.jspecify.annotations.Nullable;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * A buffer's right-click menu, built on each request for the view that was clicked: Run/Debug for the file,
- * test, main class or {@code .http} request there, the debugger and build-tool items, the language-server
- * submenu, AI actions, spelling suggestions, the markup submenus, Toggle Comment, the editing items, plugin
- * items, bookmarks and notes; trimmed to the editing items in Simple UI mode. The {@code ContextMenu} popup is
+ * A buffer's right-click menu, built on each request for the view that was clicked: the editing items first
+ * (Cut/Copy/Paste, Undo/Redo, Select All), then Run/Debug for the file, test, main class or {@code .http}
+ * request there, the debugger items (the Breakpoints submenu), the language-server submenu, the build-tool
+ * items, AI actions, spelling suggestions, the markup submenus, Toggle Comment, plugin items, bookmarks and
+ * notes; trimmed to the editing items in Simple UI mode. The {@code ContextMenu} popup is
  * created on the first right-click.
  */
 final class BufferContextMenu {
@@ -81,6 +82,10 @@ final class BufferContextMenu {
             // First, and for every item below: one position the menu is about (and the caret moved to a
             // right-click outside the selection), so Paste, Run Test, the LSP items and Add Bookmark agree.
             ContextMenuTarget at = ContextMenuTarget.resolve(a, e, b::collapseCarets);
+            // The editing items lead — Cut/Copy/Paste, Undo/Redo, Select All — so they sit in the same place on
+            // every file, whatever the file-type, debugger and language-server items below them add up to.
+            items.addAll(standardMenuItems());
+            items.add(new SeparatorMenuItem());
             // A JUnit test file runs/debugs the method there (or the class from its declaration)
             // rather than offering generic "Run File"; anything else runnable keeps that generic action.
             // Simple UI mode keeps the editing actions only: no Run/Debug, language-server, build, AI, markup,
@@ -188,9 +193,9 @@ final class BufferContextMenu {
             }
             items.addAll(b.spell.menuItems(at.offset(), contextMenu.getItems()));
             // One submenu per markup language, the way the LSP and build-tool actions are already grouped:
-            // eight flat "Typst: …" entries pushed cut/copy/paste and the spelling suggestions down the menu
-            // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
-            // top level above — they are the actions you reach for without reading the menu.
+            // eight flat "Typst: …" entries pushed the spelling suggestions down the menu and made the
+            // file-type actions indistinguishable from the editing ones. Run/Debug stay at the top level
+            // above — they are the actions you reach for without reading the menu.
             if (!simpleMenu && b.canFormatMarkdown()) {
                 items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(b, b.typstImagePasteHandler)));
                 items.add(new SeparatorMenuItem());
@@ -205,7 +210,6 @@ final class BufferContextMenu {
                 items.add(comment);
                 items.add(new SeparatorMenuItem());
             }
-            items.addAll(standardMenuItems());
             // Print / Export to PDF stay in Simple mode, as on its File menu; the controller already leaves out the
             // External Tools and plugin items there.
             if (menuContributor != null) { // plugin-contributed items
@@ -233,10 +237,29 @@ final class BufferContextMenu {
                 addNote.setOnAction(ev -> b.addNoteHandler.accept(b));
                 items.add(addNote);
             }
-            contextMenu.getItems().setAll(items);
+            contextMenu.getItems().setAll(tidySeparators(items));
             contextMenu.show(a, at.screenX(), at.screenY());
             e.consume();
         });
+    }
+
+    /**
+     * Drops the separators each group adds around itself where they would show as a leading, trailing or doubled
+     * line — groups come and go per file and per click, so only the assembled menu knows which are needed.
+     */
+    private static List<MenuItem> tidySeparators(List<MenuItem> items) {
+        List<MenuItem> out = new java.util.ArrayList<>(items.size());
+        for (MenuItem item : items) {
+            boolean separator = item instanceof SeparatorMenuItem;
+            if (separator && (out.isEmpty() || out.getLast() instanceof SeparatorMenuItem)) {
+                continue;
+            }
+            out.add(item);
+        }
+        while (!out.isEmpty() && out.getLast() instanceof SeparatorMenuItem) {
+            out.removeLast();
+        }
+        return out;
     }
 
     /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
@@ -250,8 +273,8 @@ final class BufferContextMenu {
     }
 
     /**
-     * Simple UI mode trims the right-click menu, as it trims the menu bar, to Toggle Comment, the spelling
-     * suggestions, Cut/Copy/Paste, Undo/Redo, Select All and Print / Export to PDF; the preview menu loses
+     * Simple UI mode trims the right-click menu, as it trims the menu bar, to Cut/Copy/Paste, Undo/Redo,
+     * Select All, the spelling suggestions, Toggle Comment and Print / Export to PDF; the preview menu loses
      * its extra export formats (see {@link PreviewMenu}). Read on each right-click,
      * so a toggle applies to the next one.
      */
