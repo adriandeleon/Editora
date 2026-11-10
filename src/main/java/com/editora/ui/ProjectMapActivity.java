@@ -90,6 +90,9 @@ final class ProjectMapActivity {
     private long generation;
     private boolean heatOn;
     private boolean overviewWanted;
+    /** The Code Metrics card is open (its Changes and Hotspot columns): the history is wanted (gap 15). */
+    private boolean metricsWanted;
+
     private boolean reading;
     private boolean readAgain;
     private @Nullable Derived derived;
@@ -197,8 +200,17 @@ final class ProjectMapActivity {
         }
     }
 
+    /** The Code Metrics card is open (gap 15): the history is wanted, for its Changes and Hotspot columns. */
+    void setMetricsWanted(boolean wanted) {
+        boolean was = metricsWanted;
+        metricsWanted = wanted;
+        if (wanted && !was) {
+            read();
+        }
+    }
+
     private boolean wanted() {
-        return heatOn || overviewWanted;
+        return heatOn || overviewWanted || metricsWanted;
     }
 
     /** Whether the history is being read. */

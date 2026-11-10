@@ -106,6 +106,10 @@ final class ProjectMapView extends VBox {
     private final MenuItem dependenciesItem = new MenuItem(tr("project.map.deps.projectMenu"));
     /** Which project file uses which, for the Dependencies card (gap 14). */
     private final MapDependencyIndex dependencyIndex = new MapDependencyIndex();
+    /** ⋯ → Project Code Metrics: the Code Metrics card on the whole project (gap 15). */
+    private final MenuItem metricsItem = new MenuItem(tr("project.map.metrics.projectMenu"));
+    /** The project's files measured, for the Code Metrics card (gap 15). */
+    private final MapMetricsIndex metricsIndex = new MapMetricsIndex();
 
     private Consumer<Boolean> onCompactRowsChanged = ignored -> {};
     private Consumer<Boolean> onHideIgnoredChanged = ignored -> {};
@@ -438,6 +442,7 @@ final class ProjectMapView extends VBox {
         canvasFlowMenu.setGraphic(Icons.flow());
         layoutOverviewItem.setGraphic(Icons.overview());
         dependenciesItem.setGraphic(Icons.dependencies());
+        metricsItem.setGraphic(Icons.metrics());
         openCardsMenu.setGraphic(Icons.cards());
         canvasCollapseAllItem.setGraphic(Icons.collapseAll());
         workingSets.menu().setGraphic(Icons.layers());
@@ -461,6 +466,7 @@ final class ProjectMapView extends VBox {
                         revealActiveItem,
                         layoutOverviewItem,
                         dependenciesItem,
+                        metricsItem,
                         openCardsMenu,
                         canvasCollapseAllItem,
                         workingSets.menu(),
@@ -501,6 +507,12 @@ final class ProjectMapView extends VBox {
             Path current = root;
             if (current != null) {
                 openDependencies(current, null);
+            }
+        });
+        metricsItem.setOnAction(event -> {
+            Path current = root;
+            if (current != null) {
+                openMetrics(current);
             }
         });
         activity.setOnExplain(message -> onStatus.accept(message)); // why no heat shows (Map review 4 B11)
@@ -616,6 +628,10 @@ final class ProjectMapView extends VBox {
     /** The history or the owners arrived: the rows and an open Overview card follow. */
     private void activityChanged() {
         surface.repaint();
+        ProjectMapMetricsCard metrics = cards.metricsCard();
+        if (metrics != null) {
+            metrics.setChanges(activity.changes());
+        }
         ProjectMapOverviewCard card = cards.overviewCard();
         if (card != null) {
             card.setActivity(activity.summary());
@@ -649,6 +665,7 @@ final class ProjectMapView extends VBox {
     void setOverviewFileSource(@Nullable Function<Path, com.editora.search.ProjectFileList.@Nullable Snapshot> source) {
         orientation.setFileSource(source);
         dependencyIndex.setFileSource(source);
+        metricsIndex.setFileSource(source);
     }
 
     /** Whether the Map search leaves ignored files out: its "no files match" banner then says so (review 3 A11). */
@@ -702,6 +719,47 @@ final class ProjectMapView extends VBox {
     @Nullable
     ProjectMapDependencyCard dependencyCard() {
         return cards.dependencyCard();
+    }
+
+    /**
+     * Opens the Code Metrics card (gap 15) on the folder {@code folder} — the project or a folder of it — and measures
+     * the project again for it (only the files changed since the last time); the last 90 days' history is read for its
+     * Changes and Hotspot columns.
+     */
+    void openMetrics(Path folder) {
+        Path current = root;
+        if (current == null || disposed) {
+            return;
+        }
+        Path normalized = folder.toAbsolutePath().normalize();
+        if (!normalized.startsWith(current)) {
+            return;
+        }
+        String rel = current.relativize(normalized).toString().replace('\\', '/');
+        ProjectMapMetricsCard card = cards.openMetricsCard(current, rel, made -> {
+            made.setOnReveal(this::revealPath);
+            made.setOnRefresh(() -> readMetrics(made));
+            made.setOnDependencies(path -> openDependencies(path, null));
+        });
+        activity.setMetricsWanted(true);
+        card.setChanges(activity.changes());
+        readMetrics(card);
+        card.focusContent();
+    }
+
+    private void readMetrics(ProjectMapMetricsCard card) {
+        card.setReading();
+        metricsIndex.load(found -> {
+            if (cards.metricsCard() == card) {
+                card.setMetrics(found);
+            }
+        });
+    }
+
+    /** The open Code Metrics card, or null. */
+    @Nullable
+    ProjectMapMetricsCard metricsCard() {
+        return cards.metricsCard();
     }
 
     /** The open Overview card, or null. */
@@ -1165,6 +1223,7 @@ final class ProjectMapView extends VBox {
         setOutputEnabled(false);
         orientation.setRoot(normalized);
         dependencyIndex.setRoot(normalized);
+        metricsIndex.setRoot(normalized);
         activity.setRoot(normalized);
         surface.resetForRoot();
         if (otherFileSystem) {
@@ -2219,6 +2278,7 @@ final class ProjectMapView extends VBox {
      */
     void activityGitRefreshed() {
         activity.setOverviewWanted(cards.overviewCard() != null);
+        activity.setMetricsWanted(cards.metricsCard() != null);
         activity.headMaybeMoved();
     }
 
@@ -2501,6 +2561,10 @@ final class ProjectMapView extends VBox {
                 || entry.isFile() && ProjectMapImports.languageOf(entry.path().toString()) != null) {
             // What uses it and what it uses, as a card (gap 14).
             items.add(mapMenuItem("project.map.deps.menu", () -> openDependencies(entry.path(), null)));
+        }
+        if (entry.directory()) {
+            // Its files' sizes, complexity and hotspots, as a card (gap 15).
+            items.add(mapMenuItem("project.map.metrics.menu", () -> openMetrics(entry.path())));
         }
         Path closable = surface.closeTargetFor(entry);
         if (closable != null) {
@@ -3045,6 +3109,7 @@ final class ProjectMapView extends VBox {
         usages.dispose();
         orientation.dispose();
         dependencyIndex.dispose();
+        metricsIndex.dispose();
         activity.dispose();
         noMatchesDelay.stop();
         if (helpPopup != null) {
