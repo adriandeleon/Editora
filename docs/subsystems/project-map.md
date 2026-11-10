@@ -122,6 +122,7 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Row menu → **Close Other Branches** | Close every column, folder or Structure, that is not on the way to that row; a folder row keeps its own column. Offered while such a column is open |
 | Options (⋯) menu → **Collapse All** | Close every column but the first and the ones on the way to the selection (`ProjectMapView.canvasCloseOthers`, `MapLoader.canvasCloseOthers`); cards opened from the closed columns close with them. "Nothing to collapse" when only those are open |
 | Options (⋯) menu → **Open cards** | List the open cards, the most recently used first; one brings its card into the middle of the map area with the keyboard in it |
+| Recent Files or Switch File key (Ctrl+E IntelliJ, Ctrl+R VS Code), or ⋯ → **Open cards** → **Switch Card…** | Pick an open card by name, the most recently used first, starting on the one before the card in use |
 | Ctrl+Shift+arrows | Move the keyboard to the nearest card that way, from a card or from the map's selected row; the map moves only as far as that card is out of view |
 | Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout, the open cards where they stand |
 | Options (⋯) menu → **PDF…** | Export the complete map layout and the open cards using the configured PDF page size; the map's names are searchable text |
@@ -455,6 +456,15 @@ its declaration — Show References, Callers, Callees, Implementations, Supertyp
 Definition, Go to Super Method; not Definition or Declaration, which are the row itself — then the same In the
 Editor submenu at the declaration, with the caret on its name. The same commands typed on the map with a declaration
 row selected ask about it (`ProjectMapView.runRowNavigation`, through the Map window's `HANDLED_COMMANDS`).
+
+**Switching between cards** (Map code browser round 2). Typed in the Map window, `recent.jump` (Recent Files:
+Ctrl+E in IntelliJ, Ctrl+R in VS Code, `C-x C-r` in Emacs) and `buffer.jump` (Switch File) show a picker over the Map
+window of its open cards in sight, the most recently used first (`ProjectPanel.mapSwitchCard`, from
+`MapCards.visibleCards`): each card's name, where it is below the Map's folder (a note card says Personal Notes), and
+its file's icon or its kind's. It starts on the card before the one the keyboard is in, so Enter goes back to it
+(`ProjectMapView.switcherStart`); typing filters by name. The card picked comes into view with the keyboard in it, as
+from ⋯ → **Open cards**, whose first item, **Switch Card…**, shows the same picker. With no card open the status line
+says so. Nothing opens in the editor.
 
 **Go to File and Go to Symbol on the Map.** Typed in the Map window — in a card or on the map —
 `file.find` (Ctrl+P in VS Code, Ctrl+Shift+N in IntelliJ, `C-x C-f` in Emacs) and `lsp.gotoSymbol` show the editor's
@@ -1805,6 +1815,9 @@ The focused coverage lives in:
   repository's link at HEAD with lines mapped through uncommitted edits, all-new lines, untracked files, the
   upstream's remote and whether HEAD is pushed, no repository, commit or remote; the editor command on a selection
   and at the caret, a card's and a folder row's menu item, and the status line's words;
+- `MapCardSwitcherFxTest` for the card switcher: nothing to switch to, the open cards most recently used first
+  starting on the one before the card in use, a pick bringing its card up with the keyboard in it, typing to filter,
+  ⋯ → Open cards → Switch Card…, and each card's detail and icon;
 - `MapCardSpatialKeysFxTest` for Ctrl+Shift+arrows: the nearest card that way (straight ahead first, one mostly to
   the side left out, ties by centre), the map moved only as far as a card is out of view, which keys move; moving
   between three cards and from the map's selected row, the status with no card that way, and a card partly out of

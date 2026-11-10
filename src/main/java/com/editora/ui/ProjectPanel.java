@@ -203,6 +203,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private @Nullable BiConsumer<Path, Boolean> onOpenTerminal;
     /** Injected by MainController: per-file Local History + Git actions for the cell menu (files only). */
     private @Nullable FileActions fileActions;
+    /** The last card switcher shown on the Map (round 2, item 6), for tests. */
+    private @Nullable QuickOpen<MapCards.OpenCard> cardSwitcher;
     /** Injected by MainController: file-level entry points into the line-anchored bookmark/note stores. */
     private @Nullable MarkerActions markerActions;
     /** Injected by MainController: whether Simple UI mode is on, which trims the cell menu. */
@@ -788,6 +790,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapFilterField.textProperty().addListener((o, w, n) -> strip.refresh());
         // Everything the Map says goes to its own window's status line, never the editor's (A2).
         mapView.setOnStatus(mapStatusLine::show);
+        mapView.setOnSwitchCard(this::mapSwitchCard);
         mapView.setOnSearchNotice(mapStatusLine::showSearch);
         VBox content = new VBox(filterRow, strip, mapView, mapStatusLine);
         content.getStyleClass().add("project-map-window");
@@ -851,6 +854,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             case "lsp.gotoSymbol" -> {
                 return mapGotoSymbol();
             }
+            case "recent.jump", "buffer.jump" -> {
+                return mapSwitchCard(); // Recent Files and Switch File on the Map: its open cards
+            }
             default -> {
                 // Go to Implementation, Find Usages… on a selected declaration row: answered as cards on the Map.
                 return mapView.runRowNavigation(commandId);
@@ -885,6 +891,46 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         finder.setOverlayHost(mapWindow.overlayHost());
         finder.show(owner);
         return true;
+    }
+
+    /**
+     * Recent Files or Switch File typed on the Map (Map code browser round 2): a picker over the Map window of its open
+     * cards in sight, the most recently used first, starting on the one before the card the keyboard is in, so Enter
+     * goes back to it; typing filters them by name. The card picked comes into view with the keyboard in it. With no
+     * card open, the status line says so.
+     */
+    boolean mapSwitchCard() {
+        javafx.stage.Stage owner = mapWindow.stage();
+        if (owner == null) {
+            return false;
+        }
+        List<MapCards.OpenCard> open = mapView.switchableCards();
+        if (open.isEmpty()) {
+            mapStatusLine.show(tr("project.map.switch.none"));
+            return true;
+        }
+        MapCards.OpenCard start = mapView.switcherStart(open);
+        QuickOpen<MapCards.OpenCard> switcher = new QuickOpen<>(
+                tr("project.map.switch.title"),
+                tr("project.map.switch.prompt"),
+                () -> open,
+                MapCards.OpenCard::label,
+                mapView::switcherDetail,
+                mapView::switchToCard);
+        switcher.setItemIcon(ProjectMapView::switcherIcon);
+        if (start != null) {
+            switcher.setCurrentItem(() -> start);
+        }
+        switcher.setOverlayHost(mapWindow.overlayHost());
+        switcher.show(owner);
+        cardSwitcher = switcher;
+        return true;
+    }
+
+    /** The last card switcher shown, or null. For tests. */
+    @Nullable
+    QuickOpen<MapCards.OpenCard> cardSwitcher() {
+        return cardSwitcher;
     }
 
     /**

@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Project Map it is in a code card's menu and in a file's or folder's menu. It works with GitHub, GitLab, Bitbucket,
   Gitea, Forgejo, Codeberg, sourcehut and Azure DevOps remotes, and keeps the right lines when the file has unsaved
   or uncommitted edits above them. The status bar says when HEAD is not pushed yet.
+- **Switch between Project Map cards by name.** On the Map, the Recent Files key (Ctrl+E in the IntelliJ keymap,
+  Ctrl+R in VS Code's) or ⋯ → *Open cards* → *Switch Card…* lists the open cards, the most recently used first,
+  starting on the one you were in before. Type to filter, Enter to go there.
 - **Code metrics and hotspots on the Project Map.** *Code Metrics* in a folder's menu on the Map, or *Project Code
   Metrics* in the ⋯ menu, opens a card listing the folder's files, or its subfolders added up, with their lines of
   code and comments, their complexity and their commits of the last 90 days. A hotspot score marks code that is both

@@ -102,6 +102,9 @@ final class ProjectMapView extends VBox {
     private final CheckMenuItem layoutHideIgnoredOption = optionItem("project.map.layout.hideIgnored", false);
     /** "Project overview" (review 3 B4): opens the Overview card. */
     private final MenuItem layoutOverviewItem = new MenuItem(tr("project.map.overview.open"));
+    /** The card switcher, when the panel gives one: the first item of ⋯ → Open cards. */
+    private @Nullable Runnable onSwitchCard;
+
     /** ⋯ → Project Dependencies: the Dependencies card on the whole project (gap 14). */
     private final MenuItem dependenciesItem = new MenuItem(tr("project.map.deps.projectMenu"));
     /** Which project file uses which, for the Dependencies card (gap 14). */
@@ -535,6 +538,13 @@ final class ProjectMapView extends VBox {
      */
     private void fillOpenCardsMenu() {
         List<MenuItem> items = new ArrayList<>();
+        Runnable switcher = onSwitchCard;
+        if (switcher != null && !cards.visibleCards().isEmpty()) {
+            MenuItem switchItem = new MenuItem(tr("project.map.switch.menu"));
+            switchItem.setOnAction(event -> switcher.run());
+            items.add(switchItem);
+            items.add(new SeparatorMenuItem());
+        }
         for (MapCards.OpenCard card : cards.openCards()) {
             String label = card.note() ? tr("project.map.openCards.notes", card.label()) : card.label();
             MenuItem item = new MenuItem(label, card.note() ? Icons.notes() : null);
@@ -713,6 +723,11 @@ final class ProjectMapView extends VBox {
                 card.setDependencies(found);
             }
         });
+    }
+
+    /** What ⋯ → Open cards → Switch Card… does: the panel's card switcher. */
+    void setOnSwitchCard(@Nullable Runnable action) {
+        onSwitchCard = action;
     }
 
     /** The open Dependencies card, or null. */
@@ -2759,6 +2774,75 @@ final class ProjectMapView extends VBox {
             kinds.forEach(kind -> cards.showLinks(entry, kind));
         }
         return true;
+    }
+
+    // --- the card switcher (Map code browser round 2, item 6) ------------------------------------------------
+
+    /** The open cards in sight, the most recently used first: what the card switcher lists. */
+    List<MapCards.OpenCard> switchableCards() {
+        return cards.visibleCards();
+    }
+
+    /**
+     * Where the switcher starts among {@code open} (the most recently used first): the card before the one the keyboard
+     * is in, so Enter goes back to it; else the most recent. Null for none.
+     */
+    static MapCards.@Nullable OpenCard switcherStart(List<MapCards.OpenCard> open, @Nullable Node focused) {
+        if (open.isEmpty()) {
+            return null;
+        }
+        boolean inFirst = false;
+        for (Node node = focused; node != null; node = node.getParent()) {
+            if (node == open.get(0).node()) {
+                inFirst = true;
+                break;
+            }
+        }
+        return inFirst && open.size() > 1 ? open.get(1) : open.get(0);
+    }
+
+    /** The card the switcher starts on now. */
+    MapCards.@Nullable OpenCard switcherStart(List<MapCards.OpenCard> open) {
+        javafx.scene.Scene scene = getScene();
+        return switcherStart(open, scene == null ? null : scene.getFocusOwner());
+    }
+
+    /** What the switcher says under a card's name: where it is, below the Map's folder; a note card says so. */
+    String switcherDetail(MapCards.OpenCard card) {
+        Path file = card.node() instanceof ProjectMapPreview code && code.path() != null ? code.path() : card.key();
+        Path base = root;
+        String where = base != null && file.startsWith(base) && !file.equals(base)
+                ? base.relativize(file).toString().replace('\\', '/')
+                : file.toString();
+        return card.note() ? tr("project.map.switch.notes", where) : where;
+    }
+
+    /** The switcher's icon of a card: its file's, or its kind's. */
+    static Node switcherIcon(MapCards.OpenCard card) {
+        Region node = card.node();
+        if (card.note()) {
+            return Icons.notes();
+        }
+        if (node instanceof ProjectMapOverviewCard) {
+            return Icons.overview();
+        }
+        if (node instanceof ProjectMapHistoryCard) {
+            return Icons.gitLog();
+        }
+        if (node instanceof ProjectMapDependencyCard) {
+            return Icons.dependencies();
+        }
+        if (node instanceof ProjectMapMetricsCard) {
+            return Icons.metrics();
+        }
+        Path file = node instanceof ProjectMapPreview code && code.path() != null ? code.path() : card.key();
+        Path name = file.getFileName();
+        return FileIcons.forFileName(name == null ? file.toString() : name.toString());
+    }
+
+    /** The card picked in the switcher comes into view, with the keyboard in it. */
+    void switchToCard(MapCards.OpenCard card) {
+        cards.bringIntoView(card.node());
     }
 
     /** The card the keyboard is in, or null: the place Go to File and Go to Symbol typed on the Map start from. */
