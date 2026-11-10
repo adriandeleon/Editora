@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs first, and with `stopAll`, stopping one stops them all. A project can also have compounds of its own saved run
   configurations: make them in *Debug: Edit Compounds…* and start them with *Debug: Start Compound…*. A launch.json
   configuration started while a session runs is now debugged beside it, as in VS Code, instead of replacing it.
+- **Switch between Project Map cards by name.** On the Map, the Recent Files key (Ctrl+E in the IntelliJ keymap,
+  Ctrl+R in VS Code's) or ⋯ → *Open cards* → *Switch Card…* lists the open cards, the most recently used first,
+  starting on the one you were in before. Type to filter, Enter to go there.
 - **Code metrics and hotspots on the Project Map.** *Code Metrics* in a folder's menu on the Map, or *Project Code
   Metrics* in the ⋯ menu, opens a card listing the folder's files, or its subfolders added up, with their lines of
   code and comments, their complexity and their commits of the last 90 days. A hotspot score marks code that is both
