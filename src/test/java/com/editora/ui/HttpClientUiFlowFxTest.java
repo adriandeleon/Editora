@@ -309,13 +309,17 @@ class HttpClientUiFlowFxTest {
                 assertNotNull(menu, "the editor menu opened");
                 List<String> texts =
                         menu.getItems().stream().map(MenuItem::getText).toList();
-                menu.getItems().get(0).fire();
-                menu.getItems().get(1).fire();
+                // After the editing sections (Cut/Copy/Paste, Undo/Redo, Select All), the file's own actions lead.
+                int runAt = texts.indexOf(tr("editmenu.runHttpRequest"));
+                menu.getItems().get(runAt).fire();
+                menu.getItems().get(runAt + 1).fire();
                 menu.hide();
                 return texts;
             });
-            assertEquals(tr("editmenu.runHttpRequest"), labels.get(0));
-            assertEquals(tr("editmenu.runHttpFile"), labels.get(1));
+            int runAt = labels.indexOf(tr("editmenu.runHttpRequest"));
+            assertEquals(
+                    tr("editmenu.selectAll"), labels.get(runAt - 2), "Run Request heads the section after Select All");
+            assertEquals(tr("editmenu.runHttpFile"), labels.get(runAt + 1));
             assertFalse(labels.contains(tr("command.file.run")), "no Run File: it launched java on the file");
             assertTrue(runs[0] >= 0, "Run Request ran the request under the click");
             assertEquals(1, runs[1]);
