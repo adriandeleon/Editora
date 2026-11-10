@@ -845,10 +845,12 @@ final class BufferPreview {
 
     private void showTreePreviewContextMenu(double screenX, double screenY) {
         if (treePreviewContextMenu == null) {
-            MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
+            MenuItem pdf = com.editora.command.MenuChords.tag(
+                    new MenuItem(tr("command.preview.exportPdf")), "preview.exportPdf");
             pdf.setGraphic(MenuIcons.download());
             pdf.setOnAction(ev -> b.previewMenu.exportPdf());
-            MenuItem print = new MenuItem(tr("command.preview.print"));
+            MenuItem print =
+                    com.editora.command.MenuChords.tag(new MenuItem(tr("command.preview.print")), "preview.print");
             print.setGraphic(MenuIcons.print());
             print.setOnAction(ev -> b.previewMenu.print());
             pomViewItem = new MenuItem();

@@ -193,7 +193,7 @@ public final class PreviewMenu {
         List<MenuItem> fullOnly = new java.util.ArrayList<>(); // hidden in Simple UI mode
         if (b.isMarkdown()) {
             // The selection: Copy is offered while there is one; Select All makes one.
-            MenuItem copy = new MenuItem(tr("previewmenu.copy"));
+            MenuItem copy = com.editora.command.MenuChords.tag(new MenuItem(tr("previewmenu.copy")), "preview.copy");
             copy.setGraphic(MenuIcons.copy());
             copy.setOnAction(ev -> withPreview(MarkdownPreview::copySelection));
             MenuItem selectAll = new MenuItem(tr("previewmenu.selectAll"));
@@ -225,7 +225,8 @@ public final class PreviewMenu {
                 copyCode.setVisible(code != null);
             });
             // Copy puts rendered rich text on the clipboard; this one puts the HTML markup itself.
-            MenuItem copyHtml = new MenuItem(tr("previewmenu.copyHtml"));
+            MenuItem copyHtml =
+                    com.editora.command.MenuChords.tag(new MenuItem(tr("previewmenu.copyHtml")), "preview.copyHtml");
             copyHtml.setGraphic(MenuIcons.code());
             copyHtml.setOnAction(ev -> copyHtmlSource());
             m.getItems().add(copyHtml);
@@ -234,16 +235,19 @@ public final class PreviewMenu {
         m.getItems().add(new SeparatorMenuItem());
         if (b.isMarkwhen()) {
             // Markwhen: JSON export + a timeline⇄calendar view switch (PDF/Word/Print don't apply).
-            MenuItem json = new MenuItem(tr("command.markwhen.exportJson"));
+            MenuItem json = com.editora.command.MenuChords.tag(
+                    new MenuItem(tr("command.markwhen.exportJson")), "markwhen.exportJson");
             json.setGraphic(MenuIcons.download());
             json.setOnAction(ev -> exportJson.run());
             MenuItem viewToggle = new MenuItem();
             viewToggle.setGraphic(MenuIcons.table());
             viewToggle.setOnAction(ev -> b.toggleMarkwhenView());
-            MenuItem pdf = new MenuItem(tr("previewmenu.exportPdf"));
+            MenuItem pdf =
+                    com.editora.command.MenuChords.tag(new MenuItem(tr("previewmenu.exportPdf")), "preview.exportPdf");
             pdf.setGraphic(MenuIcons.download());
             pdf.setOnAction(ev -> exportPdf.run());
-            MenuItem printItem = new MenuItem(tr("previewmenu.print"));
+            MenuItem printItem =
+                    com.editora.command.MenuChords.tag(new MenuItem(tr("previewmenu.print")), "preview.print");
             printItem.setGraphic(MenuIcons.print());
             printItem.setOnAction(ev -> print.run());
             m.getItems().addAll(json, viewToggle, new SeparatorMenuItem(), pdf, printItem);
@@ -253,16 +257,19 @@ public final class PreviewMenu {
                             ? tr("markwhen.switchToCalendar")
                             : tr("markwhen.switchToTimeline")));
         } else {
-            MenuItem pdf = new MenuItem(tr("previewmenu.exportPdf"));
+            MenuItem pdf =
+                    com.editora.command.MenuChords.tag(new MenuItem(tr("previewmenu.exportPdf")), "preview.exportPdf");
             pdf.setGraphic(MenuIcons.download());
             pdf.setOnAction(ev -> exportPdf.run());
             m.getItems().add(pdf);
             // Typst also exports to PNG / SVG natively (typst -f png/svg).
             if (b.isTypst()) {
-                MenuItem png = new MenuItem(tr("command.typst.exportPng"));
+                MenuItem png = com.editora.command.MenuChords.tag(
+                        new MenuItem(tr("command.typst.exportPng")), "typst.exportPng");
                 png.setGraphic(MenuIcons.download());
                 png.setOnAction(ev -> exportPng.run());
-                MenuItem svg = new MenuItem(tr("command.typst.exportSvg"));
+                MenuItem svg = com.editora.command.MenuChords.tag(
+                        new MenuItem(tr("command.typst.exportSvg")), "typst.exportSvg");
                 svg.setGraphic(MenuIcons.download());
                 svg.setOnAction(ev -> exportSvg.run());
                 m.getItems().addAll(png, svg);
@@ -270,16 +277,19 @@ public final class PreviewMenu {
             }
             // Word / OpenDocument export — Markdown only (not standalone diagrams).
             if (b.isMarkdown()) {
-                MenuItem docx = new MenuItem(tr("previewmenu.exportDocx"));
+                MenuItem docx = com.editora.command.MenuChords.tag(
+                        new MenuItem(tr("previewmenu.exportDocx")), "preview.exportDocx");
                 docx.setGraphic(MenuIcons.download());
                 docx.setOnAction(ev -> exportDocx.run());
-                MenuItem odt = new MenuItem(tr("previewmenu.exportOdt"));
+                MenuItem odt = com.editora.command.MenuChords.tag(
+                        new MenuItem(tr("previewmenu.exportOdt")), "preview.exportOdt");
                 odt.setGraphic(MenuIcons.download());
                 odt.setOnAction(ev -> exportOdt.run());
                 m.getItems().addAll(docx, odt);
                 fullOnly.addAll(List.of(docx, odt));
             }
-            MenuItem printItem = new MenuItem(tr("previewmenu.print"));
+            MenuItem printItem =
+                    com.editora.command.MenuChords.tag(new MenuItem(tr("previewmenu.print")), "preview.print");
             printItem.setGraphic(MenuIcons.print());
             printItem.setOnAction(ev -> print.run());
             m.getItems().addAll(new SeparatorMenuItem(), printItem);

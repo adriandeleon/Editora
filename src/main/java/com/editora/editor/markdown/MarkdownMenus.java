@@ -182,6 +182,9 @@ public final class MarkdownMenus {
 
     private static MenuItem item(String commandKey, @Nullable Node icon, @Nullable Runnable action) {
         MenuItem mi = new MenuItem(label(tr(commandKey)));
+        if (commandKey.startsWith("command.")) {
+            com.editora.command.MenuChords.tag(mi, commandKey.substring("command.".length()));
+        }
         if (icon != null) {
             mi.setGraphic(icon);
         }

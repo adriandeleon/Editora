@@ -540,6 +540,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.config = config;
         this.registry = registry;
         this.keymap = keymap;
+        // Right-click menus show each command's chord beside it, read from the live keymap as the menu bar is.
+        com.editora.command.MenuChords.setChords(keymap::displayChords);
         this.macroCoordinator = new MacroCoordinator(config, registry, coordinatorHost, new MacroCoordinator.Ops() {
             @Override
             public void refreshAllWindows() {

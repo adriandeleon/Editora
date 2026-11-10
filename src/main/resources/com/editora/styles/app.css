@@ -6035,6 +6035,16 @@
    two labels carry their own colours. Periwinkle for the chord — the keyboard's one hue, as everywhere
    else a binding is shown. */
 
+/* Right-click menus show a command's chord in JavaFX's own accelerator column (MenuChords). Styled like the
+   menu bar's `.menu-item-chord` — Inter 11px in periwinkle — so a binding reads the same in both. The extra
+   `.label` class outranks the 14px `.context-menu .menu-item .label` pin and the theme's focused-label fill,
+   so the chord keeps its size and colour while the row is hovered, as the menu bar's does. */
+.context-menu .menu-item > .label.accelerator-text {
+    -fx-font-family: "Inter", "System", "sans-serif";
+    -fx-font-size: 11px;
+    -fx-text-fill: -state-key;
+}
+
 /* Submenu rows (MainMenuBar.nestedMenu) draw their title in the graphic, laid out like a command row, so the
    arrow column lands at the menu's right edge. The Menu's own label would repeat the title: collapse it, and
    drop the graphic gutter so the row starts where the command rows do. */

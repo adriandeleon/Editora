@@ -6,6 +6,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 
+import com.editora.command.MenuChords;
 import com.editora.editor.EditorBuffer;
 
 import static com.editora.i18n.Messages.tr;
@@ -100,6 +101,26 @@ final class TabContextMenu {
                 Icons.diff(),
                 () -> c.git.withRepositoryOf(
                         buffer.getPath(), () -> c.diffCoordinator.diffPathVsCommit(buffer.getPath())));
+        // Each row a command also does shows that command's chord — the shortcut for "this, on the active tab".
+        MenuChords.tag(save, "file.save");
+        MenuChords.tag(saveAs, "file.saveAs");
+        MenuChords.tag(print, "editor.print");
+        MenuChords.tag(exportPdf, "editor.exportPdf");
+        MenuChords.tag(close, "buffer.close");
+        MenuChords.tag(closeOthers, "buffer.closeOthers");
+        MenuChords.tag(closeAll, "buffer.closeAll");
+        MenuChords.tag(closeUnmodified, "buffer.closeUnmodified");
+        MenuChords.tag(closeLeft, "buffer.closeLeft");
+        MenuChords.tag(closeRight, "buffer.closeRight");
+        MenuChords.tag(copyPath, "buffer.copyPath");
+        MenuChords.tag(pin, "buffer.togglePin");
+        MenuChords.tag(rename, "buffer.rename");
+        MenuChords.tag(stage, "git.stageFile");
+        MenuChords.tag(ignore, "git.addToGitignore");
+        MenuChords.tag(diffHead, "diff.vsHead");
+        MenuChords.tag(diffBranch, "diff.vsBranch");
+        MenuChords.tag(diffTag, "diff.vsTag");
+        MenuChords.tag(diffCommit, "diff.vsCommit");
         MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
         annotate.setGraphic(Icons.blame());
         annotate.setOnAction(e -> c.git.ifEnabled(() -> {

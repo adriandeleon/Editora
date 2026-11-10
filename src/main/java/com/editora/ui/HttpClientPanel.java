@@ -707,10 +707,12 @@ public final class HttpClientPanel extends VBox {
      * selection (or the whole text when nothing is selected) on the clipboard without disturbing the selection.
      */
     private static void installCopyMenu(CodeArea area) {
-        MenuItem copy = new MenuItem(tr("editmenu.copy"), Icons.copy());
+        MenuItem copy =
+                com.editora.command.MenuChords.tag(new MenuItem(tr("editmenu.copy"), Icons.copy()), "edit.copy");
         copy.setOnAction(
                 e -> putOnClipboard(area.getSelection().getLength() > 0 ? area.getSelectedText() : area.getText()));
-        MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"), Icons.selectAll());
+        MenuItem selectAll = com.editora.command.MenuChords.tag(
+                new MenuItem(tr("editmenu.selectAll"), Icons.selectAll()), "edit.selectAll");
         selectAll.setOnAction(e -> area.selectAll());
         ContextMenu menu = new ContextMenu(copy, selectAll);
         // Use the UI font (not the area's inherited monospace), matching the editor right-click menu.

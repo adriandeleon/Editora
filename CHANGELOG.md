@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Right-click menus show keybindings.** An item that does what a command does now shows that command's shortcut
+  at its right edge, in the same small periwinkle type as the menu bar: the editor menu (Run, the LSP, Markdown
+  and Typst submenus, the debugger items, Toggle Comment, Cut/Copy/Paste, Undo/Redo, Select All, bookmarks and
+  notes), the editor tab menu, the preview menus and the Copy/Select All of the output consoles. Chords come from
+  the active keymap, Emacs sequences such as `C-x C-s` included, and follow a keymap switch on the next right-click.
+
 - **Copy Permalink.** *Git: Copy Permalink* (in Git → History) copies the web address of the current file at the
   HEAD commit, with the selected lines (or the caret's line) marked, ready to paste in a chat or an issue. On the
   Project Map it is in a code card's menu and in a file's or folder's menu. It works with GitHub, GitLab, Bitbucket,

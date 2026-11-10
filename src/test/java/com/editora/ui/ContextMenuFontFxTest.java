@@ -60,6 +60,43 @@ class ContextMenuFontFxTest {
         assertEquals(normal.getStyle(), fromFileStyledOwner.getStyle());
     }
 
+    /** A tagged item's chord sits in the accelerator column in the menu bar's chord font: Inter, 11px. */
+    @Test
+    void chordUsesTheMenuBarsChordFont() throws Exception {
+        Node root = FxTestSupport.callOnFx(() ->
+                FxTestSupport.<Stage>field(fx.controller, "stage").getScene().getRoot());
+        ContextMenu menu = FxTestSupport.callOnFx(() -> {
+            MenuItem save = com.editora.command.MenuChords.tag(new MenuItem("Save"), "file.save");
+            ContextMenu result = new ContextMenu(save);
+            result.show(root, 100, 100);
+            return result;
+        });
+        try {
+            FxTestSupport.runOnFx(() -> {
+                MenuItem save = menu.getItems().get(0);
+                assertNotNull(save.getAccelerator(), "file.save is bound in every bundled keymap");
+                Node skin = menu.getSkin().getNode();
+                skin.applyCss();
+                if (skin instanceof javafx.scene.Parent parent) {
+                    parent.layout();
+                }
+                Label chord = (Label) skin.lookup(".accelerator-text");
+                Label title = skin.lookupAll(".label").stream()
+                        .filter(Label.class::isInstance)
+                        .map(Label.class::cast)
+                        .filter(label -> "Save".equals(label.getText()))
+                        .findFirst()
+                        .orElseThrow();
+                assertNotNull(chord);
+                assertEquals(save.getAccelerator().getDisplayText(), chord.getText());
+                assertEquals(11.0, chord.getFont().getSize(), 0.01, "the menu bar's .menu-item-chord size");
+                assertEquals(title.getFont().getFamily(), chord.getFont().getFamily());
+            });
+        } finally {
+            FxTestSupport.runOnFx(menu::hide);
+        }
+    }
+
     private static Font menuFont(Node owner, String ownerStyle) throws Exception {
         String oldStyle = FxTestSupport.callOnFx(owner::getStyle);
         ContextMenu menu = FxTestSupport.callOnFx(() -> {
