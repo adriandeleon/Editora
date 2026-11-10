@@ -268,6 +268,42 @@ public final class DapManager {
         this.callbackWrapper = wrapper == null ? java.util.function.UnaryOperator.identity() : wrapper;
     }
 
+    /** {@link LspManager#executeCommand}, its answer handed back through {@link #callbackWrapper}. */
+    private void executeCommand(
+            @Nullable Path file,
+            String command,
+            List<Object> args,
+            java.util.function.BiConsumer<Object, Throwable> cb) {
+        lsp.executeCommand(
+                file,
+                command,
+                args,
+                (r, e) -> callbackWrapper.apply(() -> cb.accept(r, e)).run());
+    }
+
+    /** As above, waiting up to {@code timeout}. */
+    private void executeCommand(
+            @Nullable Path file,
+            String command,
+            List<Object> args,
+            java.time.Duration timeout,
+            java.util.function.BiConsumer<Object, Throwable> cb) {
+        lsp.executeCommand(
+                file,
+                command,
+                args,
+                timeout,
+                (r, e) -> callbackWrapper.apply(() -> cb.accept(r, e)).run());
+    }
+
+    /** {@link LspManager#buildJavaWorkspace}, its answer handed back through {@link #callbackWrapper}. */
+    private void buildJavaWorkspace(Path file, boolean full, Consumer<LspManager.BuildOutcome> cb) {
+        lsp.buildJavaWorkspace(
+                file,
+                full,
+                outcome -> callbackWrapper.apply(() -> cb.accept(outcome)).run());
+    }
+
     /** Runs {@code r} later on the FX thread, through {@link #callbackWrapper}. */
     private void fx(Runnable r) {
         Runnable wrapped = callbackWrapper.apply(r);
@@ -1032,7 +1068,7 @@ public final class DapManager {
             @Nullable Path projectRoot,
             @Nullable Path looseCwd,
             long epoch) {
-        lsp.executeCommand(file, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
+        executeCommand(file, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
             if (!isCurrent(epoch)) {
                 return;
             }
@@ -1251,14 +1287,14 @@ public final class DapManager {
      */
     private void projectNameOf(Path file, Consumer<String> cb) {
         String uri = lsp.serverUri(file);
-        lsp.executeCommand(file, "vscode.java.resolveMainMethod", List.of(uri), (res, err) -> {
+        executeCommand(file, "vscode.java.resolveMainMethod", List.of(uri), (res, err) -> {
             String name = err == null ? JavaLaunchSupport.projectName(res) : null;
             int[] at = name == null ? JavaLaunchSupport.typeNamePosition(file) : null;
             if (at == null) {
                 cb.accept(name);
                 return;
             }
-            lsp.executeCommand(
+            executeCommand(
                     file,
                     "vscode.java.resolveElementAtSelection",
                     List.of(uri, at[0], at[1]),
@@ -1388,7 +1424,7 @@ public final class DapManager {
             return;
         }
         String proj = opt.projectName() == null ? "" : opt.projectName();
-        lsp.executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(mainClass, proj), (res, err) -> {
+        executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(mainClass, proj), (res, err) -> {
             if (err != null) {
                 cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathFailed", msg(err))));
                 return;
@@ -1411,11 +1447,11 @@ public final class DapManager {
                 cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathEmpty", mainClass)));
                 return;
             }
-            lsp.executeCommand(
+            executeCommand(
                     routingFile,
                     "vscode.java.resolveJavaExecutable",
                     List.of(mainClass, proj),
-                    (jx, e2) -> lsp.executeCommand(
+                    (jx, e2) -> executeCommand(
                             routingFile,
                             "vscode.java.checkProjectSettings",
                             List.of(JavaLaunchSupport.previewSettingsQuery(mainClass, proj)),
@@ -1441,7 +1477,7 @@ public final class DapManager {
             cb.accept(List.of());
             return;
         }
-        lsp.executeCommand(routingFile, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
+        executeCommand(routingFile, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
             if (err != null) {
                 // The caller cannot tell this from "the project has none" — it reports the same thing either
                 // way — so the log is the only place the difference can survive.
@@ -1757,7 +1793,7 @@ public final class DapManager {
         }
         // java-debug keeps one set of settings per jdtls: give it this session's before the session starts. A
         // failure (an older java-debug) is no reason not to debug, on its defaults as before.
-        lsp.executeCommand(file, JavaDebugSettings.COMMAND, List.of(shared.javaDebugSettings.toJson()), (r, e) -> {
+        executeCommand(file, JavaDebugSettings.COMMAND, List.of(shared.javaDebugSettings.toJson()), (r, e) -> {
             if (e != null) {
                 LOG.log(Level.FINE, "java-debug settings were not applied", e);
             }
@@ -1771,7 +1807,7 @@ public final class DapManager {
             return;
         }
         javaAdapterEpoch = epoch;
-        lsp.executeCommand(file, "vscode.java.startDebugSession", List.of(), (res, err) -> {
+        executeCommand(file, "vscode.java.startDebugSession", List.of(), (res, err) -> {
             if (!isCurrent(epoch)) {
                 return;
             }
@@ -3104,7 +3140,7 @@ public final class DapManager {
                 return;
             }
             onOutput(epoch, tr("debug.hosted.starting") + "\n", COMMAND_CATEGORY);
-            lsp.executeCommand(file, command, List.of(params), HOSTED_START_TIMEOUT, (res, err) -> {
+            executeCommand(file, command, List.of(params), HOSTED_START_TIMEOUT, (res, err) -> {
                 if (!isCurrent(epoch)) {
                     return;
                 }
@@ -5501,7 +5537,7 @@ public final class DapManager {
             return;
         }
         codeReplacePrimedEpoch = sessionEpoch;
-        lsp.buildJavaWorkspace(debugFile, false, built -> {});
+        buildJavaWorkspace(debugFile, false, built -> {});
     }
 
     /** The file the session was started for (it routes a build to that session's jdtls); null when none. */
@@ -5522,7 +5558,7 @@ public final class DapManager {
             return;
         }
         long epoch = sessionEpoch;
-        lsp.buildJavaWorkspace(file, false, built -> {
+        buildJavaWorkspace(file, false, built -> {
             if (!isCurrent(epoch, c)) {
                 cb.accept(ended()); // the caller waits for an answer (review D101)
                 return;

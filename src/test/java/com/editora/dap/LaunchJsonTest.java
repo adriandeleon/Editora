@@ -217,4 +217,32 @@ class LaunchJsonTest {
                         .map(conf -> LaunchRoute.of(conf.body(), Map.of()).kind())
                         .toList());
     }
+
+    @Test
+    void compoundsAreReadWithTheirConfigurationsInOrder() throws Exception {
+        LaunchJson.File f = LaunchJson.parse("""
+                {
+                  "configurations": [
+                    { "name": "Server", "type": "debugpy", "request": "launch" },
+                    { "name": "Client", "type": "node", "request": "launch" },
+                  ],
+                  "compounds": [
+                    { "name": "Both", "configurations": ["Server", { "name": "Client", "folder": "web" }],
+                      "stopAll": true, "preLaunchTask": "build" },
+                    { "name": "Bare", "configurations": ["Client"] },
+                    "not an object",
+                    { "configurations": "not a list" },
+                  ],
+                }
+                """);
+        assertEquals(
+                List.of(
+                        new LaunchJson.Compound("Both", List.of("Server", "Client"), true, "build"),
+                        new LaunchJson.Compound("Bare", List.of("Client"), false, ""),
+                        new LaunchJson.Compound("", List.of(), false, "")),
+                f.compounds());
+        assertEquals("node", f.configuration("Client").type());
+        assertNull(f.configuration("Gone"));
+        assertTrue(LaunchJson.parse("{}").compounds().isEmpty(), "none: no compounds");
+    }
 }

@@ -2146,6 +2146,14 @@ final class WindowCommandRegistrar {
                         "debug.stopAll", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stopAll)));
         host.registry()
                 .register(Command.of(
+                        "debug.startCompound",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::startCompound)));
+        host.registry()
+                .register(Command.of(
+                        "debug.editCompounds",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editCompounds)));
+        host.registry()
+                .register(Command.of(
                         "debug.restart", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restart)));
         host.registry()
                 .register(Command.of(
