@@ -225,6 +225,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Turn exception breakpoints on caught ({@code caught}) or uncaught exceptions on or off. */
         default void toggleExceptions(boolean caught) {}
 
+        /**
+         * The Debug window went back to frame {@code frame} of earlier stop {@code stop}: the editor shows that stop's
+         * line, inline and pinned values (Debug History).
+         */
+        default void showHistoryFrame(DebugHistory.Stop stop, int frame) {}
+
+        /** The Debug window came back from an earlier stop: the editor shows the live stop again, if any. */
+        default void leaveHistory() {}
+
+        /** Show Value History: lists {@code seen} under {@code title}; a pick goes back to that stop. */
+        default void pickValueHistory(String title, List<DebugHistory.Seen> seen, java.util.function.IntConsumer go) {}
+
         /** Whether numbers are shown in hexadecimal. */
         default boolean hexValues() {
             return false;
@@ -453,6 +465,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 btn(runToCursor, DebugPanelText.Control.RUN_TO_CURSOR, actions::runToCursor, Icons.debugRunToCursor()),
                 groupSeparator(),
                 exceptionsButton(),
+                groupSeparator(),
+                historyButton(historyBack, "debugpanel.history.back", this::historyBack, Icons.chevronLeft()),
+                historyButton(historyForward, "debugpanel.history.forward", this::historyForward, Icons.chevronRight()),
+                historyLabel,
                 spacer(),
                 busy,
                 runtime,
@@ -536,6 +552,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         stack.setPlaceholder(stackHint);
         stack.getSelectionModel().selectedItemProperty().addListener((o, a, f) -> {
             if (f != null && !settingStack) {
+                DebugHistory.Stop viewed = viewing;
+                if (viewed != null) {
+                    showHistoryFrame(viewed, viewed.frames.indexOf(f));
+                    return;
+                }
                 if (StackFolding.isFold(f)) {
                     // Shows the folded frames, keeping the frame that was selected selected.
                     javafx.application.Platform.runLater(() -> expandFrames(a));
@@ -809,7 +830,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
         });
 
-        getChildren().addAll(toolbar, main);
+        historyBanner.getStyleClass().add("debug-history-banner");
+        historyBanner.setAlignment(Pos.CENTER_LEFT);
+        javafx.scene.control.Hyperlink live = new javafx.scene.control.Hyperlink(tr("debugpanel.history.live"));
+        live.setOnAction(e -> leaveHistory());
+        historyBanner.getChildren().addAll(historyBannerText, spacer(), live);
+        showBanner(false);
+        getChildren().addAll(toolbar, historyBanner, main);
         setState(DapManager.State.INACTIVE);
     }
 
@@ -890,6 +917,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         selectedFrameId = frame.id();
         int index = allFrames.indexOf(frame);
+        DebugHistory.Stop live = stopHistory.last();
+        recordingFrame = live == null || !historyLive() ? -1 : live.frames.indexOf(frame);
         valueChanges.setFrame(DebugValueChanges.frameKey(
                 selectedThreadId(),
                 frame.name(),
@@ -1132,8 +1161,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         boolean wasRunning = lastState == DapManager.State.RUNNING;
         if (state == DapManager.State.SUSPENDED && lastState != DapManager.State.SUSPENDED) {
             valueChanges.newStop(); // this stop's values are compared with the ones shown before it
+            historyStopPending = true; // recorded when its call stack arrives
         } else if (state == DapManager.State.STARTING || state == DapManager.State.INACTIVE) {
             valueChanges.reset();
+        }
+        if (state == DapManager.State.STARTING && lastState == DapManager.State.INACTIVE) {
+            stopHistory.reset(); // a new session: the last one's stops were kept until now
+        }
+        if (viewing != null && state != DapManager.State.INACTIVE) {
+            leaveHistory(); // the program ran on, or a new session began: the live state is what to show
+        }
+        if (state != DapManager.State.SUSPENDED) {
+            recordingFrame = -1;
         }
         lastState = state;
         outputTrailing = false;
@@ -1197,7 +1236,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             variables.setRoot(idleRoot());
             setThreads(List.of(), -1);
             selectedFrameId = -1;
+            DebugHistory.Stop viewed = viewing;
+            if (viewed != null) {
+                viewing = null;
+                viewStop(viewed, viewingFrame); // the session ended while an earlier stop was shown: keep it
+            }
         }
+        refreshHistoryControls();
         refreshStatus();
         refreshTooltips();
     }
@@ -1329,6 +1374,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Names the exception of the current exception stop ("IllegalStateException: boom") in the state line. */
     public void setStoppedException(String summary) {
         stoppedException = summary == null ? "" : summary;
+        if (historyLive() && !stoppedException.isEmpty()) {
+            stopHistory.recordException(stoppedException);
+        }
         refreshStatus();
     }
 
@@ -1575,6 +1623,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** As {@link #setCallStack(List)}, selecting frame {@code selected} — the topmost one that has source. */
     public void setCallStack(List<DapModels.StackFrameInfo> frames, int selected) {
         int index = Math.max(0, Math.min(selected, frames.size() - 1));
+        if (historyStopPending && lastState == DapManager.State.SUSPENDED) {
+            historyStopPending = false;
+            stopHistory.newStop(historyReason, java.time.LocalTime.now(), historyThreadId, frames, index);
+            refreshHistoryControls();
+        }
         allFrames = List.copyOf(frames);
         framesExpanded = false;
         showFrames(index);
@@ -1648,6 +1701,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * exception stop is called out: it otherwise looks exactly like a breakpoint hit on the same line.
      */
     public void setStopReason(@Nullable String reason) {
+        historyReason = reason == null ? "" : reason;
         String member = "function breakpoint".equals(reason)
                 ? "debugpanel.state.methodBreakpoint"
                 : "data breakpoint".equals(reason) ? "debugpanel.state.fieldWatchpoint" : null;
@@ -1882,6 +1936,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private void rebuildVarsMenu(javafx.scene.control.ContextMenu menu) {
         menu.getItems().clear();
         VarRow row = selectedRow();
+        if (viewing != null) {
+            historyVarsMenu(menu, row); // an earlier stop's values: read, copied, followed through the stops
+            return;
+        }
         if (row != null && row.kind() == Kind.WATCH) {
             javafx.scene.control.MenuItem edit = new javafx.scene.control.MenuItem(tr("debugpanel.editWatch"));
             edit.setGraphic(Icons.edit());
@@ -1907,6 +1965,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 javafx.scene.control.MenuItem copyName = new javafx.scene.control.MenuItem(tr("debugpanel.copyName"));
                 copyName.setOnAction(e -> copyToClipboard(row.name()));
                 menu.getItems().add(copyName);
+            }
+            javafx.scene.control.MenuItem valueHistory = valueHistoryItem();
+            if (valueHistory != null && row.kind() != Kind.EXCEPTION) {
+                menu.getItems().add(valueHistory);
             }
             if (row.kind() == Kind.VARIABLE) {
                 String expression = pathExpression(variables.getSelectionModel().getSelectedItem());
@@ -2249,6 +2311,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         VarRow row = item.getValue();
         if (comparable(row) && lastState == DapManager.State.SUSPENDED && inShownTree(item)) {
             valueChanges.record(pathOf(item), row.value());
+            if (recordingFrame >= 0 && viewing == null) {
+                stopHistory.record(recordingFrame, pathOf(item), row.value(), row.type(), row.ref() > 0);
+            }
         }
     }
 
@@ -2262,6 +2327,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** Whether {@code item}'s value differs from what it showed at an earlier stop in the same frame. */
     boolean changed(@Nullable TreeItem<VarRow> item, VarRow row) {
+        DebugHistory.Stop viewed = viewing;
+        if (viewed != null) {
+            return item != null
+                    && comparable(row)
+                    && viewingFrame >= 0
+                    && stopHistory.changed(viewed, viewingFrame, pathOf(item), row.value());
+        }
         return item != null
                 && comparable(row)
                 && lastState == DapManager.State.SUSPENDED
@@ -2610,5 +2682,324 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     @Override
     public void focusFirstItem() {
         stack.requestFocus();
+    }
+
+    // --- debug history (time travel lite) ------------------------------------------------------------
+
+    /** The stops of this session (and, once it ended, of the last one), as they were shown. */
+    private final DebugHistory stopHistory = new DebugHistory();
+
+    /** The earlier stop shown instead of the live one, or null. */
+    private DebugHistory.@Nullable Stop viewing;
+
+    /** The frame of {@link #viewing} shown, or -1. */
+    private int viewingFrame = -1;
+
+    /** The live variables tree, kept while an earlier stop is shown. */
+    private @Nullable TreeItem<VarRow> liveRoot;
+
+    /** The program stopped; the stop is recorded when its call stack arrives. */
+    private boolean historyStopPending;
+
+    /** Why the program stopped, and which thread did, for the stop recorded next. */
+    private String historyReason = "";
+
+    private int historyThreadId = -1;
+
+    /** The frame of the live stop whose values are being recorded, or -1. */
+    private int recordingFrame = -1;
+
+    private final Button historyBack = new Button();
+    private final Button historyForward = new Button();
+    private final Label historyLabel = new Label();
+    private final HBox historyBanner = new HBox(8);
+    private final Label historyBannerText = new Label();
+
+    /** The stops recorded (tests, the coordinator's list and settings). */
+    DebugHistory history() {
+        return stopHistory;
+    }
+
+    /** The earlier stop shown, or null while the live one is. */
+    DebugHistory.@Nullable Stop viewing() {
+        return viewing;
+    }
+
+    /** The thread that stopped, for the stop recorded next (the coordinator says it before the call stack). */
+    void setStoppedThread(int threadId) {
+        historyThreadId = threadId;
+    }
+
+    /** Whether the stop being shown is the live one, recorded as its values load. */
+    private boolean historyLive() {
+        return viewing == null
+                && !historyStopPending
+                && lastState == DapManager.State.SUSPENDED
+                && stopHistory.last() != null;
+    }
+
+    private Button historyButton(Button b, String key, Runnable action, Node icon) {
+        b.setGraphic(icon);
+        b.setTooltip(new Tooltip(tr(key)));
+        b.setAccessibleText(tr(key));
+        b.getStyleClass().addAll("flat", "debug-toolbar-button");
+        b.setFocusTraversable(false);
+        b.setOnAction(e -> action.run());
+        return b;
+    }
+
+    /** The live frame's values were painted beside {@code line} of {@code file}: kept with the live stop. */
+    void recordInlineValues(
+            DapModels.StackFrameInfo frame, java.nio.file.Path file, int line, java.util.Map<String, String> values) {
+        DebugHistory.Stop live = stopHistory.last();
+        if (historyLive() && live != null) {
+            stopHistory.recordInline(live.frames.indexOf(frame), file, line, values);
+        }
+    }
+
+    /** The live stop painted pinned values {@code shown} (by line) in {@code file}; null: none. */
+    void recordPins(java.nio.file.Path file, java.util.@Nullable Map<Integer, String> shown) {
+        if (historyLive()) {
+            stopHistory.recordPins(file, shown);
+        }
+    }
+
+    /** The stop Back goes to: the one before the shown one, or the last one the program has left. */
+    private DebugHistory.@Nullable Stop backTarget() {
+        DebugHistory.Stop viewed = viewing;
+        if (viewed != null) {
+            return stopHistory.before(viewed);
+        }
+        DebugHistory.Stop last = stopHistory.last();
+        if (last == null) {
+            return null;
+        }
+        return lastState == DapManager.State.SUSPENDED ? stopHistory.before(last) : last;
+    }
+
+    /** Debug: Back (History): the stop before the one shown. */
+    void historyBack() {
+        DebugHistory.Stop target = backTarget();
+        if (target != null) {
+            viewStop(target, target.shownFrame);
+        }
+    }
+
+    /** Debug: Forward (History): the stop after the one shown, and from the last one the live stop. */
+    void historyForward() {
+        DebugHistory.Stop viewed = viewing;
+        if (viewed == null) {
+            return;
+        }
+        DebugHistory.Stop next = stopHistory.after(viewed);
+        boolean nextIsLive = next != null && next == stopHistory.last() && lastState == DapManager.State.SUSPENDED;
+        if (next == null || nextIsLive) {
+            if (lastState == DapManager.State.INACTIVE && next == null) {
+                return; // the session's last stop: there is no live one to come back to
+            }
+            leaveHistory();
+        } else {
+            viewStop(next, next.shownFrame);
+        }
+    }
+
+    /** Shows the stop numbered {@code number}, with its frame {@code frame} (-1: the one it selected). */
+    boolean viewStop(int number, int frame) {
+        DebugHistory.Stop stop = stopHistory.byNumber(number);
+        if (stop == null) {
+            return false;
+        }
+        boolean live = stop == stopHistory.last() && lastState == DapManager.State.SUSPENDED;
+        if (live) {
+            leaveHistory();
+        } else {
+            viewStop(stop, frame < 0 ? stop.shownFrame : frame);
+        }
+        return true;
+    }
+
+    /** Shows earlier stop {@code stop} read-only: its call stack, frame {@code frame}'s values, the banner. */
+    void viewStop(DebugHistory.Stop stop, int frame) {
+        if (viewing == null) {
+            liveRoot = variables.getRoot();
+        }
+        viewing = stop;
+        settingStack = true;
+        try {
+            stack.getItems().setAll(stop.frames);
+            if (frame >= 0 && frame < stop.frames.size()) {
+                stack.getSelectionModel().clearAndSelect(frame);
+                stack.scrollTo(Math.max(0, frame - 1));
+            }
+        } finally {
+            settingStack = false;
+        }
+        historyBannerText.setText(DebugPanelText.historyBanner(stop));
+        showBanner(true);
+        showHistoryFrame(stop, frame);
+        refreshHistoryControls();
+    }
+
+    /** Shows frame {@code frame} of the stop gone back to: its values as they were, and its line in the editor. */
+    private void showHistoryFrame(DebugHistory.Stop stop, int frame) {
+        viewingFrame = frame;
+        variables.setRoot(historyTree(stop, frame));
+        if (frame >= 0) {
+            actions.showHistoryFrame(stop, frame);
+        }
+    }
+
+    /** Back to the live stop (or, the session over, to nothing): the live stack and values, the editor's too. */
+    void leaveHistory() {
+        if (viewing == null) {
+            return;
+        }
+        viewing = null;
+        viewingFrame = -1;
+        showBanner(false);
+        if (lastState == DapManager.State.INACTIVE) {
+            stack.getItems().clear();
+            variables.setRoot(idleRoot());
+        } else {
+            DapModels.StackFrameInfo selected = allFrames.stream()
+                    .filter(f -> f.id() == selectedFrameId)
+                    .findFirst()
+                    .orElse(null);
+            showFrames(selected == null ? 0 : Math.max(0, allFrames.indexOf(selected)));
+            TreeItem<VarRow> root = liveRoot;
+            variables.setRoot(root != null ? root : idleRoot());
+        }
+        liveRoot = null;
+        actions.leaveHistory();
+        refreshHistoryControls();
+    }
+
+    private void showBanner(boolean shown) {
+        historyBanner.setVisible(shown);
+        historyBanner.setManaged(shown);
+    }
+
+    /** Back and Forward as there is somewhere to go; the label names the stop shown. */
+    private void refreshHistoryControls() {
+        historyBack.setDisable(backTarget() == null);
+        DebugHistory.Stop viewed = viewing;
+        historyForward.setDisable(
+                viewed == null || (stopHistory.after(viewed) == null && lastState == DapManager.State.INACTIVE));
+        historyLabel.setText(viewed == null ? "" : DebugPanelText.historyLabel(viewed));
+        historyLabel.setVisible(viewed != null);
+        historyLabel.setManaged(viewed != null);
+    }
+
+    /**
+     * The values frame {@code frame} of {@code stop} showed, as a tree: each row under the one its path names, the
+     * top-level nodes (scopes, Watches) expanded, a row that had children but was not opened marked so.
+     */
+    private TreeItem<VarRow> historyTree(DebugHistory.Stop stop, int frame) {
+        TreeItem<VarRow> root = new TreeItem<>();
+        if (frame < 0 || !stop.hasRows(frame)) {
+            root.getChildren()
+                    .add(new TreeItem<>(new VarRow(tr("debugpanel.history.noValues"), "", "", 0, 0, Kind.MORE)));
+            return root;
+        }
+        String exceptionText = stop.exception();
+        if (exceptionText != null && frame == stop.shownFrame) {
+            root.getChildren().add(new TreeItem<>(new VarRow(exceptionText, "", "", 0, 0, Kind.EXCEPTION)));
+        }
+        String watchesName = tr("debugpanel.watches");
+        java.util.Map<List<String>, TreeItem<VarRow>> items = new java.util.HashMap<>();
+        for (DebugHistory.Row r : stop.rows(frame)) {
+            TreeItem<VarRow> parent = root;
+            for (int depth = 1; depth < r.path().size(); depth++) {
+                List<String> prefix = r.path().subList(0, depth);
+                TreeItem<VarRow> found = items.get(prefix);
+                if (found == null) {
+                    found = new TreeItem<>(new VarRow(prefix.getLast(), "", "", 0, 0, Kind.SCOPE));
+                    found.setExpanded(true);
+                    parent.getChildren().add(found);
+                    items.put(List.copyOf(prefix), found);
+                }
+                parent = found;
+            }
+            boolean watch = r.path().size() == 2 && r.path().getFirst().equals(watchesName);
+            TreeItem<VarRow> item = items.get(r.path());
+            VarRow row = new VarRow(r.name(), r.value(), r.type(), 0, 0, watch ? Kind.WATCH : Kind.VARIABLE);
+            if (item == null) {
+                item = new TreeItem<>(row);
+                parent.getChildren().add(item);
+                items.put(r.path(), item);
+            } else {
+                item.setValue(row); // created as a parent of an earlier row
+            }
+        }
+        for (DebugHistory.Row r : stop.rows(frame)) {
+            TreeItem<VarRow> item = items.get(r.path());
+            if (item != null && r.expandable()) {
+                if (item.getChildren().isEmpty()) {
+                    item.getChildren()
+                            .add(new TreeItem<>(
+                                    new VarRow(tr("debugpanel.history.notOpened"), "", "", 0, 0, Kind.MORE)));
+                } else {
+                    item.setExpanded(true);
+                }
+            }
+        }
+        return root;
+    }
+
+    /** The variables menu at an earlier stop: copy, and Show Value History, as nothing there can be changed. */
+    private void historyVarsMenu(javafx.scene.control.ContextMenu menu, @Nullable VarRow row) {
+        if (row == null || !(row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH)) {
+            javafx.scene.control.MenuItem live = new javafx.scene.control.MenuItem(tr("debugpanel.history.live"));
+            live.setOnAction(e -> leaveHistory());
+            menu.getItems().add(live);
+            return;
+        }
+        javafx.scene.control.MenuItem copyValue = new javafx.scene.control.MenuItem(tr("debugpanel.copyValue"));
+        copyValue.setOnAction(e -> copyToClipboard(DebugPanelText.copyValue(row.value())));
+        javafx.scene.control.MenuItem copyName = new javafx.scene.control.MenuItem(tr("debugpanel.copyName"));
+        copyName.setOnAction(e -> copyToClipboard(row.name()));
+        menu.getItems().addAll(copyValue, copyName);
+        javafx.scene.control.MenuItem valueHistory = valueHistoryItem();
+        if (valueHistory != null) {
+            menu.getItems().add(valueHistory);
+        }
+    }
+
+    /**
+     * Show Value History for the selected row: its value at every stop kept where its frame showed it. Null when
+     * nothing is recorded for the frame shown.
+     */
+    private javafx.scene.control.@Nullable MenuItem valueHistoryItem() {
+        TreeItem<VarRow> item = variables.getSelectionModel().getSelectedItem();
+        String key = shownFrameKey();
+        if (item == null || item.getValue() == null || key == null) {
+            return null;
+        }
+        List<String> path = pathOf(item);
+        javafx.scene.control.MenuItem show = new javafx.scene.control.MenuItem(tr("debugpanel.history.valueHistory"));
+        show.setOnAction(e -> showValueHistory(key, path));
+        return show;
+    }
+
+    /** The history key of the frame whose values are shown (an earlier stop's, or the live one's), or null. */
+    private @Nullable String shownFrameKey() {
+        DebugHistory.Stop viewed = viewing;
+        if (viewed != null) {
+            return viewingFrame < 0 ? null : viewed.frameKey(viewingFrame);
+        }
+        DebugHistory.Stop live = stopHistory.last();
+        return live == null || recordingFrame < 0 || !historyLive() ? null : live.frameKey(recordingFrame);
+    }
+
+    /** Lists {@code path}'s value at each stop its frame {@code key} showed it; a pick goes back to that stop. */
+    void showValueHistory(String key, List<String> path) {
+        List<DebugHistory.Seen> seen = stopHistory.valueHistory(key, path);
+        String name = String.join(".", path.size() > 1 ? path.subList(1, path.size()) : path);
+        actions.pickValueHistory(tr("debugpanel.history.valueHistoryTitle", name), seen, number -> {
+            DebugHistory.Stop stop = stopHistory.byNumber(number);
+            if (stop != null) {
+                viewStop(number, stop.frameIndex(key));
+            }
+        });
     }
 }

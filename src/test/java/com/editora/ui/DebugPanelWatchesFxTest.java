@@ -340,6 +340,7 @@ class DebugPanelWatchesFxTest {
                             tr("debugpanel.removeWatch"),
                             tr("debugpanel.copyValue"),
                             tr("debugpanel.copyName"),
+                            tr("debugpanel.history.valueHistory"), // the stop is kept: its values can be followed
                             null, // separator
                             tr("debugpanel.addWatch"),
                             null,
@@ -368,6 +369,7 @@ class DebugPanelWatchesFxTest {
                             tr("debugpanel.setValue"),
                             tr("debugpanel.copyValue"),
                             tr("debugpanel.copyName"),
+                            tr("debugpanel.history.valueHistory"),
                             tr("debugpanel.addToWatches", "count"),
                             null, // separator
                             tr("debugpanel.addWatch"),

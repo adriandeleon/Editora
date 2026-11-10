@@ -168,14 +168,38 @@ final class PinnedValues {
                         answers.computeIfAbsent(line, k -> new LinkedHashMap<>())
                                 .put(expr, shown(r));
                         if (--pending[0] == 0) {
-                            b.setPinnedValues(paint(lines, answers));
+                            Map<Integer, String> shown = paint(lines, answers);
+                            b.setPinnedValues(shown);
                             painted.add(b);
+                            onPainted.accept(b, shown);
                         }
                     }));
                 }
             }
             requests.forEach(Runnable::run);
         }
+    }
+
+    /** Hears each buffer's pinned values as they are painted at a stop (Debug History keeps them). */
+    private java.util.function.BiConsumer<EditorBuffer, Map<Integer, String>> onPainted = (b, shown) -> {};
+
+    void setOnPainted(java.util.function.BiConsumer<EditorBuffer, Map<Integer, String>> listener) {
+        this.onPainted = listener;
+    }
+
+    /**
+     * Paints the pinned values an earlier stop showed ({@code recorded}, by file then line) in the open files, in
+     * place of the live ones; a file it showed none in shows none. Nothing is evaluated.
+     */
+    void showRecorded(Map<java.nio.file.Path, Map<Integer, String>> recorded) {
+        clear();
+        host.forEachBuffer(b -> {
+            Map<Integer, String> shown = b.getPath() == null ? null : recorded.get(b.getPath());
+            if (shown != null && !shown.isEmpty()) {
+                b.setPinnedValues(shown);
+                painted.add(b);
+            }
+        });
     }
 
     /** The program runs again, or the session ended: no pinned value is shown. */

@@ -4252,6 +4252,11 @@ public class EditorBuffer implements TabContent {
         executionLine.setException(area, exception);
     }
 
+    /** Draws the execution line as an earlier stop's (Debug History: grey) or the live one's. */
+    public void setExecutionLineHistory(boolean history) {
+        executionLine.setHistory(area, history);
+    }
+
     /** Removes the execution-point highlight (if any). */
     public void clearExecutionLine() {
         executionLine.clear(area, this::refreshGutterLine);
