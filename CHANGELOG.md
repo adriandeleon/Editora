@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project Map cards read like the editor.** Code cards now show the language server's semantic highlighting and
+  inlay hints, and pin the headers of the class or method you have scrolled into, as the editor does. Each follows
+  its editor setting.
 - **Right-click menus show keybindings.** An item that does what a command does now shows that command's shortcut
   at its right edge, in the same small periwinkle type as the menu bar: the editor menu (Run, the LSP, Markdown
   and Typst submenus, the debugger items, Toggle Comment, Cut/Copy/Paste, Undo/Redo, Select All, bookmarks and

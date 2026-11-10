@@ -230,6 +230,9 @@ final class MapCards {
     private @Nullable ProjectMapHistoryCard historyCard;
     /** The Dependencies card, when open (gap 14): one at a time, not counted against the limit. */
     private @Nullable ProjectMapDependencyCard dependencyCard;
+    /** Which of the editor's reading aids the code cards show: the editor's settings (round 2). */
+    private java.util.function.Supplier<MapCardAids> cardAids = () -> MapCardAids.NONE;
+
     /** The Symbol Graph card, when open (round 2): one at a time, not counted against the limit. */
     private @Nullable ProjectMapSymbolGraphCard symbolGraphCard;
     /** The Code Metrics card, when open (gap 15): one at a time, not counted against the limit. */
@@ -1169,6 +1172,67 @@ final class MapCards {
         touchCard(card, true);
         card.focusContent();
         return card;
+    }
+
+    /** Where the code cards read which of the editor's reading aids to show: the editor's settings. */
+    void setCardAids(java.util.function.Supplier<MapCardAids> aids) {
+        cardAids = aids;
+        applyCardAids();
+    }
+
+    /** The editor's settings changed: every code card shows the aids they name now, asked afresh. */
+    void applyCardAids() {
+        for (ProjectMapPreview card : List.copyOf(previews.values())) {
+            card.setStickyScroll(cardAids.get().stickyScroll());
+            askCardAids(card);
+        }
+    }
+
+    /**
+     * Asks the server that holds {@code card}'s file (the card lends it) for its semantic tokens and its inlay hints of
+     * the card's lines, as the settings want them; with a setting off, the card's are taken away.
+     */
+    private void askCardAids(ProjectMapPreview card) {
+        MapCardAids aids = cardAids.get();
+        MapCardLinks.Source source = links.source();
+        Path file = card.path();
+        String text = card.fullText();
+        if (file == null || text.isEmpty() || disposed) {
+            return;
+        }
+        int lineCount = 1;
+        int lastBreak = -1;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                lineCount++;
+                lastBreak = i;
+            }
+        }
+        int lastLineLength = text.length() - lastBreak - 1;
+        if (aids.semantic() && source != null) {
+            source.semanticTokens(file, lineCount, lastLineLength, tokens -> card.setSemanticTokens(text, tokens));
+        } else {
+            card.setSemanticTokens(text, List.of());
+        }
+        if (aids.inlayHints() && source != null) {
+            ProjectMapPreview.Range shown = card.range();
+            int start = shown == null ? 0 : shown.startLine();
+            int end = shown == null ? lineCount - 1 : shown.endLine();
+            com.editora.lsp.InlayHintFilter.Mode mode = com.editora.lsp.InlayHintFilter.Mode.of(aids.inlayMode());
+            String[] lines = text.split("\n", -1);
+            source.inlayHints(
+                    file,
+                    start,
+                    end,
+                    lineCount,
+                    lastLineLength,
+                    hints -> card.setInlayHints(
+                            text,
+                            com.editora.lsp.InlayHintFilter.filter(
+                                    hints, mode, line -> line >= 0 && line < lines.length ? lines[line] : "")));
+        } else {
+            card.setInlayHints(text, List.of());
+        }
     }
 
     /** The open Symbol Graph card, or null. */
@@ -2268,7 +2332,11 @@ final class MapCards {
             updateCardNotes(preview); // stored notes are found again in the new text
             restyleCardStructure(preview);
         });
-        preview.setOnStylesShown(() -> restyleCardStructure(preview)); // its Structure column borrows the colours
+        preview.setOnStylesShown(() -> {
+            restyleCardStructure(preview); // its Structure column borrows the colours
+            askCardAids(preview); // and the server's semantic tokens and inlay hints go over them (round 2)
+        });
+        preview.setStickyScroll(cardAids.get().stickyScroll());
         // A sticky note's connector meets its line in the text, which scrolls under it.
         preview.editor().estimatedScrollYProperty().addListener((obs, old, value) -> {
             if (stickyNotes.containsKey(preview)) {

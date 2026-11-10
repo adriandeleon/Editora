@@ -730,6 +730,16 @@ final class ProjectMapView extends VBox {
         onSwitchCard = action;
     }
 
+    /** Where the code cards read which of the editor's reading aids to show (round 2): the editor's settings. */
+    void setCardAids(java.util.function.Supplier<MapCardAids> aids) {
+        cards.setCardAids(aids);
+    }
+
+    /** The editor's settings changed: the code cards show the reading aids they name now. */
+    void applyCardAids() {
+        cards.applyCardAids();
+    }
+
     /** The open Dependencies card, or null. */
     @Nullable
     ProjectMapDependencyCard dependencyCard() {

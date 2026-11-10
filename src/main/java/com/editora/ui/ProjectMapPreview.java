@@ -585,6 +585,28 @@ final class ProjectMapPreview extends StackPane {
     private Runnable onMoveToFreeSpace = () -> {};
     private Runnable onTextShown = () -> {};
     private Runnable onStylesShown = () -> {};
+
+    // --- the editor's reading aids (Map code browser round 2) --------------------------------------------------
+
+    /** The card's colours as last applied, before the semantic tokens over them; null until coloured. */
+    private @Nullable StyleSpans<Collection<String>> baseSpans;
+    /** The language server's semantic tokens of {@link #semanticText}, the file's text they were asked for. */
+    private java.util.List<com.editora.text.SemanticToken> semanticTokens = java.util.List.of();
+
+    private String semanticText = "";
+    /** The server's inlay hints, by the card's own 0-based line. */
+    private java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> hintsByLine = java.util.Map.of();
+
+    private boolean inlayFactoryInstalled;
+    /** The pinned headers of the scopes scrolled past, over the card's text (sticky scroll). */
+    private final com.editora.editor.fold.StickyScrollBar stickyBar = new com.editora.editor.fold.StickyScrollBar();
+
+    private boolean stickyOn;
+    private boolean stickyPending;
+    /** The text {@link #stickyRegions} were found in: found again when the card's text changes. */
+    private @Nullable String stickyRegionsText;
+
+    private java.util.List<com.editora.text.FoldRegions.Region> stickyRegions = java.util.List.of();
     private java.util.function.DoubleConsumer onContentZoomed = zoom -> {};
 
     private java.util.function.@Nullable BiConsumer<Path, Integer> onOpenAt;
@@ -2788,6 +2810,133 @@ final class ProjectMapPreview extends StackPane {
         return new int[] {first + 1, Math.max(first, last) + 1};
     }
 
+    /** Colours the card with {@code spans} (of its text), the semantic tokens of its text laid over them. */
+    private void applyBaseSpans(StyleSpans<Collection<String>> spans) {
+        baseSpans = spans;
+        editor.setStyleSpans(0, withSemantic(spans));
+    }
+
+    private StyleSpans<Collection<String>> withSemantic(StyleSpans<Collection<String>> spans) {
+        return semanticTokens.isEmpty() || !semanticText.equals(fullText)
+                ? spans
+                : MapCardSemantics.overlay(spans, shownText, semanticTokens, fileLine(0));
+    }
+
+    /**
+     * The language server's semantic tokens of the card's file, asked when its text was {@code forText}: laid over
+     * the card's colours, as in the editor; dropped when the text has changed since. Empty tokens take them away.
+     */
+    void setSemanticTokens(String forText, java.util.List<com.editora.text.SemanticToken> tokens) {
+        if (disposed || !forText.equals(fullText)) {
+            return;
+        }
+        semanticTokens = java.util.List.copyOf(tokens);
+        semanticText = forText;
+        StyleSpans<Collection<String>> base = baseSpans;
+        if (base != null && base.length() <= editor.getLength()) {
+            editor.setStyleSpans(0, withSemantic(base));
+        }
+    }
+
+    /**
+     * The server's inlay hints of the card's file (its lines), asked when its text was {@code forText}: drawn between
+     * the card's characters at their columns, as the editor draws them; dropped when the text has changed since.
+     */
+    void setInlayHints(String forText, java.util.List<com.editora.lsp.LspManager.InlayHintSpan> hints) {
+        if (disposed || !forText.equals(fullText)) {
+            return;
+        }
+        int first = fileLine(0);
+        int lines = editor.getParagraphs().size();
+        java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> byLine = new java.util.HashMap<>();
+        java.util.List<com.editora.lsp.LspManager.InlayHintSpan> sorted = new java.util.ArrayList<>(hints);
+        sorted.sort(java.util.Comparator.comparingInt(com.editora.lsp.LspManager.InlayHintSpan::line)
+                .thenComparingInt(com.editora.lsp.LspManager.InlayHintSpan::col));
+        for (com.editora.lsp.LspManager.InlayHintSpan hint : sorted) {
+            int line = hint.line() - first;
+            if (line >= 0 && line < lines && hint.col() <= editor.getParagraphLength(line)) {
+                byLine.computeIfAbsent(line, k -> new java.util.ArrayList<>())
+                        .add(new org.fxmisc.richtext.Inlay(hint.col(), hint.paddedLabel(), "inlay-hint"));
+            }
+        }
+        if (byLine.isEmpty() && hintsByLine.isEmpty()) {
+            return;
+        }
+        hintsByLine = byLine;
+        if (!inlayFactoryInstalled) {
+            inlayFactoryInstalled = true;
+            editor.setInlayFactory(line -> hintsByLine.get(line));
+        }
+        editor.refreshInlays();
+    }
+
+    /** The inlay hints drawn on the card's 0-based {@code line}, as labels. For tests. */
+    java.util.List<String> inlayLabels(int line) {
+        java.util.List<org.fxmisc.richtext.Inlay> on = hintsByLine.get(line);
+        return on == null
+                ? java.util.List.of()
+                : on.stream().map(org.fxmisc.richtext.Inlay::getText).toList();
+    }
+
+    /**
+     * Turns the pinned headers on or off: the lines of the scopes the card has scrolled into but no longer shows
+     * the start of, over the top of its text (the editor's sticky scroll). A press on one scrolls the card there.
+     */
+    void setStickyScroll(boolean on) {
+        if (on == stickyOn) {
+            return;
+        }
+        stickyOn = on;
+        if (on) {
+            javafx.scene.Node bar = stickyBar.node();
+            if (!textPane.getChildren().contains(bar)) {
+                ((Region) bar).setMaxHeight(Region.USE_PREF_SIZE);
+                StackPane.setAlignment(bar, Pos.TOP_LEFT);
+                textPane.getChildren().add(bar);
+                editor.estimatedScrollYProperty().addListener((obs, was, now) -> scheduleSticky());
+            }
+            scheduleSticky();
+        } else {
+            stickyBar.hide();
+        }
+    }
+
+    private void scheduleSticky() {
+        if (!stickyOn || stickyPending) {
+            return;
+        }
+        stickyPending = true;
+        Platform.runLater(() -> {
+            stickyPending = false;
+            int first;
+            try {
+                first = Math.max(0, editor.firstVisibleParToAllParIndex());
+            } catch (RuntimeException notLaidOut) {
+                return; // the next scroll brings it back
+            }
+            stickyLinesFor(first);
+        });
+    }
+
+    /** The pinned headers for the card scrolled to its 0-based line {@code firstVisible}, shown; their lines. */
+    java.util.List<Integer> stickyLinesFor(int firstVisible) {
+        if (!stickyOn || disposed) {
+            stickyBar.hide();
+            return java.util.List.of();
+        }
+        String text = shownText;
+        if (!text.equals(stickyRegionsText)) {
+            Path file = path;
+            Path name = file == null ? null : file.getFileName();
+            String language = com.editora.text.LanguageRegistry.forFileName(name == null ? "" : name.toString());
+            stickyRegions = com.editora.text.FoldRegions.detect(text, language);
+            stickyRegionsText = text;
+        }
+        java.util.List<Integer> lines = stickyBar.pinnedLines(stickyRegions, firstVisible);
+        stickyBar.update(editor, lines, 4, line -> editor.showParagraphAtTop(line));
+        return lines;
+    }
+
     /** Called when the card's text has been coloured: what borrows its colours takes them again. */
     void setOnStylesShown(Runnable callback) {
         onStylesShown = callback == null ? () -> {} : callback;
@@ -4461,7 +4610,7 @@ final class ProjectMapPreview extends StackPane {
             if (spans.length() > shownText.length()) {
                 return;
             }
-            editor.setStyleSpans(0, spans);
+            applyBaseSpans(spans);
             colouredLines = editor.offsetToPosition(spans.length(), TwoDimensional.Bias.Backward)
                             .getMajor()
                     + 1;
@@ -4469,13 +4618,13 @@ final class ProjectMapPreview extends StackPane {
             if (spans.length() != shownText.length()) {
                 return;
             }
-            editor.setStyleSpans(0, spans);
+            applyBaseSpans(spans);
         } else {
             int end = sliceOffset + shownText.length();
             if (end > spans.length()) {
                 return;
             }
-            editor.setStyleSpans(0, spans.subView(sliceOffset, end));
+            applyBaseSpans(spans.subView(sliceOffset, end));
         }
         status.setText(idleStatus(truncated));
         applyOpening();

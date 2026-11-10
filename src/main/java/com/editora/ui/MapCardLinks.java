@@ -313,6 +313,29 @@ final class MapCardLinks {
                 Consumer<java.util.@Nullable Map<Integer, Integer>> answer) {
             answer.accept(null);
         }
+
+        /**
+         * The semantic tokens of {@code file} — {@code lineCount} lines, its last {@code lastLineLength} long — from
+         * the server that holds it (a card lends it), once on the FX thread; none without one (nothing is started).
+         */
+        default void semanticTokens(
+                Path file, int lineCount, int lastLineLength, Consumer<List<com.editora.text.SemanticToken>> tokens) {
+            tokens.accept(List.of());
+        }
+
+        /**
+         * The inlay hints of {@code file}'s 0-based lines {@code startLine..endLine} from the server that holds it,
+         * once on the FX thread; none without one.
+         */
+        default void inlayHints(
+                Path file,
+                int startLine,
+                int endLine,
+                int lineCount,
+                int lastLineLength,
+                Consumer<List<com.editora.lsp.LspManager.InlayHintSpan>> hints) {
+            hints.accept(List.of());
+        }
     }
 
     /**
