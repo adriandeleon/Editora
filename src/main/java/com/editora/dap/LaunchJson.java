@@ -34,9 +34,40 @@ public final class LaunchJson {
     /** One of {@code inputs}: a {@code promptString} or {@code pickString} a {@code ${input:id}} asks. */
     public record Input(String id, String type, String description, String defaultValue, List<String> options) {}
 
+    /**
+     * A compound: configurations started together, each in a session of its own, in the order listed — VS Code's
+     * {@code compounds}. {@code stopAll}: stopping one of them stops them all. {@code preLaunchTask}: a {@code tasks.json}
+     * task run once before any of them ("": none).
+     */
+    public record Compound(String name, List<String> configurations, boolean stopAll, String preLaunchTask) {
+
+        public Compound {
+            configurations = List.copyOf(configurations);
+        }
+    }
+
     /** What a launch.json (or tasks.json) holds. */
     public record File(
-            List<Configuration> configurations, Map<String, Input> inputs, List<Map<String, Object>> tasks) {}
+            List<Configuration> configurations,
+            Map<String, Input> inputs,
+            List<Map<String, Object>> tasks,
+            List<Compound> compounds) {
+
+        /** One with no compounds. */
+        public File(List<Configuration> configurations, Map<String, Input> inputs, List<Map<String, Object>> tasks) {
+            this(configurations, inputs, tasks, List.of());
+        }
+
+        /** The configuration called {@code name}, or null. */
+        public @Nullable Configuration configuration(String name) {
+            for (Configuration c : configurations) {
+                if (c.name().equals(name)) {
+                    return c;
+                }
+            }
+            return null;
+        }
+    }
 
     /** A launch.json (or tasks.json) that does not parse, or a variable that cannot be put in. */
     public static final class LaunchJsonException extends Exception {
@@ -129,7 +160,33 @@ public final class LaunchJson {
                 }
             }
         }
-        return new File(configurations, inputs, tasks);
+        List<Compound> compounds = new ArrayList<>();
+        if (o.get("compounds") instanceof JsonArray cs) {
+            for (JsonElement c : cs) {
+                if (!c.isJsonObject()) {
+                    continue;
+                }
+                JsonObject compound = c.getAsJsonObject();
+                List<String> names = new ArrayList<>();
+                if (compound.get("configurations") instanceof JsonArray members) {
+                    for (JsonElement m : members) {
+                        // A name, or {"name": …, "folder": …} in a multi-root workspace (the folder is this one).
+                        if (m.isJsonPrimitive()) {
+                            names.add(m.getAsString());
+                        } else if (m.isJsonObject() && m.getAsJsonObject().get("name") instanceof JsonPrimitive n) {
+                            names.add(n.getAsString());
+                        }
+                    }
+                }
+                JsonElement stopAll = compound.get("stopAll");
+                compounds.add(new Compound(
+                        str(compound, "name"),
+                        names,
+                        stopAll != null && stopAll.isJsonPrimitive() && stopAll.getAsBoolean(),
+                        compound.get("preLaunchTask") instanceof JsonPrimitive task ? task.getAsString() : ""));
+            }
+        }
+        return new File(configurations, inputs, tasks, compounds);
     }
 
     private static String str(JsonObject o, String key) {

@@ -37,7 +37,7 @@ class WorkspaceStateV31Test {
         assertTrue(card.isPinned());
         assertEquals(10, card.getX());
         assertEquals(WorkspaceState.SCHEMA_VERSION, config.getWorkspaceState().getSchemaVersion());
-        assertEquals(31, ConfigSchema.WORKSPACE.currentVersion());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, ConfigSchema.WORKSPACE.currentVersion());
     }
 
     @Test

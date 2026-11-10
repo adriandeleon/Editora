@@ -689,6 +689,37 @@ class DebugCoordinatorCommandsFxTest {
         assertEquals("edited", two.launchArgs.get("args"));
     }
 
+    /**
+     * A compound of saved configurations debugs each in a session of its own, in order; with Stop All on, Stop in one
+     * of them ends both, and a session started again for something else is no longer the compound's.
+     */
+    @Test
+    void aCompoundDebugsItsConfigurationsSideBySideAndStopsThemTogether() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        configs.add(config("Server", "java", "demo.Args", ""));
+        configs.add(config("Client", "java", "demo.Args", ""));
+        FxTestSupport.runOnFx(() ->
+                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        FakeDebugAdapter.Session server = session("launch");
+        FakeDebugAdapter.Session client = session("launch");
+        assertEquals(2, FxTestSupport.callOnFx(() -> debug.sessions().size()), "a session each");
+        List<DebugSession> both = FxTestSupport.callOnFx(() -> debug.sessions().all());
+        assertTrue(
+                FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.compound != null && x.compound.holds(x))));
+
+        FxTestSupport.runOnFx(() -> debug.inSession(both.getFirst(), debug::stop)); // Stop in the server
+        assertTrue(server.disconnected.await(10, TimeUnit.SECONDS));
+        assertTrue(client.disconnected.await(10, TimeUnit.SECONDS), "and the client stops with it");
+
+        FxTestSupport.runOnFx(() -> debug.debugRunCompound(
+                new com.editora.config.RunCompound("Missing", List.of("Server", "Gone"), false)));
+        assertEquals(
+                tr("status.debug.compoundMissing", "Missing", "Gone"),
+                statuses().getLast(),
+                "none is started");
+    }
+
     /** The other unsaved Java files of the project are saved before a launch; other files are not (review B3). */
     @Test
     void unsavedJavaFilesOfTheProjectAreSavedBeforeDebug() throws Exception {

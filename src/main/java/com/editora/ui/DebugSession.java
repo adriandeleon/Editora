@@ -30,6 +30,16 @@ final class DebugSession {
 
     // --- the launch -------------------------------------------------------------------------------------
 
+    /** The compound whose launch this session runs, or null ({@link DebugCompound#holds} says whether it still does). */
+    @Nullable
+    DebugCompound compound;
+
+    /** This session's before-launch steps and the service they run on; null until its first step. */
+    @Nullable
+    BeforeLaunchStep beforeLaunch;
+
+    com.editora.run.@Nullable RunService beforeLaunchService;
+
     /** The text each file of the session was launched from (see {@link LaunchedLines}). */
     final LaunchedLines launchedLines = new LaunchedLines();
 

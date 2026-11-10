@@ -167,6 +167,14 @@ final class DebugCoordinator {
         /** Persists the exception-breakpoint choices (workspace state + save). */
         default void persistDebugExceptionFilters(Map<String, List<String>> filters) {}
 
+        /** This project's compounds: run configurations debugged together (workspace state). */
+        default List<com.editora.config.RunCompound> runCompounds() {
+            return List.of();
+        }
+
+        /** Opens the compounds' editor on compound {@code name} (null: a new one). */
+        default void editCompounds(@Nullable String name) {}
+
         /** The addresses Attach reached in this project, most recent first (workspace state). */
         default List<String> debugAttachTargets() {
             return List.of();
@@ -228,19 +236,27 @@ final class DebugCoordinator {
     private int consoleFontSize;
 
     /**
-     * The before-launch build of a debug launch. On its own service rather than the Run console's, so
-     * debugging a configuration is not refused merely because another program is running there.
+     * The before-launch steps of the session being handled ({@link #s()}), made on first use. Each session has its
+     * own, on its own service rather than the Run console's: debugging is not refused because a program runs there,
+     * and the sessions of a compound build at the same time. What a step hands back runs as its session's.
      */
-    private final com.editora.run.RunService beforeLaunchService = new com.editora.run.RunService();
-
-    private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(beforeLaunchService);
-
-    /** The session whose before-launch step runs (or last ran); one step runs at a time in a window. */
-    private @Nullable DebugSession beforeLaunchOwner;
+    private BeforeLaunchStep beforeLaunch() {
+        DebugSession session = s();
+        BeforeLaunchStep step = session.beforeLaunch;
+        if (step == null) {
+            com.editora.run.RunService service = new com.editora.run.RunService();
+            session.beforeLaunchService = service;
+            step = new BeforeLaunchStep(service);
+            step.setContext(() -> r -> () -> inSession(session, r));
+            session.beforeLaunch = step;
+        }
+        return step;
+    }
 
     /** A before-launch step of the session being handled is running: its Stop stops that step. */
     private boolean beforeLaunchActive() {
-        return beforeLaunch.isActive() && beforeLaunchOwner == s();
+        BeforeLaunchStep step = s().beforeLaunch;
+        return step != null && step.isActive();
     }
 
     /** The java-debug bundle jars last pushed to the LSP layer — restart jdtls only when this changes. */
@@ -413,12 +429,6 @@ final class DebugCoordinator {
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
         setUp(sessions.focused());
-        beforeLaunch.setContext(
-                () -> { // each step belongs to the session that started it
-                    DebugSession owner = s();
-                    beforeLaunchOwner = owner;
-                    return r -> () -> inSession(owner, r);
-                });
         memberBreakpoints = new MemberBreakpointCommands(
                 host, ops, this::dap, this::allManagers, lspManager, () -> breakpointsMuted);
         memberMarks = new MemberBreakpointMarks(host, ops, lspManager);
@@ -616,6 +626,7 @@ final class DebugCoordinator {
         if (sessions.size() >= DebugSessions.MAX_SESSIONS) {
             for (DebugSession old : sessions.all()) {
                 if (old != sessions.focused() && !inSession(old, this::sessionLive)) {
+                    shutdownBeforeLaunch(old);
                     sessions.remove(old);
                     break;
                 }
@@ -638,6 +649,7 @@ final class DebugCoordinator {
             others.remove(session);
             focusSession(others.getLast());
         }
+        shutdownBeforeLaunch(session);
         sessions.remove(session);
         refreshSessionTabs();
     }
@@ -646,7 +658,7 @@ final class DebugCoordinator {
     void stopAll() {
         forEachSession(() -> {
             if (sessionLive()) {
-                stop();
+                stopOne();
             }
         });
     }
@@ -816,11 +828,38 @@ final class DebugCoordinator {
         return enabled && RemoteExec.runsFor(file);
     }
 
-    /** Debug ▸ Stop: a before-launch build still running is what gets stopped; else the session. */
+    /**
+     * Debug ▸ Stop: {@link #stopOne()} — and, for a session of a compound that stops all, every session of it still
+     * running that compound's launches (VS Code's {@code stopAll}).
+     */
     void stop() {
+        DebugSession current = s();
+        DebugCompound group = current.compound;
+        if (group == null || !group.stopAll || group.stopping || !group.holds(current)) {
+            stopOne();
+            return;
+        }
+        group.stopping = true;
+        try {
+            for (DebugSession member : group.sessions()) {
+                if (sessions.all().contains(member)) {
+                    inSession(member, () -> {
+                        if (member == current || sessionLive()) {
+                            stopOne();
+                        }
+                    });
+                }
+            }
+        } finally {
+            group.stopping = false;
+        }
+    }
+
+    /** Stops the session being handled: a before-launch build still running is what gets stopped; else the session. */
+    private void stopOne() {
         s().closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
         if (beforeLaunchActive()) {
-            beforeLaunch.stop();
+            beforeLaunch().stop();
         } else if (s().pendingBuild != null) {
             // The jdtls build before a launch: it finishes on its own, but nothing is launched after it.
             dropPendingBuild();
@@ -927,7 +966,17 @@ final class DebugCoordinator {
     void shutdown() {
         persistDebounce.stop();
         flushPendingPersist(); // a breakpoint moved by an edit in the last 300 ms is not lost with the window
-        beforeLaunchService.shutdown();
+        for (DebugSession session : sessions.all()) {
+            shutdownBeforeLaunch(session);
+        }
+    }
+
+    /** Ends {@code session}'s before-launch service, if it has one (the session or the window is going). */
+    private static void shutdownBeforeLaunch(DebugSession session) {
+        com.editora.run.RunService service = session.beforeLaunchService;
+        if (service != null) {
+            service.shutdown();
+        }
     }
 
     /** The session's program is running (not paused, starting or being built for): what Pause acts on (C206). */
@@ -2682,47 +2731,262 @@ final class DebugCoordinator {
     }
 
     /**
-     * Debug: Start Configuration: the configurations of the project's {@code .vscode/launch.json} (or the nearest one
-     * above the active file), picked from a list — the one started last first — and started as VS Code starts them.
+     * Debug: Start Configuration: the configurations and compounds of the project's {@code .vscode/launch.json} (or the
+     * nearest one above the active file), picked from a list — the one started last first — and started as VS Code
+     * starts them: beside the running session, when there is one.
      */
     void startLaunchConfiguration() {
         EditorBuffer b = host.activeBuffer();
+        LaunchFile launch = readLaunchJson(b);
+        if (launch == null) {
+            return; // said
+        }
+        if (launch.parsed().configurations().isEmpty()
+                && launch.parsed().compounds().isEmpty()) {
+            host.setStatus(tr("status.debug.noConfigurations", launch.path()));
+            return;
+        }
+        List<LaunchChoice> choices = new ArrayList<>();
+        launch.parsed().configurations().forEach(c -> choices.add(new LaunchChoice(c, null)));
+        launch.parsed().compounds().forEach(c -> choices.add(new LaunchChoice(null, c)));
+        String last = lastConfiguration.get(launch.path());
+        choices.sort(java.util.Comparator.comparing(c -> !c.name().equals(last)));
+        QuickOpen<LaunchChoice> picker = new QuickOpen<>(
+                tr("debug.launchJson.title"),
+                tr("debug.launchJson.prompt"),
+                () -> choices,
+                LaunchChoice::name,
+                LaunchChoice::detail,
+                c -> {
+                    if (c != null) {
+                        lastConfiguration.put(launch.path(), c.name());
+                        startLaunchChoice(launch, c, b);
+                    }
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /** A project's launch.json, read: where it is, the folder it is for, what it holds. */
+    record LaunchFile(Path path, Path workspace, com.editora.dap.LaunchJson.File parsed) {}
+
+    /** The launch.json for the active file's project, read; null after saying why there is none to use. */
+    private @Nullable LaunchFile readLaunchJson(@Nullable EditorBuffer b) {
         Path file = b == null ? null : b.getPath();
         Path launchJson = com.editora.dap.LaunchJson.find(ops.projectRoot(), file);
         if (launchJson == null) {
             host.setStatus(tr("status.debug.noLaunchJson"));
-            return;
+            return null;
         }
         com.editora.dap.LaunchJson.File parsed;
         try {
             parsed = com.editora.dap.LaunchJson.parse(java.nio.file.Files.readString(launchJson));
         } catch (java.io.IOException | com.editora.dap.LaunchJson.LaunchJsonException e) {
             host.setStatus(tr("status.debug.launchJsonInvalid", launchJson, e.getMessage()));
-            return;
+            return null;
         }
-        if (parsed.configurations().isEmpty()) {
-            host.setStatus(tr("status.debug.noConfigurations", launchJson));
-            return;
-        }
-        List<com.editora.dap.LaunchJson.Configuration> configs = new ArrayList<>(parsed.configurations());
-        String last = lastConfiguration.get(launchJson);
-        configs.sort(java.util.Comparator.comparing(c -> !c.name().equals(last)));
         Path vscode = launchJson.toAbsolutePath().getParent();
         Path workspace = vscode == null || vscode.getParent() == null ? launchJson : vscode.getParent();
-        QuickOpen<com.editora.dap.LaunchJson.Configuration> picker = new QuickOpen<>(
-                tr("debug.launchJson.title"),
-                tr("debug.launchJson.prompt"),
-                () -> configs,
-                com.editora.dap.LaunchJson.Configuration::name,
-                c -> c.type() + " · " + c.request(),
+        return new LaunchFile(launchJson, workspace, parsed);
+    }
+
+    /** An entry of Debug: Start Configuration: one of launch.json's configurations, or one of its compounds. */
+    record LaunchChoice(
+            com.editora.dap.LaunchJson.@Nullable Configuration configuration,
+            com.editora.dap.LaunchJson.@Nullable Compound compound) {
+
+        String name() {
+            com.editora.dap.LaunchJson.Configuration c = configuration;
+            com.editora.dap.LaunchJson.Compound group = compound;
+            return c != null ? c.name() : group != null ? group.name() : "";
+        }
+
+        String detail() {
+            com.editora.dap.LaunchJson.Configuration c = configuration;
+            com.editora.dap.LaunchJson.Compound group = compound;
+            return c != null
+                    ? c.type() + " · " + c.request()
+                    : tr(
+                            "debug.compound.detail",
+                            group == null ? 0 : group.configurations().size());
+        }
+    }
+
+    /** Starts {@code choice} of {@code launch}: a configuration, or every configuration of a compound. */
+    private void startLaunchChoice(LaunchFile launch, LaunchChoice choice, @Nullable EditorBuffer b) {
+        com.editora.dap.LaunchJson.Configuration c = choice.configuration();
+        com.editora.dap.LaunchJson.Compound group = choice.compound();
+        if (c != null) {
+            runLaunchConfiguration(launch.path(), launch.workspace(), launch.parsed(), c, b);
+        } else if (group != null) {
+            runLaunchCompound(launch, group, b);
+        }
+    }
+
+    /**
+     * The session a launch asked for now goes into: the one being handled when it is free, else a new one beside it,
+     * shown from now on — a configuration started while another session runs is debugged next to it, as in VS Code.
+     */
+    private DebugSession sessionForLaunch() {
+        return sessionLive() ? openSession() : s();
+    }
+
+    /**
+     * Starts launch.json compound {@code group}: asks the inputs its configurations use (each once), runs its
+     * {@code preLaunchTask}, then starts each configuration in a session of its own, in the order listed — each with
+     * its own {@code preLaunchTask}. Stopping one stops them all when the compound says {@code stopAll}.
+     */
+    void runLaunchCompound(LaunchFile launch, com.editora.dap.LaunchJson.Compound group, @Nullable EditorBuffer b) {
+        List<com.editora.dap.LaunchJson.Configuration> members = new ArrayList<>();
+        for (String name : group.configurations()) {
+            com.editora.dap.LaunchJson.Configuration c = launch.parsed().configuration(name);
+            if (c == null) {
+                host.setStatus(tr("status.debug.compoundMissing", group.name(), name));
+                return;
+            }
+            members.add(c);
+        }
+        if (members.isEmpty()) {
+            host.setStatus(tr("status.debug.compoundEmpty", group.name()));
+            return;
+        }
+        String os = com.editora.dap.LaunchJson.osKey(System.getProperty("os.name", ""));
+        List<java.util.Map<String, Object>> bodies = members.stream()
+                .map(c -> com.editora.dap.LaunchJson.forPlatform(c.body(), os))
+                .toList();
+        List<String> ids = bodies.stream()
+                .flatMap(body -> com.editora.dap.LaunchJson.inputsUsed(body).stream())
+                .distinct()
+                .toList();
+        askInputs(launch.parsed().inputs(), ids, 0, new java.util.LinkedHashMap<>(), answers -> {
+            DebugCompound compound = new DebugCompound(group.name(), group.stopAll());
+            DebugSession first = sessionForLaunch();
+            Runnable startAll = () -> {
+                for (int i = 0; i < members.size(); i++) {
+                    DebugSession target = i == 0 ? first : openSession();
+                    String name = members.get(i).name();
+                    java.util.Map<String, Object> body = bodies.get(i);
+                    compound.join(target);
+                    inSession(target, () -> resolveAndRun(launch.path(), launch.workspace(), name, body, answers, b));
+                }
+            };
+            if (group.preLaunchTask().isBlank()) {
+                startAll.run();
+                return;
+            }
+            inSession(first, () -> {
+                List<String> argv = preLaunchTask(launch.path(), launch.workspace(), group.preLaunchTask(), b, answers);
+                if (argv == null) {
+                    return; // said
+                }
+                nameSession(group.name());
+                beforeLaunch()
+                        .run(
+                                host,
+                                new BeforeLaunchStep.Command(group.preLaunchTask(), argv, "status.run.preLaunchTask"),
+                                launch.workspace(),
+                                java.util.Map.of(),
+                                beforeLaunchConsole(),
+                                () -> later(startAll)); // once the step has ended: its service is free again
+            });
+        });
+    }
+
+    /**
+     * Debugs compound {@code compound} of saved run configurations: each in a session of its own, in the order listed,
+     * as Debug ▸ Run Configuration debugs one. Says which configuration is missing, and starts none, when one is.
+     */
+    void debugRunCompound(com.editora.config.RunCompound compound) {
+        List<com.editora.config.RunConfiguration> saved = ops.runConfigurations();
+        List<com.editora.config.RunConfiguration> members = new ArrayList<>();
+        for (String name : compound.configurations()) {
+            com.editora.config.RunConfiguration cfg = saved.stream()
+                    .filter(c -> c.name().equals(name))
+                    .findFirst()
+                    .orElse(null);
+            if (cfg == null) {
+                host.setStatus(tr("status.debug.compoundMissing", compound.name(), name));
+                return;
+            }
+            members.add(cfg);
+        }
+        if (members.isEmpty()) {
+            host.setStatus(tr("status.debug.compoundEmpty", compound.name()));
+            return;
+        }
+        DebugCompound group = new DebugCompound(compound.name(), compound.stopAll());
+        for (int i = 0; i < members.size(); i++) {
+            DebugSession target = i == 0 ? sessionForLaunch() : openSession();
+            com.editora.config.RunConfiguration cfg = members.get(i);
+            group.join(target);
+            inSession(target, () -> debugConfig(cfg));
+        }
+    }
+
+    /**
+     * Debug: Start Compound — the project's compounds (its own and its launch.json's), picked from a list and debugged
+     * together; the last entry makes a new one.
+     */
+    void startCompound() {
+        EditorBuffer b = host.activeBuffer();
+        Path launchJson = com.editora.dap.LaunchJson.find(ops.projectRoot(), b == null ? null : b.getPath());
+        LaunchFile launch = launchJson == null ? null : readLaunchJson(b);
+        List<CompoundChoice> choices = new ArrayList<>();
+        ops.runCompounds().forEach(c -> choices.add(new CompoundChoice(c, null)));
+        if (launch != null) {
+            launch.parsed().compounds().forEach(c -> choices.add(new CompoundChoice(null, c)));
+        }
+        choices.add(new CompoundChoice(null, null)); // New Compound…
+        QuickOpen<CompoundChoice> picker = new QuickOpen<>(
+                tr("debug.compound.title"),
+                tr("debug.compound.prompt"),
+                () -> choices,
+                CompoundChoice::name,
+                CompoundChoice::detail,
                 c -> {
-                    if (c != null) {
-                        lastConfiguration.put(launchJson, c.name());
-                        runLaunchConfiguration(launchJson, workspace, parsed, c, b);
+                    if (c == null) {
+                        return;
+                    }
+                    com.editora.config.RunCompound own = c.own();
+                    com.editora.dap.LaunchJson.Compound fromJson = c.launchJson();
+                    if (own != null) {
+                        debugRunCompound(own);
+                    } else if (fromJson != null && launch != null) {
+                        runLaunchCompound(launch, fromJson, b);
+                    } else {
+                        ops.editCompounds(null);
                     }
                 });
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());
+    }
+
+    /** Debug: Edit Compounds… — the project's own compounds, in their editor. */
+    void editCompounds() {
+        ops.editCompounds(
+                ops.runCompounds().isEmpty()
+                        ? null
+                        : ops.runCompounds().getFirst().name());
+    }
+
+    /** An entry of Debug: Start Compound: one of the project's own, one of its launch.json's, or New Compound…. */
+    record CompoundChoice(
+            com.editora.config.@Nullable RunCompound own, com.editora.dap.LaunchJson.@Nullable Compound launchJson) {
+
+        String name() {
+            com.editora.config.RunCompound o = own;
+            com.editora.dap.LaunchJson.Compound j = launchJson;
+            return o != null ? o.name() : j != null ? j.name() : tr("debug.compound.new");
+        }
+
+        String detail() {
+            com.editora.config.RunCompound o = own;
+            com.editora.dap.LaunchJson.Compound j = launchJson;
+            if (o != null) {
+                return String.join(", ", o.configurations());
+            }
+            return j != null ? "launch.json · " + String.join(", ", j.configurations()) : "";
+        }
     }
 
     /** Runs configuration {@code c}: asks its inputs, then {@link #resolveAndRun}. */
@@ -2739,7 +3003,8 @@ final class DebugCoordinator {
                 com.editora.dap.LaunchJson.inputsUsed(body),
                 0,
                 new java.util.LinkedHashMap<>(),
-                answers -> resolveAndRun(launchJson, workspace, c.name(), body, answers, b));
+                answers -> inSession(
+                        sessionForLaunch(), () -> resolveAndRun(launchJson, workspace, c.name(), body, answers, b)));
     }
 
     /** Asks inputs {@code ids} from {@code index} on, one after another, then hands the answers to {@code done}. */
@@ -2817,13 +3082,14 @@ final class DebugCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        beforeLaunch.run(
-                host,
-                new BeforeLaunchStep.Command(task, argv, "status.run.preLaunchTask"),
-                workspace,
-                java.util.Map.of(),
-                beforeLaunchConsole(),
-                () -> later(start));
+        beforeLaunch()
+                .run(
+                        host,
+                        new BeforeLaunchStep.Command(task, argv, "status.run.preLaunchTask"),
+                        workspace,
+                        java.util.Map.of(),
+                        beforeLaunchConsole(),
+                        () -> later(start));
     }
 
     /** The command line of {@code tasks.json}'s task {@code label}; null when it cannot be run here (said). */
@@ -3017,32 +3283,33 @@ final class DebugCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        beforeLaunch.run(
-                host,
-                new BeforeLaunchStep.Command(name, build, "status.run.cargoBuild"),
-                workspace,
-                java.util.Map.of(),
-                beforeLaunchConsole(),
-                () -> startOffFx("editora-cargo-artifacts", session -> () -> {
-                    var listed = com.editora.dap.RustLaunch.listArtifacts(workspace, json, CARGO_LIST_TIMEOUT);
-                    laterIn(session, () -> {
-                        Path exe = listed.ok()
-                                ? com.editora.dap.LaunchRoute.cargoExecutable(
-                                        com.editora.dap.RustLaunch.artifacts(listed.out()),
-                                        args.contains("test"),
-                                        filter.get("name") instanceof String n ? n : null,
-                                        filter.get("kind") instanceof String k ? k : null)
-                                : null;
-                        if (exe == null) {
-                            host.setStatus(tr("status.debug.cargoNoArtifact", name));
-                            return;
-                        }
-                        java.util.Map<String, Object> resolved = new java.util.LinkedHashMap<>(request);
-                        resolved.remove("cargo");
-                        resolved.put("program", exe.toString());
-                        startExternalSession(anchor, profile, resolved, name);
-                    });
-                }));
+        beforeLaunch()
+                .run(
+                        host,
+                        new BeforeLaunchStep.Command(name, build, "status.run.cargoBuild"),
+                        workspace,
+                        java.util.Map.of(),
+                        beforeLaunchConsole(),
+                        () -> startOffFx("editora-cargo-artifacts", session -> () -> {
+                            var listed = com.editora.dap.RustLaunch.listArtifacts(workspace, json, CARGO_LIST_TIMEOUT);
+                            laterIn(session, () -> {
+                                Path exe = listed.ok()
+                                        ? com.editora.dap.LaunchRoute.cargoExecutable(
+                                                com.editora.dap.RustLaunch.artifacts(listed.out()),
+                                                args.contains("test"),
+                                                filter.get("name") instanceof String n ? n : null,
+                                                filter.get("kind") instanceof String k ? k : null)
+                                        : null;
+                                if (exe == null) {
+                                    host.setStatus(tr("status.debug.cargoNoArtifact", name));
+                                    return;
+                                }
+                                java.util.Map<String, Object> resolved = new java.util.LinkedHashMap<>(request);
+                                resolved.remove("cargo");
+                                resolved.put("program", exe.toString());
+                                startExternalSession(anchor, profile, resolved, name);
+                            });
+                        }));
     }
 
     /**
@@ -3467,8 +3734,8 @@ final class DebugCoordinator {
                 if (path == null) {
                     return false;
                 }
-                // Both at once only beside a session that has started: a launch still getting ready holds the
-                // window's one before-launch step or build.
+                // Both at once beside a session that has started; one still getting ready (a build, a test run's
+                // JVM) is replaced or kept, as before.
                 boolean both = active && !preparing;
                 Retarget answer = askRetarget(
                         tr(both ? "dialog.debug.retargetBothQuestion" : phase.retargetKey, label, path.getFileName()),
@@ -3516,7 +3783,7 @@ final class DebugCoordinator {
     /** Ends whatever launch is live or getting ready, for a launch of another file. */
     private void endLiveLaunch() {
         if (beforeLaunchActive()) {
-            beforeLaunch.stop();
+            beforeLaunch().stop();
         }
         dropPendingBuild();
         stop(); // the session, or a test run waiting for its JVM
@@ -3703,16 +3970,18 @@ final class DebugCoordinator {
         List<String> json = new java.util.ArrayList<>(cargo);
         json.addAll(plan.jsonArgs());
         boolean terminal = host.settings().isDebugProgramConsole();
-        beforeLaunch.run(
-                host,
-                new BeforeLaunchStep.Command(String.valueOf(path.getFileName()), build, "status.run.cargoBuild"),
-                root,
-                java.util.Map.of(),
-                beforeLaunchConsole(),
-                () -> startOffFx("editora-cargo-artifacts", session -> () -> {
-                    var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, CARGO_LIST_TIMEOUT);
-                    laterIn(session, () -> launchRustArtifact(path, root, plan, args, terminal, listed));
-                }));
+        beforeLaunch()
+                .run(
+                        host,
+                        new BeforeLaunchStep.Command(
+                                String.valueOf(path.getFileName()), build, "status.run.cargoBuild"),
+                        root,
+                        java.util.Map.of(),
+                        beforeLaunchConsole(),
+                        () -> startOffFx("editora-cargo-artifacts", session -> () -> {
+                            var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, CARGO_LIST_TIMEOUT);
+                            laterIn(session, () -> launchRustArtifact(path, root, plan, args, terminal, listed));
+                        }));
         updateDebugAvailability();
     }
 
@@ -3816,15 +4085,16 @@ final class DebugCoordinator {
             then.run();
             return;
         }
-        beforeLaunch.run(
-                host,
-                new BeforeLaunchStep.Command(
-                        String.valueOf(path.getFileName()), plan.steps().get(index), "status.run.nativeBuild"),
-                plan.root(),
-                java.util.Map.of(),
-                beforeLaunchConsole(index == 0),
-                // after the step has ended: the next one is not refused as "still running"
-                () -> later(() -> runNativeSteps(path, plan, index + 1, then)));
+        beforeLaunch()
+                .run(
+                        host,
+                        new BeforeLaunchStep.Command(
+                                String.valueOf(path.getFileName()), plan.steps().get(index), "status.run.nativeBuild"),
+                        plan.root(),
+                        java.util.Map.of(),
+                        beforeLaunchConsole(index == 0),
+                        // after the step has ended: the next one is not refused as "still running"
+                        () -> later(() -> runNativeSteps(path, plan, index + 1, then)));
     }
 
     /** Finds the executable {@code plan} built (off the FX thread) and launches it, or says there is none. */
@@ -3890,16 +4160,19 @@ final class DebugCoordinator {
         List<String> dotnet = dotnetCommand;
         List<String> build = new java.util.ArrayList<>(dotnet);
         build.addAll(plan.buildArgs());
-        beforeLaunch.run(
-                host,
-                new BeforeLaunchStep.Command(String.valueOf(path.getFileName()), build, "status.run.dotnetBuild"),
-                plan.root(),
-                com.editora.dap.DotnetLaunch.BUILD_ENV,
-                beforeLaunchConsole(),
-                () -> startOffFx("editora-dotnet-target", session -> () -> {
-                    var listed = com.editora.dap.DotnetLaunch.queryTargetPath(dotnet, plan, DOTNET_QUERY_TIMEOUT);
-                    laterIn(session, () -> launchCsharpAssembly(path, plan, args, listed));
-                }));
+        beforeLaunch()
+                .run(
+                        host,
+                        new BeforeLaunchStep.Command(
+                                String.valueOf(path.getFileName()), build, "status.run.dotnetBuild"),
+                        plan.root(),
+                        com.editora.dap.DotnetLaunch.BUILD_ENV,
+                        beforeLaunchConsole(),
+                        () -> startOffFx("editora-dotnet-target", session -> () -> {
+                            var listed =
+                                    com.editora.dap.DotnetLaunch.queryTargetPath(dotnet, plan, DOTNET_QUERY_TIMEOUT);
+                            laterIn(session, () -> launchCsharpAssembly(path, plan, args, listed));
+                        }));
         updateDebugAvailability();
     }
 
@@ -4765,24 +5038,29 @@ final class DebugCoordinator {
         // one, jdtls builds it (review A2). A plain folder is built by jdtls after any step (review 2, A101).
         boolean hasStep = cfg.beforeLaunch() != null && !cfg.beforeLaunch().isBlank();
         Path toolRoot = buildRoot != null ? buildRoot : root;
-        beforeLaunch.run(
-                host,
-                cfg,
-                tool -> ops.buildExecutable(tool, toolRoot), // a symbolic step (maven:compile) runs the tree's Maven
-                root,
-                plan.jdkEnvironment(),
-                beforeLaunchConsole(),
-                () -> {
-                    if (plainFolder) {
-                        looseBuildThenLaunch(routing, launch); // after its own step too: jdtls's output (A101)
-                    } else if (!hasStep) {
-                        buildToolThenLaunch(
-                                buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
-                    } else { // the user's step built it; a Gradle launch still runs jdtls's bin/main (A202)
-                        afterToolBuild(buildRoot == null ? null : BuildBeforeLaunch.toolAt(buildRoot), routing, launch)
-                                .run();
-                    }
-                });
+        beforeLaunch()
+                .run(
+                        host,
+                        cfg,
+                        tool -> ops.buildExecutable(
+                                tool, toolRoot), // a symbolic step (maven:compile) runs the tree's Maven
+                        root,
+                        plan.jdkEnvironment(),
+                        beforeLaunchConsole(),
+                        () -> {
+                            if (plainFolder) {
+                                looseBuildThenLaunch(routing, launch); // after its own step too: jdtls's output (A101)
+                            } else if (!hasStep) {
+                                buildToolThenLaunch(
+                                        buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
+                            } else { // the user's step built it; a Gradle launch still runs jdtls's bin/main (A202)
+                                afterToolBuild(
+                                                buildRoot == null ? null : BuildBeforeLaunch.toolAt(buildRoot),
+                                                routing,
+                                                launch)
+                                        .run();
+                            }
+                        });
     }
 
     /**
@@ -4810,13 +5088,14 @@ final class DebugCoordinator {
         }
         List<String> argv =
                 BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, buildRoot));
-        beforeLaunch.run(
-                host,
-                new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
-                buildRoot,
-                env,
-                beforeLaunchConsole(),
-                afterToolBuild(tool, source, launch));
+        beforeLaunch()
+                .run(
+                        host,
+                        new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
+                        buildRoot,
+                        env,
+                        beforeLaunchConsole(),
+                        afterToolBuild(tool, source, launch));
         updateDebugAvailability();
     }
 
@@ -4907,31 +5186,34 @@ final class DebugCoordinator {
                 cfg.workingDir().isBlank() && com.editora.run.ScriptRunCommand.CLOJURE.equals(cfg.type()) ? null : cwd;
         String name = cfg.name();
         s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
-        beforeLaunch.run(
-                host,
-                cfg,
-                cwd,
-                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()),
-                beforeLaunchConsole(),
-                () -> {
-                    ops.openToolWindow();
-                    nameSession(cfg.name());
-                    dap().setProgramArgs(args);
-                    if (program || com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(cfg.type())) {
-                        // `java` (a Kotlin program) and Scala CLI take VM arguments on their command line.
-                        dap().setVmArgs(com.editora.run.ProgramArgs.tokenize(cfg.vmArgs()));
-                    } else {
-                        dap().setVmArgs(cfg.vmArgs().strip()); // placed where the tool reads them (JvmScriptRun)
-                    }
-                    dap().setHostJavaExec("");
-                    dap().setEnv(programEnv);
-                    if (program) {
-                        debugKotlinProgram(
-                                script, cwd, com.editora.run.JdkToolchain.javaExecutable(jdkHome), programEnv);
-                    } else {
-                        withClosedBreakpoints(() -> dap().startJvmScript(script, cfg.type(), folder));
-                    }
-                });
+        beforeLaunch()
+                .run(
+                        host,
+                        cfg,
+                        cwd,
+                        com.editora.run.JdkToolchain.environment(
+                                jdkHome, com.editora.process.ProcessRunner.augmentedPath()),
+                        beforeLaunchConsole(),
+                        () -> {
+                            ops.openToolWindow();
+                            nameSession(cfg.name());
+                            dap().setProgramArgs(args);
+                            if (program || com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(cfg.type())) {
+                                // `java` (a Kotlin program) and Scala CLI take VM arguments on their command line.
+                                dap().setVmArgs(com.editora.run.ProgramArgs.tokenize(cfg.vmArgs()));
+                            } else {
+                                dap().setVmArgs(cfg.vmArgs()
+                                        .strip()); // placed where the tool reads them (JvmScriptRun)
+                            }
+                            dap().setHostJavaExec("");
+                            dap().setEnv(programEnv);
+                            if (program) {
+                                debugKotlinProgram(
+                                        script, cwd, com.editora.run.JdkToolchain.javaExecutable(jdkHome), programEnv);
+                            } else {
+                                withClosedBreakpoints(() -> dap().startJvmScript(script, cfg.type(), folder));
+                            }
+                        });
     }
 
     /**
@@ -4966,22 +5248,23 @@ final class DebugCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        beforeLaunch.run(
-                host,
-                new BeforeLaunchStep.Command(
-                        source.getFileName().toString(), plan.compile(), "status.run.kotlinCompile"),
-                cwd != null ? cwd : source.getParent(),
-                env,
-                beforeLaunchConsole(),
-                () -> {
-                    try {
-                        com.editora.run.KotlinBuild.finish(plan);
-                    } catch (java.io.IOException e) {
-                        host.setStatus(tr("debug.error.startFailed", e.getMessage()));
-                        return;
-                    }
-                    start.run();
-                });
+        beforeLaunch()
+                .run(
+                        host,
+                        new BeforeLaunchStep.Command(
+                                source.getFileName().toString(), plan.compile(), "status.run.kotlinCompile"),
+                        cwd != null ? cwd : source.getParent(),
+                        env,
+                        beforeLaunchConsole(),
+                        () -> {
+                            try {
+                                com.editora.run.KotlinBuild.finish(plan);
+                            } catch (java.io.IOException e) {
+                                host.setStatus(tr("debug.error.startFailed", e.getMessage()));
+                                return;
+                            }
+                            start.run();
+                        });
         updateDebugAvailability();
     }
 

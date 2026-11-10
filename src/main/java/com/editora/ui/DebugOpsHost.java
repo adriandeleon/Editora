@@ -109,6 +109,24 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public List<com.editora.config.RunCompound> runCompounds() {
+        return List.copyOf(mc.config.getWorkspaceState().getRunCompounds());
+    }
+
+    /** The compounds' editor, made on first use. */
+    private @Nullable DebugCompoundsWindow compoundsWindow;
+
+    @Override
+    public void editCompounds(@Nullable String name) {
+        DebugCompoundsWindow window = compoundsWindow;
+        if (window == null) {
+            window = new DebugCompoundsWindow(mc.config, compound -> mc.debugCoordinator.debugRunCompound(compound));
+            compoundsWindow = window;
+        }
+        window.show(name, mc.stage);
+    }
+
+    @Override
     public String pythonInterpreterChoice() {
         return mc.config.getWorkspaceState().getPythonInterpreter();
     }

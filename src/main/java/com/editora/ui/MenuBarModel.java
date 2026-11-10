@@ -323,6 +323,8 @@ final class MenuBarModel {
                                         // title read unevenly among the bare rows (review 3, choice 5).
                                         List.of(
                                                 "debug.startConfiguration",
+                                                "debug.startCompound",
+                                                "debug.editCompounds",
                                                 "debug.pause",
                                                 "debug.stepOver",
                                                 "debug.stepInto",
