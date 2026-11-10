@@ -480,21 +480,24 @@ class DebugReviewCWindowFxTest {
     void theEditorMenuOffersBreakpointsAndWhilePausedRunToCursorShowValueAndWatch() throws Exception {
         Path util = file("util.py", UTIL);
         EditorBuffer b = open(util);
-        List<String> idle = FxTestSupport.callOnFx(
-                () -> debug.editorMenuItems(b).stream().map(MenuItem::getText).toList());
+        List<String> idle = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
         assertEquals(
                 List.of(
+                        tr("editmenu.breakpoints"),
                         DebugPanelText.bareTitle(tr("command.debug.toggleBreakpoint")),
-                        DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.toggleTemporaryBreakpoint")),
-                        DebugPanelText.bareTitle(tr("command.debug.toggleRecordingBreakpoint"))),
-                idle);
+                        DebugPanelText.bareTitle(tr("command.debug.toggleRecordingBreakpoint")),
+                        DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")),
+                        DebugPanelText.bareTitle(tr("command.debug.toggleBreakpointEnabled")),
+                        DebugPanelText.bareTitle(tr("command.debug.breakpoints")),
+                        DebugPanelText.bareTitle(tr("command.debug.muteBreakpoints"))),
+                idle,
+                "one Breakpoints submenu, its rows after it");
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             FakeDebugAdapter.Session session = connect(adapter, util);
             stopAt(session, util, 3, "breakpoint");
             FxTestSupport.runOnFx(() -> b.getArea().moveTo(2, 5)); // on "y" of "y = x * 2"
-            List<String> paused = FxTestSupport.callOnFx(() ->
-                    debug.editorMenuItems(b).stream().map(MenuItem::getText).toList());
+            List<String> paused = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
             assertTrue(paused.contains(DebugPanelText.bareTitle(tr("command.debug.runToCursor"))), paused.toString());
             assertTrue(paused.contains(DebugPanelText.bareTitle(tr("command.debug.showValue"))), paused.toString());
             assertTrue(paused.contains(tr("debugpanel.addToWatches", "y")), paused.toString());
@@ -510,14 +513,12 @@ class DebugReviewCWindowFxTest {
     void aPlainFolderJavaClassOffersDebugFileInTheEditorMenu() throws Exception {
         Path main = file("Main.java", "public class Main {\n    public static void main(String[] a) {\n    }\n}\n");
         EditorBuffer b = open(main);
-        List<String> labels = FxTestSupport.callOnFx(
-                () -> debug.editorMenuItems(b).stream().map(MenuItem::getText).toList());
+        List<String> labels = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
         assertEquals(tr("editmenu.debugFile"), labels.getFirst(), labels.toString());
         // Review 2 C110: not while that file is being debugged — it offered a second launch of it.
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             connect(adapter, main);
-            List<String> during = FxTestSupport.callOnFx(() ->
-                    debug.editorMenuItems(b).stream().map(MenuItem::getText).toList());
+            List<String> during = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
             assertFalse(during.contains(tr("editmenu.debugFile")), during.toString());
         }
     }
@@ -590,16 +591,10 @@ class DebugReviewCWindowFxTest {
         assertTrue(FxTestSupport.callOnFx(() -> mgr.tooltip(4)).contains(tr("debug.breakpoint.lambdasOnly", "1")));
         String title = DebugPanelText.bareTitle(tr("command.debug.toggleLambdaBreakpoint"));
         assertFalse(
-                FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
-                        .map(MenuItem::getText)
-                        .toList()
-                        .contains(title)),
+                FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)).contains(title)),
                 "the caret's line starts no lambda");
         FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(4, 2));
-        assertTrue(FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
-                .map(MenuItem::getText)
-                .toList()
-                .contains(title)));
+        assertTrue(FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)).contains(title)));
 
         // The gutter menu of line 6: on the line too, and the first lambda as well.
         FxTestSupport.drainFx();
@@ -705,9 +700,7 @@ class DebugReviewCWindowFxTest {
             debug.toggleLambdaBreakpointAtCaret();
         });
         assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(0)));
-        assertFalse(FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
-                .map(MenuItem::getText)
-                .toList()
+        assertFalse(FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b))
                 .contains(DebugPanelText.bareTitle(tr("command.debug.toggleLambdaBreakpoint")))));
     }
 
@@ -1053,5 +1046,20 @@ class DebugReviewCWindowFxTest {
             assertEquals(3, asked.getColumn());
             assertEquals("names", got.getFirst().getFirst().label());
         }
+    }
+
+    /** The menu's labels, each submenu followed by its own rows (separators dropped). FX thread. */
+    private static List<String> labels(List<MenuItem> items) {
+        List<String> out = new java.util.ArrayList<>();
+        for (MenuItem item : items) {
+            if (item instanceof javafx.scene.control.SeparatorMenuItem) {
+                continue;
+            }
+            out.add(item.getText());
+            if (item instanceof javafx.scene.control.Menu sub) {
+                out.addAll(labels(sub.getItems()));
+            }
+        }
+        return out;
     }
 }

@@ -320,6 +320,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The editor's right-click menu opens with the editing items.** Cut, Copy and Paste, then Undo and Redo, then
+  Select All now come first, in the same place on every file, with Run and Debug, the debugger, LSP, build, AI,
+  spelling, markup, comment, plugin, bookmark and note items below them. The breakpoint actions — Toggle, Temporary,
+  Recording and Lambda breakpoints, Edit Breakpoint and Enable / Disable — move into one **Breakpoints** submenu,
+  which also offers the Breakpoints list and Mute Breakpoints.
 - **The Commit window says when a clean tree still has commits to push.** Below "Nothing to commit — working tree
   clean" it now adds "2 commits to push to origin/main" and a Push button, instead of leaving the small `↑2` in the
   header as the only sign. A branch with no upstream keeps the header's `↑ publish` alone.
