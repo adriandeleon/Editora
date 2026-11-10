@@ -528,7 +528,7 @@ final class Chrome {
      * Changes was enabled with no session, to answer with a status line (review 2 C109).
      */
     private static final java.util.Set<String> DEBUG_NEEDS_SESSION =
-            java.util.Set.of("debug.stop", "debug.restart", "debug.pause", "debug.applyCodeChanges");
+            java.util.Set.of("debug.stop", "debug.stopAll", "debug.restart", "debug.pause", "debug.applyCodeChanges");
 
     /**
      * Git commands that must stay enabled <b>outside</b> a repository, because that is where they are

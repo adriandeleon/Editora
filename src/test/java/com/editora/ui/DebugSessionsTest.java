@@ -32,6 +32,28 @@ class DebugSessionsTest {
     }
 
     @Test
+    void sessionsAreAddedFocusedAndRemoved() {
+        DapManager dap = new DapManager(null);
+        DebugSessions sessions = new DebugSessions(dap);
+        DebugSession first = sessions.focused();
+        DebugSession second = new DebugSession(dap.newSession());
+        sessions.add(second);
+        assertEquals(2, sessions.size());
+        assertSame(first, sessions.focused(), "adding does not show it");
+        sessions.focus(second);
+        assertSame(second, sessions.focused());
+        sessions.focus(new DebugSession(new DapManager(null)));
+        assertSame(second, sessions.focused(), "one not kept is ignored");
+
+        sessions.remove(second);
+        assertEquals(1, sessions.size());
+        assertSame(first, sessions.focused(), "the focus moves to the newest of the others");
+        sessions.remove(first);
+        assertEquals(1, sessions.size(), "the window always has one");
+        assertSame(first, sessions.focused());
+    }
+
+    @Test
     void shutdownEndsEverySession() {
         DapManager dap = new DapManager(null);
         DebugSessions sessions = new DebugSessions(dap);

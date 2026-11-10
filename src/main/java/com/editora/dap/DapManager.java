@@ -257,6 +257,23 @@ public final class DapManager {
         return other.shared == shared;
     }
 
+    /**
+     * Wraps every reply and event this manager hands the FX thread; the window's debug sessions run each one as the
+     * session of the manager it came from. Identity by default.
+     */
+    private java.util.function.UnaryOperator<Runnable> callbackWrapper = java.util.function.UnaryOperator.identity();
+
+    /** Sets {@link #callbackWrapper} ({@code null}: none). */
+    public void setCallbackWrapper(java.util.function.@Nullable UnaryOperator<Runnable> wrapper) {
+        this.callbackWrapper = wrapper == null ? java.util.function.UnaryOperator.identity() : wrapper;
+    }
+
+    /** Runs {@code r} later on the FX thread, through {@link #callbackWrapper}. */
+    private void fx(Runnable r) {
+        Runnable wrapped = callbackWrapper.apply(r);
+        Platform.runLater(wrapped);
+    }
+
     public void setListener(Listener listener) {
         this.listener = listener == null ? noopListener() : listener;
     }
@@ -310,9 +327,7 @@ public final class DapManager {
      * ones — or the adapter's defaults — after); the next session starts that way. The choices themselves stay.
      */
     public void setExceptionsMuted(boolean muted) {
-        if (shared.exceptionsMuted == muted) {
-            return;
-        }
+        // No early return when the shared flag already says so: each of a window's managers tells its own session.
         shared.exceptionsMuted = muted;
         if (client != null) {
             List<String> chosen = shared.exceptionChoices.get(sessionLanguage);
@@ -512,7 +527,7 @@ public final class DapManager {
     public void detect(Consumer<Boolean> onResult) {
         io.submit(() -> {
             List<String> found = locate();
-            Platform.runLater(() -> {
+            fx(() -> {
                 shared.bundlePaths = shared.enabled ? found : List.of();
                 onResult.accept(!found.isEmpty());
             });
@@ -541,7 +556,7 @@ public final class DapManager {
             Path dir = DebugAdapterLocator.locateDebugpy("", home()).orElse(null);
             boolean on = shared.enabled && shared.pythonEnabled;
             boolean installed = (on || installedOnly) && probeDebugpy(dir);
-            Platform.runLater(() -> {
+            fx(() -> {
                 shared.debugpyDir = dir;
                 shared.pythonAvailable = on && installed;
                 onResult.accept(installedOnly ? installed : on && installed);
@@ -558,7 +573,7 @@ public final class DapManager {
             Path server = DebugAdapterLocator.locateJsDebugServer(shared.jsPath, home())
                     .orElse(null);
             boolean ok = shared.enabled && shared.jsEnabled && server != null && probeNode(adapterNode());
-            Platform.runLater(() -> {
+            fx(() -> {
                 shared.jsServer = server;
                 shared.jsAvailable = ok;
                 onResult.accept(ok);
@@ -616,7 +631,7 @@ public final class DapManager {
             String nodeVersion = nodeVersion(node);
             String runner = adapterNodeFor(node, nodeVersion);
             String runnerVersion = runner == null || runner.equals(node) ? nodeVersion : nodeVersion(runner);
-            Platform.runLater(() -> onResult.accept(new JsDebugInstall(server, serverVersion, runnerVersion)));
+            fx(() -> onResult.accept(new JsDebugInstall(server, serverVersion, runnerVersion)));
         });
     }
 
@@ -825,7 +840,7 @@ public final class DapManager {
                             fail(epoch, tr("debug.error.launchFailed", msg(ae)));
                         }
                     });
-                    Platform.runLater(() -> {
+                    fx(() -> {
                         if (isCurrent(epoch, c)) {
                             setState(State.RUNNING);
                         }
@@ -1586,7 +1601,7 @@ public final class DapManager {
                 // The classes come from a temp dir, so java-debug cannot infer the project it compiles
                 // conditions, logpoints and evaluated expressions against: name the one jdtls keeps the
                 // source in (its invisible project for a loose file).
-                Platform.runLater(() -> projectNameOf(
+                fx(() -> projectNameOf(
                         routing,
                         project -> startDebugSessionAndConnect(
                                 routing,
@@ -1814,7 +1829,7 @@ public final class DapManager {
                     }
                     // Running once the adapter has the program, not when the request left: until then
                     // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
-                    Platform.runLater(() -> {
+                    fx(() -> {
                         if (!isCurrent(epoch, c)) {
                             return;
                         }
@@ -1981,7 +1996,7 @@ public final class DapManager {
                 shared.externalLocated.put(language.id(), found);
             }
             if (onDone != null) {
-                Platform.runLater(() -> onDone.accept(found != null));
+                fx(() -> onDone.accept(found != null));
             }
         });
     }
@@ -2293,7 +2308,7 @@ public final class DapManager {
                     fail(epoch, tr(key, msg(le)) + AdapterStderr.suffix(tail));
                 }
             });
-            Platform.runLater(() -> {
+            fx(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
                 }
@@ -2424,7 +2439,7 @@ public final class DapManager {
                             fail(epoch, tr("debug.error.attachFailed", msg(ae)));
                         }
                     });
-                    Platform.runLater(() -> {
+                    fx(() -> {
                         if (isCurrent(epoch, c)) {
                             setState(State.RUNNING);
                         }
@@ -2495,7 +2510,7 @@ public final class DapManager {
                             fail(epoch, tr("debug.error.attachFailed", msg(ae)));
                         }
                     });
-                    Platform.runLater(() -> {
+                    fx(() -> {
                         if (isCurrent(epoch, c)) {
                             setState(State.RUNNING);
                         }
@@ -2742,7 +2757,7 @@ public final class DapManager {
                     fail(epoch, launchFailure(le, launch) + AdapterStderr.suffix(stderr));
                 }
             });
-            Platform.runLater(() -> {
+            fx(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
                     List<String> runtime = pythonRuntime(launch);
@@ -3009,7 +3024,7 @@ public final class DapManager {
                     fail(epoch, tr("debug.error.launchFailed", msg(le)));
                 }
             });
-            Platform.runLater(() -> {
+            fx(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
                     listener.onDebuggeeRuntime(List.of(tool), runtimeWhere(file), programEnv);
@@ -3080,7 +3095,7 @@ public final class DapManager {
         String command = HostedDebugAdapter.startCommand(language);
         Map<String, Object> params =
                 HostedDebugAdapter.discovery(file.toUri().toString(), false, programArgs, jvmOptions(), env);
-        Platform.runLater(() -> {
+        fx(() -> {
             if (!isCurrent(epoch)) {
                 return;
             }
@@ -3130,7 +3145,7 @@ public final class DapManager {
                             fail(epoch, tr("debug.error.launchFailed", msg(le)));
                             return;
                         }
-                        Platform.runLater(() -> {
+                        fx(() -> {
                             if (isCurrent(epoch, c) && state == State.STARTING) {
                                 setState(State.RUNNING);
                             }
@@ -3375,7 +3390,7 @@ public final class DapManager {
                             COMMAND_CATEGORY);
                 }
             });
-            Platform.runLater(() -> {
+            fx(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
                     if (runtime != null && !runtime.isEmpty()) {
@@ -3713,7 +3728,7 @@ public final class DapManager {
         allSuspended = false;
         resumedSinceSuspendAll.clear();
         (wholeProgram ? c.resumeAll(threadId) : c.resume(threadId))
-                .whenComplete((all, e) -> Platform.runLater(() -> {
+                .whenComplete((all, e) -> fx(() -> {
                     if (e == null && isCurrent(epoch, c)) {
                         afterThreadResumed(epoch, c, all == null || all);
                     }
@@ -3836,7 +3851,7 @@ public final class DapManager {
             setState(State.RUNNING);
         }
         c.resume(threadId)
-                .whenComplete((all, e) -> Platform.runLater(() -> {
+                .whenComplete((all, e) -> fx(() -> {
                     if (e != null || !isCurrent(epoch, c)) {
                         return;
                     }
@@ -3877,7 +3892,7 @@ public final class DapManager {
             return;
         }
         c.threads()
-                .whenComplete((list, e) -> Platform.runLater(() -> {
+                .whenComplete((list, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(list == null ? List.of() : list);
                     }
@@ -3961,7 +3976,7 @@ public final class DapManager {
         }
         int threadId = currentThreadId;
         c.gotoTargets(file, line)
-                .whenComplete((ids, e) -> Platform.runLater(() -> {
+                .whenComplete((ids, e) -> fx(() -> {
                     if (client != c) {
                         return;
                     }
@@ -3975,7 +3990,7 @@ public final class DapManager {
                     }
                     c.gotoTarget(threadId, ids.get(0)).whenComplete((v, e2) -> {
                         if (e2 != null) {
-                            Platform.runLater(() -> {
+                            fx(() -> {
                                 if (client == c) {
                                     onError.accept(msg(e2));
                                 }
@@ -4091,7 +4106,7 @@ public final class DapManager {
             return;
         }
         c.disassemble(memoryReference, instructionOffset, count)
-                .whenComplete((list, e) -> Platform.runLater(() -> {
+                .whenComplete((list, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(e != null || list == null ? List.of() : list);
                     }
@@ -4114,7 +4129,7 @@ public final class DapManager {
             return;
         }
         c.readMemory(memoryReference, offset, count)
-                .whenComplete((block, e) -> Platform.runLater(() -> {
+                .whenComplete((block, e) -> fx(() -> {
                     if (client != c) {
                         return;
                     }
@@ -4137,7 +4152,7 @@ public final class DapManager {
             return;
         }
         c.memoryReferenceOf(expression, frameId)
-                .whenComplete((ref, e) -> Platform.runLater(() -> {
+                .whenComplete((ref, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(e != null ? null : ref);
                     }
@@ -4169,7 +4184,7 @@ public final class DapManager {
         int stops = stopCount;
         stepPendingEpoch = epoch;
         request.apply(c, threadId)
-                .whenComplete((v, e) -> Platform.runLater(() -> {
+                .whenComplete((v, e) -> fx(() -> {
                     if (stepPendingEpoch == epoch) {
                         stepPendingEpoch = -1;
                     }
@@ -4253,7 +4268,7 @@ public final class DapManager {
      * the adapter had launched it). End it at once and say why the session ended.
      */
     private void onTransportClosed(long epoch) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (!isCurrent(epoch)) {
                 return;
             }
@@ -4306,7 +4321,7 @@ public final class DapManager {
             return;
         }
         c.stackTrace(threadId)
-                .whenComplete((frames, e) -> Platform.runLater(() -> {
+                .whenComplete((frames, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(originalFrames(frames));
                     }
@@ -4320,7 +4335,7 @@ public final class DapManager {
             return;
         }
         c.scopes(frameId)
-                .whenComplete((scopes, e) -> Platform.runLater(() -> {
+                .whenComplete((scopes, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(scopes == null ? List.of() : scopes);
                     }
@@ -4344,7 +4359,7 @@ public final class DapManager {
                 .reply(ref + "/" + filter + "/" + start + "/" + count, () -> c.variables(ref, filter, start, count))
                 .thenCompose(vars -> lazyValues.resolveAll(vars, child -> c.variables(child, null, 0, 0)))
                 .thenCompose(vars -> repairStrings(c, vars))
-                .whenComplete((vars, e) -> Platform.runLater(() -> {
+                .whenComplete((vars, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(vars == null ? List.of() : vars);
                     }
@@ -4364,7 +4379,7 @@ public final class DapManager {
         lazyValues
                 .resolveNow(row, child -> c.variables(child, null, 0, 0))
                 .thenCompose(r -> repairStrings(c, List.of(r)))
-                .whenComplete((rows, e) -> Platform.runLater(() -> {
+                .whenComplete((rows, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(rows == null || rows.isEmpty() ? row : rows.get(0));
                     }
@@ -4434,7 +4449,7 @@ public final class DapManager {
         }
         c.evaluateFull(expression, frameId, context) // the full answer: a string result can be repaired from it
                 .thenCompose(full -> repairString(c, full))
-                .whenComplete((full, e) -> Platform.runLater(() -> {
+                .whenComplete((full, e) -> fx(() -> {
                     if (console && client == c) {
                         consoleEvaluations = Math.max(0, consoleEvaluations - 1);
                     }
@@ -4500,7 +4515,7 @@ public final class DapManager {
         }
         c.evaluateFull(expression, frameId, context)
                 .thenCompose(r -> repairString(c, r))
-                .whenComplete((r, e) -> Platform.runLater(() -> {
+                .whenComplete((r, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(
                                 e != null
@@ -4520,7 +4535,7 @@ public final class DapManager {
         }
         c.evaluateFull(expression, frameId, "hover")
                 .thenCompose(r -> repairString(c, r))
-                .whenComplete((r, e) -> Platform.runLater(() -> {
+                .whenComplete((r, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(e != null || r == null ? null : r.result());
                     }
@@ -4549,7 +4564,7 @@ public final class DapManager {
             return; // no session: nothing was set
         }
         c.setVariable(ref, name, value)
-                .whenComplete((r, e) -> Platform.runLater(() -> {
+                .whenComplete((r, e) -> fx(() -> {
                     if (client != c) {
                         return;
                     }
@@ -4567,7 +4582,7 @@ public final class DapManager {
     private void assign(DapClient c, String name, String assignment, int frameId, Consumer<String> cb) {
         c.evaluateFull(assignment, frameId, "repl")
                 .thenCompose(r -> repairString(c, r))
-                .whenComplete((r, e) -> Platform.runLater(() -> {
+                .whenComplete((r, e) -> fx(() -> {
                     if (client != c) {
                         return;
                     }
@@ -4611,7 +4626,7 @@ public final class DapManager {
             return;
         }
         c.dataBreakpointInfo(variablesReference, name)
-                .whenComplete((r, e) -> Platform.runLater(() -> {
+                .whenComplete((r, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(e != null || r == null ? java.util.Optional.empty() : r);
                     }
@@ -4644,7 +4659,7 @@ public final class DapManager {
     private void presentStop(
             long epoch, DapClient c, int threadId, String reason, boolean event, boolean allThreadsStopped) {
         c.stackTrace(threadId)
-                .whenComplete((frames, e) -> Platform.runLater(() -> {
+                .whenComplete((frames, e) -> fx(() -> {
                     if (!isCurrent(epoch, c)) {
                         return;
                     }
@@ -4679,7 +4694,7 @@ public final class DapManager {
     /** Asks which exception {@code threadId} stopped on and reports it, unless the stop has ended meanwhile. */
     private void reportException(long epoch, DapClient c, int threadId, int stop) {
         c.exceptionInfo(threadId)
-                .whenComplete((info, e) -> Platform.runLater(() -> {
+                .whenComplete((info, e) -> fx(() -> {
                     if (info != null
                             && !info.isEmpty()
                             && isCurrent(epoch, c)
@@ -4692,7 +4707,7 @@ public final class DapManager {
     }
 
     private void onBreakpointStatus(long epoch, Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (!isCurrent(epoch) || file == null) {
                 return;
             }
@@ -4703,7 +4718,7 @@ public final class DapManager {
     }
 
     private void onNotice(long epoch, String message, boolean error) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (isCurrent(epoch)) {
                 outputPump.flush(); // keep it after the program output that preceded it
                 listener.onNotice(message, error);
@@ -4712,7 +4727,7 @@ public final class DapManager {
     }
 
     private void onContinued(long epoch, int threadId, boolean allThreads) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (!isCurrent(epoch)) {
                 return;
             }
@@ -4777,7 +4792,7 @@ public final class DapManager {
             return;
         }
         CompletableFuture.delayedExecutor(wait, TimeUnit.MILLISECONDS)
-                .execute(() -> Platform.runLater(() -> {
+                .execute(() -> fx(() -> {
                     if (isCurrent(epoch)) {
                         whenOutputQuiet(epoch, doneNanos, then);
                     }
@@ -4803,7 +4818,7 @@ public final class DapManager {
         }
         trailingEpoch = epoch;
         CompletableFuture.delayedExecutor(TRAILING_NOTICE_MILLIS, TimeUnit.MILLISECONDS)
-                .execute(() -> Platform.runLater(() -> {
+                .execute(() -> fx(() -> {
                     if (isCurrent(epoch) && state != State.INACTIVE) {
                         outputPump.flush(); // after the output that came before it
                         listener.onOutputTrailing();
@@ -4859,21 +4874,21 @@ public final class DapManager {
             self.process()
                     .onExit()
                     .completeOnTimeout(self.process(), PROGRAM_ADAPTER_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)
-                    .thenRun(() -> Platform.runLater(() -> {
+                    .thenRun(() -> fx(() -> {
                         if (isCurrent(epoch)) {
                             whenOutputQuiet(epoch, System.nanoTime(), () -> endSession(epoch));
                         }
                     }));
             return;
         }
-        Platform.runLater(() -> {
+        fx(() -> {
             Debuggee program = debuggee;
             if (isCurrent(epoch) && program != null && program.isRunning()) {
                 // The adapter is done with a program Editora started. Its last output is still in our pipe
                 // and the process may not be gone yet: the session ends when its exit is delivered
                 // (startDebuggee's sink), and a program that outlives its debugger is ended, not left running.
                 CompletableFuture.delayedExecutor(DEBUGGEE_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)
-                        .execute(() -> Platform.runLater(() -> {
+                        .execute(() -> fx(() -> {
                             if (debuggee == program) {
                                 program.terminate();
                             }
@@ -5025,7 +5040,7 @@ public final class DapManager {
      * output. A program Editora started itself reports its own exit instead (see {@link #startDebuggee}).
      */
     private void onExited(long epoch, int exitCode) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (!isCurrent(epoch) || programStartedEpoch == epoch || exitReportedEpoch == epoch) {
                 return;
             }
@@ -5098,7 +5113,7 @@ public final class DapManager {
         }
         exitWrapper = null;
         CompletableFuture.supplyAsync(() -> own.wrapper().awaitExitCode(java.time.Duration.ofSeconds(3)))
-                .whenComplete((code, e) -> Platform.runLater(() -> {
+                .whenComplete((code, e) -> fx(() -> {
                     own.wrapper().delete();
                     if (managerClosed || sessionEpoch - epoch > 1) {
                         return; // a new session (or a Stop after the end) owns the console now
@@ -5135,7 +5150,7 @@ public final class DapManager {
     }
 
     private void onError(long epoch, String message) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (isCurrent(epoch)) {
                 listener.onError(message);
             }
@@ -5266,7 +5281,7 @@ public final class DapManager {
 
             @Override
             public void onProcessId(long pid) {
-                Platform.runLater(() -> DapManager.this.onProcessId(epoch, pid));
+                fx(() -> DapManager.this.onProcessId(epoch, pid));
             }
 
             @Override
@@ -5286,7 +5301,7 @@ public final class DapManager {
 
             @Override
             public void onThreadsChanged() {
-                Platform.runLater(() -> {
+                fx(() -> {
                     if (isCurrent(epoch)) {
                         listener.onThreadsChanged();
                     }
@@ -5301,7 +5316,7 @@ public final class DapManager {
             @Override
             public CompletableFuture<Long> onRunInTerminal(String cwd, List<String> argv, Map<String, String> env) {
                 CompletableFuture<Long> started = new CompletableFuture<>();
-                Platform.runLater(() -> startDebuggee(epoch, cwd, argv, env, started));
+                fx(() -> startDebuggee(epoch, cwd, argv, env, started));
                 return started;
             }
 
@@ -5325,7 +5340,7 @@ public final class DapManager {
 
     /** As above; {@code compileFailed}: the launched file did not compile, so nothing was started (review 3, A201). */
     private void failWithConsole(long epoch, String console, String status, boolean compileFailed) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (!isCurrent(epoch)) {
                 return;
             }
@@ -5341,7 +5356,7 @@ public final class DapManager {
     }
 
     private void fail(long epoch, @Nullable String message) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (!isCurrent(epoch)) {
                 return;
             }
@@ -5455,7 +5470,7 @@ public final class DapManager {
     }
 
     private void onHotCodeReplace(long epoch, String changeType, String message) {
-        Platform.runLater(() -> {
+        fx(() -> {
             if (isCurrent(epoch)) {
                 outputPump.flush(); // after the program output that preceded it
                 codeReplaceNotices.accept(changeType, message);
@@ -5520,7 +5535,7 @@ public final class DapManager {
                             ""));
                 case SUCCEEDED ->
                     c.redefineClasses()
-                            .whenComplete((r, e) -> Platform.runLater(() -> {
+                            .whenComplete((r, e) -> fx(() -> {
                                 cb.accept(
                                         isCurrent(epoch, c)
                                                 ? codeReplaceOutcome(r, e == null ? null : msg(e))
@@ -5590,7 +5605,7 @@ public final class DapManager {
                 .thenCompose(frames -> frames == null || frames.isEmpty()
                         ? CompletableFuture.completedFuture(List.<DapModels.StepTarget>of())
                         : c.stepInTargets(frames.get(0).id()))
-                .whenComplete((targets, e) -> Platform.runLater(() -> {
+                .whenComplete((targets, e) -> fx(() -> {
                     if (!isCurrent(epoch, c) || state != State.SUSPENDED) {
                         return;
                     }
@@ -5641,7 +5656,7 @@ public final class DapManager {
             return;
         }
         c.completions(frameId, text, column)
-                .whenComplete((r, e) -> Platform.runLater(() -> {
+                .whenComplete((r, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(e != null || r == null ? List.of() : r);
                     }

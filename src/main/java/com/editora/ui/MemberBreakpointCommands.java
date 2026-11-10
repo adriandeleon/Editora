@@ -33,6 +33,9 @@ final class MemberBreakpointCommands {
     /** The focused debug session's manager. */
     private final java.util.function.Supplier<DapManager> dapManager;
 
+    /** Every debug session's manager. */
+    private final java.util.function.Supplier<List<DapManager>> allManagers;
+
     private final LspManager lspManager;
     private final BooleanSupplier muted;
 
@@ -40,11 +43,13 @@ final class MemberBreakpointCommands {
             CoordinatorHost host,
             DebugCoordinator.Ops ops,
             java.util.function.Supplier<DapManager> dapManager,
+            java.util.function.Supplier<List<DapManager>> allManagers,
             LspManager lspManager,
             BooleanSupplier muted) {
         this.host = host;
         this.ops = ops;
         this.dapManager = dapManager;
+        this.allManagers = allManagers;
         this.lspManager = lspManager;
         this.muted = muted;
     }
@@ -56,7 +61,11 @@ final class MemberBreakpointCommands {
 
     /** Tells the debugger the ones in force: the enabled ones, none while breakpoints are muted. */
     void push() {
-        dapManager.get().setMemberBreakpoints(muted.getAsBoolean() ? List.of() : adapterBreakpoints(all()));
+        List<com.editora.dap.DapModels.MemberBreakpoint> now =
+                muted.getAsBoolean() ? List.of() : adapterBreakpoints(all());
+        for (DapManager each : allManagers.get()) { // every session of the window is told
+            each.setMemberBreakpoints(now);
+        }
     }
 
     /** The enabled ones as the adapter takes them. Pure. */

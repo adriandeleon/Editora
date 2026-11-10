@@ -880,7 +880,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     Chrome.PaletteContext paletteContext() {
         EditorBuffer b = activeBuffer();
-        boolean debugActive = debugCoordinator != null && debugCoordinator.sessionLive(); // incl. starting/building
+        // Any session of the window, starting or being built for included.
+        boolean debugActive = debugCoordinator != null && debugCoordinator.anySessionLive();
         return new Chrome.PaletteContext(
                 b != null,
                 git.repoRoot() != null,
@@ -2150,7 +2151,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         runToolWindow.busyProperty().bind(runCoordinator.runningProperty()); // spinner badge on its stripe button
         debugCoordinator =
                 new DebugCoordinator(coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugOpsHost(this));
-        debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::panel);
+        debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::view);
         debugCoordinator.setProgramTerminal(terminalCoordinator::runProgram); // Settings → Debug → in the Terminal
         debugToolWindow.setFirstOpenShare(0.42); // stack, variables and console need rows (review C4)
         externalToolToolWindow = toolWindow(

@@ -222,8 +222,6 @@ final class DebugCoordinator {
     private final LspManager lspManager;
     private final LspCoordinator lsp;
     private final Ops ops;
-    /** The Debug panel; null until {@link #panel()} builds it. */
-    private @Nullable DebugPanel debugPanel;
     /** The console font to apply when the panel is built (set by every settings apply, panel or not). */
     private @Nullable String consoleFontFamily;
 
@@ -236,6 +234,14 @@ final class DebugCoordinator {
     private final com.editora.run.RunService beforeLaunchService = new com.editora.run.RunService();
 
     private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(beforeLaunchService);
+
+    /** The session whose before-launch step runs (or last ran); one step runs at a time in a window. */
+    private @Nullable DebugSession beforeLaunchOwner;
+
+    /** A before-launch step of the session being handled is running: its Stop stops that step. */
+    private boolean beforeLaunchActive() {
+        return beforeLaunch.isActive() && beforeLaunchOwner == s();
+    }
 
     /** The java-debug bundle jars last pushed to the LSP layer — restart jdtls only when this changes. */
     private List<String> appliedDebugBundles = List.of();
@@ -272,14 +278,126 @@ final class DebugCoordinator {
      */
     private static final Runnable HTTP_SCRIPT_ATTACH = () -> {};
 
-    /** The focused debug session: the one the Debug window shows and the debug commands act on. */
+    /**
+     * The session whose event, reply, panel action or launch step is being handled ({@link #inSession}); else the
+     * focused one, which the Debug window shows and the debug commands act on.
+     */
     DebugSession s() {
-        return sessions.focused();
+        DebugSession d = dispatching;
+        return d != null ? d : sessions.focused();
     }
 
-    /** The focused session's debug manager. */
+    /** The debug manager of {@link #s()}. */
     DapManager dap() {
-        return sessions.focused().dap;
+        return s().dap;
+    }
+
+    /** The session being handled while one is ({@link #inSession}); null: the focused one. FX thread. */
+    private @Nullable DebugSession dispatching;
+
+    /** Runs {@code r} as {@code session}'s: {@link #s()} and {@link #dap()} are that session's meanwhile. */
+    void inSession(DebugSession session, Runnable r) {
+        DebugSession before = dispatching;
+        dispatching = session;
+        try {
+            r.run();
+        } finally {
+            dispatching = before;
+        }
+    }
+
+    /** As {@link #inSession(DebugSession, Runnable)}, for an answer. */
+    private <T> T inSession(DebugSession session, java.util.function.Supplier<T> r) {
+        DebugSession before = dispatching;
+        dispatching = session;
+        try {
+            return r.get();
+        } finally {
+            dispatching = before;
+        }
+    }
+
+    /** Runs {@code r} later on the FX thread, as the session being handled now ({@link #s()}). */
+    private void later(Runnable r) {
+        DebugSession session = s();
+        Platform.runLater(() -> inSession(session, r));
+    }
+
+    /**
+     * Starts {@code work} on a virtual thread called {@code name}, given the session being handled now (read here, on
+     * the FX thread) so that what it hands back runs as that session's ({@link #laterIn}).
+     */
+    private void startOffFx(String name, Function<DebugSession, Runnable> work) {
+        Runnable job = work.apply(s());
+        Thread.ofVirtual().name(name).start(job);
+    }
+
+    /** Runs {@code r} later on the FX thread as {@code session}'s; callable from any thread. */
+    private void laterIn(DebugSession session, Runnable r) {
+        Platform.runLater(() -> inSession(session, r));
+    }
+
+    /** {@code c}, run as the session being handled now ({@link #s()}) whenever it is called. */
+    private <T> Consumer<T> asThisSession(Consumer<T> c) {
+        DebugSession session = s();
+        return value -> inSession(session, () -> c.accept(value));
+    }
+
+    /** Runs {@code r} as each session's in turn, oldest first. */
+    private void forEachSession(Runnable r) {
+        for (DebugSession session : sessions.all()) {
+            inSession(session, r);
+        }
+    }
+
+    /**
+     * Whether the session being handled is the one the window shows: only its stop marks the editor (execution line,
+     * inline values, the exception card, breakpoint states) and the status bar's debug state.
+     */
+    private boolean shown() {
+        return s() == sessions.focused();
+    }
+
+    /**
+     * Ties {@code session}'s manager to this window: its events, replies, code-replace notices and its panel's actions
+     * are each handled as that session's ({@link #inSession}), whichever one is focused.
+     */
+    private void setUp(DebugSession session) {
+        DapManager.Listener events = dapListener();
+        session.dap.setListener(inSessionProxy(DapManager.Listener.class, events, session));
+        session.dap.setCallbackWrapper(r -> () -> inSession(session, r));
+        session.dap.setCodeReplaceNotices(
+                (type, message) -> inSession(session, () -> codeReplaceNotice(type, message)));
+        session.dap.setBreakpointsSupplier(this::collectBreakpoints);
+    }
+
+    /** {@code target} behind {@code type}, each of whose calls runs as {@code session}'s. */
+    private <T> T inSessionProxy(Class<T> type, T target, DebugSession session) {
+        return type.cast(java.lang.reflect.Proxy.newProxyInstance(
+                type.getClassLoader(), new Class<?>[] {type}, (proxy, method, args) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return switch (method.getName()) {
+                            case "equals" -> proxy == args[0];
+                            case "hashCode" -> System.identityHashCode(proxy);
+                            default -> type.getSimpleName() + " of " + session;
+                        };
+                    }
+                    return inSession(session, () -> {
+                        try {
+                            return method.invoke(target, args);
+                        } catch (java.lang.reflect.InvocationTargetException e) {
+                            if (e.getCause() instanceof RuntimeException re) {
+                                throw re;
+                            }
+                            if (e.getCause() instanceof Error err) {
+                                throw err;
+                            }
+                            throw new IllegalStateException(e.getCause());
+                        } catch (IllegalAccessException e) {
+                            throw new IllegalStateException(e);
+                        }
+                    });
+                }));
     }
 
     /** The window's debug sessions. */
@@ -294,18 +412,23 @@ final class DebugCoordinator {
         this.lsp = lsp;
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
-        dap().setListener(dapListener());
-        dap().setCodeReplaceNotices(this::codeReplaceNotice);
-        dap().setBreakpointsSupplier(this::collectBreakpoints);
-        memberBreakpoints = new MemberBreakpointCommands(host, ops, this::dap, lspManager, () -> breakpointsMuted);
+        setUp(sessions.focused());
+        beforeLaunch.setContext(
+                () -> { // each step belongs to the session that started it
+                    DebugSession owner = s();
+                    beforeLaunchOwner = owner;
+                    return r -> () -> inSession(owner, r);
+                });
+        memberBreakpoints = new MemberBreakpointCommands(
+                host, ops, this::dap, this::allManagers, lspManager, () -> breakpointsMuted);
         memberMarks = new MemberBreakpointMarks(host, ops, lspManager);
         memberBreakpoints.setOnChanged(memberMarks::refreshAll);
         lambdaBreakpoints = new LambdaBreakpoints(host);
         pinnedValues = new PinnedValues(host, ops, this::dap);
         // Each stop's pinned values are kept with it in Debug History.
         pinnedValues.setOnPainted((b, shown) -> {
-            if (debugPanel != null && b.getPath() != null) {
-                debugPanel.recordPins(b.getPath(), shown);
+            if (s().panel != null && b.getPath() != null) {
+                s().panel.recordPins(b.getPath(), shown);
             }
         });
     }
@@ -376,8 +499,9 @@ final class DebugCoordinator {
      * its first use: the window's first open, or the first session event that has something to show.
      */
     DebugPanel panel() {
-        if (debugPanel == null) {
-            DebugPanel built = new DebugPanel(debugActions());
+        if (s().panel == null) {
+            DebugSession session = s();
+            DebugPanel built = new DebugPanel(inSessionProxy(DebugPanel.Actions.class, debugActions(), session));
             built.setPrompt(host::promptText);
             built.setExpressionPrompt(this::expressionPrompt); // Add / Edit Watch: the field completes (follow-up 5)
             built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
@@ -385,7 +509,16 @@ final class DebugCoordinator {
             built.setChordLookup(id -> java.util.Objects.requireNonNullElse(ops.chordFor(id), ""));
             built.setSourceCheck(this::hasSource);
             built.history().setCapacity(host.settings().getDebugHistoryStops());
-            built.setOnWatchesChanged(() -> ops.persistDebugWatches(new ArrayList<>(built.getWatches())));
+            built.setOnWatchesChanged(() -> {
+                List<String> watches = new ArrayList<>(built.getWatches());
+                ops.persistDebugWatches(watches);
+                forEachPanel(
+                        other -> { // the watches are the window's: every session evaluates the same ones
+                            if (other != built) {
+                                other.setWatches(watches);
+                            }
+                        });
+            });
             if (consoleFontFamily != null) {
                 built.setConsoleFont(consoleFontFamily, consoleFontSize);
             }
@@ -400,11 +533,181 @@ final class DebugCoordinator {
                     readMemory();
                 }
             });
-            debugPanel = built;
+            s().panel = built;
             refreshExceptionToggles();
             built.setBreakpointsMuted(breakpointsMuted); // the state line says so from the start
+            if (shown() && sessionsView != null) {
+                sessionsView.setContent(built);
+            }
         }
-        return debugPanel;
+        return s().panel;
+    }
+
+    // --- several sessions at once ------------------------------------------------------------------
+
+    /** The Debug tool window's content; null until {@link #view()} builds it. */
+    private @Nullable DebugSessionsView sessionsView;
+
+    /**
+     * The Debug tool-window content (the {@code ToolWindow} itself stays in {@code MainController}): the focused
+     * session's panel, under a strip of the sessions' tabs when there is more than one.
+     */
+    DebugSessionsView view() {
+        if (sessionsView == null) {
+            DebugSessionsView built = new DebugSessionsView(new DebugSessionsView.Actions() {
+                @Override
+                public void show(DebugSession session) {
+                    focusSession(session);
+                }
+
+                @Override
+                public void close(DebugSession session) {
+                    closeSession(session);
+                }
+
+                @Override
+                public void stopAll() {
+                    DebugCoordinator.this.stopAll();
+                }
+            });
+            sessionsView = built;
+            refreshSessionTabs();
+        }
+        return sessionsView;
+    }
+
+    /**
+     * Shows {@code target} and makes it the one the debug commands act on: the editor drops the last one's execution
+     * line, inline values and exception card and marks {@code target}'s stop, its breakpoints' states and the status
+     * bar's debug state instead.
+     */
+    void focusSession(DebugSession target) {
+        DebugSession before = sessions.focused();
+        if (target == before || !sessions.all().contains(target)) {
+            return;
+        }
+        inSession(before, () -> {
+            closeMainClassPicker(); // it chose for that session's launch
+            closeSmartStepPicker(DapManager.State.INACTIVE);
+            clearExecHighlight();
+            clearDebugEditorSurfaces();
+        });
+        sessions.focus(target);
+        inSession(target, () -> {
+            host.forEachBuffer(this::showBreakpointStates);
+            updateDebugStatus(dap().state());
+            DapModels.StackFrameInfo frame = s().shownFrame;
+            if (dap().state() == DapManager.State.SUSPENDED && frame != null && s().quietStop != s().stopSerial) {
+                s().debugFrameId = frame.id(); // the hover evaluator's frame again
+                highlightFrame(frame);
+                dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
+                pinnedValues.refresh(frame.id());
+            }
+        });
+        refreshSessionTabs();
+        updateDebugAvailability();
+    }
+
+    /**
+     * A session for a launch while the focused one is live ("Debug Both"), focused from now on: the launch that asked
+     * for it is its own. Past {@link DebugSessions#MAX_SESSIONS}, the oldest session that has ended makes room.
+     */
+    private DebugSession openSession() {
+        if (sessions.size() >= DebugSessions.MAX_SESSIONS) {
+            for (DebugSession old : sessions.all()) {
+                if (old != sessions.focused() && !inSession(old, this::sessionLive)) {
+                    sessions.remove(old);
+                    break;
+                }
+            }
+        }
+        DebugSession session = new DebugSession(sessions.focused().dap.newSession());
+        setUp(session);
+        sessions.add(session);
+        focusSession(session);
+        return session;
+    }
+
+    /** Closes the tab of {@code session}, which has ended; a live one, or the window's last, stays. */
+    void closeSession(DebugSession session) {
+        if (sessions.size() < 2 || inSession(session, this::sessionLive)) {
+            return;
+        }
+        if (session == sessions.focused()) {
+            List<DebugSession> others = new ArrayList<>(sessions.all());
+            others.remove(session);
+            focusSession(others.getLast());
+        }
+        sessions.remove(session);
+        refreshSessionTabs();
+    }
+
+    /** Debug: Stop All Sessions — Stop, in every session that is live. */
+    void stopAll() {
+        forEachSession(() -> {
+            if (sessionLive()) {
+                stop();
+            }
+        });
+    }
+
+    /** Every session's debug manager, oldest first. */
+    List<DapManager> allManagers() {
+        return sessions.all().stream().map(session -> session.dap).toList();
+    }
+
+    /** Whether any session is starting, running, paused or being built for. */
+    boolean anySessionLive() {
+        for (DebugSession session : sessions.all()) {
+            if (inSession(session, this::sessionLive)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Draws the sessions' tabs again (each one's name and state) and shows the focused one's panel. */
+    private void refreshSessionTabs() {
+        DebugSessionsView view = sessionsView;
+        if (view == null) {
+            return;
+        }
+        List<DebugSessionsView.Tab> tabs = new ArrayList<>();
+        List<DebugSession> all = sessions.all();
+        for (int i = 0; i < all.size(); i++) {
+            DebugSession session = all.get(i);
+            int number = i + 1;
+            tabs.add(inSession(
+                    session,
+                    () -> new DebugSessionsView.Tab(
+                            session,
+                            s().sessionLabel.isEmpty() ? tr("debug.sessions.untitled", number) : s().sessionLabel,
+                            sessionStateWords(),
+                            sessionLive(),
+                            session == sessions.focused())));
+        }
+        view.setTabs(tabs);
+        view.setContent(inSession(sessions.focused(), this::panel));
+    }
+
+    /** What a session's tab says of its state. */
+    private String sessionStateWords() {
+        return switch (dap().state()) {
+            case STARTING -> tr("debug.state.starting");
+            case RUNNING -> tr("debug.state.running");
+            case SUSPENDED -> tr("debug.state.suspended");
+            case INACTIVE, TERMINATED -> sessionLive() ? tr("debug.state.starting") : tr("debug.sessions.ended");
+        };
+    }
+
+    /** Runs {@code action} on each session's Debug panel that has been built. */
+    private void forEachPanel(Consumer<DebugPanel> action) {
+        for (DebugSession session : sessions.all()) {
+            DebugPanel panel = session.panel;
+            if (panel != null) {
+                action.accept(panel);
+            }
+        }
     }
 
     /**
@@ -414,9 +717,7 @@ final class DebugCoordinator {
      */
     void refreshValueColours() {
         boolean plain = plainValueColours();
-        if (debugPanel != null) {
-            debugPanel.setPlainValueColours(plain);
-        }
+        forEachPanel(panel -> panel.setPlainValueColours(plain));
         if (valuePopup != null && valuePopup.popup().getSkin() != null) {
             DebugPanel.setPlainValueColours(valuePopup.popup().getSkin().getNode(), plain);
         }
@@ -432,9 +733,7 @@ final class DebugCoordinator {
     void setConsoleFont(String family, int size) {
         consoleFontFamily = family;
         consoleFontSize = size;
-        if (debugPanel != null) {
-            debugPanel.setConsoleFont(family, size);
-        }
+        forEachPanel(panel -> panel.setConsoleFont(family, size));
     }
 
     // --- gating / effectiveness --------------------------------------------------------------------
@@ -520,7 +819,7 @@ final class DebugCoordinator {
     /** Debug ▸ Stop: a before-launch build still running is what gets stopped; else the session. */
     void stop() {
         s().closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
-        if (beforeLaunch.isActive()) {
+        if (beforeLaunchActive()) {
             beforeLaunch.stop();
         } else if (s().pendingBuild != null) {
             // The jdtls build before a launch: it finishes on its own, but nothing is launched after it.
@@ -559,7 +858,7 @@ final class DebugCoordinator {
         }
         // A session being debugged keeps its own buttons (Continue, Stop through ownerStop): the waiting state
         // shows once it ends, when the run's next fork is what Stop would end (see the state listener).
-        if (!beforeLaunch.isActive() && s().pendingBuild == null && !dap().isActive()) {
+        if (!beforeLaunchActive() && s().pendingBuild == null && !dap().isActive()) {
             panel().setPreparing(cancel != null, tr("debugpanel.state.waitingTest"));
         }
         updateDebugAvailability();
@@ -639,7 +938,7 @@ final class DebugCoordinator {
     /** A session is starting, running, paused or being built for — the states Stop / Restart act on. */
     boolean sessionLive() {
         return dap().state() != DapManager.State.INACTIVE
-                || beforeLaunch.isActive()
+                || beforeLaunchActive()
                 || s().pendingBuild != null
                 || s().pendingAttachStop != null;
     }
@@ -648,6 +947,7 @@ final class DebugCoordinator {
     private void nameSession(@Nullable String label) {
         s().sessionLabel = label == null ? "" : label;
         panel().setSessionFile(s().sessionLabel);
+        refreshSessionTabs();
     }
 
     /** Streams a before-launch build into the Debug console and keeps Stop usable while it runs. */
@@ -764,9 +1064,8 @@ final class DebugCoordinator {
                         on && s.isCppDebugEnabled(),
                         scope.debugTool("rust", s.getRustDebugPath()),
                         found -> applyGating());
-        if (debugPanel != null) {
-            debugPanel.history().setCapacity(s.getDebugHistoryStops()); // fewer forgets the oldest now
-        }
+        int historyStops = s.getDebugHistoryStops();
+        forEachPanel(panel -> panel.history().setCapacity(historyStops)); // fewer forgets the oldest now
         dap().setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         dap().setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dap().setProgramTerminal(s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
@@ -816,7 +1115,7 @@ final class DebugCoordinator {
         updateDebugAvailability();
         if (!on) {
             ops.setStatusDebug(null);
-            ops.setStatusDebugLoading(false);
+            debugLoading(false);
         }
     }
 
@@ -829,7 +1128,7 @@ final class DebugCoordinator {
      */
     void updateDebugAvailability() {
         boolean available = debugSupportEnabled()
-                && (isDebuggableBuffer(host.activeBuffer()) || sessionLive() || ops.isToolWindowOpen());
+                && (isDebuggableBuffer(host.activeBuffer()) || anySessionLive() || ops.isToolWindowOpen());
         ops.setToolWindowAvailable(available);
     }
 
@@ -860,15 +1159,18 @@ final class DebugCoordinator {
             pendingPersist.remove(buffer); // the user's own toggle / edit: written now, never left to a timer
             persistBreakpoints(buffer);
         }
-        if (buffer.getPath() != null && dap().isActive()) {
-            // Adapter stays current immediately — but only when what it is told actually changed: editing
-            // the text of a breakpoint's line is a change to persist, not one to put on the wire.
-            DapModels.FileBreakpoints now = fileBreakpoints(buffer, buffer.getPath());
-            if (!now.equals(s().sentBreakpoints.put(buffer.getPath(), now))) {
-                dap().updateBreakpoints(now);
-            }
-            showBreakpointStates(buffer); // a new breakpoint is unverified until the adapter answers for it
-        }
+        forEachSession(
+                () -> { // every live session is told
+                    if (buffer.getPath() != null && dap().isActive()) {
+                        // Adapter stays current immediately — but only when what it is told actually changed: editing
+                        // the text of a breakpoint's line is a change to persist, not one to put on the wire.
+                        DapModels.FileBreakpoints now = fileBreakpoints(buffer, buffer.getPath());
+                        if (!now.equals(s().sentBreakpoints.put(buffer.getPath(), now))) {
+                            dap().updateBreakpoints(now);
+                        }
+                        showBreakpointStates(buffer); // a new breakpoint is unverified until the adapter answers for it
+                    }
+                });
     }
 
     // --- what the live session says about the breakpoints ------------------------------------------
@@ -878,6 +1180,9 @@ final class DebugCoordinator {
      * bound one, flagged when it refused one — or as plain breakpoints when there is no session.
      */
     private void showBreakpointStates(EditorBuffer buffer) {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         Path file = buffer.getPath();
         if (file == null || dap().state() == DapManager.State.INACTIVE) {
             buffer.getBreakpointManager().setLive(null);
@@ -1056,14 +1361,18 @@ final class DebugCoordinator {
             seenInStore.put(buffer, MarkMerge.keys(map.get(key(newPath)), Breakpoint::line));
             persistBreakpoints(buffer); // writes the file, also when the buffer has none (the old key is gone)
         }
-        if (dap().isActive()) {
-            if (oldPath != null && s().sentBreakpoints.remove(oldPath) != null && oldGone) {
-                dap().updateBreakpoints(new DapModels.FileBreakpoints(oldPath, List.of()));
+        Path renamedFrom = oldPath;
+        boolean renamedAway = oldGone;
+        forEachSession(() -> {
+            if (dap().isActive()) {
+                if (renamedFrom != null && s().sentBreakpoints.remove(renamedFrom) != null && renamedAway) {
+                    dap().updateBreakpoints(new DapModels.FileBreakpoints(renamedFrom, List.of()));
+                }
+                DapModels.FileBreakpoints now = fileBreakpoints(buffer, newPath);
+                s().sentBreakpoints.put(newPath, now);
+                dap().updateBreakpoints(now);
             }
-            DapModels.FileBreakpoints now = fileBreakpoints(buffer, newPath);
-            s().sentBreakpoints.put(newPath, now);
-            dap().updateBreakpoints(now);
-        }
+        });
     }
 
     /**
@@ -1132,22 +1441,25 @@ final class DebugCoordinator {
             return;
         }
         host.forEachBuffer(b -> {
-            if (b.getPath() == null || b.isNarrowed()) {
+            Path file = b.getPath();
+            if (file == null || b.isNarrowed()) {
                 return; // a narrowed buffer's lines are region-relative; it merges when it next writes
             }
-            String key = key(b.getPath());
+            String key = key(file);
             if (fileKey != null && !fileKey.equals(key)) {
                 return;
             }
             List<Breakpoint> stored = ops.breakpointMap().getOrDefault(key, List.of());
             b.applyBreakpoints(stored);
             seenInStore.put(b, MarkMerge.keys(stored, Breakpoint::line));
-            if (dap().isActive()) {
-                DapModels.FileBreakpoints now = fileBreakpoints(b, b.getPath());
-                if (!now.equals(s().sentBreakpoints.put(b.getPath(), now))) {
-                    dap().updateBreakpoints(now);
+            forEachSession(() -> {
+                if (dap().isActive()) {
+                    DapModels.FileBreakpoints now = fileBreakpoints(b, file);
+                    if (!now.equals(s().sentBreakpoints.put(file, now))) {
+                        dap().updateBreakpoints(now);
+                    }
                 }
-            }
+            });
             showBreakpointStates(b);
         });
     }
@@ -1218,12 +1530,6 @@ final class DebugCoordinator {
 
     // --- B1: lines of the code the program runs, against the document as it is now ---------------------
 
-    /** The text each file of the session was launched from (see {@link LaunchedLines}). */
-    private final LaunchedLines launchedLines = new LaunchedLines();
-
-    /** Files the console already said were changed since the session started. */
-    private final Set<String> changedNoticed = new HashSet<>();
-
     /**
      * {@link #rebaselineLines(Path)} for each of {@code files}: after a hot code replace, the Java files saved
      * since the last successful replace (see {@link #codeReplaced}).
@@ -1237,18 +1543,18 @@ final class DebugCoordinator {
     /** The mapping between {@code b}'s launched text and its document (identity when there is none). */
     private LaunchedLines.Mapping lineMap(@Nullable EditorBuffer b) {
         Path file = b == null ? null : b.getPath();
-        if (b == null || file == null || b.isNarrowed() || !launchedLines.has(file)) {
+        if (b == null || file == null || b.isNarrowed() || !s().launchedLines.has(file)) {
             return LaunchedLines.Mapping.IDENTITY; // a narrowed buffer's text is its region only
         }
         // The area's own text, not getContent(): that is cached per document version, which has not moved yet
         // when a breakpoint shift is reported in the middle of the edit.
-        return launchedLines.mapping(file, b.getArea().getText());
+        return s().launchedLines.mapping(file, b.getArea().getText());
     }
 
     /** Records every open file's text as the session's launched text (the files were saved for the launch). */
     private void snapshotLaunchedLines() {
-        launchedLines.clear();
-        changedNoticed.clear();
+        s().launchedLines.clear();
+        s().changedNoticed.clear();
         host.forEachBuffer(this::snapshotLaunched);
     }
 
@@ -1259,18 +1565,18 @@ final class DebugCoordinator {
             return;
         }
         if (!b.isDirty()) {
-            launchedLines.snapshotIfAbsent(file, b.getContent());
+            s().launchedLines.snapshotIfAbsent(file, b.getContent());
             return;
         }
         List<String> disk = ClosedFileBreakpoints.readLinesOrNull(file);
         if (disk != null) {
-            launchedLines.snapshotIfAbsent(file, String.join("\n", disk));
+            s().launchedLines.snapshotIfAbsent(file, String.join("\n", disk));
         }
     }
 
     /** {@code frames} with each line as the document now has it (a frame names the launched line). */
     private List<DapModels.StackFrameInfo> currentLines(List<DapModels.StackFrameInfo> frames) {
-        if (launchedLines.isEmpty() || frames == null) {
+        if (s().launchedLines.isEmpty() || frames == null) {
             return frames;
         }
         List<DapModels.StackFrameInfo> out = new ArrayList<>(frames.size());
@@ -1294,7 +1600,7 @@ final class DebugCoordinator {
             return;
         }
         String message = tr("status.debug.changedSinceLaunch", file.getFileName());
-        if (changedNoticed.add(key(file))) {
+        if (s().changedNoticed.add(key(file))) {
             panel().appendNotice(message);
         }
         host.setStatus(message);
@@ -1309,7 +1615,7 @@ final class DebugCoordinator {
         if (b == null || b.getPath() == null || !dap().isActive()) {
             return; // a buffer found by its path always has one
         }
-        launchedLines.rebaseline(file, b.getContent());
+        s().launchedLines.rebaseline(file, b.getContent());
         DapModels.FileBreakpoints now = fileBreakpoints(b, b.getPath());
         if (!now.equals(s().sentBreakpoints.put(file, now))) {
             dap().updateBreakpoints(now);
@@ -1352,7 +1658,8 @@ final class DebugCoordinator {
      */
     private void withClosedBreakpoints(Runnable then) {
         Object token = new Object();
-        s().closedBreakpointsRead = token; // a newer start, or Stop, drops this one
+        DebugSession session = s();
+        session.closedBreakpointsRead = token; // a newer start, or Stop, drops this one
         Set<String> openPaths = new HashSet<>();
         host.forEachBuffer(b -> {
             if (b.getPath() != null) {
@@ -1364,7 +1671,7 @@ final class DebugCoordinator {
                 () -> {
                     List<DapModels.FileBreakpoints> computed = closedFileBreakpoints(
                             map, openPaths, RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull);
-                    Platform.runLater(() -> {
+                    laterIn(session, () -> {
                         if (s().closedBreakpointsRead != token) {
                             return; // stopped, or replaced by another start, while the files were read
                         }
@@ -1400,10 +1707,10 @@ final class DebugCoordinator {
                 }
                 // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
                 // starts in that state by itself, so there is nothing to show and no reason to build it now.
-                boolean show = debugPanel != null || state != DapManager.State.INACTIVE;
+                boolean show = s().panel != null || state != DapManager.State.INACTIVE;
                 if (state == DapManager.State.STARTING || state == DapManager.State.INACTIVE) {
                     s().runtimeGeneration++; // a probe still out answers for the session that just ended
-                    if (debugPanel != null) {
+                    if (s().panel != null) {
                         panel().setRuntime(null);
                     }
                 }
@@ -1449,7 +1756,7 @@ final class DebugCoordinator {
                     if (state == DapManager.State.STARTING) {
                         snapshotLaunchedLines(); // B1: what the program is built from (the files were saved)
                     } else {
-                        launchedLines.clear();
+                        s().launchedLines.clear();
                     }
                     s().sentBreakpoints.clear(); // the next session is told everything afresh
                     s().breakpointStatus.clear(); // and what the last one said about them no longer holds
@@ -1464,21 +1771,22 @@ final class DebugCoordinator {
                 if (state == DapManager.State.INACTIVE
                         && s().relaunch == ONE_SHOT_ATTACH
                         && !queuedAttaches.isEmpty()) {
-                    Platform.runLater(queuedAttaches.poll()); // the next JVM of the same run is waiting
+                    later(queuedAttaches.poll()); // the next JVM of the same run is waiting
                 } else if (state == DapManager.State.INACTIVE
                         && s().pendingAttachStop != null
-                        && !beforeLaunch.isActive()) {
+                        && !beforeLaunchActive()) {
                     // A Debug Test run still waits for its next fork: Stop ends it.
                     panel().setPreparing(true, tr("debugpanel.state.waitingTest"));
                 }
                 boolean starting = state == DapManager.State.STARTING;
-                ops.setStatusDebugLoading(starting);
+                debugLoading(starting);
                 updateDebugAvailability(); // keep the window available during a session; hide it once it ends
                 if (starting || state == DapManager.State.SUSPENDED) {
                     // A stop shows the window again if it was closed meanwhile (review C5) — without focus: the
                     // editor keeps it, and in the panel plain letters are debugger commands (review C2).
                     ops.openToolWindow();
                 }
+                refreshSessionTabs();
             }
 
             @Override
@@ -1502,6 +1810,9 @@ final class DebugCoordinator {
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
                 s().quietStop = recording ? s().stopSerial : -1;
+                if (!recording && !shown()) {
+                    focusSession(s()); // another session stopped: it is shown now, as in VS Code and IntelliJ
+                }
                 panel().setCallStack(frames, shown);
                 if (recording) {
                     recordAndContinue(frames.getFirst());
@@ -1542,7 +1853,7 @@ final class DebugCoordinator {
                     List<String> runtime, @Nullable Path where, java.util.Map<String, String> env) {
                 long generation = s().runtimeGeneration;
                 com.editora.run.RuntimeProbe.probe(runtime, where, env, version -> {
-                    if (generation == s().runtimeGeneration && debugPanel != null) {
+                    if (generation == s().runtimeGeneration && s().panel != null) {
                         panel().setRuntime(version);
                     }
                 });
@@ -1574,8 +1885,8 @@ final class DebugCoordinator {
 
             @Override
             public void onThreadsChanged() {
-                if (debugPanel != null) {
-                    debugPanel.threadsChanged();
+                if (s().panel != null) {
+                    s().panel.threadsChanged();
                 }
             }
 
@@ -1613,7 +1924,17 @@ final class DebugCoordinator {
         };
     }
 
+    /** The status bar's debug spinner, for the session shown. */
+    private void debugLoading(boolean on) {
+        if (shown()) {
+            ops.setStatusDebugLoading(on);
+        }
+    }
+
     private void updateDebugStatus(DapManager.State state) {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         switch (state) {
             case INACTIVE, TERMINATED -> ops.setStatusDebug(null);
             case STARTING -> ops.setStatusDebug(tr("debug.state.starting"));
@@ -1827,9 +2148,12 @@ final class DebugCoordinator {
 
             @Override
             public void setHexValues(boolean on) {
-                dap().setHexValues(on);
+                forEachSession(
+                        () -> { // a setting of the window's: every session shows numbers this way
+                            dap().setHexValues(on);
+                            refreshValues();
+                        });
                 host.setStatus(tr(on ? "status.debug.hexOn" : "status.debug.hexOff"));
-                refreshValues();
             }
 
             @Override
@@ -1869,6 +2193,9 @@ final class DebugCoordinator {
     /** Fetches the selected frame's local variables and paints them as inline values in the frame's
      *  file buffer; also arms the hover value tooltip there (IntelliJ's editor surfaces). */
     private void applyInlineValues(DapModels.StackFrameInfo frame, List<DapModels.ScopeInfo> scopes) {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         if (frame == null || frame.file() == null || scopes.isEmpty()) {
             return;
         }
@@ -1878,8 +2205,8 @@ final class DebugCoordinator {
             return;
         }
         dap().variables(locals.variablesReference(), vars -> {
-            if (dap().state() != DapManager.State.SUSPENDED) {
-                return; // resumed while the request was in flight
+            if (dap().state() != DapManager.State.SUSPENDED || !shown()) {
+                return; // resumed, or another session shown, while the request was in flight
             }
             Map<String, String> values = new LinkedHashMap<>();
             for (DapModels.VariableInfo v : vars) {
@@ -1888,12 +2215,12 @@ final class DebugCoordinator {
                 }
                 values.put(v.name(), DebugValues.display(v.value())); // a function: its first line (review D9)
             }
-            if (debugPanel != null && debugPanel.viewing() != null) {
+            if (s().panel != null && s().panel.viewing() != null) {
                 return; // an earlier stop is shown: its own values are painted
             }
             Path file = frame.file();
-            if (debugPanel != null && file != null) {
-                debugPanel.recordInlineValues(frame, file, frame.line(), values);
+            if (s().panel != null && file != null) {
+                s().panel.recordInlineValues(frame, file, frame.line(), values);
             }
             EditorBuffer b = ops.bufferForPath(frame.file());
             if (b == null) {
@@ -1933,14 +2260,14 @@ final class DebugCoordinator {
         ops.openPath(frame.file());
         EditorBuffer b = ops.bufferForPath(frame.file());
         if (keepFocus != null) {
-            Platform.runLater(keepFocus::requestFocus);
+            later(keepFocus::requestFocus);
         }
         if (b == null) {
             return;
         }
         execHighlightBuffer = b;
         ops.afterBufferLoad(b, () -> {
-            if (execHighlightBuffer != b || debugPanel == null || debugPanel.viewing() != stop) {
+            if (execHighlightBuffer != b || s().panel == null || s().panel.viewing() != stop) {
                 return; // another stop or frame, or back to the live one, meanwhile
             }
             int first = b.getBreakpointManager().regionFirstLine();
@@ -1994,23 +2321,23 @@ final class DebugCoordinator {
 
     /** Debug: Back (History). */
     void historyBack() {
-        if (debugPanel != null) {
+        if (s().panel != null) {
             ops.openToolWindow();
-            debugPanel.historyBack();
+            s().panel.historyBack();
         }
     }
 
     /** Debug: Forward (History). */
     void historyForward() {
-        if (debugPanel != null) {
-            debugPanel.historyForward();
+        if (s().panel != null) {
+            s().panel.historyForward();
         }
     }
 
     /** Debug: Show History…: every stop kept, newest first; a pick goes back to it. */
     void showHistory() {
         List<DebugHistory.Stop> stops =
-                debugPanel == null ? List.of() : debugPanel.history().stops();
+                s().panel == null ? List.of() : s().panel.history().stops();
         if (stops.isEmpty()) {
             host.setStatus(tr("status.debug.noHistory"));
             return;
@@ -2024,9 +2351,9 @@ final class DebugCoordinator {
                 DebugPanelText::historyEntry,
                 st -> st.time.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")),
                 st -> {
-                    if (st != null && debugPanel != null) {
+                    if (st != null && s().panel != null) {
                         ops.openToolWindow();
-                        debugPanel.viewStop(st.number, -1);
+                        s().panel.viewStop(st.number, -1);
                     }
                 });
         picker.setOverlayHost(host.overlayHost());
@@ -2161,6 +2488,9 @@ final class DebugCoordinator {
 
     private void clearDebugEditorSurfaces() {
         s().debugFrameId = -1;
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         pinnedValues.clear();
         if (debugValuesBuffer != null) {
             debugValuesBuffer.setInlineValues(null, -1);
@@ -2483,7 +2813,7 @@ final class DebugCoordinator {
         if (argv == null) {
             return; // said
         }
-        if (beforeLaunch.isActive() || s().pendingBuild != null) {
+        if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -2493,7 +2823,7 @@ final class DebugCoordinator {
                 workspace,
                 java.util.Map.of(),
                 beforeLaunchConsole(),
-                () -> Platform.runLater(start));
+                () -> later(start));
     }
 
     /** The command line of {@code tasks.json}'s task {@code label}; null when it cannot be run here (said). */
@@ -2683,7 +3013,7 @@ final class DebugCoordinator {
         build.addAll(args);
         List<String> json = new ArrayList<>(build);
         json.add("--message-format=json");
-        if (beforeLaunch.isActive() || s().pendingBuild != null) {
+        if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -2693,9 +3023,9 @@ final class DebugCoordinator {
                 workspace,
                 java.util.Map.of(),
                 beforeLaunchConsole(),
-                () -> Thread.ofVirtual().name("editora-cargo-artifacts").start(() -> {
+                () -> startOffFx("editora-cargo-artifacts", session -> () -> {
                     var listed = com.editora.dap.RustLaunch.listArtifacts(workspace, json, CARGO_LIST_TIMEOUT);
-                    Platform.runLater(() -> {
+                    laterIn(session, () -> {
                         Path exe = listed.ok()
                                 ? com.editora.dap.LaunchRoute.cargoExecutable(
                                         com.editora.dap.RustLaunch.artifacts(listed.out()),
@@ -2750,7 +3080,7 @@ final class DebugCoordinator {
      * Code; one line otherwise.
      */
     void stepOver() {
-        if (debugPanel != null && debugPanel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
+        if (s().panel != null && s().panel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
             dap().stepOverInstruction();
         } else {
             dap().stepOver();
@@ -2759,7 +3089,7 @@ final class DebugCoordinator {
 
     /** Step Into: as {@link #stepOver}, one instruction (into a call) while the Disassembly view has the keyboard. */
     void stepInto() {
-        if (debugPanel != null && debugPanel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
+        if (s().panel != null && s().panel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
             dap().stepIntoInstruction();
         } else {
             dap().stepInto();
@@ -2787,10 +3117,10 @@ final class DebugCoordinator {
 
     /** Fills the Disassembly or Memory view, when shown, for the stop and frame shown. */
     private void refreshLowLevelViews() {
-        if (debugPanel == null) {
+        if (s().panel == null) {
             return;
         }
-        DebugPanel p = debugPanel;
+        DebugPanel p = s().panel;
         String area = p.shownArea();
         if (dap().state() != DapManager.State.SUSPENDED) {
             if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
@@ -2856,10 +3186,10 @@ final class DebugCoordinator {
     /** Reads a page at the Memory view's reference and offset into it. */
     private void readMemory() {
         String ref = s().memoryReference;
-        if (ref == null || debugPanel == null) {
+        if (ref == null || s().panel == null) {
             return;
         }
-        DebugMemoryView view = debugPanel.memoryView();
+        DebugMemoryView view = s().panel.memoryView();
         dap().readMemory(
                         ref,
                         s().memoryOffset,
@@ -2881,6 +3211,9 @@ final class DebugCoordinator {
 
     /** Opens the frame's file and paints the execution-line highlight there. */
     private void highlightFrame(DapModels.StackFrameInfo frame) {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         clearExecHighlight();
         if (frame == null) {
             return;
@@ -2916,7 +3249,7 @@ final class DebugCoordinator {
             paintExecutionLine(b, frame);
         }
         if (keepFocus != null) {
-            Platform.runLater(keepFocus::requestFocus); // after openPath's own requestFocus, so the panel wins
+            later(keepFocus::requestFocus); // after openPath's own requestFocus, so the panel wins
         }
     }
 
@@ -2930,6 +3263,9 @@ final class DebugCoordinator {
      * which exception it is. By itself ({@code asked} false) only once per stop: closing it keeps it closed.
      */
     private void showExceptionCard(boolean asked) {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         DapModels.ExceptionInfo info = s().stopException;
         DapModels.StackFrameInfo frame = paintedFrame;
         EditorBuffer b = execHighlightBuffer;
@@ -2958,6 +3294,9 @@ final class DebugCoordinator {
     }
 
     private void hideExceptionCard() {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         if (exceptionCard != null) {
             exceptionCard.hide();
         }
@@ -2991,6 +3330,9 @@ final class DebugCoordinator {
     }
 
     private void paintExecutionLine(EditorBuffer b, DapModels.StackFrameInfo frame) {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         execHighlightBuffer = b;
         ops.afterBufferLoad(b, () -> {
             // The user may resume or select another frame while this file is still loading. Never let
@@ -3002,7 +3344,7 @@ final class DebugCoordinator {
                 b.setExecutionLineException(frame.id() == s().exceptionFrameId);
                 paintedFrame = frame;
                 if (frame.id() == s().exceptionFrameId) {
-                    Platform.runLater(() -> showExceptionCard(false)); // once the line has been laid out
+                    later(() -> showExceptionCard(false)); // once the line has been laid out
                 } else {
                     hideExceptionCard(); // another frame's line: the card belongs to the one that threw
                 }
@@ -3017,7 +3359,7 @@ final class DebugCoordinator {
         var scene = window == null ? null : window.getScene();
         Node owner = scene == null ? null : scene.getFocusOwner();
         for (Node n = owner; n != null; n = n.getParent()) {
-            if (debugPanel != null && n == debugPanel) {
+            if (s().panel != null && n == s().panel) {
                 return owner;
             }
         }
@@ -3025,6 +3367,9 @@ final class DebugCoordinator {
     }
 
     private void clearExecHighlight() {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         paintedFrame = null;
         hideExceptionCard();
         if (execHighlightBuffer != null) {
@@ -3088,6 +3433,14 @@ final class DebugCoordinator {
      */
     private boolean clearToStart(@Nullable EditorBuffer b, boolean f5) {
         Path path = b == null ? null : b.getPath();
+        if (path != null) {
+            for (DebugSession other : sessions.all()) {
+                if (other != s() && inSession(other, () -> launchLiveFor(path))) {
+                    focusSession(other); // the file is another session's: that one is shown, and asked about
+                    return clearToStart(b, f5);
+                }
+            }
+        }
         boolean preparing = launchPreparing();
         Path liveFile = preparing ? preparingFile() : dap().debugFile();
         boolean differentFile = path != null && !samePath(path, liveFile);
@@ -3111,11 +3464,28 @@ final class DebugCoordinator {
                 return false;
             }
             case ASK_RETARGET -> {
-                if (path == null || !confirmRetarget(tr(phase.retargetKey, label, path.getFileName()))) {
+                if (path == null) {
                     return false;
                 }
-                endLiveLaunch(); // retarget to the file asked for
-                return true;
+                // Both at once only beside a session that has started: a launch still getting ready holds the
+                // window's one before-launch step or build.
+                boolean both = active && !preparing;
+                Retarget answer = askRetarget(
+                        tr(both ? "dialog.debug.retargetBothQuestion" : phase.retargetKey, label, path.getFileName()),
+                        both);
+                switch (answer) {
+                    case BOTH -> {
+                        openSession(); // the launch asked for is the new session's
+                        return true;
+                    }
+                    case STOP -> {
+                        endLiveLaunch(); // retarget to the file asked for
+                        return true;
+                    }
+                    default -> {
+                        return false;
+                    }
+                }
             }
             default -> {
                 return true; // nothing to end first
@@ -3125,8 +3495,7 @@ final class DebugCoordinator {
 
     /** A launch is getting ready with no session yet: a jdtls build, a before-launch step, a test run's JVM. */
     private boolean launchPreparing() {
-        return !dap().isActive()
-                && (s().pendingBuild != null || beforeLaunch.isActive() || s().pendingAttachStop != null);
+        return !dap().isActive() && (s().pendingBuild != null || beforeLaunchActive() || s().pendingAttachStop != null);
     }
 
     /** The file the launch getting ready is for, when known. */
@@ -3146,7 +3515,7 @@ final class DebugCoordinator {
 
     /** Ends whatever launch is live or getting ready, for a launch of another file. */
     private void endLiveLaunch() {
-        if (beforeLaunch.isActive()) {
+        if (beforeLaunchActive()) {
             beforeLaunch.stop();
         }
         dropPendingBuild();
@@ -3187,23 +3556,54 @@ final class DebugCoordinator {
     @Nullable
     Predicate<String> confirmRetarget;
 
-    private boolean confirmRetarget(String question) {
-        if (confirmRetarget != null) {
-            return confirmRetarget.test(question);
+    /** What to do with the live launch when another file is asked to be debugged. */
+    enum Retarget {
+        /** Debug the other file in a session of its own, beside the live one. */
+        BOTH,
+        /** End the live launch and debug the other file instead. */
+        STOP,
+        /** Leave things as they are. */
+        CANCEL
+    }
+
+    /**
+     * Answers {@link #askRetarget} in tests: the question, and whether Debug Both was offered. Null: ask the user.
+     * When only {@link #confirmRetarget} is set, its yes is {@link Retarget#STOP}.
+     */
+    java.util.function.@Nullable BiFunction<String, Boolean, Retarget> retargetChoice;
+
+    /**
+     * Asks before F5 in another tab ends the live launch: Debug Both (when {@code bothOffered}: the default, a running
+     * server is not stopped by a key pressed in the wrong tab), Stop and Debug, or Cancel.
+     */
+    private Retarget askRetarget(String question, boolean bothOffered) {
+        if (retargetChoice != null) {
+            return retargetChoice.apply(question, bothOffered);
         }
+        if (confirmRetarget != null) {
+            return confirmRetarget.test(question) ? Retarget.STOP : Retarget.CANCEL;
+        }
+        javafx.scene.control.ButtonType both = new javafx.scene.control.ButtonType(
+                tr("dialog.debug.retargetBoth"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.ButtonType stop = new javafx.scene.control.ButtonType(
+                tr("dialog.debug.retargetStop"),
+                bothOffered
+                        ? javafx.scene.control.ButtonBar.ButtonData.OTHER
+                        : javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        List<javafx.scene.control.ButtonType> buttons = bothOffered
+                ? List.of(both, stop, javafx.scene.control.ButtonType.CANCEL)
+                : List.of(stop, javafx.scene.control.ButtonType.CANCEL);
         javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.CONFIRMATION,
                 question,
-                javafx.scene.control.ButtonType.OK,
-                javafx.scene.control.ButtonType.CANCEL);
-        alert.setTitle(tr("dialog.debug.retargetTitle"));
+                buttons.toArray(javafx.scene.control.ButtonType[]::new));
+        alert.setTitle(tr(bothOffered ? "dialog.debug.retargetBothTitle" : "dialog.debug.retargetTitle"));
         alert.setHeaderText(null);
         if (host.window() != null) {
             alert.initOwner(host.window());
         }
-        return alert.showAndWait()
-                .filter(r -> r == javafx.scene.control.ButtonType.OK)
-                .isPresent();
+        javafx.scene.control.ButtonType answer = alert.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL);
+        return answer == both ? Retarget.BOTH : answer == stop ? Retarget.STOP : Retarget.CANCEL;
     }
 
     /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
@@ -3294,7 +3694,7 @@ final class DebugCoordinator {
     private void startRust(
             Path path, Path root, List<String> cargo, com.editora.dap.RustLaunch.Plan plan, List<String> args) {
         saveBuffersUnder(root, "rust");
-        if (beforeLaunch.isActive() || s().pendingBuild != null) {
+        if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -3309,9 +3709,9 @@ final class DebugCoordinator {
                 root,
                 java.util.Map.of(),
                 beforeLaunchConsole(),
-                () -> Thread.ofVirtual().name("editora-cargo-artifacts").start(() -> {
+                () -> startOffFx("editora-cargo-artifacts", session -> () -> {
                     var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, CARGO_LIST_TIMEOUT);
-                    Platform.runLater(() -> launchRustArtifact(path, root, plan, args, terminal, listed));
+                    laterIn(session, () -> launchRustArtifact(path, root, plan, args, terminal, listed));
                 }));
         updateDebugAvailability();
     }
@@ -3390,7 +3790,7 @@ final class DebugCoordinator {
     private void startNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args) {
         saveBuffersUnder(plan.root(), "c");
         saveBuffersUnder(plan.root(), "cpp");
-        if (beforeLaunch.isActive() || s().pendingBuild != null) {
+        if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -3424,12 +3824,12 @@ final class DebugCoordinator {
                 java.util.Map.of(),
                 beforeLaunchConsole(index == 0),
                 // after the step has ended: the next one is not refused as "still running"
-                () -> Platform.runLater(() -> runNativeSteps(path, plan, index + 1, then)));
+                () -> later(() -> runNativeSteps(path, plan, index + 1, then)));
     }
 
     /** Finds the executable {@code plan} built (off the FX thread) and launches it, or says there is none. */
     private void launchNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args, boolean terminal) {
-        Thread.ofVirtual().name("editora-native-executable").start(() -> {
+        startOffFx("editora-native-executable", session -> () -> {
             Path exe = switch (plan.tool()) {
                 case CMAKE ->
                     plan.buildDir() == null ? null : com.editora.dap.NativeBuild.cmakeExecutable(plan.buildDir(), path);
@@ -3437,7 +3837,7 @@ final class DebugCoordinator {
                 case COMPILER -> plan.output();
             };
             boolean there = exe != null && java.nio.file.Files.isRegularFile(exe);
-            Platform.runLater(() -> {
+            laterIn(session, () -> {
                 if (!there || exe == null) {
                     host.setStatus(tr("status.debug.nativeNoProgram", path.getFileName()));
                     return;
@@ -3483,7 +3883,7 @@ final class DebugCoordinator {
     /** Saves the C# files under the project, builds it in the Debug console, then launches its assembly. */
     private void startCsharp(Path path, com.editora.dap.DotnetLaunch.Plan plan, List<String> args) {
         saveBuffersUnder(plan.root(), "csharp");
-        if (beforeLaunch.isActive() || s().pendingBuild != null) {
+        if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -3496,9 +3896,9 @@ final class DebugCoordinator {
                 plan.root(),
                 com.editora.dap.DotnetLaunch.BUILD_ENV,
                 beforeLaunchConsole(),
-                () -> Thread.ofVirtual().name("editora-dotnet-target").start(() -> {
+                () -> startOffFx("editora-dotnet-target", session -> () -> {
                     var listed = com.editora.dap.DotnetLaunch.queryTargetPath(dotnet, plan, DOTNET_QUERY_TIMEOUT);
-                    Platform.runLater(() -> launchCsharpAssembly(path, plan, args, listed));
+                    laterIn(session, () -> launchCsharpAssembly(path, plan, args, listed));
                 }));
         updateDebugAvailability();
     }
@@ -3836,16 +4236,17 @@ final class DebugCoordinator {
         Object token = new Object();
         s().pendingBuild = token;
         showPreparing(routing); // from the first moment: the source-folder step can wait seconds on jdtls (C203)
+        DebugSession session = s();
         com.editora.dap.JavaSourceRootFix.correct(
                 lspManager,
                 routing,
                 com.editora.dap.JavaSourceRootFix.declaredPackage(readQuietly(routing)),
-                () -> s().pendingBuild == token,
-                fixed -> {
+                () -> session.pendingBuild == token,
+                asThisSession(fixed -> {
                     if (s().pendingBuild == token) {
                         buildThenLaunch(routing, launch, true);
                     }
-                });
+                }));
     }
 
     /**
@@ -3857,7 +4258,7 @@ final class DebugCoordinator {
         s().pendingBuildFile = routing;
         ops.openToolWindow();
         panel().setPreparing(true);
-        ops.setStatusDebugLoading(true);
+        debugLoading(true);
         updateDebugAvailability();
         if (!shown) {
             host.setStatus(tr("status.debug.building", String.valueOf(routing.getFileName())));
@@ -3872,7 +4273,7 @@ final class DebugCoordinator {
         s().pendingBuild = null;
         s().pendingBuildFile = null;
         panel().setPreparing(false);
-        ops.setStatusDebugLoading(false);
+        debugLoading(false);
         updateDebugAvailability();
     }
 
@@ -3923,14 +4324,14 @@ final class DebugCoordinator {
         s().pendingBuild = token;
         lsp.ensureManaged(routing);
         showPreparing(routing);
-        lspManager.buildJavaWorkspaceForLaunch(routing, result -> {
+        lspManager.buildJavaWorkspaceForLaunch(routing, asThisSession(result -> {
             if (s().pendingBuild != token) {
                 return; // stopped, or replaced by another launch
             }
             s().pendingBuild = null;
             s().pendingBuildFile = null;
             panel().setPreparing(false);
-            ops.setStatusDebugLoading(false);
+            debugLoading(false);
             JavaLaunchPrep.AfterBuild next = JavaLaunchPrep.afterBuild(result.outcome(), loose);
             if (next == JavaLaunchPrep.AfterBuild.REFUSE) {
                 showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS);
@@ -3940,7 +4341,7 @@ final class DebugCoordinator {
                 dap().setLooseClassesBuilt(next == JavaLaunchPrep.AfterBuild.LAUNCH_BUILT);
             }
             launch.run();
-        });
+        }));
     }
 
     /**
@@ -4327,7 +4728,7 @@ final class DebugCoordinator {
         // dispatch — because those guards reject a configuration that cannot launch at all (a script type, a
         // blank main class), and spending a multi-minute build on one before saying so is worse than not
         // building.
-        if (beforeLaunch.isActive() || s().pendingBuild != null) {
+        if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -4478,7 +4879,7 @@ final class DebugCoordinator {
             ops.editConfiguration(cfg.name());
             return;
         }
-        if (beforeLaunch.isActive() || s().pendingBuild != null) {
+        if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -4561,7 +4962,7 @@ final class DebugCoordinator {
             start.run();
             return;
         }
-        if (beforeLaunch.isActive() || s().pendingBuild != null) {
+        if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -5046,7 +5447,7 @@ final class DebugCoordinator {
                 found = List.of();
             }
             List<com.editora.dap.LocalProcesses.Target> targets = found;
-            Platform.runLater(() -> showProcessPicker(targets));
+            Platform.runLater(() -> showProcessPicker(targets)); // for the session shown when the scan ends
         });
     }
 
@@ -5504,6 +5905,9 @@ final class DebugCoordinator {
 
     /** Closes the main-class picker if it is still open; its answer goes to a launch that no longer waits. */
     private void closeMainClassPicker() {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         QuickOpen<DapManager.MainClassOption> picker = mainClassPicker;
         mainClassPicker = null;
         if (picker != null && picker.isShown()) {
@@ -5710,7 +6114,7 @@ final class DebugCoordinator {
         restoreExceptionFilters();
         List<DapModels.ExceptionFilterOption> options = dap().exceptionFilterOptions(language);
         List<String> next = toggledFilter(dap().exceptionFiltersFor(language), filter, options);
-        dap().setExceptionFilters(language, next);
+        forEachSession(() -> dap().setExceptionFilters(language, next)); // each live session of that language
         ops.persistDebugExceptionFilters(dap().exceptionChoices()); // C12: kept across restarts, per project
         refreshExceptionToggles();
         host.setStatus(exceptionStatus(language, next, options));
@@ -5784,9 +6188,11 @@ final class DebugCoordinator {
 
     /** Shows the toggles' state in the Debug window (when it has been built). */
     private void refreshExceptionToggles() {
-        if (debugPanel != null) {
-            debugPanel.setExceptionToggles(exceptionToggleOn(true), exceptionToggleOn(false));
-        }
+        forEachSession(() -> {
+            if (s().panel != null) { // each session's own language decides what they mean
+                s().panel.setExceptionToggles(exceptionToggleOn(true), exceptionToggleOn(false));
+            }
+        });
     }
 
     /** Pure: {@code current} with {@code filter} turned on or off, in the order the adapter lists its filters. */
@@ -5883,7 +6289,7 @@ final class DebugCoordinator {
     void focusEvaluate() {
         ops.openToolWindow();
         panel().focusEvaluate();
-        Platform.runLater(panel()::focusEvaluate); // a window opened just now is laid out on the next pulse
+        later(panel()::focusEvaluate); // a window opened just now is laid out on the next pulse
     }
 
     /**
@@ -6238,6 +6644,9 @@ final class DebugCoordinator {
 
     /** A Smart Step Into list belongs to one stop: it closes once the program runs on or the session ends. */
     private void closeSmartStepPicker(DapManager.State state) {
+        if (!shown()) {
+            return; // another session's: the editor shows the focused one's
+        }
         QuickOpen<DapModels.StepTarget> picker = smartStepPicker;
         if (picker != null && state != DapManager.State.SUSPENDED) {
             smartStepPicker = null;
@@ -6259,7 +6668,13 @@ final class DebugCoordinator {
 
     /** Debug: Breakpoints — the palette-style list of every breakpoint (see {@link BreakpointsPicker}). */
     void showBreakpoints() {
-        new BreakpointsPicker(host, ops, dap(), this::toggleMuteBreakpoints, () -> breakpointsMuted, memberBreakpoints)
+        new BreakpointsPicker(
+                        host,
+                        ops,
+                        this::allManagers,
+                        this::toggleMuteBreakpoints,
+                        () -> breakpointsMuted,
+                        memberBreakpoints)
                 .show();
     }
 
@@ -6269,24 +6684,26 @@ final class DebugCoordinator {
      */
     void toggleMuteBreakpoints() {
         breakpointsMuted = !breakpointsMuted;
-        dap().setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
         memberBreakpoints.push(); // and method breakpoints and field watchpoints
-        if (dap().isActive()) {
-            Set<String> open = new HashSet<>();
-            host.forEachBuffer(b -> {
-                if (b.getPath() != null && open.add(key(b.getPath()))) {
-                    DapModels.FileBreakpoints fb = fileBreakpoints(b, b.getPath());
-                    s().sentBreakpoints.put(b.getPath(), fb);
-                    dap().updateBreakpoints(fb);
-                }
-            });
-            for (DapModels.FileBreakpoints fb : closedBreakpoints) {
-                if (fb.file() != null && !open.contains(key(fb.file()))) {
-                    dap().updateBreakpoints(
-                                    breakpointsMuted ? new DapModels.FileBreakpoints(fb.file(), List.of()) : fb);
+        forEachSession(() -> {
+            dap().setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
+            if (dap().isActive()) {
+                Set<String> open = new HashSet<>();
+                host.forEachBuffer(b -> {
+                    if (b.getPath() != null && open.add(key(b.getPath()))) {
+                        DapModels.FileBreakpoints fb = fileBreakpoints(b, b.getPath());
+                        s().sentBreakpoints.put(b.getPath(), fb);
+                        dap().updateBreakpoints(fb);
+                    }
+                });
+                for (DapModels.FileBreakpoints fb : closedBreakpoints) {
+                    if (fb.file() != null && !open.contains(key(fb.file()))) {
+                        dap().updateBreakpoints(
+                                        breakpointsMuted ? new DapModels.FileBreakpoints(fb.file(), List.of()) : fb);
+                    }
                 }
             }
-        }
+        });
         ops.persistDebugBreakpointsMuted(breakpointsMuted);
         showBreakpointsMuted();
         panel().setBreakpointsMuted(breakpointsMuted);
@@ -6297,9 +6714,7 @@ final class DebugCoordinator {
     private void showBreakpointsMuted() {
         String hover = breakpointsMuted ? tr("debug.breakpoint.muted") : ""; // "": not muted
         host.forEachBuffer(b -> b.getBreakpointManager().setMuted(hover));
-        if (debugPanel != null) {
-            debugPanel.setBreakpointsMuted(breakpointsMuted);
-        }
+        forEachPanel(panel -> panel.setBreakpointsMuted(breakpointsMuted));
     }
 
     /**
