@@ -93,6 +93,11 @@ final class SettingsDebugPage {
             config.getSettings().setDebugShowToString(now);
             w.apply();
         });
+        debugPythonSubprocessesCheck = new CheckBox(tr("settings.debug.pythonSubprocesses"));
+        debugPythonSubprocessesCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugPythonSubprocesses(now);
+            w.apply();
+        });
         debugSuspendAllThreadsCheck = new CheckBox(tr("settings.debug.suspendAllThreads"));
         debugSuspendAllThreadsCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugSuspendAllThreads(now);
@@ -201,6 +206,7 @@ final class SettingsDebugPage {
     private CheckBox debugShowStaticsCheck;
     private CheckBox debugShowToStringCheck;
     private CheckBox debugSuspendAllThreadsCheck;
+    private CheckBox debugPythonSubprocessesCheck;
     private TextField debugExceptionTypesField;
     /** C and C++ debugging, on the Rust card: they run on the same CodeLLDB. */
     private CheckBox debugCppCheck;
@@ -306,6 +312,14 @@ final class SettingsDebugPage {
                         tr("settings.debug.exceptionTypes.hint"),
                         debugExceptionTypesField,
                         "debug java exception breakpoint class type filter caught uncaught");
+            }
+            if ("python".equals(dbg.id())) {
+                w.checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugPythonSubprocessesCheck,
+                        tr("settings.debug.pythonSubprocesses.hint"),
+                        "debug python subprocess child process multiprocessing pool fork session");
             }
             if ("rust".equals(dbg.id())) {
                 w.checkRow(
@@ -570,6 +584,7 @@ final class SettingsDebugPage {
         debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
         debugShowToStringCheck.setSelected(settings.isDebugShowToString());
         debugSuspendAllThreadsCheck.setSelected(settings.isDebugSuspendAllThreads());
+        debugPythonSubprocessesCheck.setSelected(settings.isDebugPythonSubprocesses());
         debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
         debugCppCheck.setSelected(settings.isCppDebugEnabled());
         debugCppDebuggerCombo.setValue(settings.getCppDebugger());

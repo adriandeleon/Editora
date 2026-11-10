@@ -1731,6 +1731,20 @@ started while a session runs goes beside it (`sessionForLaunch`), as in VS Code.
 its main class after another session was focused still starts in its own. `LaunchCompoundWindowFxTest` and
 `DebugCoordinatorCommandsFxTest` drive compounds on fake adapters, `SeveralSessionsProbeFxTest` on debugpy.
 
+**Python subprocesses.** A local Python launch sets debugpy's `subProcess` when Settings → Debugging → Python →
+*Debug Python subprocesses* is on (`Settings.debugPythonSubprocesses`, schema 167; `DapSettings.pythonSubprocesses`),
+and its stdio `DapClient` gets `setChildSessions`, which makes it declare `supportsStartDebuggingRequest`. debugpy
+then asks for each subprocess with `startDebugging`, naming the port of its own client listener and the child's
+`subProcessId`. The client hands that configuration up instead of opening a child connection itself
+(`DapManager.Listener.onChildSession`); the coordinator opens a session for it beside its parent
+(`openChildSession`, `DebugSession.parent`, named as debugpy names it, "Subprocess 1234"), whose manager attaches
+to that port with the configuration (`DapManager.startPythonChild`; Stop detaches). It is shown when it stops, like
+any other session; Restart is refused there (`SUBPROCESS`); stopping its parent, or its parent ending, stops it
+(`stopChildren`); its tab goes once it has ended, unless it is the one shown. A launch on a host keeps `subProcess`
+off. js-debug's children stay inside their session (`DapClient`'s root owns them), where the Threads view and the
+call stack already show each process's threads. `PythonSubprocessSessionsWindowFxTest` drives a child session on
+the fake adapter; `SeveralSessionsProbeFxTest#aPythonSubprocess…` a `multiprocessing` child on debugpy.
+
 The Variables tree marks a value that changed since the previous stop
 ([`ui/DebugValueChanges`](../../src/main/java/com/editora/ui/DebugValueChanges.java)). Values are recorded as rows
 reach the tree (`DebugPanel.noteValue`: loaded children, evaluated watches, rows loaded on a click — only rows of the tree

@@ -161,6 +161,64 @@ class SeveralSessionsProbeFxTest {
         }
     }
 
+    @Test
+    void aPythonSubprocessIsDebuggedInASessionOfItsOwn(@TempDir Path dir) throws Exception {
+        assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
+        assumeTrue(DebugAdapterLocator.locateDebugpy("", HOME).isPresent(), "needs debugpy");
+        Path app = Files.createDirectory(dir.resolve("app")).toRealPath();
+        Path main = Files.writeString(app.resolve("pool.py"), """
+                import multiprocessing
+
+                def work(n):
+                    total = n * 2
+                    return total
+
+                if __name__ == '__main__':
+                    p = multiprocessing.Process(target=work, args=(21,))
+                    p.start()
+                    p.join()
+                    print('parent done', p.exitcode)
+                """);
+        Path configDir = Files.createDirectory(dir.resolve("config"));
+        SharedConfig seed = new SharedConfig(configDir, false);
+        seed.load();
+        seed.getSettings().setDebugSupport(true);
+        assertEquals(true, seed.saveSettings());
+        seed.shutdown();
+        FxWindowFixture fx = FxWindowFixture.create(
+                configDir, false, false, false, List.of(new MainController.OpenTarget(main, 0, 0)), true, c -> {});
+        try {
+            MainController c = fx.controller;
+            DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
+            await("python debugging available", 90, () -> call(() -> debug.debugEffectiveFor("python")));
+            EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
+            FxTestSupport.runOnFx(() -> b.toggleBreakpoint(4)); // return total — in the subprocess
+            DebugSession parent = call(() -> debug.sessions().focused());
+            FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
+            await(
+                    "the subprocess's session",
+                    60,
+                    () -> call(() -> debug.sessions().size()) == 2);
+            DebugSession child = call(() -> debug.sessions().all().getLast());
+            assertSame(parent, child.parent);
+            assertTrue(call(() -> child.sessionLabel).startsWith("Subprocess "), call(() -> child.sessionLabel));
+            awaitStop(child, 4);
+            awaitRow(child, "total", "42");
+            assertSame(child, call(() -> debug.sessions().focused()), "the subprocess that stopped is shown");
+            assertEquals(DapManager.State.RUNNING, call(parent.dap::state), "the parent waits for it, running");
+
+            FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.continue"));
+            await("both ended", 60, () -> !call(parent.dap::isActive) && !call(child.dap::isActive));
+            assertTrue(
+                    call(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(parent.panel, "console")
+                            .getText()
+                            .contains("parent done 0")),
+                    "the parent ran on to its end");
+        } finally {
+            fx.dispose();
+        }
+    }
+
     private interface Check<T> {
         T get() throws Exception;
     }
