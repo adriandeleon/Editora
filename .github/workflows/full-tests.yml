@@ -427,7 +427,7 @@ jobs:
       # SeveralSessionsProbeFxTest: two Python programs stop at once on debugpy, each in its own session with its own
       # values; continuing the one shown leaves the other paused, and Stop All ends both. A launch.json compound starts
       # both, each in its own session, and one that ends by itself leaves the other. A multiprocessing child stops in a
-      # session of its own, and ends with its parent.
+      # session of its own — forked, and from a fork server — and ends with its parent.
       - name: Test compact Java language service and debugging
         run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 

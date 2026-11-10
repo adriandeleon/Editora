@@ -2570,6 +2570,19 @@ public final class DapManager {
         });
     }
 
+    /** Hands each subprocess debugpy asks for to the window ({@link Listener#onChildSession}), while it is current. */
+    private java.util.function.Function<Map<String, Object>, java.util.concurrent.CompletableFuture<Void>>
+            childSessions(long epoch, DapClient c) {
+        return configuration -> {
+            fx(() -> {
+                if (isCurrent(epoch, c)) {
+                    listener.onChildSession(configuration);
+                }
+            });
+            return java.util.concurrent.CompletableFuture.completedFuture(null);
+        };
+    }
+
     /**
      * Debugs a subprocess of a Python session in this (new) manager: attaches to the port debugpy named for it in
      * {@code configuration} ({@link Listener#onChildSession}), anchored at the parent's file {@code anchor}. Stop
@@ -2607,6 +2620,9 @@ public final class DapManager {
                 c.setBreakpoints(bps);
                 c.setExceptionFilters(filters);
                 c.setTerminateOnDisconnect(false);
+                // A subprocess's own subprocesses (multiprocessing's fork server forks the workers) are sessions of
+                // their own too, not connections folded into this one.
+                c.setChildSessions(childSessions(epoch, c));
                 if (!publishClient(epoch, c)) {
                     c.dispose();
                     return;
@@ -2857,14 +2873,7 @@ public final class DapManager {
         c.setRunsDebuggee(runsDebuggee);
         if (Boolean.TRUE.equals(launch.get("subProcess")) && paths == DapPaths.LOCAL) {
             // debugpy asks for each subprocess with startDebugging, naming a port of its own to attach a session to.
-            c.setChildSessions(configuration -> {
-                fx(() -> {
-                    if (isCurrent(epoch, c)) {
-                        listener.onChildSession(configuration);
-                    }
-                });
-                return java.util.concurrent.CompletableFuture.completedFuture(null);
-            });
+            c.setChildSessions(childSessions(epoch, c));
         }
         if (!publishClient(epoch, c)) {
             com.editora.process.ProcessRegistry.killTree(proc);

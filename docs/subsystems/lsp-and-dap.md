@@ -1749,7 +1749,11 @@ then asks for each subprocess with `startDebugging`, naming the port of its own 
 `subProcessId`. The client hands that configuration up instead of opening a child connection itself
 (`DapManager.Listener.onChildSession`); the coordinator opens a session for it beside its parent
 (`openChildSession`, `DebugSession.parent`, named as debugpy names it, "Subprocess 1234"), whose manager attaches
-to that port with the configuration (`DapManager.startPythonChild`; Stop detaches). It is shown when it stops, like
+to that port with the configuration (`DapManager.startPythonChild`; Stop detaches). A subprocess's client hands its
+own subprocesses up the same way, so `multiprocessing`'s fork server (Python 3.14's default start method on Linux),
+which is itself a subprocess and forks the workers, gets a session, and so does each worker under it: folded into the
+fork server's connection, as the first version did, the worker was no session of its own and its breakpoints showed in
+none. It is shown when it stops, like
 any other session; Restart is refused there (`SUBPROCESS`); stopping its parent, or its parent ending, stops it
 (`stopChildren`); its tab goes once it has ended, unless it is the one shown. A launch on a host keeps `subProcess`
 off. js-debug's children stay inside their session (`DapClient`'s root owns them), where the Threads view and the
