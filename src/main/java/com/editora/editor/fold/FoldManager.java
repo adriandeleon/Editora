@@ -117,6 +117,9 @@ public final class FoldManager {
                     + "M12 14.3a2.3 2.3 0 1 1 0-4.6 2.3 2.3 0 0 1 0 4.6z";
     /** A "1" over the dot of a temporary breakpoint (removed once hit), in the dot's 24-unit box. */
     static final String TEMPORARY_MARK_PATH = "M10.6 6.5h2.8v11h-2.8zM8.4 8.6l2.2-2.1v2.9l-2.2 1.2z";
+    /** A ring over the dot of a recording breakpoint: it records the stop and the program goes on (a lens). */
+    static final String RECORDING_MARK_PATH =
+            "M12 6.6a5.4 5.4 0 1 0 0 10.8 5.4 5.4 0 1 0 0-10.8zM12 9.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z";
     /** The execution-point arrow drawn in the breakpoint strip of the line the debugger is stopped on. */
     static final String EXEC_ARROW_PATH = "M3 7.5h9V3l9.5 9-9.5 9v-4.5H3z";
     /** Material "play_arrow" triangle, shared by the gutter Run glyph and the right-click Run menu item. */
@@ -2054,19 +2057,25 @@ public final class FoldManager {
         boolean lambda = kinds.contains("lambda");
         boolean method = kinds.contains("method");
         boolean field = kinds.contains("field");
-        if (!conditional && !lambda && !method && !field && !kinds.contains("temporary")) {
+        boolean recording = kinds.contains("recording");
+        if (!conditional && !lambda && !method && !field && !recording && !kinds.contains("temporary")) {
             return new Group(svg);
         }
         // An arrow in: a method breakpoint; an eye: a field watchpoint (their colour says a condition). "=" over the
-        // dot: a condition, readable without telling colours apart; "λ" one that stops in lambdas; "1" temporary.
+        // dot: a condition, readable without telling colours apart; "λ" one that stops in lambdas; a ring one that
+        // records and goes on; "1" temporary.
         SVGPath mark = new SVGPath();
         mark.setContent(
                 method
                         ? METHOD_MARK_PATH
                         : field
                                 ? FIELD_MARK_PATH
-                                : conditional ? CONDITION_MARK_PATH : lambda ? LAMBDA_MARK_PATH : TEMPORARY_MARK_PATH);
-        if (field) {
+                                : conditional
+                                        ? CONDITION_MARK_PATH
+                                        : lambda
+                                                ? LAMBDA_MARK_PATH
+                                                : recording ? RECORDING_MARK_PATH : TEMPORARY_MARK_PATH);
+        if (field || recording) {
             mark.setFillRule(javafx.scene.shape.FillRule.EVEN_ODD); // the pupil is a hole in the eye
         }
         mark.getStyleClass().add("breakpoint-condition-mark");

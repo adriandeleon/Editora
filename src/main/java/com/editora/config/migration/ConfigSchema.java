@@ -502,6 +502,10 @@ public enum ConfigSchema {
                     4,
                     ConfigMigrations::identity,
                     5,
+                    ConfigMigrations::identity,
+                    // v6 → v7: + Breakpoint.recording (Debug History records the stop and the program goes on).
+                    // Additive: absent is a breakpoint that stops.
+                    6,
                     ConfigMigrations::identity)),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),

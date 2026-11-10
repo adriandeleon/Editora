@@ -87,6 +87,101 @@ class DebugHistoryProbeFxTest {
         });
     }
 
+    @Test
+    void pythonRecording(@TempDir Path dir) throws Exception {
+        assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
+        assumeTrue(DebugAdapterLocator.locateDebugpy("", HOME).isPresent(), "needs debugpy");
+        Path file = Files.writeString(
+                Files.createDirectory(dir.resolve("app")).toRealPath().resolve("loop.py"),
+                "total = 0\nfor i in range(5):\n    total += i\nprint('total', total)\n");
+        recordingProbe(dir, file, 2, "python", s -> {});
+    }
+
+    @Test
+    void javascriptRecording(@TempDir Path dir) throws Exception {
+        assumeTrue(Boolean.getBoolean("lsp.probe") && Boolean.getBoolean("node.probe"), "opt-in: Node probes");
+        assumeTrue(DebugAdapterLocator.locateJsDebugServer("", HOME).isPresent(), "needs js-debug");
+        Path file = Files.writeString(
+                Files.createDirectory(dir.resolve("app")).toRealPath().resolve("loop.js"),
+                "let total = 0;\nfor (let i = 0; i < 5; i++) {\n  total += i;\n}\nconsole.log('total', total);\n");
+        recordingProbe(dir, file, 2, "javascript", s -> {});
+    }
+
+    @Test
+    void javaRecording(@TempDir Path dir) throws Exception {
+        assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
+        Path jdtls = HOME.resolve(".editora/plugins/lsp/java/bin/jdtls");
+        Path plugin = DebugAdapterLocator.locate("", HOME).orElse(null);
+        assumeTrue(Files.isExecutable(jdtls) && plugin != null, "needs JDT LS and java-debug");
+        Path file = Files.writeString(
+                Files.createDirectory(dir.resolve("loose")).toRealPath().resolve("Main.java"), """
+                public class Main {
+                    public static void main(String[] args) {
+                        int total = 0;
+                        for (int i = 0; i < 5; i++) {
+                            total += i;
+                        }
+                        System.out.println("total " + total);
+                    }
+                }
+                """);
+        recordingProbe(dir, file, 4, "java", s -> {
+            s.setLspSupport(true);
+            s.setJavaLspEnabled(true);
+            s.setJavaLspCommand(jdtls.toString());
+            s.setJavaDebugPluginPath(plugin.toString());
+        });
+    }
+
+    /**
+     * A recording breakpoint on {@code line} of {@code file}'s five-pass loop: the program runs to its end without
+     * staying stopped, and Debug History holds the five stops with {@code i} 0 to 4.
+     */
+    private void recordingProbe(
+            Path dir,
+            Path file,
+            int line,
+            String language,
+            java.util.function.Consumer<com.editora.config.Settings> settings)
+            throws Exception {
+        Path configDir = Files.createDirectory(dir.resolve("config"));
+        SharedConfig seed = new SharedConfig(configDir, false);
+        seed.load();
+        seed.getSettings().setDebugSupport(true);
+        settings.accept(seed.getSettings());
+        assertTrue(seed.saveSettings());
+        seed.shutdown();
+        FxWindowFixture fx = FxWindowFixture.create(
+                configDir, false, false, false, List.of(new MainController.OpenTarget(file, 0, 0)), true, c -> {});
+        try {
+            MainController c = fx.controller;
+            DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
+            DapManager dap = FxTestSupport.field(c, "dapManager");
+            await(language + " debugging available", 90, () -> call(() -> debug.debugEffectiveFor(language)));
+            EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
+            FxTestSupport.runOnFx(() -> {
+                b.getFocusedArea().moveTo(line, 0);
+                debug.toggleRecordingBreakpointAtCaret();
+            });
+            FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
+            DebugPanel panel = call(debug::panel);
+            await("five stops recorded", 180, () -> call(() -> panel.history().size()) >= 5);
+            await("the program ran to its end", 60, () -> !call(dap::isActive));
+            List<DebugHistory.Stop> stops = call(() -> panel.history().stops());
+            assertEquals(5, stops.size(), "one per pass, and none left stopped");
+            assertEquals(
+                    List.of("0", "1", "2", "3", "4"),
+                    stops.stream().map(s -> keptValue(s, "i")).toList());
+            assertTrue(
+                    call(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(panel, "console")
+                                    .getText())
+                            .contains("total"),
+                    "the program printed its total");
+        } finally {
+            fx.dispose();
+        }
+    }
+
     /** Three stops on {@code line} of {@code file}'s loop, then the history read back. */
     private void probe(
             Path dir,

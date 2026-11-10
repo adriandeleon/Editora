@@ -162,6 +162,9 @@ public final class BreakpointManager implements LineMarks.Carrier {
         if (bp.temporary() && !bp.isLogpoint()) {
             kind = kind == null ? "temporary" : kind + " temporary"; // a logpoint never stops, so is never removed
         }
+        if (bp.records() && bp.enabled()) { // a disabled one is grey like any other
+            kind = kind == null ? "recording" : kind + " recording";
+        }
         if (bp.hasLambdas()) {
             kind = kind == null ? "lambda" : kind + " lambda";
         }
@@ -377,6 +380,18 @@ public final class BreakpointManager implements LineMarks.Carrier {
         String value = hitCondition == null ? "" : hitCondition;
         if (bp != null && !bp.hitCondition().equals(value)) {
             byLine.put(line, bp.withHitCondition(value));
+            fireChanged();
+        }
+    }
+
+    /**
+     * Makes the breakpoint on {@code line} a recording one (Debug History keeps the stop and the program goes on), or
+     * one that stops.
+     */
+    public void setRecording(int line, boolean recording) {
+        Breakpoint bp = byLine.get(line);
+        if (bp != null && bp.recording() != recording) {
+            byLine.put(line, bp.withRecording(recording));
             fireChanged();
         }
     }

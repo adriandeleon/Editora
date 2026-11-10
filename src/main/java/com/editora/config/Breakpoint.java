@@ -14,7 +14,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * edited outside the editor). On a line of Java that starts lambdas, it can also stop inside some of them
  * ({@code lambdas}: their numbers on the line, from 1, left to right), or only there ({@code lambdasOnly}): the
  * Java debugger's lambda breakpoints. Persisted per file path, bucketed per project, in {@link BreakpointStore}
- * ({@code breakpoints.json}).
+ * ({@code breakpoints.json}). A {@code recording} one does not stay stopped: Debug History keeps the stop's values and
+ * the program goes on.
  *
  * <p>A Jackson-serialized record; the {@code com.editora.config} package is already opened to
  * jackson.databind in {@code module-info.java} (see {@link Bookmark}).
@@ -29,7 +30,8 @@ public record Breakpoint(
         String hitCondition,
         boolean temporary,
         List<Integer> lambdas,
-        boolean lambdasOnly) {
+        boolean lambdasOnly,
+        boolean recording) {
 
     /** Max stored length of the captured line snapshot. */
     public static final int MAX_LINE_TEXT = 200;
@@ -54,6 +56,20 @@ public record Breakpoint(
         lambdasOnly = lambdasOnly && !lambdas.isEmpty(); // with no lambda it stops on the line
     }
 
+    /** A breakpoint that stops on its line or in its lambdas, and is not a recording one. */
+    public Breakpoint(
+            int line,
+            String condition,
+            String logMessage,
+            boolean enabled,
+            String lineText,
+            String hitCondition,
+            boolean temporary,
+            List<Integer> lambdas,
+            boolean lambdasOnly) {
+        this(line, condition, logMessage, enabled, lineText, hitCondition, temporary, lambdas, lambdasOnly, false);
+    }
+
     /** Highest lambda number kept: a line never starts more lambdas than this. */
     public static final int MAX_LAMBDA = 32;
 
@@ -66,7 +82,7 @@ public record Breakpoint(
             String lineText,
             String hitCondition,
             boolean temporary) {
-        this(line, condition, logMessage, enabled, lineText, hitCondition, temporary, List.of(), false);
+        this(line, condition, logMessage, enabled, lineText, hitCondition, temporary, List.of(), false, false);
     }
 
     /** A breakpoint that stays after it is hit. */
@@ -97,28 +113,64 @@ public record Breakpoint(
 
     public Breakpoint withLine(int newLine) {
         return new Breakpoint(
-                newLine, condition, logMessage, enabled, lineText, hitCondition, temporary, lambdas, lambdasOnly);
+                newLine,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording);
     }
 
     /** This breakpoint with a fresh snapshot of its line's text (the line was edited in place). */
     public Breakpoint withLineText(String newLineText) {
         return new Breakpoint(
-                line, condition, logMessage, enabled, newLineText, hitCondition, temporary, lambdas, lambdasOnly);
+                line,
+                condition,
+                logMessage,
+                enabled,
+                newLineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording);
     }
 
     public Breakpoint withCondition(String newCondition) {
         return new Breakpoint(
-                line, newCondition, logMessage, enabled, lineText, hitCondition, temporary, lambdas, lambdasOnly);
+                line,
+                newCondition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording);
     }
 
     public Breakpoint withLogMessage(String newLog) {
         return new Breakpoint(
-                line, condition, newLog, enabled, lineText, hitCondition, temporary, lambdas, lambdasOnly);
+                line, condition, newLog, enabled, lineText, hitCondition, temporary, lambdas, lambdasOnly, recording);
     }
 
     public Breakpoint withEnabled(boolean newEnabled) {
         return new Breakpoint(
-                line, condition, logMessage, newEnabled, lineText, hitCondition, temporary, lambdas, lambdasOnly);
+                line,
+                condition,
+                logMessage,
+                newEnabled,
+                lineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording);
     }
 
     /**
@@ -127,7 +179,16 @@ public record Breakpoint(
      */
     public Breakpoint withHitCondition(String newHitCondition) {
         return new Breakpoint(
-                line, condition, logMessage, enabled, lineText, newHitCondition, temporary, lambdas, lambdasOnly);
+                line,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                newHitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording);
     }
 
     /**
@@ -136,7 +197,16 @@ public record Breakpoint(
      */
     public Breakpoint withTemporary(boolean newTemporary) {
         return new Breakpoint(
-                line, condition, logMessage, enabled, lineText, hitCondition, newTemporary, lambdas, lambdasOnly);
+                line,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                newTemporary,
+                lambdas,
+                lambdasOnly,
+                recording);
     }
 
     /**
@@ -145,7 +215,31 @@ public record Breakpoint(
      */
     public Breakpoint withLambdas(List<Integer> newLambdas, boolean only) {
         return new Breakpoint(
-                line, condition, logMessage, enabled, lineText, hitCondition, temporary, newLambdas, only);
+                line, condition, logMessage, enabled, lineText, hitCondition, temporary, newLambdas, only, recording);
+    }
+
+    /**
+     * This breakpoint as a recording one ({@code true}: Debug History keeps the stop's values and the program goes
+     * on, as a tracepoint records) or one that stops ({@code false}).
+     */
+    public Breakpoint withRecording(boolean newRecording) {
+        return new Breakpoint(
+                line,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                newRecording);
+    }
+
+    /** Whether a hit is recorded and the program goes on: a recording breakpoint that is not a logpoint. */
+    @JsonIgnore
+    public boolean records() {
+        return recording && !isLogpoint();
     }
 
     /** Whether it stops inside any lambda of its line. */

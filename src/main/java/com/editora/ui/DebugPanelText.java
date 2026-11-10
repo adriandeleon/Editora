@@ -393,6 +393,17 @@ final class DebugPanelText {
         return tr("debugpanel.history.label", stop.number, HISTORY_TIME.format(stop.time));
     }
 
+    /** Where a stop was: its selected frame's name, with its file and 1-based line. */
+    static String historyWhere(DebugHistory.Stop stop) {
+        DapModels.StackFrameInfo top = stop.top();
+        return top == null
+                ? ""
+                : frameName(top.name())
+                        + (top.file() == null
+                                ? ""
+                                : " (" + DebugValues.sourceName(top.file()) + ":" + (top.line() + 1) + ")");
+    }
+
     /**
      * The banner over an earlier stop: which stop, when, why and where it stopped, and that its values are as they
      * were then.

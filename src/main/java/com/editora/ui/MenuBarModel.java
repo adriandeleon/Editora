@@ -347,6 +347,7 @@ final class MenuBarModel {
                                                 SEPARATOR,
                                                 "debug.toggleBreakpointEnabled",
                                                 "debug.toggleTemporaryBreakpoint",
+                                                "debug.toggleRecordingBreakpoint",
                                                 "debug.toggleLambdaBreakpoint",
                                                 "debug.toggleMethodBreakpoint",
                                                 "debug.toggleFieldWatchpoint",

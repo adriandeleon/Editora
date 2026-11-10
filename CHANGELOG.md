@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Recording breakpoints.** A breakpoint can record instead of stopping: each time it is hit, Debug History keeps the
+  stop (the call stack, the frame's values, your watches) and the program goes on, without the editor jumping to it.
+  Back, Forward and *Show Value History* then read the recorded stops as any other. Set one with *Debug: Toggle
+  Recording Breakpoint* or *Record and continue* in the breakpoint's form; it is purple with a ring in the gutter. A
+  session records at most 500 stops, after which the breakpoint stops as usual.
+
 - **Debug History: go back to an earlier stop.** The Debug window keeps each stop of a session as it was: the call
   stack, the values you looked at, your watches, inline values and pinned values. Back and Forward in the Debug
   toolbar (or *Debug: Back*, *Debug: Forward* and *Debug: Show History…*) show an earlier stop read-only, with its

@@ -67,7 +67,7 @@ class StoreShapeGuardTest {
         PINNED.put(ConfigSchema.SETTINGS, "166:ff48d4fab3ac1de3");
         PINNED.put(ConfigSchema.WORKSPACE, "31:dcbad8eba699732a");
         PINNED.put(ConfigSchema.BOOKMARKS, "2:c932fc9b729bab63");
-        PINNED.put(ConfigSchema.BREAKPOINTS, "6:e2586ae7fb6a4bcc");
+        PINNED.put(ConfigSchema.BREAKPOINTS, "7:a68fe2aa9c2723bc");
         PINNED.put(ConfigSchema.PROJECTS, "2:a373bb1579a65406");
         PINNED.put(ConfigSchema.RECENT, "1:d784f4ce61c5c2a8");
         PINNED.put(ConfigSchema.NOTES, "2:f89de7207bb41420");
