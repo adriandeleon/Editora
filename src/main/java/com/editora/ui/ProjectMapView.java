@@ -909,6 +909,17 @@ final class ProjectMapView extends VBox {
                 Platform.runLater(cards::keepFocusOnMap);
             }
         });
+        // Ctrl+Shift+arrows: the keyboard goes to the nearest card that way, from a card or from the map's selected
+        // row (gap 13). Claimed here, so a keymap binding of the chord does not take it from the cards or the map.
+        host.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, MapCards.TOWARD_KEYS);
+        host.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            MapCards.Toward toward = MapCards.toward(event);
+            if (toward != null
+                    && event.getTarget() instanceof Node target
+                    && cards.focusToward(target, toward, towardOrigin(target))) {
+                event.consume();
+            }
+        });
         host.getStyleClass().add("project-map-host");
         // Cards sit on the canvas and may reach past its edges (dragged, panned or zoomed there): the part
         // outside is not drawn, and takes no clicks, over the filter bar above or anything else around.
@@ -937,6 +948,24 @@ final class ProjectMapView extends VBox {
     }
 
     private static final double ZOOM_BAR_MARGIN = 8;
+
+    /**
+     * Where Ctrl+Shift+arrows start from on the map ({@code {x, y, w, h}}), when {@code target} is on it: its selected
+     * row as drawn, or the middle of the map area when no row is selected or it is out of sight; null when {@code
+     * target} is not the map (a card, or what is stuck on one, starts from itself).
+     */
+    private double @Nullable [] towardOrigin(Node target) {
+        for (Node node = target; node != null; node = node.getParent()) {
+            if (node == surface) {
+                Path selected = surface.selectedPath();
+                MapSurface.NodeBox box = selected == null ? null : surface.nodeBox(selected);
+                return box != null
+                        ? new double[] {box.x(), box.y(), box.width(), box.height()}
+                        : new double[] {canvasHost.getWidth() / 2, canvasHost.getHeight() / 2, 0, 0};
+            }
+        }
+        return null;
+    }
 
     private static Button zoomButton(Node icon, String nameKey, Runnable action) {
         Button button = Icons.button(icon, tr(nameKey), action, "project-map-zoom-control");
