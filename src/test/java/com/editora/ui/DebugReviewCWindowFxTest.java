@@ -65,10 +65,13 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.runOnFx(() -> {
             fx.shared.getSettings().setDebugSupport(true);
             fx.shared.getSettings().setPythonDebugEnabled(true);
-            set(manager, "enabled", true);
-            set(manager, "pythonEnabled", true);
-            set(manager, "pythonAvailable", true);
-            set(manager, "pythonCommand", fx.configDir.resolve("no-such-python").toString());
+            com.editora.dap.DapTestSettings.set(manager, "enabled", true);
+            com.editora.dap.DapTestSettings.set(manager, "pythonEnabled", true);
+            com.editora.dap.DapTestSettings.set(manager, "pythonAvailable", true);
+            com.editora.dap.DapTestSettings.set(
+                    manager,
+                    "pythonCommand",
+                    fx.configDir.resolve("no-such-python").toString());
             Stage stage = FxTestSupport.field(fx.controller, "stage");
             stage.setWidth(1300);
             stage.setHeight(850);

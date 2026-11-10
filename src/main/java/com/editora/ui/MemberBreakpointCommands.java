@@ -30,14 +30,16 @@ final class MemberBreakpointCommands {
 
     private final CoordinatorHost host;
     private final DebugCoordinator.Ops ops;
-    private final DapManager dapManager;
+    /** The focused debug session's manager. */
+    private final java.util.function.Supplier<DapManager> dapManager;
+
     private final LspManager lspManager;
     private final BooleanSupplier muted;
 
     MemberBreakpointCommands(
             CoordinatorHost host,
             DebugCoordinator.Ops ops,
-            DapManager dapManager,
+            java.util.function.Supplier<DapManager> dapManager,
             LspManager lspManager,
             BooleanSupplier muted) {
         this.host = host;
@@ -54,7 +56,7 @@ final class MemberBreakpointCommands {
 
     /** Tells the debugger the ones in force: the enabled ones, none while breakpoints are muted. */
     void push() {
-        dapManager.setMemberBreakpoints(muted.getAsBoolean() ? List.of() : adapterBreakpoints(all()));
+        dapManager.get().setMemberBreakpoints(muted.getAsBoolean() ? List.of() : adapterBreakpoints(all()));
     }
 
     /** The enabled ones as the adapter takes them. Pure. */
@@ -199,7 +201,7 @@ final class MemberBreakpointCommands {
      * adapter says which field it is ({@code dataBreakpointInfo}); a local variable cannot be watched.
      */
     void watchVariable(int containerRef, String name) {
-        dapManager.dataBreakpointInfo(containerRef, name, target -> {
+        dapManager.get().dataBreakpointInfo(containerRef, name, target -> {
             MemberBreakpoint.Named named = target.isEmpty()
                     ? null
                     : MemberBreakpoint.parse(target.get().dataId());
@@ -213,7 +215,7 @@ final class MemberBreakpointCommands {
 
     /** Whether the live session can watch a field (the Variables menu offers Break When Value Changes). */
     boolean canWatchFields() {
-        return dapManager.supportsDataBreakpoints();
+        return dapManager.get().supportsDataBreakpoints();
     }
 
     /**

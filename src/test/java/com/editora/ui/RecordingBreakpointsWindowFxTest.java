@@ -165,7 +165,7 @@ class RecordingBreakpointsWindowFxTest {
         FxTestSupport.runOnFx(panel::leaveHistory);
 
         // Past the session's limit it stops, and says why.
-        FxTestSupport.runOnFx(() -> debug.recordedStops = DebugCoordinator.MAX_RECORDED_STOPS);
+        FxTestSupport.runOnFx(() -> debug.s().recordedStops = DebugCoordinator.MAX_RECORDED_STOPS);
         hit(session, 1, "4");
         await(
                 "stopped",
@@ -180,7 +180,7 @@ class RecordingBreakpointsWindowFxTest {
 
         // With Debug History off there is nowhere to record: it stops.
         FxTestSupport.runOnFx(() -> {
-            debug.recordedStops = 0;
+            debug.s().recordedStops = 0;
             panel.history().setCapacity(0);
         });
         hit(session, 1, "5");

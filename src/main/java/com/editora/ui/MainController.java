@@ -855,11 +855,27 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /**
+     * The debug manager of the session the window shows: the focused one of {@link DebugCoordinator#sessions()}, or
+     * this window's first manager before the coordinator is made.
+     */
+    com.editora.dap.DapManager focusedDap() {
+        return debugCoordinator == null ? dapManager : debugCoordinator.dap();
+    }
+
+    private void shutdownDebugSessions() {
+        if (debugCoordinator == null) {
+            dapManager.shutdown();
+        } else {
+            debugCoordinator.sessions().shutdown();
+        }
+    }
+
     /** Jump to Line is greyed while paused in a debugger that cannot do it (java-debug has no goto). */
     private boolean jumpPossible(String commandId) {
         return !"debug.jumpToLine".equals(commandId)
-                || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED
-                || dapManager.supportsJumpToLine();
+                || focusedDap().state() != com.editora.dap.DapManager.State.SUSPENDED
+                || focusedDap().supportsJumpToLine();
     }
 
     Chrome.PaletteContext paletteContext() {
@@ -874,7 +890,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b != null && b.isTypst(),
                 b != null && b.hasPreview(),
                 debugActive,
-                dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED,
+                focusedDap().state() == com.editora.dap.DapManager.State.SUSPENDED,
                 debugCoordinator == null || debugCoordinator.restartAvailable(),
                 git.operationInProgress(),
                 b != null && b.hasExportablePreview() && !b.previewShowsError(),
@@ -1340,7 +1356,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         WindowDisposal.runAll(
                 () -> lspManager.close(), // stop this window's language servers and refuse any late restart
-                () -> dapManager.shutdown(), // end the debug session and release the per-window connect worker
+                () -> shutdownDebugSessions(), // end the debug sessions and release their connect workers
                 debugCoordinator == null ? null : () -> debugCoordinator.shutdown(), // its before-launch build
                 () -> git.shutdown(),
                 () -> github.shutdown(), // stop the gh worker thread

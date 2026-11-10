@@ -130,15 +130,7 @@ class KotlinRunDebugWindowFxTest {
             MainController c = fx.controller;
             DapManager manager = FxTestSupport.field(c, "dapManager");
             FxTestSupport.runOnFx(() -> fx.shared.getSettings().setDebugSupport(true));
-            FxTestSupport.runOnFx(() -> {
-                try {
-                    var f = DapManager.class.getDeclaredField("enabled");
-                    f.setAccessible(true);
-                    f.set(manager, true);
-                } catch (ReflectiveOperationException e) {
-                    throw new AssertionError(e);
-                }
-            });
+            FxTestSupport.runOnFx(() -> com.editora.dap.DapTestSettings.set(manager, "enabled", true));
             EditorBuffer b = open(c, source);
             FxTestSupport.runOnFx(() -> b.toggleBreakpoint(4)); // `return msg`
             CommandRegistry registry = FxTestSupport.field(c, "registry");

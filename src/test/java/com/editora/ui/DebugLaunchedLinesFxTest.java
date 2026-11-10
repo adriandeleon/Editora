@@ -42,9 +42,9 @@ class DebugLaunchedLinesFxTest {
         FxTestSupport.runOnFx(() -> {
             fx.shared.getSettings().setDebugSupport(true);
             fx.shared.getSettings().setPythonDebugEnabled(true);
-            set(manager, "enabled", true);
-            set(manager, "pythonEnabled", true);
-            set(manager, "pythonAvailable", true);
+            com.editora.dap.DapTestSettings.set(manager, "enabled", true);
+            com.editora.dap.DapTestSettings.set(manager, "pythonEnabled", true);
+            com.editora.dap.DapTestSettings.set(manager, "pythonAvailable", true);
         });
         adapter = new FakeDebugAdapter(false);
     }

@@ -160,7 +160,7 @@ class DebugSessionStartFxTest {
             };
             FxTestSupport.call(debug, "nameSession", new Class<?>[] {String.class}, "Alpha.java");
             try {
-                set(debug, "pendingBuild", new Object()); // what looseBuildThenLaunch sets, before its first step
+                set(debug.s(), "pendingBuild", new Object()); // what looseBuildThenLaunch sets, before its first step
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }

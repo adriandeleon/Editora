@@ -312,7 +312,7 @@ class DebugCodeChangesFxTest {
         session.stop(7, "breakpoint");
         await("the stop", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.SUSPENDED);
         DapModels.StackFrameInfo[] shown = new DapModels.StackFrameInfo[1];
-        await("the frame to show", () -> (shown[0] = FxTestSupport.field(debug, "shownFrame")) != null);
+        await("the frame to show", () -> (shown[0] = debug.s().shownFrame) != null);
 
         FxTestSupport.runOnFx(() -> registry.run("debug.restartFrame"));
 
@@ -326,7 +326,7 @@ class DebugCodeChangesFxTest {
         session.framePath = file.toString(); // one frame: main, which nothing called
         session.stop(7, "breakpoint");
         await("the stop", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.SUSPENDED);
-        await("the frame to show", () -> FxTestSupport.field(debug, "shownFrame") != null);
+        await("the frame to show", () -> debug.s().shownFrame != null);
 
         FxTestSupport.runOnFx(() -> registry.run("debug.restartFrame"));
         FxTestSupport.drainFx();
@@ -405,7 +405,7 @@ class DebugCodeChangesFxTest {
         session.stepTargetLabels = List.of("add(twice(1),twice(2))", "twice(2)", "twice(1)");
         session.stop(7, "breakpoint");
         await("the stop", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.SUSPENDED);
-        await("the frame to show", () -> FxTestSupport.field(debug, "shownFrame") != null);
+        await("the frame to show", () -> debug.s().shownFrame != null);
         FxTestSupport.runOnFx(() -> registry.run("debug.smartStepInto"));
         QuickOpen<DapModels.StepTarget>[] picker = new QuickOpen[1];
         await(

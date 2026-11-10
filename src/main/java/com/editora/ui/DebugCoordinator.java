@@ -216,7 +216,9 @@ final class DebugCoordinator {
     private static final int MAX_INLINE_VALUES = 100;
 
     private final CoordinatorHost host;
-    private final DapManager dapManager;
+    /** The window's debug sessions; the focused one is shown and acted on ({@link #s()}). */
+    private final DebugSessions sessions;
+
     private final LspManager lspManager;
     private final LspCoordinator lsp;
     private final Ops ops;
@@ -241,9 +243,6 @@ final class DebugCoordinator {
     /** The buffer currently carrying the execution-line highlight (cleared on resume/terminate). */
     private @Nullable EditorBuffer execHighlightBuffer;
 
-    /** The selected stack frame's id (the hover evaluator's context); -1 while not suspended. */
-    private int debugFrameId = -1;
-
     /** The buffer currently carrying inline values + an active hover (cleared on resume/terminate). */
     private @Nullable EditorBuffer debugValuesBuffer;
 
@@ -255,53 +254,14 @@ final class DebugCoordinator {
      */
     private volatile List<DapModels.FileBreakpoints> closedBreakpoints = List.of();
 
-    /**
-     * The session start waiting for {@link #withClosedBreakpoints}'s file reads, else null (FX thread). Stop and a
-     * newer start clear or replace it, and the start it stands for is then not made (review D104).
-     */
-    private @Nullable Object closedBreakpointsRead;
-
     // Coalesce the per-edit (line-shift) breakpoint persist off the FX hot path — see schedulePersistBreakpoints.
     // Only the synchronous breakpoints.json write is debounced; the adapter update stays immediate. (#551)
     private final javafx.animation.PauseTransition persistDebounce =
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
     private final Set<EditorBuffer> pendingPersist = new LinkedHashSet<>();
 
-    /** The frame whose line is highlighted (re-applied when its file is reopened); null unless suspended. */
-    private DapModels.@Nullable StackFrameInfo shownFrame;
-
-    /** The session label of the launch in progress, re-applied once the session it replaces has ended. */
-    private String sessionLabel = "";
-
-    /** Whether this session's start was said in the status bar (once, at its first RUNNING or SUSPENDED). */
-    private boolean sessionAnnounced = true;
-
-    /**
-     * Whether the next session's start is said in the status bar: one that a before-launch step or a build/test
-     * run started, whose "Running the before-launch step…" / "Attaching the debugger…" would stay there otherwise.
-     */
-    private boolean announceStart;
-
-    /** The console already belongs to this launch (its before-launch build wrote to it): do not clear again. */
-    private boolean consoleStarted;
-
-    /** What each open file's breakpoints were when last sent to the live session (cleared between sessions). */
-    private final Map<Path, DapModels.FileBreakpoints> sentBreakpoints = new java.util.HashMap<>();
-
-    /** What the live session said about each file's breakpoints, by document line (cleared between sessions). */
-    private final Map<Path, Map<Integer, DapModels.BreakpointStatus>> breakpointStatus = new java.util.HashMap<>();
-
     /** A breakpoint condition or log message the adapter could not evaluate, and what it said about it. */
-    private record EvaluationFailure(String expression, String message) {}
-
-    /** Evaluation failures of this session, by file and document line; one ends when its expression is edited. */
-    private final Map<Path, Map<Integer, EvaluationFailure>> evaluationFailures = new java.util.HashMap<>();
-
-    /** Rejections already reported in the status bar this session, so a re-sent file does not repeat them. */
-    private final Set<String> reportedRejections = new HashSet<>();
-
-    /** Repeats the last coordinator-level start (save, before-launch build, closed-file breakpoints, launch). */
-    private @Nullable Runnable relaunch;
+    record EvaluationFailure(String expression, String message) {}
 
     /** {@link #relaunch} of a session attached to a JVM a build or test run started: it cannot be redone. */
     private static final Runnable ONE_SHOT_ATTACH = () -> {};
@@ -312,21 +272,36 @@ final class DebugCoordinator {
      */
     private static final Runnable HTTP_SCRIPT_ATTACH = () -> {};
 
+    /** The focused debug session: the one the Debug window shows and the debug commands act on. */
+    DebugSession s() {
+        return sessions.focused();
+    }
+
+    /** The focused session's debug manager. */
+    DapManager dap() {
+        return sessions.focused().dap;
+    }
+
+    /** The window's debug sessions. */
+    DebugSessions sessions() {
+        return sessions;
+    }
+
     DebugCoordinator(CoordinatorHost host, DapManager dapManager, LspManager lspManager, LspCoordinator lsp, Ops ops) {
         this.host = host;
-        this.dapManager = dapManager;
+        this.sessions = new DebugSessions(dapManager);
         this.lspManager = lspManager;
         this.lsp = lsp;
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
-        dapManager.setListener(dapListener());
-        dapManager.setCodeReplaceNotices(this::codeReplaceNotice);
-        dapManager.setBreakpointsSupplier(this::collectBreakpoints);
-        memberBreakpoints = new MemberBreakpointCommands(host, ops, dapManager, lspManager, () -> breakpointsMuted);
+        dap().setListener(dapListener());
+        dap().setCodeReplaceNotices(this::codeReplaceNotice);
+        dap().setBreakpointsSupplier(this::collectBreakpoints);
+        memberBreakpoints = new MemberBreakpointCommands(host, ops, this::dap, lspManager, () -> breakpointsMuted);
         memberMarks = new MemberBreakpointMarks(host, ops, lspManager);
         memberBreakpoints.setOnChanged(memberMarks::refreshAll);
         lambdaBreakpoints = new LambdaBreakpoints(host);
-        pinnedValues = new PinnedValues(host, ops, dapManager);
+        pinnedValues = new PinnedValues(host, ops, this::dap);
         // Each stop's pinned values are kept with it in Debug History.
         pinnedValues.setOnPainted((b, shown) -> {
             if (debugPanel != null && b.getPath() != null) {
@@ -415,13 +390,13 @@ final class DebugCoordinator {
                 built.setConsoleFont(consoleFontFamily, consoleFontSize);
             }
             built.setPlainValueColours(plainValueColours()); // values legible on mixed themes (C111)
-            built.setState(dapManager.state()); // a session may already be running (the window opened mid-session)
+            built.setState(dap().state()); // a session may already be running (the window opened mid-session)
             built.setOnAreaShown(area -> refreshLowLevelViews());
             built.disassemblyView().setOnOpenSource(this::openSourceLine);
             built.memoryView().setOnGo(this::memoryGo);
             built.memoryView().setOnPage(direction -> {
-                if (memoryReference != null) {
-                    memoryOffset += (long) direction * DebugMemoryView.PAGE;
+                if (s().memoryReference != null) {
+                    s().memoryOffset += (long) direction * DebugMemoryView.PAGE;
                     readMemory();
                 }
             });
@@ -501,7 +476,7 @@ final class DebugCoordinator {
             return lspEnabled()
                     && lsp.serverEnabled("java")
                     && lsp.isServerAvailable("java")
-                    && dapManager.isAdapterAvailable();
+                    && dap().isAdapterAvailable();
         }
         // Its own switch, when it has one (Python, JavaScript), and its adapter found. Editora's own JVM adapter and
         // Metals' have nothing to install: the tool (groovy, kotlinc, clojure or lein), or Metals for a build's Scala
@@ -509,11 +484,9 @@ final class DebugCoordinator {
         DebugAdapterSettings.Binding settings = DebugAdapterSettings.of(profile.id());
         if (profile == com.editora.dap.DebugLanguages.CPP && gdbForCpp()) {
             // C and C++ on GDB: its switch is C/C++'s, its adapter GDB's own DAP mode.
-            return host.settings().isCppDebugEnabled()
-                    && dapManager.isExternalLocated(com.editora.dap.DebugLanguages.GDB);
+            return host.settings().isCppDebugEnabled() && dap().isExternalLocated(com.editora.dap.DebugLanguages.GDB);
         }
-        return (settings == null || settings.isEnabled(host.settings()))
-                && dapManager.isLanguageAvailable(profile.id());
+        return (settings == null || settings.isEnabled(host.settings())) && dap().isLanguageAvailable(profile.id());
     }
 
     /** Whether C and C++ are debugged on GDB (Settings → Debugging), not CodeLLDB. */
@@ -539,60 +512,54 @@ final class DebugCoordinator {
                 // or the host's own), so the adapter is the host's jdtls's.
                 : lspEnabled()
                         && lsp.serverEnabled("java")
-                        && (dapManager.isAdapterAvailable()
+                        && (dap().isAdapterAvailable()
                                 || com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null);
         return enabled && RemoteExec.runsFor(file);
     }
 
     /** Debug ▸ Stop: a before-launch build still running is what gets stopped; else the session. */
     void stop() {
-        closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
+        s().closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
         if (beforeLaunch.isActive()) {
             beforeLaunch.stop();
-        } else if (pendingBuild != null) {
+        } else if (s().pendingBuild != null) {
             // The jdtls build before a launch: it finishes on its own, but nothing is launched after it.
             dropPendingBuild();
             host.setStatus(tr("status.debug.launchCancelled"));
-        } else if (pendingAttachStop != null && !dapManager.isActive()) {
+        } else if (s().pendingAttachStop != null && !dap().isActive()) {
             // Debug Test waiting for its suspended JVM: there is no session yet, so Stop ends the build that
             // would fork it (review D1) — as it ends the run of an attached session below.
-            Runnable cancel = pendingAttachStop;
+            Runnable cancel = s().pendingAttachStop;
             setPendingAttach(null);
             cancel.run();
         } else {
-            Runnable owner = relaunch == ONE_SHOT_ATTACH ? ownerStop : null;
-            ownerStop = null;
+            Runnable owner = s().relaunch == ONE_SHOT_ATTACH ? s().ownerStop : null;
+            s().ownerStop = null;
             queuedAttaches.clear(); // Stop ends the whole run, its other JVMs included
-            dapManager.stop();
+            dap().stop();
             if (owner != null) {
                 owner.run();
             }
         }
     }
 
-    /** What Debug ▸ Stop runs while a test run waits for its JVM to attach (no session yet). */
-    private @Nullable Runnable pendingAttachStop;
-
-    /** The test file of {@link #pendingAttachStop}'s run: F5 there again says it is starting (review 3, A208). */
-    private @Nullable Path pendingAttachFile;
-
     /**
      * A Debug Test run is waiting for its suspended JVM ({@code cancel} ends that build), or no longer is
      * ({@code null}): the window opens with Stop usable and its spinner on, like a before-launch build.
      */
     void setPendingAttach(@Nullable Runnable cancel) {
-        boolean was = pendingAttachStop != null;
-        pendingAttachStop = cancel;
+        boolean was = s().pendingAttachStop != null;
+        s().pendingAttachStop = cancel;
         if (cancel != null && !was) {
             EditorBuffer active = host.activeBuffer(); // Debug Test runs the active file's test
-            pendingAttachFile = active == null ? null : active.getPath();
+            s().pendingAttachFile = active == null ? null : active.getPath();
             ops.openToolWindow();
         } else if (cancel == null) {
-            pendingAttachFile = null;
+            s().pendingAttachFile = null;
         }
         // A session being debugged keeps its own buttons (Continue, Stop through ownerStop): the waiting state
         // shows once it ends, when the run's next fork is what Stop would end (see the state listener).
-        if (!beforeLaunch.isActive() && pendingBuild == null && !dapManager.isActive()) {
+        if (!beforeLaunch.isActive() && s().pendingBuild == null && !dap().isActive()) {
             panel().setPreparing(cancel != null, tr("debugpanel.state.waitingTest"));
         }
         updateDebugAvailability();
@@ -607,7 +574,7 @@ final class DebugCoordinator {
      * only let it run to its end and leave a session with no debuggee showing "Running".
      */
     void restart() {
-        Runnable again = relaunch;
+        Runnable again = s().relaunch;
         if (again == ONE_SHOT_ATTACH) {
             host.setStatus(tr("status.debug.cannotRestartAttached"));
             return;
@@ -617,16 +584,16 @@ final class DebugCoordinator {
             return;
         }
         if (again == null) {
-            dapManager.restart();
+            dap().restart();
             return;
         }
-        dapManager.stop();
+        dap().stop();
         again.run();
     }
 
     /** Whether Restart can do anything for the session there is: not for one attached to a build or test run. */
     boolean restartAvailable() {
-        return relaunch != ONE_SHOT_ATTACH && relaunch != HTTP_SCRIPT_ATTACH;
+        return s().relaunch != ONE_SHOT_ATTACH && s().relaunch != HTTP_SCRIPT_ATTACH;
     }
 
     /**
@@ -642,13 +609,13 @@ final class DebugCoordinator {
         }
         ops.openToolWindow();
         nameSession(label);
-        relaunch = HTTP_SCRIPT_ATTACH;
+        s().relaunch = HTTP_SCRIPT_ATTACH;
         Path dir = shim == null ? null : shim.getParent();
         List<String> skip = new java.util.ArrayList<>(List.of("<node_internals>/**"));
         if (shim != null) {
             skip.add(shim.toString());
         }
-        withClosedBreakpoints(() -> dapManager.startJsAttach("127.0.0.1", port, label, dir, skip, true));
+        withClosedBreakpoints(() -> dap().startJsAttach("127.0.0.1", port, label, dir, skip, true));
         if (unguardedNode != null) {
             // Said after the session starts (which clears the console), where the user is looking.
             String why = tr("status.http.debugUnguarded", unguardedNode);
@@ -666,21 +633,21 @@ final class DebugCoordinator {
 
     /** The session's program is running (not paused, starting or being built for): what Pause acts on (C206). */
     boolean programRunning() {
-        return dapManager.isActive() && dapManager.state() == DapManager.State.RUNNING;
+        return dap().isActive() && dap().state() == DapManager.State.RUNNING;
     }
 
     /** A session is starting, running, paused or being built for — the states Stop / Restart act on. */
     boolean sessionLive() {
-        return dapManager.state() != DapManager.State.INACTIVE
+        return dap().state() != DapManager.State.INACTIVE
                 || beforeLaunch.isActive()
-                || pendingBuild != null
-                || pendingAttachStop != null;
+                || s().pendingBuild != null
+                || s().pendingAttachStop != null;
     }
 
     /** Names the session being launched in the panel; survives the end of the session it replaces. */
     private void nameSession(@Nullable String label) {
-        sessionLabel = label == null ? "" : label;
-        panel().setSessionFile(sessionLabel);
+        s().sessionLabel = label == null ? "" : label;
+        panel().setSessionFile(s().sessionLabel);
     }
 
     /** Streams a before-launch build into the Debug console and keeps Stop usable while it runs. */
@@ -690,7 +657,7 @@ final class DebugCoordinator {
 
     /** As {@link #beforeLaunchConsole()}; not {@code fresh}: a later step of the same build, which keeps the output. */
     private BeforeLaunchStep.Console beforeLaunchConsole(boolean fresh) {
-        announceStart = true; // a step's status would outlive it (review 2, A105)
+        s().announceStart = true; // a step's status would outlive it (review 2, A105)
         return new BeforeLaunchStep.Console() {
             @Override
             public void started(String commandLine) {
@@ -699,7 +666,7 @@ final class DebugCoordinator {
                 if (fresh) {
                     panel().clearConsole(); // a new launch: the previous session's output is not this one's
                 }
-                consoleStarted = true;
+                s().consoleStarted = true;
                 panel().appendOutput("$ " + commandLine + "\n", "console");
             }
 
@@ -711,7 +678,7 @@ final class DebugCoordinator {
             @Override
             public void ended(int code, @Nullable String launchError) {
                 panel().setPreparing(false);
-                consoleStarted = code == 0 && launchError == null; // a failed build is not followed by a session
+                s().consoleStarted = code == 0 && launchError == null; // a failed build is not followed by a session
                 if (launchError != null) {
                     panel().appendOutput(launchError + "\n", "stderr");
                 }
@@ -747,72 +714,74 @@ final class DebugCoordinator {
         var s = host.settings();
         boolean on = debugSupportEnabled(); // effective: off in Simple UI mode
         ProjectScope scope = host.projectScope(); // a trusted project's debugger paths, else the user's
-        dapManager.configure(
-                on,
-                scope.debugTool("java", s.getJavaDebugPluginPath()),
-                s.isPythonDebugEnabled(),
-                scope.debugTool("python", s.getPythonDebugCommand()),
-                s.isJsDebugEnabled(),
-                scope.debugTool("javascript", s.getJsDebugPath()));
+        dap().configure(
+                        on,
+                        scope.debugTool("java", s.getJavaDebugPluginPath()),
+                        s.isPythonDebugEnabled(),
+                        scope.debugTool("python", s.getPythonDebugCommand()),
+                        s.isJsDebugEnabled(),
+                        scope.debugTool("javascript", s.getJsDebugPath()));
         // Delve: as configured, else `dlv` on the PATH (where `go install` puts it is on Editora's PATH).
-        dapManager.configureExternal(
-                com.editora.dap.DebugLanguages.GO,
-                on && s.isGoDebugEnabled(),
-                scope.debugTool("go", s.getGoDebugPath()),
-                found -> applyGating());
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.GO,
+                        on && s.isGoDebugEnabled(),
+                        scope.debugTool("go", s.getGoDebugPath()),
+                        found -> applyGating());
         // CodeLLDB: as configured, else Editora's install, VS Code's extension, or the PATH.
-        dapManager.configureExternal(
-                com.editora.dap.DebugLanguages.RUST,
-                on && s.isRustDebugEnabled(),
-                scope.debugTool("rust", s.getRustDebugPath()),
-                found -> applyGating());
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.RUST,
+                        on && s.isRustDebugEnabled(),
+                        scope.debugTool("rust", s.getRustDebugPath()),
+                        found -> applyGating());
         // GDB's DAP mode: C and C++'s other debugger, and launch.json's gdb / cppdbg.
-        dapManager.configureExternal(
-                com.editora.dap.DebugLanguages.GDB, on, scope.debugTool("gdb", s.getGdbPath()), found -> applyGating());
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.GDB,
+                        on,
+                        scope.debugTool("gdb", s.getGdbPath()),
+                        found -> applyGating());
         loadCustomAdapters(on);
         // netcoredbg: as configured, else Editora's install, a VS Code extension's, or the PATH.
-        dapManager.configureExternal(
-                com.editora.dap.DebugLanguages.CSHARP,
-                on && s.isCsharpDebugEnabled(),
-                scope.debugTool("csharp", s.getCsharpDebugPath()),
-                found -> applyGating());
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.CSHARP,
+                        on && s.isCsharpDebugEnabled(),
+                        scope.debugTool("csharp", s.getCsharpDebugPath()),
+                        found -> applyGating());
         // rdbg: as configured, else on the PATH or where `gem install --user-install` put it.
-        dapManager.configureExternal(
-                com.editora.dap.DebugLanguages.RUBY,
-                on && s.isRubyDebugEnabled(),
-                scope.debugTool("ruby", s.getRubyDebugPath()),
-                found -> applyGating());
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.RUBY,
+                        on && s.isRubyDebugEnabled(),
+                        scope.debugTool("ruby", s.getRubyDebugPath()),
+                        found -> applyGating());
         // vscode-php-debug: as configured, else Editora's install or VS Code's extension.
-        dapManager.configureExternal(
-                com.editora.dap.DebugLanguages.PHP,
-                on && s.isPhpDebugEnabled(),
-                scope.debugTool("php", s.getPhpDebugPath()),
-                found -> applyGating());
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.PHP,
+                        on && s.isPhpDebugEnabled(),
+                        scope.debugTool("php", s.getPhpDebugPath()),
+                        found -> applyGating());
         // C and C++: the same CodeLLDB as Rust's.
-        dapManager.configureExternal(
-                com.editora.dap.DebugLanguages.CPP,
-                on && s.isCppDebugEnabled(),
-                scope.debugTool("rust", s.getRustDebugPath()),
-                found -> applyGating());
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.CPP,
+                        on && s.isCppDebugEnabled(),
+                        scope.debugTool("rust", s.getRustDebugPath()),
+                        found -> applyGating());
         if (debugPanel != null) {
             debugPanel.history().setCapacity(s.getDebugHistoryStops()); // fewer forgets the oldest now
         }
-        dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
-        dapManager.setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
-        dapManager.setProgramTerminal(
-                s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
-        dapManager.setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
+        dap().setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
+        dap().setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
+        dap().setProgramTerminal(s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
+        dap().setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
                 s.isDebugStepFilters(),
                 s.isDebugShowStatics(),
                 com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes()),
                 s.isDebugShowToString(),
                 s.isDebugSuspendAllThreads()));
-        List<String> bundles = on ? dapManager.bundlePaths() : List.of();
+        List<String> bundles = on ? dap().bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
         appliedDebugBundles = bundles;
         if (!on) {
-            dapManager.stop();
+            dap().stop();
         }
         if (changed) {
             lspManager.restartServer("java"); // reload a running jdtls with/without the bundle (no-op if none)
@@ -821,8 +790,8 @@ final class DebugCoordinator {
         applyGating();
         if (on) {
             // Probe debugpy / node off-thread; re-gate when each result lands (enables python/js gutters).
-            dapManager.detectPython(ok -> applyGating());
-            dapManager.detectJs(ok -> applyGating());
+            dap().detectPython(ok -> applyGating());
+            dap().detectJs(ok -> applyGating());
         }
     }
 
@@ -833,9 +802,9 @@ final class DebugCoordinator {
      * the controller calls this from the server-ready event (#711). Light: no bundle push, no restart.
      */
     void refreshJavaDebugAvailability() {
-        boolean before = dapManager.isLanguageAvailable("java");
-        dapManager.setServerProvidesJavaDebug(lspManager.javaDebugCommandsAvailable());
-        if (dapManager.isLanguageAvailable("java") != before) {
+        boolean before = dap().isLanguageAvailable("java");
+        dap().setServerProvidesJavaDebug(lspManager.javaDebugCommandsAvailable());
+        if (dap().isLanguageAvailable("java") != before) {
             applyGating(); // the breakpoint gutter + Debug window just became (un)available
         }
     }
@@ -891,12 +860,12 @@ final class DebugCoordinator {
             pendingPersist.remove(buffer); // the user's own toggle / edit: written now, never left to a timer
             persistBreakpoints(buffer);
         }
-        if (buffer.getPath() != null && dapManager.isActive()) {
+        if (buffer.getPath() != null && dap().isActive()) {
             // Adapter stays current immediately — but only when what it is told actually changed: editing
             // the text of a breakpoint's line is a change to persist, not one to put on the wire.
             DapModels.FileBreakpoints now = fileBreakpoints(buffer, buffer.getPath());
-            if (!now.equals(sentBreakpoints.put(buffer.getPath(), now))) {
-                dapManager.updateBreakpoints(now);
+            if (!now.equals(s().sentBreakpoints.put(buffer.getPath(), now))) {
+                dap().updateBreakpoints(now);
             }
             showBreakpointStates(buffer); // a new breakpoint is unverified until the adapter answers for it
         }
@@ -910,12 +879,12 @@ final class DebugCoordinator {
      */
     private void showBreakpointStates(EditorBuffer buffer) {
         Path file = buffer.getPath();
-        if (file == null || dapManager.state() == DapManager.State.INACTIVE) {
+        if (file == null || dap().state() == DapManager.State.INACTIVE) {
             buffer.getBreakpointManager().setLive(null);
             return;
         }
-        Map<Integer, DapModels.BreakpointStatus> known = breakpointStatus.getOrDefault(file, Map.of());
-        Map<Integer, EvaluationFailure> failures = evaluationFailures.get(file);
+        Map<Integer, DapModels.BreakpointStatus> known = s().breakpointStatus.getOrDefault(file, Map.of());
+        Map<Integer, EvaluationFailure> failures = s().evaluationFailures.get(file);
         Map<Integer, BreakpointManager.Live> live = new java.util.HashMap<>();
         String pending = tr(DebugFeedback.pendingKey(known.values(), buffer.getLanguage()));
         LaunchedLines.Mapping map = lineMap(buffer);
@@ -950,12 +919,12 @@ final class DebugCoordinator {
     /** The adapter answered for {@code file}'s breakpoints, or changed its mind about some of them. */
     private void breakpointStatusChanged(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
         Map<Integer, DapModels.BreakpointStatus> known =
-                breakpointStatus.computeIfAbsent(file, f -> new java.util.HashMap<>());
+                s().breakpointStatus.computeIfAbsent(file, f -> new java.util.HashMap<>());
         if (whole) {
             known.clear();
         }
         EditorBuffer buffer = ops.bufferForPath(file);
-        DapModels.FileBreakpoints sent = sentBreakpoints.get(file);
+        DapModels.FileBreakpoints sent = s().sentBreakpoints.get(file);
         LaunchedLines.Mapping map = lineMap(buffer); // statuses name launched lines; the markers are the document's
         for (DapModels.BreakpointStatus status : statuses) {
             known.put(status.line(), status);
@@ -963,7 +932,7 @@ final class DebugCoordinator {
             if (!armed) {
                 continue; // a run-to-cursor stop, or an answer about a set that has since been replaced
             }
-            if (status.failed() && reportedRejections.add(file + ":" + status.line() + ":" + status.message())) {
+            if (status.failed() && s().reportedRejections.add(file + ":" + status.line() + ":" + status.message())) {
                 host.setStatus(tr(
                         "status.debug.breakpointInvalid",
                         file.getFileName() + ":" + (status.line() + 1),
@@ -1020,7 +989,7 @@ final class DebugCoordinator {
                         ? bp.condition()
                         : DebugFeedback.noticeNames(message, bp.logMessage()) ? bp.logMessage() : null;
                 if (bp.enabled() && expression != null) {
-                    evaluationFailures
+                    s().evaluationFailures
                             .computeIfAbsent(b.getPath(), f -> new java.util.HashMap<>())
                             .put(bp.line(), new EvaluationFailure(expression, message));
                     flagged = true;
@@ -1087,13 +1056,13 @@ final class DebugCoordinator {
             seenInStore.put(buffer, MarkMerge.keys(map.get(key(newPath)), Breakpoint::line));
             persistBreakpoints(buffer); // writes the file, also when the buffer has none (the old key is gone)
         }
-        if (dapManager.isActive()) {
-            if (oldPath != null && sentBreakpoints.remove(oldPath) != null && oldGone) {
-                dapManager.updateBreakpoints(new DapModels.FileBreakpoints(oldPath, List.of()));
+        if (dap().isActive()) {
+            if (oldPath != null && s().sentBreakpoints.remove(oldPath) != null && oldGone) {
+                dap().updateBreakpoints(new DapModels.FileBreakpoints(oldPath, List.of()));
             }
             DapModels.FileBreakpoints now = fileBreakpoints(buffer, newPath);
-            sentBreakpoints.put(newPath, now);
-            dapManager.updateBreakpoints(now);
+            s().sentBreakpoints.put(newPath, now);
+            dap().updateBreakpoints(now);
         }
     }
 
@@ -1173,10 +1142,10 @@ final class DebugCoordinator {
             List<Breakpoint> stored = ops.breakpointMap().getOrDefault(key, List.of());
             b.applyBreakpoints(stored);
             seenInStore.put(b, MarkMerge.keys(stored, Breakpoint::line));
-            if (dapManager.isActive()) {
+            if (dap().isActive()) {
                 DapModels.FileBreakpoints now = fileBreakpoints(b, b.getPath());
-                if (!now.equals(sentBreakpoints.put(b.getPath(), now))) {
-                    dapManager.updateBreakpoints(now);
+                if (!now.equals(s().sentBreakpoints.put(b.getPath(), now))) {
+                    dap().updateBreakpoints(now);
                 }
             }
             showBreakpointStates(b);
@@ -1188,7 +1157,7 @@ final class DebugCoordinator {
         if (file == null) {
             return;
         }
-        if (dapManager.isActive()) {
+        if (dap().isActive()) {
             snapshotLaunched(buffer); // opened during a session: as on disk, which is what the program was built from
         }
         List<Breakpoint> stored = ops.breakpointMap().getOrDefault(key(file), List.of());
@@ -1207,17 +1176,17 @@ final class DebugCoordinator {
      * and inline values back — the buffer that carried them was disposed with its tab.
      */
     private void reshowFrameIn(EditorBuffer buffer) {
-        DapModels.StackFrameInfo frame = shownFrame;
+        DapModels.StackFrameInfo frame = s().shownFrame;
         if (frame == null
                 || frame.file() == null
-                || dapManager.state() != DapManager.State.SUSPENDED
+                || dap().state() != DapManager.State.SUSPENDED
                 || buffer == execHighlightBuffer
                 || !samePath(frame.file(), buffer.getPath())) {
             return;
         }
         clearExecHighlight();
         paintExecutionLine(buffer, frame);
-        dapManager.scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
+        dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
     }
 
     /**
@@ -1337,13 +1306,13 @@ final class DebugCoordinator {
      */
     void rebaselineLines(Path file) {
         EditorBuffer b = file == null ? null : ops.bufferForPath(file);
-        if (b == null || b.getPath() == null || !dapManager.isActive()) {
+        if (b == null || b.getPath() == null || !dap().isActive()) {
             return; // a buffer found by its path always has one
         }
         launchedLines.rebaseline(file, b.getContent());
         DapModels.FileBreakpoints now = fileBreakpoints(b, b.getPath());
-        if (!now.equals(sentBreakpoints.put(file, now))) {
-            dapManager.updateBreakpoints(now);
+        if (!now.equals(s().sentBreakpoints.put(file, now))) {
+            dap().updateBreakpoints(now);
         }
         showBreakpointStates(b);
     }
@@ -1362,7 +1331,7 @@ final class DebugCoordinator {
             }
             open.add(key(b.getPath()));
             DapModels.FileBreakpoints fb = fileBreakpoints(b, b.getPath());
-            sentBreakpoints.put(b.getPath(), fb);
+            s().sentBreakpoints.put(b.getPath(), fb);
             if (!fb.breakpoints().isEmpty()) {
                 out.add(fb);
             }
@@ -1383,7 +1352,7 @@ final class DebugCoordinator {
      */
     private void withClosedBreakpoints(Runnable then) {
         Object token = new Object();
-        closedBreakpointsRead = token; // a newer start, or Stop, drops this one
+        s().closedBreakpointsRead = token; // a newer start, or Stop, drops this one
         Set<String> openPaths = new HashSet<>();
         host.forEachBuffer(b -> {
             if (b.getPath() != null) {
@@ -1396,10 +1365,10 @@ final class DebugCoordinator {
                     List<DapModels.FileBreakpoints> computed = closedFileBreakpoints(
                             map, openPaths, RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull);
                     Platform.runLater(() -> {
-                        if (closedBreakpointsRead != token) {
+                        if (s().closedBreakpointsRead != token) {
                             return; // stopped, or replaced by another start, while the files were read
                         }
-                        closedBreakpointsRead = null;
+                        s().closedBreakpointsRead = null;
                         closedBreakpoints = computed;
                         then.run();
                     });
@@ -1420,9 +1389,6 @@ final class DebugCoordinator {
 
     // --- DAP event sink + panel actions ------------------------------------------------------------
 
-    /** Bumped when a session starts or ends, so a slow runtime probe cannot label the next one. */
-    private long runtimeGeneration;
-
     private DapManager.Listener dapListener() {
         return new DapManager.Listener() {
             @Override
@@ -1430,45 +1396,45 @@ final class DebugCoordinator {
                 closeSmartStepPicker(state); // review E108
                 if (state != DapManager.State.SUSPENDED) {
                     hideExceptionCard(); // Continue, a step, the session's end: the stop it described is over
-                    stopException = null;
+                    s().stopException = null;
                 }
                 // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
                 // starts in that state by itself, so there is nothing to show and no reason to build it now.
                 boolean show = debugPanel != null || state != DapManager.State.INACTIVE;
                 if (state == DapManager.State.STARTING || state == DapManager.State.INACTIVE) {
-                    runtimeGeneration++; // a probe still out answers for the session that just ended
+                    s().runtimeGeneration++; // a probe still out answers for the session that just ended
                     if (debugPanel != null) {
                         panel().setRuntime(null);
                     }
                 }
                 if (state == DapManager.State.STARTING) {
-                    if (!consoleStarted) {
+                    if (!s().consoleStarted) {
                         panel().clearConsole(); // each launch starts with its own output
                     }
-                    consoleStarted = false;
+                    s().consoleStarted = false;
                 }
                 if (show) {
                     panel().setRestartBlocked(restartAvailable() ? null : tr("status.debug.cannotRestartAttached"));
                     panel().setState(state);
                 }
                 if (state == DapManager.State.STARTING) {
-                    recordedStops = 0; // the recording breakpoints' limit is per session
-                    nameSession(sessionLabel); // ending the replaced session cleared it
+                    s().recordedStops = 0; // the recording breakpoints' limit is per session
+                    nameSession(s().sessionLabel); // ending the replaced session cleared it
                     refreshExceptionToggles(); // the session's language decides what Caught / Uncaught mean
-                    sessionAnnounced = !announceStart;
-                    announceStart = false;
+                    s().sessionAnnounced = !s().announceStart;
+                    s().announceStart = false;
                 } else if ((state == DapManager.State.RUNNING || state == DapManager.State.SUSPENDED)
-                        && !sessionAnnounced) {
+                        && !s().sessionAnnounced) {
                     // Once per session: replaces "Running the before-launch step…" or "Attaching the debugger on
                     // port …", which stood in the status bar while the program sat paused (review 2, A105).
-                    sessionAnnounced = true;
+                    s().sessionAnnounced = true;
                     host.setStatus(
-                            sessionLabel.isEmpty()
+                            s().sessionLabel.isEmpty()
                                     ? tr("status.debug.sessionStarted")
-                                    : tr("status.debug.sessionStartedNamed", sessionLabel));
+                                    : tr("status.debug.sessionStartedNamed", s().sessionLabel));
                 }
                 if (state != DapManager.State.SUSPENDED) {
-                    shownFrame = null;
+                    s().shownFrame = null;
                     if (show) {
                         panel().setStopReason(null);
                     }
@@ -1485,20 +1451,22 @@ final class DebugCoordinator {
                     } else {
                         launchedLines.clear();
                     }
-                    sentBreakpoints.clear(); // the next session is told everything afresh
-                    breakpointStatus.clear(); // and what the last one said about them no longer holds
-                    evaluationFailures.clear();
-                    reportedRejections.clear();
+                    s().sentBreakpoints.clear(); // the next session is told everything afresh
+                    s().breakpointStatus.clear(); // and what the last one said about them no longer holds
+                    s().evaluationFailures.clear();
+                    s().reportedRejections.clear();
                     host.forEachBuffer(DebugCoordinator.this::showBreakpointStates);
                 }
                 if (state != DapManager.State.SUSPENDED) {
                     clearExecHighlight();
                     clearDebugEditorSurfaces(); // inline values + hover live only while suspended
                 }
-                if (state == DapManager.State.INACTIVE && relaunch == ONE_SHOT_ATTACH && !queuedAttaches.isEmpty()) {
+                if (state == DapManager.State.INACTIVE
+                        && s().relaunch == ONE_SHOT_ATTACH
+                        && !queuedAttaches.isEmpty()) {
                     Platform.runLater(queuedAttaches.poll()); // the next JVM of the same run is waiting
                 } else if (state == DapManager.State.INACTIVE
-                        && pendingAttachStop != null
+                        && s().pendingAttachStop != null
                         && !beforeLaunch.isActive()) {
                     // A Debug Test run still waits for its next fork: Stop ends it.
                     panel().setPreparing(true, tr("debugpanel.state.waitingTest"));
@@ -1515,15 +1483,15 @@ final class DebugCoordinator {
 
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> stopFrames) {
-                stopSerial++;
-                stopException = null; // a new stop: the last one's exception is not this one's
+                s().stopSerial++;
+                s().stopException = null; // a new stop: the last one's exception is not this one's
                 hideExceptionCard();
                 List<DapModels.StackFrameInfo> frames = currentLines(stopFrames);
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
                 panel().setStoppedThread(threadId); // Debug History keys this stop's frames by it
                 // The frame that threw: its line is drawn red while it is the one shown (review C13).
-                exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
+                s().exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
                         ? frames.get(firstFrameWithSource(frames, DebugCoordinator.this::hasSource))
                                 .id()
                         : -1;
@@ -1533,7 +1501,7 @@ final class DebugCoordinator {
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
-                quietStop = recording ? stopSerial : -1;
+                s().quietStop = recording ? s().stopSerial : -1;
                 panel().setCallStack(frames, shown);
                 if (recording) {
                     recordAndContinue(frames.getFirst());
@@ -1548,7 +1516,7 @@ final class DebugCoordinator {
                                     : "status.debug.stoppedWithoutSource",
                             DebugPanelText.frameName(frames.get(0).name())));
                 }
-                dapManager.threads(list -> panel().setThreads(list, dapManager.currentThreadId()));
+                dap().threads(list -> panel().setThreads(list, dap().currentThreadId()));
             }
 
             @Override
@@ -1572,9 +1540,9 @@ final class DebugCoordinator {
             @Override
             public void onDebuggeeRuntime(
                     List<String> runtime, @Nullable Path where, java.util.Map<String, String> env) {
-                long generation = runtimeGeneration;
+                long generation = s().runtimeGeneration;
                 com.editora.run.RuntimeProbe.probe(runtime, where, env, version -> {
-                    if (generation == runtimeGeneration && debugPanel != null) {
+                    if (generation == s().runtimeGeneration && debugPanel != null) {
                         panel().setRuntime(version);
                     }
                 });
@@ -1616,7 +1584,7 @@ final class DebugCoordinator {
                 // Which exception: the one thing an exception stop has to say, and the stop event does not.
                 panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
                 panel().setExceptionInfo(info);
-                stopException = info;
+                s().stopException = info;
                 showExceptionCard(false); // under the line that threw, when it is the one shown
                 host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
             }
@@ -1669,7 +1637,7 @@ final class DebugCoordinator {
 
             @Override
             public void pause() {
-                dapManager.pause();
+                dap().pause();
             }
 
             @Override
@@ -1679,33 +1647,33 @@ final class DebugCoordinator {
 
             @Override
             public void threadStatuses(Consumer<List<DapModels.ThreadStatus>> cb) {
-                dapManager.threadStatuses(cb);
+                dap().threadStatuses(cb);
             }
 
             @Override
             public void pauseThread(int threadId) {
-                dapManager.pauseThread(threadId);
+                dap().pauseThread(threadId);
             }
 
             @Override
             public void resumeThread(int threadId) {
-                dapManager.resumeThread(threadId);
+                dap().resumeThread(threadId);
             }
 
             @Override
             public void showThread(DapModels.ThreadStatus thread) {
-                if (dapManager.state() == DapManager.State.SUSPENDED) {
+                if (dap().state() == DapManager.State.SUSPENDED) {
                     panel().showThread(thread.id()); // as if picked in the dropdown
                     selectThread(thread.id());
                 } else {
-                    dapManager.showSuspendedThread(thread.id(), thread.reason());
+                    dap().showSuspendedThread(thread.id(), thread.reason());
                 }
             }
 
             @Override
             public void selectThread(int threadId) {
-                int previous = dapManager.currentThreadId();
-                dapManager.selectThread(threadId, threadFrames -> {
+                int previous = dap().currentThreadId();
+                dap().selectThread(threadId, threadFrames -> {
                     List<DapModels.StackFrameInfo> frames = currentLines(threadFrames);
                     if (!frames.isEmpty() || threadId == previous) {
                         panel().setCallStack(frames, firstFrameWithSource(frames, DebugCoordinator.this::hasSource));
@@ -1716,7 +1684,7 @@ final class DebugCoordinator {
                     // aimed at the running thread — said nothing about why.
                     host.setStatus(tr("status.debug.threadRunning"));
                     panel().showThread(previous);
-                    dapManager.selectThread(previous, back -> {
+                    dap().selectThread(previous, back -> {
                         if (back.isEmpty()) { // it has been resumed meanwhile: nothing is stopped to show
                             panel().setCallStack(back, 0);
                             panel().setScopes(List.of());
@@ -1739,7 +1707,7 @@ final class DebugCoordinator {
 
             @Override
             public boolean canViewMemory() {
-                return dapManager.supportsReadMemory();
+                return dap().supportsReadMemory();
             }
 
             @Override
@@ -1752,7 +1720,7 @@ final class DebugCoordinator {
 
             @Override
             public void stepOut() {
-                dapManager.stepOut();
+                dap().stepOut();
             }
 
             @Override
@@ -1767,17 +1735,17 @@ final class DebugCoordinator {
 
             @Override
             public void selectFrame(DapModels.StackFrameInfo frame) {
-                if (dapManager.state() != DapManager.State.SUSPENDED) {
+                if (dap().state() != DapManager.State.SUSPENDED) {
                     return; // a frame of the previous stop, clicked while the program runs: there is no "here"
                 }
-                debugFrameId = frame.id(); // the hover evaluator's frame context
-                shownFrame = frame;
-                if (quietStop == stopSerial) {
+                s().debugFrameId = frame.id(); // the hover evaluator's frame context
+                s().shownFrame = frame;
+                if (s().quietStop == s().stopSerial) {
                     return; // a recording breakpoint's stop: kept, not shown (recordAndContinue)
                 }
                 highlightFrame(frame);
                 noteChangedSinceLaunch(frame);
-                dapManager.scopes(frame.id(), scopes -> {
+                dap().scopes(frame.id(), scopes -> {
                     panel().setScopes(scopes);
                     applyInlineValues(frame, scopes);
                 });
@@ -1787,33 +1755,33 @@ final class DebugCoordinator {
 
             @Override
             public void loadChildren(int ref, Consumer<List<DapModels.VariableInfo>> cb) {
-                dapManager.variables(ref, cb);
+                dap().variables(ref, cb);
             }
 
             @Override
             public void loadChildrenPage(
                     int ref, boolean indexed, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
-                dapManager.variables(ref, indexed ? "indexed" : "named", start, count, cb);
+                dap().variables(ref, indexed ? "indexed" : "named", start, count, cb);
             }
 
             @Override
             public void evaluate(String expr, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb) {
-                dapManager.evaluate(expr, frameId, "repl", cb);
+                dap().evaluate(expr, frameId, "repl", cb);
             }
 
             @Override
             public void evaluateWatch(String expr, int frameId, Consumer<DapModels.EvalResult> cb) {
-                dapManager.evaluateFull(expr, frameId, "watch", cb);
+                dap().evaluateFull(expr, frameId, "watch", cb);
             }
 
             @Override
             public void complete(String text, int caret, int frameId, Consumer<List<DapModels.CompletionTarget>> cb) {
-                dapManager.completions(frameId, text, caret, cb);
+                dap().completions(frameId, text, caret, cb);
             }
 
             @Override
             public void sendInput(String line) {
-                dapManager.sendProgramInput(line);
+                dap().sendProgramInput(line);
             }
 
             @Override
@@ -1828,7 +1796,7 @@ final class DebugCoordinator {
 
             @Override
             public void setVariable(int parentRef, String name, String value, Consumer<String> cb) {
-                dapManager.setVariable(parentRef, name, value, cb);
+                dap().setVariable(parentRef, name, value, cb);
             }
 
             @Override
@@ -1844,22 +1812,22 @@ final class DebugCoordinator {
             @Override
             public void setVariable(
                     int parentRef, String name, String value, String assignTo, int frameId, Consumer<String> cb) {
-                dapManager.setVariable(parentRef, name, value, assignTo, frameId, cb);
+                dap().setVariable(parentRef, name, value, assignTo, frameId, cb);
             }
 
             @Override
             public void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
-                dapManager.loadValue(row, cb);
+                dap().loadValue(row, cb);
             }
 
             @Override
             public boolean hexValues() {
-                return dapManager.hexValues();
+                return dap().hexValues();
             }
 
             @Override
             public void setHexValues(boolean on) {
-                dapManager.setHexValues(on);
+                dap().setHexValues(on);
                 host.setStatus(tr(on ? "status.debug.hexOn" : "status.debug.hexOff"));
                 refreshValues();
             }
@@ -1882,12 +1850,12 @@ final class DebugCoordinator {
 
             @Override
             public boolean refreshValues() {
-                DapModels.StackFrameInfo frame = shownFrame;
-                if (frame == null || dapManager.state() != DapManager.State.SUSPENDED) {
+                DapModels.StackFrameInfo frame = s().shownFrame;
+                if (frame == null || dap().state() != DapManager.State.SUSPENDED) {
                     return false;
                 }
-                dapManager.forgetValues(); // B205: what the program now says, not this stop's first answers
-                dapManager.scopes(frame.id(), scopes -> {
+                dap().forgetValues(); // B205: what the program now says, not this stop's first answers
+                dap().scopes(frame.id(), scopes -> {
                     panel().setScopes(scopes);
                     applyInlineValues(frame, scopes);
                 });
@@ -1909,8 +1877,8 @@ final class DebugCoordinator {
         if (locals == null) {
             return;
         }
-        dapManager.variables(locals.variablesReference(), vars -> {
-            if (dapManager.state() != DapManager.State.SUSPENDED) {
+        dap().variables(locals.variablesReference(), vars -> {
+            if (dap().state() != DapManager.State.SUSPENDED) {
                 return; // resumed while the request was in flight
             }
             Map<String, String> values = new LinkedHashMap<>();
@@ -1990,10 +1958,10 @@ final class DebugCoordinator {
     private void leaveHistory() {
         clearExecHighlight();
         pinnedValues.clear();
-        DapModels.StackFrameInfo frame = shownFrame;
-        if (dapManager.state() == DapManager.State.SUSPENDED && frame != null) {
+        DapModels.StackFrameInfo frame = s().shownFrame;
+        if (dap().state() == DapManager.State.SUSPENDED && frame != null) {
             highlightFrame(frame);
-            dapManager.scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
+            dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
             pinnedValues.refresh(frame.id());
         } else {
             clearDebugEditorSurfaces();
@@ -2067,12 +2035,6 @@ final class DebugCoordinator {
 
     // --- recording breakpoints: record the stop, then go on ------------------------------------------
 
-    /** The stop a recording breakpoint made, whose frame is not shown in the editor; -1 for none. */
-    private int quietStop = -1;
-
-    /** Stops recorded by recording breakpoints this session. */
-    int recordedStops;
-
     /** A session records at most this many stops; the next hit stops as a plain breakpoint does, and says why. */
     static final int MAX_RECORDED_STOPS = 500;
 
@@ -2094,7 +2056,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.recordingHistoryOff"));
             return false;
         }
-        if (recordedStops >= MAX_RECORDED_STOPS) {
+        if (s().recordedStops >= MAX_RECORDED_STOPS) {
             host.setStatus(tr("status.debug.recordingLimit", MAX_RECORDED_STOPS));
             return false;
         }
@@ -2104,7 +2066,8 @@ final class DebugCoordinator {
     /** Whether a recording breakpoint was sent for 0-based line {@code line} of {@code file}. */
     private boolean recordingBreakpointAt(Path file, int line) {
         String wanted = key(file);
-        List<DapModels.FileBreakpoints> sent = new ArrayList<>(sentBreakpoints.values());
+        List<DapModels.FileBreakpoints> sent =
+                new ArrayList<>(s().sentBreakpoints.values());
         sent.addAll(closedBreakpoints);
         for (DapModels.FileBreakpoints fb : sent) {
             if (fb.file() != null && key(fb.file()).equals(wanted)) {
@@ -2124,28 +2087,28 @@ final class DebugCoordinator {
      * acts on first (a step, Stop) or another stop meanwhile is left as it is.
      */
     private void recordAndContinue(DapModels.StackFrameInfo top) {
-        recordedStops++;
-        int serial = stopSerial;
+        s().recordedStops++;
+        int serial = s().stopSerial;
         DebugPanel panel = panel();
         DebugHistory.Stop stop = panel.history().last();
         Runnable goOn = () -> {
-            if (serial != stopSerial || dapManager.state() != DapManager.State.SUSPENDED) {
+            if (serial != s().stopSerial || dap().state() != DapManager.State.SUSPENDED) {
                 return;
             }
             if (stop != null) {
                 panel.appendNotice(tr("debug.console.recorded", stop.number, DebugPanelText.historyWhere(stop)));
             }
-            dapManager.resume();
+            dap().resume();
         };
-        dapManager.scopes(top.id(), scopes -> {
+        dap().scopes(top.id(), scopes -> {
             DapModels.ScopeInfo locals =
                     scopes.stream().filter(sc -> !sc.expensive()).findFirst().orElse(null);
-            if (locals == null || serial != stopSerial) {
+            if (locals == null || serial != s().stopSerial) {
                 recordWatches(top, serial, goOn);
                 return;
             }
-            dapManager.variables(locals.variablesReference(), vars -> {
-                if (serial != stopSerial) {
+            dap().variables(locals.variablesReference(), vars -> {
+                if (serial != s().stopSerial) {
                     return;
                 }
                 DebugHistory history = panel.history();
@@ -2177,13 +2140,13 @@ final class DebugCoordinator {
     }
 
     private void recordWatch(DapModels.StackFrameInfo top, int serial, List<String> watches, int index, Runnable then) {
-        if (index >= watches.size() || serial != stopSerial) {
+        if (index >= watches.size() || serial != s().stopSerial) {
             then.run();
             return;
         }
         String expr = watches.get(index);
-        dapManager.evaluateFull(expr, top.id(), "watch", r -> {
-            if (serial == stopSerial && r != null && !r.failed()) {
+        dap().evaluateFull(expr, top.id(), "watch", r -> {
+            if (serial == s().stopSerial && r != null && !r.failed()) {
                 panel().history()
                         .record(
                                 0,
@@ -2197,7 +2160,7 @@ final class DebugCoordinator {
     }
 
     private void clearDebugEditorSurfaces() {
-        debugFrameId = -1;
+        s().debugFrameId = -1;
         pinnedValues.clear();
         if (debugValuesBuffer != null) {
             debugValuesBuffer.setInlineValues(null, -1);
@@ -2302,7 +2265,7 @@ final class DebugCoordinator {
                 .map(com.editora.dap.CustomAdapters.Adapter::profile)
                 .toList());
         for (var a : adapters) {
-            dapManager.configureExternal(a.profile(), on, "", found -> applyGating());
+            dap().configureExternal(a.profile(), on, "", found -> applyGating());
         }
         if (!problems.isEmpty()) {
             host.setStatus(tr("status.debug.customAdaptersInvalid", String.join("; ", problems)));
@@ -2383,8 +2346,8 @@ final class DebugCoordinator {
             Path anchor, com.editora.dap.DebugLanguage profile, java.util.Map<String, Object> request, String label) {
         ops.openToolWindow();
         nameSession(label);
-        Runnable start = () -> withClosedBreakpoints(() -> dapManager.startExternal(anchor, profile, request));
-        relaunch = start;
+        Runnable start = () -> withClosedBreakpoints(() -> dap().startExternal(anchor, profile, request));
+        s().relaunch = start;
         start.run();
     }
 
@@ -2520,7 +2483,7 @@ final class DebugCoordinator {
         if (argv == null) {
             return; // said
         }
-        if (beforeLaunch.isActive() || pendingBuild != null) {
+        if (beforeLaunch.isActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -2592,15 +2555,14 @@ final class DebugCoordinator {
                     String[] where = attachAddress(body, 5678);
                     ops.openToolWindow();
                     nameSession(name);
-                    relaunch = null;
-                    withClosedBreakpoints(
-                            () -> dapManager.startPythonAttach(anchor, where[0], Integer.parseInt(where[1])));
+                    s().relaunch = null;
+                    withClosedBreakpoints(() -> dap().startPythonAttach(anchor, where[0], Integer.parseInt(where[1])));
                 } else {
                     ops.openToolWindow();
                     nameSession(name);
                     Path file = program != null ? program : anchor;
-                    relaunch = null;
-                    withClosedBreakpoints(() -> dapManager.startConfigured(file, "python", route.request()));
+                    s().relaunch = null;
+                    withClosedBreakpoints(() -> dap().startConfigured(file, "python", route.request()));
                 }
             }
             case JS_DEBUG -> {
@@ -2610,20 +2572,20 @@ final class DebugCoordinator {
                     String[] where = attachAddress(body, com.editora.dap.JsLaunch.DEFAULT_INSPECTOR_PORT);
                     ops.openToolWindow();
                     nameSession(name);
-                    relaunch = null;
-                    withClosedBreakpoints(() -> dapManager.startJsAttach(
-                            where[0],
-                            Integer.parseInt(where[1]),
-                            name,
-                            workspace,
-                            List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
-                            true));
+                    s().relaunch = null;
+                    withClosedBreakpoints(() -> dap().startJsAttach(
+                                    where[0],
+                                    Integer.parseInt(where[1]),
+                                    name,
+                                    workspace,
+                                    List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
+                                    true));
                 } else {
                     ops.openToolWindow();
                     nameSession(name);
                     Path file = program != null ? program : anchor;
-                    relaunch = null;
-                    withClosedBreakpoints(() -> dapManager.startConfigured(file, "javascript", route.request()));
+                    s().relaunch = null;
+                    withClosedBreakpoints(() -> dap().startConfigured(file, "javascript", route.request()));
                 }
             }
             case DELVE, CODELLDB, NETCOREDBG, RDBG, PHP_DEBUG, GDB, CUSTOM -> {
@@ -2635,7 +2597,7 @@ final class DebugCoordinator {
                 boolean byProgram = route.kind() == com.editora.dap.LaunchRoute.Kind.GDB
                         || route.kind() == com.editora.dap.LaunchRoute.Kind.CUSTOM;
                 boolean ready = byProgram
-                        ? debugSupportEnabled() && dapManager.isExternalLocated(profile)
+                        ? debugSupportEnabled() && dap().isExternalLocated(profile)
                         : debugEffectiveFor(profile.editorLanguages().iterator().next());
                 if (!ready) {
                     host.setStatus(
@@ -2675,11 +2637,11 @@ final class DebugCoordinator {
         nameSession(label);
         com.editora.dap.DebugLanguage ruby = com.editora.dap.DebugLanguages.RUBY;
         Runnable start = attach
-                ? () -> withClosedBreakpoints(() -> dapManager.startPortAttach(
-                        anchor, ruby, com.editora.dap.LaunchRoute.rdbgPort(request), request))
+                ? () -> withClosedBreakpoints(() ->
+                        dap().startPortAttach(anchor, ruby, com.editora.dap.LaunchRoute.rdbgPort(request), request))
                 : () -> withClosedBreakpoints(() ->
-                        dapManager.startExternal(anchor, ruby, request, com.editora.dap.LaunchRoute.rdbgTail(request)));
-        relaunch = start;
+                        dap().startExternal(anchor, ruby, request, com.editora.dap.LaunchRoute.rdbgTail(request)));
+        s().relaunch = start;
         start.run();
     }
 
@@ -2721,7 +2683,7 @@ final class DebugCoordinator {
         build.addAll(args);
         List<String> json = new ArrayList<>(build);
         json.add("--message-format=json");
-        if (beforeLaunch.isActive() || pendingBuild != null) {
+        if (beforeLaunch.isActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -2783,43 +2745,37 @@ final class DebugCoordinator {
 
     static final int DISASSEMBLY_COUNT = 120;
 
-    /** The Memory view's memory reference (an address, or one an expression's value has), or null before any. */
-    private @Nullable String memoryReference;
-
-    /** The Memory view's offset from {@link #memoryReference}: its paging. */
-    private long memoryOffset;
-
     /**
      * Step Over (F10, the toolbar): one machine instruction while the Disassembly view has the keyboard, as in VS
      * Code; one line otherwise.
      */
     void stepOver() {
-        if (debugPanel != null && debugPanel.disassemblyView().hasFocus() && dapManager.supportsInstructionStepping()) {
-            dapManager.stepOverInstruction();
+        if (debugPanel != null && debugPanel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
+            dap().stepOverInstruction();
         } else {
-            dapManager.stepOver();
+            dap().stepOver();
         }
     }
 
     /** Step Into: as {@link #stepOver}, one instruction (into a call) while the Disassembly view has the keyboard. */
     void stepInto() {
-        if (debugPanel != null && debugPanel.disassemblyView().hasFocus() && dapManager.supportsInstructionStepping()) {
-            dapManager.stepIntoInstruction();
+        if (debugPanel != null && debugPanel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
+            dap().stepIntoInstruction();
         } else {
-            dapManager.stepInto();
+            dap().stepInto();
         }
     }
 
     /** Debug: Step Over Instruction (and Into): one machine instruction, wherever the keyboard is. */
     void stepInstruction(boolean into) {
-        if (!dapManager.supportsInstructionStepping()) {
+        if (!dap().supportsInstructionStepping()) {
             host.setStatus(tr("status.debug.noInstructionStepping"));
             return;
         }
         if (into) {
-            dapManager.stepIntoInstruction();
+            dap().stepIntoInstruction();
         } else {
-            dapManager.stepOverInstruction();
+            dap().stepOverInstruction();
         }
     }
 
@@ -2836,30 +2792,30 @@ final class DebugCoordinator {
         }
         DebugPanel p = debugPanel;
         String area = p.shownArea();
-        if (dapManager.state() != DapManager.State.SUSPENDED) {
+        if (dap().state() != DapManager.State.SUSPENDED) {
             if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
                 p.disassemblyView().setMessage(tr("debugpanel.disassembly.idle"));
             }
             return;
         }
         if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
-            DapModels.StackFrameInfo frame = shownFrame;
+            DapModels.StackFrameInfo frame = s().shownFrame;
             String ip = frame == null ? null : frame.instructionPointer();
-            if (!dapManager.supportsDisassemble()) {
+            if (!dap().supportsDisassemble()) {
                 p.disassemblyView().setMessage(tr("debugpanel.disassembly.unsupported"));
             } else if (ip == null) {
                 p.disassemblyView().setMessage(tr("debugpanel.disassembly.noPointer"));
             } else {
-                dapManager.disassemble(ip, -DISASSEMBLY_BEFORE, DISASSEMBLY_COUNT, list -> {
-                    if (shownFrame == frame) {
+                dap().disassemble(ip, -DISASSEMBLY_BEFORE, DISASSEMBLY_COUNT, list -> {
+                    if (s().shownFrame == frame) {
                         p.disassemblyView().show(list, ip);
                     }
                 });
             }
         } else if (DebugPanel.AREA_MEMORY.equals(area)) {
-            if (!dapManager.supportsReadMemory()) {
+            if (!dap().supportsReadMemory()) {
                 p.memoryView().setMessage(tr("debugpanel.memory.unsupported"));
-            } else if (memoryReference != null) {
+            } else if (s().memoryReference != null) {
                 readMemory();
             }
         }
@@ -2871,45 +2827,45 @@ final class DebugCoordinator {
         if (text == null || text.isBlank()) {
             return;
         }
-        if (dapManager.state() != DapManager.State.SUSPENDED) {
+        if (dap().state() != DapManager.State.SUSPENDED) {
             view.setMessage(tr("debugpanel.memory.idle"));
             return;
         }
-        if (!dapManager.supportsReadMemory()) {
+        if (!dap().supportsReadMemory()) {
             view.setMessage(tr("debugpanel.memory.unsupported"));
             return;
         }
         String literal = DebugMemoryView.literalAddress(text);
         if (literal != null) {
-            memoryReference = literal;
-            memoryOffset = 0;
+            s().memoryReference = literal;
+            s().memoryOffset = 0;
             readMemory();
             return;
         }
-        dapManager.memoryReferenceOf(text, debugFrameId, ref -> {
+        dap().memoryReferenceOf(text, s().debugFrameId, ref -> {
             if (ref == null) {
                 view.setMessage(tr("debugpanel.memory.noAddress", text));
                 return;
             }
-            memoryReference = ref;
-            memoryOffset = 0;
+            s().memoryReference = ref;
+            s().memoryOffset = 0;
             readMemory();
         });
     }
 
     /** Reads a page at the Memory view's reference and offset into it. */
     private void readMemory() {
-        String ref = memoryReference;
+        String ref = s().memoryReference;
         if (ref == null || debugPanel == null) {
             return;
         }
         DebugMemoryView view = debugPanel.memoryView();
-        dapManager.readMemory(
-                ref,
-                memoryOffset,
-                DebugMemoryView.PAGE,
-                view::show,
-                why -> view.setMessage(tr("debugpanel.memory.failed", ref, why)));
+        dap().readMemory(
+                        ref,
+                        s().memoryOffset,
+                        DebugMemoryView.PAGE,
+                        view::show,
+                        why -> view.setMessage(tr("debugpanel.memory.failed", ref, why)));
     }
 
     /** Opens {@code file} at 0-based {@code line}: a double-clicked instruction's source line. */
@@ -2930,11 +2886,11 @@ final class DebugCoordinator {
             return;
         }
         if (!hasSource(frame)) {
-            if (frame.sourceUri() != null && dapManager.debugFile() != null) {
+            if (frame.sourceUri() != null && dap().debugFile() != null) {
                 // B5: a JDK or library class jdtls can supply the text of (java/classFileContents) — shown in its
                 // read-only library tab, as go-to-definition and the console's stack-trace links already do.
-                ops.openLibraryFrame(dapManager.debugFile(), frame.sourceUri(), frame.line(), lib -> {
-                    if (shownFrame == frame && dapManager.state() == DapManager.State.SUSPENDED) {
+                ops.openLibraryFrame(dap().debugFile(), frame.sourceUri(), frame.line(), lib -> {
+                    if (s().shownFrame == frame && dap().state() == DapManager.State.SUSPENDED) {
                         clearExecHighlight();
                         paintExecutionLine(lib, frame);
                     }
@@ -2964,20 +2920,8 @@ final class DebugCoordinator {
         }
     }
 
-    /** The id of the frame an exception stop threw in (its line is drawn red), or -1. */
-    private int exceptionFrameId = -1;
-
-    /** The exception of the stop shown, once the adapter has said which (else null). */
-    private DapModels.@Nullable ExceptionInfo stopException;
-
     /** The frame whose line the editor marks as the execution line, or null. */
     private DapModels.@Nullable StackFrameInfo paintedFrame;
-
-    /** Counts stops: the exception card opens by itself once per stop, and again only when asked. */
-    private int stopSerial;
-
-    /** The stop the exception card last opened by itself for. */
-    private int exceptionCardStop = -1;
 
     private @Nullable DebugExceptionCard exceptionCard;
 
@@ -2986,20 +2930,20 @@ final class DebugCoordinator {
      * which exception it is. By itself ({@code asked} false) only once per stop: closing it keeps it closed.
      */
     private void showExceptionCard(boolean asked) {
-        DapModels.ExceptionInfo info = stopException;
+        DapModels.ExceptionInfo info = s().stopException;
         DapModels.StackFrameInfo frame = paintedFrame;
         EditorBuffer b = execHighlightBuffer;
         if (info == null
                 || frame == null
                 || b == null
-                || frame.id() != exceptionFrameId
-                || dapManager.state() != DapManager.State.SUSPENDED) {
+                || frame.id() != s().exceptionFrameId
+                || dap().state() != DapManager.State.SUSPENDED) {
             return;
         }
-        if (!asked && exceptionCardStop == stopSerial) {
+        if (!asked && s().exceptionCardStop == s().stopSerial) {
             return;
         }
-        exceptionCardStop = stopSerial;
+        s().exceptionCardStop = s().stopSerial;
         if (exceptionCard == null) {
             exceptionCard = new DebugExceptionCard(new DebugExceptionCard.Actions(
                     () -> {
@@ -3030,17 +2974,17 @@ final class DebugCoordinator {
      * that threw when another one is shown.
      */
     void showException() {
-        if (stopException == null || dapManager.state() != DapManager.State.SUSPENDED) {
+        if (s().stopException == null || dap().state() != DapManager.State.SUSPENDED) {
             host.setStatus(tr("status.debug.noException"));
             return;
         }
         DapModels.StackFrameInfo frame = paintedFrame;
-        if (frame == null || frame.id() != exceptionFrameId) {
-            if (!panel().selectFrameById(exceptionFrameId)) {
+        if (frame == null || frame.id() != s().exceptionFrameId) {
+            if (!panel().selectFrameById(s().exceptionFrameId)) {
                 host.setStatus(tr("status.debug.noException"));
                 return;
             }
-            exceptionCardStop = -1; // the frame's paint opens it, once laid out
+            s().exceptionCardStop = -1; // the frame's paint opens it, once laid out
             return;
         }
         showExceptionCard(true);
@@ -3055,9 +2999,9 @@ final class DebugCoordinator {
                 // A narrowed buffer shows only its region: the frame's file line is region-relative
                 // there (a stop outside the region has no line to show and paints nothing).
                 b.setExecutionLine(frame.line() - b.getBreakpointManager().regionFirstLine());
-                b.setExecutionLineException(frame.id() == exceptionFrameId);
+                b.setExecutionLineException(frame.id() == s().exceptionFrameId);
                 paintedFrame = frame;
-                if (frame.id() == exceptionFrameId) {
+                if (frame.id() == s().exceptionFrameId) {
                     Platform.runLater(() -> showExceptionCard(false)); // once the line has been laid out
                 } else {
                     hideExceptionCard(); // another frame's line: the card belongs to the one that threw
@@ -3110,13 +3054,13 @@ final class DebugCoordinator {
         if (!clearToStart(b, true)) {
             return;
         }
-        startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
+        s().startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
         try {
             if (debugsTest(b)) {
                 return;
             }
         } finally {
-            startCleared = false;
+            s().startCleared = false;
         }
         launchBuffer(b);
     }
@@ -3130,11 +3074,8 @@ final class DebugCoordinator {
 
     /** Debug Test at the caret or from the editor menu: false when a live launch stays (said, or asked and kept). */
     boolean clearToDebugTest() {
-        return startCleared || clearToStart(host.activeBuffer(), false);
+        return s().startCleared || clearToStart(host.activeBuffer(), false);
     }
-
-    /** F5 is starting a test: its check has been made (see {@link #clearToDebugTest}). */
-    private boolean startCleared;
 
     /**
      * The one check every way to start goes through (review 3, C202–C204, A208, A209). A launch is live — or still
@@ -3148,21 +3089,21 @@ final class DebugCoordinator {
     private boolean clearToStart(@Nullable EditorBuffer b, boolean f5) {
         Path path = b == null ? null : b.getPath();
         boolean preparing = launchPreparing();
-        Path liveFile = preparing ? preparingFile() : dapManager.debugFile();
+        Path liveFile = preparing ? preparingFile() : dap().debugFile();
         boolean differentFile = path != null && !samePath(path, liveFile);
         boolean debuggable = b != null && path != null && debugEffectiveFor(b.getLanguage(), path);
-        boolean active = dapManager.isActive();
-        DapManager.State state = dapManager.state();
+        boolean active = dap().isActive();
+        DapManager.State state = dap().state();
         DebugStartChoice choice = f5
-                ? DebugStartChoice.of(active, state, dapManager.isStepping(), preparing, differentFile, debuggable)
+                ? DebugStartChoice.of(active, state, dap().isStepping(), preparing, differentFile, debuggable)
                 : DebugStartChoice.forFile(active, state, preparing, differentFile);
-        DebugStartChoice.Phase phase = DebugStartChoice.Phase.of(active, state, dapManager.isStepping(), preparing);
-        String label = preparing && pendingBuild == null && pendingAttachFile != null
-                ? String.valueOf(pendingAttachFile.getFileName())
-                : sessionLabel;
+        DebugStartChoice.Phase phase = DebugStartChoice.Phase.of(active, state, dap().isStepping(), preparing);
+        String label = preparing && s().pendingBuild == null && s().pendingAttachFile != null
+                ? String.valueOf(s().pendingAttachFile.getFileName())
+                : s().sessionLabel;
         switch (choice) {
             case CONTINUE -> {
-                dapManager.resume(); // F5-style continue
+                dap().resume(); // F5-style continue
                 return false;
             }
             case ALREADY_RUNNING -> {
@@ -3184,12 +3125,15 @@ final class DebugCoordinator {
 
     /** A launch is getting ready with no session yet: a jdtls build, a before-launch step, a test run's JVM. */
     private boolean launchPreparing() {
-        return !dapManager.isActive() && (pendingBuild != null || beforeLaunch.isActive() || pendingAttachStop != null);
+        return !dap().isActive()
+                && (s().pendingBuild != null || beforeLaunch.isActive() || s().pendingAttachStop != null);
     }
 
     /** The file the launch getting ready is for, when known. */
     private @Nullable Path preparingFile() {
-        return pendingBuild != null ? pendingBuildFile : pendingAttachStop != null ? pendingAttachFile : null;
+        return s().pendingBuild != null
+                ? s().pendingBuildFile
+                : s().pendingAttachStop != null ? s().pendingAttachFile : null;
     }
 
     /** A launch of {@code file} is live or getting ready. */
@@ -3197,7 +3141,7 @@ final class DebugCoordinator {
         if (launchPreparing()) {
             return samePath(file, preparingFile());
         }
-        return dapManager.state() != DapManager.State.INACTIVE && samePath(file, dapManager.debugFile());
+        return dap().state() != DapManager.State.INACTIVE && samePath(file, dap().debugFile());
     }
 
     /** Ends whatever launch is live or getting ready, for a launch of another file. */
@@ -3286,9 +3230,9 @@ final class DebugCoordinator {
         java.util.Map<String, Object> launch =
                 com.editora.dap.GoLaunch.launch(path, text, caret, module != null, args, java.util.Map.of(), false);
         nameSession(com.editora.dap.GoLaunch.sessionName(path, text, caret));
-        dapManager.setExternalPathDirs("go", goToolDirs(go));
+        dap().setExternalPathDirs("go", goToolDirs(go));
         Path built = module != null ? module : path.toAbsolutePath().getParent();
-        relaunch = () -> startGo(path, built, launch); // the same test again, wherever the caret is now
+        s().relaunch = () -> startGo(path, built, launch); // the same test again, wherever the caret is now
         startGo(path, built, launch);
     }
 
@@ -3298,7 +3242,7 @@ final class DebugCoordinator {
      */
     private void startGo(Path path, @Nullable Path built, java.util.Map<String, Object> launch) {
         saveBuffersUnder(built, "go");
-        withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.GO, launch));
+        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.GO, launch));
     }
 
     /** The folder of {@code go} (its argv) when it is a path, for Delve's PATH: Delve builds with the {@code go} found there. */
@@ -3338,7 +3282,7 @@ final class DebugCoordinator {
         com.editora.dap.RustLaunch.Plan plan =
                 com.editora.dap.RustLaunch.plan(root, path, b.getContent(), caretLine(b), hasProgram);
         nameSession(plan.sessionName());
-        relaunch = () -> startRust(path, root, cargo, plan, args); // the same test again, wherever the caret is now
+        s().relaunch = () -> startRust(path, root, cargo, plan, args); // the same test again, wherever the caret is now
         startRust(path, root, cargo, plan, args);
     }
 
@@ -3350,7 +3294,7 @@ final class DebugCoordinator {
     private void startRust(
             Path path, Path root, List<String> cargo, com.editora.dap.RustLaunch.Plan plan, List<String> args) {
         saveBuffersUnder(root, "rust");
-        if (beforeLaunch.isActive() || pendingBuild != null) {
+        if (beforeLaunch.isActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -3403,7 +3347,7 @@ final class DebugCoordinator {
         java.util.Map<String, Object> launch = com.editora.dap.RustLaunch.launch(
                 artifact.executable(), programArgs, root, java.util.Map.of(), false, terminal);
         ops.openToolWindow();
-        withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.RUST, launch));
+        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.RUST, launch));
     }
 
     /**
@@ -3430,7 +3374,7 @@ final class DebugCoordinator {
             }
         }
         nameSession(plan.sessionName());
-        relaunch = () -> startNative(path, plan, args);
+        s().relaunch = () -> startNative(path, plan, args);
         startNative(path, plan, args);
     }
 
@@ -3446,7 +3390,7 @@ final class DebugCoordinator {
     private void startNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args) {
         saveBuffersUnder(plan.root(), "c");
         saveBuffersUnder(plan.root(), "cpp");
-        if (beforeLaunch.isActive() || pendingBuild != null) {
+        if (beforeLaunch.isActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -3505,7 +3449,7 @@ final class DebugCoordinator {
                 com.editora.dap.DebugLanguage profile =
                         gdb ? com.editora.dap.DebugLanguages.GDB : com.editora.dap.DebugLanguages.CPP;
                 ops.openToolWindow();
-                withClosedBreakpoints(() -> dapManager.startExternal(path, profile, launch));
+                withClosedBreakpoints(() -> dap().startExternal(path, profile, launch));
             });
         });
     }
@@ -3526,7 +3470,7 @@ final class DebugCoordinator {
             return; // not trusted: nothing is built
         }
         nameSession(plan.sessionName());
-        relaunch = () -> startCsharp(path, plan, args);
+        s().relaunch = () -> startCsharp(path, plan, args);
         startCsharp(path, plan, args);
     }
 
@@ -3539,7 +3483,7 @@ final class DebugCoordinator {
     /** Saves the C# files under the project, builds it in the Debug console, then launches its assembly. */
     private void startCsharp(Path path, com.editora.dap.DotnetLaunch.Plan plan, List<String> args) {
         saveBuffersUnder(plan.root(), "csharp");
-        if (beforeLaunch.isActive() || pendingBuild != null) {
+        if (beforeLaunch.isActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -3581,7 +3525,7 @@ final class DebugCoordinator {
         }
         java.util.Map<String, Object> launch = com.editora.dap.DotnetLaunch.launch(assembly, args, plan.root());
         ops.openToolWindow();
-        withClosedBreakpoints(() -> dapManager.startExternal(path, com.editora.dap.DebugLanguages.CSHARP, launch));
+        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.CSHARP, launch));
     }
 
     /**
@@ -3592,16 +3536,16 @@ final class DebugCoordinator {
         Path cwd = path.toAbsolutePath().getParent();
         Path dir = cwd != null ? cwd : path.toAbsolutePath();
         Runnable start = "ruby".equals(language)
-                ? () -> withClosedBreakpoints(() -> dapManager.startExternal(
-                        path,
-                        com.editora.dap.DebugLanguages.RUBY,
-                        com.editora.dap.ScriptLaunch.rubyLaunch(path, args, dir),
-                        com.editora.dap.ScriptLaunch.rubyTail(path, args)))
-                : () -> withClosedBreakpoints(() -> dapManager.startExternal(
-                        path,
-                        com.editora.dap.DebugLanguages.PHP,
-                        com.editora.dap.ScriptLaunch.phpLaunch(path, args, dir)));
-        relaunch = start;
+                ? () -> withClosedBreakpoints(() -> dap().startExternal(
+                                path,
+                                com.editora.dap.DebugLanguages.RUBY,
+                                com.editora.dap.ScriptLaunch.rubyLaunch(path, args, dir),
+                                com.editora.dap.ScriptLaunch.rubyTail(path, args)))
+                : () -> withClosedBreakpoints(() -> dap().startExternal(
+                                path,
+                                com.editora.dap.DebugLanguages.PHP,
+                                com.editora.dap.ScriptLaunch.phpLaunch(path, args, dir)));
+        s().relaunch = start;
         start.run();
     }
 
@@ -3731,21 +3675,21 @@ final class DebugCoordinator {
         ops.openToolWindow();
         nameSession(path.getFileName().toString());
         // Said once it runs: "Saved …" or the last run's exit stood in the status bar while it was paused (choice 12).
-        announceStart = true;
-        dapManager.setProgramArgs(fileArgs);
-        dapManager.setVmArgs(""); // no user VM args on a plain debug
-        dapManager.setHostJavaExec("");
+        s().announceStart = true;
+        dap().setProgramArgs(fileArgs);
+        dap().setVmArgs(""); // no user VM args on a plain debug
+        dap().setHostJavaExec("");
         if (b.isPython()) {
             planPython(path, firstLine(b.getContent()));
         }
-        dapManager.setJsProjectRoot(ops.projectRoot()); // a JavaScript file's Node.js, package root, workspace
-        dapManager.setJsNodeArgs(nodeArgs);
-        dapManager.setJsProgram(null); // the file itself, not a configuration's planned launch
+        dap().setJsProjectRoot(ops.projectRoot()); // a JavaScript file's Node.js, package root, workspace
+        dap().setJsNodeArgs(nodeArgs);
+        dap().setJsProgram(null); // the file itself, not a configuration's planned launch
         if ("javascript".equals(language) && com.editora.process.ExecTargets.runsHere(path)) {
             // Planned exactly as Run plans it (review D104, D106): the same Node.js, flags, environment and
             // folder — and for a TypeScript file whatever Run runs for it (tsx, or the compiled file).
             Path launchedJs = path;
-            relaunch = () -> relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
+            s().relaunch = () -> relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
             debugJsFile(path, fileArgs, nodeArgs);
             return;
         }
@@ -3809,10 +3753,10 @@ final class DebugCoordinator {
         String javaExec = java && projectRoot == null && com.editora.process.ExecTargets.runsHere(path)
                 ? looseJava(selectedJava)
                 : selectedJava;
-        dapManager.setEnv(
-                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
+        dap().setEnv(com.editora.run.JdkToolchain.environment(
+                jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         Path launched = path;
-        relaunch = () -> relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
+        s().relaunch = () -> relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
         if ("kotlin".equals(language)
                 && com.editora.run.KotlinRun.shape(launched.getFileName().toString())
                         == com.editora.run.KotlinRun.Shape.PROGRAM) {
@@ -3832,13 +3776,13 @@ final class DebugCoordinator {
                 return;
             }
             if (compactSource && shebangSource != null) {
-                dapManager.startCompactShebang(file, shebangSource, javaExec);
+                dap().startCompactShebang(file, shebangSource, javaExec);
             } else if (compactSource && file.getFileName().toString().endsWith(".java")) {
-                dapManager.startCompactSource(file, javaExec);
+                dap().startCompactSource(file, javaExec);
             } else if (java) {
-                dapManager.startLaunch(file, this::pickMainClass, javaExec, projectRoot, looseCwd);
+                dap().startLaunch(file, this::pickMainClass, javaExec, projectRoot, looseCwd);
             } else {
-                dapManager.startLaunch(file, language, this::pickMainClass, javaExec, projectRoot);
+                dap().startLaunch(file, language, this::pickMainClass, javaExec, projectRoot);
             }
         });
         if (projectRoot != null && !compactSource) {
@@ -3864,7 +3808,7 @@ final class DebugCoordinator {
         String said = tr("debug.console.defaultJdkMissing", home.strip());
         panel().clearConsole(); // this launch's console: kept when its session starts
         panel().appendNotice(said);
-        consoleStarted = true;
+        s().consoleStarted = true;
         host.setStatus(said);
         return "";
     }
@@ -3890,15 +3834,15 @@ final class DebugCoordinator {
     private void looseBuildThenLaunch(Path routing, Runnable launch) {
         lsp.ensureManaged(routing);
         Object token = new Object();
-        pendingBuild = token;
+        s().pendingBuild = token;
         showPreparing(routing); // from the first moment: the source-folder step can wait seconds on jdtls (C203)
         com.editora.dap.JavaSourceRootFix.correct(
                 lspManager,
                 routing,
                 com.editora.dap.JavaSourceRootFix.declaredPackage(readQuietly(routing)),
-                () -> pendingBuild == token,
+                () -> s().pendingBuild == token,
                 fixed -> {
-                    if (pendingBuild == token) {
+                    if (s().pendingBuild == token) {
                         buildThenLaunch(routing, launch, true);
                     }
                 });
@@ -3909,8 +3853,8 @@ final class DebugCoordinator {
      * it and the spinner, and F5 there says the launch is still starting (review 3, C203, C204).
      */
     private void showPreparing(Path routing) {
-        boolean shown = pendingBuildFile != null && samePath(pendingBuildFile, routing);
-        pendingBuildFile = routing;
+        boolean shown = s().pendingBuildFile != null && samePath(s().pendingBuildFile, routing);
+        s().pendingBuildFile = routing;
         ops.openToolWindow();
         panel().setPreparing(true);
         ops.setStatusDebugLoading(true);
@@ -3920,19 +3864,13 @@ final class DebugCoordinator {
         }
     }
 
-    /** The build before a project launch in flight; replaced or cleared to drop its result (Stop). */
-    private @Nullable Object pendingBuild;
-
-    /** The file {@link #pendingBuild}'s launch is for. */
-    private @Nullable Path pendingBuildFile;
-
     /** Drops the build before a launch, if one is running: it finishes on its own, but nothing is launched. */
     private void dropPendingBuild() {
-        if (pendingBuild == null) {
+        if (s().pendingBuild == null) {
             return;
         }
-        pendingBuild = null;
-        pendingBuildFile = null;
+        s().pendingBuild = null;
+        s().pendingBuildFile = null;
         panel().setPreparing(false);
         ops.setStatusDebugLoading(false);
         updateDebugAvailability();
@@ -3982,15 +3920,15 @@ final class DebugCoordinator {
     /** As above; {@code loose}: a file without a build tool, whose launch is told whether its build succeeded. */
     private void buildThenLaunch(Path routing, Runnable launch, boolean loose) {
         Object token = new Object();
-        pendingBuild = token;
+        s().pendingBuild = token;
         lsp.ensureManaged(routing);
         showPreparing(routing);
         lspManager.buildJavaWorkspaceForLaunch(routing, result -> {
-            if (pendingBuild != token) {
+            if (s().pendingBuild != token) {
                 return; // stopped, or replaced by another launch
             }
-            pendingBuild = null;
-            pendingBuildFile = null;
+            s().pendingBuild = null;
+            s().pendingBuildFile = null;
             panel().setPreparing(false);
             ops.setStatusDebugLoading(false);
             JavaLaunchPrep.AfterBuild next = JavaLaunchPrep.afterBuild(result.outcome(), loose);
@@ -3999,7 +3937,7 @@ final class DebugCoordinator {
                 return;
             }
             if (loose) { // without jdtls's output, javac compiles it from its declared source root (review 3, A201)
-                dapManager.setLooseClassesBuilt(next == JavaLaunchPrep.AfterBuild.LAUNCH_BUILT);
+                dap().setLooseClassesBuilt(next == JavaLaunchPrep.AfterBuild.LAUNCH_BUILT);
             }
             launch.run();
         });
@@ -4028,7 +3966,7 @@ final class DebugCoordinator {
             return;
         }
         panel().clearConsole();
-        consoleStarted = false;
+        s().consoleStarted = false;
         List<String> lines = JavaLaunchPrep.javaErrorLines(found, scope, ops.projectRoot(), MAX_BUILD_ERROR_LINES);
         for (String line : lines) {
             panel().appendOutput(line + "\n", "stderr");
@@ -4107,7 +4045,7 @@ final class DebugCoordinator {
         if (!lsp.isServerAvailable("java")) {
             return tr("status.debug.jdtlsMissing");
         }
-        if (!dapManager.isAdapterAvailable()) {
+        if (!dap().isAdapterAvailable()) {
             return tr("status.debug.javaDebugMissing");
         }
         return tr("status.debug.unavailable");
@@ -4198,14 +4136,14 @@ final class DebugCoordinator {
         List<String> fallback = unittestIds == null ? List.of() : unittestIds;
         ops.openToolWindow();
         nameSession(label);
-        dapManager.setProgramArgs(List.of());
+        dap().setProgramArgs(List.of());
         planPython(anchor, open == null ? null : firstLine(open.getContent()));
-        relaunch = () -> debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
+        s().relaunch = () -> debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
         withClosedBreakpoints(() -> {
             if (pytestIds == null || pytestIds.isEmpty()) {
-                dapManager.startPythonModule(anchor, "unittest", fallback, cwd);
+                dap().startPythonModule(anchor, "unittest", fallback, cwd);
             } else {
-                dapManager.startPythonTest(anchor, pytestIds, fallback, cwd);
+                dap().startPythonTest(anchor, pytestIds, fallback, cwd);
             }
         });
     }
@@ -4218,16 +4156,16 @@ final class DebugCoordinator {
      */
     private void planPython(Path file, @Nullable String firstLine) {
         Path dir = file.getParent() == null ? file : file.getParent();
-        dapManager.setPythonPlan(
-                com.editora.run.PythonRunPlan.Request.file(
-                        file,
-                        pythonRootOf(file),
-                        com.editora.process.ExecTargets.forPath(file).toTargetPath(file),
-                        List.of(),
-                        firstLine,
-                        ops.pythonInterpreterChoice(),
-                        PythonRunLauncher.setting(dir, host.settings())),
-                PythonRunLauncher.hostFor(dir));
+        dap().setPythonPlan(
+                        com.editora.run.PythonRunPlan.Request.file(
+                                file,
+                                pythonRootOf(file),
+                                com.editora.process.ExecTargets.forPath(file).toTargetPath(file),
+                                List.of(),
+                                firstLine,
+                                ops.pythonInterpreterChoice(),
+                                PythonRunLauncher.setting(dir, host.settings())),
+                        PythonRunLauncher.hostFor(dir));
     }
 
     private static @Nullable String firstLine(String text) {
@@ -4285,7 +4223,7 @@ final class DebugCoordinator {
         if (b != null) {
             launch.accept(b);
         } else {
-            dapManager.restart();
+            dap().restart();
         }
     }
 
@@ -4389,19 +4327,19 @@ final class DebugCoordinator {
         // dispatch — because those guards reject a configuration that cannot launch at all (a script type, a
         // blank main class), and spending a multi-minute build on one before saying so is worse than not
         // building.
-        if (beforeLaunch.isActive() || pendingBuild != null) {
+        if (beforeLaunch.isActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
         // Restart reads the configuration again: an edit made since the first launch applies (review A14).
         String name = cfg.name();
-        relaunch = () -> debugConfig(currentConfiguration(name, cfg));
+        s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
         boolean plainFolder = buildRoot == null;
         Runnable launch = () -> {
             // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
             // resolve below comes back "no language server for file" while jdtls is running perfectly.
             lsp.ensureManaged(routing);
-            dapManager.resolveMainClasses(routing, options -> {
+            dap().resolveMainClasses(routing, options -> {
                 DapManager.MainClassOption match = matchConfiguredClass(options, cfg.mainClass(), plainFolder);
                 if (match == null) {
                     host.setStatus(
@@ -4412,15 +4350,14 @@ final class DebugCoordinator {
                 }
                 ops.openToolWindow();
                 nameSession(shortName(match.mainClass()));
-                dapManager.setProgramArgs(plan.args());
-                dapManager.setVmArgs(plan.vmArgs());
-                dapManager.setEnv(plan.environment());
+                dap().setProgramArgs(plan.args());
+                dap().setVmArgs(plan.vmArgs());
+                dap().setEnv(plan.environment());
                 // On a remote host the plan names the host's configured JDK, as Run uses it (review D9).
                 boolean onHost = !com.editora.process.ExecTargets.runsHere(routing);
-                dapManager.setHostJavaExec(onHost ? plan.javaExecutable() : "");
+                dap().setHostJavaExec(onHost ? plan.javaExecutable() : "");
                 String java = onHost ? "" : plainFolder ? looseJava(plan.javaExecutable()) : plan.javaExecutable();
-                withClosedBreakpoints(
-                        () -> dapManager.startLaunchMainClass(routing, match, plan.cwd(), java, plainFolder));
+                withClosedBreakpoints(() -> dap().startLaunchMainClass(routing, match, plan.cwd(), java, plainFolder));
             });
         };
         // A before-launch step builds the project the user's way, in the project root (review A12); without
@@ -4541,7 +4478,7 @@ final class DebugCoordinator {
             ops.editConfiguration(cfg.name());
             return;
         }
-        if (beforeLaunch.isActive() || pendingBuild != null) {
+        if (beforeLaunch.isActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -4568,7 +4505,7 @@ final class DebugCoordinator {
         Path folder =
                 cfg.workingDir().isBlank() && com.editora.run.ScriptRunCommand.CLOJURE.equals(cfg.type()) ? null : cwd;
         String name = cfg.name();
-        relaunch = () -> debugConfig(currentConfiguration(name, cfg));
+        s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
         beforeLaunch.run(
                 host,
                 cfg,
@@ -4578,20 +4515,20 @@ final class DebugCoordinator {
                 () -> {
                     ops.openToolWindow();
                     nameSession(cfg.name());
-                    dapManager.setProgramArgs(args);
+                    dap().setProgramArgs(args);
                     if (program || com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(cfg.type())) {
                         // `java` (a Kotlin program) and Scala CLI take VM arguments on their command line.
-                        dapManager.setVmArgs(com.editora.run.ProgramArgs.tokenize(cfg.vmArgs()));
+                        dap().setVmArgs(com.editora.run.ProgramArgs.tokenize(cfg.vmArgs()));
                     } else {
-                        dapManager.setVmArgs(cfg.vmArgs().strip()); // placed where the tool reads them (JvmScriptRun)
+                        dap().setVmArgs(cfg.vmArgs().strip()); // placed where the tool reads them (JvmScriptRun)
                     }
-                    dapManager.setHostJavaExec("");
-                    dapManager.setEnv(programEnv);
+                    dap().setHostJavaExec("");
+                    dap().setEnv(programEnv);
                     if (program) {
                         debugKotlinProgram(
                                 script, cwd, com.editora.run.JdkToolchain.javaExecutable(jdkHome), programEnv);
                     } else {
-                        withClosedBreakpoints(() -> dapManager.startJvmScript(script, cfg.type(), folder));
+                        withClosedBreakpoints(() -> dap().startJvmScript(script, cfg.type(), folder));
                     }
                 });
     }
@@ -4618,13 +4555,13 @@ final class DebugCoordinator {
         String javaExec = java == null || java.isBlank() ? "java" : java;
         Runnable start = () -> {
             ops.openToolWindow();
-            withClosedBreakpoints(() -> dapManager.startJvmProgram(source, "kotlin", cwd, plan.jar(), javaExec));
+            withClosedBreakpoints(() -> dap().startJvmProgram(source, "kotlin", cwd, plan.jar(), javaExec));
         };
         if (plan.compile().isEmpty()) {
             start.run();
             return;
         }
-        if (beforeLaunch.isActive() || pendingBuild != null) {
+        if (beforeLaunch.isActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -4725,7 +4662,7 @@ final class DebugCoordinator {
             return;
         }
         boolean plainFolder = buildRoot == null;
-        dapManager.resolveMainClasses(routing, options -> {
+        dap().resolveMainClasses(routing, options -> {
             if (options.isEmpty()) {
                 host.setStatus(tr("status.debug.noMainClass"));
                 return;
@@ -4748,15 +4685,15 @@ final class DebugCoordinator {
                 }
                 ops.openToolWindow();
                 nameSession(shortName(opt.mainClass()));
-                dapManager.setProgramArgs(mainArgs);
-                dapManager.setVmArgs(""); // the gutter/command debug carries no VM args/env
-                dapManager.setHostJavaExec("");
-                dapManager.setEnv(configuredJdkEnvironment(buildRoot, null));
+                dap().setProgramArgs(mainArgs);
+                dap().setVmArgs(""); // the gutter/command debug carries no VM args/env
+                dap().setHostJavaExec("");
+                dap().setEnv(configuredJdkEnvironment(buildRoot, null));
                 lsp.ensureManaged(routing); // see above
-                relaunch = () -> relaunchFor(routing, again -> startMainClassDebug(again, opt.className()));
+                s().relaunch = () -> relaunchFor(routing, again -> startMainClassDebug(again, opt.className()));
                 String javaExec = configuredJavaExecutable(buildRoot, null);
                 Runnable go = () -> withClosedBreakpoints(
-                        () -> dapManager.startLaunchMainClass(routing, opt, root, javaExec, plainFolder));
+                        () -> dap().startLaunchMainClass(routing, opt, root, javaExec, plainFolder));
                 if (plainFolder) {
                     looseBuildThenLaunch(routing, go); // built like a loose file (review 2, A101)
                 } else {
@@ -4842,7 +4779,7 @@ final class DebugCoordinator {
     /** Resumes and stops at the active buffer's caret line via a one-shot temporary breakpoint. */
     void debugRunToCursor() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || dapManager.state() != DapManager.State.SUSPENDED) {
+        if (b == null || b.getPath() == null || dap().state() != DapManager.State.SUSPENDED) {
             return;
         }
         int line = lineMap(b).toLaunched(fileLineAtCaret(b));
@@ -4850,7 +4787,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.lineAddedSinceLaunch"));
             return;
         }
-        dapManager.runToCursor(b.getPath(), line);
+        dap().runToCursor(b.getPath(), line);
     }
 
     /** Debug: Show Numbers as Hexadecimal — on or off, in Variables, watches, hover and inline values. */
@@ -4861,7 +4798,7 @@ final class DebugCoordinator {
     /** Debug: Force Run to Cursor — Run to Cursor with every breakpoint on the way ignored. */
     void debugForceRunToCursor() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || dapManager.state() != DapManager.State.SUSPENDED) {
+        if (b == null || b.getPath() == null || dap().state() != DapManager.State.SUSPENDED) {
             return;
         }
         int line = lineMap(b).toLaunched(fileLineAtCaret(b));
@@ -4869,17 +4806,17 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.lineAddedSinceLaunch"));
             return;
         }
-        dapManager.forceRunToCursor(b.getPath(), line);
+        dap().forceRunToCursor(b.getPath(), line);
     }
 
     /** Jump to Line: move the execution pointer to the caret line without executing in-between code.
      *  Capability-gated — debugpy supports it; java-debug/js-debug report "not supported". */
     void debugJumpToLine() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || dapManager.state() != DapManager.State.SUSPENDED) {
+        if (b == null || b.getPath() == null || dap().state() != DapManager.State.SUSPENDED) {
             return;
         }
-        if (!dapManager.supportsJumpToLine()) {
+        if (!dap().supportsJumpToLine()) {
             host.setStatus(tr("status.debug.jumpUnsupported"));
             return;
         }
@@ -4888,8 +4825,10 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.lineAddedSinceLaunch"));
             return;
         }
-        dapManager.jumpToLine(
-                b.getPath(), line, err -> host.setStatus(err.isEmpty() ? tr("status.debug.jumpNoTarget") : err));
+        dap().jumpToLine(
+                        b.getPath(),
+                        line,
+                        err -> host.setStatus(err.isEmpty() ? tr("status.debug.jumpNoTarget") : err));
     }
 
     /** The caret's line in the whole file (a narrowed buffer's paragraphs are region-relative). */
@@ -4907,9 +4846,6 @@ final class DebugCoordinator {
         attachToPort(anchorFile, attachHost, port, null);
     }
 
-    /** The test or build run that started the JVM of the attached session; Stop ends it too (review A4). */
-    private @Nullable Runnable ownerStop;
-
     /**
      * JVMs of the same run that printed their banner while one of them was being debugged (several surefire
      * forks, a multi-module build), attached in turn as each session ends (review D11). Each waits suspended.
@@ -4922,16 +4858,16 @@ final class DebugCoordinator {
      * the test or app running on (review A4).
      */
     void attachToPort(Path anchorFile, String attachHost, int port, @Nullable Runnable stopOwner) {
-        if (relaunch == ONE_SHOT_ATTACH && dapManager.isActive()) {
+        if (s().relaunch == ONE_SHOT_ATTACH && dap().isActive()) {
             queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
             host.setStatus(tr("status.debug.attachQueued", port));
             return;
         }
-        if (pendingAttachStop != null) {
+        if (s().pendingAttachStop != null) {
             setPendingAttach(null); // the wait is over: from here Stop goes through the session (ownerStop)
         }
-        ownerStop = stopOwner;
-        announceStart = stopOwner != null; // "Attaching the debugger on port …" would outlive it (review 2, A105)
+        s().ownerStop = stopOwner;
+        s().announceStart = stopOwner != null; // "Attaching the debugger on port …" would outlive it (review 2, A105)
         String jvmLanguage = jvmAdapterLanguage(anchorFile);
         if (jvmLanguage != null) {
             // A Kotlin (or Groovy) program of a build: Editora's JVM adapter, which binds by source name.
@@ -4941,8 +4877,8 @@ final class DebugCoordinator {
             }
             ops.openToolWindow();
             nameSession(anchorFile.getFileName().toString());
-            relaunch = ONE_SHOT_ATTACH;
-            withClosedBreakpoints(() -> dapManager.startJvmAttach(anchorFile, jvmLanguage, attachHost, port));
+            s().relaunch = ONE_SHOT_ATTACH;
+            withClosedBreakpoints(() -> dap().startJvmAttach(anchorFile, jvmLanguage, attachHost, port));
             return;
         }
         // On a remote anchor's host the adapter attaches from there: "localhost" is the host itself.
@@ -4956,8 +4892,8 @@ final class DebugCoordinator {
         // document it has open: a test class found on disk (Debug Test with no tab for it) has no session.
         Path routing = attachRouting(anchorFile);
         lsp.ensureManaged(routing); // an open tab whose server start was deferred
-        relaunch = ONE_SHOT_ATTACH; // the run that owns this JVM has to be started again instead
-        withClosedBreakpoints(() -> dapManager.startAttach(routing, attachHost, port));
+        s().relaunch = ONE_SHOT_ATTACH; // the run that owns this JVM has to be started again instead
+        withClosedBreakpoints(() -> dap().startAttach(routing, attachHost, port));
     }
 
     /** The open Java file an attach anchored at {@code anchor} is routed through — see {@link #attachRouting}. */
@@ -5187,9 +5123,14 @@ final class DebugCoordinator {
                 String label = t.name() + " (" + t.pid() + ")";
                 ops.openToolWindow();
                 nameSession(label);
-                relaunch = null; // an attach is re-attached as it was
-                withClosedBreakpoints(() -> dapManager.startJsAttach(
-                        t.host(), t.port(), label, dir, List.of(com.editora.dap.JsLaunch.NODE_INTERNALS), false));
+                s().relaunch = null; // an attach is re-attached as it was
+                withClosedBreakpoints(() -> dap().startJsAttach(
+                                t.host(),
+                                t.port(),
+                                label,
+                                dir,
+                                List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
+                                false));
             }
             case PYTHON -> {
                 if (!debugSupportEnabled()) {
@@ -5202,8 +5143,8 @@ final class DebugCoordinator {
                 Path anchor = active != null ? active : root != null ? root : Path.of(System.getProperty("user.home"));
                 ops.openToolWindow();
                 nameSession(t.name() + " (" + t.pid() + ")");
-                relaunch = null;
-                withClosedBreakpoints(() -> dapManager.startPythonAttach(anchor, t.host(), t.port()));
+                s().relaunch = null;
+                withClosedBreakpoints(() -> dap().startPythonAttach(anchor, t.host(), t.port()));
             }
             case GO -> attachToGo(t.pid(), t.name());
             case RUST -> attachToNative(t.pid(), t.name(), com.editora.dap.DebugLanguages.RUST);
@@ -5227,8 +5168,8 @@ final class DebugCoordinator {
         java.util.Map<String, Object> attach = com.editora.dap.NativeBuild.attach(pid, language.id());
         ops.openToolWindow();
         nameSession(name + " (" + pid + ")");
-        Runnable start = () -> withClosedBreakpoints(() -> dapManager.startExternal(anchor, language, attach));
-        relaunch = start; // attaches again
+        Runnable start = () -> withClosedBreakpoints(() -> dap().startExternal(anchor, language, attach));
+        s().relaunch = start; // attaches again
         start.run();
     }
 
@@ -5248,9 +5189,9 @@ final class DebugCoordinator {
         java.util.Map<String, Object> attach = com.editora.dap.GoLaunch.attach(pid);
         ops.openToolWindow();
         nameSession(name + " (" + pid + ")");
-        Runnable start = () -> withClosedBreakpoints(
-                () -> dapManager.startExternal(anchor, com.editora.dap.DebugLanguages.GO, attach));
-        relaunch = start; // attaches again
+        Runnable start = () ->
+                withClosedBreakpoints(() -> dap().startExternal(anchor, com.editora.dap.DebugLanguages.GO, attach));
+        s().relaunch = start; // attaches again
         start.run();
     }
 
@@ -5335,11 +5276,11 @@ final class DebugCoordinator {
         ops.openToolWindow();
         nameSession(file.getFileName().toString());
         String attachHost = hostName;
-        relaunch = null; // an attach is re-attached as it was
+        s().relaunch = null; // an attach is re-attached as it was
         if (jvmLanguage != null) {
-            withClosedBreakpoints(() -> dapManager.startJvmAttach(file, jvmLanguage, attachHost, port));
+            withClosedBreakpoints(() -> dap().startJvmAttach(file, jvmLanguage, attachHost, port));
         } else {
-            withClosedBreakpoints(() -> dapManager.startAttach(file, attachHost, port));
+            withClosedBreakpoints(() -> dap().startAttach(file, attachHost, port));
         }
     }
 
@@ -5368,14 +5309,14 @@ final class DebugCoordinator {
                     Path dir = b.getPath() != null ? b.getPath().getParent() : ops.projectRoot();
                     ops.openToolWindow();
                     nameSession(label);
-                    relaunch = null; // an attach is re-attached as it was
-                    withClosedBreakpoints(() -> dapManager.startJsAttach(
-                            address.get().host(),
-                            address.get().port(),
-                            label,
-                            dir,
-                            List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
-                            false));
+                    s().relaunch = null; // an attach is re-attached as it was
+                    withClosedBreakpoints(() -> dap().startJsAttach(
+                                    address.get().host(),
+                                    address.get().port(),
+                                    label,
+                                    dir,
+                                    List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
+                                    false));
                 });
     }
 
@@ -5428,7 +5369,7 @@ final class DebugCoordinator {
             ops.editConfiguration(name);
             return;
         }
-        relaunch = () -> debugConfig(currentConfiguration(name, cfg));
+        s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
         if (com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
             if (!trusted(com.editora.run.RunTrust.npm(cwd))) {
                 return; // a package script runs its pre/post hooks: npm's workspace-trust gate, as Run asks it
@@ -5516,14 +5457,13 @@ final class DebugCoordinator {
                             ready.plan().argv(), file.toString(), ready.plan().env(), ready.dir());
                     if (program == null || !NodeDebugConfigs.debuggableRuntime(program.runtime())) {
                         withClosedBreakpoints(
-                                () -> dapManager.startLaunch(file, "javascript", this::pickMainClass, "", null));
+                                () -> dap().startLaunch(file, "javascript", this::pickMainClass, "", null));
                         return;
                     }
-                    dapManager.setProgramArgs(List.of());
-                    dapManager.setJsNodeArgs(List.of());
-                    dapManager.setJsProgram(program);
-                    withClosedBreakpoints(
-                            () -> dapManager.startLaunch(file, "javascript", this::pickMainClass, "", null));
+                    dap().setProgramArgs(List.of());
+                    dap().setJsNodeArgs(List.of());
+                    dap().setJsProgram(program);
+                    withClosedBreakpoints(() -> dap().startLaunch(file, "javascript", this::pickMainClass, "", null));
                 });
     }
 
@@ -5534,11 +5474,11 @@ final class DebugCoordinator {
         }
         ops.openToolWindow();
         nameSession(label);
-        dapManager.setProgramArgs(List.of());
-        dapManager.setJsNodeArgs(List.of());
-        dapManager.setJsProjectRoot(ops.projectRoot());
-        dapManager.setJsProgram(program);
-        withClosedBreakpoints(() -> dapManager.startLaunch(anchor, "javascript", this::pickMainClass, "", null));
+        dap().setProgramArgs(List.of());
+        dap().setJsNodeArgs(List.of());
+        dap().setJsProjectRoot(ops.projectRoot());
+        dap().setJsProgram(program);
+        withClosedBreakpoints(() -> dap().startLaunch(anchor, "javascript", this::pickMainClass, "", null));
     }
 
     /** Main-class chooser (QuickOpen) when jdtls finds several. */
@@ -5739,7 +5679,7 @@ final class DebugCoordinator {
     void toggleExceptionBreakpoints() {
         String language = exceptionLanguage();
         List<DapModels.ExceptionFilterOption> options =
-                language == null ? List.of() : dapManager.exceptionFilterOptions(language);
+                language == null ? List.of() : dap().exceptionFilterOptions(language);
         if (language == null || options.isEmpty()) {
             host.setStatus(tr("status.debug.exceptionsNoLanguage"));
             return;
@@ -5761,25 +5701,25 @@ final class DebugCoordinator {
 
     /** A picker row: the filter's label, marked when it is on for {@code language}. */
     String exceptionRow(String language, DapModels.ExceptionFilterOption o) {
-        return (dapManager.exceptionFiltersFor(language).contains(o.filter()) ? "✓ " : "    ")
+        return (dap().exceptionFiltersFor(language).contains(o.filter()) ? "✓ " : "    ")
                 + com.editora.dap.ExceptionFilterCatalog.displayLabel(o);
     }
 
     /** Turns {@code language}'s exception filter {@code filter} on or off (the picker's choice), and says so. */
     void toggleExceptionFilter(String language, @Nullable String filter) {
         restoreExceptionFilters();
-        List<DapModels.ExceptionFilterOption> options = dapManager.exceptionFilterOptions(language);
-        List<String> next = toggledFilter(dapManager.exceptionFiltersFor(language), filter, options);
-        dapManager.setExceptionFilters(language, next);
-        ops.persistDebugExceptionFilters(dapManager.exceptionChoices()); // C12: kept across restarts, per project
+        List<DapModels.ExceptionFilterOption> options = dap().exceptionFilterOptions(language);
+        List<String> next = toggledFilter(dap().exceptionFiltersFor(language), filter, options);
+        dap().setExceptionFilters(language, next);
+        ops.persistDebugExceptionFilters(dap().exceptionChoices()); // C12: kept across restarts, per project
         refreshExceptionToggles();
         host.setStatus(exceptionStatus(language, next, options));
     }
 
     /** The adapter language the exception picker is about: the live session's, else the active file's. */
     private @Nullable String exceptionLanguage() {
-        if (dapManager.isActive()) {
-            return dapManager.sessionLanguage();
+        if (dap().isActive()) {
+            return dap().sessionLanguage();
         }
         EditorBuffer b = host.activeBuffer();
         String language = b == null ? null : b.getLanguage();
@@ -5801,12 +5741,12 @@ final class DebugCoordinator {
         exceptionFiltersRestored = true;
         ops.debugExceptionFilters().forEach((language, filters) -> {
             if (language != null && filters != null) {
-                dapManager.setExceptionFilters(language, filters);
+                dap().setExceptionFilters(language, filters);
             }
         });
         if (ops.debugBreakpointsMuted() && !breakpointsMuted) {
             breakpointsMuted = true; // Mute Breakpoints is kept per project, like the exception choices
-            dapManager.setExceptionsMuted(true);
+            dap().setExceptionsMuted(true);
             showBreakpointsMuted();
         }
         memberBreakpoints.push(); // the method breakpoints and field watchpoints this project keeps
@@ -5830,7 +5770,7 @@ final class DebugCoordinator {
         String filter = caught
                 ? com.editora.dap.ExceptionFilterCatalog.caughtFilter(language)
                 : com.editora.dap.ExceptionFilterCatalog.uncaughtFilter(language);
-        return filter != null && dapManager.exceptionFiltersFor(language).contains(filter);
+        return filter != null && dap().exceptionFiltersFor(language).contains(filter);
     }
 
     /** The Caught or Uncaught toggle (commands {@code debug.exceptions.caught} / {@code .uncaught}, panel). */
@@ -5921,7 +5861,7 @@ final class DebugCoordinator {
         });
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
-        buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));
+        buffer.setDebugHoverEvaluator((expr, cb) -> dap().evaluateHover(expr, s().debugFrameId, cb));
         buffer.setDebugValuePresenter(valuePopup()); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
         // Through F5's check: a live launch of another file is replaced only after asking (review 3, C202).
@@ -5952,7 +5892,7 @@ final class DebugCoordinator {
      * to end — see {@link DapManager#setProgramConsole}.
      */
     void endProgramInput() {
-        if (dapManager.closeProgramInput()) {
+        if (dap().closeProgramInput()) {
             panel().showInputEnded();
         } else {
             host.setStatus(tr("status.debug.noProgramInput"));
@@ -5969,17 +5909,6 @@ final class DebugCoordinator {
     }
 
     // --- Java code changes and frame control: hot code replace, restart frame, smart step into -----------
-
-    /** An Apply Code Changes is building or replacing; a save meanwhile is folded into one more round. */
-    private boolean codeReplaceRunning;
-    /** Bumped when a session starts or ends: the answer of a replace begun before is not this session's. */
-    private long codeReplaceSession;
-    /** Another save arrived during {@link #codeReplaceRunning}: apply once more when it ends. */
-    private @Nullable Path codeReplaceAgain;
-    /** Java files saved since the running code last matched them (re-baselined by a successful replace). */
-    private final Set<Path> savedSinceReplace = new LinkedHashSet<>();
-    /** java-debug's last ERROR notice, so a failed replace does not print the same reason twice. */
-    private String lastCodeReplaceError = "";
 
     private DapManager.CodeReplaceMode codeReplaceMode() {
         return DapManager.CodeReplaceMode.of(host.settings().getDebugHotCodeReplace());
@@ -6001,10 +5930,10 @@ final class DebugCoordinator {
      */
     void sourceSaved(EditorBuffer buffer) {
         Path file = buffer == null ? null : buffer.getPath();
-        if (!isJavaSource(file) || !dapManager.canReplaceCode()) {
+        if (!isJavaSource(file) || !dap().canReplaceCode()) {
             return;
         }
-        savedSinceReplace.add(file);
+        s().savedSinceReplace.add(file);
         switch (codeReplaceMode()) {
             case AUTO -> requestCodeReplace(file, false);
             case MANUAL -> host.setStatus(tr("debug.hcr.manualHint"));
@@ -6023,11 +5952,11 @@ final class DebugCoordinator {
         if (state != DapManager.State.STARTING && state != DapManager.State.INACTIVE) {
             return;
         }
-        codeReplaceSession++;
-        codeReplaceRunning = false;
-        codeReplaceAgain = null;
-        savedSinceReplace.clear();
-        lastCodeReplaceError = "";
+        s().codeReplaceSession++;
+        s().codeReplaceRunning = false;
+        s().codeReplaceAgain = null;
+        s().savedSinceReplace.clear();
+        s().lastCodeReplaceError = "";
     }
 
     /**
@@ -6035,7 +5964,7 @@ final class DebugCoordinator {
      * chip) and the one jdtls builds a file without a build tool for; null when that cannot be told.
      */
     private @Nullable String explainCodeReplace(@Nullable String message) {
-        Path file = dapManager.sessionFile();
+        Path file = dap().sessionFile();
         if (!CodeReplaceJdk.reasonless(message) || file == null || JavaProjectRoot.find(file) != null) {
             return null; // a build project is compiled for its own release, not jdtls's default
         }
@@ -6046,13 +5975,13 @@ final class DebugCoordinator {
     /** A Java session started running: let jdtls build what it will compare saved changes with. */
     private void primeCodeReplace(DapManager.State state) {
         if (state == DapManager.State.RUNNING && codeReplaceMode() != DapManager.CodeReplaceMode.OFF) {
-            dapManager.primeCodeReplace();
+            dap().primeCodeReplace();
         }
     }
 
     /** {@code debug.applyCodeChanges}: loads what is saved into the running program (auto and manual modes). */
     void applyCodeChanges() {
-        if (!dapManager.canReplaceCode()) {
+        if (!dap().canReplaceCode()) {
             host.setStatus(tr("debug.hcr.noSession"));
             return;
         }
@@ -6061,7 +5990,7 @@ final class DebugCoordinator {
             return;
         }
         EditorBuffer active = host.activeBuffer();
-        Path file = active != null && isJavaSource(active.getPath()) ? active.getPath() : dapManager.sessionFile();
+        Path file = active != null && isJavaSource(active.getPath()) ? active.getPath() : dap().sessionFile();
         if (active != null && active.isDirty() && isJavaSource(active.getPath())) {
             panel().appendNotice(tr("debug.hcr.unsavedNote")); // only saved files are compiled
         }
@@ -6070,24 +5999,24 @@ final class DebugCoordinator {
 
     /** Starts a replace, or folds this request into the one running (one more round once it ends). */
     private void requestCodeReplace(@Nullable Path file, boolean asked) {
-        if (codeReplaceRunning) {
-            codeReplaceAgain = file;
+        if (s().codeReplaceRunning) {
+            s().codeReplaceAgain = file;
             return;
         }
-        codeReplaceRunning = true;
-        lastCodeReplaceError = "";
-        Set<Path> covered = new LinkedHashSet<>(savedSinceReplace);
-        long session = codeReplaceSession;
+        s().codeReplaceRunning = true;
+        s().lastCodeReplaceError = "";
+        Set<Path> covered = new LinkedHashSet<>(s().savedSinceReplace);
+        long session = s().codeReplaceSession;
         host.setStatus(tr("debug.hcr.applying"));
-        dapManager.applyCodeChanges(file, outcome -> {
-            if (session != codeReplaceSession) {
+        dap().applyCodeChanges(file, outcome -> {
+            if (session != s().codeReplaceSession) {
                 return; // its session ended meanwhile, which reset all of this (review D101)
             }
-            codeReplaceRunning = false;
+            s().codeReplaceRunning = false;
             reportCodeReplace(outcome, covered, asked);
-            Path again = codeReplaceAgain;
-            codeReplaceAgain = null;
-            if (again != null && dapManager.canReplaceCode()) {
+            Path again = s().codeReplaceAgain;
+            s().codeReplaceAgain = null;
+            if (again != null && dap().canReplaceCode()) {
                 requestCodeReplace(again, false);
             }
         });
@@ -6107,11 +6036,11 @@ final class DebugCoordinator {
                     explainOldCode();
                     host.setStatus(tr("debug.hcr.appliedOldStatus", names));
                 }
-                savedSinceReplace.removeAll(covered);
+                s().savedSinceReplace.removeAll(covered);
                 codeReplaced(covered);
             }
             case NOTHING_CHANGED -> {
-                savedSinceReplace.removeAll(covered); // the program already runs what these files say
+                s().savedSinceReplace.removeAll(covered); // the program already runs what these files say
                 codeReplaced(covered);
                 host.setStatus(tr(asked ? "debug.hcr.nothing" : "debug.hcr.nothingQuiet"));
             }
@@ -6125,9 +6054,10 @@ final class DebugCoordinator {
             }
             case FAILED -> {
                 String explained = explainCodeReplace(outcome.message());
-                if (explained != null && !explained.equals(lastCodeReplaceError)) {
+                if (explained != null && !explained.equals(s().lastCodeReplaceError)) {
                     panel().appendNotice(tr("debug.hcr.notice", explained));
-                } else if (explained != null || CodeReplaceText.saidAlready(outcome.message(), lastCodeReplaceError)) {
+                } else if (explained != null
+                        || CodeReplaceText.saidAlready(outcome.message(), s().lastCodeReplaceError)) {
                     panel().appendNotice(tr("debug.hcr.restartNeeded")); // the adapter's event gave the reason
                 } else {
                     panel().appendNotice(tr("debug.hcr.failed", outcome.message()));
@@ -6156,12 +6086,12 @@ final class DebugCoordinator {
             panel().appendNotice(CodeReplaceText.oldCodeHint(shown)); // that stack came before the answer
             return;
         }
-        long asked = ++oldCodeHintAsked;
-        oldCodeHintPending = asked;
+        long asked = ++s().oldCodeHintAsked;
+        s().oldCodeHintPending = asked;
         javafx.animation.PauseTransition wait = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
         wait.setOnFinished(e -> {
-            if (oldCodeHintPending == asked) {
-                oldCodeHintPending = 0;
+            if (s().oldCodeHintPending == asked) {
+                s().oldCodeHintPending = 0;
                 panel().appendNotice(CodeReplaceText.oldCodeHint(panel().callStack().stream()
                         .map(DapModels.StackFrameInfo::name)
                         .toList()));
@@ -6170,15 +6100,10 @@ final class DebugCoordinator {
         wait.play();
     }
 
-    /** The replace whose old-code hint waits for the next stack ({@link #explainOldCode}); 0 when none. */
-    private long oldCodeHintPending;
-
-    private long oldCodeHintAsked;
-
     /** A stack arrived: say the waiting old-code hint from it (B209). */
     private void oldCodeHintFrom(List<DapModels.StackFrameInfo> frames) {
-        if (oldCodeHintPending != 0) {
-            oldCodeHintPending = 0;
+        if (s().oldCodeHintPending != 0) {
+            s().oldCodeHintPending = 0;
             panel().appendNotice(CodeReplaceText.oldCodeHint(
                     frames.stream().map(DapModels.StackFrameInfo::name).toList()));
         }
@@ -6201,7 +6126,7 @@ final class DebugCoordinator {
         String message = explained != null ? explained : rawMessage;
         String text = CodeReplaceText.notice(changeType, message);
         if ("ERROR".equals(changeType)) {
-            lastCodeReplaceError = message == null ? "" : message.strip();
+            s().lastCodeReplaceError = message == null ? "" : message.strip();
         }
         if (text != null) {
             panel().appendNotice(tr("debug.hcr.notice", text));
@@ -6213,15 +6138,15 @@ final class DebugCoordinator {
      * when none is selected). Paused Java sessions only; the adapter says when a frame cannot be restarted.
      */
     void restartFrame() {
-        restartFrame(shownFrame);
+        restartFrame(s().shownFrame);
     }
 
     private void restartFrame(DapModels.@Nullable StackFrameInfo frame) {
-        if (dapManager.state() != DapManager.State.SUSPENDED || frame == null) {
+        if (dap().state() != DapManager.State.SUSPENDED || frame == null) {
             host.setStatus(tr("debug.frame.notPaused"));
             return;
         }
-        if (!dapManager.supportsRestartFrame()) {
+        if (!dap().supportsRestartFrame()) {
             host.setStatus(tr("debug.restartFrame.unsupported"));
             return;
         }
@@ -6231,7 +6156,7 @@ final class DebugCoordinator {
             host.setStatus(tr("debug.restartFrame.bottom"));
             return;
         }
-        dapManager.restartFrame(frame.id());
+        dap().restartFrame(frame.id());
     }
 
     /**
@@ -6256,7 +6181,7 @@ final class DebugCoordinator {
             DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
         javafx.scene.control.MenuItem restart = new javafx.scene.control.MenuItem(tr("debugpanel.restartFrame"));
         restart.setDisable(!canRestartFrame(
-                dapManager.state() == DapManager.State.SUSPENDED, dapManager.supportsRestartFrame(), frame, frames));
+                dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
         restart.setOnAction(e -> restartFrame(frame));
         return List.of(restart);
     }
@@ -6269,21 +6194,21 @@ final class DebugCoordinator {
      * into it when there is only one. Plain Step Into is unchanged.
      */
     void smartStepInto() {
-        if (dapManager.state() != DapManager.State.SUSPENDED) {
+        if (dap().state() != DapManager.State.SUSPENDED) {
             host.setStatus(tr("debug.frame.notPaused"));
             return;
         }
-        if (!dapManager.supportsStepInTargets()) {
+        if (!dap().supportsStepInTargets()) {
             host.setStatus(tr("debug.smartStep.unsupported"));
             return;
         }
         String lineText = shownLineText();
-        dapManager.stepInTargets(found -> {
+        dap().stepInTargets(found -> {
             List<DapModels.StepTarget> targets = StepTargetOrder.sort(found, lineText);
             if (targets.isEmpty()) {
                 host.setStatus(tr("debug.smartStep.none"));
             } else if (targets.size() == 1) {
-                dapManager.stepIntoTarget(targets.get(0).id());
+                dap().stepIntoTarget(targets.get(0).id());
             } else {
                 QuickOpen<DapModels.StepTarget> picker = smartStepPicker = new QuickOpen<>(
                         tr("debug.smartStep.title"),
@@ -6291,7 +6216,7 @@ final class DebugCoordinator {
                         () -> targets,
                         DapModels.StepTarget::label,
                         t -> t.line() >= 0 ? tr("debug.smartStep.line", t.line() + 1) : "",
-                        t -> dapManager.stepIntoTarget(t.id()));
+                        t -> dap().stepIntoTarget(t.id()));
                 picker.setOverlayHost(host.overlayHost());
                 picker.show(host.window());
             }
@@ -6300,7 +6225,7 @@ final class DebugCoordinator {
 
     /** The text of the stopped line Smart Step Into lists the calls of ("" when its file is not open). */
     private String shownLineText() {
-        DapModels.StackFrameInfo frame = shownFrame;
+        DapModels.StackFrameInfo frame = s().shownFrame;
         if (frame == null || frame.file() == null) {
             return "";
         }
@@ -6334,8 +6259,7 @@ final class DebugCoordinator {
 
     /** Debug: Breakpoints — the palette-style list of every breakpoint (see {@link BreakpointsPicker}). */
     void showBreakpoints() {
-        new BreakpointsPicker(
-                        host, ops, dapManager, this::toggleMuteBreakpoints, () -> breakpointsMuted, memberBreakpoints)
+        new BreakpointsPicker(host, ops, dap(), this::toggleMuteBreakpoints, () -> breakpointsMuted, memberBreakpoints)
                 .show();
     }
 
@@ -6345,21 +6269,21 @@ final class DebugCoordinator {
      */
     void toggleMuteBreakpoints() {
         breakpointsMuted = !breakpointsMuted;
-        dapManager.setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
+        dap().setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
         memberBreakpoints.push(); // and method breakpoints and field watchpoints
-        if (dapManager.isActive()) {
+        if (dap().isActive()) {
             Set<String> open = new HashSet<>();
             host.forEachBuffer(b -> {
                 if (b.getPath() != null && open.add(key(b.getPath()))) {
                     DapModels.FileBreakpoints fb = fileBreakpoints(b, b.getPath());
-                    sentBreakpoints.put(b.getPath(), fb);
-                    dapManager.updateBreakpoints(fb);
+                    s().sentBreakpoints.put(b.getPath(), fb);
+                    dap().updateBreakpoints(fb);
                 }
             });
             for (DapModels.FileBreakpoints fb : closedBreakpoints) {
                 if (fb.file() != null && !open.contains(key(fb.file()))) {
-                    dapManager.updateBreakpoints(
-                            breakpointsMuted ? new DapModels.FileBreakpoints(fb.file(), List.of()) : fb);
+                    dap().updateBreakpoints(
+                                    breakpointsMuted ? new DapModels.FileBreakpoints(fb.file(), List.of()) : fb);
                 }
             }
         }
@@ -6489,7 +6413,7 @@ final class DebugCoordinator {
     /** Debug: Show Value at Caret — the value popup for the name at the caret, from the keyboard. */
     void showValueAtCaret() {
         EditorBuffer b = host.activeBuffer();
-        if (dapManager.state() != DapManager.State.SUSPENDED) {
+        if (dap().state() != DapManager.State.SUSPENDED) {
             host.setStatus(tr("palette.disabled.needsSuspended"));
         } else if (b == null || !b.showDebugValueAtCaret()) {
             host.setStatus(tr("status.debug.noValueAtCaret"));
@@ -6501,8 +6425,8 @@ final class DebugCoordinator {
      * does in VS Code, whose debugging keys those keymaps now carry (review C8).
      */
     void stepIntoOrElse(Runnable otherwise) {
-        if (debugSupportEnabled() && dapManager.state() == DapManager.State.SUSPENDED) {
-            dapManager.stepInto();
+        if (debugSupportEnabled() && dap().state() == DapManager.State.SUSPENDED) {
+            dap().stepInto();
         } else {
             otherwise.run();
         }
@@ -6629,7 +6553,7 @@ final class DebugCoordinator {
         if (LambdaBreakpoints.caretLineHasLambdas(b)) {
             items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
         }
-        if (dapManager.state() == DapManager.State.SUSPENDED) {
+        if (dap().state() == DapManager.State.SUSPENDED) {
             items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
             items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));
             items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));
@@ -6677,7 +6601,7 @@ final class DebugCoordinator {
         return new DebugCompletion.Source() {
             @Override
             public boolean paused() {
-                return dapManager.state() == DapManager.State.SUSPENDED && debugFrameId >= 0;
+                return dap().state() == DapManager.State.SUSPENDED && s().debugFrameId >= 0;
             }
 
             @Override
@@ -6687,7 +6611,7 @@ final class DebugCoordinator {
                     cb.accept(List.of()); // outside {…}: plain log text
                     return;
                 }
-                dapManager.completions(debugFrameId, text.substring(from, caret), caret - from, cb);
+                dap().completions(s().debugFrameId, text.substring(from, caret), caret - from, cb);
             }
         };
     }
@@ -6719,7 +6643,7 @@ final class DebugCoordinator {
             valuePopup = new DebugValuePopup(new DebugValuePopup.Source() {
                 @Override
                 public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
-                    dapManager.evaluateFull(expression, debugFrameId, "hover", cb);
+                    dap().evaluateFull(expression, s().debugFrameId, "hover", cb);
                 }
 
                 @Override
@@ -6729,7 +6653,7 @@ final class DebugCoordinator {
                         int start,
                         int count,
                         Consumer<List<DapModels.VariableInfo>> cb) {
-                    dapManager.variables(ref, filter, start, count, cb);
+                    dap().variables(ref, filter, start, count, cb);
                 }
 
                 @Override

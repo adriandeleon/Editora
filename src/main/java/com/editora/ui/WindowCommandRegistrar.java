@@ -131,6 +131,7 @@ final class WindowCommandRegistrar {
 
         ToolWindow remoteToolWindow();
 
+        /** The debug manager of the session the window shows (the focused one). */
         com.editora.dap.DapManager dapManager();
 
         ToolWindow debugToolWindow();

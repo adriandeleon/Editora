@@ -85,6 +85,6 @@ final class TestRunOpsHost implements TestRunCoordinator.Ops {
 
     @Override
     public boolean debugSessionActive() {
-        return mc.dapManager.isActive();
+        return mc.focusedDap().isActive();
     }
 }

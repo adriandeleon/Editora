@@ -48,10 +48,13 @@ class DebugSessionFlowFxTest {
             fx.shared.getSettings().setPythonDebugEnabled(true);
             // debugpy "installed", with an interpreter that cannot be spawned: a launch gets as far as the
             // coordinator can take it and then fails harmlessly instead of starting a real debuggee.
-            set(manager, "enabled", true);
-            set(manager, "pythonEnabled", true);
-            set(manager, "pythonAvailable", true);
-            set(manager, "pythonCommand", fx.configDir.resolve("no-such-python").toString());
+            com.editora.dap.DapTestSettings.set(manager, "enabled", true);
+            com.editora.dap.DapTestSettings.set(manager, "pythonEnabled", true);
+            com.editora.dap.DapTestSettings.set(manager, "pythonAvailable", true);
+            com.editora.dap.DapTestSettings.set(
+                    manager,
+                    "pythonCommand",
+                    fx.configDir.resolve("no-such-python").toString());
         });
     }
 
