@@ -53,4 +53,19 @@ class BreakpointTargetsTest {
         assertFalse(BreakpointTargets.javaLanguage("kotlin"));
         assertFalse(BreakpointTargets.javaLanguage(null));
     }
+
+    @Test
+    void aRecordingBreakpointIsSentRecordingOnItsLineAndInItsLambdas() {
+        Breakpoint bp =
+                new Breakpoint(4, "", "", true, "", "").withRecording(true).withLambdas(List.of(1), false);
+        List<DapModels.LineBreakpoint> sent = BreakpointTargets.of(bp, 4, LINE, true);
+        assertEquals(List.of(0, X), columns(sent));
+        assertTrue(sent.stream().allMatch(DapModels.LineBreakpoint::recording));
+        assertTrue(
+                BreakpointTargets.of(bp.withLogMessage("m"), 4, LINE, true).stream()
+                        .noneMatch(DapModels.LineBreakpoint::recording),
+                "a logpoint never stops");
+        assertTrue(BreakpointTargets.of(bp.withRecording(false), 4, LINE, true).stream()
+                .noneMatch(DapModels.LineBreakpoint::recording));
+    }
 }

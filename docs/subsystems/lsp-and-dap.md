@@ -1461,6 +1461,17 @@ evaluates nothing. Forward from the last kept stop, a step or Continue, or a new
 (`DebugHistory.valueHistory`, the frame told apart by `DebugValueChanges.frameKey`); picking one goes back to that stop.
 `DebugHistoryPanelFxTest` and `DebugHistoryWindowFxTest` (a fake adapter) cover the panel and editor;
 `DebugHistoryProbeFxTest`, opt-in, drives debugpy, js-debug and java-debug.
+**Recording breakpoints** keep a stop in Debug History and let the program go on, as Visual Studio's tracepoints and
+IntelliJ's non-suspending breakpoints log. `Breakpoint.recording` (`breakpoints.json` schema 7; `records()` is false for a
+logpoint, which never stops) is sent as an ordinary breakpoint: the adapter is not told. `BreakpointTargets` and
+`ClosedFileBreakpoints` carry it on `DapModels.LineBreakpoint.recording`, so a stop is matched against what was sent, in
+the numbering of the code the program runs (`DebugCoordinator.recordingBreakpointAt`). On a `breakpoint` stop there,
+`recordingHit` marks the stop quiet (`selectFrame` paints nothing in the editor), and `recordAndContinue` reads the top
+frame's first cheap scope and the watches into the stop's history entry (its inline values too), writes `Recorded stop
+n: …` to the console and resumes. A session records at most `MAX_RECORDED_STOPS` (500); past that, or with Debug History
+off, the breakpoint stops and says why. *Debug: Toggle Recording Breakpoint* and the breakpoint form's *Record and
+continue* set it; the gutter draws it purple with a ring. `RecordingBreakpointsWindowFxTest` (a fake adapter) and the
+`…Recording` tests of `DebugHistoryProbeFxTest` cover it.
 **Lambda breakpoints** ([`ui/LambdaBreakpoints`](../../src/main/java/com/editora/ui/LambdaBreakpoints.java),
 [`editor/debug/JavaLambdas`](../../src/main/java/com/editora/editor/debug/JavaLambdas.java)) are line breakpoints
 that also, or only, stop inside lambdas of their line: `Breakpoint.lambdas` holds their numbers on the line (from 1,

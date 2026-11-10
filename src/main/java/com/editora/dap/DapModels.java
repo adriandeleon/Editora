@@ -206,14 +206,25 @@ public final class DapModels {
 
     /**
      * A breakpoint to send to the adapter for one file: 0-based {@code line} + optional condition/log, and the 1-based
-     * {@code column} a lambda breakpoint stops at (the lambda's start), or 0 for the line itself.
+     * {@code column} a lambda breakpoint stops at (the lambda's start), or 0 for the line itself. {@code recording} is
+     * Editora's alone (the adapter is not told): a stop on it is recorded in Debug History and the program goes on.
      */
     public record LineBreakpoint(
             int line,
             @Nullable String condition,
             @Nullable String logMessage,
             @Nullable String hitCondition,
-            int column) {
+            int column,
+            boolean recording) {
+        public LineBreakpoint(
+                int line,
+                @Nullable String condition,
+                @Nullable String logMessage,
+                @Nullable String hitCondition,
+                int column) {
+            this(line, condition, logMessage, hitCondition, column, false);
+        }
+
         public LineBreakpoint(
                 int line, @Nullable String condition, @Nullable String logMessage, @Nullable String hitCondition) {
             this(line, condition, logMessage, hitCondition, 0);

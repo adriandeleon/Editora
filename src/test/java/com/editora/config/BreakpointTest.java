@@ -145,4 +145,36 @@ class BreakpointTest {
         assertEquals(List.of(), old.lambdas());
         assertTrue(old.stopsOnLine());
     }
+
+    @Test
+    void aRecordingBreakpointStaysRecordingThroughTheWithersAndJson() throws Exception {
+        Breakpoint b = Breakpoint.plain(4, "total += i").withRecording(true);
+        assertTrue(b.recording());
+        assertTrue(b.records());
+        Breakpoint changed = b.withLine(9)
+                .withLineText("y")
+                .withCondition("i > 0")
+                .withEnabled(false)
+                .withHitCondition("2")
+                .withTemporary(true)
+                .withLambdas(List.of(1), false);
+        assertTrue(changed.recording(), "every wither keeps it");
+        assertFalse(changed.withRecording(false).recording());
+        assertFalse(b.withLogMessage("at {i}").records(), "a logpoint never stops, so has nothing to record");
+        assertFalse(Breakpoint.plain(1, "x").recording(), "a breakpoint stops by default");
+        assertFalse(new Breakpoint(1, "", "", true, "x", "", false, List.of(2), true).recording());
+
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertEquals(b, json.readValue(json.writeValueAsString(b), Breakpoint.class));
+        // breakpoints.json written before recording breakpoints existed (schema 6)
+        Breakpoint old = json.readValue(
+                "{\"line\":2,\"condition\":\"\",\"logMessage\":\"\",\"enabled\":true,\"lineText\":\"x\","
+                        + "\"lambdas\":[1],\"lambdasOnly\":true}",
+                Breakpoint.class);
+        assertFalse(old.recording());
+        assertEquals(List.of(1), old.lambdas());
+        assertEquals(
+                List.of(com.editora.i18n.Messages.tr("debug.breakpoint.recording")),
+                com.editora.editor.debug.BreakpointDescription.lines(b));
+    }
 }

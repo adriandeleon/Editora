@@ -42,6 +42,9 @@ public final class BreakpointDescription {
         if (bp.temporary() && !bp.isLogpoint()) {
             out.add(tr("debug.breakpoint.temporary"));
         }
+        if (bp.records()) {
+            out.add(tr("debug.breakpoint.recording"));
+        }
         return out;
     }
 
