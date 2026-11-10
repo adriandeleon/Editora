@@ -257,6 +257,18 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         /** Find in Folder…: the Find in Files popup, its folder set to {@code folder} (Project Map review 3 E10). */
         default void findInFolder(Path folder) {}
 
+        /**
+         * The Map's text search ({@code %text}, Map code browser gap 10): {@code query} in the files under {@code
+         * folder}, open buffers' unsaved text included, as Find in Files searches; the outcome given once on the FX
+         * thread, null when nothing searched. A newer text search drops this one's answer.
+         */
+        default void searchText(
+                com.editora.search.SearchQuery query,
+                Path folder,
+                Consumer<com.editora.search.SearchService.@Nullable Outcome> answer) {
+            answer.accept(null);
+        }
+
         /** A folder's Git ▸ Show Git History: the log of the commits that touch it (Project Map review 3 E10). */
         default void gitShowFolderHistory(Path folder) {}
 
@@ -801,6 +813,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             case "file.find" -> {
                 return mapGotoFile();
             }
+            case "search.inFiles", "search.inFilesPopup" -> {
+                return mapFindText(null); // Find in Files on the Map: the files' text, hits as cards (gap 10)
+            }
             case "lsp.gotoSymbol" -> {
                 return mapGotoSymbol();
             }
@@ -1110,6 +1125,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         ProjectMapSearch.Query parsed = ProjectMapSearch.Query.parse(q);
         String text = parsed.text();
+        if (!parsed.contents()) {
+            mapTextScope = null; // Find in Folder's folder is the text search's
+        }
+        if (parsed.contents() && text.codePointCount(0, text.length()) < MIN_MAP_SEARCH_LENGTH) {
+            mapView.setSearchMatches(q, List.of(), 0, false);
+            mapStatusLine.showSearch(tr("project.map.status.textPrompt", textScopeName(searchRoot)));
+            return;
+        }
         if (text.codePointCount(0, text.length()) < MIN_MAP_SEARCH_LENGTH) {
             // One character matches most of a project: opening the folders of 300 matches and drawing them
             // stalled every window for a third of a second on a mid-size repository. It filters the rows already
@@ -1120,6 +1143,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         if (parsed.symbols()) {
             searchMapSymbols(gen, q, text, searchRoot);
+            return;
+        }
+        if (parsed.contents()) {
+            searchMapText(gen, q, text, searchRoot);
             return;
         }
         java.util.function.BooleanSupplier superseded = () -> gen != mapSearchGen.get();
@@ -1170,6 +1197,110 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         searchFilesChanged(touched);
     }
+
+    // --- The Map's text search (%text; Map code browser gap 10) ----------------------------------------------------
+
+    /** The folder Find in Folder… limited the text search to; null: the Map's whole folder. */
+    private @Nullable Path mapTextScope;
+
+    /**
+     * Find in Files typed in the Map window, or a folder row's Find in Folder…: the Map's search set to the files'
+     * text ({@code %}), limited to {@code folder} (null: the Map's folder), what was typed in the field searched for.
+     */
+    boolean mapFindText(@Nullable Path folder) {
+        Path root = mapRoot;
+        if (root == null) {
+            return false;
+        }
+        Path scope = folder == null ? null : folder.toAbsolutePath().normalize();
+        mapTextScope = scope != null && !scope.equals(root) && scope.startsWith(root) ? scope : null;
+        String typed = mapFilterField.getText().strip();
+        // What was typed carries over: the text of a text search, or a name searched for (its @ or # dropped).
+        String text =
+                typed.startsWith(ProjectMapSearch.CONTENTS_SIGIL) || typed.startsWith("@") || typed.startsWith("#")
+                        ? typed.substring(1).strip()
+                        : typed;
+        String query = ProjectMapSearch.CONTENTS_SIGIL + text;
+        mapFilterField.setText(query);
+        mapFilterField.requestFocus();
+        mapFilterField.positionCaret(query.length());
+        mapFilterDebounce.stop();
+        searchMap(); // the prompt, or the search again in the new folder
+        return true;
+    }
+
+    /** Where the text search looks: Find in Folder's folder, while it is under {@code root}; else {@code root}. */
+    private Path textScope(Path root) {
+        Path scope = mapTextScope;
+        return scope != null && scope.startsWith(root) ? scope : root;
+    }
+
+    /** How the status line names where the text search looks: the folder's project path, or the Map's folder. */
+    private String textScopeName(Path root) {
+        Path scope = textScope(root);
+        return scope.equals(root)
+                ? com.editora.config.PathDisplay.fileName(root)
+                : root.relativize(scope).toString().replace('\\', '/');
+    }
+
+    /**
+     * Searches the files' text for {@code text} — any case unless it has a capital, as typed — under the Map's folder
+     * or Find in Folder's, through the window's Find in Files: each line found a match, the files holding them
+     * standing out on the map; stepping opens each line's card (gap 10).
+     */
+    private void searchMapText(long gen, String q, String text, Path root) {
+        FileActions ops = fileActions;
+        Path scope = textScope(root);
+        if (ops == null) {
+            mapView.setSearchMatches(new ProjectMapSearchResult(q, List.of(), 0, false));
+            return;
+        }
+        String where = textScopeName(root);
+        if (!scope.equals(root)) {
+            mapStatusLine.showSearch(tr("project.map.status.textIn", where));
+        }
+        boolean caseSensitive = !text.equals(text.toLowerCase(java.util.Locale.ROOT));
+        ops.searchText(new com.editora.search.SearchQuery(text, caseSensitive, false, false), scope, outcome -> {
+            if (gen != mapSearchGen.get() || !isMapShowing()) {
+                return;
+            }
+            mapView.setSearchMatches(textMatches(q, root, outcome)); // the notice says when it stopped short
+        });
+    }
+
+    /**
+     * A text search's {@code outcome} as the Map's search answer for {@code query}: each line found under {@code
+     * root} one match (its file, 0-based line and its text, trimmed), in the order found, at most {@link
+     * ProjectMapSearch#MAX_MATCHES}; empty for none. Pure.
+     */
+    static ProjectMapSearchResult textMatches(
+            String query, Path root, com.editora.search.SearchService.@Nullable Outcome outcome) {
+        if (outcome == null) {
+            return new ProjectMapSearchResult(query, List.of(), 0, false);
+        }
+        List<ProjectMapSearchResult.Match> matches = new ArrayList<>();
+        for (com.editora.search.FileResult file : outcome.files()) {
+            Path path = file.file().toAbsolutePath().normalize();
+            if (!path.startsWith(root)) {
+                continue; // an open buffer outside the Map's folder
+            }
+            String relative = root.relativize(path).toString().replace('\\', '/');
+            for (com.editora.search.LineMatch line : file.matches()) {
+                if (matches.size() == ProjectMapSearch.MAX_MATCHES) {
+                    break;
+                }
+                String shown = line.lineText().strip();
+                if (shown.length() > MAX_TEXT_MATCH) {
+                    shown = shown.substring(0, MAX_TEXT_MATCH) + "…";
+                }
+                matches.add(ProjectMapSearchResult.Match.text(path, relative, line.line() - 1, shown));
+            }
+        }
+        return new ProjectMapSearchResult(query, matches, outcome.totalMatches(), outcome.truncated());
+    }
+
+    /** How much of a found line a results row shows. */
+    static final int MAX_TEXT_MATCH = 160;
 
     /**
      * An {@code @name} query: declarations from the symbol index and the language servers (Project Map review 3
@@ -4318,7 +4449,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // Exploring one folder (Project Map review 3 E10): search only inside it, and what changed here lately.
             MenuItem findInFolder = new MenuItem(tr("project.menu.findInFolder"));
             findInFolder.setGraphic(Icons.findInFiles());
-            findInFolder.setOnAction(e -> fileOps.findInFolder(dir));
+            if (treeItem instanceof MapRowItem) {
+                // On the Map: its own text search, limited to the folder, its hits cards on the Map (gap 10).
+                findInFolder.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
+                findInFolder.setOnAction(e -> mapFindText(dir));
+            } else {
+                findInFolder.setOnAction(e -> fileOps.findInFolder(dir));
+            }
             menu.getItems().add(findInFolder);
             MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));
             folderHistory.setGraphic(Icons.history());

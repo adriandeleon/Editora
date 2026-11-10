@@ -195,6 +195,7 @@ final class ProjectMapResultsStrip extends HBox {
                         match.relativePath(),
                         match.line() + 1);
             case FILE -> where.isEmpty() ? match.label() : tr("project.map.results.fileRowIn", match.label(), where);
+            case TEXT -> tr("project.map.results.textRow", match.label(), match.line() + 1, match.detail());
         };
     }
 
@@ -212,7 +213,8 @@ final class ProjectMapResultsStrip extends HBox {
         @Override
         protected void updateItem(ProjectMapSearchResult.@Nullable Match match, boolean empty) {
             super.updateItem(match, empty);
-            getStyleClass().removeAll("project-map-results-folder", "project-map-results-symbol");
+            getStyleClass()
+                    .removeAll("project-map-results-folder", "project-map-results-symbol", "project-map-results-text");
             if (empty || match == null) {
                 setText(null);
                 setGraphic(null);
@@ -228,7 +230,10 @@ final class ProjectMapResultsStrip extends HBox {
                     getStyleClass().add("project-map-results-symbol");
                     setGraphic(null);
                 }
-                case FILE -> {
+                case FILE, TEXT -> {
+                    if (match.kind() == ProjectMapSearchResult.Kind.TEXT) {
+                        getStyleClass().add("project-map-results-text");
+                    }
                     Path name = match.path().getFileName();
                     setGraphic(FileIcons.forFileName(name == null ? match.label() : name.toString()));
                 }

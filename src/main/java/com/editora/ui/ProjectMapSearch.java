@@ -71,13 +71,28 @@ final class ProjectMapSearch {
     private ProjectMapSearch() {}
 
     /** What a query asks for once its sigil is read: the text to match and where to look. */
-    record Query(String raw, String text, boolean symbols, boolean filesOnly, boolean foldersOnly, boolean path) {
+    record Query(
+            String raw,
+            String text,
+            boolean symbols,
+            boolean filesOnly,
+            boolean foldersOnly,
+            boolean path,
+            boolean contents) {
+
+        Query(String raw, String text, boolean symbols, boolean filesOnly, boolean foldersOnly, boolean path) {
+            this(raw, text, symbols, filesOnly, foldersOnly, path, false);
+        }
 
         static Query parse(@Nullable String raw) {
             String q = raw == null ? "" : raw.strip();
             boolean symbols = q.startsWith("@");
             boolean filesOnly = q.startsWith("#");
-            String text = symbols || filesOnly ? q.substring(1).strip() : q;
+            boolean contents = q.startsWith(CONTENTS_SIGIL); // the files' text, as VS Code's quick search
+            String text = symbols || filesOnly || contents ? q.substring(1).strip() : q;
+            if (contents) {
+                return new Query(q, text, false, false, false, false, true);
+            }
             boolean path = !symbols && text.indexOf('/') >= 0;
             boolean foldersOnly = path && text.endsWith("/") && !filesOnly;
             if (path) {
@@ -92,8 +107,14 @@ final class ProjectMapSearch {
             return new Query(q, text, symbols, filesOnly, foldersOnly, path);
         }
 
-        /** The part a row's own name is matched against, for the map's highlighting of loaded rows. */
+        /**
+         * The part a row's own name is matched against, for the map's highlighting of loaded rows. A search of the
+         * files' text matches no name: only the files it found stand out (nothing, while it is too short to run).
+         */
         String nameText() {
+            if (contents) {
+                return text.codePointCount(0, text.length()) >= ProjectPanel.MIN_MAP_SEARCH_LENGTH ? NO_NAME : "";
+            }
             if (!path) {
                 return text;
             }
@@ -107,9 +128,15 @@ final class ProjectMapSearch {
 
         /** The same query asking for files only (Search Everywhere's file group, the tree's filter). */
         Query onlyFiles() {
-            return new Query(raw, text, symbols, true, false, path);
+            return new Query(raw, text, symbols, true, false, path, false);
         }
     }
+
+    /** What a query starts with to search the files' text rather than their names (Map code browser gap 10). */
+    static final String CONTENTS_SIGIL = "%";
+
+    /** A name no row has: a text search's row filter, so only the files it found stand out. */
+    static final String NO_NAME = "\u0000";
 
     /** Whether {@code raw} asks for declarations ({@code @name}). */
     static boolean isSymbolQuery(@Nullable String raw) {

@@ -535,6 +535,10 @@ final class MapCardLinks {
         if (place != null && place.file().equals(file)) {
             placeArrived(place);
         }
+        HitWaiting hit = hitWaiting;
+        if (hit != null && hit.file().equals(file)) {
+            hitArrived(hit);
+        }
         for (Pending waiting : List.copyOf(pending)) {
             if (waiting.waitingFor.remove(file) && waiting.waitingFor.isEmpty()) {
                 pending.remove(waiting);
@@ -559,6 +563,10 @@ final class MapCardLinks {
         PlaceWaiting place = placeWaiting;
         if (place != null) {
             files.add(place.file());
+        }
+        HitWaiting hit = hitWaiting;
+        if (hit != null) {
+            files.add(hit.file());
         }
         return files;
     }
@@ -824,6 +832,102 @@ final class MapCardLinks {
         placeWaiting = null;
         waiting.timeout().stop();
         waiting.opened().accept(openPlaceNow(waiting.file(), waiting.line(), waiting.name()));
+    }
+
+    // --- A text search's hits on the Map (Map code browser gap 10) -------------------------------------------------
+
+    /** The card the last hit stepped to opened, a preview the next step replaces; null for none. */
+    private @Nullable ProjectMapPreview hitPreview;
+
+    /**
+     * A text search's hit: the card of the declaration that holds {@code file}'s 0-based {@code line} (the file's
+     * when it has none), the first match of {@code mark} from that line selected. Stepping to the next hit replaces
+     * the card the last one opened, where it stood, unless something keeps it (moved, pinned, asked from); with
+     * {@code keep} the card stays. Nothing opens when every open card is pinned.
+     */
+    void openSearchHit(
+            Path file,
+            int line,
+            java.util.regex.Pattern mark,
+            boolean keep,
+            Consumer<@Nullable ProjectMapPreview> opened) {
+        Path normalized = file.toAbsolutePath().normalize();
+        HitWaiting older = hitWaiting;
+        if (older != null) {
+            older.timeout().stop(); // the step before: never opened now
+            hitWaiting = null;
+        }
+        if (structure.supports(normalized)) {
+            structure.ensure(normalized); // its declarations, for the card that holds the line
+            if (structure.view(normalized).problem() == ProjectMapStructure.Problem.LOADING) {
+                javafx.animation.PauseTransition timeout = new javafx.animation.PauseTransition(OUTLINE_WAIT);
+                HitWaiting waiting = new HitWaiting(normalized, line, mark, keep, opened, timeout);
+                timeout.setOnFinished(event -> hitArrived(waiting));
+                hitWaiting = waiting;
+                timeout.playFromStart();
+                return;
+            }
+        }
+        openSearchHitNow(normalized, line, mark, keep, opened);
+    }
+
+    /** A hit waiting for its file's outline, to open in the card of the declaration that holds it. */
+    private record HitWaiting(
+            Path file,
+            int line,
+            java.util.regex.Pattern mark,
+            boolean keep,
+            Consumer<@Nullable ProjectMapPreview> opened,
+            javafx.animation.PauseTransition timeout) {}
+
+    private @Nullable HitWaiting hitWaiting;
+
+    /** {@code waiting}'s outline arrived, or the wait ran out: its card opens now, if it is still the step waiting. */
+    private void hitArrived(HitWaiting waiting) {
+        if (hitWaiting != waiting) {
+            return;
+        }
+        hitWaiting = null;
+        waiting.timeout().stop();
+        openSearchHitNow(waiting.file(), waiting.line(), waiting.mark(), waiting.keep(), waiting.opened());
+    }
+
+    private void openSearchHitNow(
+            Path normalized,
+            int line,
+            java.util.regex.Pattern mark,
+            boolean keep,
+            Consumer<@Nullable ProjectMapPreview> opened) {
+        List<ProjectMapStructure.Node> roots = outlineOf(normalized);
+        ProjectMapStructure.Node node = roots == null ? null : enclosing(roots, line);
+        Path key = node != null ? node.path() : normalized;
+        ProjectMapPreview last = hitPreview;
+        // The last hit's preview, if nothing keeps it: the new card takes its place.
+        ProjectMapPreview previous = last != null && cards.isOpen(last) && reusable(last) ? last : null;
+        boolean existed = cards.card(key) != null;
+        if (previous != null && !existed) {
+            takePlace.put(key, MapCards.drawnBounds(previous));
+        }
+        ProjectMapPreview card;
+        try {
+            card = node != null ? cards.openDeclaration(node) : cards.openFile(normalized);
+        } finally {
+            takePlace.remove(key);
+        }
+        if (card != null) {
+            card.linksRevealPlace(line, mark);
+            if (keep) {
+                keepCard(card);
+            } else if (!existed) {
+                previewCards.add(card);
+                card.setPreview(true);
+            }
+            if (previous != null && !existed) {
+                cards.close(previous); // never the card just opened: that one did not exist
+            }
+            hitPreview = keep ? null : card;
+        }
+        opened.accept(card);
     }
 
     private @Nullable ProjectMapPreview openPlaceNow(Path file, int line, @Nullable String name) {

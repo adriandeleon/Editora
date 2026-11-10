@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memory only (200 by default, *Settings → Debugging → History*), and after the session ends you can still read them
   until the next one starts. Values nobody opened at a stop were never fetched, so they cannot be shown later.
 
+- **Search the text of files on the Project Map.** Start the Map's search with `%` (`%needle`) to find text in the
+  files instead of their names. The files that hold it stand out on the map. Each step through the lines found opens
+  the card of the declaration that holds the line, with the text selected. That card is replaced by the next one
+  unless you keep it with Ctrl+Enter, move it or pin it. *Find in Folder…* on a folder in the Map, and Find in Files
+  typed in the Map window, start the same search, limited to that folder.
 - **Project Map working sets keep each card's answers and caret.** References, Callers, Go to Definition and the
   other answers asked from a card come back with their edges and their "+N more" list, without asking the language
   server again. Each card comes back with its caret and scroll position. This holds for working sets and for the

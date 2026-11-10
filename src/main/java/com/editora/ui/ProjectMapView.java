@@ -1780,6 +1780,23 @@ final class ProjectMapView extends VBox {
         if (open && match.kind() == ProjectMapSearchResult.Kind.FILE) {
             onOpenFile.accept(target);
         }
+        if (match.kind() == ProjectMapSearchResult.Kind.TEXT) {
+            // The hit itself, in a card: a preview the next step replaces; opened (Ctrl+Enter), a card that stays.
+            cards.openSearchHit(target, match.line(), textMark(query), open);
+        }
+    }
+
+    /**
+     * What marks a text search's hit in its card: the text of {@code query} ({@code %text}) as typed, any case
+     * unless it has a capital (smart case, as the search itself). Pure.
+     */
+    static java.util.regex.Pattern textMark(String query) {
+        String text = ProjectMapSearch.Query.parse(query).text();
+        return java.util.regex.Pattern.compile(
+                java.util.regex.Pattern.quote(text),
+                text.equals(text.toLowerCase(java.util.Locale.ROOT))
+                        ? java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE
+                        : 0);
     }
 
     // --- Search results: the strip's cursor, the banner, the notices (Project Map review 3 B1, A2, B12) ---
@@ -1963,7 +1980,9 @@ final class ProjectMapView extends VBox {
         if (shown < opened) {
             parts.add(tr("project.map.status.search.rowLimit", shown, opened));
         }
-        if (searchMatchesPartial) {
+        if (searchMatchesPartial && ProjectMapSearch.Query.parse(query).contents()) {
+            parts.add(tr("project.map.status.search.textPartial")); // Find in Files' own limits (gap 10)
+        } else if (searchMatchesPartial) {
             parts.add(tr(
                     "project.map.status.search.partial",
                     com.editora.search.ProjectFileList.MAX_FILES,

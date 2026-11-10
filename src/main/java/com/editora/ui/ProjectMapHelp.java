@@ -111,6 +111,7 @@ final class ProjectMapHelp {
                 "project.map.help.searchField");
         row = addRow(keys, row, "@", "project.map.help.searchSymbols");
         row = addRow(keys, row, "#", "project.map.help.searchFiles");
+        row = addRow(keys, row, "%", "project.map.help.searchText");
         row = addRow(keys, row, "↓", "project.map.help.searchDown");
         row = addRow(keys, row, key("enter") + " / " + chord("shift", key("enter")), "project.map.help.searchStep");
         row = addRow(keys, row, chord("shortcut", key("enter")), "project.map.help.searchOpen");

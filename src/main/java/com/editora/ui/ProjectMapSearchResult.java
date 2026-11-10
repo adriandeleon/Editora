@@ -27,7 +27,9 @@ record ProjectMapSearchResult(String query, List<Match> matches, int total, bool
     enum Kind {
         FILE,
         FOLDER,
-        SYMBOL
+        SYMBOL,
+        /** A line of a file that holds the text searched for ({@code %text}, Map code browser gap 10). */
+        TEXT
     }
 
     /**
@@ -37,8 +39,10 @@ record ProjectMapSearchResult(String query, List<Match> matches, int total, bool
      * @param path the file or folder (for a declaration: its file), absolute and normalized
      * @param relativePath {@code path} relative to the Map's root, {@code /}-separated
      * @param symbol the declaration's name, for {@link Kind#SYMBOL}; else null
-     * @param line the declaration's 0-based line, for {@link Kind#SYMBOL}; else -1
-     * @param detail what the declaration is and where (its kind or container), for a list row; else ""
+     * @param line the declaration's 0-based line, for {@link Kind#SYMBOL}; the line found, for {@link Kind#TEXT};
+     *     else -1
+     * @param detail what the declaration is and where (its kind or container), for a list row; the line's text,
+     *     for {@link Kind#TEXT}; else ""
      */
     record Match(
             Kind kind,
@@ -63,6 +67,11 @@ record ProjectMapSearchResult(String query, List<Match> matches, int total, bool
 
         static Match symbol(Path file, String relativePath, String name, int line, String detail) {
             return new Match(Kind.SYMBOL, file, relativePath, name, Math.max(0, line), detail);
+        }
+
+        /** The 0-based {@code line} of {@code file} that holds the text searched for; {@code text} is the line's. */
+        static Match text(Path file, String relativePath, int line, String text) {
+            return new Match(Kind.TEXT, file, relativePath, null, Math.max(0, line), text);
         }
 
         /** The text a results row shows first: the declaration's name, else the last segment of the path. */
