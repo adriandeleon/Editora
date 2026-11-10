@@ -22,14 +22,14 @@ final class ConsoleContextMenu {
 
     static void install(CodeArea area) {
         MenuItem selectAll =
-                com.editora.command.MenuChords.tag(new MenuItem(tr("editmenu.selectAll")), "edit.selectAll");
+                com.editora.editor.MenuChords.tag(new MenuItem(tr("editmenu.selectAll")), "edit.selectAll");
         selectAll.setGraphic(Icons.selectAll());
         selectAll.setOnAction(e -> {
             area.selectAll();
             area.requestFocus();
         });
 
-        MenuItem copy = com.editora.command.MenuChords.tag(new MenuItem(tr("editmenu.copy")), "edit.copy");
+        MenuItem copy = com.editora.editor.MenuChords.tag(new MenuItem(tr("editmenu.copy")), "edit.copy");
         copy.setGraphic(Icons.copy());
         copy.setOnAction(e -> copySelectionOrAll(area));
 

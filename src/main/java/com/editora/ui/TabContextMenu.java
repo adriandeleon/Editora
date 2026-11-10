@@ -6,8 +6,8 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 
-import com.editora.command.MenuChords;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.MenuChords;
 
 import static com.editora.i18n.Messages.tr;
 

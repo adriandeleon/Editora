@@ -7277,7 +7277,7 @@ final class DebugCoordinator {
     private static javafx.scene.control.MenuItem menuItem(String commandId, @Nullable Node icon, Runnable action) {
         javafx.scene.control.MenuItem item =
                 new javafx.scene.control.MenuItem(DebugPanelText.bareTitle(tr("command." + commandId)));
-        com.editora.command.MenuChords.tag(item, commandId);
+        com.editora.editor.MenuChords.tag(item, commandId);
         item.setGraphic(icon);
         item.setOnAction(e -> action.run());
         return item;

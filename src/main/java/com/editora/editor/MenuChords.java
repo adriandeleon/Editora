@@ -1,4 +1,4 @@
-package com.editora.command;
+package com.editora.editor;
 
 import java.util.List;
 import java.util.Map;
@@ -27,7 +27,7 @@ import org.jspecify.annotations.Nullable;
  * <p>A {@link MenuItem} draws its accelerator, right-aligned in a column of its own, from
  * {@link KeyCombination#getDisplayText()}. That is exactly the layout wanted, so the chord goes there — as a
  * {@link Shown} combination that only <em>displays</em>. It never matches a key event, so it can never fire the
- * item or take a keystroke from {@link KeyDispatcher}, and it can hold what no real {@code KeyCombination}
+ * item or take a keystroke from the key dispatcher, and it can hold what no real {@code KeyCombination}
  * can: an Emacs multi-key sequence like {@code C-x C-;}. The menu bar avoids accelerators for the same two
  * reasons (see {@code MainMenuBar}) and draws its chord column by hand; a context menu is a JavaFX popup on
  * every platform, so the native column is available to it.

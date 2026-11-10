@@ -66,7 +66,7 @@ class ContextMenuFontFxTest {
         Node root = FxTestSupport.callOnFx(() ->
                 FxTestSupport.<Stage>field(fx.controller, "stage").getScene().getRoot());
         ContextMenu menu = FxTestSupport.callOnFx(() -> {
-            MenuItem save = com.editora.command.MenuChords.tag(new MenuItem("Save"), "file.save");
+            MenuItem save = com.editora.editor.MenuChords.tag(new MenuItem("Save"), "file.save");
             ContextMenu result = new ContextMenu(save);
             result.show(root, 100, 100);
             return result;

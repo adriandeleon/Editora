@@ -1,4 +1,4 @@
-package com.editora.command;
+package com.editora.editor;
 
 import java.util.HashMap;
 import java.util.List;

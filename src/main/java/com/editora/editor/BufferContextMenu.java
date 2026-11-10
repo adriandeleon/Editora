@@ -9,7 +9,6 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.input.Clipboard;
 
-import com.editora.command.MenuChords;
 import com.editora.editor.fold.FoldManager;
 import com.editora.editor.http.HttpVariableFixes;
 import com.editora.editor.markdown.MarkdownMenus;
