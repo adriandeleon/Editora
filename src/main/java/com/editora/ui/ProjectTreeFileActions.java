@@ -26,6 +26,8 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
     /** The window's Go to Symbol choice, a library's source included. Nothing until {@link #of}. */
     private java.util.function.BiConsumer<Path, com.editora.lsp.LspManager.WorkspaceSymbolMatch> openSymbol =
             (anchor, match) -> {};
+    /** The window's Find in Files, for the Map's text search. Nothing until {@link #of}. */
+    private @Nullable SearchCoordinator search;
 
     ProjectTreeFileActions(
             GitCoordinator git,
@@ -50,7 +52,21 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
         actions.openUrl = window::openExternalUrl;
         actions.openPicked = window.navigation::findFileChosen;
         actions.openSymbol = window.lspCoordinator.navigation::openWorkspaceSymbol;
+        actions.search = window.searchCoordinator;
         return actions;
+    }
+
+    @Override
+    public void searchText(
+            com.editora.search.SearchQuery query,
+            Path folder,
+            java.util.function.Consumer<com.editora.search.SearchService.@Nullable Outcome> answer) {
+        SearchCoordinator coordinator = search;
+        if (coordinator == null) {
+            answer.accept(null);
+        } else {
+            coordinator.mapTextSearch(query, folder, answer);
+        }
     }
 
     @Override

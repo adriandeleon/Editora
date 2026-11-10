@@ -317,6 +317,18 @@ final class SearchCoordinator {
         showFindInFilesPopup(folder);
     }
 
+    /** The Project Map's text search's own line of searches: a newer one drops this one's answer, and only this one's. */
+    private final SearchService.Channel mapChannel = service.newChannel();
+
+    /**
+     * The Project Map's text search ({@code %text}, Map code browser gap 10): {@code query} under {@code folder}, as
+     * Find in Files searches (the window's backend, its open buffers' unsaved text), the outcome given once on the
+     * FX thread; a superseded search gives nothing.
+     */
+    void mapTextSearch(SearchQuery query, Path folder, Consumer<SearchService.@Nullable Outcome> answer) {
+        service.search(mapChannel, query, folder, collectOpenBuffers(), List.of(), List.of(), answer::accept, null);
+    }
+
     private void showFindInFilesPopup(@Nullable Path folder) {
         if (host.overlayHost() == null) {
             return;

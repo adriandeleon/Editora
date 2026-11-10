@@ -677,6 +677,19 @@ final class MapCards {
     }
 
     /**
+     * A text search's hit stepped to (Map code browser gap 10): the card of the declaration holding {@code file}'s
+     * 0-based {@code line}, the match of {@code mark} there selected — a preview the next hit replaces, or, with
+     * {@code keep}, a card that stays. The keyboard stays in the search.
+     */
+    void openSearchHit(Path file, int line, java.util.regex.Pattern mark, boolean keep) {
+        links.openSearchHit(file, line, mark, keep, card -> {
+            if (card != null) {
+                pickedCards.add(card); // asked for: the orphan check leaves it, its folder closed or not
+            }
+        });
+    }
+
+    /**
      * Opens (or brings up and focuses) the card of a declaration row: its lines of its file, beside the Map's
      * Structure column, which an open card asked for from a file card's column moves to.
      */

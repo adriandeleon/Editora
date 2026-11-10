@@ -107,7 +107,7 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Click a file's Structure icon (just before the eye) | Open or close the file's structure column |
 | Click a declaration | Open or focus a floating preview of only its lines |
 | Click a declaration's chevron | Open or close the column of the declarations it holds |
-| Right-click a node | Select it and open its menu: the Map's own **Preview**, **Show Structure** / **Hide Structure**, **Personal Notes** (when the row has some) and **Close Column** (the column the row is in) first, then the same context menu as the Project tree, including first-line bookmark and Personal Note actions; a file row also has **Related Test / Subject**, and a folder's has **Find in Folder…** (the Find in Files popup set to that folder) and Git ▸ **Show Git History** (the Git log searched for `path:<folder>`) |
+| Right-click a node | Select it and open its menu: the Map's own **Preview**, **Show Structure** / **Hide Structure**, **Personal Notes** (when the row has some) and **Close Column** (the column the row is in) first, then the same context menu as the Project tree, including first-line bookmark and Personal Note actions; a file row also has **Related Test / Subject**, and a folder's has **Find in Folder…** (the Map's text search, `%`, limited to that folder) and Git ▸ **Show Git History** (the Git log searched for `path:<folder>`) |
 | Drag empty canvas space, or a row | Pan the map (from a row, once the pointer has moved 5 px, so a click stays a click) |
 | Middle-button drag | Pan the map, wherever the drag starts (including on a row) |
 | Mouse wheel | Zoom around the pointer position; scroll inertia does not zoom |
@@ -970,6 +970,25 @@ matching…" (review 3 B16). A folder
 match is selected and opened; a declaration match selects its file, opens the file's Structure column and
 selects the declaration once the outline is in (`showSearchMatch(match, true)` also opens its card).
 
+**Searching the files' text** (Map code browser gap 10). A query that starts with `%` (VS Code's quick-search
+sigil) searches what the files say rather than their names: `%needle` runs the window's Find in Files over the
+Map's folder (`ProjectPanel.searchMapText` → `FileActions.searchText` → `SearchCoordinator.mapTextSearch`, on a
+channel of its own, so the editor's searches and this one never drop each other's answers; ripgrep or the walker as
+set, open buffers' unsaved text included, any case unless the text has a capital). Each line found is a match of
+kind `TEXT` (`ProjectPanel.textMatches`: its file, 0-based line and trimmed text, at most `MAX_MATCHES` 2,000, in
+the order found, nothing outside the Map's folder), so the files that hold the text stand out on the map — no row
+matches by name meanwhile (`ProjectMapSearch.NO_NAME`) — and the results strip lists and steps through the lines
+("Beta.java:7 — needle();"). Landing on the first line opens nothing; each step (Enter, F3, a row of the list)
+selects the line's file and opens the card of the declaration that holds the line, the text selected
+(`MapCardLinks.openSearchHit`, waiting for the file's outline as Go to Symbol does). That card is a preview, in
+italics, which the next step replaces where it stood (gap 6's preview cards) unless something keeps it — moved,
+pinned, asked from; Ctrl/Cmd+Enter keeps the current line's card. A query too short to search says what to type
+("Type the text to find in project"), and a search that stopped at Find in Files' limits says so in the search's
+notice. **Find in Folder…** on a Map folder's row (and Find in Files typed in the Map window) starts the same
+search, limited to that folder ("Searching the text of src/main"), carrying over what the field held (a name
+search's `@` or `#` dropped); the folder is forgotten when the query stops being a text search. The editor's
+Project tree keeps its Find in Folder…, the Find in Files popup.
+
 The **results strip** (`ProjectMapResultsStrip`, review 3 B1) sits under the Map window's search row while a
 query searches: "3 of 49" (or "3 of 2,000 (best of 5,120)"), a "partial" mark when the file list was cut,
 previous / next buttons, and a drop-down list of every kept match (name and relative folder; folders and
@@ -1644,6 +1663,10 @@ The focused coverage lives in:
   `ProjectMapLinksFxTest` / `MapCardLinksReview4FxTest` for an answer's list: a place's group, the places' order and
   text, the filter and Tests; the chip's list of 209 files' places with their text, the filter, a place opened with
   its edge, the list going with its answer; callers by name listed and opened; a place with no room kept listed;
+- `MapTextSearchFxTest` for the text search: `%` parsed, smart case, a found line as a match (0-based, trimmed, cut,
+  outside the folder left out), the strip's row; stepping opening each line's card as a preview the next replaces,
+  Ctrl+Enter keeping one, Find in Folder… on a Map row limiting the search, Find in Files in the Map carrying the
+  name typed over, the short-query prompt and a search that stopped short;
 - `MapCardProblemsFxTest` for a card's problems: a lent file's diagnostics kept and watched whatever the Problems
   scope, forgotten with the last loan, nothing started without a server; marks on a declaration card's own lines,
   the status counts, Next / Previous Problem (errors first, wrapping, none here), one watch per buffer, a disk card
