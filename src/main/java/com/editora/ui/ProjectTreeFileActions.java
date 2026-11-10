@@ -202,4 +202,35 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
             found.accept(null);
         }
     }
+
+    @Override
+    public void gitLineHistory(
+            Path file,
+            int startLine,
+            int endLine,
+            int max,
+            java.util.function.Consumer<com.editora.git.LineHistory.Result> found) {
+        if (git.isEnabled()) {
+            git.service().lineHistory(file, startLine, endLine, max, found);
+        } else {
+            found.accept(com.editora.git.LineHistory.Result.unavailable());
+        }
+    }
+
+    @Override
+    public void gitBlame(
+            Path root,
+            Path file,
+            java.util.function.Consumer<java.util.List<com.editora.git.BlameParser.BlameLine>> found) {
+        if (git.isEnabled()) {
+            git.service().blame(root, file, found);
+        } else {
+            found.accept(java.util.List.of());
+        }
+    }
+
+    @Override
+    public void gitOpenCommitFile(Path root, String hash, String path, @Nullable String previousPath) {
+        git.ifEnabled(() -> diff.diffCommitFile(root, hash, path, previousPath));
+    }
 }

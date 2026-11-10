@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A declaration's history as a card on the Project Map.** *Declaration History* in a declaration card's menu, or
+  in a Structure row's, opens a card beside it that lists every commit that changed that method, class or field,
+  newest first. Under the list, *Changes* shows what the picked commit changed in it, and *Blame* shows who last
+  changed each of its lines. Enter or a double click opens the commit's diff of the file in the editor.
 - **Usage counts on Project Map declaration rows.** A method, class or field row in the Map's Structure columns and a
   card's says how many times it is used ("12 uses", "no uses"), as the editor's code lens does. The counts come
   from the language server already running for the file, and update a moment after you stop typing.

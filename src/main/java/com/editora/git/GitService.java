@@ -1110,6 +1110,69 @@ public final class GitService {
                 : null;
     }
 
+    /** How long {@link #lineHistory}'s {@code git log -L} may take before it is given up. */
+    public static final Duration LINE_LOG_BUDGET = Duration.ofSeconds(15);
+
+    /**
+     * Every commit that changed {@code file}'s 0-based lines {@code startLine..endLine}, newest first, at most {@code
+     * max} of them, each with the part of its diff that touched them ({@code git log -L}, which follows the lines
+     * through edits and moves of the file). The lines are the file's on disk, mapped to HEAD's as {@link #lastChange}
+     * maps them; lines that are all uncommitted additions have no history ({@link LineHistory.Status#NEW_LINES}). Read
+     * off the FX thread on the history lane; posted on the FX thread.
+     */
+    public void lineHistory(Path file, int startLine, int endLine, int max, Consumer<LineHistory.Result> onResult) {
+        Path dir = file.toAbsolutePath().getParent();
+        if (dir == null || startLine < 0 || endLine < startLine || max <= 0) {
+            Platform.runLater(() -> onResult.accept(LineHistory.Result.unavailable()));
+            return;
+        }
+        boolean queued = submit(historyExec, () -> {
+            LineHistory.Result found = readLineHistory(dir, file, startLine, endLine, max);
+            Platform.runLater(() -> onResult.accept(found));
+        });
+        if (!queued) {
+            Platform.runLater(() -> onResult.accept(LineHistory.Result.unavailable()));
+        }
+    }
+
+    /** {@link #lineHistory}'s read, on the calling thread. */
+    LineHistory.Result readLineHistory(Path dir, Path file, int startLine, int endLine, int max) {
+        if (!mayBeRepository(dir) || !gitAvailable(dir)) {
+            return LineHistory.Result.unavailable();
+        }
+        Path root = resolveRoot(file);
+        Path fileName = file.getFileName();
+        if (root == null || fileName == null || headOf(dir) == null) {
+            return LineHistory.Result.unavailable();
+        }
+        int[] atHead = linesAtHead(dir, file, startLine, endLine);
+        if (atHead == null) {
+            return new LineHistory.Result(LineHistory.Status.NEW_LINES, List.of(), false, root, "");
+        }
+        ProcessRunner.Result r = git(
+                dir,
+                LINE_LOG_BUDGET,
+                "log",
+                "-n",
+                Integer.toString(max + 1), // one more: whether there were more
+                "--no-color",
+                "--no-ext-diff",
+                "--format=" + LineHistory.FORMAT,
+                "-L" + (atHead[0] + 1) + "," + (atHead[1] + 1) + ":" + fileName);
+        if (r.timedOut()) {
+            return new LineHistory.Result(LineHistory.Status.TOO_SLOW, List.of(), false, root, "");
+        }
+        if (!r.ok()) {
+            String problem = r.err().isBlank() ? r.out() : r.err();
+            String first = problem.strip().lines().findFirst().orElse("");
+            // An untracked file, or lines past HEAD's end: no history to read, not a failure.
+            return first.contains("no path") || first.contains("has only")
+                    ? new LineHistory.Result(LineHistory.Status.UNAVAILABLE, List.of(), false, root, "")
+                    : LineHistory.Result.failed(root, first);
+        }
+        return LineHistory.parse(r.out(), max, root);
+    }
+
     /** {@link #lastChange}'s read, on the history lane. */
     private @Nullable LastChange readLastChange(Path dir, Path file, int startLine, int endLine) {
         HeadRead read = headOf(dir);

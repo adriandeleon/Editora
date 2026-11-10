@@ -982,6 +982,24 @@ lenses on, rust-analyzer — the number its "N references" title starts with), e
 first `MAX_COUNTED` (40) declarations, one after another. Nothing starts a server: without one a row shows no count.
 An answer for an outline since changed, or a file since closed, is dropped.
 
+**A declaration's history as a card** (Map code browser gap 12, `ProjectMapHistoryCard`). **Declaration History**
+in a declaration card's menu, or in a declaration row's (a Structure column of the Map's or a card's, which opens the
+row's card first), opens the History card beside that card: right of it, left of it or below it, whichever fits its
+minimum and covers least of the map's columns, the other cards and the zoom bar (`MapCards.historySpot`; with no room
+beside it at all, where any card would go). It lists every commit that changed the declaration's lines, newest
+first — subject, author, age, short hash and the lines it added and removed — from `git log -L<start>,<end>:<file>`
+(`GitService.lineHistory`, parsed by `LineHistory`; at most `MAX_COMMITS` 100, saying when older ones were left out,
+given `LINE_LOG_BUDGET` 15 s on the history lane; the lines on disk are mapped to HEAD's as for the last change, and
+lines that are all uncommitted say so). The summary above names how many commits and authors, and who added the
+lines and when. Under the list, **Changes** shows the picked commit's part of the diff (`+`/`-` lines coloured), and
+**Blame** each of the declaration's lines now with who last changed it and when (the editor's blame of the file,
+`GitService.blame`, sliced to the declaration); picking a line there picks its commit, and the picked commit's lines
+are marked. Enter or a double click on a commit or a blamed line, or **Open Commit**, opens that commit's diff of
+the file in the editor window (`DiffCoordinator.diffCommitFile`, with the file's old path when the commit moved it).
+One History card is open at a time: asking for another declaration's history fills it again, an answer for an
+earlier ask is dropped, and it opens in Changes or Blame as the last one was left. It moves, resizes and zooms as the
+other cards, Escape in it or on the map closes it, and it is not kept in working sets.
+
 **Searching the files' text** (Map code browser gap 10). A query that starts with `%` (VS Code's quick-search
 sigil) searches what the files say rather than their names: `%needle` runs the window's Find in Files over the
 Map's folder (`ProjectPanel.searchMapText` → `FileActions.searchText` → `SearchCoordinator.mapTextSearch`, on a
@@ -1679,6 +1697,12 @@ The focused coverage lives in:
   the ask a moment after the outline settles and the answers dropped, a Map Structure column's rows and a card's
   saying a references lens's counts (and a screen reader hearing them), references counted without a lens, and
   nothing without a server;
+- `LineHistoryTest`, `GitServiceLineHistoryRepoTest` and `MapHistoryCardFxTest` for the History card: `git log -L`
+  read (paths, a move's old path, patches cut, unreadable records, more than asked), a real repository's commits
+  newest first with their part of the diff, uncommitted, untracked and moved files; the card opened beside its card
+  from its menu and from a Structure row's, its summary, diff and blame, a blamed line picking its commit, Enter and
+  Open Commit opening the commit's diff, one card filled in turn and stale answers dropped, Escape and zoom, and its
+  spot beside the card;
 - `MapTextSearchFxTest` for the text search: `%` parsed, smart case, a found line as a match (0-based, trimmed, cut,
   outside the folder left out), the strip's row; stepping opening each line's card as a preview the next replaces,
   Ctrl+Enter keeping one, Find in Folder… on a Map row limiting the search, Find in Files in the Map carrying the

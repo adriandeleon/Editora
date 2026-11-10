@@ -252,6 +252,27 @@ final class ProjectMapPreview extends StackPane {
                 Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
             found.accept(null);
         }
+
+        /**
+         * Every commit that changed {@code file}'s 0-based lines {@code startLine..endLine}, newest first, at most
+         * {@code max}, with the part of each diff that touched them; on the FX thread (Map gap 12).
+         */
+        default void lineHistory(
+                Path file, int startLine, int endLine, int max, Consumer<com.editora.git.LineHistory.Result> found) {
+            found.accept(com.editora.git.LineHistory.Result.unavailable());
+        }
+
+        /** Who last changed each line of {@code file} in the repository at {@code root}; on the FX thread. */
+        default void blame(
+                Path root, Path file, Consumer<java.util.List<com.editora.git.BlameParser.BlameLine>> found) {
+            found.accept(java.util.List.of());
+        }
+
+        /**
+         * Opens commit {@code hash}'s diff of the file at {@code path} (repository-relative, at {@code previousPath}
+         * before the commit when it moved) in the repository at {@code root}, in the editor window.
+         */
+        default void openCommitFile(Path root, String hash, String path, @Nullable String previousPath) {}
     }
 
     /** The editor commands a card and a declaration row follow the code with, in their menus' order (C12). */
@@ -558,6 +579,9 @@ final class ProjectMapPreview extends StackPane {
     private java.util.function.DoubleConsumer onContentZoomed = zoom -> {};
 
     private java.util.function.@Nullable BiConsumer<Path, Integer> onOpenAt;
+    /** A declaration card's Declaration History: the Map's History card opens beside it (gap 12). */
+    private @Nullable Runnable onHistory;
+
     private @Nullable Runnable onOpenNarrowed;
 
     private boolean loading;
@@ -1706,6 +1730,11 @@ final class ProjectMapPreview extends StackPane {
         return range;
     }
 
+    /** What a declaration card's Declaration History does: its History card opens beside it (gap 12). */
+    void setOnHistory(Runnable callback) {
+        onHistory = callback;
+    }
+
     /** Where a declaration card's Open goes when its declaration is gone: its file, at the declaration's line. */
     void setOnOpenAt(java.util.function.BiConsumer<Path, Integer> callback) {
         onOpenAt = callback;
@@ -2823,6 +2852,14 @@ final class ProjectMapPreview extends StackPane {
             actions.annotate(file);
         });
         items.add(related);
+        Runnable declarationHistory = onHistory;
+        if (shown != null && declarationHistory != null) {
+            // The declaration's own commits and blame, as a card on the Map beside this one (gap 12).
+            MenuItem lines = new MenuItem(tr("project.map.history.menu"), Icons.gitLog());
+            lines.setDisable(symbolMissing);
+            lines.setOnAction(ignored -> declarationHistory.run());
+            items.add(lines);
+        }
         items.add(history);
         items.add(annotate);
         return items;

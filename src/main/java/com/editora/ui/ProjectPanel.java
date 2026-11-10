@@ -300,6 +300,28 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 java.util.function.Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
             found.accept(null);
         }
+
+        /**
+         * Every commit that changed {@code file}'s 0-based lines {@code startLine..endLine}, newest first, at most
+         * {@code max}, for a Map history card (gap 12); on the FX thread, unavailable when Git is off.
+         */
+        default void gitLineHistory(
+                Path file,
+                int startLine,
+                int endLine,
+                int max,
+                java.util.function.Consumer<com.editora.git.LineHistory.Result> found) {
+            found.accept(com.editora.git.LineHistory.Result.unavailable());
+        }
+
+        /** Who last changed each line of {@code file} in the repository at {@code root}; on the FX thread. */
+        default void gitBlame(
+                Path root, Path file, java.util.function.Consumer<List<com.editora.git.BlameParser.BlameLine>> found) {
+            found.accept(List.of());
+        }
+
+        /** Opens commit {@code hash}'s diff of the repository-relative {@code path} in the repository at {@code root}. */
+        default void gitOpenCommitFile(Path root, String hash, String path, @Nullable String previousPath) {}
     }
 
     /** Bookmark/note state and actions shared by the classic tree and Canvas map. */
@@ -3004,6 +3026,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     int endLine,
                     Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
                 actions.gitLastChange(file, startLine, endLine, found);
+            }
+
+            @Override
+            public void lineHistory(
+                    Path file,
+                    int startLine,
+                    int endLine,
+                    int max,
+                    Consumer<com.editora.git.LineHistory.Result> found) {
+                actions.gitLineHistory(file, startLine, endLine, max, found);
+            }
+
+            @Override
+            public void blame(Path root, Path file, Consumer<List<com.editora.git.BlameParser.BlameLine>> found) {
+                actions.gitBlame(root, file, found);
+            }
+
+            @Override
+            public void openCommitFile(Path root, String hash, String path, @Nullable String previousPath) {
+                actions.gitOpenCommitFile(root, hash, path, previousPath);
+                raiseEditorWindow();
             }
         };
     }

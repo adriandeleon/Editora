@@ -223,6 +223,10 @@ final class MapCards {
     private final Map<ProjectMapPreview, CardAttachment> viewsAttachments = new java.util.IdentityHashMap<>();
     /** The Overview card, when open (review 3 B4): not counted against the limit and never evicted. */
     private @Nullable ProjectMapOverviewCard overviewCard;
+    /** The declaration History card, when open (gap 12): one at a time, not counted against the limit. */
+    private @Nullable ProjectMapHistoryCard historyCard;
+    /** Changes or Blame: what the last History card showed, and the next one opens with. */
+    private ProjectMapHistoryCard.Mode historyMode = ProjectMapHistoryCard.Mode.CHANGES;
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
     private final Map<Region, Long> cardTouches = new java.util.IdentityHashMap<>();
     /** The pinned code cards: never evicted (Map explore round, position 7). */
@@ -995,6 +999,190 @@ final class MapCards {
         focusReturnToMap(focused);
     }
 
+    /** The cards there is one of at most — the Overview and the History card — that are open. */
+    private List<Region> soloCards() {
+        List<Region> solo = new ArrayList<>(2);
+        if (overviewCard != null) {
+            solo.add(overviewCard);
+        }
+        if (historyCard != null) {
+            solo.add(historyCard);
+        }
+        return solo;
+    }
+
+    /**
+     * Opens the History card of the declaration {@code card} shows (gap 12) beside it, or fills the open History card
+     * with it; a card showing a whole file has no declaration, and opens none. Its commits and its lines' blame are
+     * asked of Git as it opens.
+     */
+    @Nullable
+    ProjectMapHistoryCard openHistory(ProjectMapPreview card) {
+        Path file = card.path();
+        ProjectMapPreview.Range range = card.range();
+        ProjectMapPreview.FollowActions actions = followActions;
+        if (file == null || range == null || actions == null) {
+            return null;
+        }
+        ProjectMapHistoryCard history = historyCard;
+        boolean created = history == null;
+        if (history == null) {
+            ProjectMapHistoryCard made = new ProjectMapHistoryCard();
+            made.setOnClose(this::closeHistoryCard);
+            made.setOnActivate(() -> touchCard(made, true));
+            made.setOnEscape(() -> {
+                closeHistoryCard();
+                host.focusMap();
+            });
+            made.setOnModeChanged(mode -> historyMode = mode);
+            made.setMapScale(host.zoom());
+            installPreviewListeners(made);
+            historyCard = made;
+            cardTouches.put(made, ++cardTouchSequence);
+            canvasHost.getChildren().add(made);
+            history = made;
+        }
+        ProjectMapHistoryCard shown = history;
+        shown.setMode(historyMode);
+        long ask = shown.show(file, range.symbol(), range.startLine(), range.endLine(), card.fullText());
+        shown.place(historyPlacement(shown, card, file));
+        touchCard(shown, true);
+        if (created) {
+            repaintPreviewConnectors();
+        }
+        try {
+            actions.lineHistory(file, range.startLine(), range.endLine(), ProjectMapHistoryCard.MAX_COMMITS, result -> {
+                if (historyCard != shown) {
+                    return;
+                }
+                shown.setHistory(ask, result);
+                Path root = result.root();
+                if (root != null) {
+                    // The commits listed are this repository's: each opens there.
+                    shown.setOnOpenCommit(commit ->
+                            actions.openCommitFile(root, commit.hash(), commit.path(), commit.previousPath()));
+                    actions.blame(root, file, lines -> {
+                        if (historyCard == shown) {
+                            shown.setLines(ask, card.fullText()); // read by now, if not when it was shown
+                            shown.setBlame(ask, lines);
+                        }
+                    });
+                }
+            });
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("asking Git for a declaration's history", failed);
+        }
+        return shown;
+    }
+
+    /**
+     * Where the History card opens: right of the declaration card it is about, level with its top, or left of it when
+     * that covers less of the map's columns, the other cards and the zoom bar — else below it — at its default size or
+     * smaller down to its minimum; with no room beside the card at all, as any card is placed ({@link
+     * #previewPlacement}). The map is not panned.
+     */
+    private ProjectMapPreview.Placement historyPlacement(
+            ProjectMapHistoryCard history, ProjectMapPreview card, Path file) {
+        double width = canvasHost.getWidth();
+        double height = canvasHost.getHeight();
+        double scale = cardScale(history);
+        List<double[]> obstacles = new ArrayList<>(cardsTaken(history));
+        obstacles.addAll(host.chrome());
+        double[] spot = historySpot(
+                drawnBounds(card),
+                ProjectMapHistoryCard.DEFAULT_WIDTH * scale,
+                ProjectMapHistoryCard.DEFAULT_HEIGHT * scale,
+                ProjectMapHistoryCard.MIN_WIDTH * scale,
+                ProjectMapHistoryCard.MIN_HEIGHT * scale,
+                width,
+                height,
+                obstacles);
+        if (spot == null) {
+            return previewPlacement(
+                    history,
+                    file,
+                    ProjectMapHistoryCard.DEFAULT_WIDTH,
+                    ProjectMapHistoryCard.DEFAULT_HEIGHT,
+                    ProjectMapHistoryCard.MIN_WIDTH,
+                    ProjectMapHistoryCard.MIN_HEIGHT,
+                    width,
+                    height);
+        }
+        return new ProjectMapPreview.Placement(spot[0], spot[1], spot[2] / scale, spot[3] / scale);
+    }
+
+    /**
+     * The History card's spot beside {@code source} ({@code {x, y, w, h}} as drawn) in a panel {@code parentWidth ×
+     * parentHeight}: {@code {x, y, w, h}}, right of it, left of it or below it — the first of those that fits the
+     * card's minimum and covers least of {@code obstacles} ({@code {x, y, w, h}}, or with a weight after) — or null when
+     * none fits. Pure.
+     */
+    static double @Nullable [] historySpot(
+            double[] source,
+            double width,
+            double height,
+            double minimumWidth,
+            double minimumHeight,
+            double parentWidth,
+            double parentHeight,
+            List<double[]> obstacles) {
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double gap = COLUMN_GAP;
+        double top = Math.max(margin, Math.min(source[1], parentHeight - margin - minimumHeight));
+        double h = Math.min(height, parentHeight - margin - top);
+        double[] best = null;
+        double bestCost = Double.MAX_VALUE;
+        // Right of it.
+        double rightX = source[0] + source[2] + gap;
+        double rightW = Math.min(width, parentWidth - margin - rightX);
+        // Left of it.
+        double leftW = Math.min(width, source[0] - gap - margin);
+        // Below it.
+        double belowY = source[1] + source[3] + gap;
+        double belowX = Math.max(margin, Math.min(source[0], parentWidth - margin - minimumWidth));
+        double belowW = Math.min(width, parentWidth - margin - belowX);
+        double belowH = Math.min(height, parentHeight - margin - belowY);
+        List<double[]> weighed = new ArrayList<>(obstacles.size());
+        for (double[] o : obstacles) {
+            weighed.add(o.length > 4 ? o : new double[] {o[0], o[1], o[2], o[3], 1}); // unweighed: as much as a card
+        }
+        double[][] candidates = {
+            {rightX, top, rightW, h},
+            {source[0] - gap - leftW, top, leftW, h},
+            {belowX, belowY, belowW, belowH}
+        };
+        for (double[] c : candidates) {
+            if (c[2] < minimumWidth || c[3] < minimumHeight || c[0] < margin - 0.5 || c[1] < margin - 0.5) {
+                continue;
+            }
+            double cost = cardOverlapCost(c[0], c[1], c[2], c[3], weighed);
+            if (cost < bestCost - 0.5) {
+                best = c;
+                bestCost = cost;
+            }
+        }
+        return best;
+    }
+
+    /** The open History card, or null. */
+    @Nullable
+    ProjectMapHistoryCard historyCard() {
+        return historyCard;
+    }
+
+    private void closeHistoryCard() {
+        ProjectMapHistoryCard card = historyCard;
+        if (card == null) {
+            return;
+        }
+        boolean focused = focusReturnsFrom(card);
+        historyCard = null;
+        cardTouches.remove(card);
+        canvasHost.getChildren().remove(card);
+        repaintPreviewConnectors();
+        focusReturnToMap(focused);
+    }
+
     /** Every open card, the most recently used first. */
     List<OpenCard> openCards() {
         List<OpenCard> open = new ArrayList<>();
@@ -1004,6 +1192,11 @@ final class MapCards {
         Path root = host.root();
         if (overview != null && root != null) {
             open.add(new OpenCard(root, overview, overview.title(), false));
+        }
+        ProjectMapHistoryCard history = historyCard;
+        Path historyFile = history == null ? null : history.file();
+        if (history != null && historyFile != null) {
+            open.add(new OpenCard(historyFile, history, history.title(), false));
         }
         open.sort(java.util.Comparator.comparingLong((OpenCard card) -> cardTouches.getOrDefault(card.node(), 0L))
                 .reversed());
@@ -1046,12 +1239,14 @@ final class MapCards {
             note.focusContent();
         } else if (card instanceof ProjectMapOverviewCard overview) {
             overview.focusContent();
+        } else if (card instanceof ProjectMapHistoryCard history) {
+            history.focusContent();
         }
     }
 
     /** Whether any card is open. */
     boolean isEmpty() {
-        return previews.isEmpty() && notePreviews.isEmpty() && overviewCard == null;
+        return previews.isEmpty() && notePreviews.isEmpty() && soloCards().isEmpty();
     }
 
     /** Closes one code or note card, with what is stuck on it. */
@@ -1062,6 +1257,8 @@ final class MapCards {
             closeNotePreview(note);
         } else if (card == overviewCard) {
             closeOverviewCard();
+        } else if (card == historyCard) {
+            closeHistoryCard();
         }
     }
 
@@ -1093,11 +1290,9 @@ final class MapCards {
                 .toList();
         cards.forEach(this::closePreview);
         notes.forEach(this::closeNotePreview);
-        boolean overview = overviewCard != null && overviewCard.isVisible();
-        if (overview) {
-            closeOverviewCard();
-        }
-        return !cards.isEmpty() || !notes.isEmpty() || overview;
+        List<Region> solo = soloCards().stream().filter(Region::isVisible).toList(); // the Overview, the History card
+        solo.forEach(this::close);
+        return !cards.isEmpty() || !notes.isEmpty() || !solo.isEmpty();
     }
 
     /** The files whose outline the cards need: declaration cards' files and those with a Structure column out. */
@@ -1187,6 +1382,11 @@ final class MapCards {
         if (overview != null) {
             cards.add(overview);
             overview.setMapScale(zoom);
+        }
+        ProjectMapHistoryCard history = historyCard;
+        if (history != null) {
+            cards.add(history);
+            history.setMapScale(zoom);
         }
         for (Region card : cards) {
             card.relocate(x + (card.getLayoutX() - fromX) * ratio, y + (card.getLayoutY() - fromY) * ratio);
@@ -1467,6 +1667,7 @@ final class MapCards {
             cardColumnCards.add(preview);
         }
         preview.setOnOpenAt((path, line) -> host.openAt(path, line));
+        preview.setOnHistory(() -> openHistory(preview));
         preview.setOnStep(direction -> cardsStep(preview, direction));
         preview.setOnShowInStructure(() -> cardsShowInStructure(preview));
         preview.setOnOpenNarrowed(() -> {
@@ -2146,9 +2347,7 @@ final class MapCards {
         obstacles.addAll(host.chrome());
         List<Region> others = new ArrayList<>(previews.values());
         others.addAll(notePreviews.values());
-        if (overviewCard != null) {
-            others.add(overviewCard);
-        }
+        others.addAll(soloCards());
         for (Region other : others) {
             if (other != card && other.isVisible() && other.getWidth() > 0) {
                 double scale = cardScale(other);
@@ -2302,6 +2501,7 @@ final class MapCards {
             // Nor, while an answer opens its result cards, the card it was asked from or its other results (C4).
             Region oldest = oldestCard(card -> card != keep
                     && card != overviewCard
+                    && card != historyCard
                     && !pinnedCards.contains(card)
                     && !links.linksKeepsWhileOpening(card));
             if (oldest instanceof ProjectMapPreview code && cardStructures.containsKey(code)) {
@@ -2417,6 +2617,7 @@ final class MapCards {
             if (current instanceof ProjectMapPreview
                     || current instanceof ProjectMapNotePreview
                     || current instanceof ProjectMapOverviewCard
+                    || current instanceof ProjectMapHistoryCard
                     || current.getStyleClass().contains("project-map-sticky-note")
                     || current.getStyleClass().contains("project-map-card-structure")
                     || current.getStyleClass().contains("project-map-link-more")) {
@@ -2529,6 +2730,7 @@ final class MapCards {
             preview.dispose();
         }
         closeOverviewCard();
+        closeHistoryCard();
         List<ProjectMapNotePreview> openNotes = List.copyOf(notePreviews.values());
         notePreviews.clear();
         for (ProjectMapNotePreview preview : openNotes) {
@@ -2718,6 +2920,9 @@ final class MapCards {
         notePreviews.values().forEach(preview -> preview.constrainTo(width, height));
         if (overviewCard != null) {
             overviewCard.constrainTo(width, height);
+        }
+        if (historyCard != null) {
+            historyCard.constrainTo(width, height);
         }
     }
 
@@ -3094,9 +3299,7 @@ final class MapCards {
         obstacles.addAll(chrome); // the zoom bar and the overview: never covered when anything else will do
         List<Region> cards = new ArrayList<>(previews.values());
         cards.addAll(notePreviews.values());
-        if (overviewCard != null) {
-            cards.add(overviewCard);
-        }
+        cards.addAll(soloCards());
         for (CardAttachment stuck : allAttachments()) {
             double[] drawn = stuck.card() == preview ? null : stuck.bounds(); // its own move with it
             if (drawn != null) { // what is stuck on a card weighs as a card does
@@ -3489,6 +3692,9 @@ final class MapCards {
         if (card instanceof ProjectMapOverviewCard overview) {
             return overview.mapScale();
         }
+        if (card instanceof ProjectMapHistoryCard history) {
+            return history.mapScale();
+        }
         return card instanceof ProjectMapNotePreview note ? note.mapScale() : 1;
     }
 
@@ -3566,10 +3772,7 @@ final class MapCards {
         Set<Node> cards = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         cards.addAll(previews.values());
         cards.addAll(notePreviews.values());
-        ProjectMapOverviewCard overview = overviewCard;
-        if (overview != null) {
-            cards.add(overview);
-        }
+        cards.addAll(soloCards());
         List<Node> nodes = new ArrayList<>();
         for (Node child : canvasHost.getChildren()) {
             if (child.isVisible()

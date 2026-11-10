@@ -2530,7 +2530,13 @@ final class ProjectMapView extends VBox {
                         : new com.editora.text.FoldRegions.Region(symbol.line(), symbol.endLine())));
         menu.getItems().setAll(preview, openAt, openNarrowed);
         menu.getItems().addAll(linksItems(entry));
-        menu.getItems().addAll(followItems(symbol.file(), symbol.line(), followName(symbol.label())));
+        menu.getItems().addAll(followItems(symbol.file(), symbol.line(), followName(symbol.label()), () -> {
+            previewAction.run(); // the declaration's card first: its History card opens beside it
+            ProjectMapPreview card = cards.codeCard(entry.path());
+            if (card != null) {
+                cards.openHistory(card);
+            }
+        }));
         return menu;
     }
 
@@ -2704,6 +2710,26 @@ final class ProjectMapView extends VBox {
 
         /** Opens a link of a card's Quick Documentation in the browser, as the editor's hover does. */
         default void openUrl(String url) {}
+
+        /**
+         * Every commit that changed {@code file}'s 0-based lines {@code startLine..endLine}, newest first, at most
+         * {@code max}, with the part of each diff that touched them; on the FX thread (Map gap 12).
+         */
+        default void lineHistory(
+                Path file, int startLine, int endLine, int max, Consumer<com.editora.git.LineHistory.Result> found) {
+            found.accept(com.editora.git.LineHistory.Result.unavailable());
+        }
+
+        /** Who last changed each line of {@code file} in the repository at {@code root}; on the FX thread. */
+        default void blame(Path root, Path file, Consumer<List<com.editora.git.BlameParser.BlameLine>> found) {
+            found.accept(List.of());
+        }
+
+        /**
+         * Opens commit {@code hash}'s diff of the file at {@code path} (repository-relative, at {@code previousPath}
+         * before the commit when it moved) in the repository at {@code root}, in the editor window.
+         */
+        default void openCommitFile(Path root, String hash, String path, @Nullable String previousPath) {}
     }
 
     private @Nullable FollowCode followCode;
@@ -2748,15 +2774,38 @@ final class ProjectMapView extends VBox {
                                     Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
                                 code.lastChange(file, startLine, endLine, found);
                             }
+
+                            @Override
+                            public void lineHistory(
+                                    Path file,
+                                    int startLine,
+                                    int endLine,
+                                    int max,
+                                    Consumer<com.editora.git.LineHistory.Result> found) {
+                                code.lineHistory(file, startLine, endLine, max, found);
+                            }
+
+                            @Override
+                            public void blame(
+                                    Path root, Path file, Consumer<List<com.editora.git.BlameParser.BlameLine>> found) {
+                                code.blame(root, file, found);
+                            }
+
+                            @Override
+                            public void openCommitFile(
+                                    Path root, String hash, String path, @Nullable String previousPath) {
+                                code.openCommitFile(root, hash, path, previousPath);
+                            }
                         });
     }
 
     /**
      * A declaration row's follow items: Go to Definition, Find Usages, Go to Implementation, Type and Call
      * Hierarchy at the declaration in the editor — in an In the Editor submenu when the Map answers them as cards —
-     * then Related Test / Subject and File History of its file. Empty without a {@link FollowCode}.
+     * then Related Test / Subject, the declaration's History card ({@code declarationHistory}, gap 12) and File
+     * History of its file. Empty without a {@link FollowCode}.
      */
-    private List<MenuItem> followItems(Path file, int line, String name) {
+    private List<MenuItem> followItems(Path file, int line, String name, Runnable declarationHistory) {
         FollowCode code = followCode;
         if (code == null) {
             return List.of();
@@ -2778,6 +2827,9 @@ final class ProjectMapView extends VBox {
         }
         items.add(new SeparatorMenuItem());
         items.add(mapMenuItem("project.map.follow.related", () -> followRelated(file)));
+        MenuItem lines = new MenuItem(tr("project.map.history.menu"), Icons.gitLog());
+        lines.setOnAction(event -> declarationHistory.run());
+        items.add(lines);
         MenuItem history = new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog());
         history.setOnAction(event -> code.fileHistory(file));
         items.add(history);
