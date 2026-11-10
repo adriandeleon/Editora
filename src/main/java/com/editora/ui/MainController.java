@@ -1254,6 +1254,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
         panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
         panel.shareIndexes(indexCoordinator, lspManager); // "@name" in the Map; Search Everywhere's files
+        panel.setMapCardAids(
+                () -> { // the Map's code cards read as the editor does: its settings
+                    Settings s = config.getSettings();
+                    return new MapCardAids(
+                            s.isSemanticHighlight(), s.isInlayHints(), s.getInlayHintMode(), s.isStickyScroll());
+                });
         panel.setSimpleMode(chrome::simpleModeActive);
         panel.setShowHidden(config.getSettings().isProjectShowHidden());
         panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
@@ -1556,6 +1562,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     void applyProjectSupport() {
         if (projectPanel != null) { // else applied when the panel is built
             projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()); // hidden-files toggle
+            projectPanel.applyMapCardAids(); // semantic highlighting, inlay hints, sticky scroll in the Map's cards
             projectPanel.setRespectGitignore(
                     config.getSettings().isSearchRespectGitignore()); // skip .gitignore'd files in the filter search
         }

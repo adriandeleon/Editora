@@ -391,6 +391,19 @@ by a caret move, a scroll, a click elsewhere or Escape — the first Escape clos
 links open through the window's link choke point, `FileActions.openExternalUrl`). Without a server the status line
 says it needs one.
 
+**The editor's reading aids in cards** (Map code browser round 2). A code card reads as the editor does, as the
+editor's settings say (`MapCardAids`, from `Settings`, followed again when they change: `ProjectPanel.applyMapCardAids`):
+**semantic highlighting** — the language server's semantic tokens of the card's file, which the card lends it (gap 8),
+laid over the card's TextMate colours where a token stands (`MapCardSemantics.overlay`, the editor's `.text.sem-*`
+classes; a declaration card shifts the file's lines to its own); **inlay hints** — the server's hints of the card's
+lines, filtered as the editor filters them (`InlayHintFilter`, the setting's mode), drawn between the characters at
+their columns by the same inlay factory as the editor's; and **sticky scroll** — the headers of the scopes the card
+has scrolled into but no longer shows the start of, pinned over its text (the editor's `StickyScrollBar`, over the
+card's fold regions, `FoldRegions.detect`); a press on one scrolls the card there. Tokens and hints are asked each time
+the card's text is coloured (`MapCards.askCardAids`, through `MapCardLinks.Source.semanticTokens` / `inlayHints` →
+`ProjectMapLinkSearch`, only of a server that already holds the file: nothing is started), and an answer for text the
+card no longer shows is dropped. With a setting off, the card's are taken away.
+
 **A card's problems** (Map code browser gap 8). A code card keeps its file before the running language server for
 as long as it shows it (`MapCardLinks.Source.watchProblems`: `LspManager.lendDocument` with the text the card shows,
 and `LspManager.watchDiagnostics`; an open tab's file is the tab's, so nothing is lent and its unsaved text is what
@@ -1838,6 +1851,11 @@ The focused coverage lives in:
   recursive call marked and not walked, a press, Enter walking with stale answers dropped, Back, opening from the
   middle and a declaration's menu, types drawn only when there are some, more than fit, the server's note, and the
   graph opened from a card through the Map's links with a server's answer, and Escape;
+- `MapCardSemanticsTest` and `MapCardEditorAidsFxTest` for the editor's reading aids in cards: semantic tokens over
+  the colours at their place, shifted for a declaration card, cut at their line, overlapping and uncoloured ones left
+  out; a card coloured by the server's tokens, its hints drawn (an uninformative one filtered out), its scopes pinned,
+  stale answers dropped, the settings turning each off and on; the link search asking only a server that holds the
+  file;
 - `MapCardSpatialKeysFxTest` for Ctrl+Shift+arrows: the nearest card that way (straight ahead first, one mostly to
   the side left out, ties by centre), the map moved only as far as a card is out of view, which keys move; moving
   between three cards and from the map's selected row, the status with no card that way, and a card partly out of

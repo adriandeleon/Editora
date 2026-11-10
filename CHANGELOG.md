@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project Map cards read like the editor.** Code cards now show the language server's semantic highlighting and
+  inlay hints, and pin the headers of the class or method you have scrolled into, as the editor does. Each follows
+  its editor setting.
 - **Debug Python subprocesses.** A process your Python program starts (`multiprocessing`, a Python subprocess) is now
   debugged too, in a session of its own beside the program's. Its breakpoints stop, and the Debug window shows it
   when it stops. Stopping the program stops its subprocesses, and a subprocess's tab goes once it ends. Turn it off
