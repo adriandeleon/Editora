@@ -123,6 +123,8 @@ final class MapSurface extends Region {
     private static final double STRUCTURE_ZONE = 24;
     /** Room for a declaration row's line number. */
     private static final double SYMBOL_LINE_WIDTH = 56;
+    /** About how wide one character of a row's usage count is, unzoomed, at its 10px font. */
+    private static final double USES_CHAR_WIDTH = 5.6;
     /** Width reserved in a row for one bookmark or Personal Note badge. */
     private static final double MARKER_WIDTH = 13;
 
@@ -3794,9 +3796,17 @@ final class MapSurface extends Region {
         g.setFont(mapFont(FontWeight.NORMAL, FontPosture.REGULAR, Math.max(8, 10 * zoom)));
         g.setTextAlign(TextAlignment.RIGHT);
         g.fillText(line, right - 2 * zoom, box.y() + 20 * zoom);
+        // How many times it is used, before its line, as the editor's code lens says it (gap 11).
+        Integer count = symbol == null ? null : view.usages.count(symbol.file(), symbol.line());
+        double usesWidth = 0;
+        if (count != null) {
+            String uses = MapUsageCounts.text(count);
+            usesWidth = (uses.length() * USES_CHAR_WIDTH + 6) * zoom;
+            g.fillText(uses, right - SYMBOL_LINE_WIDTH * zoom, box.y() + 20 * zoom);
+        }
         g.setTextAlign(TextAlignment.LEFT);
         double labelLeft = box.x() + 31 * zoom;
-        double room = right - SYMBOL_LINE_WIDTH * zoom - labelLeft;
+        double room = right - SYMBOL_LINE_WIDTH * zoom - usesWidth - labelLeft;
         g.setFont(rowFont(bold));
         String label = entry.name();
         double width = measuredLabelWidth(label) * zoom;
@@ -6205,6 +6215,10 @@ final class MapSurface extends Region {
         }
         ProjectMapModel.Symbol symbol = current.symbol();
         String base;
+        Integer uses = symbol == null ? null : view.usages.count(symbol.file(), symbol.line());
+        if (uses != null) {
+            states.add(MapUsageCounts.text(uses)); // as its row says it (gap 11)
+        }
         if (symbol != null) {
             base = tr(
                     row ? "project.map.accessible.row.symbol" : "project.map.accessible.symbol",

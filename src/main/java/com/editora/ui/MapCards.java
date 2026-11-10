@@ -1360,6 +1360,37 @@ final class MapCards {
         return fallback;
     }
 
+    /** Usage counts for the cards' Structure columns (gap 11); null: none shown. */
+    private @Nullable MapUsageCounts usages;
+
+    void setUsages(@Nullable MapUsageCounts counts) {
+        usages = counts;
+        cardStructures.values().forEach(column -> column.setUsages(counts));
+    }
+
+    /** Usage counts came or went: the cards' Structure columns show them. */
+    void usagesChanged() {
+        cardStructures.values().forEach(ProjectMapCardStructure::usagesChanged);
+    }
+
+    /** {@code card}'s Structure column, or null. For tests. */
+    @Nullable
+    ProjectMapCardStructure cardStructureForTest(ProjectMapPreview card) {
+        return cardStructures.get(card);
+    }
+
+    /** The files whose card has its Structure column out. */
+    Set<Path> structureColumnFiles() {
+        Set<Path> files = new HashSet<>();
+        for (ProjectMapPreview card : cardStructures.keySet()) {
+            Path file = card.path();
+            if (file != null) {
+                files.add(file);
+            }
+        }
+        return files;
+    }
+
     /**
      * The files a declaration card is open for, or whose card has its Structure column out: their outlines are
      * kept to follow the cards' lines and to list them.
@@ -1812,6 +1843,7 @@ final class MapCards {
                         this::connectorsMoved,
                         () -> reserveBesideCard(card)));
         structure.ensure(file);
+        column.setUsages(usages);
         // Always on the card's right, so the declarations read on from the card (Map Structure right).
         column.show(CardAttachment.Side.RIGHT, false);
         column.update(structure.view(file)); // shown first: its width is measured in the rows' font

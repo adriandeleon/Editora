@@ -302,6 +302,17 @@ final class MapCardLinks {
                 Path file, String text, Consumer<java.util.List<com.editora.text.LspDiagnostic>> problems) {
             return null;
         }
+
+        /**
+         * How many times each of {@code declarations} of {@code file} is used, by declaration line, given once on
+         * the FX thread; null when no running server can say (nothing is started). Map code browser gap 11.
+         */
+        default void usages(
+                Path file,
+                List<MapUsageCounts.Declaration> declarations,
+                Consumer<java.util.@Nullable Map<Integer, Integer>> answer) {
+            answer.accept(null);
+        }
     }
 
     /**

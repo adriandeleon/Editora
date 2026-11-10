@@ -39,7 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Back, Forward and *Show Value History* then read the recorded stops as any other. Set one with *Debug: Toggle
   Recording Breakpoint* or *Record and continue* in the breakpoint's form; it is purple with a ring in the gutter. A
   session records at most 500 stops, after which the breakpoint stops as usual.
-
+- **Usage counts on Project Map declaration rows.** A method, class or field row in the Map's Structure columns and a
+  card's says how many times it is used ("12 uses", "no uses"), as the editor's code lens does. The counts come
+  from the language server already running for the file, and update a moment after you stop typing.
 - **Debug History: go back to an earlier stop.** The Debug window keeps each stop of a session as it was: the call
   stack, the values you looked at, your watches, inline values and pinned values. Back and Forward in the Debug
   toolbar (or *Debug: Back*, *Debug: Forward* and *Debug: Show History…*) show an earlier stop read-only, with its
