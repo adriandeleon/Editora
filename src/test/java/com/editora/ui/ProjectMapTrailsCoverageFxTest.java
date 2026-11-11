@@ -25,6 +25,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
@@ -468,6 +469,32 @@ class ProjectMapTrailsCoverageFxTest {
                 assertNull(h.cards().codeCard(h.file(2)), "the second stop's card closed as the trail moved on");
                 assertNull(h.cards().viewsAttachment(h.trails().stopCard()), "a stop with no note gets no sheet");
             });
+        }
+    }
+
+    @Test
+    void aStopsNoteClosesOnItsCrossAndComesBackWhenTheStopIsPlayedAgain() throws Exception {
+        Path project = project();
+        tour(project);
+        try (Harness h = open(project)) {
+            FxTestSupport.runOnFx(() -> assertTrue(h.trails().play("Tour", 0)));
+            waitForFx(() -> h.trails().stopCard() != null
+                    && h.cards().viewsAttachment(h.trails().stopCard()) != null);
+            FxTestSupport.runOnFx(() -> {
+                ProjectMapPreview card = h.trails().stopCard();
+                ProjectMapTrailNote note = (ProjectMapTrailNote) h.cards().viewsAttachment(card);
+                HBox header = (HBox) note.getChildren().getFirst();
+                Button close = (Button) header.getChildren().getLast();
+                assertEquals("×", close.getText());
+                assertEquals(tr("project.map.trails.note.close"), close.getAccessibleText());
+                close.fire();
+                assertNull(note.getParent(), "the sheet is gone");
+                assertNull(h.cards().viewsAttachment(card), "and off its card");
+                assertTrue(h.trails().stopCard() == card, "the stop's card stays");
+                h.trails().play("Tour", 0);
+            });
+            waitForFx(() -> h.trails().stopCard() != null
+                    && h.cards().viewsAttachment(h.trails().stopCard()) != null);
         }
     }
 

@@ -4,22 +4,27 @@ import javafx.beans.InvalidationListener;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
 import org.jspecify.annotations.Nullable;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A trail stop's note (Map explore, position 2), stuck on the stop's card as a sticky note is: a small read-only
  * sheet beside the card, tied by a connector to the stop's first line, that moves, zooms, rises, hides and closes
  * with the card. It looks like the card's Personal Notes sheets ({@link ProjectMapStickyNotes}) but is not one: the
  * note belongs to the trail, in the project, and is edited in the trail's editor. It can be dragged to another
- * spot beside the card, which it keeps while the stop is shown.
+ * spot beside the card, which it keeps while the stop is shown. Its × hides it until the stop is played again.
  */
 final class ProjectMapTrailNote extends VBox implements CardAttachment {
 
@@ -44,6 +49,9 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
     private boolean dragged;
 
     private boolean disposed;
+    /** What × does: the trail takes the sheet off its card; alone, the sheet only goes. */
+    private Runnable onClose = this::dispose;
+
     private double dragScreenX;
     private double dragScreenY;
     private double dragLayoutX;
@@ -89,7 +97,14 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         where.getStyleClass().add("project-map-sticky-note-where");
         where.setMinWidth(0);
         where.setMaxWidth(Double.MAX_VALUE);
-        HBox top = new HBox(where);
+        HBox.setHgrow(where, Priority.ALWAYS);
+        Button close = new Button("×");
+        close.getStyleClass().addAll("flat", "project-map-sticky-note-close");
+        close.setFocusTraversable(false);
+        close.setTooltip(new Tooltip(tr("project.map.trails.note.closeHelp")));
+        close.setAccessibleText(tr("project.map.trails.note.close"));
+        close.setOnAction(event -> onClose.run());
+        HBox top = new HBox(where, close);
         top.getStyleClass().add("project-map-sticky-note-header");
         top.setAlignment(Pos.CENTER_LEFT);
         top.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
@@ -137,6 +152,11 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
     void setAvoid(java.util.function.@Nullable Supplier<javafx.geometry.@Nullable Bounds> bounds) {
         avoid = bounds == null ? () -> null : bounds;
         follow();
+    }
+
+    /** What × does instead of only disposing of the sheet: the trail takes it off the card, so the card forgets it. */
+    void setOnClose(Runnable action) {
+        onClose = action;
     }
 
     /** The note's text, as shown. For tests. */
