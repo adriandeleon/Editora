@@ -1256,6 +1256,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
         panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
         panel.shareIndexes(indexCoordinator, lspManager); // "@name" in the Map; Search Everywhere's files
+        lspCoordinator.setOnProblemsShown(panel::setMapProblems); // the Problems window's errors and warnings
         panel.setMapCardAids(
                 () -> { // the Map's code cards read as the editor does: its settings
                     Settings s = config.getSettings();

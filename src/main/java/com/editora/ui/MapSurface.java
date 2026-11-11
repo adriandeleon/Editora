@@ -290,6 +290,9 @@ final class MapSurface extends Region {
     private Set<Path> modifiedPaths = Set.of();
     private Set<Path> bookmarkedPaths = Set.of();
     Set<Path> notedPaths = Set.of();
+    /** The errors and warnings of the files, and of the folders that hold them (Map code browser round 2). */
+    private ProjectMapProblems problems = ProjectMapProblems.NONE;
+
     private Set<Path> emphasized = Set.of();
     FlowDirection flowDirection = DEFAULT_FLOW;
     private @Nullable Path selected;
@@ -2254,6 +2257,7 @@ final class MapSurface extends Region {
                         filters.gitChanged(),
                         filters.bookmarked(),
                         filters.personalNotes(),
+                        filters.problems(),
                         filters.type());
         for (ProjectMapModel.Entry entry : entries) {
             Path path = entry.path();
@@ -2271,7 +2275,8 @@ final class MapSurface extends Region {
                     modifiedPaths.contains(path),
                     gitChanged(path),
                     bookmarkedPaths.contains(path),
-                    notedPaths.contains(path))) {
+                    notedPaths.contains(path),
+                    problems.has(path))) {
                 direct.add(path);
             }
         }
@@ -2304,6 +2309,7 @@ final class MapSurface extends Region {
                 filters.gitChanged(),
                 filters.bookmarked(),
                 filters.personalNotes(),
+                filters.problems(),
                 filters.type());
         Set<Path> result = new HashSet<>();
         Map<Path, Boolean> fileAccepted = new HashMap<>();
@@ -2322,7 +2328,8 @@ final class MapSurface extends Region {
                             modifiedPaths.contains(file),
                             gitChanged(file),
                             bookmarkedPaths.contains(file),
-                            notedPaths.contains(file)));
+                            notedPaths.contains(file),
+                            problems.has(file)));
             if (accepted) {
                 result.add(entry.path());
             }
@@ -2338,7 +2345,7 @@ final class MapSurface extends Region {
     private void addUnloadedMatches(Set<Path> direct, Set<Path> loadedPaths) {
         boolean tabs = filters.open() || filters.modified();
         boolean markers = filters.bookmarked() || filters.personalNotes();
-        if (view.root == null || !tabs && !markers) {
+        if (view.root == null || !tabs && !markers && !filters.problems()) {
             return;
         }
         Set<Path> candidates = new HashSet<>();
@@ -2346,6 +2353,9 @@ final class MapSurface extends Region {
             candidates.addAll(view.openFiles.get()); // an open buffer may hold markers not stored yet
             if (markers) {
                 candidates.addAll(view.markerCandidates.get());
+            }
+            if (filters.problems()) {
+                candidates.addAll(problems.files()); // a file with problems inside a collapsed folder lights it
             }
         } catch (RuntimeException failed) {
             ProjectMapLog.unexpected("listing open and marked files", failed);
@@ -2371,7 +2381,8 @@ final class MapSurface extends Region {
                     filters.modified() && safeTest(modifiedState, path),
                     false,
                     filters.bookmarked() && safeTest(bookmarkState, path),
-                    filters.personalNotes() && safeTest(noteState, path))) {
+                    filters.personalNotes() && safeTest(noteState, path),
+                    filters.problems() && problems.has(path))) {
                 direct.add(path);
             }
         }
@@ -3746,6 +3757,11 @@ final class MapSurface extends Region {
         double iconX = content.x() + 7 * zoom;
         double iconY = content.y() + 6 * zoom;
         drawIcon(g, entry, iconX, iconY, focusedSelection);
+        ProjectMapProblems.Count problemCount =
+                entry.isSymbol() ? ProjectMapProblems.Count.ZERO : problems.of(entry.path());
+        if (problemCount.any()) {
+            drawProblemMark(g, problemCount, iconX, iconY, fill);
+        }
         if (entry.isSymbol()) {
             drawSymbolRow(g, entry, content, focusedSelection, isSelected);
             g.setGlobalAlpha(1);
@@ -3754,9 +3770,15 @@ final class MapSurface extends Region {
         }
         Color ink = focusedSelection
                 ? onAccent()
-                : openPaths.contains(entry.path())
-                        ? color(accentTextProbe, accent)
-                        : color(textProbe, Color.web("#d8dee9"));
+                : problemCount.errors() > 0
+                        ? color(
+                                dangerProbe,
+                                Color.web("#f85149")) // as the editor's explorer: a name with errors is red
+                        : problemCount.warnings() > 0
+                                ? color(warningProbe, Color.web("#d29922"))
+                                : openPaths.contains(entry.path())
+                                        ? color(accentTextProbe, accent)
+                                        : color(textProbe, Color.web("#d8dee9"));
         g.setFont(rowFont(isSelected));
         // A name wider than the row (the width is capped) loses its middle; the tooltip has it whole.
         String label = entry.name();
@@ -4185,6 +4207,37 @@ final class MapSurface extends Region {
         }
         g.setFill(selectedNode ? onAccent() : color(accentProbe, Color.web("#388bfd")));
         g.fillRoundRect(box.x() + 2 * zoom, box.y() + 7 * zoom, 3 * zoom, box.height() - 14 * zoom, 3 * zoom, 3 * zoom);
+    }
+
+    /**
+     * A row's problems: a dot on its icon's lower corner, red with an error, amber with only warnings, ringed in the
+     * row's {@code ground} so it stands off the icon. The tooltip says how many.
+     */
+    private void drawProblemMark(
+            GraphicsContext g, ProjectMapProblems.Count count, double iconX, double iconY, Color ground) {
+        double r = 3.6 * zoom;
+        double cx = iconX + 15 * zoom;
+        double cy = iconY + 15 * zoom;
+        g.setFill(ground);
+        g.fillOval(cx - r - 1.2 * zoom, cy - r - 1.2 * zoom, 2 * (r + 1.2 * zoom), 2 * (r + 1.2 * zoom));
+        g.setFill(
+                count.errors() > 0
+                        ? color(dangerProbe, Color.web("#f85149"))
+                        : color(warningProbe, Color.web("#d29922")));
+        g.fillOval(cx - r, cy - r, 2 * r, 2 * r);
+    }
+
+    /** The errors and warnings the rows show (the Problems window's), and the Problems chip filters by. */
+    void setProblems(ProjectMapProblems found) {
+        problems = found;
+        if (filters != null && filters.problems()) {
+            recomputeEmphasis();
+        }
+        repaint();
+    }
+
+    ProjectMapProblems problems() {
+        return problems;
     }
 
     private void drawIcon(GraphicsContext g, ProjectMapModel.Entry entry, double x, double y, boolean onAccentFill) {
@@ -4783,6 +4836,10 @@ final class MapSurface extends Region {
         }
         if (notedPaths.contains(entry.path())) {
             statuses.add(tr("project.map.tooltip.personalNotes"));
+        }
+        ProjectMapProblems.Count count = problems.of(entry.path());
+        if (count.any()) {
+            statuses.add(tr("project.map.tooltip.problems", count.errors(), count.warnings()));
         }
         if (!statuses.isEmpty()) {
             lines.add(tr("project.map.tooltip.status", String.join(", ", statuses)));

@@ -1655,6 +1655,15 @@ final class LspCoordinator {
         if (problemsPanel != null) {
             problemsPanel.setProblems(problems); // an unbuilt panel shows the map when it is built
         }
+        onProblemsShown.accept(problems);
+    }
+
+    /** Told each time the Problems window's diagnostics change: the Project Map marks them (round 2). */
+    private java.util.function.Consumer<Map<Path, List<LspDiagnostic>>> onProblemsShown = shown -> {};
+
+    void setOnProblemsShown(java.util.function.Consumer<Map<Path, List<LspDiagnostic>>> listener) {
+        onProblemsShown = listener;
+        listener.accept(problems);
     }
 
     /** Runs a Problems rebuild that is waiting for its turn now — a test's stand-in for the pacing delay. */

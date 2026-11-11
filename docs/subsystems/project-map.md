@@ -930,7 +930,7 @@ hidden) is 0.85em of the UI size, and the back, forward and help buttons and the
 The search field at the top of the Map window is the map's global fuzzy name query (the Project tool
 window's own field filters the tree only). It combines with:
 
-- status chips for files that are open, modified, Git-changed, bookmarked, or have Personal Notes;
+- status chips for files that are open, modified, Git-changed, bookmarked, have Personal Notes, or have problems;
 - a type selector for source, markup, configuration, other files, or all files;
 - a fuzzy free-text filter in every column;
 - a per-column **Show hidden** checkbox.
@@ -952,6 +952,20 @@ as the Git chip does. Those ancestor sets come from the open tabs and the marker
 on the FX thread. Folders match the Bookmarks and Personal Notes chips in their own right. In its default
 mode `git status` names a new folder (`? deep/`), not the files in it, so every row below a path reported as
 untracked counts as untracked (`MapSurface.gitStatusOf`): it matches the Git chip and carries the "U" letter.
+
+**Problems on the Map** (Map code browser round 2). The rows show the errors and warnings the editor's Problems window
+holds — open files', or the whole project's with its project-wide option — as it holds them (`LspCoordinator`
+tells the Map each time they change, `setOnProblemsShown` → `ProjectPanel.setMapProblems` →
+`ProjectMapView.setProblems`). `ProjectMapProblems` counts each file's (infos and hints left out) and adds them up into
+every folder above it, below the Map's folder (counted again for a new root). A row with problems has a dot on its
+icon's lower corner — red with an error, amber with only warnings — and its name in that colour, as the editor's
+explorer marks them; its tooltip says how many (`project.map.tooltip.problems`). The **Problems** chip
+(`problemsFilter`) matches files with problems and, like the others, lights the collapsed folders that hold one.
+**Next Problem** and **Previous Problem** (`lsp.nextProblem` / `lsp.previousProblem`) typed on the Map step through
+every problem of the project, file by file and line by line, going round: the card of the next one after the card the
+keyboard is in (its caret; from the problem last stepped to while the caret is on its line) or the selected row
+opens at its line (`MapCards.openPlaceCard`), and the status line says which of how many it is, error or warning,
+and what it says. A card answers them inside its own file first (gap 8).
 
 **Hide unmatched** (a checkbox in the filter row, remembered per workspace as `projectMapHideUnmatched`,
 workspace schema v25) takes the rows that would fade off the map instead. It keeps exactly the emphasized
@@ -1856,6 +1870,10 @@ The focused coverage lives in:
   out; a card coloured by the server's tokens, its hints drawn (an uninformative one filtered out), its scopes pinned,
   stale answers dropped, the settings turning each off and on; the link search asking only a server that holds the
   file;
+- `ProjectMapProblemsTest` and `MapProblemsFxTest` for problems on the Map: files and the folders above them counted,
+  infos, hints and files outside the Map left out, steps forward and back going round; the rows' tooltip, the
+  Problems chip lighting a collapsed folder and following new problems, Next and Previous Problem opening cards with
+  the status, from a card's caret, and a new root counting afresh;
 - `MapCardSpatialKeysFxTest` for Ctrl+Shift+arrows: the nearest card that way (straight ahead first, one mostly to
   the side left out, ties by centre), the map moved only as far as a card is out of view, which keys move; moving
   between three cards and from the map's selected row, the status with no card that way, and a card partly out of

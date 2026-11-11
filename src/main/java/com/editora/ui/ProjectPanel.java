@@ -854,6 +854,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             case "lsp.gotoSymbol" -> {
                 return mapGotoSymbol();
             }
+            case "lsp.nextProblem", "lsp.previousProblem" -> {
+                // On the Map (a card answers inside its own file first): the next problem of the whole project.
+                mapView.stepProblem("lsp.nextProblem".equals(commandId));
+                return true;
+            }
             case "recent.jump", "buffer.jump" -> {
                 return mapSwitchCard(); // Recent Files and Switch File on the Map: its open cards
             }
@@ -1425,6 +1430,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 host == null || host.isBlank()
                         ? tr("project.map.status.searchingRemote")
                         : tr("project.map.status.searchingHost", host));
+    }
+
+    /** The errors and warnings of the editor's Problems window, for the Map's rows (round 2). */
+    void setMapProblems(java.util.Map<Path, List<com.editora.text.LspDiagnostic>> byFile) {
+        mapView.setProblems(byFile);
     }
 
     /** Where the Map's code cards read which of the editor's reading aids to show (round 2). */
