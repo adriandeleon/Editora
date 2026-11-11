@@ -514,6 +514,10 @@ public enum ConfigSchema {
                     // v6 → v7: + Breakpoint.recording (Debug History records the stop and the program goes on).
                     // Additive: absent is a breakpoint that stops.
                     6,
+                    ConfigMigrations::identity,
+                    // v7 → v8: + Breakpoint.id and Breakpoint.triggeredBy (a breakpoint that waits for another to be
+                    // hit). Additive: absent is a breakpoint no other waits for, that waits for none.
+                    7,
                     ConfigMigrations::identity)),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),

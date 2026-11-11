@@ -120,6 +120,8 @@ public final class FoldManager {
     /** A ring over the dot of a recording breakpoint: it records the stop and the program goes on (a lens). */
     static final String RECORDING_MARK_PATH =
             "M12 6.6a5.4 5.4 0 1 0 0 10.8 5.4 5.4 0 1 0 0-10.8zM12 9.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z";
+    /** An hourglass over the dot of a triggered breakpoint: it waits until another breakpoint is hit. */
+    static final String TRIGGERED_MARK_PATH = "M7.5 6h9v2.2L13.4 12l3.1 3.8V18h-9v-2.2l3.1-3.8-3.1-3.8z";
     /** The execution-point arrow drawn in the breakpoint strip of the line the debugger is stopped on. */
     static final String EXEC_ARROW_PATH = "M3 7.5h9V3l9.5 9-9.5 9v-4.5H3z";
     /** Material "play_arrow" triangle, shared by the gutter Run glyph and the right-click Run menu item. */
@@ -2068,23 +2070,27 @@ public final class FoldManager {
         boolean method = kinds.contains("method");
         boolean field = kinds.contains("field");
         boolean recording = kinds.contains("recording");
-        if (!conditional && !lambda && !method && !field && !recording && !kinds.contains("temporary")) {
+        boolean triggered = kinds.contains("triggered");
+        if (!conditional && !lambda && !method && !field && !recording && !triggered && !kinds.contains("temporary")) {
             return new Group(svg);
         }
         // An arrow in: a method breakpoint; an eye: a field watchpoint (their colour says a condition). "=" over the
         // dot: a condition, readable without telling colours apart; "λ" one that stops in lambdas; a ring one that
-        // records and goes on; "1" temporary.
+        // records and goes on; "1" temporary; an hourglass one that waits for another breakpoint (first: it does not
+        // stop at all until then).
         SVGPath mark = new SVGPath();
         mark.setContent(
                 method
                         ? METHOD_MARK_PATH
                         : field
                                 ? FIELD_MARK_PATH
-                                : conditional
-                                        ? CONDITION_MARK_PATH
-                                        : lambda
-                                                ? LAMBDA_MARK_PATH
-                                                : recording ? RECORDING_MARK_PATH : TEMPORARY_MARK_PATH);
+                                : triggered
+                                        ? TRIGGERED_MARK_PATH
+                                        : conditional
+                                                ? CONDITION_MARK_PATH
+                                                : lambda
+                                                        ? LAMBDA_MARK_PATH
+                                                        : recording ? RECORDING_MARK_PATH : TEMPORARY_MARK_PATH);
         if (field || recording) {
             mark.setFillRule(javafx.scene.shape.FillRule.EVEN_ODD); // the pupil is a hole in the eye
         }

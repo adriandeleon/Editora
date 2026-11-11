@@ -177,4 +177,46 @@ class BreakpointTest {
                 List.of(com.editora.i18n.Messages.tr("debug.breakpoint.recording")),
                 com.editora.editor.debug.BreakpointDescription.lines(b));
     }
+
+    @Test
+    void anIdAndTheBreakpointItWaitsForAreKeptByEveryWither() throws Exception {
+        Breakpoint b = Breakpoint.plain(4, "total += i").withId(" a1b2c3d4 ").withTriggeredBy("e5f6");
+        assertEquals("a1b2c3d4", b.id(), "trimmed");
+        assertTrue(b.isTriggered());
+        Breakpoint changed = b.withLine(9)
+                .withLineText("y")
+                .withCondition("i > 0")
+                .withLogMessage("")
+                .withEnabled(false)
+                .withHitCondition("2")
+                .withTemporary(true)
+                .withLambdas(List.of(1), false)
+                .withRecording(true);
+        assertEquals("a1b2c3d4", changed.id(), "every wither keeps it");
+        assertEquals("e5f6", changed.triggeredBy());
+        assertFalse(changed.withTriggeredBy("").isTriggered());
+        assertFalse(b.withTriggeredBy("a1b2c3d4").isTriggered(), "a breakpoint never waits for itself");
+        assertEquals("", Breakpoint.plain(1, "x").id(), "none until another waits for it");
+        assertEquals(8, Breakpoint.newId().length());
+        assertTrue(!Breakpoint.newId().equals(Breakpoint.newId()));
+
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertEquals(b, json.readValue(json.writeValueAsString(b), Breakpoint.class));
+        // breakpoints.json written before triggered breakpoints existed (schema 7)
+        Breakpoint old = json.readValue(
+                "{\"line\":2,\"condition\":\"\",\"logMessage\":\"\",\"enabled\":true,\"lineText\":\"x\","
+                        + "\"recording\":true}",
+                Breakpoint.class);
+        assertEquals("", old.id());
+        assertFalse(old.isTriggered());
+        assertTrue(old.recording());
+        assertEquals(
+                List.of(com.editora.i18n.Messages.tr("debug.breakpoint.triggeredBy", "Main.java:3")),
+                com.editora.editor.debug.BreakpointDescription.lines(
+                        b, id -> "e5f6".equals(id) ? "Main.java:3" : null));
+        assertEquals(
+                List.of(),
+                com.editora.editor.debug.BreakpointDescription.lines(b, id -> null),
+                "one whose trigger is gone waits for none");
+    }
 }

@@ -2,6 +2,7 @@ package com.editora.editor.debug;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 import com.editora.config.Breakpoint;
 import org.jspecify.annotations.Nullable;
@@ -18,12 +19,24 @@ public final class BreakpointDescription {
 
     /** One line per property that makes {@code bp} more than a plain breakpoint; empty for a plain one. */
     public static List<String> lines(@Nullable Breakpoint bp) {
+        return lines(bp, id -> null);
+    }
+
+    /**
+     * {@link #lines(Breakpoint)}, naming the breakpoint it waits for by {@code triggers} (a breakpoint id → where it
+     * is, "Main.java:12"; null when there is no such breakpoint, so this one waits for none).
+     */
+    public static List<String> lines(@Nullable Breakpoint bp, Function<String, @Nullable String> triggers) {
         List<String> out = new ArrayList<>();
         if (bp == null) {
             return out;
         }
         if (!bp.enabled()) {
             out.add(tr("debug.breakpoint.disabled"));
+        }
+        String trigger = bp.isTriggered() ? triggers.apply(bp.triggeredBy()) : null;
+        if (trigger != null) {
+            out.add(tr("debug.breakpoint.triggeredBy", trigger));
         }
         if (bp.isLogpoint()) {
             out.add(tr("debug.breakpoint.logMessage", bp.logMessage()));
@@ -50,7 +63,13 @@ public final class BreakpointDescription {
 
     /** {@link #lines} joined into a hover text, followed by what a live session says ({@code live}); null if none. */
     public static @Nullable String tooltip(@Nullable Breakpoint bp, @Nullable String live) {
-        List<String> all = lines(bp);
+        return tooltip(bp, live, id -> null);
+    }
+
+    /** {@link #tooltip(Breakpoint, String)}, naming the breakpoint it waits for by {@code triggers}. */
+    public static @Nullable String tooltip(
+            @Nullable Breakpoint bp, @Nullable String live, Function<String, @Nullable String> triggers) {
+        List<String> all = lines(bp, triggers);
         if (live != null && !live.isBlank()) {
             all.add(live);
         }

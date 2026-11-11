@@ -20,7 +20,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class BreakpointStore {
 
     /** Current on-disk schema version of {@code breakpoints.json}. */
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 8;
 
     private int schemaVersion = SCHEMA_VERSION;
 

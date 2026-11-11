@@ -99,12 +99,13 @@ final class BreakpointsPicker {
     void show() {
         Path root = ops.projectRoot();
         Path home = homeDir();
+        var triggers = TriggeredBreakpoints.labels(lineEntries(host, ops)); // what each triggered one waits for
         QuickOpen<Entry> picker = new QuickOpen<>(
                 tr("debug.breakpoints.title"),
                 tr("debug.breakpoints.prompt"),
                 this::entries,
                 BreakpointsPicker::label,
-                e -> detail(e, root, home),
+                e -> detail(e, root, home, triggers),
                 this::jump);
         // The kind in the glyph's shape and colour, as in the gutter: a logpoint is a diamond (review 2 C107).
         picker.setItemIcon(e -> glyph(e));
@@ -145,6 +146,17 @@ final class BreakpointsPicker {
     }
 
     private void lineEntries(List<Entry> out) {
+        lineEntries(host, ops, out);
+    }
+
+    /** Every line breakpoint of the window's files: open tabs' as they are now, then the saved ones of closed files. */
+    static List<Entry> lineEntries(CoordinatorHost host, DebugCoordinator.Ops ops) {
+        List<Entry> out = new ArrayList<>();
+        lineEntries(host, ops, out);
+        return out;
+    }
+
+    private static void lineEntries(CoordinatorHost host, DebugCoordinator.Ops ops, List<Entry> out) {
         Set<String> open = new HashSet<>();
         host.forEachBuffer(b -> {
             if (b.getPath() == null) {
@@ -242,10 +254,19 @@ final class BreakpointsPicker {
      * condition was cut off (review 2 C107).
      */
     static String detail(Entry e, @Nullable Path projectRoot, @Nullable Path home) {
+        return detail(e, projectRoot, home, id -> null);
+    }
+
+    /** {@link #detail(Entry, Path, Path)}, naming the breakpoint a triggered one waits for by {@code triggers}. */
+    static String detail(
+            Entry e,
+            @Nullable Path projectRoot,
+            @Nullable Path home,
+            java.util.function.Function<String, @Nullable String> triggers) {
         if (e.member() != null) {
             return memberDetail(e.member());
         }
-        List<String> parts = new ArrayList<>(BreakpointDescription.lines(e.breakpoint()));
+        List<String> parts = new ArrayList<>(BreakpointDescription.lines(e.breakpoint(), triggers));
         String folder = folder(e.file().getParent(), projectRoot, home);
         if (!folder.isEmpty()) {
             parts.add(folder);

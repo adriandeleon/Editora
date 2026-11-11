@@ -54,6 +54,19 @@ final class ClosedFileBreakpoints {
             Set<String> openPaths,
             Predicate<Path> isLocal,
             Function<Path, @Nullable List<String>> readLines) {
+        return of(map, openPaths, isLocal, readLines, bp -> true);
+    }
+
+    /**
+     * {@link #of(Map, Set, Predicate, Function)} sending only the breakpoints {@code sent} accepts: a triggered one
+     * whose trigger has not been hit in the session waits (see {@link TriggeredBreakpoints}).
+     */
+    static List<DapModels.FileBreakpoints> of(
+            Map<String, List<Breakpoint>> map,
+            Set<String> openPaths,
+            Predicate<Path> isLocal,
+            Function<Path, @Nullable List<String>> readLines,
+            Predicate<Breakpoint> sent) {
         List<DapModels.FileBreakpoints> out = new ArrayList<>();
         if (map == null) {
             return out;
@@ -86,13 +99,13 @@ final class ClosedFileBreakpoints {
                         BreakpointManager.MAX_REANCHOR_SCAN);
                 String language = com.editora.editor.debug.LineFunctions.languageOf(p);
                 for (Breakpoint bp : anchored.values()) {
-                    if (bp.enabled()) {
+                    if (bp.enabled() && sent.test(bp)) {
                         out2.addAll(BreakpointTargets.of(bp, bp.line(), lines.get(bp.line()), language));
                     }
                 }
             } else {
                 for (Breakpoint bp : bps) {
-                    if (bp.enabled()) {
+                    if (bp.enabled() && sent.test(bp)) {
                         out2.add(new DapModels.LineBreakpoint(
                                 bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition(), 0, bp.records()));
                     }

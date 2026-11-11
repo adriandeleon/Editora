@@ -428,8 +428,10 @@ jobs:
       # values; continuing the one shown leaves the other paused, and Stop All ends both. A launch.json compound starts
       # both, each in its own session, and one that ends by itself leaves the other. A multiprocessing child stops in a
       # session of its own — forked, and from a fork server — and ends with its parent.
+      # TriggeredBreakpointsProbeFxTest: on debugpy and java-debug, a breakpoint that waits for another stops only after
+      # that one is hit (its js-debug test runs in the Node job).
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release
@@ -481,5 +483,7 @@ jobs:
       # DebugHistoryProbeFxTest#javascript*: on js-debug, a loop's stops are kept and read back, and recorded.
       # JsColumnBreakpointsProbeFxTest: on js-debug, a lambda breakpoint on an arrow function stops inside it each
       # time it runs; made a line breakpoint, it stops on the line only.
+      # TriggeredBreakpointsProbeFxTest#javascript: on js-debug, a breakpoint that waits for another stops only after
+      # that one is hit.
       - name: Test the TypeScript server, JavaScript debugging and Pyright
-        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,TriggeredBreakpointsProbeFxTest#javascript -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test

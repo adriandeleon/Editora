@@ -1504,6 +1504,28 @@ n: …` to the console and resumes. A session records at most `MAX_RECORDED_STOP
 off, the breakpoint stops and says why. *Debug: Toggle Recording Breakpoint* and the breakpoint form's *Record and
 continue* set it; the gutter draws it purple with a ring. `RecordingBreakpointsWindowFxTest` (a fake adapter) and the
 `…Recording` tests of `DebugHistoryProbeFxTest` cover it.
+**Triggered breakpoints** ([`ui/TriggeredBreakpoints`](../../src/main/java/com/editora/ui/TriggeredBreakpoints.java))
+wait, in each debug session, until another breakpoint is hit — VS Code's triggered breakpoints, IntelliJ's "Disable
+until hitting the following breakpoint", Visual Studio's "Only enable when the following breakpoint is hit". A
+breakpoint names the one it waits for by id (`Breakpoint.triggeredBy` → that one's `Breakpoint.id`, `breakpoints.json`
+schema 8): line numbers move with edits, ids do not. A breakpoint gets an id (`Breakpoint.newId`, eight hex digits)
+only when another is first made to wait for it (`TriggeredBreakpoints.link`, in its tab or in a closed file's saved
+list). The waiting is Editora's, not the adapter's, so it works with every debugger: `fileBreakpoints` and
+`ClosedFileBreakpoints.of` (its `sent` predicate) leave out a breakpoint that `TriggeredBreakpoints.waits` — its trigger
+still exists among the window's breakpoints and is not in the session's `DebugSession.hitTriggers`. On a `breakpoint`
+stop (`armTriggered`, before a recording breakpoint resumes, so a recording one can be a trigger), the top frame's
+breakpoint id joins `hitTriggers` and the files of the breakpoints waiting for it are sent again — open tabs at once, a
+closed file re-anchored off the FX thread — with the status bar and console saying so. `hitTriggers` is cleared when a
+session starts or ends, so each session waits again. A breakpoint whose trigger is removed waits for none: it is sent
+at once (`triggersChanged` re-sends the other tabs' triggered breakpoints after any breakpoint change) and drawn as a
+plain one. While waiting, the gutter draws it hollow with "Waiting: … has not been hit in this session"; otherwise an
+hourglass over the dot (`FoldManager.TRIGGERED_MARK_PATH`) and "Waits until … is hit" on hover
+(`BreakpointManager.setTriggerLabels`, `BreakpointDescription.lines`). *Debug: Add Triggered Breakpoint…*
+(`debug.addTriggeredBreakpoint`; editor menu, gutter menu, Run menu) picks the breakpoint to wait for from a list, and
+the breakpoint form has a *Wait for* choice; neither offers a breakpoint that waits, directly or through others, for
+this one (`TriggeredBreakpoints.choices`), so two never wait for each other. `TriggeredBreakpointsTest`,
+`TriggeredBreakpointsWindowFxTest` (a fake adapter) and the opt-in `TriggeredBreakpointsProbeFxTest` (debugpy, js-debug,
+java-debug) cover it.
 **Add Logpoint** (`DebugCoordinator.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
 (`FoldManager.setBreakpointShiftClick` → `EditorBuffer.setGutterLogpointClick`; unset, a Shift+click toggles like a
 plain click) open a one-field form for the log message, with the `{expression}` completion of the full form. OK is

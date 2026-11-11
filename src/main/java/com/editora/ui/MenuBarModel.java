@@ -351,6 +351,7 @@ final class MenuBarModel {
                                                 "debug.toggleBreakpointEnabled",
                                                 "debug.toggleTemporaryBreakpoint",
                                                 "debug.toggleRecordingBreakpoint",
+                                                "debug.addTriggeredBreakpoint",
                                                 "debug.toggleLambdaBreakpoint",
                                                 "debug.toggleMethodBreakpoint",
                                                 "debug.toggleFieldWatchpoint",
