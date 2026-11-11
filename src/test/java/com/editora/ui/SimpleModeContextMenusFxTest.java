@@ -129,6 +129,7 @@ class SimpleModeContextMenusFxTest {
                                         DebugPanelText.bareTitle(tr("command.debug.toggleBreakpoint")),
                                         DebugPanelText.bareTitle(tr("command.debug.toggleTemporaryBreakpoint")),
                                         DebugPanelText.bareTitle(tr("command.debug.toggleRecordingBreakpoint")),
+                                        DebugPanelText.bareTitle(tr("command.debug.addLogpoint")),
                                         DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")),
                                         DebugPanelText.bareTitle(tr("command.debug.toggleBreakpointEnabled")),
                                         "-",

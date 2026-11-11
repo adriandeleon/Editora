@@ -187,6 +187,7 @@
   "C-c C-d a": "debug.attach",
   "C-c C-d S-a": "debug.reattach",
   "C-c C-d e": "debug.editBreakpoint",
+  "C-c C-d g": "debug.addLogpoint",
   "C-c C-d p": "debug.pause",
   "C-c C-d u": "debug.runToCursor",
   "C-c C-d S-u": "debug.forceRunToCursor",

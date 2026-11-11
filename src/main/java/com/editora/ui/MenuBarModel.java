@@ -354,6 +354,7 @@ final class MenuBarModel {
                                                 "debug.toggleLambdaBreakpoint",
                                                 "debug.toggleMethodBreakpoint",
                                                 "debug.toggleFieldWatchpoint",
+                                                "debug.addLogpoint",
                                                 "debug.editBreakpoint",
                                                 "debug.breakpoints",
                                                 "debug.threads",

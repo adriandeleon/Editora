@@ -22,6 +22,14 @@ final class BreakpointFormText {
         return tr("dialog.debug.breakpointTitleAt", file.getFileName().toString(), String.valueOf(line0 + 1));
     }
 
+    /** The Add Logpoint form's title: the file and 1-based line, or a bare title for an unsaved buffer. */
+    static String logpointTitle(@Nullable Path file, int line0) {
+        if (file == null || file.getFileName() == null) {
+            return tr("dialog.debug.logpointTitle");
+        }
+        return tr("dialog.debug.logpointTitleAt", file.getFileName().toString(), String.valueOf(line0 + 1));
+    }
+
     /**
      * The hit-count field's hint: debugpy also takes {@code >= 3} and {@code % 2}; java-debug and the others only a
      * count. The hint used to name Python in a Java file's form.

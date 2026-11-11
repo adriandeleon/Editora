@@ -487,6 +487,7 @@ class DebugReviewCWindowFxTest {
                         DebugPanelText.bareTitle(tr("command.debug.toggleBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.toggleTemporaryBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.toggleRecordingBreakpoint")),
+                        DebugPanelText.bareTitle(tr("command.debug.addLogpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.toggleBreakpointEnabled")),
                         DebugPanelText.bareTitle(tr("command.debug.breakpoints")),
@@ -521,6 +522,96 @@ class DebugReviewCWindowFxTest {
             List<String> during = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
             assertFalse(during.contains(tr("editmenu.debugFile")), during.toString());
         }
+    }
+
+    /**
+     * Add Logpoint: a Shift+click in the gutter (IntelliJ's gesture) or the command asks for the message and makes
+     * the line a logpoint; OK waits for a message, a cancelled form leaves no breakpoint behind, a plain click still
+     * toggles, and on a line that has a breakpoint it edits that one's message and keeps its condition.
+     */
+    @Test
+    void shiftClickingTheGutterOrAddLogpointMakesTheLineALogpoint() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        var mgr = b.getBreakpointManager();
+        Node slot = FxTestSupport.callOnFx(
+                () -> find(b.getArea().getParagraphGraphicFactory().apply(1), "breakpoint-slot"));
+        assertNotNull(slot);
+        FxTestSupport.runOnFx(() -> slot.fireEvent(click(true)));
+        FxTestSupport.drainFx();
+        assertTrue(OverlayDriver.showing(fx.controller), "the Shift+click asks for the message");
+        assertEquals("", FxTestSupport.callOnFx(() -> OverlayDriver.promptText(fx.controller)));
+        assertTrue(FxTestSupport.callOnFx(this::okDisabled), "nothing to log yet");
+        assertFalse(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(1)), "no breakpoint before OK");
+        FxTestSupport.runOnFx(() -> OverlayDriver.dismiss(fx.controller));
+        assertFalse(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(1)), "a cancelled form leaves nothing behind");
+
+        FxTestSupport.runOnFx(() -> slot.fireEvent(click(true)));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, "  x = {x}  "));
+        assertEquals("x = {x}", FxTestSupport.callOnFx(() -> mgr.get(1).logMessage()));
+        assertTrue(FxTestSupport.callOnFx(() -> mgr.get(1).isLogpoint()));
+        assertTrue(FxTestSupport.callOnFx(() -> mgr.glyphClasses(1)).contains("logpoint"), "drawn as a diamond");
+
+        // A plain click is still Toggle Breakpoint: it removes the logpoint.
+        FxTestSupport.runOnFx(() -> slot.fireEvent(click(false)));
+        assertFalse(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(1)));
+
+        // The command on a conditional breakpoint: the form opens on its message, and the condition stays.
+        FxTestSupport.runOnFx(() -> {
+            b.toggleBreakpoint(2);
+            mgr.setCondition(2, "x > 1");
+            b.getArea().moveTo(2, 0);
+            debug.addLogpointAtCaret();
+        });
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, "y = {y}"));
+        assertEquals("y = {y}", FxTestSupport.callOnFx(() -> mgr.get(2).logMessage()));
+        assertEquals("x > 1", FxTestSupport.callOnFx(() -> mgr.get(2).condition()));
+        FxTestSupport.runOnFx(() -> debug.addLogpointAtCaret());
+        FxTestSupport.drainFx();
+        assertEquals("y = {y}", FxTestSupport.callOnFx(() -> OverlayDriver.promptText(fx.controller)));
+        FxTestSupport.runOnFx(() -> OverlayDriver.dismiss(fx.controller));
+
+        // A blank line has no code to log from: no form.
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().moveTo(4, 0);
+            debug.addLogpointAtCaret();
+        });
+        assertFalse(OverlayDriver.showing(fx.controller));
+        FxTestSupport.runOnFx(() -> b.toggleBreakpoint(2));
+    }
+
+    private static javafx.scene.input.MouseEvent click(boolean shift) {
+        return new javafx.scene.input.MouseEvent(
+                javafx.scene.input.MouseEvent.MOUSE_CLICKED,
+                1,
+                1,
+                100,
+                100,
+                javafx.scene.input.MouseButton.PRIMARY,
+                1,
+                shift,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true,
+                null);
+    }
+
+    /** Whether the overlay card's OK button is disabled. FX thread. */
+    private boolean okDisabled() {
+        return OverlayDriver.card(fx.controller).lookupAll(".button").stream()
+                .filter(n -> n instanceof javafx.scene.control.Button btn
+                        && tr("dialog.ok").equals(btn.getText()))
+                .findFirst()
+                .orElseThrow()
+                .isDisabled();
     }
 
     @Test

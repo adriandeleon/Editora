@@ -6414,6 +6414,67 @@ final class DebugCoordinator {
     }
 
     /**
+     * Debug: Add Logpoint — asks for the message to log on the caret line and makes that line a logpoint: the
+     * adapter logs the message each time the line runs and the program never suspends (VS Code's Add Logpoint,
+     * IntelliJ's Shift+click in the gutter). On a line that already has a breakpoint it edits that one's message,
+     * keeping its condition and hit count.
+     */
+    void addLogpointAtCaret() {
+        EditorBuffer b = breakpointBuffer();
+        if (b != null) {
+            addLogpoint(b, b.getFocusedArea().getCurrentParagraph());
+        }
+    }
+
+    /** {@link #addLogpointAtCaret} for {@code line} of {@code b} — also what a Shift+click in the gutter runs. */
+    void addLogpoint(EditorBuffer b, int line) {
+        if (!breakpointAllowed(b, line)) {
+            return;
+        }
+        var mgr = b.getBreakpointManager();
+        Breakpoint existing = mgr.get(line);
+        TextField message = new TextField(existing == null ? "" : existing.logMessage());
+        message.setPrefColumnCount(32);
+        message.setPromptText(tr("dialog.debug.logpointPrompt"));
+        DebugCompletion.attach(message, completionSource(true)); // the {expression}s, in the stopped frame
+        Label lineText = new Label(
+                BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
+        lineText.getStyleClass().add("debug-breakpoint-line");
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        grid.add(lineText, 0, 0, 2, 1);
+        grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 1);
+        grid.add(message, 1, 1);
+        grid.add(note(tr("dialog.debug.logpointHint")), 1, 2);
+        GridPane.setHgrow(message, Priority.ALWAYS);
+        // Nothing to log is not a logpoint: OK waits for a message rather than leaving a breakpoint that stops.
+        var hasMessage = javafx.beans.binding.Bindings.createBooleanBinding(
+                () -> !message.getText().isBlank(), message.textProperty());
+        OverlayInput.show(
+                host.overlayHost(),
+                BreakpointFormText.logpointTitle(b.getPath(), line),
+                grid,
+                message,
+                tr("dialog.ok"),
+                hasMessage,
+                () -> {
+                    String text = message.getText().trim();
+                    if (text.isEmpty()) {
+                        return;
+                    }
+                    if (!mgr.isBreakpoint(line)) {
+                        b.toggleBreakpoint(line);
+                    }
+                    mgr.setLogMessage(line, text);
+                    b.refreshGutterLine(line);
+                    host.setStatus(tr("status.debug.logpointAdded", line + 1));
+                },
+                null,
+                false);
+    }
+
+    /**
      * A small muted hint label under a form field, wrapped at a fixed width. Left at its own preferred width a
      * wrapping label asks for its whole text on one line, and the overlay card hugs its content, so the hint
      * stretched the form across the window and squeezed the field labels to an ellipsis. (A width bound to the
@@ -6616,6 +6677,12 @@ final class DebugCoordinator {
                 mark.members().forEach(memberBreakpoints::toggle); // a method breakpoint's mark: removes it
             } else if (breakpointAllowed(b, line)) {
                 b.toggleBreakpoint(line);
+            }
+        });
+        buffer.setGutterLogpointClick((b, line) -> {
+            if (b.getBreakpointManager().isBreakpoint(line)
+                    || b.getBreakpointManager().memberMark(line) == null) {
+                addLogpoint(b, line); // IntelliJ's Shift+click: a breakpoint that logs and does not suspend
             }
         });
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
@@ -7352,6 +7419,7 @@ final class DebugCoordinator {
         if (LambdaBreakpoints.caretLineHasLambdas(b)) {
             items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
         }
+        items.add(menuItem("debug.addLogpoint", logpointGlyph(), this::addLogpointAtCaret));
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
         javafx.scene.control.MenuItem flip =
                 menuItem("debug.toggleBreakpointEnabled", Icons.check(), this::toggleBreakpointEnabledAtCaret);
@@ -7382,6 +7450,13 @@ final class DebugCoordinator {
         javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
         dot.getStyleClass().add("debug-menu-breakpoint");
         return dot;
+    }
+
+    /** Add Logpoint's mark in the same menu: the gutter's logpoint diamond, blue, at the dot's size. */
+    private static Node logpointGlyph() {
+        javafx.scene.shape.Polygon diamond = new javafx.scene.shape.Polygon(4, 0, 8, 4, 4, 8, 0, 4);
+        diamond.getStyleClass().add("debug-menu-logpoint");
+        return diamond;
     }
 
     // --- follow-ups 5 and 6: completion in expression fields, the expandable value popup ----------------

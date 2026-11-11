@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Add Logpoint in one step.** Shift+click the breakpoint gutter on a line, as in IntelliJ, or use *Debug: Add
+  Logpoint…* (in the editor's right-click *Breakpoints* submenu, the Run menu and the palette; `C-c C-d g` in the
+  Emacs keymap). It asks only for the message to log, with `{expression}` for a value. OK makes the line a logpoint,
+  which logs each time the line runs and never suspends. On a line that already has a breakpoint it edits that
+  one's message and keeps its condition and hit count. Before, a logpoint took the full *Edit Breakpoint* form.
 - **Lambda breakpoints in JavaScript and TypeScript.** *Debug: Toggle Lambda Breakpoint* now works on arrow
   functions and inline function expressions too: the breakpoint stops inside the function each time its body runs,
   not once when the line runs. Pick which functions of the line it stops in from the breakpoint's gutter menu, as in
