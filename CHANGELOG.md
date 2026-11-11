@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dependencies of the selection on the Project Map.** With ⋯ *Show dependencies of the selection* on, selecting
+  a file or folder tints the rows it uses (violet), the rows that use it (olive) and the rows on both sides (amber),
+  folders included, so a collapsed folder still shows that something in it is involved. The tooltip says which side
+  a row is on, and the status line how many files each way. It reads the same imports as the Dependencies card, in
+  the same 13 languages, and is remembered per workspace (workspace schema 34).
 - **Triggered breakpoints.** A breakpoint can wait until another breakpoint is hit, as VS Code's triggered
   breakpoints and IntelliJ's "Disable until hitting the following breakpoint" do: until then it does not stop, and
   from then on it stops like any other, for the rest of that debug session. The next session it waits again. Choose

@@ -294,6 +294,9 @@ final class MapSurface extends Region {
     private ProjectMapProblems problems = ProjectMapProblems.NONE;
 
     private Set<Path> emphasized = Set.of();
+    /** The rows the selection uses and that use it, under ⋯ "Show dependencies of the selection" (round 2). */
+    private MapDependencyOverlay dependencyOverlay = MapDependencyOverlay.NONE;
+
     FlowDirection flowDirection = DEFAULT_FLOW;
     private @Nullable Path selected;
     private @Nullable Path hovered;
@@ -3736,13 +3739,19 @@ final class MapSurface extends Region {
         if (heat > 0 && !isSelected) {
             fill = activityTinted(fill, heat);
         }
+        int dependency = isSelected || entry.isSymbol() ? 0 : dependencyOverlay.mark(entry.path());
+        Color dependencyInk = dependency == 0 ? null : dependencyInk(dependency);
+        if (dependencyInk != null) {
+            fill = mix(fill, dependencyInk, 0.16);
+        }
         if (isHovered && !isSelected) {
             fill = mix(fill, accent, 0.16);
         }
         g.setFill(fill);
         g.fillRoundRect(box.x(), box.y(), box.width(), box.height(), 8 * zoom, 8 * zoom);
-        g.setStroke(isSelected || isHovered || selectedPath ? accent : rowBorder());
-        g.setLineWidth((isSelected ? 1.8 : selectedPath ? 1.35 : 1.0) * zoom);
+        g.setStroke(
+                isSelected || isHovered || selectedPath ? accent : dependencyInk != null ? dependencyInk : rowBorder());
+        g.setLineWidth((isSelected ? 1.8 : selectedPath || dependencyInk != null ? 1.35 : 1.0) * zoom);
         g.strokeRoundRect(box.x(), box.y(), box.width(), box.height(), 8 * zoom, 8 * zoom);
         if (focusedSelection) {
             // A ring outside the row, separated from it by a sliver of the card.
@@ -3918,8 +3927,15 @@ final class MapSurface extends Region {
         boolean faded = !prominence(entry.path()) || layoutIgnoredReason(entry) != null;
         double inset = Math.min(2, box.width() * 0.05);
         double barHeight = Math.max(1, box.height() - Math.max(1, 2 * zoom));
-        g.setGlobalAlpha(isSelected ? 1 : match ? 0.9 : faded ? 0.16 : entry.isPlaceholder() ? 0.2 : 0.42);
-        g.setFill(isSelected || match ? accent : openPaths.contains(entry.path()) ? mix(muted, accent, 0.5) : muted);
+        int dependency = isSelected || match ? 0 : dependencyOverlay.mark(entry.path());
+        g.setGlobalAlpha(
+                isSelected ? 1 : match || dependency != 0 ? 0.9 : faded ? 0.16 : entry.isPlaceholder() ? 0.2 : 0.42);
+        g.setFill(
+                isSelected || match
+                        ? accent
+                        : dependency != 0
+                                ? dependencyInk(dependency)
+                                : openPaths.contains(entry.path()) ? mix(muted, accent, 0.5) : muted);
         g.fillRoundRect(box.x() + inset, box.y(), box.width() - inset * 2, barHeight, 3, 3);
         if (isSelected) {
             g.setStroke(color(focusRingProbe, accent));
@@ -4238,6 +4254,30 @@ final class MapSurface extends Region {
 
     ProjectMapProblems problems() {
         return problems;
+    }
+
+    /** The rows the selection uses and that use it, tinted: violet, olive, or amber for both (round 2). */
+    void setDependencyOverlay(MapDependencyOverlay overlay) {
+        if (overlay != dependencyOverlay) {
+            dependencyOverlay = overlay;
+            repaint();
+        }
+    }
+
+    MapDependencyOverlay dependencyOverlay() {
+        return dependencyOverlay;
+    }
+
+    /**
+     * The ink of a dependency mark: violet for a row the selection uses, olive for one that uses it, and the
+     * Dependencies card's amber for one on both sides.
+     */
+    private Color dependencyInk(int mark) {
+        return switch (mark) {
+            case MapDependencyOverlay.USES -> color(violetProbe, Color.web("#b392f0"));
+            case MapDependencyOverlay.USED_BY -> color(oliveProbe, Color.web("#a9b84a"));
+            default -> color(warningProbe, Color.web("#d29922"));
+        };
     }
 
     private void drawIcon(GraphicsContext g, ProjectMapModel.Entry entry, double x, double y, boolean onAccentFill) {
@@ -4840,6 +4880,12 @@ final class MapSurface extends Region {
         ProjectMapProblems.Count count = problems.of(entry.path());
         if (count.any()) {
             statuses.add(tr("project.map.tooltip.problems", count.errors(), count.warnings()));
+        }
+        switch (entry.path().equals(selected) ? 0 : dependencyOverlay.mark(entry.path())) {
+            case MapDependencyOverlay.USES -> statuses.add(tr("project.map.tooltip.depUsed"));
+            case MapDependencyOverlay.USED_BY -> statuses.add(tr("project.map.tooltip.depUses"));
+            case MapDependencyOverlay.BOTH -> statuses.add(tr("project.map.tooltip.depBoth"));
+            default -> {}
         }
         if (!statuses.isEmpty()) {
             lines.add(tr("project.map.tooltip.status", String.join(", ", statuses)));

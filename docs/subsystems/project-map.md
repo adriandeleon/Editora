@@ -967,6 +967,20 @@ keyboard is in (its caret; from the problem last stepped to while the caret is o
 opens at its line (`MapCards.openPlaceCard`), and the status line says which of how many it is, error or warning,
 and what it says. A card answers them inside its own file first (gap 8).
 
+**The dependency overlay** (Map code browser round 2). With ⋯ **Show dependencies of the selection** on
+(`dependencyOverlayOption`, remembered per workspace as `projectMapShowDependencies`, workspace schema v34), the
+rows the selected file or folder uses are tinted violet, those that use it olive, and those on both sides amber (the
+Dependencies card's colour for mutual uses): a light fill and a border in that colour, at every zoom, so a file's
+place in the project shows without opening the Dependencies card. A folder selected stands for its files, and only
+the files outside it count. `MapDependencyOverlay.of` works the marks out from the Dependencies card's index
+(`MapDependencyIndex`, `ProjectMapDependencies.neighbours`): each file, and every folder above it below the Map's
+folder that does not hold the selection, so a collapsed folder still shows that something in it is involved; a
+declaration row stands for its file. `ProjectMapView.dependencyOverlayUpdate` runs on each selection — a click, a
+key, and a selection that lands with a load (a reveal, a search, a history step) — from the imports last read, and
+reads the changed files again when that reading is more than five seconds old. The tooltip says which side a row is
+on (`project.map.tooltip.depUsed` / `depUses` / `depBoth`) and the status line how many files the selection uses and
+how many use it, or that the Map does not read that kind of file's imports.
+
 **Hide unmatched** (a checkbox in the filter row, remembered per workspace as `projectMapHideUnmatched`,
 workspace schema v25) takes the rows that would fade off the map instead. It keeps exactly the emphasized
 set — the matches and the folders that lead to them — by handing it to `ProjectMapModel.columnsById` as a
@@ -1735,7 +1749,8 @@ through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnore
 is no longer written or read, see *The Overview card*). v29 adds
 `projectMapWorkingSets`, the named views of ⋯ → Working sets (see *Working sets and trails*),
 `projectMapShowRecentChanges` for ⋯ "Show recent changes", and a kept card's `pinned`; trails are files of the
-project, not workspace state. v31 adds a kept card's `caretLine`, `caretColumn`, `topLine` and `answers` (below).
+project, not workspace state. v31 adds a kept card's `caretLine`, `caretColumn`, `topLine` and `answers` (below). v34
+adds `projectMapShowDependencies` for ⋯ "Show dependencies of the selection".
 
 **A card's answers and caret are kept** (Map code browser gap 9), in the restart state and in working sets alike
 (`ProjectMapState.Card`). Each answer stuck on a card — References, Callers, Go to Definition and the rest — is
