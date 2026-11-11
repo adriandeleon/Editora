@@ -237,6 +237,8 @@ final class MapCards {
     private @Nullable ProjectMapSymbolGraphCard symbolGraphCard;
     /** The Code Metrics card, when open (gap 15): one at a time, not counted against the limit. */
     private @Nullable ProjectMapMetricsCard metricsCard;
+    /** The working tree's changes (Map code browser round 2), when open. */
+    private @Nullable ProjectMapChangesCard changesCard;
     /** Changes or Blame: what the last History card showed, and the next one opens with. */
     private ProjectMapHistoryCard.Mode historyMode = ProjectMapHistoryCard.Mode.CHANGES;
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
@@ -1031,6 +1033,9 @@ final class MapCards {
         if (metricsCard != null) {
             solo.add(metricsCard);
         }
+        if (changesCard != null) {
+            solo.add(changesCard);
+        }
         if (symbolGraphCard != null) {
             solo.add(symbolGraphCard);
         }
@@ -1116,6 +1121,47 @@ final class MapCards {
         }
         touchCard(card, true);
         return card;
+    }
+
+    /**
+     * Opens the Changes card (Map code browser round 2) on the project at {@code root}, where a card of the project
+     * would open, or brings the open one up. {@code setUp} is called once, on a new card, to give it its actions.
+     */
+    ProjectMapChangesCard openChangesCard(Path root, Consumer<ProjectMapChangesCard> setUp) {
+        ProjectMapChangesCard card = changesCard;
+        boolean created = card == null;
+        if (card == null) {
+            ProjectMapChangesCard made = new ProjectMapChangesCard();
+            setUp.accept(made);
+            changesCard = made;
+            adoptSoloCard(made, this::closeChangesCard);
+            card = made;
+        }
+        if (created) {
+            card.place(besidePlacement(
+                    card,
+                    null,
+                    root,
+                    ProjectMapChangesCard.DEFAULT_WIDTH,
+                    ProjectMapChangesCard.DEFAULT_HEIGHT,
+                    ProjectMapChangesCard.MIN_WIDTH,
+                    ProjectMapChangesCard.MIN_HEIGHT));
+            repaintPreviewConnectors();
+        }
+        touchCard(card, true);
+        return card;
+    }
+
+    /** The open Changes card, or null. */
+    @Nullable
+    ProjectMapChangesCard changesCard() {
+        return changesCard;
+    }
+
+    private void closeChangesCard() {
+        ProjectMapChangesCard card = changesCard;
+        changesCard = null;
+        dropSoloCard(card);
     }
 
     /**
@@ -1485,6 +1531,11 @@ final class MapCards {
         if (metrics != null && metricsRoot != null) {
             open.add(new OpenCard(metricsRoot.resolve(metrics.subject()), metrics, metrics.title(), false));
         }
+        ProjectMapChangesCard changes = changesCard;
+        Path changesRoot = changes == null ? null : changes.root();
+        if (changes != null && changesRoot != null) {
+            open.add(new OpenCard(changesRoot, changes, changes.title(), false));
+        }
         ProjectMapSymbolGraphCard graph = symbolGraphCard;
         ProjectMapSymbolGraphCard.Subject graphSubject = graph == null ? null : graph.subject();
         if (graph != null && graphSubject != null) {
@@ -1715,6 +1766,8 @@ final class MapCards {
             closeDependencyCard();
         } else if (card == metricsCard) {
             closeMetricsCard();
+        } else if (card == changesCard) {
+            closeChangesCard();
         } else if (card == symbolGraphCard) {
             closeSymbolGraphCard();
         }
@@ -3201,6 +3254,7 @@ final class MapCards {
         closeHistoryCard();
         closeDependencyCard();
         closeMetricsCard();
+        closeChangesCard();
         closeSymbolGraphCard();
         List<ProjectMapNotePreview> openNotes = List.copyOf(notePreviews.values());
         notePreviews.clear();

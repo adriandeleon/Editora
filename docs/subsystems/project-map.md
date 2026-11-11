@@ -530,6 +530,24 @@ Card**, opens the declaration's card (`MapCards.openPlaceCard`). An answer for a
 dropped. One Symbol Graph card is open at a time: asking again moves it; it moves, resizes and zooms as the other cards,
 and Escape closes it.
 
+**The Changes card** (Map code browser round 2, `ProjectMapChangesCard`). ⋯ → **Review Changes**, or **Show Changes**
+in the menu of a row Git counts as changed (a folder's: its first changed file), opens a card of the working tree's
+changes against HEAD below the Map's folder, staged and unstaged together, untracked files added whole (ignored ones
+left out). The line on top says how many files and how many lines added and removed; the list under it has each file's
+status letter (A, M, D, U, coloured as in the Git tool window), its path and its `+N −N`; below it, the picked file's
+diff with three lines of context, each line numbered as in the old and the new file. **Next / Previous Change** — F7
+and Shift+F7 in the card, the ↓ and ↑ buttons, or the editor's `git.nextChange` / `git.previousChange` typed on the Map
+(which opens the card when it is not open) — step through the hunks of every file, going round, and the status line
+says "Change n of m" with the file and line. Enter or a double click on a line opens the file's card at that line
+(`MapCards.openPlaceCard`; a removed line stands for the line after it), Ctrl+Enter or **Open in Editor** the file in
+the editor there, **Compare with HEAD** the editor's side-by-side diff. The card reads Git again when it is opened,
+on **Refresh**, and whenever the window's Git status changes (`setGitStatus`: a save, a commit, a checkout), keeping the
+file picked. Git is read once for the whole folder (`GitService.workingChanges`: `git diff --relative -U3 HEAD -- .`,
+against the empty tree in a repository with no commit yet, and `ls-files --others --exclude-standard`), split per file
+by the pure `git/GitChanges` (at most 500 files and 5,000 lines a file; an untracked file over 1 MB, or a binary one,
+is listed without lines). One Changes card is open at a time; it moves, resizes and zooms as the other cards, and
+Escape closes it.
+
 **Hierarchy trees** (Map code browser gap 4, `MapHierarchyTree`). The cards answer one level of a hierarchy; a
 tree goes as deep as the reader opens it. Call Hierarchy (`lsp.callHierarchy`) and Type Hierarchy
 (`lsp.typeHierarchy`) typed in a card or on a declaration row, and the card and declaration-row menus' **Show Call

@@ -325,6 +325,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         /** Opens commit {@code hash}'s diff of the repository-relative {@code path} in the repository at {@code root}. */
         default void gitOpenCommitFile(Path root, String hash, String path, @Nullable String previousPath) {}
 
+        /**
+         * The working tree's changes against HEAD below {@code folder}, for the Map's Changes card (round 2); on the FX
+         * thread, unavailable when Git is off.
+         */
+        default void gitWorkingChanges(
+                Path folder, java.util.function.Consumer<com.editora.git.GitChanges.Result> found) {
+            found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
+        }
+
         /** The permalink of a file (its lines) or folder at HEAD; on the FX thread, none when Git is off. */
         default void gitPermalink(
                 Path target,
@@ -853,6 +862,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
             case "lsp.gotoSymbol" -> {
                 return mapGotoSymbol();
+            }
+            case "git.nextChange", "git.previousChange" -> {
+                // On the Map: the next hunk of the working tree's changes, in the Changes card (round 2).
+                mapView.stepChange("git.nextChange".equals(commandId));
+                return true;
             }
             case "lsp.nextProblem", "lsp.previousProblem" -> {
                 // On the Map (a card answers inside its own file first): the next problem of the whole project.
@@ -3133,6 +3147,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             @Override
             public void copyPermalink(Path target, int startLine, int endLine) {
                 actions.gitPermalink(target, startLine, endLine, link -> mapStatusLine.show(GitPermalinks.copy(link)));
+            }
+
+            @Override
+            public void workingChanges(Path folder, Consumer<com.editora.git.GitChanges.Result> found) {
+                actions.gitWorkingChanges(folder, found);
+            }
+
+            @Override
+            public void compareWithHead(Path file) {
+                actions.gitCompareWithHead(file);
+                raiseEditorWindow();
             }
         };
     }
