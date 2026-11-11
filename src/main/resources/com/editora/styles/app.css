@@ -5388,6 +5388,8 @@
 /* A recording breakpoint (Debug History keeps the stop, the program goes on): purple, with a ring over it. */
 .breakpoint-marker.breakpoint-recording { -fx-fill: #8957e5; }
 .breakpoint-condition-mark { -fx-fill: white; }
+/* Mark Object: the label of a marked object, before its value wherever it shows (Variables, watches, the hover). */
+.debug-val-mark { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 /* While a debug session is live: a breakpoint the adapter has not bound (its class is not loaded yet, or
    the line has no code) is a hollow ring; one it refused, or whose condition it cannot evaluate, an amber one.
    The glyph is drawn at half scale, so the stroke is twice the width it shows. */

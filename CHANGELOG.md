@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mark Object.** Right-click a variable, watch or result that shows an object and choose *Mark Object…* to give
+  it a label, as in IntelliJ. The label then shows before that object's value wherever it appears in the session (in
+  Variables, watches, results, the hover popup and Debug History), so you can follow one object as it moves between
+  variables and collections. It works where the debugger shows an object's identity: Java objects, Python objects
+  with an address, and pointers in native code. *Edit Mark…*, *Unmark Object* and *Unmark All Objects* are in the
+  same menu.
+- **View a string as JSON, XML or text.** *View As* on a string value opens its whole text in a read-only tab, laid
+  out and highlighted as JSON or XML, or as plain text, so you can fold, search and copy it. If the text is not valid
+  JSON or XML it opens as plain text, and the status line says why.
+
 - **Debugging code that has no file.** When a JavaScript or TypeScript program stops or steps into code the debugger
   holds only in memory, such as code run through `eval`, that code now opens in a read-only tab with the current line
   marked, as VS Code shows it. Before, Editora said there was no source. The tab is opened once per session and shown
