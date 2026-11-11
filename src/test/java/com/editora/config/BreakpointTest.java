@@ -219,4 +219,40 @@ class BreakpointTest {
                 com.editora.editor.debug.BreakpointDescription.lines(b, id -> null),
                 "one whose trigger is gone waits for none");
     }
+
+    @Test
+    void aGroupIsKeptByEveryWitherAndItsNameTidied() throws Exception {
+        Breakpoint b = Breakpoint.plain(4, "total += i")
+                .withGroup("  Checkout\n  flow  ")
+                .withId("a1");
+        assertEquals("Checkout flow", b.group(), "one line, spaces folded");
+        Breakpoint changed = b.withLine(9)
+                .withLineText("y")
+                .withCondition("i > 0")
+                .withLogMessage("")
+                .withEnabled(false)
+                .withHitCondition("2")
+                .withTemporary(true)
+                .withLambdas(List.of(1), false)
+                .withRecording(true)
+                .withId("b2")
+                .withTriggeredBy("c3");
+        assertEquals("Checkout flow", changed.group(), "every wither keeps it");
+        assertEquals("", b.withGroup(null).group());
+        assertEquals(Breakpoint.MAX_GROUP, Breakpoint.groupName("x".repeat(100)).length());
+
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertEquals(b, json.readValue(json.writeValueAsString(b), Breakpoint.class));
+        // breakpoints.json written before groups existed (schema 8)
+        Breakpoint old = json.readValue(
+                "{\"line\":2,\"condition\":\"\",\"logMessage\":\"\",\"enabled\":true,\"lineText\":\"x\","
+                        + "\"id\":\"q\",\"triggeredBy\":\"r\"}",
+                Breakpoint.class);
+        assertEquals("", old.group());
+        assertEquals("r", old.triggeredBy());
+        assertEquals(
+                List.of(com.editora.i18n.Messages.tr("debug.breakpoint.group", "Checkout flow")),
+                com.editora.editor.debug.BreakpointDescription.lines(
+                        Breakpoint.plain(1, "x").withGroup("Checkout flow")));
+    }
 }

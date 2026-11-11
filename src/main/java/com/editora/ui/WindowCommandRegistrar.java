@@ -2359,6 +2359,22 @@ final class WindowCommandRegistrar {
                         "debug.breakpoints",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showBreakpoints)));
         host.registry()
+                .register(Command.of(
+                        "debug.moveBreakpointToGroup",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::moveBreakpointToGroupAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.toggleBreakpointGroup",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleBreakpointGroup)));
+        host.registry()
+                .register(Command.of(
+                        "debug.exportBreakpoints",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::exportBreakpoints)));
+        host.registry()
+                .register(Command.of(
+                        "debug.importBreakpoints",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::importBreakpoints)));
+        host.registry()
                 .register(Command.toggle( // checked in the Run menu while muted
                         "debug.muteBreakpoints",
                         () -> host.debugCoordinator().breakpointsMuted(),

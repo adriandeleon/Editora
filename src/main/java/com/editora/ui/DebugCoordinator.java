@@ -454,6 +454,7 @@ final class DebugCoordinator {
         memberBreakpoints.setOnChanged(memberMarks::refreshAll);
         lambdaBreakpoints = new LambdaBreakpoints(host);
         triggered = new TriggeredBreakpoints(host, ops);
+        groups = new BreakpointGroups(host, ops, this::breakpointsPicker, memberBreakpoints, this::sendClosed);
         pinnedValues = new PinnedValues(host, ops, this::dap);
         // Each stop's pinned values are kept with it in Debug History.
         pinnedValues.setOnPainted((b, shown) -> {
@@ -504,6 +505,13 @@ final class DebugCoordinator {
 
     /** Breakpoints that wait for another to be hit (see {@link TriggeredBreakpoints}). */
     private final TriggeredBreakpoints triggered;
+
+    /** Breakpoint groups, and breakpoints exported to a file and imported (see {@link BreakpointGroups}). */
+    private final BreakpointGroups groups;
+
+    BreakpointGroups groups() {
+        return groups;
+    }
 
     MemberBreakpointCommands memberBreakpoints() {
         return memberBreakpoints;
@@ -6545,6 +6553,7 @@ final class DebugCoordinator {
         recording.setSelected(bp.recording());
         // Wait for: another breakpoint this one waits for in each session (a triggered breakpoint).
         javafx.scene.control.ComboBox<BreakpointsPicker.Entry> waitFor = waitForChoice(b, line, bp);
+        javafx.scene.control.ComboBox<String> group = groups.groupField(bp.group());
 
         GridPane grid = new GridPane();
         grid.setHgap(8);
@@ -6562,8 +6571,10 @@ final class DebugCoordinator {
         grid.add(hitCondition, 1, 3);
         grid.add(new Label(tr("dialog.debug.triggeredByLabel")), 0, 4);
         grid.add(waitFor, 1, 4);
-        grid.add(new javafx.scene.layout.HBox(16, enabled, temporary, recording), 1, 5);
-        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 6);
+        grid.add(new Label(tr("dialog.debug.groupLabel")), 0, 5);
+        grid.add(group, 1, 5);
+        grid.add(new javafx.scene.layout.HBox(16, enabled, temporary, recording), 1, 6);
+        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 7);
         GridPane.setHgrow(condition, Priority.ALWAYS);
         GridPane.setHgrow(logMessage, Priority.ALWAYS);
 
@@ -6584,6 +6595,7 @@ final class DebugCoordinator {
                     mgr.setEnabled(line, enabled.isSelected());
                     mgr.setTemporary(line, temporary.isSelected());
                     mgr.setRecording(line, recording.isSelected());
+                    mgr.setGroup(line, BreakpointGroups.groupIn(group));
                     BreakpointsPicker.Entry trigger = waitFor.getValue();
                     if (trigger != null && trigger.line() < 0) {
                         trigger = null; // "no other breakpoint"
@@ -7504,14 +7516,68 @@ final class DebugCoordinator {
 
     /** Debug: Breakpoints — the palette-style list of every breakpoint (see {@link BreakpointsPicker}). */
     void showBreakpoints() {
-        new BreakpointsPicker(
-                        host,
-                        ops,
-                        this::allManagers,
-                        this::toggleMuteBreakpoints,
-                        () -> breakpointsMuted,
-                        memberBreakpoints)
-                .show();
+        breakpointsPicker().show();
+    }
+
+    /** The breakpoints of the window's files, and what can be done to them (see {@link BreakpointsPicker}). */
+    BreakpointsPicker breakpointsPicker() {
+        return new BreakpointsPicker(
+                host, ops, this::allManagers, this::toggleMuteBreakpoints, () -> breakpointsMuted, memberBreakpoints);
+    }
+
+    /** Debug: Move Breakpoint to Group… — on the caret line (see {@link BreakpointGroups#moveToGroupAtCaret}). */
+    void moveBreakpointToGroupAtCaret() {
+        EditorBuffer b = breakpointBuffer();
+        if (b != null) {
+            groups.moveToGroupAtCaret(b);
+        }
+    }
+
+    /** Debug: Enable / Disable Breakpoint Group… (see {@link BreakpointGroups#toggleGroupPicker}). */
+    void toggleBreakpointGroup() {
+        groups.toggleGroupPicker();
+    }
+
+    /** Debug: Export Breakpoints… (see {@link BreakpointGroups#exportBreakpoints}). */
+    void exportBreakpoints() {
+        groups.exportBreakpoints();
+    }
+
+    /** Debug: Import Breakpoints… (see {@link BreakpointGroups#importBreakpoints}). */
+    void importBreakpoints() {
+        groups.importBreakpoints();
+    }
+
+    /**
+     * Breakpoints just saved for files with no tab ({@code saved}, by file key) are sent to each live session: an
+     * import mid-session. The files are re-anchored off the FX thread.
+     */
+    private void sendClosed(Map<String, List<Breakpoint>> saved) {
+        if (breakpointsMuted) {
+            return; // sent when Mute is turned off
+        }
+        Map<String, List<Breakpoint>> copy = new LinkedHashMap<>(saved);
+        forEachSession(() -> {
+            if (!dap().isActive()) {
+                return;
+            }
+            Predicate<Breakpoint> sent = sentPredicate(s());
+            startOffFx("debug-import", session -> () -> {
+                List<DapModels.FileBreakpoints> computed = ClosedFileBreakpoints.of(
+                        copy, Set.of(), RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull, sent);
+                laterIn(session, () -> {
+                    if (!dap().isActive()) {
+                        return;
+                    }
+                    for (DapModels.FileBreakpoints fb : computed) {
+                        if (ops.bufferForPath(fb.file()) == null) { // opened meanwhile: its tab sent them
+                            s().sentBreakpoints.put(fb.file(), fb);
+                            dap().updateBreakpoints(fb);
+                        }
+                    }
+                });
+            });
+        });
     }
 
     /**
@@ -7719,7 +7785,11 @@ final class DebugCoordinator {
             b.getFocusedArea().moveTo(line, 0);
             addTriggeredBreakpointAtCaret();
         });
-        gutterMenu.getItems().setAll(edit, flip, remove, waitFor);
+        javafx.scene.control.MenuItem toGroup = menuItem("debug.moveBreakpointToGroup", null, () -> {
+            b.getFocusedArea().moveTo(line, 0);
+            moveBreakpointToGroupAtCaret();
+        });
+        gutterMenu.getItems().setAll(edit, flip, remove, waitFor, toGroup);
         List<javafx.scene.control.MenuItem> lambdas = lambdaBreakpoints.choices(b, line, bp);
         if (!lambdas.isEmpty()) {
             gutterMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
@@ -7843,6 +7913,10 @@ final class DebugCoordinator {
         items.add(menuItem("debug.addLogpoint", logpointGlyph(), this::addLogpointAtCaret));
         items.add(menuItem("debug.addTriggeredBreakpoint", breakpointGlyph(), this::addTriggeredBreakpointAtCaret));
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
+        javafx.scene.control.MenuItem toGroup =
+                menuItem("debug.moveBreakpointToGroup", null, this::moveBreakpointToGroupAtCaret);
+        toGroup.setDisable(b.getBreakpointManager().get(b.getFocusedArea().getCurrentParagraph()) == null);
+        items.add(toGroup);
         javafx.scene.control.MenuItem flip =
                 menuItem("debug.toggleBreakpointEnabled", Icons.check(), this::toggleBreakpointEnabledAtCaret);
         flip.setDisable(b.getBreakpointManager().get(b.getFocusedArea().getCurrentParagraph()) == null);

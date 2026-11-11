@@ -5,6 +5,7 @@ import java.util.TreeSet;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A breakpoint on a single line of a file: a 0-based line index, an optional {@code condition} (a Java
@@ -16,7 +17,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * Java debugger's lambda breakpoints. Persisted per file path, bucketed per project, in {@link BreakpointStore}
  * ({@code breakpoints.json}). A {@code recording} one does not stay stopped: Debug History keeps the stop's values and
  * the program goes on. A breakpoint with a {@code triggeredBy} waits in each debug session until the breakpoint with
- * that {@code id} is hit (a triggered breakpoint).
+ * that {@code id} is hit (a triggered breakpoint). A breakpoint can be in a named {@code group}, turned on and off as one.
  *
  * <p>A Jackson-serialized record; the {@code com.editora.config} package is already opened to
  * jackson.databind in {@code module-info.java} (see {@link Bookmark}).
@@ -34,7 +35,8 @@ public record Breakpoint(
         boolean lambdasOnly,
         boolean recording,
         String id,
-        String triggeredBy) {
+        String triggeredBy,
+        String group) {
 
     /** Max stored length of the captured line snapshot. */
     public static final int MAX_LINE_TEXT = 200;
@@ -44,6 +46,7 @@ public record Breakpoint(
         logMessage = logMessage == null ? "" : logMessage;
         lineText = lineText == null ? "" : lineText;
         hitCondition = hitCondition == null ? "" : hitCondition;
+        group = groupName(group);
         id = id == null ? "" : id.strip();
         triggeredBy = triggeredBy == null || triggeredBy.strip().equals(id) ? "" : triggeredBy.strip();
         if (lineText.length() > MAX_LINE_TEXT) {
@@ -59,6 +62,69 @@ public record Breakpoint(
         }
         lambdas = List.copyOf(numbers);
         lambdasOnly = lambdasOnly && !lambdas.isEmpty(); // with no lambda it stops on the line
+    }
+
+    /** A breakpoint in no group. */
+    public Breakpoint(
+            int line,
+            String condition,
+            String logMessage,
+            boolean enabled,
+            String lineText,
+            String hitCondition,
+            boolean temporary,
+            List<Integer> lambdas,
+            boolean lambdasOnly,
+            boolean recording,
+            String id,
+            String triggeredBy) {
+        this(
+                line,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording,
+                id,
+                triggeredBy,
+                "");
+    }
+
+    /** The longest group name kept. */
+    public static final int MAX_GROUP = 60;
+
+    /** {@code name} as a group's name: stripped, on one line, at most {@link #MAX_GROUP} characters; "" for none. */
+    public static String groupName(@Nullable String name) {
+        if (name == null) {
+            return "";
+        }
+        String one = name.replaceAll("\\s+", " ").strip();
+        return one.length() > MAX_GROUP ? one.substring(0, MAX_GROUP).strip() : one;
+    }
+
+    /**
+     * This breakpoint in the group {@code newGroup} (blank: in none) — IntelliJ's breakpoint groups: a group's
+     * breakpoints are turned on and off together.
+     */
+    public Breakpoint withGroup(String newGroup) {
+        return new Breakpoint(
+                line,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording,
+                id,
+                triggeredBy,
+                newGroup);
     }
 
     /** A breakpoint with no id, that waits for no other one. */
@@ -126,7 +192,20 @@ public record Breakpoint(
             String lineText,
             String hitCondition,
             boolean temporary) {
-        this(line, condition, logMessage, enabled, lineText, hitCondition, temporary, List.of(), false, false, "", "");
+        this(
+                line,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                temporary,
+                List.of(),
+                false,
+                false,
+                "",
+                "",
+                "");
     }
 
     /** A breakpoint that stays after it is hit. */
@@ -168,7 +247,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     /** This breakpoint with a fresh snapshot of its line's text (the line was edited in place). */
@@ -185,7 +265,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     public Breakpoint withCondition(String newCondition) {
@@ -201,7 +282,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     public Breakpoint withLogMessage(String newLog) {
@@ -217,7 +299,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     public Breakpoint withEnabled(boolean newEnabled) {
@@ -233,7 +316,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     /**
@@ -253,7 +337,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     /**
@@ -273,7 +358,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     /**
@@ -293,7 +379,8 @@ public record Breakpoint(
                 only,
                 recording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     /**
@@ -313,7 +400,8 @@ public record Breakpoint(
                 lambdasOnly,
                 newRecording,
                 id,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     /**
@@ -333,7 +421,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 newId,
-                triggeredBy);
+                triggeredBy,
+                group);
     }
 
     /**
@@ -354,7 +443,8 @@ public record Breakpoint(
                 lambdasOnly,
                 recording,
                 id,
-                trigger);
+                trigger,
+                group);
     }
 
     /** Whether it waits for another breakpoint to be hit (when that one still exists). */

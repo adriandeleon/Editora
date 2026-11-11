@@ -106,6 +106,7 @@ final class BreakpointsPicker {
                 this::entries,
                 BreakpointsPicker::label,
                 e -> detail(e, root, home, triggers),
+                e -> label(e) + " " + groupOf(e), // typing a group's name lists its breakpoints
                 this::jump);
         // The kind in the glyph's shape and colour, as in the gutter: a logpoint is a diamond (review 2 C107).
         picker.setItemIcon(e -> glyph(e));
@@ -120,6 +121,14 @@ final class BreakpointsPicker {
                 new KeyCodeCombination(KeyCode.D, KeyCombination.ALT_DOWN),
                 tr("debug.breakpoints.keyRemove", "Alt+D"),
                 this::remove);
+        picker.addRowAction(
+                new KeyCodeCombination(KeyCode.G, KeyCombination.ALT_DOWN),
+                tr("debug.breakpoints.keyGroup", "Alt+G"),
+                e -> {
+                    if (!groupOf(e).isEmpty()) {
+                        toggleGroup(groupOf(e));
+                    }
+                });
         picker.addRowAction(
                 new KeyCodeCombination(KeyCode.M, KeyCombination.ALT_DOWN),
                 tr("debug.breakpoints.keyMute", "Alt+M"),
@@ -291,6 +300,9 @@ final class BreakpointsPicker {
         if (!m.enabled()) {
             parts.add(tr("debug.breakpoint.disabled"));
         }
+        if (!m.group().isEmpty()) {
+            parts.add(tr("debug.breakpoint.group", m.group()));
+        }
         return String.join("  ·  ", parts);
     }
 
@@ -359,6 +371,74 @@ final class BreakpointsPicker {
             return;
         }
         rewriteClosed(e, null);
+    }
+
+    // --- groups -------------------------------------------------------------------------------------------------
+
+    /** The group {@code e}'s breakpoint is in ("" for none). */
+    static String groupOf(Entry e) {
+        return e.member() != null ? e.member().group() : e.breakpoint().group();
+    }
+
+    /** Whether {@code e}'s breakpoint is on. */
+    static boolean enabledOf(Entry e) {
+        return e.member() != null ? e.member().enabled() : e.breakpoint().enabled();
+    }
+
+    /** The groups of {@code entries}, each once, sorted as people read them (case aside). */
+    static List<String> groups(List<Entry> entries) {
+        java.util.TreeSet<String> out = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (Entry e : entries) {
+            if (!groupOf(e).isEmpty()) {
+                out.add(groupOf(e));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** {@code entries} in the group {@code group}. */
+    static List<Entry> inGroup(List<Entry> entries, String group) {
+        return entries.stream().filter(e -> groupOf(e).equals(group)).toList();
+    }
+
+    /** Puts {@code e}'s breakpoint in the group {@code group} (blank: in none). */
+    void setGroup(Entry e, String group) {
+        if (e.member() != null) {
+            if (members != null) {
+                members.replace(e.member().withGroup(group));
+            }
+            return;
+        }
+        if (e.buffer() != null) {
+            var mgr = e.buffer().getBreakpointManager();
+            mgr.setGroup(e.line() - mgr.regionFirstLine(), group);
+            return;
+        }
+        rewriteClosed(e, e.breakpoint().withGroup(group));
+    }
+
+    /**
+     * Turns every breakpoint of {@code group} on — or, when all of them are on already, off — as IntelliJ's group
+     * check box does. Returns whether they are on now; says so on the status line.
+     */
+    boolean toggleGroup(String group) {
+        List<Entry> members = inGroup(entries(), group);
+        boolean on = !members.stream().allMatch(BreakpointsPicker::enabledOf);
+        for (Entry e : members) {
+            if (enabledOf(e) != on) {
+                toggleEnabled(e);
+            }
+        }
+        host.setStatus(tr(on ? "status.debug.groupEnabled" : "status.debug.groupDisabled", group, members.size()));
+        return on;
+    }
+
+    /** A group's row in a list: ✓ when all its breakpoints are on, – when some are, then its name and size. */
+    static String groupRow(String group, List<Entry> entries) {
+        List<Entry> members = inGroup(entries, group);
+        long on = members.stream().filter(BreakpointsPicker::enabledOf).count();
+        String mark = on == members.size() ? "✓ " : on == 0 ? "    " : "– ";
+        return mark + tr("debug.breakpoints.groupRow", group, members.size());
     }
 
     /** A closed file's saved breakpoint replaced ({@code next}) or removed (null): saved, and sent to a session. */
