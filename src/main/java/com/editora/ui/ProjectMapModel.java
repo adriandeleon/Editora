@@ -208,10 +208,23 @@ final class ProjectMapModel {
             boolean gitChanged,
             boolean bookmarked,
             boolean personalNotes,
+            boolean problems,
             TypeFilter type) {
         Filters {
             query = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
             type = type == null ? TypeFilter.ALL : type;
+        }
+
+        /** Without the Problems chip (Map code browser round 2). */
+        Filters(
+                String query,
+                boolean open,
+                boolean modified,
+                boolean gitChanged,
+                boolean bookmarked,
+                boolean personalNotes,
+                TypeFilter type) {
+            this(query, open, modified, gitChanged, bookmarked, personalNotes, false, type);
         }
 
         boolean active() {
@@ -221,6 +234,7 @@ final class ProjectMapModel {
                     || gitChanged
                     || bookmarked
                     || personalNotes
+                    || problems
                     || type != TypeFilter.ALL;
         }
     }
@@ -1093,6 +1107,19 @@ final class ProjectMapModel {
             boolean gitChanged,
             boolean bookmarked,
             boolean personalNotes) {
+        return matches(entry, filters, open, modified, gitChanged, bookmarked, personalNotes, false);
+    }
+
+    /** As above, with whether the entry has errors or warnings (the Problems chip, Map code browser round 2). */
+    static boolean matches(
+            Entry entry,
+            Filters filters,
+            boolean open,
+            boolean modified,
+            boolean gitChanged,
+            boolean bookmarked,
+            boolean personalNotes,
+            boolean problems) {
         if (entry == null || filters == null) {
             return false;
         }
@@ -1105,13 +1132,15 @@ final class ProjectMapModel {
                 || filters.modified()
                 || filters.gitChanged()
                 || filters.bookmarked()
-                || filters.personalNotes();
+                || filters.personalNotes()
+                || filters.problems();
         if (hasStatusFilter
                 && !((filters.open() && open)
                         || (filters.modified() && modified)
                         || (filters.gitChanged() && gitChanged)
                         || (filters.bookmarked() && bookmarked)
-                        || (filters.personalNotes() && personalNotes))) {
+                        || (filters.personalNotes() && personalNotes)
+                        || (filters.problems() && problems))) {
             return false;
         }
         return matchesType(entry, filters.type());

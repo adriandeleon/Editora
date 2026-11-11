@@ -824,10 +824,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         stackLabel.setMinWidth(Region.USE_PREF_SIZE); // the thread selector shrinks first ("Call St…", review C16)
         stackTitle = stackLabel;
         threadsToggle.setMinWidth(Region.USE_PREF_SIZE);
-        Region threadsGap = spacer();
-        threadsGap.visibleProperty().bind(threadsToggle.selectedProperty());
-        threadsGap.managedProperty().bind(threadsToggle.selectedProperty());
-        HBox stackHeader = new HBox(6, stackLabel, threads, threadsGap, threadsToggle);
+        // The Threads view hides the dropdown but keeps its room: taken out of the row, the row lost the
+        // dropdown's height and the toggle jumped up when clicked.
+        HBox stackHeader = new HBox(6, stackLabel, threads, threadsToggle);
         stackHeader.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(threads, Priority.ALWAYS);
         javafx.scene.layout.StackPane stackArea = new javafx.scene.layout.StackPane(stack, threadList);
@@ -895,6 +894,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         // Call stack | variables | console. Stacked on top of each other they shared the height of the
         // bottom strip three ways: at the default tool-window height the call stack had no rows at all.
+        for (VBox box : List.of(stackBox, varsBox, consoleBox)) {
+            box.getStyleClass().add("debug-area"); // room between a column's content and the dividers
+        }
         areas.getItems().addAll(stackBox, varsBox, consoleBox);
         SplitPane main = areas;
         VBox.setVgrow(main, Priority.ALWAYS);
@@ -1637,8 +1639,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         threadList.setVisible(on);
         stack.setVisible(!on);
-        threads.setVisible(!on);
-        threads.setManaged(!on);
+        threads.setVisible(!on); // still managed: the header row keeps its height (and the toggle its place)
         if (stackTitle != null) {
             stackTitle.setText(tr(on ? "debugpanel.threadsTitle" : "debugpanel.callStack"));
         }

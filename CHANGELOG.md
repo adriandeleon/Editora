@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Problems on the Project Map.** Files with errors or warnings, and the folders that hold them, are marked on the
+  Map with a red or amber dot and coloured names, and their tooltip says how many. A new *Problems* chip highlights
+  them, and Next/Previous Problem on the Map steps through the whole project's problems, opening each one's card.
 - **Evaluate expressions as IntelliJ does.** The Debug window has an evaluate field at the top of Variables. Its result
   is the first row, and an object's fields open under it, with Copy Value, Set Value and Add to Watches on them. A
   button beside the field adds the expression to Watches. *Debug: Evaluate Expression* (Alt+F8 in the IntelliJ keymap,
