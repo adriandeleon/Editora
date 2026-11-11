@@ -16,6 +16,14 @@ public interface DebugValuePresenter {
      */
     void show(CodeArea area, String expression, double x, double y, boolean keyboard);
 
+    /**
+     * Quick Evaluate: evaluates {@code expression} as code (a method call included) and shows its value, or why it
+     * did not evaluate, at {@code (x, y)}. The hover's {@link #show} by default.
+     */
+    default void showEvaluated(CodeArea area, String expression, double x, double y) {
+        show(area, expression, x, y, true);
+    }
+
     /** Closes the popup now (resumed, another word, Esc). */
     void hide();
 

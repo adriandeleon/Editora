@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -52,6 +51,11 @@ final class DebugValuePopup implements DebugValuePresenter {
 
         void addWatch(String expression);
 
+        /** Evaluates {@code expression} as code (context "repl"): Quick Evaluate. The hover's evaluation by default. */
+        default void evaluateCode(String expression, Consumer<DapModels.EvalResult> cb) {
+            evaluate(expression, cb);
+        }
+
         /** Pins {@code expression} to line {@code line} (0-based) of {@code area}'s file, or unpins it there. */
         default void pin(CodeArea area, int line, String expression) {}
     }
@@ -59,11 +63,17 @@ final class DebugValuePopup implements DebugValuePresenter {
     /** The line the popup was opened for (where Pin to Line pins), or -1. */
     private int anchorLine = -1;
 
+    /** The value line shows an evaluation's failure (Quick Evaluate): drawn as an error, not as a value. */
+    private static final javafx.css.PseudoClass FAILED = javafx.css.PseudoClass.getPseudoClass("failed");
+
     static final double MAX_WIDTH = 560;
     static final double MAX_HEIGHT = 340;
     private static final double ROW = 22;
 
     private final Source source;
+    /** Loads the rows of an object's fields, a page at a time. */
+    private final DebugValueTree values;
+
     private final PopupControl popup = new PopupControl();
     private final StackPane root = new StackPane();
     private final Label line = new Label();
@@ -88,6 +98,7 @@ final class DebugValuePopup implements DebugValuePresenter {
 
     DebugValuePopup(Source source) {
         this.source = source;
+        this.values = new DebugValueTree(source::children);
         root.getStyleClass().addAll("debug-panel", "debug-value-popup");
         line.getStyleClass().add("debug-value-line");
         line.setWrapText(true);
@@ -105,7 +116,8 @@ final class DebugValuePopup implements DebugValuePresenter {
             }
         });
         tree.setOnMouseClicked(e -> {
-            if (e.getClickCount() == 2 && tree.getSelectionModel().getSelectedItem() instanceof More more) {
+            if (e.getClickCount() == 2
+                    && tree.getSelectionModel().getSelectedItem() instanceof DebugValueTree.More more) {
                 more.load();
             }
         });
@@ -196,6 +208,31 @@ final class DebugValuePopup implements DebugValuePresenter {
         });
     }
 
+    /**
+     * Quick Evaluate (Alt+click, IntelliJ's): {@code expr} evaluated as code — a method call included, which the hover
+     * never runs — and shown even when it fails, with the adapter's reason: it was asked for, so silence would read as
+     * the click being missed. Keyboard-driven, as Show Value at Caret.
+     */
+    @Override
+    public void showEvaluated(CodeArea area, String expr, double x, double y) {
+        int asked = ++shown;
+        anchorLine = lineAbove(area, x, y);
+        closing.stop();
+        source.evaluateCode(expr, r -> {
+            if (asked != shown || r == null) {
+                return;
+            }
+            if (r.failed() || r.result() == null || r.result().isBlank()) {
+                String reason = r.failed() && r.result() != null && !r.result().isBlank()
+                        ? r.result()
+                        : tr("debugpanel.noValue");
+                present(area, expr, DapModels.EvalResult.failure(reason), x, y, true);
+                return;
+            }
+            present(area, expr, r, x, y, true);
+        });
+    }
+
     @Override
     public void hide() {
         shown++;
@@ -262,7 +299,8 @@ final class DebugValuePopup implements DebugValuePresenter {
             root.setPrefSize(
                     javafx.scene.layout.Region.USE_COMPUTED_SIZE, javafx.scene.layout.Region.USE_COMPUTED_SIZE);
         } else if (r.variablesReference() <= 0) {
-            line.setText(expr + " = " + r.result());
+            line.setText(r.failed() ? tr("debugpanel.evalFailedLine", expr, r.result()) : expr + " = " + r.result());
+            line.pseudoClassStateChanged(FAILED, r.failed());
             root.getChildren().setAll(line);
             root.setPrefSize(
                     javafx.scene.layout.Region.USE_COMPUTED_SIZE, javafx.scene.layout.Region.USE_COMPUTED_SIZE);
@@ -276,7 +314,7 @@ final class DebugValuePopup implements DebugValuePresenter {
                     DebugPanel.Kind.VARIABLE,
                     r.namedVariables(),
                     r.indexedVariables());
-            TreeItem<DebugPanel.VarRow> item = lazy(top);
+            TreeItem<DebugPanel.VarRow> item = values.lazy(top);
             tree.setRoot(item);
             item.setExpanded(true); // the object's fields at once: that is what hovering it is for
             tree.getSelectionModel().select(0);
@@ -303,117 +341,12 @@ final class DebugValuePopup implements DebugValuePresenter {
         }
     }
 
-    /** A tree item whose children load on first expansion (a page at a time for a large array). */
-    private TreeItem<DebugPanel.VarRow> lazy(DebugPanel.VarRow row) {
-        TreeItem<DebugPanel.VarRow> item = new TreeItem<>(row) {
-            @Override
-            public boolean isLeaf() {
-                return row.ref() <= 0;
-            }
-        };
-        if (row.ref() > 0) {
-            boolean[] loaded = {false};
-            item.expandedProperty().addListener((o, was, now) -> {
-                if (now && !loaded[0]) {
-                    loaded[0] = true;
-                    load(item, row);
-                }
-            });
-        }
-        return item;
-    }
-
-    private void load(TreeItem<DebugPanel.VarRow> item, DebugPanel.VarRow row) {
-        if (!DebugValues.fetchedByPage(row.indexed())) {
-            source.children(row.ref(), null, 0, 0, all -> page(item, row, all, 0));
-            return;
-        }
-        if (row.named() > 0) {
-            source.children(row.ref(), "named", 0, 0, named -> {
-                item.getChildren().addAll(rows(row, named));
-                requestPage(item, row, 0);
-            });
-        } else {
-            requestPage(item, row, 0);
-        }
-    }
-
-    private void requestPage(TreeItem<DebugPanel.VarRow> item, DebugPanel.VarRow row, int start) {
-        int count = DebugValues.nextPage(start, row.indexed());
-        source.children(row.ref(), "indexed", start, count, got -> {
-            dropMore(item);
-            if (got.size() > count) {
-                page(item, row, got, 0); // the adapter ignored start/count
-                return;
-            }
-            item.getChildren().addAll(rows(row, got));
-            int done = start + got.size();
-            int next = DebugValues.nextPage(done, row.indexed());
-            if (next > 0 && !got.isEmpty()) {
-                item.getChildren().add(new More(next, row.indexed() - done, () -> requestPage(item, row, done)));
-            }
-        });
-    }
-
-    private void page(
-            TreeItem<DebugPanel.VarRow> item, DebugPanel.VarRow row, List<DapModels.VariableInfo> all, int start) {
-        dropMore(item);
-        int end = start + DebugValues.nextPage(start, all.size());
-        item.getChildren().addAll(rows(row, all.subList(start, end)));
-        int next = DebugValues.nextPage(end, all.size());
-        if (next > 0) {
-            item.getChildren().add(new More(next, all.size() - end, () -> page(item, row, all, end)));
-        }
-    }
-
-    private List<TreeItem<DebugPanel.VarRow>> rows(DebugPanel.VarRow parent, List<DapModels.VariableInfo> vars) {
-        List<TreeItem<DebugPanel.VarRow>> out = new ArrayList<>(vars.size());
-        for (DapModels.VariableInfo v : vars) {
-            out.add(lazy(new DebugPanel.VarRow(
-                    v.name(),
-                    v.value(),
-                    v.type() == null ? "" : v.type(),
-                    v.variablesReference(),
-                    parent.ref(),
-                    DebugPanel.Kind.VARIABLE,
-                    v.namedVariables(),
-                    v.indexedVariables())));
-        }
-        return out;
-    }
-
-    private static void dropMore(TreeItem<DebugPanel.VarRow> item) {
-        var children = item.getChildren();
-        if (!children.isEmpty() && children.getLast() instanceof More) {
-            children.removeLast();
-        }
-    }
-
-    /** "Show N more…": Enter or a double-click loads the next page. */
-    private static final class More extends TreeItem<DebugPanel.VarRow> {
-        private final Runnable next;
-        private boolean requested;
-
-        More(int next, int remaining, Runnable load) {
-            super(new DebugPanel.VarRow(
-                    tr("debugpanel.showMore", next, remaining), "", "", 0, 0, DebugPanel.Kind.MORE));
-            this.next = load;
-        }
-
-        void load() {
-            if (!requested) {
-                requested = true;
-                next.run();
-            }
-        }
-    }
-
     // --- actions -------------------------------------------------------------------------------------
 
     /** The selected row's expression: the hovered expression, then {@code .field} / {@code [i]} down to it. */
     String selectedExpression() {
         TreeItem<DebugPanel.VarRow> sel = tree.getSelectionModel().getSelectedItem();
-        if (sel == null || sel instanceof More || expression == null) {
+        if (sel == null || sel instanceof DebugValueTree.More || expression == null) {
             return "";
         }
         if (sel == tree.getRoot()) {
@@ -427,7 +360,7 @@ final class DebugValuePopup implements DebugValuePresenter {
         TreeItem<DebugPanel.VarRow> sel = tree.getSelectionModel().getSelectedItem();
         if (root.getChildren().contains(textBox)) {
             DebugPanel.copyToClipboard(text.getText());
-        } else if (sel != null && !(sel instanceof More)) {
+        } else if (sel != null && !(sel instanceof DebugValueTree.More)) {
             DebugPanel.copyToClipboard(DebugPanelText.copyValue(sel.getValue().value()));
         } else if (root.getChildren().contains(line)) {
             DebugPanel.copyToClipboard(line.getText());
@@ -542,7 +475,7 @@ final class DebugValuePopup implements DebugValuePresenter {
             case ENTER -> {
                 if (e.isShiftDown()) {
                     addSelectedToWatches(); // Shift+Enter: the row's expression to Watches
-                } else if (sel instanceof More more) {
+                } else if (sel instanceof DebugValueTree.More more) {
                     more.load();
                 } else if (sel != null && !sel.isLeaf()) {
                     sel.setExpanded(!sel.isExpanded());

@@ -338,11 +338,13 @@ class DebugPanelWatchesFxTest {
                     java.util.Arrays.asList(
                             tr("debugpanel.editWatch"),
                             tr("debugpanel.removeWatch"),
+                            tr("debugpanel.pauseWatch"),
                             tr("debugpanel.copyValue"),
                             tr("debugpanel.copyName"),
                             tr("debugpanel.history.valueHistory"), // the stop is kept: its values can be followed
                             null, // separator
                             tr("debugpanel.addWatch"),
+                            tr("debugpanel.removeAllWatches"),
                             null,
                             tr("debugpanel.hexValues")),
                     labels(menu));

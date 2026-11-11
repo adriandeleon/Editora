@@ -4650,13 +4650,23 @@ public final class DapManager {
             cb.accept(new DapModels.EvalResult("", 0, null));
             return;
         }
+        // Code the user asked to run (the evaluate field, the Evaluate window, Quick Evaluate) holds the stopped
+        // thread as a console evaluation does: a Step meanwhile is refused, saying why, rather than queued.
+        boolean code = "repl".equals(context);
+        if (code) {
+            consoleEvaluations++;
+        }
         c.evaluateFull(expression, frameId, context)
                 .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> fx(() -> {
+                    if (code && client == c) {
+                        consoleEvaluations = Math.max(0, consoleEvaluations - 1);
+                    }
                     if (client == c) {
                         cb.accept(
                                 e != null
-                                        ? DapModels.EvalResult.failure(msg(e))
+                                        ? DapModels.EvalResult.failure(
+                                                code && isTimeout(e) ? stillEvaluating() : msg(e))
                                         : (r == null ? new DapModels.EvalResult("", 0, null) : r));
                     }
                 }));

@@ -153,6 +153,22 @@ final class DebugCoordinator {
         /** Persists the debug-watch expressions (workspace state + durable save). */
         void persistDebugWatches(List<String> watches);
 
+        /** The persisted paused watches (a subset of {@link #debugWatches}). */
+        default List<String> debugPausedWatches() {
+            return List.of();
+        }
+
+        /** Persists the paused watches. */
+        default void persistDebugPausedWatches(List<String> paused) {}
+
+        /** The persisted expressions evaluated in the evaluate fields, oldest first. */
+        default List<String> debugEvaluateHistory() {
+            return List.of();
+        }
+
+        /** Persists the evaluate fields' history. */
+        default void persistDebugEvaluateHistory(List<String> history) {}
+
         /**
          * Opens the read-only source jdtls has for {@code uri} (a {@code jdt://} class file) at {@code line0},
          * routed through {@code anchor}'s language server, and hands the tab to {@code opened}.
@@ -514,21 +530,28 @@ final class DebugCoordinator {
     DebugPanel panel() {
         if (s().panel == null) {
             DebugSession session = s();
-            DebugPanel built = new DebugPanel(inSessionProxy(DebugPanel.Actions.class, debugActions(), session));
+            DebugPanel built = new DebugPanel(
+                    inSessionProxy(DebugPanel.Actions.class, debugActions(), session), evaluateHistory());
             built.setPrompt(host::promptText);
             built.setExpressionPrompt(this::expressionPrompt); // Add / Edit Watch: the field completes (follow-up 5)
             built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             built.setWatches(ops.debugWatches());
+            built.setPausedWatches(ops.debugPausedWatches());
+            built.setOnHistoryChanged(
+                    () -> ops.persistDebugEvaluateHistory(evaluateHistory().entries()));
             built.setChordLookup(id -> java.util.Objects.requireNonNullElse(ops.chordFor(id), ""));
             built.setSourceCheck(this::hasSource);
             built.history().setCapacity(host.settings().getDebugHistoryStops());
             built.setOnWatchesChanged(() -> {
                 List<String> watches = new ArrayList<>(built.getWatches());
+                List<String> paused = built.getPausedWatches();
+                ops.persistDebugPausedWatches(paused); // first: persisting the watches saves the workspace
                 ops.persistDebugWatches(watches);
                 forEachPanel(
                         other -> { // the watches are the window's: every session evaluates the same ones
                             if (other != built) {
                                 other.setWatches(watches);
+                                other.setPausedWatches(paused);
                             }
                         });
             });
@@ -1831,6 +1854,7 @@ final class DebugCoordinator {
                                                             : "status.debug.cannotRestartAttached"));
                     panel().setState(state);
                 }
+                evaluateWindows.forEach(DebugEvaluateWindow::sessionChanged); // their results were that stop's
                 if (state == DapManager.State.STARTING) {
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
                     nameSession(s().sessionLabel); // ending the replaced session cleared it
@@ -2215,6 +2239,11 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void evaluateCode(String expr, int frameId, Consumer<DapModels.EvalResult> cb) {
+                dap().evaluateFull(expr, frameId, "repl", cb);
+            }
+
+            @Override
             public void complete(String text, int caret, int frameId, Consumer<List<DapModels.CompletionTarget>> cb) {
                 dap().completions(frameId, text, caret, cb);
             }
@@ -2293,16 +2322,7 @@ final class DebugCoordinator {
 
             @Override
             public boolean refreshValues() {
-                DapModels.StackFrameInfo frame = s().shownFrame;
-                if (frame == null || dap().state() != DapManager.State.SUSPENDED) {
-                    return false;
-                }
-                dap().forgetValues(); // B205: what the program now says, not this stop's first answers
-                dap().scopes(frame.id(), scopes -> {
-                    panel().setScopes(scopes);
-                    applyInlineValues(frame, scopes);
-                });
-                return true;
+                return refreshStopValues();
             }
         };
     }
@@ -6705,11 +6725,140 @@ final class DebugCoordinator {
         panel().showThreadsView(true);
     }
 
-    /** Focuses the Debug console's evaluate field ({@code debug.evaluate} command). */
+    /** Focuses the evaluate field at the top of Variables ({@code debug.focusEvaluate}). */
     void focusEvaluate() {
         ops.openToolWindow();
         panel().focusEvaluate();
         later(panel()::focusEvaluate); // a window opened just now is laid out on the next pulse
+    }
+
+    /**
+     * Fetches the selected frame's variables, watches and inline values again: an evaluation or Set Value may have
+     * changed them (B205). False when there is nothing to fetch them from.
+     */
+    boolean refreshStopValues() {
+        DapModels.StackFrameInfo frame = s().shownFrame;
+        if (frame == null || dap().state() != DapManager.State.SUSPENDED) {
+            return false;
+        }
+        dap().forgetValues(); // B205: what the program now says, not this stop's first answers
+        dap().scopes(frame.id(), scopes -> {
+            panel().setScopes(scopes);
+            applyInlineValues(frame, scopes);
+        });
+        return true;
+    }
+
+    // --- the Evaluate window ------------------------------------------------------------------------------
+
+    /** The expressions evaluated in this window's evaluate fields, oldest first: one list, walked by every field. */
+    private DebugPanelText.@Nullable History evaluateHistory;
+
+    /** Every Evaluate window opened; a closed one is reused by the next Evaluate. */
+    private final List<DebugEvaluateWindow> evaluateWindows = new ArrayList<>();
+
+    DebugPanelText.History evaluateHistory() {
+        if (evaluateHistory == null) {
+            evaluateHistory = new DebugPanelText.History();
+            ops.debugEvaluateHistory().forEach(evaluateHistory::add);
+        }
+        return evaluateHistory;
+    }
+
+    /**
+     * Debug: Evaluate Expression ({@code debug.evaluate}, IntelliJ's Alt+F8): opens an Evaluate window, its
+     * expression the editor's selection (one line) or the expression at the caret. Another Evaluate while one is open
+     * opens another, as IntelliJ does — unless the open one was opened for the same text.
+     */
+    void evaluateExpression() {
+        EditorBuffer b = host.activeBuffer();
+        String initial = null;
+        if (b != null) {
+            var area = b.getFocusedArea();
+            String selected = area.getSelectedText();
+            initial = selected != null && !selected.isBlank()
+                    ? selected.strip()
+                    : com.editora.editor.debug.DebugExpressions.atCaret(area);
+        }
+        openEvaluateWindow(initial);
+    }
+
+    /** Opens an Evaluate window with {@code initial} as its expression (null: the field as it was). */
+    DebugEvaluateWindow openEvaluateWindow(@Nullable String initial) {
+        javafx.stage.Window owner = host.window();
+        DebugEvaluateWindow window = null;
+        int open = 0;
+        for (DebugEvaluateWindow w : evaluateWindows) {
+            if (w.isShowing()) {
+                open++;
+            } else if (window == null) {
+                window = w;
+            }
+        }
+        if (window == null) {
+            window = new DebugEvaluateWindow(evaluateSource(), evaluateHistory());
+            evaluateWindows.add(window);
+        }
+        window.setPlainValueColours(plainValueColours());
+        window.show(owner, initial, s().panel == null ? "" : panel().expressionLanguageFile(), open * 28.0);
+        return window;
+    }
+
+    /** The Evaluate windows (tests). */
+    List<DebugEvaluateWindow> evaluateWindows() {
+        return List.copyOf(evaluateWindows);
+    }
+
+    private DebugEvaluateWindow.Source evaluateSource() {
+        return new DebugEvaluateWindow.Source() {
+            @Override
+            public boolean paused() {
+                return dap().state() == DapManager.State.SUSPENDED;
+            }
+
+            @Override
+            public String frameName() {
+                DapModels.StackFrameInfo frame = s().shownFrame;
+                if (frame == null) {
+                    return "";
+                }
+                String where = frame.file() == null
+                        ? ""
+                        : (frame.line() >= 0 ? ":" + (frame.line() + 1) : "") + ", "
+                                + DebugValues.sourceName(frame.file());
+                return DebugPanelText.frameName(frame.name()) + where;
+            }
+
+            @Override
+            public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
+                dap().evaluateFull(expression, s().debugFrameId, "repl", cb);
+            }
+
+            @Override
+            public void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb) {
+                dap().completions(s().debugFrameId, text, caret, cb);
+            }
+
+            @Override
+            public void addWatch(String expression) {
+                ops.openToolWindow();
+                panel().addWatchExpression(expression);
+            }
+
+            @Override
+            public void evaluated(boolean succeeded) {
+                ops.persistDebugEvaluateHistory(evaluateHistory().entries());
+                if (succeeded) {
+                    refreshStopValues(); // what it changed shows in Variables, the watches and the inline values
+                }
+            }
+
+            @Override
+            public void children(
+                    int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
+                dap().variables(ref, filter, start, count, cb);
+            }
+        };
     }
 
     /**
@@ -7383,6 +7532,7 @@ final class DebugCoordinator {
             items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
             items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));
             items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));
+            items.add(menuItem("debug.evaluate", Icons.debug(), this::evaluateExpression));
             var area = b.getFocusedArea();
             String selected = area.getSelectedText();
             String expression = selected != null && !selected.isBlank() && !selected.contains("\n")
@@ -7528,6 +7678,16 @@ final class DebugCoordinator {
                 public void addWatch(String expression) {
                     ops.openToolWindow();
                     panel().addWatchPrompt(expression);
+                }
+
+                @Override
+                public void evaluateCode(String expression, Consumer<DapModels.EvalResult> cb) {
+                    dap().evaluateFull(expression, s().debugFrameId, "repl", r -> {
+                        cb.accept(r);
+                        if (r != null && !r.failed()) {
+                            refreshStopValues(); // Quick Evaluate runs a call: what it changed shows (B205)
+                        }
+                    });
                 }
 
                 @Override

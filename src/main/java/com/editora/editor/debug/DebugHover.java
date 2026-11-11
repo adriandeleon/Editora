@@ -37,6 +37,11 @@ public final class DebugHover {
 
     private @Nullable PauseTransition pending;
 
+    /** The selection when an Alt+click's button went down (and its text): Quick Evaluate's, if clicked in. */
+    private javafx.scene.control.@Nullable IndexRange pressedSelection;
+
+    private @Nullable String pressedText;
+
     /** Shows the value as an expandable popup (follow-up 6); null: the one-line tooltip. */
     private @Nullable DebugValuePresenter presenter;
 
@@ -88,6 +93,76 @@ public final class DebugHover {
             }
         });
         a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> leave());
+        // Quick Evaluate (IntelliJ's Alt+click): the expression clicked, a call included, or the selection clicked in —
+        // the selection as it was when the button went down, before the press moved the caret.
+        a.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+            pressedSelection = e.isAltDown() ? a.getSelection() : null;
+            pressedText = e.isAltDown() ? a.getSelectedText() : null;
+        });
+        a.addEventHandler(MouseEvent.MOUSE_CLICKED, e -> {
+            if (quickClick(
+                            e.getButton() == javafx.scene.input.MouseButton.PRIMARY,
+                            e.isAltDown(),
+                            e.isControlDown() || e.isMetaDown() || e.isShiftDown(),
+                            e.isStillSincePress(),
+                            e.getClickCount())
+                    && quickEvaluate(a, e.getX(), e.getY(), e.getScreenX() + 12, e.getScreenY() + 16)) {
+                e.consume();
+            }
+        });
+    }
+
+    /** Whether a click is Quick Evaluate's: a single primary click with Alt alone, the mouse not dragged. Pure. */
+    static boolean quickClick(boolean primary, boolean alt, boolean otherModifier, boolean still, int clicks) {
+        return primary && alt && !otherModifier && still && clicks == 1;
+    }
+
+    /**
+     * Quick Evaluate at {@code (x, y)} of {@code a} (local), shown at the screen point {@code (sx, sy)}: the selection
+     * when the point is in it, else the expression there. False (nothing done) when not paused or not on code.
+     */
+    public boolean quickEvaluate(CodeArea a, double x, double y, double sx, double sy) {
+        if (!active || presenter == null) {
+            return false;
+        }
+        try {
+            int offset = a.hit(x, y).getInsertionIndex();
+            javafx.scene.control.IndexRange sel = pressedSelection != null ? pressedSelection : a.getSelection();
+            String selected = pressedSelection != null ? pressedText : a.getSelectedText();
+            pressedSelection = null;
+            String expression = quickExpression(a, offset, sel, selected);
+            if (expression == null) {
+                return false;
+            }
+            if (pending != null) {
+                pending.stop();
+            }
+            word = expression;
+            presenter.showEvaluated(a, expression, sx, sy);
+            return true;
+        } catch (RuntimeException e) {
+            return false; // a hit outside the text mid-layout
+        }
+    }
+
+    /** The selection when {@code offset} is in it (one line, not blank), else the expression at {@code offset}. */
+    static @Nullable String quickExpression(
+            CodeArea a, int offset, javafx.scene.control.IndexRange sel, @Nullable String selected) {
+        if (sel.getLength() > 0
+                && offset >= sel.getStart()
+                && offset <= sel.getEnd()
+                && selected != null
+                && !selected.isBlank()) {
+            return selected.strip();
+        }
+        var pos = a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+        String line = a.getParagraph(pos.getMajor()).getText();
+        int col = pos.getMinor();
+        if (!isCode(a.getStyleAtPosition(pos.getMajor(), Math.min(line.length(), col + 1)))) {
+            return null;
+        }
+        String found = DebugIdentifiers.quickExpressionAt(line, col);
+        return found == null && col > 0 ? DebugIdentifiers.quickExpressionAt(line, col - 1) : found;
     }
 
     /**

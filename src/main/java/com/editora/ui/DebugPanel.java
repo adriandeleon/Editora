@@ -175,6 +175,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Evaluate a watch expression (context "watch") keeping the expandable reference + type. */
         void evaluateWatch(String expression, int frameId, Consumer<DapModels.EvalResult> cb);
 
+        /**
+         * Evaluate {@code expression} as code (context "repl": a method call runs) keeping the expandable reference +
+         * type — the evaluate field and the Evaluate window. A watch's evaluation by default.
+         */
+        default void evaluateCode(String expression, int frameId, Consumer<DapModels.EvalResult> cb) {
+            evaluateWatch(expression, frameId, cb);
+        }
+
         /** Set a variable's value (DAP setVariable on its container reference); delivers the new value. */
         void setVariable(int parentRef, String name, String value, Consumer<String> cb);
 
@@ -286,6 +294,38 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final ConsoleAppender appender = new ConsoleAppender(console, MAX_CONSOLE_CHARS);
     private final TextField evalInput = new TextField();
 
+    /** The evaluate field's history (Up / Down, review C20); every evaluate field walks the same expressions. */
+    private final DebugPanelText.History history;
+
+    /**
+     * The evaluate field at the top of Variables (IntelliJ's): a highlighted code field whose result is the tree's
+     * first row, an object's fields opened under it. The console's field below stays the program's input.
+     */
+    private final DebugExpressionField evalField;
+
+    /** Adds the evaluate field's expression to Watches (IntelliJ's button at the end of its field). */
+    private final Button evalToWatches = new Button();
+
+    /** Expands the evaluate field to a code fragment of several lines, or back (Shift+Enter). */
+    private final javafx.scene.control.ToggleButton evalExpand = new javafx.scene.control.ToggleButton();
+
+    /** The evaluate field's last expression and its result (null: none), shown as the first row of Variables. */
+    private @Nullable String resultExpression;
+
+    private DapModels.@Nullable EvalResult result;
+
+    /** The result row's item, rebuilt with the tree but kept while the stop lasts (its expansion with it). */
+    private @Nullable TreeItem<VarRow> resultItem;
+
+    /** Watches paused by the user: listed, not evaluated at each stop (IntelliJ's Pause Watch). */
+    private final java.util.Set<String> pausedWatches = new java.util.LinkedHashSet<>();
+
+    /** Paused watches evaluated once, by Evaluate Once, for the stop shown. */
+    private final java.util.Set<String> evaluatedOnce = new java.util.HashSet<>();
+
+    /** Told when an expression was evaluated in any evaluate field (the history is persisted). */
+    private Runnable onHistoryChanged = () -> {};
+
     private int selectedFrameId = -1;
     /** Guard so programmatically selecting the current thread in the combo doesn't re-fetch its stack. */
     private boolean settingThreads;
@@ -356,9 +396,6 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Whether a frame's source can be shown; frames without are drawn muted (review C16). */
     private java.util.function.Predicate<DapModels.StackFrameInfo> hasSource = f -> f.file() != null;
 
-    /** The evaluate field's history (Up / Down, review C20). */
-    private final DebugPanelText.History history = new DebugPanelText.History();
-
     /** The exception of the current exception stop (shown at the top of Variables, review C13), or null. */
     private DapModels.@Nullable ExceptionInfo exception;
 
@@ -383,7 +420,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** "Show N more…" under a container with more children than one page. */
         MORE,
         /** The exception of an exception stop and its message (review C13). */
-        EXCEPTION
+        EXCEPTION,
+        /** What the evaluate field at the top of Variables evaluated: the first row, until the program moves on. */
+        RESULT
     }
 
     /** A variables-tree row; {@code ref > 0} means expandable, {@code parentRef} is the DAP container
@@ -440,7 +479,31 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     public DebugPanel(Actions actions) {
+        this(actions, new DebugPanelText.History());
+    }
+
+    /** A panel whose evaluate fields walk {@code shared}'s expressions (every session's panel, the Evaluate windows). */
+    DebugPanel(Actions actions, DebugPanelText.History shared) {
         this.actions = actions;
+        this.history = new DebugPanelText.History(shared);
+        this.evalField = new DebugExpressionField(
+                new DebugExpressionField.Owner() {
+                    @Override
+                    public boolean paused() {
+                        return lastState == DapManager.State.SUSPENDED && viewing == null;
+                    }
+
+                    @Override
+                    public void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb) {
+                        actions.complete(text, caret, selectedFrameId, cb);
+                    }
+
+                    @Override
+                    public void submit(String expression) {
+                        evaluateInVariables(expression);
+                    }
+                },
+                new DebugPanelText.History(history)); // its own place in the one list of expressions
         appender.onTrimmed(this::refreshStatus);
         getStyleClass().add("debug-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
@@ -673,6 +736,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     && selectedRow().kind() == Kind.WATCH) {
                 removeWatch(selectedRow().name());
                 e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.DELETE
+                    && selectedRow() != null
+                    && selectedRow().kind() == Kind.RESULT) {
+                clearResult();
+                e.consume();
             }
         });
         // Built for the row it opens on. ContextMenu.show() returns before ON_SHOWING when it has no items, so an
@@ -721,8 +789,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
         });
         evalInput.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            boolean up = e.getCode() == javafx.scene.input.KeyCode.UP;
-            if ((up || e.getCode() == javafx.scene.input.KeyCode.DOWN) && !e.isControlDown() && !e.isAltDown()) {
+            // Up / Down, the keymap's line motion (Emacs C-p / C-n) and M-p / M-n: a one-line field has no lines to
+            // move through, so they walk the history, as in a shell.
+            Boolean older = DebugPanelText.historyKey(
+                    e.getCode(), e.isControlDown(), e.isAltDown(), e.isMetaDown(), e.isShiftDown(), keymapCommand(e));
+            if (older != null) {
+                boolean up = older;
                 String text = up ? history.up(evalInput.getText()) : history.down();
                 if (text != null) {
                     evalInput.setText(text);
@@ -743,6 +815,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 actions.endInput();
             }
         });
+        // The configured keymap's motion and editing (Emacs C-a, M-f, C-k…), after the filters above have had theirs.
+        com.editora.command.TextInputKeymap.installShared(evalInput);
+        evalInput.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("M-p", "M-n"));
 
         // The thread selector shares the header's row: on its own row it took a third of the default strip.
         Label stackLabel = sectionLabel("debugpanel.callStack");
@@ -777,7 +852,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
         HBox varsHeaderRow = new HBox(6, varsHeader, spacer(), varsFilter);
         varsHeaderRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        VBox varsBox = new VBox(2, varsHeaderRow, variables);
+        VBox varsBox = new VBox(2, varsHeaderRow, evaluateBar(), variables);
         VBox.setVgrow(variables, Priority.ALWAYS);
 
         VirtualizedScrollPane<CodeArea> consoleScroll = new VirtualizedScrollPane<>(console);
@@ -985,11 +1060,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 add.getStyleClass().add("debug-add-watch");
                 flow.getChildren().add(add);
             }
-            case VARIABLE, WATCH -> {
+            case VARIABLE, WATCH, RESULT -> {
                 // Name, value and type in the editor's syntax token colours (.text.<class> from the active
                 // editor theme), so a value reads like the code it came from.
-                Text name = new Text(row.name());
+                Text name = new Text(row.kind() == Kind.RESULT ? DebugPanelText.oneLine(row.name(), 120) : row.name());
                 name.getStyleClass().addAll("text", "variable", TOKEN);
+                if (row.kind() == Kind.RESULT) {
+                    name.getStyleClass().add("debug-result-name");
+                }
                 if (row.kind() == Kind.VARIABLE
                         && row.value().isEmpty()
                         && row.ref() > 0
@@ -997,8 +1075,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     flow.getChildren().add(name); // a group (debugpy's "special variables"), not "name = "
                     return flow;
                 }
-                if (row.kind() == Kind.WATCH && row.value().isEmpty()) {
+                if (row.kind() != Kind.VARIABLE && row.value().isEmpty() && !row.failed()) {
                     flow.getChildren().add(name); // not paused: no value, and no dangling " = " (review C19)
+                    if (row.note() == DapModels.ValueNote.PAUSED) {
+                        Text note = new Text("  " + DebugPanelText.valueNote(row.note()));
+                        note.getStyleClass().add("debug-val-note");
+                        flow.getChildren().add(note);
+                    }
                     return flow;
                 }
                 Text eq = new Text(" = ");
@@ -1115,8 +1198,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * global chords (e.g. C-x o to leave the panel) still work.
      */
     private void handleDebugKey(KeyEvent e) {
-        if (evalInput.isFocused() || e.getTarget() == evalInput || e.getTarget() instanceof TextField) {
-            return; // typing an expression in the REPL, or a filter for Variables
+        if (evalInput.isFocused()
+                || e.getTarget() == evalInput
+                || e.getTarget() instanceof TextField
+                || e.getTarget() instanceof CodeArea area && area.isEditable()) {
+            return; // typing an expression in the REPL or the evaluate field, or a filter for Variables
         }
         // Modified chords (incl. C-x o focus cycling) go to the global dispatcher; Stop and Restart need Shift.
         DebugPanelText.Control control = DebugPanelText.controlFor(
@@ -1161,6 +1247,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Updates the toolbar/status to reflect the session state and enables the right controls. */
     public void setState(DapManager.State state) {
         boolean wasRunning = lastState == DapManager.State.RUNNING;
+        if (state != lastState && resultItem != null) {
+            clearResult(); // its value and its fields' references were that stop's (or it said "pause first")
+        }
         if (state == DapManager.State.SUSPENDED && lastState != DapManager.State.SUSPENDED) {
             valueChanges.newStop(); // this stop's values are compared with the ones shown before it
             historyStopPending = true; // recorded when its call stack arrives
@@ -1221,6 +1310,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // disabling the field on every Step/Continue made JavaFX move focus out of the panel, the next stop
         // then handed focus to the editor, and the expression being typed went into the source file.
         evalInput.setDisable(!(suspended || running));
+        evalField.setDisable(!(suspended || running));
+        if (!suspended) {
+            evaluatedOnce.clear(); // Evaluate Once was for that stop
+        }
         if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
             programInput = false; // the program of the session that ended; the next one says so itself
         }
@@ -1394,7 +1487,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         root.getChildren().removeIf(i -> i.getValue() != null && i.getValue().kind() == Kind.EXCEPTION);
         if (exception != null) {
-            root.getChildren().addFirst(exceptionNode(exception));
+            boolean result = !root.getChildren().isEmpty()
+                    && root.getChildren().getFirst().getValue() != null
+                    && root.getChildren().getFirst().getValue().kind() == Kind.RESULT;
+            root.getChildren().add(result ? 1 : 0, exceptionNode(exception));
         }
     }
 
@@ -1635,6 +1731,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         java.nio.file.Path at = frames.isEmpty() ? null : frames.get(index).file();
         // DebugValues.sourceName: a jdt:// frame's last segment is a piece of its query (review 2, B107).
         String in = at == null ? "" : DebugValues.sourceName(at);
+        if (!in.isEmpty()) {
+            evalField.setLanguageFile(in); // the evaluate field highlights in the language stopped in
+        }
         if (!in.equals(stoppedIn)) {
             stoppedIn = in;
             refreshStatus();
@@ -1748,6 +1847,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             root.getChildren().addFirst(exceptionNode(exception));
             offset = 2;
         }
+        if (resultItem != null) {
+            root.getChildren().addFirst(resultItem); // the evaluation stays while the stop lasts (B205's refresh too)
+            offset++;
+        }
         for (DapModels.ScopeInfo s : scopes) {
             TreeItem<VarRow> item = lazyItem(new VarRow(s.name(), "", "", s.variablesReference(), 0, Kind.SCOPE));
             root.getChildren().add(item);
@@ -1782,6 +1885,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private TreeItem<VarRow> idleRoot() {
         TreeItem<VarRow> root = new TreeItem<>();
         root.getChildren().add(buildWatchesNode());
+        if (resultItem != null) {
+            root.getChildren().addFirst(resultItem); // "evaluates only while paused", said where it was asked
+        }
         return root;
     }
 
@@ -1817,7 +1923,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (row == null || !item.isExpanded() || item.isLeaf()) {
             return;
         }
-        if (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH) {
+        if (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.RESULT) {
             out.add(pathOf(item));
         }
         for (TreeItem<VarRow> child : item.getChildren()) {
@@ -1867,6 +1973,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (list != null) {
             list.stream().filter(w -> w != null && !w.isBlank()).forEach(watches::add);
         }
+        pausedWatches.retainAll(watches);
         refreshWatchesNode();
     }
 
@@ -1881,9 +1988,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         node.setExpanded(true);
         boolean suspended = lastState == DapManager.State.SUSPENDED;
         for (String expr : watches) {
-            TreeItem<VarRow> item = new TreeItem<>(new VarRow(expr, suspended ? "…" : "", "", 0, 0, Kind.WATCH));
+            boolean paused = pausedWatches.contains(expr) && !evaluatedOnce.contains(expr);
+            TreeItem<VarRow> item = new TreeItem<>(
+                    paused
+                            ? new VarRow(expr, "", "", 0, 0, Kind.WATCH, 0, 0, false, DapModels.ValueNote.PAUSED)
+                            : new VarRow(expr, suspended ? "…" : "", "", 0, 0, Kind.WATCH));
             node.getChildren().add(item);
-            if (suspended) {
+            if (suspended && !paused) {
                 actions.evaluateWatch(expr, selectedFrameId, r -> {
                     int idx = node.getChildren().indexOf(item);
                     if (idx >= 0) {
@@ -1922,7 +2033,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         int watchesAt = 0;
         while (watchesAt < root.getChildren().size() - 1
                 && root.getChildren().get(watchesAt).getValue() != null
-                && root.getChildren().get(watchesAt).getValue().kind() == Kind.EXCEPTION) {
+                && (root.getChildren().get(watchesAt).getValue().kind() == Kind.EXCEPTION
+                        || root.getChildren().get(watchesAt).getValue().kind() == Kind.RESULT)) {
             watchesAt++;
         }
         root.getChildren().set(watchesAt, buildWatchesNode());
@@ -1949,6 +2061,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             remove.setGraphic(Icons.remove());
             remove.setOnAction(e -> removeWatch(row.name()));
             menu.getItems().addAll(edit, remove);
+            // IntelliJ's Pause Watch: kept in the list, not evaluated at each stop (an expensive or side-effecting
+            // watch); Evaluate Once gives its value at this stop without resuming it.
+            boolean paused = pausedWatches.contains(row.name());
+            javafx.scene.control.MenuItem pause =
+                    new javafx.scene.control.MenuItem(tr(paused ? "debugpanel.resumeWatch" : "debugpanel.pauseWatch"));
+            pause.setOnAction(e -> setWatchPaused(row.name(), !paused));
+            menu.getItems().add(pause);
+            if (paused && lastState == DapManager.State.SUSPENDED && !evaluatedOnce.contains(row.name())) {
+                javafx.scene.control.MenuItem once = new javafx.scene.control.MenuItem(tr("debugpanel.evaluateOnce"));
+                once.setOnAction(e -> evaluateWatchOnce(row.name()));
+                menu.getItems().add(once);
+            }
         }
         if (row != null && row.kind() == Kind.VARIABLE && row.parentRef() > 0) {
             javafx.scene.control.MenuItem set = new javafx.scene.control.MenuItem(tr("debugpanel.setValue"));
@@ -1956,7 +2080,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             set.setOnAction(e -> setValuePrompt());
             menu.getItems().add(set);
         }
-        if (row != null && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.EXCEPTION)) {
+        if (row != null
+                && (row.kind() == Kind.VARIABLE
+                        || row.kind() == Kind.WATCH
+                        || row.kind() == Kind.EXCEPTION
+                        || row.kind() == Kind.RESULT)) {
             // Review C7: a value could not be copied at all, and Add Watch started from an empty prompt.
             javafx.scene.control.MenuItem copyValue = new javafx.scene.control.MenuItem(tr("debugpanel.copyValue"));
             copyValue.setOnAction(e ->
@@ -1968,8 +2096,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 menu.getItems().add(copyName);
             }
             javafx.scene.control.MenuItem valueHistory = valueHistoryItem();
-            if (valueHistory != null && row.kind() != Kind.EXCEPTION) {
+            if (valueHistory != null && row.kind() != Kind.EXCEPTION && row.kind() != Kind.RESULT) {
                 menu.getItems().add(valueHistory);
+            }
+            if (row.kind() == Kind.RESULT) {
+                javafx.scene.control.MenuItem toWatches = new javafx.scene.control.MenuItem(
+                        tr("debugpanel.addToWatches", DebugPanelText.oneLine(row.name(), 60)));
+                toWatches.setGraphic(Icons.newFile());
+                toWatches.setOnAction(e -> addWatchExpression(row.name()));
+                javafx.scene.control.MenuItem clearResult =
+                        new javafx.scene.control.MenuItem(tr("debugpanel.clearResult"));
+                clearResult.setOnAction(e -> clearResult());
+                menu.getItems().addAll(toWatches, clearResult);
             }
             if (row.kind() == Kind.VARIABLE) {
                 String expression = pathExpression(variables.getSelectionModel().getSelectedItem());
@@ -2005,6 +2143,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         add.setGraphic(Icons.newFile());
         add.setOnAction(e -> addWatchPrompt());
         menu.getItems().add(add);
+        boolean onWatches = row != null
+                && (row.kind() == Kind.WATCH
+                        || row.kind() == Kind.ADD_WATCH
+                        || row.kind() == Kind.SCOPE && row.name().equals(tr("debugpanel.watches")));
+        if (!watches.isEmpty() && onWatches) {
+            javafx.scene.control.MenuItem removeAll =
+                    new javafx.scene.control.MenuItem(tr("debugpanel.removeAllWatches"));
+            removeAll.setGraphic(Icons.remove());
+            removeAll.setOnAction(e -> removeAllWatches());
+            menu.getItems().add(removeAll);
+        }
         javafx.scene.control.CheckMenuItem hex = new javafx.scene.control.CheckMenuItem(tr("debugpanel.hexValues"));
         hex.setSelected(actions.hexValues());
         hex.setOnAction(e -> toggleHexValues());
@@ -2046,6 +2195,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             int idx = watches.indexOf(old);
             if (idx >= 0 && expr != null && !expr.isBlank()) {
                 watches.set(idx, expr.strip());
+                if (pausedWatches.remove(old)) {
+                    pausedWatches.add(expr.strip());
+                }
                 onWatchesChanged.run();
                 refreshWatchesNode();
             }
@@ -2054,9 +2206,65 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private void removeWatch(String expr) {
         if (watches.remove(expr)) {
+            if (!watches.contains(expr)) {
+                pausedWatches.remove(expr);
+            }
             onWatchesChanged.run();
             refreshWatchesNode();
         }
+    }
+
+    /** Remove All Watches (the Variables menu, IntelliJ's): the list emptied in one step. */
+    void removeAllWatches() {
+        if (watches.isEmpty()) {
+            return;
+        }
+        watches.clear();
+        pausedWatches.clear();
+        onWatchesChanged.run();
+        refreshWatchesNode();
+    }
+
+    /** Adds {@code expression} to Watches as it is (the evaluate field's button, a result row's menu). */
+    void addWatchExpression(String expression) {
+        if (expression == null || expression.isBlank()) {
+            addWatchPrompt();
+            return;
+        }
+        watches.add(expression.strip());
+        onWatchesChanged.run();
+        refreshWatchesNode();
+    }
+
+    /** Pause Watch ({@code paused}) or Resume Watch: a paused watch is listed, not evaluated at each stop. */
+    void setWatchPaused(String expression, boolean paused) {
+        boolean changed = paused ? pausedWatches.add(expression) : pausedWatches.remove(expression);
+        evaluatedOnce.remove(expression);
+        if (changed) {
+            onWatchesChanged.run();
+            refreshWatchesNode();
+        }
+    }
+
+    /** Evaluate Once: a paused watch's value at this stop, the watch staying paused for the next. */
+    void evaluateWatchOnce(String expression) {
+        if (pausedWatches.contains(expression) && evaluatedOnce.add(expression)) {
+            refreshWatchesNode();
+        }
+    }
+
+    /** The paused watches (persisted by the controller with the watches). */
+    public List<String> getPausedWatches() {
+        return List.copyOf(pausedWatches);
+    }
+
+    /** Which watches are paused (session restore); those not in the list are ignored. */
+    public void setPausedWatches(List<String> paused) {
+        pausedWatches.clear();
+        if (paused != null) {
+            paused.stream().filter(watches::contains).forEach(pausedWatches::add);
+        }
+        refreshWatchesNode();
     }
 
     /** Set Value… on the selected variable row: prompt pre-filled with the current value, then DAP
@@ -2096,7 +2304,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         java.util.LinkedList<String> parts = new java.util.LinkedList<>();
         for (TreeItem<VarRow> i = item; i != null && i.getValue() != null; i = i.getParent()) {
             VarRow r = i.getValue();
-            if (r.kind() != Kind.VARIABLE && r.kind() != Kind.WATCH) {
+            if (r.kind() != Kind.VARIABLE && r.kind() != Kind.WATCH && r.kind() != Kind.RESULT) {
                 break;
             }
             parts.addFirst(r.name());
@@ -2104,7 +2312,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         StringBuilder sb = new StringBuilder();
         for (String part : parts) {
             if (sb.isEmpty()) {
-                sb.append(part);
+                // A watch or an evaluation is any expression: "a + b" is "(a + b).x" below it, not "a + b.x".
+                sb.append(parts.size() > 1 ? DebugPanelText.pathRoot(part) : part);
             } else if (part.chars().allMatch(Character::isDigit)) {
                 sb.append('[').append(part).append(']');
             } else {
@@ -2138,6 +2347,171 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    // --- the evaluate field at the top of Variables ----------------------------------------------------
+
+    /** The evaluate field, its Expand toggle and its Add to Watches button: one row over the tree. */
+    private HBox evaluateBar() {
+        evalField.setPromptText(tr("debugpanel.evaluatePrompt"));
+        evalField.node().getStyleClass().add("debug-evaluate-field");
+        evalField.area().setAccessibleText(tr("debugpanel.evaluatePrompt"));
+        evalField.setOnTab(back -> (back ? varsFilter : variables).requestFocus());
+        evalExpand.setGraphic(Icons.findNext());
+        evalExpand.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-expand");
+        evalExpand.setFocusTraversable(false);
+        evalExpand.setTooltip(new Tooltip(tr("debugpanel.evaluateExpand")));
+        evalExpand.setAccessibleText(tr("debugpanel.evaluateExpand"));
+        evalExpand.setOnAction(e -> {
+            evalField.toggleMultiLine();
+            evalExpand.setSelected(evalField.isMultiLine());
+        });
+        evalField.multiLineProperty().addListener((o, was, now) -> evalExpand.setSelected(now));
+        evalToWatches.setGraphic(Icons.newFile());
+        evalToWatches.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-watch");
+        evalToWatches.setFocusTraversable(false);
+        evalToWatches.setTooltip(new Tooltip(tr("debugpanel.evaluateToWatches")));
+        evalToWatches.setAccessibleText(tr("debugpanel.evaluateToWatches"));
+        evalToWatches.setOnAction(e -> {
+            String text =
+                    evalField.getText().isBlank() && resultExpression != null ? resultExpression : evalField.getText();
+            addWatchExpression(text);
+        });
+        HBox bar = new HBox(2, evalField.node(), evalExpand, evalToWatches);
+        bar.getStyleClass().add("debug-evaluate-bar");
+        bar.setAlignment(Pos.TOP_LEFT);
+        HBox.setHgrow(evalField.node(), Priority.ALWAYS);
+        return bar;
+    }
+
+    /**
+     * Evaluates {@code expression} in the selected frame, as code (DAP context "repl": a method call runs), and
+     * shows the result as the first row of Variables — an object's fields under it, Copy Value / Add to Watches /
+     * Set Value on its rows. Not paused: the row says so. A side effect shows in the values fetched again after it.
+     */
+    void evaluateInVariables(String expression) {
+        onHistoryChanged.run();
+        resultExpression = expression;
+        if (lastState != DapManager.State.SUSPENDED || viewing != null) {
+            result = DapModels.EvalResult.failure(
+                    tr(viewing != null ? "debugpanel.evalInHistory" : "debugpanel.evaluateNeedsPause"));
+            showResult();
+            return;
+        }
+        result = null;
+        showResult(); // "…" while the adapter evaluates
+        long token = runToken;
+        actions.evaluateCode(expression, selectedFrameId, r -> {
+            if (token != runToken || !expression.equals(resultExpression) || result != null) {
+                return; // the program moved on, or another expression was asked meanwhile
+            }
+            result = r == null ? DapModels.EvalResult.failure(tr("debugpanel.noValue")) : r;
+            showResult();
+            if (!result.failed() && lastState == DapManager.State.SUSPENDED) {
+                actions.refreshValues(); // `list.add(x)` changed what Variables, watches and inline values show (B205)
+            }
+        });
+    }
+
+    /** Puts the evaluation (or its "…" while pending) at the top of Variables, selected and opened. */
+    private void showResult() {
+        String expression = resultExpression;
+        if (expression == null) {
+            return;
+        }
+        DapModels.EvalResult r = result;
+        VarRow row = r == null
+                ? new VarRow(expression, "…", "", 0, 0, Kind.RESULT)
+                : new VarRow(
+                        expression,
+                        r.result() == null ? "" : r.result(),
+                        r.type() == null ? "" : r.type(),
+                        r.failed() ? 0 : r.variablesReference(),
+                        0,
+                        Kind.RESULT,
+                        r.namedVariables(),
+                        r.indexedVariables(),
+                        r.failed());
+        TreeItem<VarRow> item = lazyItem(row);
+        TreeItem<VarRow> root = variables.getRoot();
+        if (root == null) {
+            return;
+        }
+        if (resultItem != null) {
+            root.getChildren().remove(resultItem);
+        }
+        root.getChildren().removeIf(i -> i.getValue() != null && i.getValue().kind() == Kind.RESULT);
+        resultItem = item;
+        root.getChildren().addFirst(item);
+        variables.getSelectionModel().select(item);
+        variables.scrollTo(0);
+        if (r != null && !item.isLeaf()) {
+            item.setExpanded(true); // its fields at once: that is what evaluating an object is for
+        }
+    }
+
+    /** Takes the evaluation off the top of Variables (Delete on it, its menu, or the program moving on). */
+    void clearResult() {
+        TreeItem<VarRow> item = resultItem;
+        resultExpression = null;
+        result = null;
+        resultItem = null;
+        TreeItem<VarRow> root = variables.getRoot();
+        if (item != null && root != null) {
+            root.getChildren().remove(item);
+        }
+    }
+
+    /** Whether {@code item} is the evaluation's row or one of its fields. */
+    private boolean underResult(TreeItem<VarRow> item) {
+        for (TreeItem<VarRow> i = item; i != null; i = i.getParent()) {
+            if (i.getValue() != null && i.getValue().kind() == Kind.RESULT) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The command the configured keymap binds {@code e}'s chord to, or null. */
+    private static @Nullable String keymapCommand(KeyEvent e) {
+        com.editora.command.KeymapManager keymap = com.editora.command.TextInputKeymap.sharedKeymap();
+        if (keymap == null) {
+            return null;
+        }
+        String token = com.editora.command.KeyDispatcher.chord(e);
+        return token == null ? null : keymap.commandFor(token);
+    }
+
+    /** The evaluate field at the top of Variables (tests, and the coordinator's language). */
+    DebugExpressionField evaluateField() {
+        return evalField;
+    }
+
+    /** The source file the evaluate field highlights for ("" for none): the Evaluate window highlights as it does. */
+    String expressionLanguageFile() {
+        return evalField.languageFile();
+    }
+
+    /** The evaluate fields' shared history: a new Evaluate window walks the same expressions. */
+    DebugPanelText.History evaluateHistory() {
+        return history;
+    }
+
+    /** The expressions evaluated, oldest first (persisted by the controller). */
+    public List<String> getEvaluateHistory() {
+        return history.entries();
+    }
+
+    /** The expressions evaluated in an earlier session (restore), oldest first. */
+    public void setEvaluateHistory(List<String> entries) {
+        if (entries != null) {
+            entries.forEach(history::add);
+        }
+    }
+
+    /** Told after anything was evaluated in an evaluate field (the history changed). */
+    public void setOnHistoryChanged(Runnable r) {
+        this.onHistoryChanged = r == null ? () -> {} : r;
+    }
+
     /** Palette-command entry points mirroring the panel's own controls. */
     public void addWatch() {
         addWatchPrompt();
@@ -2147,8 +2521,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         setValuePrompt(); // no-ops unless a settable leaf variable is selected
     }
 
-    /** Focuses the evaluate (REPL) field so the user can type an expression (enabled only during a session). */
+    /** Focuses the evaluate field at the top of Variables (enabled only during a session), its text selected. */
     public void focusEvaluate() {
+        if (!evalField.isDisabled()) {
+            evalField.requestFocus();
+            evalField.selectAll();
+        }
+    }
+
+    /** Focuses the console's input field: the program's standard input while it runs, an evaluate REPL paused. */
+    public void focusConsoleInput() {
         if (!evalInput.isDisabled()) {
             evalInput.requestFocus();
         }
@@ -2157,6 +2539,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Matches the console font to the editor's code-area font (family + effective size). */
     public void setConsoleFont(String family, int size) {
         console.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+        evalField.setFont(family, size);
     }
 
     /** Appends program/console output (trimmed to a cap), auto-scrolling to the bottom. The DAP {@code stderr}
@@ -2278,6 +2661,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             return;
         }
         history.add(expr);
+        onHistoryChanged.run();
         // The echo muted, a failure in red: the evaluate lines looked exactly like the program's output (C20).
         appendOutput("> " + expr + "\n", DapManager.COMMAND_CATEGORY);
         evalInput.clear();
@@ -2310,6 +2694,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      */
     private void noteValue(TreeItem<VarRow> item) {
         VarRow row = item.getValue();
+        if (underResult(item)) {
+            return; // an evaluation's fields are not variables of the stop: not compared, not in Debug History
+        }
         if (comparable(row) && lastState == DapManager.State.SUSPENDED && inShownTree(item)) {
             valueChanges.record(pathOf(item), row.value());
             if (recordingFrame >= 0 && viewing == null) {
@@ -2410,7 +2797,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         VarRow row = item.getValue();
         return row != null
-                && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH)
+                && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.RESULT)
                 && row.ref() > 0
                 && row.indexed() > DebugValues.PAGE_SIZE
                 && item.isExpanded()

@@ -84,6 +84,54 @@ public final class DebugIdentifiers {
         return start == s ? word : line.substring(start, e).replace(" ", "");
     }
 
+    /**
+     * Quick Evaluate's expression at {@code col}: {@link #expressionAt}'s name chain, and when the name is called, its
+     * argument list too — {@code list.get(i)} on {@code get}, which IntelliJ's Alt+click evaluates and the hover never
+     * does. An argument list that does not close on the line is left off. Null when not on a name.
+     */
+    static @Nullable String quickExpressionAt(String line, int col) {
+        String chain = expressionAt(line, col);
+        if (chain == null) {
+            return null;
+        }
+        int end = Math.clamp(col, 0, line.length());
+        while (end < line.length() && isIdentChar(line.charAt(end))) {
+            end++;
+        }
+        int open = end;
+        while (open < line.length() && line.charAt(open) == ' ') {
+            open++;
+        }
+        if (open >= line.length() || line.charAt(open) != '(') {
+            return chain;
+        }
+        int close = closingParen(line, open);
+        return close < 0 ? chain : chain + line.substring(open, close + 1);
+    }
+
+    /** The index of the {@code )} closing the {@code (} at {@code open}, skipping quoted text; -1 if not on the line. */
+    static int closingParen(String line, int open) {
+        int depth = 0;
+        char quote = 0;
+        for (int i = open; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (quote != 0) {
+                if (c == '\\') {
+                    i++;
+                } else if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /** Whether the identifier starting at {@code start} follows a {@code .} — an attribute, not a variable. */
     static boolean isAttribute(String line, int start) {
         int i = start - 1;

@@ -104,8 +104,12 @@ public class WorkspaceState {
      *
      * <p>v31 → v32 added {@code runCompounds} (run configurations debugged together, see {@link RunCompound}).
      * Additive; absent means none, as before.
+     *
+     * <p>v32 → v33 added {@code debugPausedWatches} (watches the user paused: shown, not evaluated at each stop) and
+     * {@code debugEvaluateHistory} (the expressions evaluated, oldest first, for the evaluate fields' Up / Down and
+     * history list). Additive; absent means every watch is evaluated and an empty history, as before.
      */
-    public static final int SCHEMA_VERSION = 32;
+    public static final int SCHEMA_VERSION = 33;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -192,6 +196,10 @@ public class WorkspaceState {
     private List<String> readOnlyFiles = new ArrayList<>();
     /** Debugger watch expressions (the Debug window's Watches node), re-evaluated on every stop. */
     private List<String> debugWatches = new ArrayList<>();
+    /** Watch expressions paused (shown, not evaluated at each stop): a subset of {@link #debugWatches} (v33). */
+    private List<String> debugPausedWatches = new ArrayList<>();
+    /** The expressions evaluated in the debugger's evaluate fields, oldest first (v33). */
+    private List<String> debugEvaluateHistory = new ArrayList<>();
     /** Program arguments per runnable file (absolute path -> raw args string), shared by Run + Debug. */
     private Map<String, String> programArgs = new LinkedHashMap<>();
     /** Saved run/debug configurations for project main classes (this window's project). */
@@ -551,6 +559,22 @@ public class WorkspaceState {
 
     public List<String> getDebugWatches() {
         return debugWatches;
+    }
+
+    public List<String> getDebugPausedWatches() {
+        return debugPausedWatches;
+    }
+
+    public void setDebugPausedWatches(List<String> debugPausedWatches) {
+        this.debugPausedWatches = debugPausedWatches == null ? new ArrayList<>() : debugPausedWatches;
+    }
+
+    public List<String> getDebugEvaluateHistory() {
+        return debugEvaluateHistory;
+    }
+
+    public void setDebugEvaluateHistory(List<String> debugEvaluateHistory) {
+        this.debugEvaluateHistory = debugEvaluateHistory == null ? new ArrayList<>() : debugEvaluateHistory;
     }
 
     public List<RunConfiguration> getRunConfigurations() {
