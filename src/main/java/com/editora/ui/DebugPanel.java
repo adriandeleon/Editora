@@ -2347,10 +2347,6 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
     }
 
-    /**
-     * Pure-ish: an expression naming a variables-tree row from its scope down — {@code names} for a local,
-     * {@code obj.field} for a field, {@code arr[3]} for an element (the prompt it pre-fills is editable).
-     */
     // --- Mark Object and View As -----------------------------------------------------------------------------
 
     /** Mark Object… (or Edit Mark…) and Unmark Object for a row whose value shows an object's identity. */
@@ -2451,6 +2447,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * Pure-ish: an expression naming a variables-tree row from its scope down — {@code names} for a local,
+     * {@code obj.field} for a field, {@code arr[3]} for an element (the prompt it pre-fills is editable).
+     */
     static String pathExpression(TreeItem<VarRow> item) {
         java.util.LinkedList<String> parts = new java.util.LinkedList<>();
         for (TreeItem<VarRow> i = item; i != null && i.getValue() != null; i = i.getParent()) {

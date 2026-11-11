@@ -115,7 +115,8 @@ final class StringViews {
     /** {@code text} as indented JSON; an {@link IllegalArgumentException} saying why when it is not JSON. */
     static String prettyJson(String text) {
         try {
-            return JSON.writeValueAsString(JSON.readTree(text)) + "\n";
+            // The pretty printer ends lines the system's way (CRLF on Windows); a tab's text is LF.
+            return JSON.writeValueAsString(JSON.readTree(text)).replace("\r\n", "\n") + "\n";
         } catch (Exception e) {
             throw new IllegalArgumentException(firstLine(e.getMessage()), e);
         }
@@ -144,7 +145,7 @@ final class StringViews {
                     OutputKeys.OMIT_XML_DECLARATION, text.stripLeading().startsWith("<?xml") ? "no" : "yes");
             StringWriter out = new StringWriter();
             t.transform(new DOMSource(doc), new StreamResult(out));
-            return out.toString().strip() + "\n";
+            return out.toString().replace("\r\n", "\n").strip() + "\n";
         } catch (Exception e) {
             throw new IllegalArgumentException(firstLine(e.getMessage()), e);
         }
