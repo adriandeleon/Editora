@@ -51,4 +51,14 @@ class DebugFrameSourceTest {
         List<StackFrameInfo> noText = List.of(frame(1, null), frame(2, MAIN));
         assertEquals(1, DebugCoordinator.frameToShow("step", noText, f -> MAIN.equals(f.file())), "nothing to show");
     }
+
+    @Test
+    void aStepIntoCodeTheDebuggerHasOnlyInMemoryShowsThatCode() {
+        var evaluated = new com.editora.dap.DapModels.LoadedSource("VM12", "<eval>/VM12", null, 12, null);
+        List<StackFrameInfo> frames =
+                List.of(new StackFrameInfo(1, "twice", null, 1, 0, null, "", null, evaluated), frame(2, MAIN));
+        assertEquals(0, DebugCoordinator.frameToShow("step", frames, f -> MAIN.equals(f.file())));
+        assertEquals(1, DebugCoordinator.frameToShow("pause", frames, f -> MAIN.equals(f.file())), "as the check says");
+        assertEquals(evaluated, frames.getFirst().atLine(4).reference(), "kept when the line moves");
+    }
 }

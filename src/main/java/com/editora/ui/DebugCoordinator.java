@@ -127,6 +127,11 @@ final class DebugCoordinator {
             return null;
         }
 
+        /** Brings {@code buffer}'s tab to the front; false when it has none (it was closed). */
+        default boolean selectBufferTab(EditorBuffer buffer) {
+            return false;
+        }
+
         /** The Python interpreter picked for this window's project ("" when none was). */
         default String pythonInterpreterChoice() {
             return "";
@@ -461,7 +466,12 @@ final class DebugCoordinator {
         memberMarks = new MemberBreakpointMarks(host, ops, lspManager);
         memberBreakpoints.setOnChanged(memberMarks::refreshAll);
         lambdaBreakpoints = new LambdaBreakpoints(host);
-        loadedSources = new LoadedSourcesPicker(host, ops, this::dap, () -> debugAdapterLabel(dap().sessionLanguage()));
+        loadedSources = new LoadedSourcesPicker(
+                host,
+                ops,
+                this::dap,
+                () -> debugAdapterLabel(dap().sessionLanguage()),
+                source -> openReferenceSource(source, doc -> {}));
         triggered = new TriggeredBreakpoints(host, ops);
         groups = new BreakpointGroups(host, ops, this::breakpointsPicker, memberBreakpoints, this::sendClosed);
         pinnedValues = new PinnedValues(host, ops, this::dap);
@@ -578,7 +588,7 @@ final class DebugCoordinator {
             built.setOnHistoryChanged(
                     () -> ops.persistDebugEvaluateHistory(evaluateHistory().entries()));
             built.setChordLookup(id -> java.util.Objects.requireNonNullElse(ops.chordFor(id), ""));
-            built.setSourceCheck(this::hasSource);
+            built.setSourceCheck(this::canShow);
             built.history().setCapacity(host.settings().getDebugHistoryStops());
             built.setOnWatchesChanged(() -> {
                 List<String> watches = new ArrayList<>(built.getWatches());
@@ -1315,6 +1325,10 @@ final class DebugCoordinator {
 
     /** Persists a buffer's breakpoints + (if a session is live) re-sends that file's set to the adapter. */
     void onBreakpointsChanged(EditorBuffer buffer) {
+        if (buffer.getPath() == null) {
+            referenceBreakpointsChanged(buffer); // a tab of code the debugger has only by reference, or nothing
+            return;
+        }
         if (buffer.getBreakpointManager().isEditDriven()) {
             schedulePersistBreakpoints(buffer); // debounced FS write (off the per-newline hot path)
         } else {
@@ -2075,6 +2089,7 @@ final class DebugCoordinator {
                     }
                     s().sentBreakpoints.clear(); // the next session is told everything afresh
                     s().hitTriggers.clear(); // and its triggered breakpoints wait again
+                    forgetReferenceBreakpoints(s()); // and references from the last one mean nothing
                     s().breakpointStatus.clear(); // and what the last one said about them no longer holds
                     s().evaluationFailures.clear();
                     s().reportedRejections.clear();
@@ -2123,12 +2138,12 @@ final class DebugCoordinator {
                 panel().setStoppedThread(threadId); // Debug History keys this stop's frames by it
                 // The frame that threw: its line is drawn red while it is the one shown (review C13).
                 s().exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
-                        ? frames.get(firstFrameWithSource(frames, DebugCoordinator.this::hasSource))
+                        ? frames.get(firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop))
                                 .id()
                         : -1;
                 // Selects the first frame that has source to show → selectFrame highlights + loads vars. A step
                 // that went into library code shows that code (B5): the user asked to go there.
-                int shown = frameToShow(reason, frames, DebugCoordinator.this::hasSource);
+                int shown = frameToShow(reason, frames, DebugCoordinator.this::showsOnStop);
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
@@ -2326,7 +2341,7 @@ final class DebugCoordinator {
                 dap().selectThread(threadId, threadFrames -> {
                     List<DapModels.StackFrameInfo> frames = currentLines(threadFrames);
                     if (!frames.isEmpty() || threadId == previous) {
-                        panel().setCallStack(frames, firstFrameWithSource(frames, DebugCoordinator.this::hasSource));
+                        panel().setCallStack(frames, firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop));
                         return;
                     }
                     // A thread that is not suspended has no stack to inspect. Stay on the stopped one: showing
@@ -2840,6 +2855,122 @@ final class DebugCoordinator {
         }
     }
 
+    /**
+     * Whether {@code frame}'s code can be shown at all: a file ({@link #hasSource}), or code the debugger has only by
+     * reference, whose text the {@code source} request gives ({@link #openReferenceSource}).
+     */
+    private boolean canShow(DapModels.StackFrameInfo frame) {
+        return hasSource(frame) || (frame != null && frame.reference() != null);
+    }
+
+    /**
+     * Whether a stop selects {@code frame}: one {@link #canShow} — but not code the adapter itself de-emphasizes (Node's
+     * internals js-debug skips), so pausing a program that waits in a timer still lands on the user's line.
+     */
+    private boolean showsOnStop(DapModels.StackFrameInfo frame) {
+        return hasSource(frame)
+                || (frame != null && frame.reference() != null && !DapModels.HINT_SUBTLE.equals(frame.hint()));
+    }
+
+    /**
+     * Opens {@code source}, which the debugger has only by reference, in a read-only tab with the text its
+     * {@code source} request gives, then runs {@code then} with that tab. Once per session: asked again, the tab is
+     * brought to the front (when it is still open). Says so when the debugger cannot give the text.
+     */
+    void openReferenceSource(DapModels.LoadedSource source, Consumer<EditorBuffer> then) {
+        DebugSession session = s();
+        DebugSession.SourceDoc known = session.sourceDocs.get(source.sourceReference());
+        if (known != null && ops.selectBufferTab(known.buffer())) {
+            then.accept(known.buffer());
+            return;
+        }
+        Node keepFocus = debugPanelFocusOwner();
+        dap().sourceContent(
+                        source,
+                        text -> inSession(session, () -> {
+                            if (text == null) {
+                                host.setStatus(tr("status.debug.sourceUnavailable", source.name()));
+                                return;
+                            }
+                            EditorBuffer doc =
+                                    ops.openReadOnlyDoc(source.name(), text, LoadedSourcesPicker.languageOf(source));
+                            if (doc == null) {
+                                return;
+                            }
+                            session.sourceDocs.put(source.sourceReference(), new DebugSession.SourceDoc(source, doc));
+                            if (keepFocus != null) {
+                                later(keepFocus::requestFocus); // stepping from the Debug window keeps it there, as
+                                // with files
+                            }
+                            then.accept(doc);
+                        }));
+    }
+
+    /**
+     * The breakpoints of {@code doc} changed: when it holds code a live session has only by reference, that session is
+     * sent them (naming the reference) and the gutter shows its answer. They are not saved: a reference holds for one
+     * session ({@link #forgetReferenceBreakpoints}).
+     */
+    private void referenceBreakpointsChanged(EditorBuffer doc) {
+        forEachSession(() -> {
+            DebugSession.SourceDoc known = s().sourceDocs.values().stream()
+                    .filter(d -> d.buffer() == doc)
+                    .findFirst()
+                    .orElse(null);
+            if (known == null || !dap().isActive()) {
+                return;
+            }
+            var mgr = doc.getBreakpointManager();
+            List<DapModels.LineBreakpoint> lines = new ArrayList<>();
+            for (Breakpoint bp : mgr.documentSnapshot()) {
+                if (bp.enabled() && !breakpointsMuted) {
+                    lines.addAll(
+                            BreakpointTargets.of(bp, bp.line(), documentLineText(doc, bp.line()), doc.getLanguage()));
+                }
+            }
+            DebugSession session = s();
+            dap().updateReferenceBreakpoints(
+                            known.source(),
+                            lines,
+                            statuses -> inSession(session, () -> {
+                                if (!shown()) {
+                                    return;
+                                }
+                                Map<Integer, DapModels.BreakpointStatus> byLine = new java.util.HashMap<>();
+                                statuses.forEach(st -> byLine.put(st.line(), st));
+                                Map<Integer, BreakpointManager.Live> live = new java.util.HashMap<>();
+                                String pending = tr(DebugFeedback.pendingKey(byLine.values(), doc.getLanguage()));
+                                for (Breakpoint bp : mgr.documentSnapshot()) {
+                                    live.put(
+                                            bp.line(),
+                                            DebugFeedback.live(
+                                                    byLine.get(bp.line()),
+                                                    null,
+                                                    pending,
+                                                    tr("debug.breakpoint.rejected")));
+                                }
+                                mgr.setLive(live);
+                            }));
+        });
+    }
+
+    /**
+     * The session ended: the breakpoints set in its tabs of code it had only by reference go (they meant nothing to any
+     * other session); the tabs stay open, read-only.
+     */
+    private void forgetReferenceBreakpoints(DebugSession session) {
+        List<DebugSession.SourceDoc> docs = List.copyOf(session.sourceDocs.values());
+        session.sourceDocs.clear(); // first: removing the breakpoints below then sends nothing
+        for (DebugSession.SourceDoc d : docs) {
+            var mgr = d.buffer().getBreakpointManager();
+            mgr.setLive(null);
+            for (int line : new ArrayList<>(mgr.lines())) {
+                mgr.remove(line);
+            }
+            d.buffer().refreshGutter();
+        }
+    }
+
     /** How many frames from the top a stop looks for one with source before settling for the top frame. */
     private static final int MAX_SOURCE_SEARCH = 64;
 
@@ -2850,8 +2981,10 @@ final class DebugCoordinator {
      */
     static int frameToShow(
             String reason, List<DapModels.StackFrameInfo> frames, Predicate<DapModels.StackFrameInfo> has) {
-        if ("step".equals(reason) && !frames.isEmpty() && frames.get(0).sourceUri() != null) {
-            return 0;
+        if ("step".equals(reason)
+                && !frames.isEmpty()
+                && (frames.get(0).sourceUri() != null || frames.get(0).reference() != null)) {
+            return 0; // a step into code the debugger has only in memory shows it too
         }
         return firstFrameWithSource(frames, has);
     }
@@ -3769,6 +3902,17 @@ final class DebugCoordinator {
                     if (s().shownFrame == frame && dap().state() == DapManager.State.SUSPENDED) {
                         clearExecHighlight();
                         paintExecutionLine(lib, frame);
+                    }
+                });
+                return;
+            }
+            if (frame.reference() != null) {
+                // Code the debugger has only in memory (Node's internals, eval'd code): its text, read-only, with the
+                // execution line, as VS Code shows it.
+                openReferenceSource(frame.reference(), doc -> {
+                    if (s().shownFrame == frame && dap().state() == DapManager.State.SUSPENDED) {
+                        clearExecHighlight();
+                        paintExecutionLine(doc, frame);
                     }
                 });
                 return;

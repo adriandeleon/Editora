@@ -1564,6 +1564,22 @@ and a reference read-only (`Ops.openReadOnlyDoc`, highlighted by name; Node's in
 optimized, address range and path, and Enter or Alt+C copies the path. `DapLoadedSourcesTest`,
 `LoadedSourcesPickerTest`, `LoadedSourcesWindowFxTest` (a fake adapter) and the opt-in `LoadedSourcesProbeFxTest`
 (js-debug, CodeLLDB, debugpy) cover it.
+**Code without a file.** A frame whose source the adapter has only by reference (DAP `sourceReference`: Node's
+internals, code run through `eval`) carries it as `StackFrameInfo.reference` (`DapClient.referenceOf`;
+the frame's session is remembered in `sourceOwners`, so the `source` request about it goes to a js-debug worker when
+the frame is a worker's). `highlightFrame` opens it read-only through `openReferenceSource` — the `source` request's
+text in a path-less tab (`Ops.openReadOnlyDoc`), once per session (`DebugSession.sourceDocs`; asked again, the tab
+is brought to the front with `Ops.selectBufferTab`) — and marks the execution line there, as VS Code does. Which
+frame a stop shows: a step whose top frame is such code shows it (`frameToShow`); any other stop takes the topmost
+frame that is a file or such code the adapter does not de-emphasize (`showsOnStop`), so a pause in Node's skipped
+internals still lands on the user's line; the call stack draws such frames as having source (`canShow`).
+Loaded Sources opens a reference through the same tab. A breakpoint set in that tab goes to the session naming the
+reference (`DapClient.setReferenceBreakpoints`; `DebugCoordinator.referenceBreakpointsChanged`, the gutter drawn from
+the answer); it is never saved, and the session's end removes it (`forgetReferenceBreakpoints`): a reference means
+nothing to the next session. debugpy, with its default `justMyCode`, leaves `exec`'d code out of the stack, so this
+is js-debug's in practice. `DebugFrameSourceTest`, `SourcelessFramesWindowFxTest` (a fake adapter) and the opt-in
+`SourcelessFramesProbeFxTest` (js-debug: a `debugger` statement in `eval` code, a step into it, a breakpoint set in it)
+cover it.
 **Add Logpoint** (`DebugCoordinator.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
 (`FoldManager.setBreakpointShiftClick` → `EditorBuffer.setGutterLogpointClick`; unset, a Shift+click toggles like a
 plain click) open a one-field form for the log message, with the `{expression}` completion of the full form. OK is

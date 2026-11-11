@@ -113,6 +113,15 @@ final class DebugSession {
      */
     final java.util.Set<String> hitTriggers = new java.util.HashSet<>();
 
+    /**
+     * The read-only tabs opened for code the debugger has only by reference, by its {@code sourceReference}: asked for
+     * again, the tab is shown rather than opened twice. A reference holds for one session only.
+     */
+    final Map<Integer, SourceDoc> sourceDocs = new java.util.HashMap<>();
+
+    /** A read-only tab holding code the debugger has only by reference, and that code's source. */
+    record SourceDoc(com.editora.dap.DapModels.LoadedSource source, com.editora.editor.EditorBuffer buffer) {}
+
     /** What the live session said about each file's breakpoints, by document line (cleared between sessions). */
     final Map<Path, Map<Integer, DapModels.BreakpointStatus>> breakpointStatus = new java.util.HashMap<>();
 

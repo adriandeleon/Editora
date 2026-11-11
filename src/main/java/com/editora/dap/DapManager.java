@@ -4079,6 +4079,27 @@ public final class DapManager {
     }
 
     /**
+     * Sets the breakpoints of {@code source}, code the debugger has only by reference, for this session (callback on the
+     * FX thread with one status per line; empty with no session).
+     */
+    public void updateReferenceBreakpoints(
+            DapModels.LoadedSource source,
+            List<DapModels.LineBreakpoint> lines,
+            Consumer<List<DapModels.BreakpointStatus>> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(List.of());
+            return;
+        }
+        c.setReferenceBreakpoints(source, lines)
+                .whenComplete((statuses, e) -> fx(() -> {
+                    if (client == c) {
+                        cb.accept(statuses == null ? List.of() : statuses);
+                    }
+                }));
+    }
+
+    /**
      * The text of a loaded source that is not a file, as the adapter gives it (callback on the FX thread: the text,
      * or null when the adapter could not give it).
      */
