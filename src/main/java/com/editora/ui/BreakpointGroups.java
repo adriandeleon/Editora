@@ -251,10 +251,7 @@ final class BreakpointGroups {
 
     /** How a breakpoint's file is written: {@code src/Main.java} under the project, else its stored form. */
     static String fileText(Path file, String key, @Nullable Path root) {
-        if (root != null
-                && file.getFileSystem() == root.getFileSystem()
-                && file.isAbsolute()
-                && file.startsWith(root)) {
+        if (root != null && file.getFileSystem() == root.getFileSystem() && file.startsWith(root)) {
             return root.relativize(file).toString().replace('\\', '/');
         }
         return key.isEmpty() ? file.toString() : key;

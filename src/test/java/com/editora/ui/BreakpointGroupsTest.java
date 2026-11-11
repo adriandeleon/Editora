@@ -35,16 +35,20 @@ class BreakpointGroupsTest {
         assertEquals("Gamma", BreakpointsPicker.groupOf(all.getLast()));
     }
 
+    /** An absolute folder on any system (a bare "/work" has no drive on Windows). */
+    private static final Path BASE =
+            Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath();
+
     @Test
     void aFileIsWrittenRelativeToTheProjectAndReadBack() {
-        Path root = Path.of("/work/app");
-        assertEquals(
-                "src/Main.java",
-                BreakpointGroups.fileText(root.resolve("src/Main.java"), "/work/app/src/Main.java", root));
-        assertEquals("/other/X.java", BreakpointGroups.fileText(Path.of("/other/X.java"), "/other/X.java", root));
-        assertEquals("/other/X.java", BreakpointGroups.fileText(Path.of("/other/X.java"), "/other/X.java", null));
-        assertEquals(root.resolve("src/Main.java"), BreakpointGroups.fileOf("src/Main.java", root));
-        assertEquals(Path.of("/other/X.java"), BreakpointGroups.fileOf("/other/X.java", root));
+        Path root = BASE.resolve("app");
+        Path elsewhere = BASE.resolve("other").resolve("X.java");
+        Path main = root.resolve("src").resolve("Main.java");
+        assertEquals("src/Main.java", BreakpointGroups.fileText(main, main.toString(), root));
+        assertEquals(elsewhere.toString(), BreakpointGroups.fileText(elsewhere, elsewhere.toString(), root));
+        assertEquals(elsewhere.toString(), BreakpointGroups.fileText(elsewhere, elsewhere.toString(), null));
+        assertEquals(main, BreakpointGroups.fileOf("src/Main.java", root));
+        assertEquals(elsewhere, BreakpointGroups.fileOf(elsewhere.toString(), root));
         assertNull(BreakpointGroups.fileOf("src/Main.java", null), "relative, with no project to resolve it");
         assertNull(BreakpointGroups.fileOf("  ", root));
     }
@@ -58,11 +62,11 @@ class BreakpointGroupsTest {
 
     @Test
     void anExportKeepsWholeFileLinesAndLeavesMembersToTheirList() {
-        BreakpointsPicker.Entry line =
-                entry("/work/app/a.rb", 7, Breakpoint.plain(0, "x = 1").withGroup("G"));
+        Path root = BASE.resolve("app");
+        BreakpointsPicker.Entry line = entry(
+                root.resolve("a.rb").toString(), 7, Breakpoint.plain(0, "x = 1").withGroup("G"));
         BreakpointsPicker.Entry member = BreakpointsPicker.Entry.of(MemberBreakpoint.method("p.A", "run"));
-        List<BreakpointExport.FileBreakpoint> out =
-                BreakpointGroups.exported(List.of(line, member), Path.of("/work/app"));
+        List<BreakpointExport.FileBreakpoint> out = BreakpointGroups.exported(List.of(line, member), root);
         assertEquals(1, out.size());
         assertEquals("a.rb", out.getFirst().file());
         assertEquals(7, out.getFirst().breakpoint().line());
