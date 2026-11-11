@@ -1182,6 +1182,32 @@ public final class GitService {
         }
     }
 
+    /**
+     * {@code file}'s gutter diff against HEAD, read in the repository its own folder is in, for a Project Map card's
+     * change bars (Map gaps round 3, item 1); null, on the FX thread, when Git cannot say (no repository, no Git).
+     */
+    public void fileChanges(Path file, Consumer<@Nullable GitDiff> onResult) {
+        Path dir = file.toAbsolutePath().getParent();
+        if (dir == null) {
+            Platform.runLater(() -> onResult.accept(null));
+            return;
+        }
+        boolean queued = submit(historyExec, () -> {
+            GitDiff found = fileChangesNow(file);
+            Platform.runLater(() -> onResult.accept(found));
+        });
+        if (!queued) {
+            Platform.runLater(() -> onResult.accept(null));
+        }
+    }
+
+    /** {@link #fileChanges} on the calling thread. */
+    @Nullable
+    GitDiff fileChangesNow(Path file) {
+        Path dir = file.toAbsolutePath().getParent();
+        return dir != null && mayBeRepository(dir) && gitAvailable(dir) ? diffHead(dir, file) : null;
+    }
+
     /** {@link #lastChange} on the calling thread. For tests. */
     @Nullable
     LastChange lastChangeNow(Path file, int startLine, int endLine) {

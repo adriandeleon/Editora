@@ -199,7 +199,7 @@ class ProjectMapStructureFxTest {
                         "its block, with its Javadoc, and nothing else of the file");
                 assertTrue(editor.getStyleClass().contains("narrowed"), "the gutter takes the narrowed colour");
                 Node gutter = editor.getParagraphGraphicFactory().apply(0);
-                assertEquals("6", ((Label) gutter).getText().strip(), "the first line keeps the file's number");
+                assertEquals("6", MapCardGutter.numberOf(gutter), "the first line keeps the file's number");
                 assertEquals(new ProjectMapPreview.Range("add(int, int)", 8, 5, 10), card.range());
                 Label title = FxTestSupport.field(card, "title");
                 assertEquals("App.java › add(int, int)", title.getText());

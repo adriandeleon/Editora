@@ -1253,6 +1253,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         panel.setFileActions(ProjectTreeFileActions.of(this, this::localHistoryEnabled));
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
+        panel.setCardGutterSource(MapCardGutterMarks.of(this)); // breakpoints, bookmarks, ▶ and bars on Map cards
         panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
         panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
         panel.shareIndexes(indexCoordinator, lspManager); // "@name" in the Map; Search Everywhere's files
@@ -2975,6 +2976,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (windowManager != null) {
             windowManager.broadcastMarksChanged(this, new MarkMerge.Change(kind, bucket, fileKey));
         }
+        refreshMapCardGuttersIfBuilt();
+    }
+
+    /** A breakpoint or a bookmark was stored: the Map cards' gutters show it (Map gaps round 3, item 1). */
+    private void refreshMapCardGuttersIfBuilt() {
+        if (projectPanel != null) {
+            projectPanel.refreshCardGutters();
+        }
     }
 
     /** Another window rewrote a file's notes, bookmarks or breakpoints (see {@link MarkMerge.Change}). */
@@ -2984,6 +2993,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             case BOOKMARKS -> bookmarkCoordinator.storeChangedElsewhere(change.bucket(), change.fileKey());
             case BREAKPOINTS -> debugCoordinator.breakpointsChangedElsewhere(change.bucket(), change.fileKey());
         }
+        refreshMapCardGuttersIfBuilt();
     }
 
     /**

@@ -202,6 +202,30 @@ class BookmarkCoordinatorFxTest {
         return FxTestSupport.field(coordinator.panel(), "actions");
     }
 
+    // --- a Map card's gutter (Map gaps round 3, item 1) ------------------------------------------------------
+
+    @Test
+    void aMapCardsGutterReadsAFilesBookmarkedLinesFromItsTabOrTheStore() throws Exception {
+        fx(() -> {
+            coordinator.addBookmark(file("a.txt"), 2);
+            coordinator.addBookmark(file("a.txt"), 0);
+        });
+        assertEquals(java.util.Set.of(0, 2), FxTestSupport.callOnFx(() -> coordinator.bookmarkedLines(file("a.txt"))));
+        store().put(key("dir"), List.of(Bookmark.folder()));
+        assertEquals(
+                java.util.Set.of(),
+                FxTestSupport.callOnFx(() -> coordinator.bookmarkedLines(file("dir"))),
+                "a folder bookmark marks no line");
+        assertEquals(java.util.Set.of(), FxTestSupport.callOnFx(() -> coordinator.bookmarkedLines(file("none.txt"))));
+
+        EditorBuffer b = buffer("b.txt", "one\ntwo\nthree\n");
+        fx(() -> b.getBookmarkManager().toggle(1));
+        assertEquals(
+                java.util.Set.of(1),
+                FxTestSupport.callOnFx(() -> coordinator.bookmarkedLines(file("b.txt"))),
+                "an open tab's own, before they are stored");
+    }
+
     // --- adding from the file manager / a preview --------------------------------------------------------
 
     @Test

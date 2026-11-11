@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked, as VS Code shows it. Before, Editora said there was no source. The tab is opened once per session and shown
   again at the next stop there. You can set breakpoints in it too; they last for that debug session. Pausing a program
   that waits in a timer still shows your own line.
+- **Project Map cards have the editor's gutter.** Beside each line number a code card now shows the line's
+  breakpoint, bookmark and Git change bar, and a ▶ on a JUnit test or a Java `main` method that runs it, as the
+  editor's gutter does. Click in the breakpoint column to set or remove a breakpoint, in a file you have open or not;
+  a running debug session is told at once. Each column appears only when the file has something to show in it, and a
+  declaration card marks the file's own lines.
 - **Review changes on the Project Map.** ⋯ → *Review Changes*, or *Show Changes* on a changed file or folder, opens a
   card with every file changed against HEAD (untracked ones too) and the picked file's diff, its lines numbered as in
   the old and new file. F7 / Shift+F7, the arrows, or the editor's Next / Previous Change keys on the Map step through

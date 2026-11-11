@@ -60,6 +60,24 @@ class GitServiceWorkingChangesRepoTest {
     }
 
     @Test
+    void aMapCardsChangeBarsComeFromItsFilesOwnRepository() throws Exception {
+        Path repo = Files.createDirectories(temp.resolve("bars"));
+        GitServiceRecentChangesTest.git(repo, null, "init", "-q", "-b", "main");
+        Files.createDirectories(repo.resolve("src"));
+        Path file = Files.writeString(repo.resolve("src/A.java"), "class A {\n  int one;\n  int two;\n}\n");
+        GitServiceRecentChangesTest.commit(repo, 1, "Ada", "start");
+        Files.writeString(file, "class A {\n  long one;\n  int two;\n  int three;\n}\n");
+
+        GitService.GitDiff diff = service.fileChangesNow(file);
+        assertEquals(java.util.Map.of(1, ChangeType.MODIFIED, 3, ChangeType.ADDED), diff.changes());
+        assertFalse(diff.hunks().isEmpty(), "the bars' hover text");
+
+        Path plain =
+                Files.writeString(Files.createDirectories(temp.resolve("loose")).resolve("B.txt"), "b\n");
+        assertEquals(null, service.fileChangesNow(plain), "no repository");
+    }
+
+    @Test
     void aRepositoryWithNoCommitAndAFolderOutsideAny() throws Exception {
         Path fresh = Files.createDirectories(temp.resolve("fresh"));
         GitServiceRecentChangesTest.git(fresh, null, "init", "-q", "-b", "main");
