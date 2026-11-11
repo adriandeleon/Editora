@@ -171,7 +171,7 @@ final class WindowChromeCoordinator {
         boolean expert = expertActive();
         boolean diffUi = diffUiActive();
         boolean focus = zen || expert || diffUi;
-        boolean zenLike = zen || diffUi; // standalone diff strips menu + status like Zen
+        boolean zenLike = zen || diffUi; // standalone diff strips the status bar like Zen
         boolean simple = simpleModeActive();
         // Effective visibility (Chrome, pure + unit-tested): a saved pref AND not hidden by a focus mode/Simple.
         boolean toolbarOn = Chrome.toolbar(s.isShowToolbar(), focus);
@@ -192,9 +192,9 @@ final class WindowChromeCoordinator {
         host.statusBar().setManaged(statusOn);
         host.editorArea().setTabHeaderVisible(Chrome.tabBar(s.isShowTabBar(), focus));
         if (host.menuBar() != null) {
-            // Expert keeps the command menu available; only Zen suppresses it. This must use the real Zen
-            // flag (not `focus`) so a CLI --expert launch has a menu on its very first frame.
-            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), zenLike);
+            // Both focus modes hide the menu bar, including in an extended window, where it is the title
+            // bar's contents (the header itself, with the title and window buttons, stays).
+            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), focus);
             host.menuBar().node().setVisible(menuOn);
             host.menuBar().node().setManaged(menuOn);
             // Simple UI mode keeps the menu bar but swaps in the reduced table (a no-op when unchanged).

@@ -27,19 +27,22 @@ final class Chrome {
     // --- Effective chrome visibility. The "focus modes" (Zen and Expert) hide most of these; Simple
     //     additionally hides the breadcrumb + tool stripes (the toolbar/status/tab/menu bar stay under
     //     Simple — the menu bar keeps a reduced set of entries instead, see MenuBarModel#menus).
-    //     {@code focusMode} = Zen OR Expert. The exceptions are {@link #menuBar}, {@link #statusBar}, and
-    //     {@link #lineNumbers}, which Zen hides but Expert deliberately KEEPS, so they key on real Zen. ---
+    //     {@code focusMode} = Zen OR Expert. The exceptions are {@link #statusBar} and {@link #lineNumbers},
+    //     which Zen hides but Expert deliberately KEEPS, so they key on real Zen. ---
 
     /**
-     * The menu bar follows the user's preference and is suppressed only by Zen. Expert keeps it as the
-     * discoverable command surface while removing the toolbar, tabs, breadcrumb, and tool stripes.
+     * The menu bar follows the user's preference and is suppressed by both focus modes, Zen and Expert.
+     * Expert used to keep it as the discoverable command surface, but in an extended window the menu bar
+     * <em>is</em> the title bar's contents, and a focus mode that leaves a row of menus across the top has
+     * not stripped the chrome; every command stays reachable by its keybinding and the palette. In an
+     * extended window only the menus leave the header: the title and the system window buttons stay.
      *
      * <p>Simple UI mode deliberately does <em>not</em> hide it. The menu is the browsable map of what the
      * editor can do, which a beginner-facing mode needs most; what Simple mode changes is the map's
      * <em>contents</em>, via {@link MenuBarModel#menus(boolean)}.
      */
-    static boolean menuBar(boolean showMenuBar, boolean zen) {
-        return showMenuBar && !zen;
+    static boolean menuBar(boolean showMenuBar, boolean focusMode) {
+        return showMenuBar && !focusMode;
     }
 
     static boolean toolbar(boolean showToolbar, boolean focusMode) {
