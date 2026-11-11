@@ -454,6 +454,15 @@ public final class BreakpointManager implements LineMarks.Carrier {
         }
     }
 
+    /** Puts the breakpoint on {@code line} in the group {@code group} (blank: in none). */
+    public void setGroup(int line, String group) {
+        Breakpoint bp = byLine.get(line);
+        if (bp != null && !bp.group().equals(Breakpoint.groupName(group))) {
+            byLine.put(line, bp.withGroup(group));
+            fireChanged();
+        }
+    }
+
     /** Makes the breakpoint on {@code line} one that is removed once the program stops on it, or not. */
     public void setTemporary(int line, boolean temporary) {
         Breakpoint bp = byLine.get(line);

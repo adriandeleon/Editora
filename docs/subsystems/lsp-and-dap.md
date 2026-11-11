@@ -1526,6 +1526,26 @@ the breakpoint form has a *Wait for* choice; neither offers a breakpoint that wa
 this one (`TriggeredBreakpoints.choices`), so two never wait for each other. `TriggeredBreakpointsTest`,
 `TriggeredBreakpointsWindowFxTest` (a fake adapter) and the opt-in `TriggeredBreakpointsProbeFxTest` (debugpy, js-debug,
 java-debug) cover it.
+**Breakpoint groups and breakpoint files** ([`ui/BreakpointGroups`](../../src/main/java/com/editora/ui/BreakpointGroups.java),
+[`config/BreakpointExport`](../../src/main/java/com/editora/config/BreakpointExport.java)). Any breakpoint — on a line,
+a method or a field — can be in a named group (`Breakpoint.group`, `MemberBreakpoint.group`, `breakpoints.json` schema
+9; `Breakpoint.groupName` keeps a name on one line, at most 60 characters), as IntelliJ's groups are. *Debug: Move
+Breakpoint to Group…* (editor and gutter menus, Run menu) and the breakpoint form's *Group* field (an editable list of
+the groups there are; blank for none) set it. *Debug: Enable / Disable Breakpoint Group…* lists the groups — ✓ when
+all of a group's breakpoints are on, – when some are — and choosing one turns them all on, or all off when they all
+are (`BreakpointsPicker.toggleGroup`, through the same per-entry `toggleEnabled` as Alt+E, so tabs, closed files and
+member breakpoints all follow and a live session is told). In the Breakpoints list a row's detail names its group,
+typing a group's name lists its breakpoints, and Alt+G turns the highlighted row's group on or off. *Debug: Export
+Breakpoints…* writes every breakpoint, or one group's (asked when there are groups), to a JSON file
+(`{"format": "editora-breakpoints", "version": 1, "breakpoints": [{"file", "breakpoint"}], "memberBreakpoints"}`), each
+file relative to the project with `/` when under it, else its stored form; an encrypted file's line text is left out.
+*Debug: Import Breakpoints…* reads one back (`BreakpointExport.read` refuses another format or a later version):
+breakpoints of an open tab are re-anchored to the line their text is on now and added where the line has none; a
+file with no tab gets them in its saved list, and a live session is sent them (`DebugCoordinator.sendClosed`, off the
+FX thread); files that are not there are counted, not set. An imported id that another breakpoint already has is
+replaced, and what waits for it follows (`BreakpointExport.freshIds`). The file choosers are `chooseSave` /
+`chooseOpen`, which tests answer. `BreakpointGroupsTest`, `BreakpointExportTest` and `BreakpointGroupsWindowFxTest` (a
+fake adapter) cover it.
 **Add Logpoint** (`DebugCoordinator.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
 (`FoldManager.setBreakpointShiftClick` → `EditorBuffer.setGutterLogpointClick`; unset, a Shift+click toggles like a
 plain click) open a one-field form for the log message, with the `{expression}` completion of the full form. OK is

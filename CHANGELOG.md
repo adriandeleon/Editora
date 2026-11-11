@@ -34,6 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Breakpoint groups.** Put breakpoints in named groups, as in IntelliJ, and turn a whole group on or off at once:
+  *Debug: Move Breakpoint to Group…* (editor menu, gutter menu, Run menu) or the breakpoint form's new *Group* field
+  sets a breakpoint's group, and *Debug: Enable / Disable Breakpoint Group…* turns every breakpoint of a group on, or
+  off when they all are. Method breakpoints and field watchpoints, and breakpoints in files that are not open, can be
+  in a group too. In the Breakpoints list, each row names its group, typing a group's name lists its breakpoints, and
+  Alt+G turns the highlighted row's group on or off.
+- **Export and import breakpoints.** *Debug: Export Breakpoints…* writes every breakpoint, or one group's, to a file
+  you can keep or share, with conditions, log messages, hit counts, groups and the breakpoints they wait for; files
+  inside the project are written relative to it. *Debug: Import Breakpoints…* sets a file's breakpoints again, each on
+  the line its code is on now, leaving lines that already have one, and a running debug session gets them at once.
+  Saved with the breakpoint (`breakpoints.json` schema 9).
+
 - **Triggered breakpoints.** A breakpoint can wait until another breakpoint is hit, as VS Code's triggered
   breakpoints and IntelliJ's "Disable until hitting the following breakpoint" do: until then it does not stop, and
   from then on it stops like any other, for the rest of that debug session. The next session it waits again. Choose

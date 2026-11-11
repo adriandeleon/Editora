@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>{@code className} is the binary name ({@code pkg.Outer$Inner}); a method breakpoint holds every overload of
  * {@code member} in that class, not in its subclasses. {@code access} applies to a field only: {@code write},
- * {@code read} or {@code readWrite}. Persisted per project in {@link BreakpointStore} ({@code breakpoints.json}).
+ * {@code read} or {@code readWrite}. It can be in a named {@code group}, as a line breakpoint can. Persisted per project in {@link BreakpointStore} ({@code breakpoints.json}).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record MemberBreakpoint(
@@ -22,7 +22,25 @@ public record MemberBreakpoint(
         String access,
         String condition,
         String hitCondition,
-        boolean enabled) {
+        boolean enabled,
+        String group) {
+
+    /** A breakpoint in no group. */
+    public MemberBreakpoint(
+            Kind kind,
+            String className,
+            String member,
+            String access,
+            String condition,
+            String hitCondition,
+            boolean enabled) {
+        this(kind, className, member, access, condition, hitCondition, enabled, "");
+    }
+
+    /** This breakpoint in the group {@code newGroup} (blank: in none). */
+    public MemberBreakpoint withGroup(String newGroup) {
+        return new MemberBreakpoint(kind, className, member, access, condition, hitCondition, enabled, newGroup);
+    }
 
     /** A method's entry or a field's access. */
     public enum Kind {
@@ -45,6 +63,7 @@ public record MemberBreakpoint(
         member = member == null ? "" : member.strip();
         condition = condition == null ? "" : condition;
         hitCondition = hitCondition == null ? "" : hitCondition;
+        group = Breakpoint.groupName(group);
         access = kind == Kind.METHOD ? "" : normalAccess(access);
     }
 
@@ -141,18 +160,18 @@ public record MemberBreakpoint(
     }
 
     public MemberBreakpoint withEnabled(boolean newEnabled) {
-        return new MemberBreakpoint(kind, className, member, access, condition, hitCondition, newEnabled);
+        return new MemberBreakpoint(kind, className, member, access, condition, hitCondition, newEnabled, group);
     }
 
     public MemberBreakpoint withCondition(String newCondition) {
-        return new MemberBreakpoint(kind, className, member, access, newCondition, hitCondition, enabled);
+        return new MemberBreakpoint(kind, className, member, access, newCondition, hitCondition, enabled, group);
     }
 
     public MemberBreakpoint withHitCondition(String newHitCondition) {
-        return new MemberBreakpoint(kind, className, member, access, condition, newHitCondition, enabled);
+        return new MemberBreakpoint(kind, className, member, access, condition, newHitCondition, enabled, group);
     }
 
     public MemberBreakpoint withAccess(String newAccess) {
-        return new MemberBreakpoint(kind, className, member, newAccess, condition, hitCondition, enabled);
+        return new MemberBreakpoint(kind, className, member, newAccess, condition, hitCondition, enabled, group);
     }
 }
