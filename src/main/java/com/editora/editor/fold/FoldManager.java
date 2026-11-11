@@ -2021,8 +2021,8 @@ public final class FoldManager {
     }
 
     /** A small bookmark glyph for the gutter (Material "bookmark"); colored via the {@code .bookmark-marker}
-     *  CSS class (an SVG fill). Display only — it has no click behavior. */
-    private Node bookmarkMarker() {
+     *  CSS class (an SVG fill). Display only — it has no click behavior. Map cards draw it too. */
+    public static Node bookmarkMarker() {
         SVGPath svg = new SVGPath();
         svg.setContent("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
         svg.getStyleClass().add("bookmark-marker");
@@ -2054,7 +2054,7 @@ public final class FoldManager {
     /** A small filled red dot for the gutter breakpoint marker; colored via {@code .breakpoint-marker}.
      *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}, space-separated when
      *  there are several) tweaks the look. */
-    private Node breakpointMarker(String extraClass) {
+    public static Node breakpointMarker(@Nullable String extraClass) {
         java.util.List<String> kinds =
                 extraClass == null || extraClass.isEmpty() ? List.of() : List.of(extraClass.split(" "));
         SVGPath svg = new SVGPath();

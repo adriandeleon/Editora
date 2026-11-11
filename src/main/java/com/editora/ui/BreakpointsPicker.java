@@ -443,20 +443,29 @@ final class BreakpointsPicker {
 
     /** A closed file's saved breakpoint replaced ({@code next}) or removed (null): saved, and sent to a session. */
     private void rewriteClosed(Entry e, @Nullable Breakpoint next) {
+        rewriteClosed(e.file(), e.key(), e.line(), next);
+    }
+
+    /**
+     * The saved breakpoint on {@code line} of {@code file} (a file with no open tab, stored under {@code key})
+     * replaced by {@code next}, added when there was none, or removed (null): saved, and sent to a live session. A
+     * Project Map card's gutter sets and removes them so too (Map gaps round 3, item 1).
+     */
+    void rewriteClosed(Path file, String key, int line, @Nullable Breakpoint next) {
         Map<String, List<Breakpoint>> map = ops.breakpointMap();
-        List<Breakpoint> list = new ArrayList<>(map.getOrDefault(e.key(), List.of()));
-        list.removeIf(bp -> bp.line() == e.line());
+        List<Breakpoint> list = new ArrayList<>(map.getOrDefault(key, List.of()));
+        list.removeIf(bp -> bp.line() == line);
         if (next != null) {
             list.add(next);
             list.sort(java.util.Comparator.comparingInt(Breakpoint::line));
         }
         if (list.isEmpty()) {
-            map.remove(e.key());
+            map.remove(key);
         } else {
-            map.put(e.key(), list);
+            map.put(key, list);
         }
         ops.saveBreakpoints();
-        ops.breakpointsStored(map, e.key());
+        ops.breakpointsStored(map, key);
         if (!muted.getAsBoolean()) {
             List<DapModels.LineBreakpoint> lines = new ArrayList<>();
             for (Breakpoint bp : list) {
@@ -467,7 +476,7 @@ final class BreakpointsPicker {
             }
             for (DapManager each : managers.get()) {
                 if (each.isActive()) {
-                    each.updateBreakpoints(new DapModels.FileBreakpoints(e.file(), lines));
+                    each.updateBreakpoints(new DapModels.FileBreakpoints(file, lines));
                 }
             }
         }

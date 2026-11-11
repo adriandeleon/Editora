@@ -186,6 +186,26 @@ public final class BreakpointManager implements LineMarks.Carrier {
         if (bp == null) {
             return null;
         }
+        String kind = kindClasses(bp, waitsFor(bp) != null);
+        Live state = live(line);
+        String classes = kind;
+        if (state != null && state.state() != LiveState.VERIFIED) {
+            String unverified = state.state() == LiveState.REJECTED ? "unverified rejected" : "unverified";
+            classes = kind == null ? unverified : kind + " " + unverified;
+        }
+        if (mutedText != null) {
+            classes = classes == null ? "muted" : classes + " muted";
+        }
+        return classes;
+    }
+
+    /**
+     * The glyph classes {@code bp} itself calls for — disabled, logpoint or conditional, then temporary, recording,
+     * lambda and triggered ({@code waits}: it waits for another breakpoint) — or null for a plain one. What a live
+     * session says of it and muting come on top (see {@link #styleClasses}); a Project Map card draws a closed file's
+     * stored breakpoints with these alone.
+     */
+    public static @Nullable String kindClasses(Breakpoint bp, boolean waits) {
         String kind =
                 !bp.enabled() ? "disabled" : bp.isLogpoint() ? "logpoint" : bp.isConditional() ? "conditional" : null;
         if (bp.temporary() && !bp.isLogpoint()) {
@@ -197,19 +217,10 @@ public final class BreakpointManager implements LineMarks.Carrier {
         if (bp.hasLambdas()) {
             kind = kind == null ? "lambda" : kind + " lambda";
         }
-        if (waitsFor(bp) != null) {
+        if (waits) {
             kind = kind == null ? "triggered" : kind + " triggered";
         }
-        Live state = live(line);
-        String classes = kind;
-        if (state != null && state.state() != LiveState.VERIFIED) {
-            String unverified = state.state() == LiveState.REJECTED ? "unverified rejected" : "unverified";
-            classes = kind == null ? unverified : kind + " " + unverified;
-        }
-        if (mutedText != null) {
-            classes = classes == null ? "muted" : classes + " muted";
-        }
-        return classes;
+        return kind;
     }
 
     // --- method breakpoints and field watchpoints, marked on their declaration lines ----------------------

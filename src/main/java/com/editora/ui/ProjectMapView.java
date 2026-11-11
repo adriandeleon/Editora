@@ -2506,6 +2506,7 @@ final class ProjectMapView extends VBox {
         if (changes != null) {
             readChanges(changes); // a save, a commit, a checkout: the card follows
         }
+        cards.refreshGutters(true); // and the cards' change bars
     }
 
     /** The status last given to {@link #setGitStatus}, and the root it was given for. */
@@ -2530,6 +2531,16 @@ final class ProjectMapView extends VBox {
     void setPreviewMarkerActions(ProjectMapPreview.@Nullable MarkerActions actions) {
         previewMarkerActions = actions;
         cards.setMarkerActions(actions);
+    }
+
+    /** Where the cards' gutters read breakpoints, bookmarks, ▶ and change bars (Map gaps round 3, item 1). */
+    void setCardGutterSource(MapCardGutter.@Nullable Source source) {
+        cards.setGutterSource(source);
+    }
+
+    /** A breakpoint or a bookmark changed: the cards' gutters show it. */
+    void refreshCardGutters() {
+        cards.refreshGutters(false);
     }
 
     void setNotePreviewActions(ProjectPanel.MarkerActions actions) {

@@ -285,6 +285,8 @@ final class MapCards {
     private boolean disposed;
 
     private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
+    /** Where the cards' gutters read breakpoints, bookmarks, ▶ and change bars (Map gaps round 3, item 1). */
+    private MapCardGutter.@Nullable Source gutterSource;
     /** Where a card's Go to Definition, Find Usages and the rest go (Project Map review 3 C12). */
     private ProjectMapPreview.@Nullable FollowActions followActions;
 
@@ -1821,6 +1823,17 @@ final class MapCards {
         previews.values().forEach(preview -> preview.setMarkerActions(actions));
     }
 
+    /** Where every card's gutter reads its marks from, and what its clicks do (Map gaps round 3, item 1). */
+    void setGutterSource(MapCardGutter.@Nullable Source source) {
+        gutterSource = source;
+        previews.values().forEach(preview -> preview.setGutterSource(source));
+    }
+
+    /** Reads every card's gutter marks again ({@code git}: and its change bars — the Git state changed). */
+    void refreshGutters(boolean git) {
+        previews.values().forEach(preview -> preview.refreshGutter(git));
+    }
+
     /** Where every card follows the code to: the editor, the Map's reveal and the Git log (review 3 C12). */
     void setFollowActions(ProjectMapPreview.@Nullable FollowActions actions) {
         followActions = actions;
@@ -2346,6 +2359,7 @@ final class MapCards {
         preview.setInitialContentZoom(cardTextZoom); // the last −/+ zoom, so it need not be set on every card
         preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
+        preview.setGutterSource(gutterSource);
         preview.setFollowActions(followActions);
         preview.setOnDependencies(() -> {
             Path shown = preview.path();

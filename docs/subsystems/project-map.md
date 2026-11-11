@@ -256,6 +256,20 @@ file it holds ("Showing lines 1–7,515 of 9,135", or "Showing the first N lines
 64 MB on disk, or an open buffer past 4,000,000 characters) and ends in a last line, "— Preview ends here; Open to
 read the rest —", which opens the file when clicked.
 
+**The card's gutter** (Map gaps round 3, item 1; `MapCardGutter`). Beside each line number a code card shows what
+the editor's gutter shows there, in its look (the rows carry `fold-gutter`, so the editor themes' gutter rules apply):
+a **breakpoint** strip while debugging is on and the file's language debugs where its tools run (a click sets or
+removes one, through the file's tab when it has one — `DebugCoordinator.toggleCardBreakpoint` — else in the stored
+breakpoints, `BreakpointsPicker.rewriteClosed`, which a live session is sent; a blank or comment line gets none and
+the status says so), **bookmarks**, a **▶** on a JUnit test class or method and on a Java `main` method in a
+Maven or Gradle project (the Test Runner's and Run's gates; a click runs it through the build tool or as the
+project's main class and brings the editor window forward), and the **Git change bars** against HEAD (an open tab's
+live ones, its unsaved edits included, else `GitService.fileChanges` in the file's own repository). A column is there
+only when it has something for the file, so a card of a file with none keeps a gutter of numbers; a declaration card
+marks the file's own lines. The marks come from one `MapCardGutter.Source` (`MapCardGutterMarks` in an editor
+window), read again when a breakpoint or bookmark is stored in any window (`MainController.marksStored` /
+`marksChangedElsewhere`) and, with the bars, when the Git status changes or the card's text does.
+
 **Find in a card.** Find typed in a focused card (`find.show`: Ctrl+F, Cmd+F, Emacs `C-s`), or the menu's **Find in
 Card…**, opens a find bar under its title bar: a field (a one-line selection is what it looks for), "k of N", ‹ ›
 and **Aa** (match case). Typing selects the first match from where the find began; Enter and Shift+Enter, F3 and

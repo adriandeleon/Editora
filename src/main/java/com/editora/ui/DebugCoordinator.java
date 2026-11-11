@@ -6625,6 +6625,106 @@ final class DebugCoordinator {
         return picker != null && picker.isShown() ? picker : null;
     }
 
+    // --- Project Map cards' gutters (Map gaps round 3, item 1) ---
+
+    /**
+     * Whether a Map card of {@code file} has a breakpoint strip: debugging is on, and the file's language debugs where
+     * the file's tools run — as its tab's gutter would have one.
+     */
+    boolean cardBreakpointsOn(Path file) {
+        if (!debugSupportEnabled()) {
+            return false;
+        }
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null) {
+            return isDebuggableBuffer(open);
+        }
+        String language = com.editora.editor.debug.LineFunctions.languageOf(file);
+        if (language == null || !DapServerRegistry.isDebuggable(language)) {
+            return false;
+        }
+        return Vfs.isLocal(file) && com.editora.process.ExecTargets.runsHere(file)
+                || DapManager.debuggableOnHost(language) && RemoteExec.runsFor(file);
+    }
+
+    /**
+     * {@code file}'s breakpoint glyphs by 0-based line, for a Map card's gutter: its tab's, with what a live session
+     * says of them, or the stored ones of a file with no tab (or a narrowed one).
+     */
+    Map<Integer, MapCardGutter.Breakpoint> cardBreakpoints(Path file) {
+        Map<Integer, MapCardGutter.Breakpoint> out = new java.util.HashMap<>();
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null && !open.isNarrowed()) {
+            var manager = open.getBreakpointManager();
+            Set<Integer> lines = new HashSet<>(manager.memberMarks().keySet());
+            manager.snapshot().forEach(bp -> lines.add(bp.line()));
+            for (int line : lines) {
+                if (manager.hasGlyph(line)) {
+                    String tip = manager.glyphTooltip(line);
+                    out.put(line, new MapCardGutter.Breakpoint(manager.glyphClasses(line), tip == null ? "" : tip));
+                }
+            }
+            return out;
+        }
+        String muted = breakpointsMuted ? tr("debug.breakpoint.muted") : null;
+        for (Breakpoint bp : ops.breakpointMap().getOrDefault(key(file), List.of())) {
+            boolean waits = bp.isTriggered() && triggered.labelOf(bp.triggeredBy()) != null;
+            String classes = com.editora.editor.debug.BreakpointManager.kindClasses(bp, waits);
+            if (muted != null) {
+                classes = classes == null ? "muted" : classes + " muted";
+            }
+            String tip = com.editora.editor.debug.BreakpointDescription.tooltip(bp, null, triggered::labelOf);
+            tip = muted == null ? tip : tip == null || tip.isBlank() ? muted : muted + "\n" + tip;
+            out.put(bp.line(), new MapCardGutter.Breakpoint(classes, tip == null ? "" : tip));
+        }
+        return out;
+    }
+
+    /**
+     * A click in a Map card's breakpoint strip on {@code line} of {@code file}, whose text is {@code text}: what a
+     * click in its tab's gutter does — through that tab when it has one — else the stored breakpoints of the file are
+     * changed and a live session is told. A line with no code to stop on gets none, and the status says so.
+     */
+    void toggleCardBreakpoint(Path file, int line, String text) {
+        if (!cardBreakpointsOn(file)) {
+            return;
+        }
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null && !open.isNarrowed()) {
+            var manager = open.getBreakpointManager();
+            var mark = manager.isBreakpoint(line) ? null : manager.memberMark(line);
+            if (mark != null) {
+                mark.members().forEach(memberBreakpoints::toggle); // a method breakpoint's mark: removes it
+            } else if (breakpointAllowed(open, line)) {
+                open.toggleBreakpoint(line);
+            }
+            return;
+        }
+        String key = key(file);
+        boolean set = ops.breakpointMap().getOrDefault(key, List.of()).stream().anyMatch(bp -> bp.line() == line);
+        String language = com.editora.editor.debug.LineFunctions.languageOf(file);
+        if (!set && com.editora.dap.CodeLessLines.isCodeLess(text, line, language == null ? "" : language)) {
+            host.setStatus(tr("status.debug.noCodeOnLine"));
+            return;
+        }
+        breakpointsPicker().rewriteClosed(file, key, line, set ? null : Breakpoint.plain(line, lineOf(text, line)));
+    }
+
+    /** Line {@code line} (0-based) of {@code text}, or "" past its end. */
+    static String lineOf(String text, int line) {
+        int start = 0;
+        for (int i = 0; i < line; i++) {
+            int next = text.indexOf('\n', start);
+            if (next < 0) {
+                return "";
+            }
+            start = next + 1;
+        }
+        int end = text.indexOf('\n', start);
+        String found = end < 0 ? text.substring(start) : text.substring(start, end);
+        return found.endsWith("\r") ? found.substring(0, found.length() - 1) : found;
+    }
+
     /** Toggles a breakpoint on the active buffer's caret line. */
     void toggleBreakpointAtCaret() {
         EditorBuffer b = breakpointBuffer();
