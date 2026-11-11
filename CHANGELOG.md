@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Review changes on the Project Map.** ⋯ → *Review Changes*, or *Show Changes* on a changed file or folder, opens a
+  card with every file changed against HEAD (untracked ones too) and the picked file's diff, its lines numbered as in
+  the old and new file. F7 / Shift+F7, the arrows, or the editor's Next / Previous Change keys on the Map step through
+  the hunks of every file. Enter on a line opens that file's card at it, Ctrl+Enter the editor, and *Compare with
+  HEAD* the side-by-side diff. The card follows the Git status as you save and commit.
 - **Loaded Sources and Modules.** While debugging, *Debug: Loaded Sources…* lists the scripts and source files the
   program has loaded, as VS Code's Loaded Scripts does, with your project's files first. Choose one to open it: a file
   opens in its tab, ready for breakpoints, and code the debugger has only in memory (Node.js internals, code run
