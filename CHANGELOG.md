@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Emacs keymap). It asks only for the message to log, with `{expression}` for a value. OK makes the line a logpoint,
   which logs each time the line runs and never suspends. On a line that already has a breakpoint it edits that
   one's message and keeps its condition and hit count. Before, a logpoint took the full *Edit Breakpoint* form.
+- **Problems on the Project Map.** Files with errors or warnings, and the folders that hold them, are marked on the
+  Map with a red or amber dot and coloured names, and their tooltip says how many. A new *Problems* chip highlights
+  them, and Next/Previous Problem on the Map steps through the whole project's problems, opening each one's card.
 - **Project Map cards read like the editor.** Code cards now show the language server's semantic highlighting and
   inlay hints, and pin the headers of the class or method you have scrolled into, as the editor does. Each follows
   its editor setting.

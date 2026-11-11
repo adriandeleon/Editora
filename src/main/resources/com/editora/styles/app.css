@@ -5032,6 +5032,8 @@
     -fx-padding: 0;
 }
 .debug-panel .split-pane .split-pane-divider { -fx-padding: 0 1 0 1; }
+/* Call stack | variables | console: their headers and rows kept off the dividers between them. */
+.debug-panel .debug-area { -fx-padding: 0 6 0 6; }
 /* Compact icon-only toolbar (IntelliJ-style: full titles in tooltips) and evaluate field. */
 .debug-panel .debug-toolbar-button { -fx-padding: 3 6 3 6; }
 .debug-panel .debug-toolbar-separator { -fx-padding: 0 3 0 3; }

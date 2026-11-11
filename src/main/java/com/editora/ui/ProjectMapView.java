@@ -85,6 +85,10 @@ final class ProjectMapView extends VBox {
     private final ToggleButton gitFilter = filterButton("project.map.filter.gitChanged");
     private final ToggleButton bookmarksFilter = filterButton("project.map.filter.bookmarks");
     private final ToggleButton personalNotesFilter = filterButton("project.map.filter.personalNotes");
+    /** Files with errors or warnings (Map code browser round 2). */
+    private final ToggleButton problemsFilter = filterButton("project.map.filter.problems");
+    /** The Problems window's diagnostics, last given; counted again for a new root. */
+    private java.util.Map<Path, List<com.editora.text.LspDiagnostic>> problemSource = java.util.Map.of();
     // The three session options and the two output actions live in the options (⋯) menu, not in the filter row.
     private final CheckMenuItem hideOpenNotes = optionItem("project.map.filter.hideOpenNotes", false);
     private final CheckMenuItem keepZoomOnOpen = optionItem("project.map.navigation.keepZoom", true);
@@ -931,6 +935,7 @@ final class ProjectMapView extends VBox {
             gitFilter.setSelected(false);
             bookmarksFilter.setSelected(false);
             personalNotesFilter.setSelected(false);
+            problemsFilter.setSelected(false);
             // The search is a filter too and goes with the rest; "Hide all open Personal Notes" is a view
             // option in the ⋯ menu, not a filter, and is left as it is (B23).
             if (!query.isBlank()) {
@@ -945,7 +950,7 @@ final class ProjectMapView extends VBox {
         });
 
         for (ToggleButton button :
-                List.of(openFilter, modifiedFilter, gitFilter, bookmarksFilter, personalNotesFilter)) {
+                List.of(openFilter, modifiedFilter, gitFilter, bookmarksFilter, personalNotesFilter, problemsFilter)) {
             button.setOnAction(event -> updateFilters());
         }
         typeFilter.setOnAction(event -> updateFilters());
@@ -974,6 +979,7 @@ final class ProjectMapView extends VBox {
                 gitFilter,
                 bookmarksFilter,
                 personalNotesFilter,
+                problemsFilter,
                 typeFilter,
                 hideUnmatched,
                 narrowedBadge,
@@ -1247,6 +1253,7 @@ final class ProjectMapView extends VBox {
         pendingSelection = normalized;
         setOutputEnabled(false);
         orientation.setRoot(normalized);
+        surface.setProblems(new ProjectMapProblems(problemSource, normalized)); // counted below the new root
         dependencyIndex.setRoot(normalized);
         metricsIndex.setRoot(normalized);
         activity.setRoot(normalized);
@@ -2789,6 +2796,59 @@ final class ProjectMapView extends VBox {
         return true;
     }
 
+    // --- problems on the Map (Map code browser round 2) -------------------------------------------------------
+
+    /**
+     * The errors and warnings the editor's Problems window holds (each file's): the rows show them, folders add up
+     * theirs, the Problems chip filters by them, and Next and Previous Problem step through them on the Map.
+     */
+    void setProblems(java.util.Map<Path, List<com.editora.text.LspDiagnostic>> byFile) {
+        problemSource = java.util.Map.copyOf(byFile);
+        surface.setProblems(new ProjectMapProblems(problemSource, root));
+    }
+
+    /** The problem Next or Previous Problem last went to, or null. */
+    private ProjectMapProblems.@Nullable Place lastProblem;
+
+    /** The problems the Map shows. */
+    ProjectMapProblems problems() {
+        return surface.problems();
+    }
+
+    /**
+     * Next ({@code forward}) or Previous Problem typed on the Map: the card of the next problem after the card the
+     * keyboard is in (its caret) or the selected row, going round; the status line says which of how many and what
+     * it says. With none, it says so.
+     */
+    void stepProblem(boolean forward) {
+        ProjectMapProblems known = surface.problems();
+        if (known.isEmpty()) {
+            onStatus.accept(tr("project.map.problems.none"));
+            return;
+        }
+        ProjectMapPreview card = focusedCard();
+        Path file = card != null
+                ? card.path()
+                : surface.selectedEntry().map(ProjectMapModel.Entry::path).orElse(null);
+        int line = card != null ? card.fileLineAt(card.caretOffset()) : forward ? -1 : Integer.MAX_VALUE;
+        int column = card != null ? card.editor().getCaretColumn() : 0;
+        ProjectMapProblems.Place last = lastProblem;
+        if (card != null && last != null && last.file().equals(file) && last.line() == line) {
+            column = last.column(); // still on the problem last stepped to: on from it, not from where the caret fell
+        }
+        ProjectMapProblems.Place place = known.step(file, line, column, forward);
+        if (place == null) {
+            return;
+        }
+        lastProblem = place;
+        cards.openPlaceCard(card, place.file(), place.line(), null);
+        onStatus.accept(tr(
+                place.error() ? "project.map.problems.stepError" : "project.map.problems.stepWarning",
+                known.indexOf(place),
+                known.places().size(),
+                place.message()));
+    }
+
     // --- the card switcher (Map code browser round 2, item 6) ------------------------------------------------
 
     /** The open cards in sight, the most recently used first: what the card switcher lists. */
@@ -3239,6 +3299,7 @@ final class ProjectMapView extends VBox {
                 gitFilter.isSelected(),
                 bookmarksFilter.isSelected(),
                 personalNotesFilter.isSelected(),
+                problemsFilter.isSelected(),
                 type == null ? ProjectMapModel.TypeFilter.ALL : type));
     }
 
