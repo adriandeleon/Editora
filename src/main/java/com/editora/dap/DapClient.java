@@ -81,6 +81,9 @@ public final class DapClient implements IDebugProtocolClient {
     private static final Logger LOG = Logger.getLogger(DapClient.class.getName());
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
 
+    /** How long configurationDone waits for the breakpoints' and exception filters' answers (see initialized). */
+    static final Duration CONFIGURATION_WAIT = Duration.ofSeconds(5);
+
     /** How long a request waits for the adapter's answer, in seconds (for messages that name it). */
     static long requestTimeoutSeconds() {
         return REQUEST_TIMEOUT.toSeconds();
@@ -723,29 +726,47 @@ public final class DapClient implements IDebugProtocolClient {
         // configurationDone so it proceeds with launch/attach.
         //
         // CRITICAL: this runs on the DAP *reader* thread. We must NOT block here — a .join() would
-        // deadlock, since the response we'd wait for is delivered by this same thread. lsp4j serializes
-        // outgoing messages, so firing the requests in order still puts setBreakpoints on the wire before
-        // configurationDone; the adapter processes them in order. We don't need the responses for the
-        // handshake.
+        // deadlock, since the response we'd wait for is delivered by this same thread. So configurationDone is
+        // chained after the answers instead: an adapter that handles requests concurrently (vscode-js-debug)
+        // could otherwise let the program run before a breakpoint was in place — a column breakpoint, which
+        // js-debug places with more work than a line one, was missed that way about one run in three. VS Code
+        // waits for these answers too; an adapter that does not answer holds the program back at most
+        // CONFIGURATION_WAIT.
         try {
+            List<CompletableFuture<?>> configuring = new ArrayList<>();
             synchronized (configurationLock) {
                 // Configured from here on: a breakpoint change made while this runs waits for the lock and then
                 // goes on the wire after the set sent here, never before it (which this set would overwrite).
                 configured = true;
                 for (DapModels.FileBreakpoints fb : initialBreakpoints) {
-                    setBreakpointsNow(fb);
+                    configuring.add(setBreakpointsNow(fb));
                 }
                 List<String> filters = effectiveExceptionFilters();
                 if (!filters.isEmpty()) {
                     SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
                     ex.setFilters(filters.toArray(new String[0]));
-                    ignore(timed(server().setExceptionBreakpoints(ex)));
+                    CompletableFuture<?> sent = timed(server().setExceptionBreakpoints(ex));
+                    ignore(sent);
+                    configuring.add(sent);
                 }
                 if (!memberBreakpoints.isEmpty()) {
                     sendMemberBreakpointsNow();
                 }
             }
-            ignore(timed(server().configurationDone(new ConfigurationDoneArguments())));
+            CompletableFuture.allOf(configuring.stream()
+                            .map(f -> f.handle((r, e) -> null))
+                            .toArray(CompletableFuture[]::new))
+                    .completeOnTimeout(null, CONFIGURATION_WAIT.toMillis(), TimeUnit.MILLISECONDS)
+                    .whenComplete((v, e) -> {
+                        if (disposed) {
+                            return;
+                        }
+                        try {
+                            ignore(timed(server().configurationDone(new ConfigurationDoneArguments())));
+                        } catch (RuntimeException failed) {
+                            LOG.log(Level.WARNING, "configurationDone failed", failed);
+                        }
+                    });
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "configuration phase failed", e);
         }

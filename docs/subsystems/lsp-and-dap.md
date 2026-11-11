@@ -1321,9 +1321,11 @@ drives it through a window: F5 and Debug Test at Caret.
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send
-`setBreakpoints`/`setExceptionBreakpoints` then `configurationDone`, **without** `.join()` — that
-callback runs on the reader thread, and lsp4j serializes outgoing messages, so blocking would deadlock
-on a response delivered by the same thread. Events arrive on the launcher thread; the `Host`
+`setBreakpoints`/`setExceptionBreakpoints`, then `configurationDone` once they have been answered (at most
+`CONFIGURATION_WAIT`, 5 s), chained on their futures **without** `.join()` — that callback runs on the reader
+thread, so blocking would deadlock on a response delivered by the same thread. Waiting for the answers is what VS
+Code does: vscode-js-debug handles requests concurrently, and a `configurationDone` sent straight after let the
+program run before a column breakpoint (which js-debug places with more work) was in place, about one run in three. Events arrive on the launcher thread; the `Host`
 (`DapManager`) marshals them to FX. `dispose()` disconnects, closes the socket, and
 `ProcessRegistry.killTree`s the adapter subprocess tree (same wrapper-orphan reasoning as LSP). The
 standalone adapters' stderr is drained into `AdapterStderr` (an undrained PIPE deadlocks, like the LSP
@@ -1493,6 +1495,15 @@ folds the answers into one status per line (bound when all are, refused when any
 `debug.toggleLambdaBreakpoint` (the lambda at or before the caret, else the first; again removes it, and the
 breakpoint with it when it stopped nowhere else); the gutter menu's Stop on the Line / Stop in Lambda n check items.
 The opt-in `LambdaBreakpointsProbeFxTest` checks both kinds against java-debug.
+In **JavaScript and TypeScript** the same breakpoints stop inside the arrow functions and function expressions of the
+line ([`editor/debug/JsFunctions`](../../src/main/java/com/editora/editor/debug/JsFunctions.java)): each `=>` outside
+strings, template literals and comments, traced back to its parameter or parameter list (past a TypeScript return
+type and an `async`), and each `function` that does not begin the line. V8 puts a column breakpoint on the first place
+it can stop at or after the column, so where the function stops is the start of its body — the expression after `=>`,
+else the first statement after its `{`, or this line's end when the body goes on below — while its start is what the
+caret and its number go by. [`editor/debug/LineFunctions`](../../src/main/java/com/editora/editor/debug/LineFunctions.java)
+dispatches by language (and by file extension for a file with no tab, `languageOf`); `BreakpointTargets.of` sends each
+function's stop column. The opt-in `JsColumnBreakpointsProbeFxTest` checks both kinds against js-debug.
 The **Threads view** (the Call Stack area's Threads switch, `debug.threads`) lists `DapManager.threadStatuses`: the
 adapter's `threads`, each marked suspended when it is in `stoppedThreads` (with its stop reason), is the thread shown,
 or — after a whole-program suspend (`allSuspended`) — was not resumed on its own since (`resumedSinceSuspendAll`).
@@ -1738,7 +1749,11 @@ then asks for each subprocess with `startDebugging`, naming the port of its own 
 `subProcessId`. The client hands that configuration up instead of opening a child connection itself
 (`DapManager.Listener.onChildSession`); the coordinator opens a session for it beside its parent
 (`openChildSession`, `DebugSession.parent`, named as debugpy names it, "Subprocess 1234"), whose manager attaches
-to that port with the configuration (`DapManager.startPythonChild`; Stop detaches). It is shown when it stops, like
+to that port with the configuration (`DapManager.startPythonChild`; Stop detaches). A subprocess's client hands its
+own subprocesses up the same way, so `multiprocessing`'s fork server (Python 3.14's default start method on Linux),
+which is itself a subprocess and forks the workers, gets a session, and so does each worker under it: folded into the
+fork server's connection, as the first version did, the worker was no session of its own and its breakpoints showed in
+none. It is shown when it stops, like
 any other session; Restart is refused there (`SUBPROCESS`); stopping its parent, or its parent ending, stops it
 (`stopChildren`); its tab goes once it has ended, unless it is the one shown. A launch on a host keeps `subProcess`
 off. js-debug's children stay inside their session (`DapClient`'s root owns them), where the Threads view and the
