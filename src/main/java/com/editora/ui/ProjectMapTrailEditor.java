@@ -113,7 +113,7 @@ final class ProjectMapTrailEditor extends VBox {
                 event.consume();
             }
         });
-        addEventHandler(MouseEvent.MOUSE_PRESSED, event -> toFront());
+        addEventFilter(MouseEvent.MOUSE_PRESSED, event -> toFront()); // a filter: the fields consume the press
         resize(WIDTH, HEIGHT);
         host.getChildren().add(this);
         relocate(16, 48);
