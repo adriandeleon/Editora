@@ -63,7 +63,6 @@ import com.editora.text.LspDiagnostic;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.event.MouseOverTextEvent;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.TwoDimensional;
@@ -681,6 +680,16 @@ final class ProjectMapPreview extends StackPane {
     private String lastChangeText = "";
     /** What the status's tooltip adds under it for the last change: its subject and commit. */
     private String lastChangeTip = "";
+    /** Where the gutter's breakpoints, bookmarks, ▶ and change bars come from (Map gaps round 3, 1); null: numbers. */
+    private MapCardGutter.@Nullable Source gutterSource;
+    /** The card's file's marks as last read. */
+    private MapCardGutter.Marks gutterMarks = MapCardGutter.Marks.NONE;
+    /** The file's change bars, or null when Git does not track it (or has not said yet). */
+    private MapCardGutter.@Nullable Changes gutterChanges;
+    /** The ▶ lines of the card's file. */
+    private java.util.Map<Integer, MapCardGutter.Run> gutterRuns = java.util.Map.of();
+    /** The last ask for change bars: a later one wins. */
+    private long gutterAsk;
 
     private final Tooltip statusTip = new Tooltip();
 
@@ -810,7 +819,7 @@ final class ProjectMapPreview extends StackPane {
         editor.getStyleClass().addAll("editor-area", "project-map-preview-editor");
         editor.setEditable(false);
         editor.setWrapText(false);
-        editor.setParagraphGraphicFactory(LineNumberFactory.get(editor));
+        installGutter();
         editor.setAccessibleHelp(tr("project.map.preview.accessibleHelp"));
         installEditorContextMenu();
         // Sized in the pass that lays its lines out: scrolled here, the card opens where it was asked to.
@@ -1811,7 +1820,7 @@ final class ProjectMapPreview extends StackPane {
             setAccessibleText(linked(tr("project.map.preview.accessible", shownPath.toString())));
             editor.setAccessibleText(tr("project.map.preview.editorAccessible", name));
             editor.getStyleClass().remove("narrowed");
-            editor.setParagraphGraphicFactory(LineNumberFactory.get(editor));
+            installGutter();
             return;
         }
         title.setText(name + " › " + shown.symbol());
@@ -1822,7 +1831,7 @@ final class ProjectMapPreview extends StackPane {
         if (!editor.getStyleClass().contains("narrowed")) {
             editor.getStyleClass().add("narrowed"); // the editor's narrowed gutter colour
         }
-        editor.setParagraphGraphicFactory(offsetLineNumbers(shown.startLine(), shown.endLine()));
+        installGutter();
     }
 
     private String rangeLabel(Range shown) {
@@ -1880,16 +1889,98 @@ final class ProjectMapPreview extends StackPane {
         }
     }
 
-    /** Gutter numbers that count from the declaration's first line, as the file numbers it. */
-    private static java.util.function.IntFunction<javafx.scene.Node> offsetLineNumbers(int startLine, int endLine) {
-        String format = "%" + String.valueOf(endLine + 1).length() + "d";
-        return paragraph -> {
-            Label number = new Label(String.format(java.util.Locale.ROOT, format, startLine + paragraph + 1));
-            number.getStyleClass().add("lineno");
-            number.setAlignment(Pos.TOP_RIGHT);
-            number.setFont(Font.font("monospace", 12));
-            return number;
-        };
+    // --- Gutter (Map gaps round 3, item 1) ---
+
+    /** Where the card's gutter marks come from; null leaves it numbers only. */
+    void setGutterSource(MapCardGutter.@Nullable Source source) {
+        gutterSource = source;
+        refreshGutter();
+    }
+
+    /** Reads the card's marks again, asks Git for its change bars, and redraws the gutter. */
+    void refreshGutter() {
+        refreshGutter(true);
+    }
+
+    /** Reads the card's marks again ({@code askGit}: and its change bars) and redraws the gutter. */
+    void refreshGutter(boolean askGit) {
+        Path file = path;
+        MapCardGutter.Source source = gutterSource;
+        if (disposed) {
+            return;
+        }
+        if (file == null || source == null) {
+            gutterMarks = MapCardGutter.Marks.NONE;
+            gutterChanges = null;
+            gutterRuns = java.util.Map.of();
+            installGutter();
+            return;
+        }
+        try {
+            gutterMarks = source.marks(file);
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("reading a card's gutter marks", failed);
+            gutterMarks = MapCardGutter.Marks.NONE;
+        }
+        boolean javaFile =
+                PathDisplay.fileName(file).toLowerCase(java.util.Locale.ROOT).endsWith(".java");
+        gutterRuns = javaFile && (gutterMarks.tests() || gutterMarks.mains())
+                ? MapCardGutter.runs(fullText, gutterMarks.tests(), gutterMarks.mains())
+                : java.util.Map.of();
+        installGutter();
+        if (askGit) {
+            long ask = ++gutterAsk;
+            source.changes(file, found -> {
+                if (ask == gutterAsk && file.equals(path) && !disposed) {
+                    gutterChanges = found;
+                    installGutter();
+                }
+            });
+        }
+    }
+
+    /** Puts the gutter of the marks as they are: a declaration card's numbers count from its first line. */
+    private void installGutter() {
+        Range shown = range;
+        int first = shown == null ? 0 : shown.startLine();
+        int last = shown == null ? Math.max(0, editor.getParagraphs().size() - 1) : shown.endLine();
+        editor.setParagraphGraphicFactory(MapCardGutter.rows(
+                first, last, gutterMarks, gutterChanges, gutterRuns, this::gutterBreakpoint, this::gutterRun));
+    }
+
+    /** A click in the breakpoint strip on the file's {@code line}. */
+    private void gutterBreakpoint(int line) {
+        Path file = path;
+        MapCardGutter.Source source = gutterSource;
+        if (file == null || source == null || disposed) {
+            return;
+        }
+        source.toggleBreakpoint(file, line, fullText);
+        refreshGutter(false); // the store is written later; the card shows the click now
+    }
+
+    /** A click on a ▶. */
+    private void gutterRun(MapCardGutter.Run run) {
+        Path file = path;
+        MapCardGutter.Source source = gutterSource;
+        if (file != null && source != null && !disposed) {
+            source.run(file, run);
+        }
+    }
+
+    /** The gutter's marks as last read. For tests. */
+    MapCardGutter.Marks gutterMarks() {
+        return gutterMarks;
+    }
+
+    /** The change bars as last read. For tests. */
+    MapCardGutter.@Nullable Changes gutterChanges() {
+        return gutterChanges;
+    }
+
+    /** The ▶ lines. For tests. */
+    java.util.Map<Integer, MapCardGutter.Run> gutterRuns() {
+        return gutterRuns;
     }
 
     /**
@@ -1935,6 +2026,8 @@ final class ProjectMapPreview extends StackPane {
         userSized = false;
         missing = false;
         loadedStamp = null;
+        gutterChanges = null; // another file's bars
+        gutterRuns = java.util.Map.of();
         boolean openBuffer = content != null && content.open();
         fromBuffer = openBuffer;
         shownVersion = openBuffer && content != null ? content.version() : -1;
@@ -4498,6 +4591,7 @@ final class ProjectMapPreview extends StackPane {
         }
         status.setText(idleStatus(truncated));
         if (changed) {
+            refreshGutter(true);
             onTextShown.run();
         }
     }

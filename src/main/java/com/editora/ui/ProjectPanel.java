@@ -1654,6 +1654,38 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     public void refreshMarkers() {
         tree.refresh();
         mapView.refreshStates();
+        mapView.refreshCardGutters();
+    }
+
+    /** Where the Map cards' gutters read breakpoints, bookmarks, ▶ and change bars (Map gaps round 3, item 1). */
+    void setCardGutterSource(MapCardGutter.Source source) {
+        mapView.setCardGutterSource(new MapCardGutter.Source() {
+            @Override
+            public MapCardGutter.Marks marks(Path file) {
+                return source.marks(file);
+            }
+
+            @Override
+            public void changes(Path file, java.util.function.Consumer<MapCardGutter.@Nullable Changes> found) {
+                source.changes(file, found);
+            }
+
+            @Override
+            public void toggleBreakpoint(Path file, int line, String text) {
+                source.toggleBreakpoint(file, line, text);
+            }
+
+            @Override
+            public void run(Path file, MapCardGutter.Run run) {
+                source.run(file, run);
+                raiseEditorWindow(); // the run's output is in the editor window
+            }
+        });
+    }
+
+    /** A breakpoint or a bookmark was stored: the Map cards' gutters show it. */
+    void refreshCardGutters() {
+        mapView.refreshCardGutters();
     }
 
     /** Updates the active-file marker used for current-file emphasis in the tree. */

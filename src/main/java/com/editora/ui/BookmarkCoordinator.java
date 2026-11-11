@@ -167,6 +167,25 @@ final class BookmarkCoordinator {
         return stored != null && !stored.isEmpty();
     }
 
+    /**
+     * The 0-based lines of {@code file} that carry a bookmark, for a Project Map card's gutter (Map gaps round 3,
+     * item 1): its tab's, or the stored ones of a file with no tab (or a narrowed one). A folder bookmark marks none.
+     */
+    java.util.Set<Integer> bookmarkedLines(Path file) {
+        java.util.Set<Integer> lines = new java.util.HashSet<>();
+        EditorBuffer open = ops.bufferForPath(file);
+        List<Bookmark> marks =
+                open != null && !open.isNarrowed() ? open.getBookmarkManager().snapshot() : bookmarksFor(file);
+        if (marks != null) {
+            for (Bookmark mark : marks) {
+                if (!mark.isFolder()) {
+                    lines.add(mark.line());
+                }
+            }
+        }
+        return lines;
+    }
+
     /** Adds a deterministic file-manager bookmark at the file's first line without opening a tab. */
     void addBookmark(Path file) {
         if (file == null) {

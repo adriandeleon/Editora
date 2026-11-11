@@ -106,8 +106,8 @@ public final class GitGutterLines implements LineMarks.Carrier {
         return bars != null;
     }
 
-    @Nullable
-    String barAt(int line) {
+    /** The change bar's CSS class on area {@code line}, or null; a Project Map card mirroring the buffer draws it. */
+    public @Nullable String barAt(int line) {
         if (bars == null) {
             return null;
         }
@@ -115,8 +115,8 @@ public final class GitGutterLines implements LineMarks.Carrier {
         return !reverted.isEmpty() && reverted.contains(hunkAtDisk(disk)) ? null : bars.get(disk);
     }
 
-    @Nullable
-    String tooltipAt(int line) {
+    /** The hunk text of the bar on area {@code line}, or null. */
+    public @Nullable String tooltipAt(int line) {
         return tooltips == null || barAt(line) == null ? null : tooltips.get(map.diskLine(line + hiddenAbove));
     }
 
