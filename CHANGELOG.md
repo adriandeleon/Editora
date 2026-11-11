@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debugging code that has no file.** When a JavaScript or TypeScript program stops or steps into code the debugger
+  holds only in memory, such as code run through `eval`, that code now opens in a read-only tab with the current line
+  marked, as VS Code shows it. Before, Editora said there was
+  no source. The tab is opened once per session and shown again at the next stop there. You can set breakpoints in
+  it too; they last for that debug session. Pausing a program that waits in a timer still shows your own line.
+
 - **Loaded Sources and Modules.** While debugging, *Debug: Loaded Sources…* lists the scripts and source files the
   program has loaded, as VS Code's Loaded Scripts does, with your project's files first. Choose one to open it: a file
   opens in its tab, ready for breakpoints, and code the debugger has only in memory (Node.js internals, code run

@@ -149,6 +149,17 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public boolean selectBufferTab(com.editora.editor.EditorBuffer buffer) {
+        for (javafx.scene.control.Tab tab : mc.editorArea.tabs()) {
+            if (MainController.bufferOf(tab) == buffer) {
+                mc.editorArea.select(tab);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
     public void openPath(@Nullable Path file) {
         mc.fileWorkflows.openPath(file, true); // no "Already open" echo on every stop and step
     }

@@ -59,6 +59,7 @@ com.editora.ui.JsColumnBreakpointsProbeFxTest
 com.editora.ui.SeveralSessionsProbeFxTest
 com.editora.ui.TriggeredBreakpointsProbeFxTest
 com.editora.ui.LoadedSourcesProbeFxTest
+com.editora.ui.SourcelessFramesProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

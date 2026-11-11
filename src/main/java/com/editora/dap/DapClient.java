@@ -849,6 +849,14 @@ public final class DapClient implements IDebugProtocolClient {
         return new DapModels.LoadedSource(name, raw, file, Math.max(0, ref), src.getOrigin());
     }
 
+    /** {@code src} as a source the adapter has only by reference (a {@code sourceReference}); null for a file. */
+    static DapModels.@Nullable LoadedSource referenceOf(@Nullable Source src, DapPaths paths) {
+        if (src == null || src.getSourceReference() == null || src.getSourceReference() <= 0) {
+            return null;
+        }
+        return loadedSource(src, paths);
+    }
+
     /** {@code m} as a module; null when it has no id and no name. */
     static DapModels.@Nullable ModuleInfo moduleInfo(org.eclipse.lsp4j.debug.@Nullable Module m) {
         if (m == null) {
@@ -1394,8 +1402,64 @@ public final class DapClient implements IDebugProtocolClient {
         Source source = new Source();
         source.setName(fb.file().getFileName().toString());
         source.setPath(paths.toAdapter(fb.file()));
+        SetBreakpointsArguments a = new SetBreakpointsArguments();
+        a.setSource(source);
+        a.setBreakpoints(sourceBreakpoints(fb.breakpoints()));
+        a.setSourceModified(false);
+        List<DapModels.LineBreakpoint> sent = List.copyOf(fb.breakpoints());
+        return timed(server.setBreakpoints(a))
+                .whenComplete((r, e) -> reportBreakpoints(fb.file(), sent, r, e))
+                .thenApply(r -> null);
+    }
+
+    /**
+     * Sets the breakpoints of {@code source}, code the debugger has only by reference, in the session that listed it:
+     * DAP's {@code setBreakpoints} naming the {@code sourceReference}. They hold for this session only (a reference
+     * means nothing to the next). The answer is one status per line; a refused request is an empty list.
+     */
+    public CompletableFuture<List<DapModels.BreakpointStatus>> setReferenceBreakpoints(
+            DapModels.LoadedSource source, List<DapModels.LineBreakpoint> lines) {
+        DapClient owner = sourceOwners.get(source.sourceReference());
+        DapClient session = owner != null && !owner.disposed ? owner : target();
+        IDebugProtocolServer s = session.server;
+        if (s == null || source.sourceReference() <= 0) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        Source src = new Source();
+        src.setName(source.name());
+        src.setSourceReference(source.sourceReference());
+        if (!source.adapterPath().isEmpty()) {
+            src.setPath(source.adapterPath());
+        }
+        SetBreakpointsArguments a = new SetBreakpointsArguments();
+        a.setSource(src);
+        a.setBreakpoints(sourceBreakpoints(lines));
+        a.setSourceModified(false);
+        List<DapModels.LineBreakpoint> sent = List.copyOf(lines);
+        return timed(s.setBreakpoints(a)).handle((r, e) -> {
+            List<DapModels.BreakpointStatus> statuses = new ArrayList<>();
+            if (e != null) {
+                String message = adapterMessage(e);
+                for (DapModels.LineBreakpoint lb : sent) {
+                    statuses.add(new DapModels.BreakpointStatus(
+                            lb.line(), false, message != null, message == null ? "" : message, -1));
+                }
+                return perLine(statuses);
+            }
+            Breakpoint[] answered = r == null ? null : r.getBreakpoints();
+            for (int i = 0; answered != null && i < answered.length && i < sent.size(); i++) {
+                if (answered[i] != null) {
+                    statuses.add(status(sent.get(i).line(), answered[i]));
+                }
+            }
+            return perLine(statuses);
+        });
+    }
+
+    /** {@code lines} as the adapter takes them (1-based lines; a column, condition, log message, hit count when set). */
+    private static SourceBreakpoint[] sourceBreakpoints(List<DapModels.LineBreakpoint> lines) {
         List<SourceBreakpoint> sbs = new ArrayList<>();
-        for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
+        for (DapModels.LineBreakpoint lb : lines) {
             SourceBreakpoint sb = new SourceBreakpoint();
             sb.setLine(lb.line() + 1); // DAP is 1-based; our model is 0-based
             if (lb.column() > 0) {
@@ -1412,14 +1476,7 @@ public final class DapClient implements IDebugProtocolClient {
             }
             sbs.add(sb);
         }
-        SetBreakpointsArguments a = new SetBreakpointsArguments();
-        a.setSource(source);
-        a.setBreakpoints(sbs.toArray(new SourceBreakpoint[0]));
-        a.setSourceModified(false);
-        List<DapModels.LineBreakpoint> sent = List.copyOf(fb.breakpoints());
-        return timed(server.setBreakpoints(a))
-                .whenComplete((r, e) -> reportBreakpoints(fb.file(), sent, r, e))
-                .thenApply(r -> null);
+        return sbs.toArray(new SourceBreakpoint[0]);
     }
 
     /** Which breakpoint an adapter-assigned id stands for: {@code breakpoint} events carry only the id. */
@@ -1666,6 +1723,11 @@ public final class DapClient implements IDebugProtocolClient {
                     if (out.size() == STACK_FRAME_LIMIT) {
                         break; // an adapter that sent everything anyway: the innermost frames are the ones that matter
                     }
+                    DapModels.LoadedSource reference = referenceOf(f.getSource(), paths);
+                    if (reference != null) {
+                        // The source request about it goes to the session whose frame it is (a js-debug worker's).
+                        (root == null ? this : root).sourceOwners.put(reference.sourceReference(), this);
+                    }
                     out.add(new DapModels.StackFrameInfo(
                             f.getId(),
                             f.getName(),
@@ -1674,7 +1736,8 @@ public final class DapClient implements IDebugProtocolClient {
                             f.getColumn(),
                             sourceUri(f.getSource()),
                             frameHint(f),
-                            f.getInstructionPointerReference()));
+                            f.getInstructionPointerReference(),
+                            reference));
                 }
             }
             return out;

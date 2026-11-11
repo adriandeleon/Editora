@@ -23,7 +23,8 @@ import static com.editora.i18n.Messages.tr;
  * What the debuggee has loaded, as palette-style lists. <em>Debug: Loaded Sources…</em> (VS Code's Loaded Scripts)
  * lists the scripts and source files the adapter reports — the program's own files first, then the rest — and opens
  * the chosen one: a file in a tab, where breakpoints are set as in any other, and a source the adapter has only by
- * reference (Node's internals, code run through {@code eval}) read-only, with the text the adapter gives.
+ * reference (Node's internals, code run through {@code eval}) read-only, with the text the adapter gives — the same
+ * tab a stop in that code shows ({@code DebugCoordinator.openReferenceSource}).
  * <em>Debug: Modules…</em> (Visual Studio's Modules window) lists the shared libraries, assemblies or Python modules
  * loaded, with whether their symbols are; Enter copies a module's path. js-debug lists sources; CodeLLDB, netcoredbg
  * and debugpy list modules.
@@ -36,12 +37,20 @@ final class LoadedSourcesPicker {
     /** The live session's debugger, as the status line names it ("JavaScript (js-debug)"). */
     private final Supplier<String> adapterLabel;
 
+    /** Opens a source the debugger has only by reference, read-only (once per session). */
+    private final java.util.function.Consumer<DapModels.LoadedSource> openReference;
+
     LoadedSourcesPicker(
-            CoordinatorHost host, DebugCoordinator.Ops ops, Supplier<DapManager> dap, Supplier<String> adapterLabel) {
+            CoordinatorHost host,
+            DebugCoordinator.Ops ops,
+            Supplier<DapManager> dap,
+            Supplier<String> adapterLabel,
+            java.util.function.Consumer<DapModels.LoadedSource> openReference) {
         this.host = host;
         this.ops = ops;
         this.dap = dap;
         this.adapterLabel = adapterLabel;
+        this.openReference = openReference;
     }
 
     // --- loaded sources ---------------------------------------------------------------------------------------------
@@ -139,13 +148,7 @@ final class LoadedSourcesPicker {
             host.setStatus(tr("status.debug.sourceUnavailable", s.name()));
             return;
         }
-        dap.get().sourceContent(s, text -> {
-            if (text == null) {
-                host.setStatus(tr("status.debug.sourceUnavailable", s.name()));
-                return;
-            }
-            ops.openReadOnlyDoc(s.name(), text, languageOf(s));
-        });
+        openReference.accept(s);
     }
 
     /** The language to highlight a source the adapter gave as: by its name; Node's internals are JavaScript. */

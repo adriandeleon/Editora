@@ -82,13 +82,17 @@ public final class DapModels {
             int column,
             @Nullable String sourceUri,
             String hint,
-            @Nullable String instructionPointer) {
+            @Nullable String instructionPointer,
+            @Nullable LoadedSource reference) {
         /**
          * {@code hint}: {@link #HINT_SUBTLE} for a frame the adapter de-emphasizes (js-debug's {@code skipFiles}:
          * Node's own modules), {@link #HINT_LABEL} for a row that only labels the stack (an {@code await} between
          * async frames), {@link #HINT_FOLD} for the row standing for frames folded away; "" otherwise.
          * {@code instructionPointer}: DAP's {@code instructionPointerReference}, the memory reference the Disassembly
          * view is read from — null when the adapter reports none (every adapter but native ones and Delve).
+         * {@code reference}: the frame's source when the adapter has it only by reference (a {@code sourceReference}:
+         * Node's internals, code run through {@code eval}) — its text is asked for with the {@code source} request; null
+         * for a file.
          */
         public StackFrameInfo {
             hint = hint == null ? "" : hint;
@@ -101,8 +105,20 @@ public final class DapModels {
                 int line,
                 int column,
                 @Nullable String sourceUri,
+                String hint,
+                @Nullable String instructionPointer) {
+            this(id, name, file, line, column, sourceUri, hint, instructionPointer, null);
+        }
+
+        public StackFrameInfo(
+                int id,
+                String name,
+                @Nullable Path file,
+                int line,
+                int column,
+                @Nullable String sourceUri,
                 String hint) {
-            this(id, name, file, line, column, sourceUri, hint, null);
+            this(id, name, file, line, column, sourceUri, hint, null, null);
         }
 
         public StackFrameInfo(
@@ -116,7 +132,7 @@ public final class DapModels {
 
         /** This frame at another (0-based) line — the line it is shown on in an edited document. */
         public StackFrameInfo atLine(int newLine) {
-            return new StackFrameInfo(id, name, file, newLine, column, sourceUri, hint, instructionPointer);
+            return new StackFrameInfo(id, name, file, newLine, column, sourceUri, hint, instructionPointer, reference);
         }
     }
 
