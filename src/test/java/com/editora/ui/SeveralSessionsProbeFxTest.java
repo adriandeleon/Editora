@@ -162,7 +162,22 @@ class SeveralSessionsProbeFxTest {
     }
 
     @Test
-    void aPythonSubprocessIsDebuggedInASessionOfItsOwn(@TempDir Path dir) throws Exception {
+    void aForkedPythonSubprocessIsDebuggedInASessionOfItsOwn(@TempDir Path dir) throws Exception {
+        subprocessProbe(dir, "fork");
+    }
+
+    /** Python 3.14's default on Linux: the workers are forked by a fork server, itself a subprocess. */
+    @Test
+    void aForkServersWorkerIsDebuggedInASessionOfItsOwn(@TempDir Path dir) throws Exception {
+        subprocessProbe(dir, "forkserver");
+    }
+
+    /**
+     * A {@code multiprocessing} child started the {@code startMethod} way stops on a breakpoint in a session of its own,
+     * a subprocess's session (under its parent's, or under the fork server's), and is shown; the program runs on to its
+     * end after it.
+     */
+    private void subprocessProbe(Path dir, String startMethod) throws Exception {
         assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
         assumeTrue(DebugAdapterLocator.locateDebugpy("", HOME).isPresent(), "needs debugpy");
         Path app = Files.createDirectory(dir.resolve("app")).toRealPath();
@@ -174,11 +189,11 @@ class SeveralSessionsProbeFxTest {
                     return total
 
                 if __name__ == '__main__':
-                    p = multiprocessing.Process(target=work, args=(21,))
+                    p = multiprocessing.get_context('%s').Process(target=work, args=(21,))
                     p.start()
                     p.join()
                     print('parent done', p.exitcode)
-                """);
+                """.formatted(startMethod));
         Path configDir = Files.createDirectory(dir.resolve("config"));
         SharedConfig seed = new SharedConfig(configDir, false);
         seed.load();
@@ -195,20 +210,39 @@ class SeveralSessionsProbeFxTest {
             FxTestSupport.runOnFx(() -> b.toggleBreakpoint(4)); // return total — in the subprocess
             DebugSession parent = call(() -> debug.sessions().focused());
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
+            DebugSession[] stopped = new DebugSession[1];
             await(
-                    "the subprocess's session",
-                    60,
-                    () -> call(() -> debug.sessions().size()) == 2);
-            DebugSession child = call(() -> debug.sessions().all().getLast());
-            assertSame(parent, child.parent);
+                    "a subprocess's session stopped on line 5",
+                    120,
+                    () -> call(() -> {
+                        for (DebugSession s : debug.sessions().all()) {
+                            if (s.parent != null
+                                    && s.dap.state() == DapManager.State.SUSPENDED
+                                    && s.panel != null
+                                    && !s.panel.callStack().isEmpty()
+                                    && s.panel.callStack().getFirst().line() == 4) {
+                                stopped[0] = s;
+                                return true;
+                            }
+                        }
+                        return false;
+                    }));
+            DebugSession child = stopped[0];
+            DebugSession root = child;
+            while (root.parent != null) {
+                root = root.parent;
+            }
+            assertSame(parent, root, "a subprocess of the program (or of its fork server)");
             assertTrue(call(() -> child.sessionLabel).startsWith("Subprocess "), call(() -> child.sessionLabel));
-            awaitStop(child, 4);
             awaitRow(child, "total", "42");
             assertSame(child, call(() -> debug.sessions().focused()), "the subprocess that stopped is shown");
             assertEquals(DapManager.State.RUNNING, call(parent.dap::state), "the parent waits for it, running");
 
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.continue"));
-            await("both ended", 60, () -> !call(parent.dap::isActive) && !call(child.dap::isActive));
+            await(
+                    "all ended",
+                    60,
+                    () -> call(() -> debug.sessions().all().stream().noneMatch(s -> s.dap.isActive())));
             assertTrue(
                     call(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(parent.panel, "console")
                             .getText()

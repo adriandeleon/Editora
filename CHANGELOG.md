@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Emacs keymap). It asks only for the message to log, with `{expression}` for a value. OK makes the line a logpoint,
   which logs each time the line runs and never suspends. On a line that already has a breakpoint it edits that
   one's message and keeps its condition and hit count. Before, a logpoint took the full *Edit Breakpoint* form.
+- **Lambda breakpoints in JavaScript and TypeScript.** *Debug: Toggle Lambda Breakpoint* now works on arrow
+  functions and inline function expressions too: the breakpoint stops inside the function each time its body runs,
+  not once when the line runs. Pick which functions of the line it stops in from the breakpoint's gutter menu, as in
+  Java.
 - **Problems on the Project Map.** Files with errors or warnings, and the folders that hold them, are marked on the
   Map with a red or amber dot and coloured names, and their tooltip says how many. A new *Problems* chip highlights
   them, and Next/Previous Problem on the Map steps through the whole project's problems, opening each one's card.
@@ -398,6 +402,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     that had remote images on keeps loading them.
 
 ### Fixed
+
+- **A breakpoint could be missed at the very start of a JavaScript program.** Debugging told js-debug to run the
+  program before js-debug had placed the breakpoints, so one near the start (a breakpoint inside an arrow function
+  most often) was sometimes passed by. Editora now waits for the breakpoints to be placed first, as VS Code does.
 
 - **A Project Map card opened from a hierarchy tree no longer closes on its own.** When its file's folder was not
   open on the map, the next folder change could close it. It now stays while the card the tree was asked from is
