@@ -1931,6 +1931,66 @@
 .project-map-history-card .project-map-history-code .list-cell:selected {
     -fx-background-color: -color-accent-muted;
 }
+/* The Project Map's Changes card (round 2): the working tree's changed files over the picked one's diff. */
+.project-map-changes-card .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-changes-card .label.project-map-changes-summary,
+.project-map-changes-card .label.project-map-changes-counts,
+.project-map-changes-card .label.project-map-changes-number,
+.project-map-changes-card .label.project-map-changes-placeholder {
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-changes-card .label.project-map-changes-letter {
+    -fx-font-weight: bold;
+    -fx-min-width: 12px;
+}
+.project-map-changes-card .label.project-map-changes-letter.git-status-added { -fx-text-fill: -state-green; }
+.project-map-changes-card .label.project-map-changes-letter.git-status-modified { -fx-text-fill: -state-accent; }
+.project-map-changes-card .label.project-map-changes-letter.git-status-deleted { -fx-text-fill: -color-fg-muted; }
+.project-map-changes-card .label.project-map-changes-letter.git-status-untracked { -fx-text-fill: -state-olive; }
+.project-map-changes-card .list-cell:selected .label {
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-changes-card .split-pane,
+.project-map-changes-card .list-view {
+    -fx-background-color: -color-bg-default;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.project-map-changes-card .project-map-changes-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted transparent -color-border-muted transparent;
+    -fx-border-width: 1 0 1 0;
+}
+.project-map-changes-card .project-map-changes-code .list-cell {
+    -fx-padding: 0 6 0 0;
+}
+.project-map-changes-card .project-map-changes-code .list-cell .label {
+    -fx-font-family: "JetBrains Mono", "Consolas", monospace;
+    -fx-font-size: 12px;
+}
+.project-map-changes-card .project-map-changes-code .list-cell .label.project-map-changes-number {
+    -fx-font-size: 11px;
+    -fx-padding: 0 4 0 0;
+}
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-added {
+    -fx-background-color: -color-success-subtle;
+}
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-removed {
+    -fx-background-color: -color-danger-subtle;
+}
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-hunk {
+    -fx-background-color: -color-accent-subtle;
+}
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-hunk .label,
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-note .label {
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-changes-card .project-map-changes-code .list-cell:selected {
+    -fx-background-color: -color-accent-muted;
+}
 /* The Project Map's Dependencies card (gap 14): what uses a file or folder and what it uses; a folder's parts' matrix. */
 .project-map-deps-card .label {
     -fx-font-size: 12px;

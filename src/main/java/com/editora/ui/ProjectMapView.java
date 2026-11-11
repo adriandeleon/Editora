@@ -113,6 +113,8 @@ final class ProjectMapView extends VBox {
     private final MenuItem dependenciesItem = new MenuItem(tr("project.map.deps.projectMenu"));
     /** Which project file uses which, for the Dependencies card (gap 14). */
     private final MapDependencyIndex dependencyIndex = new MapDependencyIndex();
+    /** ⋯ → Review Changes: the Changes card on the working tree's changes (Map code browser round 2). */
+    private final MenuItem changesItem = new MenuItem(tr("project.map.changes.review"));
     /** ⋯ → Project Code Metrics: the Code Metrics card on the whole project (gap 15). */
     private final MenuItem metricsItem = new MenuItem(tr("project.map.metrics.projectMenu"));
     /** The project's files measured, for the Code Metrics card (gap 15). */
@@ -457,6 +459,7 @@ final class ProjectMapView extends VBox {
         layoutOverviewItem.setGraphic(Icons.overview());
         dependenciesItem.setGraphic(Icons.dependencies());
         metricsItem.setGraphic(Icons.metrics());
+        changesItem.setGraphic(Icons.diff());
         openCardsMenu.setGraphic(Icons.cards());
         canvasCollapseAllItem.setGraphic(Icons.collapseAll());
         workingSets.menu().setGraphic(Icons.layers());
@@ -482,6 +485,7 @@ final class ProjectMapView extends VBox {
                         layoutOverviewItem,
                         dependenciesItem,
                         metricsItem,
+                        changesItem,
                         openCardsMenu,
                         canvasCollapseAllItem,
                         workingSets.menu(),
@@ -530,6 +534,7 @@ final class ProjectMapView extends VBox {
                 openMetrics(current);
             }
         });
+        changesItem.setOnAction(event -> openChanges(null));
         activity.setOnExplain(message -> onStatus.accept(message)); // why no heat shows (Map review 4 B11)
         activityRecentChangesOption.selectedProperty().addListener((obs, old, selected) -> {
             activity.setHeat(selected);
@@ -865,6 +870,84 @@ final class ProjectMapView extends VBox {
     @Nullable
     ProjectMapMetricsCard metricsCard() {
         return cards.metricsCard();
+    }
+
+    /**
+     * Opens the Changes card (Map code browser round 2) on the working tree's changes against HEAD below the Map's
+     * folder, with {@code select} — a changed file, or a folder whose first changed file is wanted — picked, or brings
+     * the open one up on it; Git is asked again each time.
+     */
+    void openChanges(@Nullable Path select) {
+        ProjectMapChangesCard card = changesCardOpened(select);
+        if (card != null) {
+            card.focusContent();
+        }
+    }
+
+    private @Nullable ProjectMapChangesCard changesCardOpened(@Nullable Path select) {
+        Path current = root;
+        if (current == null || disposed) {
+            return null;
+        }
+        ProjectMapChangesCard card = cards.openChangesCard(current, made -> {
+            made.setOnOpenLine((file, line) -> cards.openPlaceCard(null, file, line, null));
+            made.setOnOpenInEditor((file, line) -> {
+                FollowCode code = followCode;
+                if (code != null) {
+                    code.follow(file, line, 0, null, ""); // no command: the file at the line
+                }
+            });
+            made.setOnCompare(file -> {
+                FollowCode code = followCode;
+                if (code != null) {
+                    code.compareWithHead(file);
+                }
+            });
+            made.setOnRefresh(() -> readChanges(made));
+            made.setOnStatus(message -> onStatus.accept(message));
+        });
+        card.show(current, select == null ? null : select.toAbsolutePath().normalize());
+        readChanges(card);
+        return card;
+    }
+
+    private void readChanges(ProjectMapChangesCard card) {
+        Path folder = card.root();
+        FollowCode code = followCode;
+        if (folder == null) {
+            return;
+        }
+        if (code == null) {
+            card.setChanges(com.editora.git.GitChanges.Result.UNAVAILABLE);
+            return;
+        }
+        code.workingChanges(folder, found -> {
+            if (cards.changesCard() == card && folder.equals(card.root())) {
+                card.setChanges(found);
+            }
+        });
+    }
+
+    /**
+     * Next or Previous Change typed on the Map: the next hunk of the working tree's changes in the Changes card,
+     * opened for it when it is not open.
+     */
+    void stepChange(boolean forward) {
+        ProjectMapChangesCard card = cards.changesCard();
+        if (card == null) {
+            card = changesCardOpened(null);
+            if (card == null) {
+                return;
+            }
+        }
+        card.step(forward);
+        card.focusContent();
+    }
+
+    /** The open Changes card, or null. */
+    @Nullable
+    ProjectMapChangesCard changesCard() {
+        return cards.changesCard();
     }
 
     /** The open Overview card, or null. */
@@ -2419,6 +2502,10 @@ final class ProjectMapView extends VBox {
         gitChangedDirectories = Set.copyOf(directories);
         surface.setGitState(gitStatus, gitChangedDirectories);
         updateFilters();
+        ProjectMapChangesCard changes = cards.changesCard();
+        if (changes != null) {
+            readChanges(changes); // a save, a commit, a checkout: the card follows
+        }
     }
 
     /** The status last given to {@link #setGitStatus}, and the root it was given for. */
@@ -2676,6 +2763,10 @@ final class ProjectMapView extends VBox {
                 || entry.isFile() && ProjectMapImports.languageOf(entry.path().toString()) != null) {
             // What uses it and what it uses, as a card (gap 14).
             items.add(mapMenuItem("project.map.deps.menu", () -> openDependencies(entry.path(), null)));
+        }
+        if (!entry.isSymbol() && surface.gitChanged(entry.path())) {
+            // Its changes against HEAD (a folder's: its first changed file's), in the Changes card (round 2).
+            items.add(mapMenuItem("project.map.changes.menu", () -> openChanges(entry.path())));
         }
         if (entry.directory()) {
             // Its files' sizes, complexity and hotspots, as a card (gap 15).
@@ -2986,6 +3077,9 @@ final class ProjectMapView extends VBox {
         if (node instanceof ProjectMapMetricsCard) {
             return Icons.metrics();
         }
+        if (node instanceof ProjectMapChangesCard) {
+            return Icons.diff();
+        }
         if (node instanceof ProjectMapSymbolGraphCard) {
             return Icons.symbolGraph();
         }
@@ -3127,6 +3221,17 @@ final class ProjectMapView extends VBox {
 
         /** Copy Permalink of a file (its lines), or a folder, at HEAD (Map code browser round 2). */
         default void copyPermalink(Path target, int startLine, int endLine) {}
+
+        /**
+         * The working tree's changes against HEAD below {@code folder}, file by file with their hunks, for the Changes
+         * card (Map code browser round 2); on the FX thread.
+         */
+        default void workingChanges(Path folder, Consumer<com.editora.git.GitChanges.Result> found) {
+            found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
+        }
+
+        /** Opens the editor's diff of {@code file} against HEAD. */
+        default void compareWithHead(Path file) {}
     }
 
     private @Nullable FollowCode followCode;

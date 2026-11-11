@@ -2239,7 +2239,7 @@ final class MapSurface extends Region {
     }
 
     /** Whether the Git chip counts a row: it has a status, or is a folder holding a change. */
-    private boolean gitChanged(Path path) {
+    boolean gitChanged(Path path) {
         return gitDirectories.contains(path) || gitStatusOf(path) != null;
     }
 

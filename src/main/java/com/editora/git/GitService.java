@@ -812,6 +812,87 @@ public final class GitService {
         showBlob(root, spec, result -> onResult.accept(result.found() ? result.bytes() : new byte[0]));
     }
 
+    /** The empty tree: what a repository with no commit yet is compared with. */
+    private static final String EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    /** An untracked file larger than this is listed, not read. */
+    private static final long MAX_UNTRACKED_BYTES = 1024 * 1024;
+
+    /**
+     * The working tree's changes against HEAD below {@code folder}, file by file with their hunks, paths relative to
+     * {@code folder}; untracked files (not ignored ones) added whole. For the Project Map's Changes card (Map code
+     * browser round 2). Posts on the FX thread; {@link GitChanges.Result#UNAVAILABLE} outside a repository.
+     */
+    public void workingChanges(Path folder, Consumer<GitChanges.Result> onResult) {
+        boolean queued = submit(exec, () -> {
+            GitChanges.Result result = workingChangesNow(folder);
+            Platform.runLater(() -> onResult.accept(result));
+        });
+        if (!queued) {
+            Platform.runLater(() -> onResult.accept(GitChanges.Result.UNAVAILABLE));
+        }
+    }
+
+    /** {@link #workingChanges} on the calling thread (a lane). */
+    GitChanges.Result workingChangesNow(@Nullable Path folder) {
+        if (folder == null || !mayBeRepository(folder) || !gitAvailable(folder)) {
+            return GitChanges.Result.UNAVAILABLE;
+        }
+        ProcessRunner.Result head = git(folder, QUICK, "rev-parse", "--verify", "--quiet", "HEAD");
+        String base = head.ok() ? "HEAD" : EMPTY_TREE;
+        ProcessRunner.Result diff = git(
+                folder,
+                QUICK,
+                GitSafety.LITERAL_PATHSPECS,
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-renames",
+                "--relative",
+                "-U3",
+                base,
+                "--",
+                ".");
+        if (!diff.ok()) {
+            return new GitChanges.Result(List.of(), false, diff.message());
+        }
+        ProcessRunner.Result others = git(
+                folder,
+                QUICK,
+                GitSafety.LITERAL_PATHSPECS,
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "-z",
+                "--",
+                ".");
+        List<GitChanges.FileDiff> untracked = new ArrayList<>();
+        if (others.ok()) {
+            for (String rel : nulTokens(others.out())) {
+                if (untracked.size() > GitChanges.MAX_FILES) {
+                    break;
+                }
+                untracked.add(readUntracked(folder, rel));
+            }
+        }
+        return GitChanges.merge(GitChanges.parse(diff.out()), untracked, diff.outTruncated());
+    }
+
+    private static GitChanges.FileDiff readUntracked(Path folder, String rel) {
+        Path file = folder.resolve(rel);
+        try {
+            long size = Files.size(file);
+            if (size > MAX_UNTRACKED_BYTES) {
+                return new GitChanges.FileDiff(rel, 'U', List.of(), List.of(), 0, 0, false, true);
+            }
+            return GitChanges.untracked(
+                    rel, new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8), false);
+        } catch (java.io.IOException | RuntimeException unreadable) {
+            return new GitChanges.FileDiff(rel, 'U', List.of(), List.of(), 0, 0, false, true);
+        }
+    }
+
     /** Changed files below a folder when a Git tree is compared with the current working tree. */
     public record WorkingTreeDiff(List<CommitFile> files, boolean truncated, String error) {
         public WorkingTreeDiff {
