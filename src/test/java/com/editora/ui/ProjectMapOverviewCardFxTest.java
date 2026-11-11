@@ -111,6 +111,26 @@ class ProjectMapOverviewCardFxTest {
     }
 
     @Test
+    void theCloseButtonSitsAtTheRightOfTheTitleBar() throws Exception {
+        ProjectMapView view = openMap(ProjectMapView.FlowDirection.LEFT_TO_RIGHT);
+        FxTestSupport.runOnFx(view::openOverview);
+        waitFor(() -> view.overviewCard() != null, "the card opens");
+        FxTestSupport.runOnFx(() -> {
+            ProjectMapOverviewCard card = view.overviewCard();
+            card.applyCss();
+            card.layout();
+            Region titleBar = FxTestSupport.field(card, "titleBar");
+            Button close = FxTestSupport.field(card, "close");
+            Label title = FxTestSupport.field(card, "title");
+            double right = titleBar.getWidth() - titleBar.snappedRightInset();
+            assertEquals(right, close.getBoundsInParent().getMaxX(), 1.0, "× at the title bar's right edge");
+            assertTrue(
+                    title.getWidth() > title.prefWidth(-1) + 1,
+                    "the title takes the room between it and the buttons, not just its text's width");
+        });
+    }
+
+    @Test
     void theOverviewOpensBeforeTheProjectsColumnInEveryFlow() throws Exception {
         for (ProjectMapView.FlowDirection flow : ProjectMapView.FlowDirection.values()) {
             ProjectMapView view = openMap(flow);

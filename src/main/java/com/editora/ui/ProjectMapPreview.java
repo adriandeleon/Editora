@@ -852,7 +852,9 @@ final class ProjectMapPreview extends StackPane {
         getChildren().addAll(frame, resizeGrip, selectionBar);
         getTransforms().add(mapZoom);
 
-        addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
+        // A filter, not a handler: the title bar (its drag) and the content (the text area) consume the press, so a
+        // handler never heard a click there and a card under another stayed under it.
+        addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
             toFront();
             onActivate.run();
         });

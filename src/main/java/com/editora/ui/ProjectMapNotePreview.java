@@ -102,6 +102,7 @@ final class ProjectMapNotePreview extends StackPane {
 
         title.getStyleClass().add("project-map-preview-title");
         title.setMinWidth(0);
+        title.setMaxWidth(Double.MAX_VALUE); // a Label stops at its text otherwise: the buttons belong at the right
         HBox.setHgrow(title, Priority.ALWAYS);
         kind.setText(tr("project.map.notes.editable"));
         kind.getStyleClass().add("project-map-note-preview-kind");
@@ -130,7 +131,9 @@ final class ProjectMapNotePreview extends StackPane {
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
         getChildren().addAll(frame, resizeGrip);
         getTransforms().add(mapZoom);
-        addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
+        // A filter, not a handler: the title bar (its drag) and the content (the text area) consume the press, so a
+        // handler never heard a click there and a card under another stayed under it.
+        addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
             toFront();
             onActivate.run();
         });

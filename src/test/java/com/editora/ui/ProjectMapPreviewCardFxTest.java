@@ -507,6 +507,40 @@ class ProjectMapPreviewCardFxTest {
     }
 
     @Test
+    void aPressOnTheTitleBarOrTheTextOfACardUnderAnotherBringsItToTheTop(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("a.txt"), "x");
+        try (Rig r = new Rig()) {
+            ProjectMapPreview[] over = new ProjectMapPreview[1];
+            r.async.onClose(() -> FxTestSupport.runOnFx(() -> over[0].dispose()));
+            FxTestSupport.runOnFx(() -> {
+                over[0] = new ProjectMapPreview(r.opened::add);
+                r.host.getChildren().add(over[0]);
+                r.card.showFile(
+                        file,
+                        new Content("text\n", false),
+                        (w, h, pw, ph) -> new ProjectMapPreview.Placement(100, 100, 500, 300));
+                over[0].showFile(
+                        file,
+                        new Content("text\n", false),
+                        (w, h, pw, ph) -> new ProjectMapPreview.Placement(300, 200, 500, 300));
+                r.host.getChildren().remove(over[0]);
+                r.host.getChildren().add(over[0]);
+                assertSame(over[0], r.host.getChildren().getLast(), "the second card starts over the first");
+
+                // The title bar's drag consumes the press: the card must still come up, before it moves.
+                Region bar = FxTestSupport.field(r.card, "titleBar");
+                javafx.event.Event.fireEvent(bar, mouse(MouseEvent.MOUSE_PRESSED, MouseButton.PRIMARY, 500, 500, true));
+                assertSame(r.card, r.host.getChildren().getLast(), "a press on its title bar brings it up");
+
+                // The text area consumes the press as well.
+                javafx.event.Event.fireEvent(
+                        over[0].editor(), mouse(MouseEvent.MOUSE_PRESSED, MouseButton.PRIMARY, 0, 0, true));
+                assertSame(over[0], r.host.getChildren().getLast(), "a press in its text brings it up");
+            });
+        }
+    }
+
+    @Test
     void theGripResizesTheCardBetweenItsMinimumAndThePanelSize(@TempDir Path dir) throws Exception {
         Path file = Files.writeString(dir.resolve("a.txt"), "x");
         try (Rig r = new Rig()) {
