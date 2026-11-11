@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Loaded Sources and Modules.** While debugging, *Debug: Loaded Sources…* lists the scripts and source files the
+  program has loaded, as VS Code's Loaded Scripts does, with your project's files first. Choose one to open it: a file
+  opens in its tab, ready for breakpoints, and code the debugger has only in memory (Node.js internals, code run
+  through `eval`) opens read-only with the text the debugger gives. *Debug: Modules…* lists the libraries, assemblies
+  or modules loaded, as Visual Studio's Modules window does, with whether their symbols are loaded; Enter copies a
+  module's path. JavaScript and TypeScript list sources; Rust, C, C++, C# and Python list modules (Python lists the
+  modules whose code has run). Both are in the Run menu.
 - **Dependencies of the selection on the Project Map.** With ⋯ *Show dependencies of the selection* on, selecting
   a file or folder tints the rows it uses (violet), the rows that use it (olive) and the rows on both sides (amber),
   folders included, so a collapsed folder still shows that something in it is involved. The tooltip says which side

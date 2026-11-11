@@ -119,6 +119,14 @@ final class DebugCoordinator {
             return null;
         }
 
+        /**
+         * Opens {@code content} in a read-only tab titled {@code title}, highlighted as {@code language}: a source the
+         * debugger has that is not a file. Null where the window has no tabs to open it in.
+         */
+        default @Nullable EditorBuffer openReadOnlyDoc(String title, String content, String language) {
+            return null;
+        }
+
         /** The Python interpreter picked for this window's project ("" when none was). */
         default String pythonInterpreterChoice() {
             return "";
@@ -453,6 +461,7 @@ final class DebugCoordinator {
         memberMarks = new MemberBreakpointMarks(host, ops, lspManager);
         memberBreakpoints.setOnChanged(memberMarks::refreshAll);
         lambdaBreakpoints = new LambdaBreakpoints(host);
+        loadedSources = new LoadedSourcesPicker(host, ops, this::dap, () -> debugAdapterLabel(dap().sessionLanguage()));
         triggered = new TriggeredBreakpoints(host, ops);
         groups = new BreakpointGroups(host, ops, this::breakpointsPicker, memberBreakpoints, this::sendClosed);
         pinnedValues = new PinnedValues(host, ops, this::dap);
@@ -502,6 +511,23 @@ final class DebugCoordinator {
     }
 
     private final LambdaBreakpoints lambdaBreakpoints;
+
+    /** What the debuggee loaded: its sources and modules (see {@link LoadedSourcesPicker}). */
+    private final LoadedSourcesPicker loadedSources;
+
+    LoadedSourcesPicker loadedSources() {
+        return loadedSources;
+    }
+
+    /** Debug: Loaded Sources… (see {@link LoadedSourcesPicker#showSources}). */
+    void showLoadedSources() {
+        loadedSources.showSources();
+    }
+
+    /** Debug: Modules… (see {@link LoadedSourcesPicker#showModules}). */
+    void showModules() {
+        loadedSources.showModules();
+    }
 
     /** Breakpoints that wait for another to be hit (see {@link TriggeredBreakpoints}). */
     private final TriggeredBreakpoints triggered;

@@ -1546,6 +1546,24 @@ FX thread); files that are not there are counted, not set. An imported id that a
 replaced, and what waits for it follows (`BreakpointExport.freshIds`). The file choosers are `chooseSave` /
 `chooseOpen`, which tests answer. `BreakpointGroupsTest`, `BreakpointExportTest` and `BreakpointGroupsWindowFxTest` (a
 fake adapter) cover it.
+**Loaded Sources and Modules** ([`ui/LoadedSourcesPicker`](../../src/main/java/com/editora/ui/LoadedSourcesPicker.java)):
+*Debug: Loaded Sources…* (VS Code's Loaded Scripts) and *Debug: Modules…* (Visual Studio's Modules window), palette
+lists of what the live session's debuggee has loaded (Run menu; greyed in the palette with no session). Each
+`DapClient` keeps what its adapter's `loadedSource` and `module` events say (`sourcesSeen`, `modulesSeen`; a
+`removed` reason takes one out), and `loadedSources()` / `modules()` merge that with the `loadedSources` / `modules`
+requests' answers where the adapter offers them, over the root and every live child (a js-debug program's workers),
+remembering which session listed each `sourceReference` (`sourceOwners`) so the `source` request goes to it. What the
+adapters do (measured): js-debug offers `loadedSources` and sends the events — the program's files by path, Node's
+internals as `<node_internals>/…` with a reference only; CodeLLDB (Rust, C/C++) offers `modules` and sends events with
+the symbol status; netcoredbg sends module events without offering the request (so `listsModules` is also true once
+an event came); debugpy answers `modules` with the modules whose code has run under it (the script as `__main__`),
+not every import; java-debug and Delve list neither, and the commands say so. The sources list puts the project's
+files first, then other files, then references; Enter opens a file in its tab (breakpoints are set there as anywhere)
+and a reference read-only (`Ops.openReadOnlyDoc`, highlighted by name; Node's internals as JavaScript) with the
+`source` request's text. The modules list puts the user's code first, shows symbol status, version, user code /
+optimized, address range and path, and Enter or Alt+C copies the path. `DapLoadedSourcesTest`,
+`LoadedSourcesPickerTest`, `LoadedSourcesWindowFxTest` (a fake adapter) and the opt-in `LoadedSourcesProbeFxTest`
+(js-debug, CodeLLDB, debugpy) cover it.
 **Add Logpoint** (`DebugCoordinator.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
 (`FoldManager.setBreakpointShiftClick` → `EditorBuffer.setGutterLogpointClick`; unset, a Shift+click toggles like a
 plain click) open a one-field form for the log message, with the `{expression}` completion of the full form. OK is

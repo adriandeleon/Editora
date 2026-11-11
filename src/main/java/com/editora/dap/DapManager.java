@@ -4036,6 +4036,61 @@ public final class DapManager {
                 }));
     }
 
+    /** Whether the live session's adapter lists the sources its debuggee loaded (js-debug does). */
+    public boolean listsLoadedSources() {
+        DapClient c = client;
+        return c != null && c.listsLoadedSources();
+    }
+
+    /** Whether the live session's adapter lists the modules its debuggee loaded (CodeLLDB, netcoredbg, debugpy). */
+    public boolean listsModules() {
+        DapClient c = client;
+        return c != null && c.listsModules();
+    }
+
+    /** The sources the debuggee has loaded (callback on the FX thread; empty with no session, or on failure). */
+    public void loadedSources(Consumer<List<DapModels.LoadedSource>> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(List.of());
+            return;
+        }
+        c.loadedSources()
+                .whenComplete((list, e) -> fx(() -> {
+                    if (client == c) {
+                        cb.accept(list == null ? List.of() : list);
+                    }
+                }));
+    }
+
+    /** The modules the debuggee has loaded (callback on the FX thread; empty with no session, or on failure). */
+    public void modules(Consumer<List<DapModels.ModuleInfo>> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(List.of());
+            return;
+        }
+        c.modules()
+                .whenComplete((list, e) -> fx(() -> {
+                    if (client == c) {
+                        cb.accept(list == null ? List.of() : list);
+                    }
+                }));
+    }
+
+    /**
+     * The text of a loaded source that is not a file, as the adapter gives it (callback on the FX thread: the text,
+     * or null when the adapter could not give it).
+     */
+    public void sourceContent(DapModels.LoadedSource source, Consumer<@Nullable String> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(null);
+            return;
+        }
+        c.sourceContent(source).whenComplete((text, e) -> fx(() -> cb.accept(e == null ? text : null)));
+    }
+
     /** Switches the inspected thread and loads its call stack (callback on the FX thread). */
     public void selectThread(int threadId, Consumer<List<DapModels.StackFrameInfo>> cb) {
         currentThreadId = threadId;
