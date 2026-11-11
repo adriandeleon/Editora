@@ -131,6 +131,16 @@ final class ProjectMapView extends VBox {
     private final CheckMenuItem dependencyOverlayOption = optionItem("project.map.deps.showOverlay", false);
 
     private Consumer<Boolean> onShowDependenciesChanged = ignored -> {};
+    /** "Follow the Debugger" (round 3, item 2): a stop opens its card on the Map, marked, with the call stack. */
+    private final CheckMenuItem debugFollowOption = optionItem("project.map.debug.follow", true);
+
+    private Consumer<Boolean> onFollowDebuggerChanged = ignored -> {};
+    /** What the debugger last said it shows. */
+    private MapDebugStop debugStop = MapDebugStop.RUNNING;
+    /** A frame picked in the Map's call stack goes to the debugger through this. */
+    private Consumer<com.editora.dap.DapModels.StackFrameInfo> onDebugFramePicked = frame -> {};
+    /** A stop is waiting for the next pulse: the stops of one step (a clear, then the frame) are applied once. */
+    private boolean debugStopPending;
     /** When the overlay last asked for the project's imports to be read again (System.nanoTime), 0 for never. */
     private long dependencyOverlayReadAt;
     /** How often rows changed lately and who owns them (Map explore positions 3, 4). */
@@ -453,6 +463,7 @@ final class ProjectMapView extends VBox {
         layoutHideIgnoredOption.setGraphic(Icons.hidden());
         activityRecentChangesOption.setGraphic(Icons.recent());
         dependencyOverlayOption.setGraphic(Icons.dependencies());
+        debugFollowOption.setGraphic(Icons.debug());
         hideOpenNotes.setGraphic(Icons.notesHidden());
         followActiveFile.setGraphic(Icons.fileSelected());
         canvasFlowMenu.setGraphic(Icons.flow());
@@ -477,6 +488,7 @@ final class ProjectMapView extends VBox {
                         layoutHideIgnoredOption,
                         activityRecentChangesOption,
                         dependencyOverlayOption,
+                        debugFollowOption,
                         hideOpenNotes,
                         followActiveFile,
                         canvasFlowMenu,
@@ -544,6 +556,10 @@ final class ProjectMapView extends VBox {
             dependencyOverlayReadAt = 0; // turned on: read the imports afresh
             dependencyOverlayUpdate(true);
             onShowDependenciesChanged.accept(selected);
+        });
+        debugFollowOption.selectedProperty().addListener((obs, old, selected) -> {
+            scheduleDebugStop();
+            onFollowDebuggerChanged.accept(selected);
         });
 
         HBox row = new HBox(3, backButton, forwardButton, breadcrumbs, revealActiveButton, help, options);
@@ -662,6 +678,65 @@ final class ProjectMapView extends VBox {
 
     void setShowDependencies(boolean show) {
         dependencyOverlayOption.setSelected(show);
+    }
+
+    /** Whether "Follow the Debugger" is on (round 3, item 2). */
+    boolean isFollowDebugger() {
+        return debugFollowOption.isSelected();
+    }
+
+    void setFollowDebugger(boolean follow) {
+        debugFollowOption.setSelected(follow);
+    }
+
+    /** Told each time "Follow the Debugger" changes, for the workspace to remember it. */
+    void setOnFollowDebuggerChanged(@Nullable Consumer<Boolean> callback) {
+        onFollowDebuggerChanged = callback == null ? ignored -> {} : callback;
+    }
+
+    /** Where a frame picked in the Map's call stack goes: the debugger, which shows it. */
+    void setOnDebugFramePicked(@Nullable Consumer<com.editora.dap.DapModels.StackFrameInfo> callback) {
+        onDebugFramePicked = callback == null ? frame -> {} : callback;
+    }
+
+    /**
+     * The debugger shows {@code stop} (round 3, item 2): with "Follow the Debugger" on and the Map showing, its card
+     * marks the frame's line with the call stack beside it, at the next pulse; a Map shown later shows the stop then.
+     */
+    void setDebugStop(MapDebugStop stop) {
+        debugStop = stop;
+        scheduleDebugStop();
+    }
+
+    private void scheduleDebugStop() {
+        if (debugStopPending || disposed) {
+            return;
+        }
+        debugStopPending = true;
+        javafx.application.Platform.runLater(() -> {
+            debugStopPending = false;
+            applyDebugStop();
+        });
+    }
+
+    /** Shows the debugger's stop on the Map, or takes it off when "Follow the Debugger" is off. */
+    void applyDebugStop() {
+        if (disposed || !active) {
+            return;
+        }
+        cards.showDebugStop(debugFollowOption.isSelected() ? debugStop : MapDebugStop.RUNNING, onDebugFramePicked);
+    }
+
+    /** The card the debugger's stop is marked on, or null. */
+    @Nullable
+    ProjectMapPreview debugStopCard() {
+        return cards.debugStopCard();
+    }
+
+    /** The call stack beside the stop card, or null. */
+    @Nullable
+    MapCallStack debugCallStack() {
+        return cards.debugCallStack();
     }
 
     /** Told each time "Show dependencies of the selection" changes, for the workspace to remember it. */
@@ -1881,6 +1956,9 @@ final class ProjectMapView extends VBox {
         }
         surface.warmIcons(); // stopped while hidden
         scheduleCardRefresh();
+        if (debugStop.frame() != null || cards.debugStopCard() != null) {
+            scheduleDebugStop(); // a stop, or a resume, while it was hidden
+        }
     }
 
     /** Whether the view is on screen: its window showing ({@link #setShowing}) and the view in a scene. */

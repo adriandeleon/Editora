@@ -715,6 +715,46 @@ final class MapCards {
     }
 
     /**
+     * The debugger shows {@code stop}'s frame (Map gaps round 3, item 2): its stop card marks the line, with the call
+     * stack beside it whose frames go to {@code pick}, and the Map pans to it as far as needed. The keyboard stays.
+     */
+    void showDebugStop(MapDebugStop stop, Consumer<com.editora.dap.DapModels.StackFrameInfo> pick) {
+        if (disposed) {
+            return;
+        }
+        links.showStop(stop, pick, card -> {
+            pickedCards.add(card); // the orphan check leaves it, its folder closed or not
+            javafx.application.Platform.runLater(() -> panTo(card));
+        });
+    }
+
+    /** The card the debugger's last stop marked, or null. */
+    @Nullable
+    ProjectMapPreview debugStopCard() {
+        return links.stopCard();
+    }
+
+    /** The call stack beside the stop card, or null. */
+    @Nullable
+    MapCallStack debugCallStack() {
+        return links.callStack();
+    }
+
+    /** Pans the Map as far as needed for {@code card} to be in view; the keyboard stays where it is. */
+    private void panTo(Region card) {
+        if (disposed || !cardTouches.containsKey(card) || !card.isVisible() || card.getWidth() <= 0) {
+            return;
+        }
+        double[] drawn = drawnBounds(card);
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double dx = revealShift(drawn[0], drawn[2], canvasHost.getWidth(), margin);
+        double dy = revealShift(drawn[1], drawn[3], canvasHost.getHeight(), margin);
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            host.panBy(dx, dy);
+        }
+    }
+
+    /**
      * Opens (or brings up and focuses) the card of a declaration row: its lines of its file, beside the Map's
      * Structure column, which an open card asked for from a file card's column moves to.
      */

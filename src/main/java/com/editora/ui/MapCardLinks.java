@@ -573,6 +573,10 @@ final class MapCardLinks {
         if (hit != null && hit.file().equals(file)) {
             hitArrived(hit);
         }
+        StopWaiting stop = stopWaiting;
+        if (stop != null && stop.file().equals(file)) {
+            stopArrived(stop);
+        }
         for (Pending waiting : List.copyOf(pending)) {
             if (waiting.waitingFor.remove(file) && waiting.waitingFor.isEmpty()) {
                 pending.remove(waiting);
@@ -601,6 +605,10 @@ final class MapCardLinks {
         HitWaiting hit = hitWaiting;
         if (hit != null) {
             files.add(hit.file());
+        }
+        StopWaiting stop = stopWaiting;
+        if (stop != null) {
+            files.add(stop.file());
         }
         return files;
     }
@@ -964,6 +972,182 @@ final class MapCardLinks {
         opened.accept(card);
     }
 
+    // --- The debugger's stop on the Map (Map gaps round 3, item 2) -----------------------------------------------
+
+    /** The card the debugger's last stop opened or marked, or null. */
+    private @Nullable ProjectMapPreview stopCard;
+    /** The call stack beside {@link #callStackCard}, or null. */
+    private @Nullable MapCallStack callStack;
+
+    private @Nullable ProjectMapPreview callStackCard;
+
+    /** A stop waiting for its file's outline, to open in the card of the declaration that holds its line. */
+    private record StopWaiting(
+            Path file,
+            MapDebugStop stop,
+            Consumer<com.editora.dap.DapModels.StackFrameInfo> pick,
+            Consumer<ProjectMapPreview> opened,
+            javafx.animation.PauseTransition timeout) {}
+
+    private @Nullable StopWaiting stopWaiting;
+
+    /**
+     * The debugger shows {@code stop}'s frame: the card of the declaration that holds its line (the file's when it has
+     * none) marks the line, with the call stack beside it, where picking a frame hands it to {@code pick}. Like a text
+     * search's hits, each stop's card is a preview the next one replaces where it stood, unless something keeps it.
+     * The keyboard stays where it is. With no frame (the program runs) the mark and the call stack go; a frame with no
+     * file the Map can show leaves the card unmarked, its call stack still listed.
+     */
+    void showStop(
+            MapDebugStop stop,
+            Consumer<com.editora.dap.DapModels.StackFrameInfo> pick,
+            Consumer<ProjectMapPreview> opened) {
+        StopWaiting older = stopWaiting;
+        if (older != null) {
+            older.timeout().stop();
+            stopWaiting = null;
+        }
+        var frame = stop.frame();
+        Path file = frame == null ? null : frame.file();
+        if (frame == null || file == null || cards.root() == null) {
+            ProjectMapPreview last = stopCard;
+            if (last != null && cards.isOpen(last)) {
+                last.clearExecutionLine();
+                if (frame != null) {
+                    showCallStack(last, stop, pick);
+                }
+            }
+            if (frame == null) {
+                closeCallStack();
+            }
+            return;
+        }
+        Path normalized = file.toAbsolutePath().normalize();
+        if (frame.line() >= 0 && structure.supports(normalized)) {
+            structure.ensure(normalized);
+            if (structure.view(normalized).problem() == ProjectMapStructure.Problem.LOADING) {
+                javafx.animation.PauseTransition timeout = new javafx.animation.PauseTransition(OUTLINE_WAIT);
+                StopWaiting waiting = new StopWaiting(normalized, stop, pick, opened, timeout);
+                timeout.setOnFinished(event -> stopArrived(waiting));
+                stopWaiting = waiting;
+                timeout.playFromStart();
+                return;
+            }
+        }
+        showStopNow(normalized, stop, pick, opened);
+    }
+
+    /** {@code waiting}'s outline arrived, or the wait ran out: its card opens now, if it is still the stop waiting. */
+    private void stopArrived(StopWaiting waiting) {
+        if (stopWaiting != waiting) {
+            return;
+        }
+        stopWaiting = null;
+        waiting.timeout().stop();
+        showStopNow(waiting.file(), waiting.stop(), waiting.pick(), waiting.opened());
+    }
+
+    private void showStopNow(
+            Path normalized,
+            MapDebugStop stop,
+            Consumer<com.editora.dap.DapModels.StackFrameInfo> pick,
+            Consumer<ProjectMapPreview> opened) {
+        var frame = stop.frame();
+        if (frame == null) {
+            return;
+        }
+        int line = Math.max(0, frame.line());
+        List<ProjectMapStructure.Node> roots = outlineOf(normalized);
+        ProjectMapStructure.Node node = roots == null ? null : enclosing(roots, line);
+        Path key = node != null ? node.path() : normalized;
+        ProjectMapPreview last = stopCard;
+        ProjectMapPreview previous = last != null && cards.isOpen(last) && reusable(last) ? last : null;
+        boolean existed = cards.card(key) != null;
+        if (previous != null && !existed) {
+            takePlace.put(key, MapCards.drawnBounds(previous));
+        }
+        ProjectMapPreview card;
+        try {
+            card = node != null ? cards.openDeclaration(node) : cards.openFile(normalized);
+        } finally {
+            takePlace.remove(key);
+        }
+        if (last != null && last != card && cards.isOpen(last)) {
+            last.clearExecutionLine();
+        }
+        if (card == null) {
+            return; // every card pinned: the status line says so
+        }
+        if (!existed) {
+            previewCards.add(card);
+            card.setPreview(true);
+        }
+        card.linksRevealPlace(line, null);
+        card.setExecutionLine(line, stop.exception());
+        if (previous != null && previous != card && !existed) {
+            if (callStackCard == previous) {
+                closeCallStack();
+            }
+            cards.close(previous); // never the card just opened: that one did not exist
+        }
+        stopCard = card;
+        showCallStack(card, stop, pick);
+        cards.touch(card);
+        opened.accept(card);
+    }
+
+    /** Lists {@code stop}'s call stack beside {@code card}, moving the column there from another card. */
+    private void showCallStack(
+            ProjectMapPreview card, MapDebugStop stop, Consumer<com.editora.dap.DapModels.StackFrameInfo> pick) {
+        var frame = stop.frame();
+        if (frame == null || stop.stack().isEmpty()) {
+            closeCallStack();
+            return;
+        }
+        MapCallStack column = callStack;
+        if (column == null || callStackCard != card) {
+            closeCallStack();
+            column = new MapCallStack(
+                    card,
+                    canvasHost,
+                    pick,
+                    () -> {
+                        closeCallStack();
+                        card.focusContent();
+                    },
+                    () -> cards.touch(card),
+                    cards::connectorsMoved);
+            callStack = column;
+            callStackCard = card;
+            column.show(cards.structureSide(card) != CardAttachment.Side.LEFT, false);
+        }
+        column.show(stop.stack(), frame.id());
+        cards.connectorsMoved();
+    }
+
+    /** Takes the call stack away, if shown (× or Escape on it shows it again at the next stop). */
+    void closeCallStack() {
+        MapCallStack shown = callStack;
+        callStack = null;
+        callStackCard = null;
+        if (shown != null) {
+            shown.dispose();
+            cards.connectorsMoved();
+        }
+    }
+
+    /** The card the debugger's last stop marked, or null. For tests. */
+    @Nullable
+    ProjectMapPreview stopCard() {
+        return stopCard;
+    }
+
+    /** The call stack beside the stop card, or null. For tests. */
+    @Nullable
+    MapCallStack callStack() {
+        return callStack;
+    }
+
     private @Nullable ProjectMapPreview openPlaceNow(Path file, int line, @Nullable String name) {
         List<ProjectMapStructure.Node> roots = line < 0 ? null : outlineOf(file);
         ProjectMapStructure.Node node = roots == null ? null : enclosing(roots, line);
@@ -1236,6 +1420,10 @@ final class MapCardLinks {
         if (tree != null) {
             all.add(tree);
         }
+        MapCallStack stack = callStack;
+        if (stack != null && callStackCard == card) {
+            all.add(stack);
+        }
         return all;
     }
 
@@ -1249,6 +1437,10 @@ final class MapCardLinks {
                         .filter(java.util.Objects::nonNull)
                         .forEach(all::add));
         all.addAll(trees.values());
+        MapCallStack stack = callStack;
+        if (stack != null) {
+            all.add(stack);
+        }
         return all;
     }
 
@@ -1268,6 +1460,12 @@ final class MapCardLinks {
         placeBeside.values().removeIf(from -> from == card);
         treeOpened.values().forEach(opened -> opened.remove(card));
         previewCards.remove(card);
+        if (callStackCard == card) {
+            closeCallStack();
+        }
+        if (stopCard == card) {
+            stopCard = null;
+        }
         return results;
     }
 
@@ -1356,6 +1554,13 @@ final class MapCardLinks {
             placeWaiting = null;
         }
         placeBeside.clear();
+        closeCallStack();
+        stopCard = null;
+        StopWaiting stop = stopWaiting;
+        if (stop != null) {
+            stop.timeout().stop();
+            stopWaiting = null;
+        }
     }
 
     // --- hierarchy trees (Map code browser gap 4) ------------------------------------------------------------

@@ -488,7 +488,9 @@ public enum ConfigSchema {
                     // evaluated and an empty evaluate history)
                     Map.entry(32, ConfigMigrations::identity),
                     // v33→34: + projectMapShowDependencies (additive; absent means off)
-                    Map.entry(33, ConfigMigrations::identity))),
+                    Map.entry(33, ConfigMigrations::identity),
+                    // v34→35: + projectMapIgnoreDebugger (additive; absent means the Map follows the debugger)
+                    Map.entry(34, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

@@ -139,6 +139,22 @@ final class MapCardGutter {
             Map<Integer, Run> runs,
             IntConsumer onBreakpoint,
             Consumer<Run> onRun) {
+        return rows(firstLine, lastLine, marks, changes, runs, -1, onBreakpoint, onRun);
+    }
+
+    /**
+     * As above, with the debugger's arrow on the file's {@code executionLine} (-1: none; Map gaps round 3, item 2) in
+     * the breakpoint strip, which is there for it even where breakpoints are not.
+     */
+    static IntFunction<Node> rows(
+            int firstLine,
+            int lastLine,
+            Marks marks,
+            @Nullable Changes changes,
+            Map<Integer, Run> runs,
+            int executionLine,
+            IntConsumer onBreakpoint,
+            Consumer<Run> onRun) {
         String format = "%" + String.valueOf(Math.max(1, lastLine + 1)).length() + "d";
         boolean bookmarks = !marks.bookmarks().isEmpty();
         boolean running = !runs.isEmpty();
@@ -147,8 +163,12 @@ final class MapCardGutter {
             HBox row = new HBox();
             row.getStyleClass().addAll("fold-gutter", "project-map-card-gutter"); // the editor gutter's look
             row.setAlignment(Pos.TOP_RIGHT);
-            if (marks.breakpointsOn()) {
-                row.getChildren().add(breakpointSlot(line, marks.breakpoints().get(line), onBreakpoint));
+            if (marks.breakpointsOn() || executionLine >= 0) {
+                StackPane strip = breakpointSlot(line, marks.breakpoints().get(line), onBreakpoint);
+                if (line == executionLine) {
+                    strip.getChildren().add(FoldManager.executionArrow());
+                }
+                row.getChildren().add(strip);
             }
             if (bookmarks) {
                 Region slot =

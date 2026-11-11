@@ -1688,6 +1688,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.refreshCardGutters();
     }
 
+    /** The debugger shows {@code stop} (Map gaps round 3, item 2): the Map follows it, when it is set to. */
+    void setDebugStop(MapDebugStop stop) {
+        mapView.setDebugStop(stop);
+    }
+
+    /** Where a frame picked in the Map's call stack goes: the debugger, which shows it. */
+    void setOnDebugFramePicked(java.util.function.Consumer<com.editora.dap.DapModels.StackFrameInfo> pick) {
+        mapView.setOnDebugFramePicked(pick);
+    }
+
     /** Updates the active-file marker used for current-file emphasis in the tree. */
     public void setActiveFile(@Nullable Path file) {
         Path next = file == null ? null : file.toAbsolutePath().normalize();
@@ -2945,6 +2955,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.setShowDependencies(stored.isProjectMapShowDependencies());
         mapView.setOnShowDependenciesChanged(show -> {
             state.get().setProjectMapShowDependencies(show);
+            save.run();
+        });
+        mapView.setFollowDebugger(!stored.isProjectMapIgnoreDebugger());
+        mapView.setOnFollowDebuggerChanged(follow -> {
+            state.get().setProjectMapIgnoreDebugger(!follow);
             save.run();
         });
         mapView.setOverviewOnFirstShow(true); // the Overview card opens on each session's first Map open
