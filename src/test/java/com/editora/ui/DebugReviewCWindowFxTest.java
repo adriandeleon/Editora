@@ -488,6 +488,7 @@ class DebugReviewCWindowFxTest {
                         DebugPanelText.bareTitle(tr("command.debug.toggleTemporaryBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.toggleRecordingBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.addLogpoint")),
+                        DebugPanelText.bareTitle(tr("command.debug.addTriggeredBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")),
                         DebugPanelText.bareTitle(tr("command.debug.toggleBreakpointEnabled")),
                         DebugPanelText.bareTitle(tr("command.debug.breakpoints")),
@@ -636,6 +637,7 @@ class DebugReviewCWindowFxTest {
                         DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")), // bare, as its neighbours (C110)
                         tr("debug.gutter.disable"),
                         tr("debug.gutter.remove"),
+                        DebugPanelText.bareTitle(tr("command.debug.addTriggeredBreakpoint")),
                         null,
                         DebugPanelText.bareTitle(tr("command.debug.breakpoints"))),
                 labels);
@@ -697,11 +699,11 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.drainFx();
         List<String> labels = FxTestSupport.callOnFx(
                 () -> menu.getItems().stream().map(MenuItem::getText).toList());
-        assertEquals(tr("debug.gutter.stopOnLine"), labels.get(4), labels.toString());
-        assertEquals(tr("debug.gutter.stopInLambda", 1, "() -> {}; Runnable s = () -> {};"), labels.get(5));
-        assertEquals(tr("debug.gutter.stopInLambda", 2, "() -> {};"), labels.get(6));
+        assertEquals(tr("debug.gutter.stopOnLine"), labels.get(5), labels.toString());
+        assertEquals(tr("debug.gutter.stopInLambda", 1, "() -> {}; Runnable s = () -> {};"), labels.get(6));
+        assertEquals(tr("debug.gutter.stopInLambda", 2, "() -> {};"), labels.get(7));
         var onLine = (javafx.scene.control.CheckMenuItem)
-                FxTestSupport.callOnFx(() -> menu.getItems().get(4));
+                FxTestSupport.callOnFx(() -> menu.getItems().get(5));
         assertFalse(FxTestSupport.callOnFx(onLine::isSelected));
         FxTestSupport.runOnFx(() -> {
             menu.hide();
@@ -711,7 +713,7 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.runOnFx(() -> slot.fireEvent(
                 new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
         var firstAgain = (javafx.scene.control.CheckMenuItem)
-                FxTestSupport.callOnFx(() -> menu.getItems().get(5));
+                FxTestSupport.callOnFx(() -> menu.getItems().get(6));
         FxTestSupport.runOnFx(() -> {
             menu.hide();
             firstAgain.setSelected(true); // as a click ticks it before its action runs
@@ -1080,7 +1082,8 @@ class DebugReviewCWindowFxTest {
             double width = card.getLayoutBounds().getWidth();
             assertTrue(width > 0 && width < 700, "the card is " + width + " px wide");
             double height = card.getLayoutBounds().getHeight();
-            assertTrue(height < 400, "the card is " + height + " px tall: the hint wraps where it is laid out");
+            // A hint left on one line made the card ~600 px tall; six rows of fields and a wrapped hint are ~405.
+            assertTrue(height < 450, "the card is " + height + " px tall: the hint wraps where it is laid out");
             for (Node n : card.lookupAll(".label")) {
                 if (n instanceof javafx.scene.control.Label l
                         && l.getParent() instanceof javafx.scene.layout.GridPane) {

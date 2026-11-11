@@ -126,6 +126,35 @@ public final class BreakpointManager implements LineMarks.Carrier {
 
     private static final Live UNANSWERED = new Live(LiveState.PENDING, "");
 
+    /** A breakpoint id → where that breakpoint is ("Main.java:12"), or null when there is none; see {@link #waitsFor}. */
+    private java.util.function.Function<String, @Nullable String> triggerLabels = id -> null;
+
+    /**
+     * Where the breakpoints a triggered breakpoint waits for are found, by id ({@link Breakpoint#triggeredBy}): the
+     * glyph and its hover say what it waits for, and one whose trigger is gone waits for none.
+     */
+    public void setTriggerLabels(java.util.function.Function<String, @Nullable String> labels) {
+        triggerLabels = labels == null ? id -> null : labels;
+    }
+
+    /** Where the breakpoint {@code bp} waits for is ("Main.java:12"); null when it waits for none, or that is gone. */
+    public @Nullable String waitsFor(@Nullable Breakpoint bp) {
+        return bp == null || !bp.isTriggered() ? null : triggerLabels.apply(bp.triggeredBy());
+    }
+
+    /** Repaints the triggered breakpoints' glyphs: a breakpoint they wait for was set, moved or removed. */
+    public void repaintTriggered() {
+        List<Integer> lines = new ArrayList<>();
+        byLine.forEach((line, bp) -> {
+            if (bp.isTriggered()) {
+                lines.add(line);
+            }
+        });
+        if (!lines.isEmpty()) {
+            onLinesRepaint.accept(lines);
+        }
+    }
+
     /** While Mute Breakpoints is on: the line every glyph's hover starts with; null when not muted. */
     private @Nullable String mutedText;
 
@@ -167,6 +196,9 @@ public final class BreakpointManager implements LineMarks.Carrier {
         }
         if (bp.hasLambdas()) {
             kind = kind == null ? "lambda" : kind + " lambda";
+        }
+        if (waitsFor(bp) != null) {
+            kind = kind == null ? "triggered" : kind + " triggered";
         }
         Live state = live(line);
         String classes = kind;
@@ -275,7 +307,8 @@ public final class BreakpointManager implements LineMarks.Carrier {
      *  and what the debug session says about it; null for a plain breakpoint the session has nothing to say on. */
     public @Nullable String tooltip(int line) {
         Live state = live(line);
-        String text = BreakpointDescription.tooltip(byLine.get(line), state == null ? null : state.tooltip());
+        String text =
+                BreakpointDescription.tooltip(byLine.get(line), state == null ? null : state.tooltip(), triggerLabels);
         if (mutedText == null || !byLine.containsKey(line)) {
             return text;
         }
@@ -392,6 +425,31 @@ public final class BreakpointManager implements LineMarks.Carrier {
         Breakpoint bp = byLine.get(line);
         if (bp != null && bp.recording() != recording) {
             byLine.put(line, bp.withRecording(recording));
+            fireChanged();
+        }
+    }
+
+    /** Gives the breakpoint on {@code line} the id {@code id} (another breakpoint is made to wait for it). */
+    public void setId(int line, String id) {
+        Breakpoint bp = byLine.get(line);
+        if (bp != null && !bp.id().equals(id)) {
+            byLine.put(line, bp.withId(id));
+            fireChanged();
+        }
+    }
+
+    /**
+     * Makes the breakpoint on {@code line} wait, in each debug session, until the breakpoint with id {@code trigger}
+     * is hit; blank: it waits for none.
+     */
+    public void setTriggeredBy(int line, String trigger) {
+        Breakpoint bp = byLine.get(line);
+        if (bp == null) {
+            return;
+        }
+        Breakpoint next = bp.withTriggeredBy(trigger);
+        if (!next.triggeredBy().equals(bp.triggeredBy())) {
+            byLine.put(line, next);
             fireChanged();
         }
     }

@@ -107,6 +107,12 @@ final class DebugSession {
     /** What each open file's breakpoints were when last sent to the live session (cleared between sessions). */
     final Map<Path, DapModels.FileBreakpoints> sentBreakpoints = new java.util.HashMap<>();
 
+    /**
+     * The ids of the breakpoints hit in this session that triggered breakpoints wait for: those that wait for them
+     * are sent from then on (cleared between sessions; see {@link TriggeredBreakpoints}).
+     */
+    final java.util.Set<String> hitTriggers = new java.util.HashSet<>();
+
     /** What the live session said about each file's breakpoints, by document line (cleared between sessions). */
     final Map<Path, Map<Integer, DapModels.BreakpointStatus>> breakpointStatus = new java.util.HashMap<>();
 

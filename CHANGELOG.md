@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Triggered breakpoints.** A breakpoint can wait until another breakpoint is hit, as VS Code's triggered
+  breakpoints and IntelliJ's "Disable until hitting the following breakpoint" do: until then it does not stop, and
+  from then on it stops like any other, for the rest of that debug session. The next session it waits again. Choose
+  the breakpoint to wait for with *Debug: Add Triggered Breakpoint…* (editor menu, gutter menu, Run menu, palette) or
+  the *Wait for* field of the breakpoint form. In the gutter it carries an hourglass, and while it waits it is drawn
+  hollow, saying which breakpoint it waits for. It works with every debugger Editora runs, in files that are not open
+  too, and a breakpoint whose trigger is removed simply stops. Saved with the breakpoint (`breakpoints.json`
+  schema 8).
+
 - **Add Logpoint in one step.** Shift+click the breakpoint gutter on a line, as in IntelliJ, or use *Debug: Add
   Logpoint…* (in the editor's right-click *Breakpoints* submenu, the Run menu and the palette; `C-c C-d g` in the
   Emacs keymap). It asks only for the message to log, with `{expression}` for a value. OK makes the line a logpoint,

@@ -453,6 +453,7 @@ final class DebugCoordinator {
         memberMarks = new MemberBreakpointMarks(host, ops, lspManager);
         memberBreakpoints.setOnChanged(memberMarks::refreshAll);
         lambdaBreakpoints = new LambdaBreakpoints(host);
+        triggered = new TriggeredBreakpoints(host, ops);
         pinnedValues = new PinnedValues(host, ops, this::dap);
         // Each stop's pinned values are kept with it in Debug History.
         pinnedValues.setOnPainted((b, shown) -> {
@@ -500,6 +501,9 @@ final class DebugCoordinator {
     }
 
     private final LambdaBreakpoints lambdaBreakpoints;
+
+    /** Breakpoints that wait for another to be hit (see {@link TriggeredBreakpoints}). */
+    private final TriggeredBreakpoints triggered;
 
     MemberBreakpointCommands memberBreakpoints() {
         return memberBreakpoints;
@@ -1295,6 +1299,120 @@ final class DebugCoordinator {
                         showBreakpointStates(buffer); // a new breakpoint is unverified until the adapter answers for it
                     }
                 });
+        triggersChanged(buffer);
+    }
+
+    /**
+     * A breakpoint of {@code changed} was set, changed or removed: one that others wait for may have come or gone, so
+     * the other tabs' triggered breakpoints are drawn again and re-sent to each live session where that changes them
+     * (one whose trigger is gone waits for none).
+     */
+    private void triggersChanged(EditorBuffer changed) {
+        host.forEachBuffer(b -> {
+            var mgr = b.getBreakpointManager();
+            if (b == changed || mgr.documentSnapshot().stream().noneMatch(Breakpoint::isTriggered)) {
+                return;
+            }
+            mgr.repaintTriggered();
+            forEachSession(() -> {
+                if (b.getPath() != null && dap().isActive()) {
+                    DapModels.FileBreakpoints now = fileBreakpoints(b, b.getPath());
+                    if (!now.equals(s().sentBreakpoints.put(b.getPath(), now))) {
+                        dap().updateBreakpoints(now);
+                    }
+                    showBreakpointStates(b);
+                }
+            });
+        });
+    }
+
+    /**
+     * The program stopped on a breakpoint: when others wait for it, they are sent to this session from now on, and
+     * stop like any other. Waits for the stopped file's buffer to load: the stop may have just opened it.
+     */
+    private void armTriggered(String reason, List<DapModels.StackFrameInfo> frames) {
+        if (!"breakpoint".equals(reason) || frames.isEmpty()) {
+            return;
+        }
+        DapModels.StackFrameInfo top = frames.get(0);
+        Path file = top.file();
+        if (file == null) {
+            return;
+        }
+        DebugSession session = s();
+        EditorBuffer b = ops.bufferForPath(file);
+        if (b == null) {
+            List<Breakpoint> stored = ops.breakpointMap().getOrDefault(key(file), List.of());
+            stored.stream().filter(bp -> bp.line() == top.line()).findFirst().ifPresent(bp -> armBy(bp, top));
+            return;
+        }
+        ops.afterBufferLoad(
+                b,
+                () -> inSession(session, () -> {
+                    var mgr = b.getBreakpointManager();
+                    Breakpoint bp = mgr.get(top.line() - mgr.regionFirstLine());
+                    if (bp != null) {
+                        armBy(bp, top);
+                    }
+                }));
+    }
+
+    /** {@code trigger} was hit in this session (at {@code where}): the breakpoints that wait for it are sent. */
+    private void armBy(Breakpoint trigger, DapModels.StackFrameInfo where) {
+        String id = trigger.id();
+        if (id.isEmpty() || s().hitTriggers.contains(id) || !dap().isActive()) {
+            return;
+        }
+        List<BreakpointsPicker.Entry> waiting = triggered.entries().stream()
+                .filter(e -> id.equals(e.breakpoint().triggeredBy())
+                        && e.breakpoint().enabled())
+                .toList();
+        s().hitTriggers.add(id);
+        if (waiting.isEmpty()) {
+            return;
+        }
+        Set<EditorBuffer> tabs = new java.util.LinkedHashSet<>();
+        Map<String, List<Breakpoint>> closed = new LinkedHashMap<>();
+        for (BreakpointsPicker.Entry e : waiting) {
+            if (e.buffer() != null) {
+                tabs.add(e.buffer());
+            } else {
+                closed.put(e.key(), ops.breakpointMap().getOrDefault(e.key(), List.of()));
+            }
+        }
+        for (EditorBuffer tab : tabs) {
+            Path file = tab.getPath();
+            if (file != null) {
+                DapModels.FileBreakpoints now = fileBreakpoints(tab, file);
+                if (!now.equals(s().sentBreakpoints.put(file, now))) {
+                    dap().updateBreakpoints(now);
+                }
+                showBreakpointStates(tab);
+            }
+        }
+        if (!closed.isEmpty()) {
+            Predicate<Breakpoint> sent = sentPredicate(s());
+            startOffFx("debug-triggered", session -> () -> {
+                List<DapModels.FileBreakpoints> computed = ClosedFileBreakpoints.of(
+                        closed, Set.of(), RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull, sent);
+                laterIn(session, () -> {
+                    if (!dap().isActive()) {
+                        return;
+                    }
+                    for (DapModels.FileBreakpoints fb : computed) {
+                        if (ops.bufferForPath(fb.file()) == null) { // opened meanwhile: its tab sent them
+                            s().sentBreakpoints.put(fb.file(), fb);
+                            dap().updateBreakpoints(fb);
+                        }
+                    }
+                });
+            });
+        }
+        String place = where.file() == null || where.file().getFileName() == null
+                ? String.valueOf(where.line() + 1)
+                : where.file().getFileName() + ":" + (where.line() + 1);
+        host.setStatus(tr("status.debug.triggerHit", place, waiting.size()));
+        panel().appendNotice(tr("status.debug.triggerHit", place, waiting.size()));
     }
 
     // --- what the live session says about the breakpoints ------------------------------------------
@@ -1317,8 +1435,21 @@ final class DebugCoordinator {
         Map<Integer, BreakpointManager.Live> live = new java.util.HashMap<>();
         String pending = tr(DebugFeedback.pendingKey(known.values(), buffer.getLanguage()));
         LaunchedLines.Mapping map = lineMap(buffer);
+        Set<String> ids = null;
         for (Breakpoint bp : buffer.getBreakpointManager().documentSnapshot()) {
             int launchedLine = map.toLaunched(bp.line());
+            if (bp.isTriggered()) {
+                ids = ids == null ? triggered.ids() : ids;
+                if (TriggeredBreakpoints.waits(bp, ids, s().hitTriggers)) {
+                    String trigger = triggered.labelOf(bp.triggeredBy());
+                    live.put(
+                            bp.line(),
+                            new BreakpointManager.Live(
+                                    BreakpointManager.LiveState.PENDING,
+                                    tr("debug.breakpoint.waiting", trigger == null ? "" : trigger)));
+                    continue;
+                }
+            }
             if (launchedLine < 0) {
                 live.put(
                         bp.line(),
@@ -1598,6 +1729,7 @@ final class DebugCoordinator {
         }
         List<Breakpoint> stored = ops.breakpointMap().getOrDefault(key(file), List.of());
         seenInStore.put(buffer, MarkMerge.keys(stored, Breakpoint::line));
+        buffer.getBreakpointManager().setTriggerLabels(triggered::labelOf);
         if (buffer.applyBreakpoints(stored)) {
             persistBreakpoints(buffer); // self-heal re-anchored indices once
         }
@@ -1636,8 +1768,15 @@ final class DebugCoordinator {
         LaunchedLines.Mapping map = lineMap(buffer);
         var mgr = buffer.getBreakpointManager();
         String language = buffer.getLanguage();
+        Set<String> ids = null; // the window's breakpoint ids, read once a triggered breakpoint asks
         for (Breakpoint bp : mgr.documentSnapshot()) {
             int line = map.toLaunched(bp.line());
+            if (bp.isTriggered()) {
+                ids = ids == null ? triggered.ids() : ids;
+                if (TriggeredBreakpoints.waits(bp, ids, s().hitTriggers)) {
+                    continue; // until its trigger is hit in this session
+                }
+            }
             if (bp.enabled() && !breakpointsMuted && line >= 0) { // Mute Breakpoints: the adapter is told none
                 lines.addAll(BreakpointTargets.of(bp, line, documentLineText(buffer, bp.line()), language));
             }
@@ -1791,10 +1930,11 @@ final class DebugCoordinator {
             }
         });
         Map<String, List<Breakpoint>> map = new LinkedHashMap<>(ops.breakpointMap());
+        Predicate<Breakpoint> sent = sentPredicate(session);
         Thread t = new Thread(
                 () -> {
-                    List<DapModels.FileBreakpoints> computed = closedFileBreakpoints(
-                            map, openPaths, RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull);
+                    List<DapModels.FileBreakpoints> computed = ClosedFileBreakpoints.of(
+                            map, openPaths, RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull, sent);
                     laterIn(session, () -> {
                         if (s().closedBreakpointsRead != token) {
                             return; // stopped, or replaced by another start, while the files were read
@@ -1807,6 +1947,16 @@ final class DebugCoordinator {
                 "debug-breakpoints");
         t.setDaemon(true);
         t.start();
+    }
+
+    /**
+     * Which saved breakpoints {@code session} is told of now: all but the triggered ones whose trigger it has not hit.
+     * Read on the FX thread; the answer may be asked off it.
+     */
+    private Predicate<Breakpoint> sentPredicate(DebugSession session) {
+        Set<String> ids = triggered.ids();
+        Set<String> hit = Set.copyOf(session.hitTriggers);
+        return bp -> !TriggeredBreakpoints.waits(bp, ids, hit);
     }
 
     /** See {@link ClosedFileBreakpoints#of}. */
@@ -1890,6 +2040,7 @@ final class DebugCoordinator {
                         s().launchedLines.clear();
                     }
                     s().sentBreakpoints.clear(); // the next session is told everything afresh
+                    s().hitTriggers.clear(); // and its triggered breakpoints wait again
                     s().breakpointStatus.clear(); // and what the last one said about them no longer holds
                     s().evaluationFailures.clear();
                     s().reportedRejections.clear();
@@ -1947,6 +2098,7 @@ final class DebugCoordinator {
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
+                armTriggered(reason, frames); // a breakpoint others wait for: they stop from now on
                 s().quietStop = recording ? s().stopSerial : -1;
                 if (!recording && !shown()) {
                     focusSession(s()); // another session stopped: it is shown now, as in VS Code and IntelliJ
@@ -6391,6 +6543,8 @@ final class DebugCoordinator {
         temporary.setSelected(bp.temporary());
         CheckBox recording = new CheckBox(tr("dialog.debug.breakpointRecording"));
         recording.setSelected(bp.recording());
+        // Wait for: another breakpoint this one waits for in each session (a triggered breakpoint).
+        javafx.scene.control.ComboBox<BreakpointsPicker.Entry> waitFor = waitForChoice(b, line, bp);
 
         GridPane grid = new GridPane();
         grid.setHgap(8);
@@ -6406,8 +6560,10 @@ final class DebugCoordinator {
         grid.add(logMessage, 1, 2);
         grid.add(new Label(tr("dialog.debug.hitConditionLabel")), 0, 3);
         grid.add(hitCondition, 1, 3);
-        grid.add(new javafx.scene.layout.HBox(16, enabled, temporary, recording), 1, 4);
-        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 5);
+        grid.add(new Label(tr("dialog.debug.triggeredByLabel")), 0, 4);
+        grid.add(waitFor, 1, 4);
+        grid.add(new javafx.scene.layout.HBox(16, enabled, temporary, recording), 1, 5);
+        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 6);
         GridPane.setHgrow(condition, Priority.ALWAYS);
         GridPane.setHgrow(logMessage, Priority.ALWAYS);
 
@@ -6428,9 +6584,120 @@ final class DebugCoordinator {
                     mgr.setEnabled(line, enabled.isSelected());
                     mgr.setTemporary(line, temporary.isSelected());
                     mgr.setRecording(line, recording.isSelected());
+                    BreakpointsPicker.Entry trigger = waitFor.getValue();
+                    if (trigger != null && trigger.line() < 0) {
+                        trigger = null; // "no other breakpoint"
+                    }
+                    Breakpoint now = mgr.get(line);
+                    String was = now == null ? "" : now.triggeredBy();
+                    if (now != null
+                            && !(trigger == null
+                                    ? was.isEmpty()
+                                    : was.equals(trigger.breakpoint().id()))) {
+                        triggered.link(b, line, trigger);
+                    }
                 },
                 null,
                 false);
+    }
+
+    /**
+     * The edit form's Wait for choice: no other breakpoint (a row with line -1), then each breakpoint the one on
+     * {@code line} of {@code b} ({@code bp}) can wait for, with the one it waits for chosen.
+     */
+    private javafx.scene.control.ComboBox<BreakpointsPicker.Entry> waitForChoice(
+            EditorBuffer b, int line, Breakpoint bp) {
+        Path file = b.getPath();
+        List<BreakpointsPicker.Entry> all = triggered.entries();
+        List<BreakpointsPicker.Entry> choices = file == null
+                ? List.of()
+                : TriggeredBreakpoints.choices(
+                        key(file), line + b.getBreakpointManager().regionFirstLine(), bp.id(), all);
+        BreakpointsPicker.Entry none = new BreakpointsPicker.Entry(Path.of(""), "", -1, bp, null);
+        javafx.scene.control.ComboBox<BreakpointsPicker.Entry> combo = new javafx.scene.control.ComboBox<>();
+        combo.getItems().add(none);
+        combo.getItems().addAll(choices);
+        combo.setConverter(new javafx.util.StringConverter<>() {
+            @Override
+            public String toString(BreakpointsPicker.@Nullable Entry e) {
+                return e == null || e.line() < 0 ? tr("dialog.debug.triggeredByNone") : BreakpointsPicker.label(e);
+            }
+
+            @Override
+            public BreakpointsPicker.@Nullable Entry fromString(String text) {
+                return null; // not editable
+            }
+        });
+        combo.setValue(choices.stream()
+                .filter(e -> bp.isTriggered()
+                        && bp.triggeredBy().equals(e.breakpoint().id()))
+                .findFirst()
+                .orElse(none));
+        combo.setMaxWidth(Double.MAX_VALUE);
+        return combo;
+    }
+
+    /**
+     * Debug: Add Triggered Breakpoint — a breakpoint on the caret line that waits, in each debug session, until the
+     * breakpoint chosen from a list is hit (VS Code's Add Triggered Breakpoint, IntelliJ's "Disable until hitting the
+     * following breakpoint"). On a line with a breakpoint it makes that one wait; choosing the one it waits for
+     * already makes it wait for none.
+     */
+    void addTriggeredBreakpointAtCaret() {
+        EditorBuffer b = breakpointBuffer();
+        if (b == null || b.getPath() == null) {
+            return;
+        }
+        int line = b.getFocusedArea().getCurrentParagraph();
+        if (!breakpointAllowed(b, line)) {
+            return;
+        }
+        var mgr = b.getBreakpointManager();
+        Breakpoint existing = mgr.get(line);
+        String selfId = existing == null ? "" : existing.id();
+        String waitsFor = existing == null ? "" : existing.triggeredBy();
+        List<BreakpointsPicker.Entry> choices = TriggeredBreakpoints.choices(
+                key(b.getPath()), line + mgr.regionFirstLine(), selfId, triggered.entries());
+        if (choices.isEmpty()) {
+            host.setStatus(tr("status.debug.noTriggerChoices"));
+            return;
+        }
+        QuickOpen<BreakpointsPicker.Entry> picker = new QuickOpen<>(
+                tr("command.debug.addTriggeredBreakpoint"),
+                tr("debug.triggered.prompt", line + 1),
+                () -> choices,
+                e -> (!waitsFor.isEmpty() && waitsFor.equals(e.breakpoint().id()) ? "✓ " : "    ")
+                        + BreakpointsPicker.label(e),
+                e -> String.join("  ·  ", com.editora.editor.debug.BreakpointDescription.lines(e.breakpoint())),
+                e -> {
+                    if (e != null) {
+                        linkTriggered(b, line, e);
+                    }
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /**
+     * Makes the breakpoint on {@code line} of {@code b} (setting one when there is none) wait for {@code trigger}'s,
+     * or — when it waits for that one already — for none; says which.
+     */
+    void linkTriggered(EditorBuffer b, int line, BreakpointsPicker.Entry trigger) {
+        var mgr = b.getBreakpointManager();
+        if (!mgr.isBreakpoint(line)) {
+            b.toggleBreakpoint(line);
+        }
+        Breakpoint bp = mgr.get(line);
+        if (bp == null) {
+            return;
+        }
+        if (bp.isTriggered() && bp.triggeredBy().equals(trigger.breakpoint().id())) {
+            triggered.link(b, line, null);
+            host.setStatus(tr("status.debug.triggeredRemoved", line + 1));
+            return;
+        }
+        triggered.link(b, line, trigger);
+        host.setStatus(tr("status.debug.triggeredAdded", line + 1, TriggeredBreakpoints.place(trigger)));
     }
 
     /**
@@ -7448,7 +7715,11 @@ final class DebugCoordinator {
             }
         });
         javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
-        gutterMenu.getItems().setAll(edit, flip, remove);
+        javafx.scene.control.MenuItem waitFor = menuItem("debug.addTriggeredBreakpoint", null, () -> {
+            b.getFocusedArea().moveTo(line, 0);
+            addTriggeredBreakpointAtCaret();
+        });
+        gutterMenu.getItems().setAll(edit, flip, remove, waitFor);
         List<javafx.scene.control.MenuItem> lambdas = lambdaBreakpoints.choices(b, line, bp);
         if (!lambdas.isEmpty()) {
             gutterMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
@@ -7570,6 +7841,7 @@ final class DebugCoordinator {
             items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
         }
         items.add(menuItem("debug.addLogpoint", logpointGlyph(), this::addLogpointAtCaret));
+        items.add(menuItem("debug.addTriggeredBreakpoint", breakpointGlyph(), this::addTriggeredBreakpointAtCaret));
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
         javafx.scene.control.MenuItem flip =
                 menuItem("debug.toggleBreakpointEnabled", Icons.check(), this::toggleBreakpointEnabledAtCaret);
