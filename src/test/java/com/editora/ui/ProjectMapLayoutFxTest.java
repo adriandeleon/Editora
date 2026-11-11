@@ -758,6 +758,7 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.layout.hideIgnored"), // review 3 A11
                             tr("project.map.activity.showRecentChanges"), // Map explore position 3
                             tr("project.map.deps.showOverlay"), // the dependency overlay (round 2)
+                            tr("project.map.debug.follow"), // follow the debugger (round 3)
                             tr("project.map.filter.hideOpenNotes"),
                             tr("project.map.navigation.followActiveFile"),
                             tr("project.map.flow.menu"), // the flow selector moved here (Map explore, 17)

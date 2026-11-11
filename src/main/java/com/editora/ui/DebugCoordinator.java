@@ -676,6 +676,7 @@ final class DebugCoordinator {
             closeSmartStepPicker(DapManager.State.INACTIVE);
             clearExecHighlight();
             clearDebugEditorSurfaces();
+            mapStop(MapDebugStop.RUNNING); // the target's own stop, if it has one, is shown next
         });
         sessions.focus(target);
         inSession(target, () -> {
@@ -2100,6 +2101,9 @@ final class DebugCoordinator {
                 if (state != DapManager.State.SUSPENDED) {
                     clearExecHighlight();
                     clearDebugEditorSurfaces(); // inline values + hover live only while suspended
+                    if (shown()) {
+                        mapStop(MapDebugStop.RUNNING);
+                    }
                 }
                 if (state == DapManager.State.INACTIVE
                         && s().relaunch == ONE_SHOT_ATTACH
@@ -2357,6 +2361,9 @@ final class DebugCoordinator {
                             panel().setScopes(List.of());
                             clearExecHighlight();
                             clearDebugEditorSurfaces();
+                            if (shown()) {
+                                mapStop(MapDebugStop.RUNNING);
+                            }
                         }
                     });
                 });
@@ -3909,8 +3916,12 @@ final class DebugCoordinator {
         }
         clearExecHighlight();
         if (frame == null) {
+            mapStop(MapDebugStop.RUNNING);
             return;
         }
+        DebugPanel stackPanel = s().panel;
+        mapStop(new MapDebugStop(
+                frame, stackPanel == null ? List.of() : stackPanel.callStack(), frame.id() == s().exceptionFrameId));
         if (!hasSource(frame)) {
             if (frame.sourceUri() != null && dap().debugFile() != null) {
                 // B5: a JDK or library class jdtls can supply the text of (java/classFileContents) — shown in its
@@ -6640,6 +6651,47 @@ final class DebugCoordinator {
     QuickOpen<DapManager.MainClassOption> openMainClassPicker() {
         QuickOpen<DapManager.MainClassOption> picker = mainClassPicker;
         return picker != null && picker.isShown() ? picker : null;
+    }
+
+    // --- The Project Map follows the debugger (Map gaps round 3, item 2) ---
+
+    /** Told each frame the editor shows, and when nothing is paused any more. */
+    private Consumer<MapDebugStop> onMapStop = stop -> {};
+
+    private MapDebugStop mapStop = MapDebugStop.RUNNING;
+
+    /** Where the Project Map hears of each stop; told the current one at once. */
+    void setOnMapStop(Consumer<MapDebugStop> listener) {
+        onMapStop = listener;
+        listener.accept(mapStop);
+    }
+
+    private void mapStop(MapDebugStop stop) {
+        mapStop = stop;
+        onMapStop.accept(stop);
+    }
+
+    /** What the Map was last told. For tests. */
+    MapDebugStop mapStop() {
+        return mapStop;
+    }
+
+    /**
+     * A frame picked in the Map's call stack: shown as a click on it in the Debug window would show it; when the stack
+     * there no longer lists it (folded runtime frames, a newer stop), the status says so.
+     */
+    void selectFrameFromMap(DapModels.StackFrameInfo frame) {
+        if (dap().state() != DapManager.State.SUSPENDED || s().panel == null) {
+            return;
+        }
+        DapModels.StackFrameInfo shown = s().shownFrame;
+        if (shown != null && shown.id() == frame.id()) {
+            mapStop(mapStop); // the frame on show: the Map shows it again, as it was picked there
+            return;
+        }
+        if (!panel().selectFrameById(frame.id())) {
+            host.setStatus(tr("status.debug.frameNotListed", frame.name()));
+        }
     }
 
     // --- Project Map cards' gutters (Map gaps round 3, item 1) ---

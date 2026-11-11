@@ -303,6 +303,45 @@ class DebugReviewCWindowFxTest {
 
     // --- C13: the exception of an exception stop ------------------------------------------------------------
 
+    // --- Map gaps round 3, item 2: the Project Map follows the stops ------------------------------------------
+
+    @Test
+    void theProjectMapIsToldEachStopAndPicksFramesBack() throws Exception {
+        Path util = file("util.py", UTIL);
+        open(util);
+        List<MapDebugStop> told = new java.util.concurrent.CopyOnWriteArrayList<>();
+        FxTestSupport.runOnFx(() -> debug.setOnMapStop(told::add));
+        assertEquals(1, told.size(), "told what holds now at once");
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            stopAt(session, util, 3, "breakpoint");
+            await("the Map was not told the stop", () -> debug.mapStop().frame() != null);
+            MapDebugStop stop = FxTestSupport.callOnFx(debug::mapStop);
+            assertEquals("util.py", stop.frame().file().getFileName().toString());
+            assertEquals(2, stop.frame().line());
+            assertFalse(stop.exception());
+            assertFalse(stop.stack().isEmpty(), "with its call stack");
+            assertEquals(stop, told.getLast());
+
+            int before = told.size();
+            FxTestSupport.runOnFx(() -> debug.selectFrameFromMap(stop.frame())); // listed: shown again
+            await("picking a frame on the Map shows it", () -> told.size() > before);
+            assertEquals(stop.frame(), told.getLast().frame());
+            FxTestSupport.runOnFx(() -> debug.selectFrameFromMap(new com.editora.dap.DapModels.StackFrameInfo(
+                    987_654, "gone", null, 0, 0, null, "", null, null))); // not listed: said, nothing shown
+
+            FxTestSupport.runOnFx(manager::resume);
+            session.awaitRequest("continue");
+            await("the Map was not told it runs", () -> debug.mapStop().frame() == null);
+            assertEquals(MapDebugStop.RUNNING, told.getLast());
+            int running = told.size();
+            FxTestSupport.runOnFx(() -> debug.selectFrameFromMap(stop.frame())); // running: nothing to pick
+            assertEquals(running, told.size());
+        } finally {
+            FxTestSupport.runOnFx(() -> debug.setOnMapStop(ignored -> {}));
+        }
+    }
+
     @Test
     void anExceptionStopShowsTheExceptionRowAndARedLine() throws Exception {
         Path util = file("util.py", UTIL);

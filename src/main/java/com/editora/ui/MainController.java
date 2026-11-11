@@ -1254,6 +1254,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setFileActions(ProjectTreeFileActions.of(this, this::localHistoryEnabled));
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
         panel.setCardGutterSource(MapCardGutterMarks.of(this)); // breakpoints, bookmarks, ▶ and bars on Map cards
+        if (debugCoordinator != null) { // the Map follows the debugger's stops, its call stack picks frames
+            panel.setOnDebugFramePicked(debugCoordinator::selectFrameFromMap);
+            debugCoordinator.setOnMapStop(panel::setDebugStop);
+        }
         panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
         panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
         panel.shareIndexes(indexCoordinator, lspManager); // "@name" in the Map; Search Everywhere's files

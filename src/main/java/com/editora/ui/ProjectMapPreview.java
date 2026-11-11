@@ -690,6 +690,12 @@ final class ProjectMapPreview extends StackPane {
     private java.util.Map<Integer, MapCardGutter.Run> gutterRuns = java.util.Map.of();
     /** The last ask for change bars: a later one wins. */
     private long gutterAsk;
+    /** The file's 0-based line the debugger is stopped on, marked on the card (Map gaps round 3, item 2), or -1. */
+    private int executionLine = -1;
+    /** The stop there is on an exception: the line is drawn red, as in the editor. */
+    private boolean executionException;
+    /** The paragraph the execution line's style is on, or -1. */
+    private int executionParagraph = -1;
 
     private final Tooltip statusTip = new Tooltip();
 
@@ -1945,7 +1951,80 @@ final class ProjectMapPreview extends StackPane {
         int first = shown == null ? 0 : shown.startLine();
         int last = shown == null ? Math.max(0, editor.getParagraphs().size() - 1) : shown.endLine();
         editor.setParagraphGraphicFactory(MapCardGutter.rows(
-                first, last, gutterMarks, gutterChanges, gutterRuns, this::gutterBreakpoint, this::gutterRun));
+                first,
+                last,
+                gutterMarks,
+                gutterChanges,
+                gutterRuns,
+                executionLine,
+                this::gutterBreakpoint,
+                this::gutterRun));
+    }
+
+    // --- The debugger's stop (Map gaps round 3, item 2) ---
+
+    /**
+     * Marks the file's 0-based {@code fileLine} as where the debugger is stopped — the editor's execution line and its
+     * arrow, red for an {@code exception} — and draws the card as the stop card.
+     */
+    void setExecutionLine(int fileLine, boolean exception) {
+        if (disposed) {
+            return;
+        }
+        executionLine = fileLine;
+        executionException = exception;
+        if (!getStyleClass().contains(DEBUG_STOP_STYLE)) {
+            getStyleClass().add(DEBUG_STOP_STYLE);
+        }
+        applyExecutionStyle();
+        installGutter();
+    }
+
+    /** The debugger left the card's line: the mark goes. */
+    void clearExecutionLine() {
+        if (executionLine < 0) {
+            return;
+        }
+        executionLine = -1;
+        executionException = false;
+        getStyleClass().remove(DEBUG_STOP_STYLE);
+        applyExecutionStyle();
+        installGutter();
+    }
+
+    /** The file's line the card marks as the debugger's, or -1. */
+    int executionLine() {
+        return executionLine;
+    }
+
+    /** The paragraph the execution line is drawn on, or -1. For tests. */
+    int executionParagraph() {
+        return executionParagraph;
+    }
+
+    /** The card's style while it marks where the debugger is stopped. */
+    static final String DEBUG_STOP_STYLE = "project-map-debug-stop";
+
+    /** Puts the execution line's style on its paragraph, if the card shows it, and takes it off the one before. */
+    private void applyExecutionStyle() {
+        int paragraphs = editor.getParagraphs().size();
+        if (executionParagraph >= 0 && executionParagraph < paragraphs) {
+            editor.setParagraphStyle(executionParagraph, java.util.List.of());
+        }
+        executionParagraph = -1;
+        if (executionLine < 0) {
+            return;
+        }
+        Range shown = range;
+        int at = executionLine - (shown == null ? 0 : shown.startLine());
+        if (at >= 0 && at < paragraphs && !shownText.isEmpty()) {
+            editor.setParagraphStyle(
+                    at,
+                    executionException
+                            ? java.util.List.of("exec-line", "exec-exception")
+                            : java.util.List.of("exec-line"));
+            executionParagraph = at;
+        }
     }
 
     /** A click in the breakpoint strip on the file's {@code line}. */
@@ -2028,6 +2107,10 @@ final class ProjectMapPreview extends StackPane {
         loadedStamp = null;
         gutterChanges = null; // another file's bars
         gutterRuns = java.util.Map.of();
+        executionLine = -1; // another file: the debugger's line is put back by whoever shows it
+        executionException = false;
+        executionParagraph = -1;
+        getStyleClass().remove(DEBUG_STOP_STYLE);
         boolean openBuffer = content != null && content.open();
         fromBuffer = openBuffer;
         shownVersion = openBuffer && content != null ? content.version() : -1;
@@ -4592,6 +4675,7 @@ final class ProjectMapPreview extends StackPane {
         status.setText(idleStatus(truncated));
         if (changed) {
             refreshGutter(true);
+            applyExecutionStyle();
             onTextShown.run();
         }
     }

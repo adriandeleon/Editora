@@ -111,8 +111,11 @@ public class WorkspaceState {
      *
      * <p>v33 → v34 added {@code projectMapShowDependencies} (the Map's ⋯ "Show dependencies of the selection").
      * Additive; absent means off, as before.
+     *
+     * <p>v34 → v35 added {@code projectMapIgnoreDebugger} (the Map's ⋯ "Follow the Debugger" turned off). Additive;
+     * absent means the Map follows the debugger, its default.
      */
-    public static final int SCHEMA_VERSION = 34;
+    public static final int SCHEMA_VERSION = 35;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -253,6 +256,8 @@ public class WorkspaceState {
     private boolean projectMapShowRecentChanges;
     /** Project Map "Show dependencies of the selection" (rows it uses and that use it, tinted). v34; off by default. */
     private boolean projectMapShowDependencies;
+    /** Project Map "Follow the Debugger" turned off (round 3, item 2). v35; absent means it follows. */
+    private boolean projectMapIgnoreDebugger;
     /** Branch dropdown sections shown folded ("local", "remote", "remote:<name>", "actions"). Additive in v14. */
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
@@ -758,6 +763,14 @@ public class WorkspaceState {
 
     public void setProjectMapShowDependencies(boolean projectMapShowDependencies) {
         this.projectMapShowDependencies = projectMapShowDependencies;
+    }
+
+    public boolean isProjectMapIgnoreDebugger() {
+        return projectMapIgnoreDebugger;
+    }
+
+    public void setProjectMapIgnoreDebugger(boolean projectMapIgnoreDebugger) {
+        this.projectMapIgnoreDebugger = projectMapIgnoreDebugger;
     }
 
     public List<ProjectMapWorkingSet> getProjectMapWorkingSets() {
