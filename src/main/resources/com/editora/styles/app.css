@@ -2349,6 +2349,27 @@
 .project-map-results-filter {
     -fx-font-size: 11px;
 }
+/* The debugger's stop card (Map gaps round 3, item 2): the editor's execution-line amber on its frame, and the call
+   stack beside it, the frame shown marked as the execution arrow is, frames with no file greyed. */
+.project-map-preview.project-map-debug-stop > .project-map-preview-frame {
+    -fx-border-color: #f0b429;
+    -fx-border-width: 2;
+}
+.project-map-call-stack-list .list-cell {
+    -fx-padding: 3 6 3 4;
+}
+.project-map-call-stack-list .list-cell:shown .project-map-call-stack-mark {
+    -fx-fill: #f0b429;
+}
+.project-map-call-stack-list .list-cell:shown .project-map-call-stack-name {
+    -fx-font-weight: bold;
+}
+.project-map-call-stack-list .list-cell:no-source .project-map-call-stack-name {
+    -fx-opacity: 0.6;
+}
+.project-map-call-stack-place {
+    -fx-font-size: 10px;
+}
 /* Linked reference cards: an edge's label, at the middle of the line from a result card to the card it was found
    from, and the "+N more" chip under that card. A label found by name only is dashed, as its edge is. */
 .project-map-link-label {

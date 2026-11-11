@@ -270,6 +270,25 @@ marks the file's own lines. The marks come from one `MapCardGutter.Source` (`Map
 window), read again when a breakpoint or bookmark is stored in any window (`MainController.marksStored` /
 `marksChangedElsewhere`) and, with the bars, when the Git status changes or the card's text does.
 
+**Following the debugger** (Map gaps round 3, item 2; ⋯ **Follow the debugger**, on by default, workspace
+`projectMapIgnoreDebugger` since v35). `DebugCoordinator` tells the Map each frame it shows as a `MapDebugStop` —
+the frame, the stopped thread's call stack (`DebugPanel.callStack`) and whether it stopped on an exception — from
+`highlightFrame`, and `MapDebugStop.RUNNING` when the session leaves the suspended state, a resumed thread's stack
+empties or another session is focused (`setOnMapStop`, wired by `MainController` when the Project panel is built,
+told the current stop at once). `ProjectMapView.setDebugStop` applies the last one at the next pulse, so a step's
+clear-then-frame is one change, and only while the Map window shows (a stop or resume while hidden is applied when it
+shows again). `MapCardLinks.showStop` opens the card of the declaration that holds the frame's line (the file's
+when it has no outline, waiting for the outline as a search hit does), as a preview the next stop replaces where it
+stood unless something keeps it, and marks it: `ProjectMapPreview.setExecutionLine` puts the editor's `exec-line`
+paragraph style (with `exec-exception`) on the line, the execution arrow in the gutter's breakpoint strip (shown for it
+even where breakpoints are not) and the `project-map-debug-stop` amber border on the card. The card is one of the
+picked cards, so the orphan check leaves it, and the Map pans to it (`MapCards.panTo`) without taking the keyboard.
+Beside it `MapCallStack` (a `MapSideColumn`, shown without focus) lists the stack top first, the shown frame marked,
+frames with no file greyed and label or fold rows unpickable; Enter or a click hands the frame to
+`DebugCoordinator.selectFrameFromMap`, which selects it in the Debug window (the frame already shown is sent again), and
+the card follows. × or Escape closes the column until the next stop. A frame with no file leaves the card unmarked with
+the column still listed; a resume takes the mark and the column away; turning the option off does too.
+
 **Find in a card.** Find typed in a focused card (`find.show`: Ctrl+F, Cmd+F, Emacs `C-s`), or the menu's **Find in
 Card…**, opens a find bar under its title bar: a field (a one-line selection is what it looks for), "k of N", ‹ ›
 and **Aa** (match case). Typing selects the first match from where the find began; Enter and Shift+Enter, F3 and

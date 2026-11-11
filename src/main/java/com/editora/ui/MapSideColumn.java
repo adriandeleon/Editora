@@ -168,6 +168,11 @@ abstract class MapSideColumn implements CardAttachment {
 
     /** Sticks the column on its card on the side with room, {@code preferLeft} first, and puts the keyboard in it. */
     void show(boolean preferLeft) {
+        show(preferLeft, true);
+    }
+
+    /** As {@link #show(boolean)}; the keyboard goes to it only with {@code focus}. */
+    void show(boolean preferLeft, boolean focus) {
         if (!shown) {
             shown = true;
             card.layoutXProperty().addListener(follow);
@@ -183,7 +188,9 @@ abstract class MapSideColumn implements CardAttachment {
         double right = left + card.getWidth() * scale;
         side = CardAttachment.side(left, right, (WIDTH + GAP) * scale, host.getWidth(), preferLeft);
         layout();
-        focusTarget().requestFocus();
+        if (focus) {
+            focusTarget().requestFocus();
+        }
     }
 
     private void layout() {

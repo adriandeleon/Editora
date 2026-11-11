@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked, as VS Code shows it. Before, Editora said there was no source. The tab is opened once per session and shown
   again at the next stop there. You can set breakpoints in it too; they last for that debug session. Pausing a program
   that waits in a timer still shows your own line.
+- **The Project Map follows the debugger.** When a debug session pauses, the Map opens the card of the method it
+  stopped in, marks the line with the editor's amber execution line and arrow (red on an exception), and shows the
+  call stack beside it. Click a frame there, or press Enter, to show it in the debugger; the card follows. Each step
+  replaces the stop card where it stood, the way search hits do, unless you pinned, moved or resized it. The Map pans
+  to the card but leaves the keyboard where it is. Turn it off with ⋯ → *Follow the debugger*; the Map remembers the
+  choice per workspace.
 - **Project Map cards have the editor's gutter.** Beside each line number a code card now shows the line's
   breakpoint, bookmark and Git change bar, and a ▶ on a JUnit test or a Java `main` method that runs it, as the
   editor's gutter does. Click in the breakpoint column to set or remove a breakpoint, in a file you have open or not;

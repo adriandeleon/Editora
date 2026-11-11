@@ -2104,7 +2104,7 @@ public final class FoldManager {
     }
 
     /** The execution-point arrow (the debugger is stopped on this line), drawn over any breakpoint glyph. */
-    private static Node executionArrow() {
+    public static Node executionArrow() {
         SVGPath svg = new SVGPath();
         svg.setContent(EXEC_ARROW_PATH);
         svg.getStyleClass().add("exec-arrow");
