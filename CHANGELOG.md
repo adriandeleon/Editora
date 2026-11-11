@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Loaded Sources and Modules.** While debugging, *Debug: Loaded Sources…* lists the scripts and source files the
+  program has loaded, as VS Code's Loaded Scripts does, with your project's files first. Choose one to open it: a file
+  opens in its tab, ready for breakpoints, and code the debugger has only in memory (Node.js internals, code run
+  through `eval`) opens read-only with the text the debugger gives. *Debug: Modules…* lists the libraries, assemblies
+  or modules loaded, as Visual Studio's Modules window does, with whether their symbols are loaded; Enter copies a
+  module's path. JavaScript and TypeScript list sources; Rust, C, C++, C# and Python list modules (Python lists the
+  modules whose code has run). Both are in the Run menu.
+
 - **Breakpoint groups.** Put breakpoints in named groups, as in IntelliJ, and turn a whole group on or off at once:
   *Debug: Move Breakpoint to Group…* (editor menu, gutter menu, Run menu) or the breakpoint form's new *Group* field
   sets a breakpoint's group, and *Debug: Enable / Disable Breakpoint Group…* turns every breakpoint of a group on, or

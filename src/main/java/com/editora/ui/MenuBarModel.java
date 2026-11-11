@@ -363,6 +363,8 @@ final class MenuBarModel {
                                                 "debug.exportBreakpoints",
                                                 "debug.importBreakpoints",
                                                 "debug.threads",
+                                                "debug.loadedSources",
+                                                "debug.modules",
                                                 "debug.showDisassembly",
                                                 "debug.showMemory",
                                                 "debug.editCustomAdapters",

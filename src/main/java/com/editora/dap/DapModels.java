@@ -18,6 +18,50 @@ public final class DapModels {
     public record ThreadInfo(int id, String name) {}
 
     /**
+     * A script or source file the debuggee has loaded, as the adapter lists it (VS Code's Loaded Scripts): its
+     * {@code name}, the {@code adapterPath} the adapter gave (a file, or a name such as
+     * {@code <node_internals>/fs}), the local {@code file} when that names one, and the {@code sourceReference} to ask
+     * the adapter for its text by when it is not a file (0: none). {@code origin} says where it came from, when the
+     * adapter says ("Skipped by skipFiles").
+     */
+    public record LoadedSource(
+            String name,
+            String adapterPath,
+            @Nullable Path file,
+            int sourceReference,
+            @Nullable String origin) {
+        public LoadedSource {
+            name = name == null ? "" : name;
+            adapterPath = adapterPath == null ? "" : adapterPath;
+        }
+
+        /** What tells two of them apart: the adapter's path, else the reference and name. */
+        public String key() {
+            return !adapterPath.isEmpty() ? "p:" + adapterPath : "r:" + sourceReference + ":" + name;
+        }
+    }
+
+    /**
+     * A module the debuggee has loaded — a shared library, an assembly, a Python module (Visual Studio's Modules
+     * window): its id and name, and what the adapter says of it ({@code null} where it says nothing): its path,
+     * version, whether its symbols are loaded, whether it is the user's code or optimized, and its address range.
+     */
+    public record ModuleInfo(
+            String id,
+            String name,
+            @Nullable String path,
+            @Nullable String version,
+            @Nullable String symbolStatus,
+            @Nullable Boolean userCode,
+            @Nullable Boolean optimized,
+            @Nullable String addressRange) {
+        public ModuleInfo {
+            id = id == null ? "" : id;
+            name = name == null ? "" : name;
+        }
+    }
+
+    /**
      * A thread as the Threads view shows it: whether it is suspended, and why ({@code breakpoint}, {@code step},
      * {@code pause}, {@code exception}… as the adapter said; {@code ""} when it did not). {@code shown} is the thread
      * whose stack and variables the Debug window shows.

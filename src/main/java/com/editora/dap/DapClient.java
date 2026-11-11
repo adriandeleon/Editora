@@ -786,6 +786,239 @@ public final class DapClient implements IDebugProtocolClient {
         host.onStopped(threadId, args.getReason(), Boolean.TRUE.equals(args.getAllThreadsStopped()));
     }
 
+    // --- loaded sources and modules -------------------------------------------------------------------------------
+
+    /** What this session's adapter said it loaded ({@code loadedSource} events), by {@link DapModels.LoadedSource#key}. */
+    private final Map<String, DapModels.LoadedSource> sourcesSeen =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>());
+
+    /** The modules this session's adapter said were loaded ({@code module} events), by id. */
+    private final Map<String, DapModels.ModuleInfo> modulesSeen =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>());
+
+    /** Root only: the session that listed each {@code sourceReference}, which is the one to ask for its text. */
+    private final Map<Integer, DapClient> sourceOwners = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Override
+    public void loadedSource(org.eclipse.lsp4j.debug.LoadedSourceEventArguments args) {
+        DapModels.LoadedSource s = args == null ? null : loadedSource(args.getSource(), paths);
+        if (s == null) {
+            return;
+        }
+        if (args.getReason() == org.eclipse.lsp4j.debug.LoadedSourceEventArgumentsReason.REMOVED) {
+            sourcesSeen.remove(s.key());
+        } else {
+            sourcesSeen.put(s.key(), s);
+        }
+    }
+
+    @Override
+    public void module(org.eclipse.lsp4j.debug.ModuleEventArguments args) {
+        DapModels.ModuleInfo m = args == null ? null : moduleInfo(args.getModule());
+        if (m == null) {
+            return;
+        }
+        if (args.getReason() == org.eclipse.lsp4j.debug.ModuleEventArgumentsReason.REMOVED) {
+            modulesSeen.remove(m.id());
+        } else {
+            modulesSeen.put(m.id(), m);
+        }
+    }
+
+    /** {@code src} as a loaded source; null when it names nothing. */
+    static DapModels.@Nullable LoadedSource loadedSource(@Nullable Source src, DapPaths paths) {
+        if (src == null) {
+            return null;
+        }
+        String raw = src.getPath() == null ? "" : src.getPath();
+        int ref = src.getSourceReference() == null ? 0 : src.getSourceReference();
+        Path file = null;
+        if (!raw.isEmpty() && ref <= 0 && !raw.startsWith("<")) {
+            Path p = paths.fromAdapter(raw);
+            file = p != null && p.isAbsolute() ? p : null;
+        }
+        String name = src.getName();
+        if (name == null || name.isBlank()) {
+            name = file != null && file.getFileName() != null
+                    ? file.getFileName().toString()
+                    : raw;
+        }
+        if (raw.isEmpty() && ref <= 0 && name.isBlank()) {
+            return null;
+        }
+        return new DapModels.LoadedSource(name, raw, file, Math.max(0, ref), src.getOrigin());
+    }
+
+    /** {@code m} as a module; null when it has no id and no name. */
+    static DapModels.@Nullable ModuleInfo moduleInfo(org.eclipse.lsp4j.debug.@Nullable Module m) {
+        if (m == null) {
+            return null;
+        }
+        Object id = m.getId() == null ? null : m.getId().get();
+        String name = m.getName();
+        if ((id == null || String.valueOf(id).isEmpty()) && (name == null || name.isEmpty())) {
+            return null;
+        }
+        return new DapModels.ModuleInfo(
+                id == null ? String.valueOf(name) : String.valueOf(id),
+                name,
+                m.getPath(),
+                m.getVersion(),
+                m.getSymbolStatus(),
+                m.getIsUserCode(),
+                m.getIsOptimized(),
+                m.getAddressRange());
+    }
+
+    /** This session and, at the root, each live child: every one lists what its own debuggee loaded. */
+    private List<DapClient> listingSessions() {
+        List<DapClient> out = new ArrayList<>();
+        out.add(this);
+        if (root == null) {
+            children.stream().filter(c -> !c.disposed).forEach(out::add);
+        }
+        return out;
+    }
+
+    /** Whether the adapter lists loaded sources: it offers the request, or has sent one as an event. */
+    public boolean listsLoadedSources() {
+        for (DapClient s : listingSessions()) {
+            Capabilities caps = s.capabilities;
+            if ((caps != null && Boolean.TRUE.equals(caps.getSupportsLoadedSourcesRequest()))
+                    || !s.sourcesSeen.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether the adapter lists modules: it offers the request, or has sent one as an event (netcoredbg does). */
+    public boolean listsModules() {
+        for (DapClient s : listingSessions()) {
+            Capabilities caps = s.capabilities;
+            if ((caps != null && Boolean.TRUE.equals(caps.getSupportsModulesRequest())) || !s.modulesSeen.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Every source the debuggee has loaded, in every session of it (a js-debug program's workers too): what the
+     * {@code loadedSources} request answers where the adapter offers it, and what its events said.
+     */
+    public CompletableFuture<List<DapModels.LoadedSource>> loadedSources() {
+        List<DapClient> sessions = listingSessions();
+        List<CompletableFuture<List<DapModels.LoadedSource>>> asked = new ArrayList<>();
+        for (DapClient s : sessions) {
+            asked.add(s.ownLoadedSources().exceptionally(e -> List.copyOf(s.sourcesSeenNow())));
+        }
+        return CompletableFuture.allOf(asked.toArray(CompletableFuture[]::new)).thenApply(v -> {
+            Map<String, DapModels.LoadedSource> out = new java.util.LinkedHashMap<>();
+            for (int i = 0; i < sessions.size(); i++) {
+                for (DapModels.LoadedSource s : asked.get(i).join()) {
+                    if (out.putIfAbsent(s.key(), s) == null && s.sourceReference() > 0) {
+                        sourceOwners.put(s.sourceReference(), sessions.get(i));
+                    }
+                }
+            }
+            return List.copyOf(out.values());
+        });
+    }
+
+    private List<DapModels.LoadedSource> sourcesSeenNow() {
+        synchronized (sourcesSeen) {
+            return List.copyOf(sourcesSeen.values());
+        }
+    }
+
+    /** This session's loaded sources: the request's answer merged with the events. */
+    private CompletableFuture<List<DapModels.LoadedSource>> ownLoadedSources() {
+        List<DapModels.LoadedSource> seen = sourcesSeenNow();
+        Capabilities caps = capabilities;
+        IDebugProtocolServer s = server;
+        if (s == null || caps == null || !Boolean.TRUE.equals(caps.getSupportsLoadedSourcesRequest())) {
+            return CompletableFuture.completedFuture(seen);
+        }
+        return timed(s.loadedSources(new org.eclipse.lsp4j.debug.LoadedSourcesArguments()))
+                .thenApply(r -> {
+                    Map<String, DapModels.LoadedSource> out = new java.util.LinkedHashMap<>();
+                    if (r != null && r.getSources() != null) {
+                        for (Source src : r.getSources()) {
+                            DapModels.LoadedSource one = loadedSource(src, paths);
+                            if (one != null) {
+                                out.putIfAbsent(one.key(), one);
+                            }
+                        }
+                    }
+                    seen.forEach(one -> out.putIfAbsent(one.key(), one));
+                    return List.copyOf(out.values());
+                });
+    }
+
+    /** Every module the debuggee has loaded, in every session of it: the {@code modules} request's and the events'. */
+    public CompletableFuture<List<DapModels.ModuleInfo>> modules() {
+        List<DapClient> sessions = listingSessions();
+        List<CompletableFuture<List<DapModels.ModuleInfo>>> asked = new ArrayList<>();
+        for (DapClient s : sessions) {
+            asked.add(s.ownModules().exceptionally(e -> s.modulesSeenNow()));
+        }
+        return CompletableFuture.allOf(asked.toArray(CompletableFuture[]::new)).thenApply(v -> {
+            Map<String, DapModels.ModuleInfo> out = new java.util.LinkedHashMap<>();
+            for (CompletableFuture<List<DapModels.ModuleInfo>> one : asked) {
+                one.join().forEach(m -> out.putIfAbsent(m.id(), m));
+            }
+            return List.copyOf(out.values());
+        });
+    }
+
+    private List<DapModels.ModuleInfo> modulesSeenNow() {
+        synchronized (modulesSeen) {
+            return List.copyOf(modulesSeen.values());
+        }
+    }
+
+    private CompletableFuture<List<DapModels.ModuleInfo>> ownModules() {
+        List<DapModels.ModuleInfo> seen = modulesSeenNow();
+        Capabilities caps = capabilities;
+        IDebugProtocolServer s = server;
+        if (s == null || caps == null || !Boolean.TRUE.equals(caps.getSupportsModulesRequest())) {
+            return CompletableFuture.completedFuture(seen);
+        }
+        return timed(s.modules(new org.eclipse.lsp4j.debug.ModulesArguments())).thenApply(r -> {
+            Map<String, DapModels.ModuleInfo> out = new java.util.LinkedHashMap<>();
+            if (r != null && r.getModules() != null) {
+                for (org.eclipse.lsp4j.debug.Module m : r.getModules()) {
+                    DapModels.ModuleInfo one = moduleInfo(m);
+                    if (one != null) {
+                        out.putIfAbsent(one.id(), one);
+                    }
+                }
+            }
+            seen.forEach(one -> out.putIfAbsent(one.id(), one));
+            return List.copyOf(out.values());
+        });
+    }
+
+    /** The text of {@code source}, which is not a file: the adapter's {@code source} answer, from the session that listed it. */
+    public CompletableFuture<String> sourceContent(DapModels.LoadedSource source) {
+        DapClient owner = sourceOwners.get(source.sourceReference());
+        DapClient session = owner != null && !owner.disposed ? owner : target();
+        IDebugProtocolServer s = session.server;
+        if (s == null || source.sourceReference() <= 0) {
+            return CompletableFuture.failedFuture(new IllegalStateException("no source to ask for"));
+        }
+        Source src = new Source();
+        src.setSourceReference(source.sourceReference());
+        if (!source.adapterPath().isEmpty()) {
+            src.setPath(source.adapterPath());
+        }
+        org.eclipse.lsp4j.debug.SourceArguments a = new org.eclipse.lsp4j.debug.SourceArguments();
+        a.setSource(src);
+        a.setSourceReference(source.sourceReference());
+        return timed(s.source(a)).thenApply(r -> r == null || r.getContent() == null ? "" : r.getContent());
+    }
+
     /** A thread started or exited: the Threads view lists them again. */
     @Override
     public void thread(org.eclipse.lsp4j.debug.ThreadEventArguments args) {

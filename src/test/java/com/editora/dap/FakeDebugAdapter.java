@@ -122,6 +122,15 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set (before the client connects), sessions advertise {@code supportsStepInTargetsRequest}. */
     public volatile boolean stepInTargets;
 
+    /** The sources the {@code loadedSources} request answers with; null: the request is not offered. */
+    public volatile List<org.eclipse.lsp4j.debug.Source> loadedSources;
+
+    /** The modules the {@code modules} request answers with; null: the request is not offered. */
+    public volatile List<org.eclipse.lsp4j.debug.Module> modules;
+
+    /** The text the {@code source} request answers with, by source reference. */
+    public final Map<Integer, String> sourceTexts = new java.util.concurrent.ConcurrentHashMap<>();
+
     /**
      * When set (before the client connects), sessions advertise {@code supportsCompletionsRequest} and answer
      * {@code completions} with these targets; the arguments of each request land in the session's
@@ -410,6 +419,86 @@ public final class FakeDebugAdapter implements AutoCloseable {
             output(text, "stdout");
         }
 
+        /** A {@code loadedSource} event: {@code source} was loaded (or changed, or removed). */
+        public void loadedSource(
+                org.eclipse.lsp4j.debug.Source source,
+                org.eclipse.lsp4j.debug.LoadedSourceEventArgumentsReason reason) {
+            org.eclipse.lsp4j.debug.LoadedSourceEventArguments a =
+                    new org.eclipse.lsp4j.debug.LoadedSourceEventArguments();
+            a.setSource(source);
+            a.setReason(reason);
+            client.loadedSource(a);
+        }
+
+        /** A {@code module} event: {@code module} was loaded (or changed, or removed). */
+        public void module(
+                org.eclipse.lsp4j.debug.Module module, org.eclipse.lsp4j.debug.ModuleEventArgumentsReason reason) {
+            org.eclipse.lsp4j.debug.ModuleEventArguments a = new org.eclipse.lsp4j.debug.ModuleEventArguments();
+            a.setModule(module);
+            a.setReason(reason);
+            client.module(a);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.LoadedSourcesResponse> loadedSources(
+                org.eclipse.lsp4j.debug.LoadedSourcesArguments args) {
+            record("loadedSources");
+            org.eclipse.lsp4j.debug.LoadedSourcesResponse r = new org.eclipse.lsp4j.debug.LoadedSourcesResponse();
+            List<org.eclipse.lsp4j.debug.Source> list = loadedSources;
+            r.setSources(
+                    list == null
+                            ? new org.eclipse.lsp4j.debug.Source[0]
+                            : list.toArray(new org.eclipse.lsp4j.debug.Source[0]));
+            return CompletableFuture.completedFuture(r);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.ModulesResponse> modules(
+                org.eclipse.lsp4j.debug.ModulesArguments args) {
+            record("modules");
+            org.eclipse.lsp4j.debug.ModulesResponse r = new org.eclipse.lsp4j.debug.ModulesResponse();
+            List<org.eclipse.lsp4j.debug.Module> list = modules;
+            r.setModules(
+                    list == null
+                            ? new org.eclipse.lsp4j.debug.Module[0]
+                            : list.toArray(new org.eclipse.lsp4j.debug.Module[0]));
+            return CompletableFuture.completedFuture(r);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.SourceResponse> source(
+                org.eclipse.lsp4j.debug.SourceArguments args) {
+            record("source");
+            String text = sourceTexts.get(args.getSourceReference());
+            if (text == null) {
+                return refused("no such source");
+            }
+            org.eclipse.lsp4j.debug.SourceResponse r = new org.eclipse.lsp4j.debug.SourceResponse();
+            r.setContent(text);
+            return CompletableFuture.completedFuture(r);
+        }
+
+        /** A source as an adapter names one: a file ({@code reference} 0) or a reference with a name. */
+        public static org.eclipse.lsp4j.debug.Source source(String name, String path, int reference) {
+            org.eclipse.lsp4j.debug.Source s = new org.eclipse.lsp4j.debug.Source();
+            s.setName(name);
+            s.setPath(path);
+            if (reference > 0) {
+                s.setSourceReference(reference);
+            }
+            return s;
+        }
+
+        /** A module as an adapter names one. */
+        public static org.eclipse.lsp4j.debug.Module module(String id, String name, String path, String symbols) {
+            org.eclipse.lsp4j.debug.Module m = new org.eclipse.lsp4j.debug.Module();
+            m.setId(org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(id));
+            m.setName(name);
+            m.setPath(path);
+            m.setSymbolStatus(symbols);
+            return m;
+        }
+
         public void output(String text, String category) {
             OutputEventArguments output = new OutputEventArguments();
             output.setOutput(text);
@@ -524,6 +613,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             if (completions != null) {
                 capabilities.setSupportsCompletionsRequest(true);
+            }
+            if (loadedSources != null) {
+                capabilities.setSupportsLoadedSourcesRequest(true);
+            }
+            if (modules != null) {
+                capabilities.setSupportsModulesRequest(true);
             }
             CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(capabilities);
             if (!javaDebug) {

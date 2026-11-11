@@ -137,6 +137,18 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public com.editora.editor.EditorBuffer openReadOnlyDoc(String title, String content, String language) {
+        // As LspOpsHost's library sources: an in-memory, read-only, path-less buffer.
+        com.editora.editor.EditorBuffer buffer = new com.editora.editor.EditorBuffer();
+        buffer.setDisplayName(title);
+        buffer.setContent(content);
+        buffer.setLanguageOverride(language);
+        buffer.setViewMode(true);
+        mc.addBuffer(buffer, true);
+        return buffer;
+    }
+
+    @Override
     public void openPath(@Nullable Path file) {
         mc.fileWorkflows.openPath(file, true); // no "Already open" echo on every stop and step
     }

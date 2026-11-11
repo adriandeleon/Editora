@@ -530,8 +530,14 @@ final class Chrome {
      * Debug commands that drive a live session (as opposed to starting/attaching/setting breakpoints). Apply Code
      * Changes was enabled with no session, to answer with a status line (review 2 C109).
      */
-    private static final java.util.Set<String> DEBUG_NEEDS_SESSION =
-            java.util.Set.of("debug.stop", "debug.stopAll", "debug.restart", "debug.pause", "debug.applyCodeChanges");
+    private static final java.util.Set<String> DEBUG_NEEDS_SESSION = java.util.Set.of(
+            "debug.stop",
+            "debug.stopAll",
+            "debug.restart",
+            "debug.pause",
+            "debug.applyCodeChanges",
+            "debug.loadedSources",
+            "debug.modules");
 
     /**
      * Git commands that must stay enabled <b>outside</b> a repository, because that is where they are
