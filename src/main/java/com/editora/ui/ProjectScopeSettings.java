@@ -102,8 +102,7 @@ final class ProjectScopeSettings {
         userButton.setToggleGroup(group);
         projectButton.setToggleGroup(group);
         userButton.setSelected(true);
-        userButton.getStyleClass().add(atlantafx.base.theme.Styles.LEFT_PILL);
-        projectButton.getStyleClass().add(atlantafx.base.theme.Styles.RIGHT_PILL);
+        userButton.setTooltip(new javafx.scene.control.Tooltip(tr("settings.scope.userTip")));
         // A toggle group lets the selected button be clicked off; the scope is always one of the two.
         group.selectedToggleProperty().addListener((o, was, now) -> {
             if (now == null) {
@@ -118,7 +117,7 @@ final class ProjectScopeSettings {
         note.setWrapText(true);
         HBox.setHgrow(note, Priority.ALWAYS);
         trustButton.setOnAction(e -> trust.run());
-        bar = new HBox(8, label, new HBox(userButton, projectButton), note, trustButton);
+        bar = new HBox(8, label, new HBox(6, userButton, projectButton), note, trustButton);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new javafx.geometry.Insets(8, 16, 4, 16));
         // The note wraps; the label and the buttons keep their width (a long note squeezed them to "...").

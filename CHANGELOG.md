@@ -330,6 +330,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings names its two scopes plainly.** In a project window the top of Settings now reads "Edit settings for
+  **All projects** | **This project: name**" instead of "Settings for User | Project: name", with a little space
+  between the two buttons and a tooltip on All projects saying it is used in every window unless a project sets its
+  own.
 - **The editor's right-click menu opens with the editing items.** Cut, Copy and Paste, then Undo and Redo, then
   Select All now come first, in the same place on every file, with Run and Debug, the debugger, LSP, build, AI,
   spelling, markup, comment, plugin, bookmark and note items below them. The breakpoint actions — Toggle, Temporary,
