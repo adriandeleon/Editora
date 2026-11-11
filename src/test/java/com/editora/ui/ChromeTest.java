@@ -42,12 +42,12 @@ class ChromeTest {
         boolean simple = false;
         // Hidden, exactly like Zen — the surrounding window chrome + whitespace guides:
         assertFalse(Chrome.toolbar(true, focus));
+        assertFalse(Chrome.menuBar(true, focus));
         assertFalse(Chrome.tabBar(true, focus));
         assertFalse(Chrome.breadcrumb(true, focus, simple));
         assertFalse(Chrome.toolStripes(true, focus, simple));
         assertFalse(Chrome.whitespace(true, focus));
         // KEPT — Expert leaves the whole editor view + the status bar (all keyed on the real zen flag):
-        assertTrue(Chrome.menuBar(true, zen));
         assertTrue(Chrome.statusBar(true, zen));
         assertTrue(Chrome.lineNumbers(true, zen, simple));
         assertTrue(Chrome.columnRuler(true, zen));

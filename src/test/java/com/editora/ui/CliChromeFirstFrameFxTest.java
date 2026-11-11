@@ -74,7 +74,7 @@ class CliChromeFirstFrameFxTest {
     void expertFlagIsAppliedBeforeTheWindowIsShown() throws Exception {
         Chrome c = firstFrame(false, true, false);
         assertFalse(c.toolbarVisible(), "--expert must hide the toolbar on the FIRST frame, not after restore");
-        assertTrue(c.menuBarVisible(), "--expert keeps the menu bar on the first frame");
+        assertFalse(c.menuBarVisible(), "--expert must hide the menu bar on the first frame");
         assertTrue(c.tabHeaderCollapsed(), "--expert must collapse the tab bar on the first frame");
         // Expert is the lighter focus mode: unlike Zen it deliberately KEEPS the status bar.
         assertTrue(c.statusBarVisible(), "--expert keeps the status bar");
