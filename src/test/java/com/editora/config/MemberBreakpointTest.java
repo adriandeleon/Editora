@@ -74,4 +74,25 @@ class MemberBreakpointTest {
         assertTrue(v3.getMemberBreakpoints().isEmpty());
         assertTrue(BreakpointStore.SCHEMA_VERSION >= 4, "member breakpoints came with schema 4");
     }
+
+    @Test
+    void aMemberBreakpointKeepsItsGroup() throws Exception {
+        MemberBreakpoint m = MemberBreakpoint.method("p.A", "run").withGroup(" Startup ");
+        assertEquals("Startup", m.group());
+        assertEquals(
+                "Startup",
+                m.withEnabled(false).withCondition("x").withHitCondition("2").group());
+        assertEquals(
+                "Startup",
+                MemberBreakpoint.field("p.A", "f", "read")
+                        .withGroup("Startup")
+                        .withAccess("write")
+                        .group());
+        ObjectMapper json = new ObjectMapper();
+        assertEquals(m, json.readValue(json.writeValueAsString(m), MemberBreakpoint.class));
+        assertEquals(
+                "",
+                json.readValue("{\"kind\":\"METHOD\",\"className\":\"p.A\",\"member\":\"run\"}", MemberBreakpoint.class)
+                        .group());
+    }
 }

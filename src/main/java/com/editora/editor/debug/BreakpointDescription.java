@@ -58,6 +58,9 @@ public final class BreakpointDescription {
         if (bp.records()) {
             out.add(tr("debug.breakpoint.recording"));
         }
+        if (!bp.group().isEmpty()) {
+            out.add(tr("debug.breakpoint.group", bp.group()));
+        }
         return out;
     }
 

@@ -126,6 +126,22 @@ final class MemberBreakpointCommands {
                 m.shortName()));
     }
 
+    /** Adds each of {@code all} whose member has none yet, saving once; returns how many were added. */
+    int addAll(List<MemberBreakpoint> all) {
+        List<MemberBreakpoint> list = new ArrayList<>(ops.memberBreakpoints());
+        int added = 0;
+        for (MemberBreakpoint m : all) {
+            if (list.stream().noneMatch(m::sameMember)) {
+                list.add(m);
+                added++;
+            }
+        }
+        if (added > 0) {
+            save(list);
+        }
+        return added;
+    }
+
     /** Replaces the breakpoint on {@code next}'s member with {@code next} (enabled, condition…). */
     void replace(MemberBreakpoint next) {
         List<MemberBreakpoint> list = new ArrayList<>(ops.memberBreakpoints());
