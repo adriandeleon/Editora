@@ -41,7 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or modules loaded, as Visual Studio's Modules window does, with whether their symbols are loaded; Enter copies a
   module's path. JavaScript and TypeScript list sources; Rust, C, C++, C# and Python list modules (Python lists the
   modules whose code has run). Both are in the Run menu.
-
+- **Dependencies of the selection on the Project Map.** With ⋯ *Show dependencies of the selection* on, selecting
+  a file or folder tints the rows it uses (violet), the rows that use it (olive) and the rows on both sides (amber),
+  folders included, so a collapsed folder still shows that something in it is involved. The tooltip says which side
+  a row is on, and the status line how many files each way. It reads the same imports as the Dependencies card, in
+  the same 13 languages, and is remembered per workspace (workspace schema 34).
 - **Breakpoint groups.** Put breakpoints in named groups, as in IntelliJ, and turn a whole group on or off at once:
   *Debug: Move Breakpoint to Group…* (editor menu, gutter menu, Run menu) or the breakpoint form's new *Group* field
   sets a breakpoint's group, and *Debug: Enable / Disable Breakpoint Group…* turns every breakpoint of a group on, or

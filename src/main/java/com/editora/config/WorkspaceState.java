@@ -108,8 +108,11 @@ public class WorkspaceState {
      * <p>v32 → v33 added {@code debugPausedWatches} (watches the user paused: shown, not evaluated at each stop) and
      * {@code debugEvaluateHistory} (the expressions evaluated, oldest first, for the evaluate fields' Up / Down and
      * history list). Additive; absent means every watch is evaluated and an empty history, as before.
+     *
+     * <p>v33 → v34 added {@code projectMapShowDependencies} (the Map's ⋯ "Show dependencies of the selection").
+     * Additive; absent means off, as before.
      */
-    public static final int SCHEMA_VERSION = 33;
+    public static final int SCHEMA_VERSION = 34;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -248,6 +251,8 @@ public class WorkspaceState {
     private List<ProjectMapWorkingSet> projectMapWorkingSets = new ArrayList<>();
     /** Project Map "Show recent changes" (rows tinted by recent commits). Additive in v29; off by default. */
     private boolean projectMapShowRecentChanges;
+    /** Project Map "Show dependencies of the selection" (rows it uses and that use it, tinted). v34; off by default. */
+    private boolean projectMapShowDependencies;
     /** Branch dropdown sections shown folded ("local", "remote", "remote:<name>", "actions"). Additive in v14. */
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
@@ -745,6 +750,14 @@ public class WorkspaceState {
 
     public void setProjectMapShowRecentChanges(boolean projectMapShowRecentChanges) {
         this.projectMapShowRecentChanges = projectMapShowRecentChanges;
+    }
+
+    public boolean isProjectMapShowDependencies() {
+        return projectMapShowDependencies;
+    }
+
+    public void setProjectMapShowDependencies(boolean projectMapShowDependencies) {
+        this.projectMapShowDependencies = projectMapShowDependencies;
     }
 
     public List<ProjectMapWorkingSet> getProjectMapWorkingSets() {

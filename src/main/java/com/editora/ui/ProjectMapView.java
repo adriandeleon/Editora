@@ -125,6 +125,12 @@ final class ProjectMapView extends VBox {
             optionItem("project.map.activity.showRecentChanges", false);
 
     private Consumer<Boolean> onShowRecentChangesChanged = ignored -> {};
+    /** "Show dependencies of the selection" (round 2): the rows the selection uses and that use it, tinted. */
+    private final CheckMenuItem dependencyOverlayOption = optionItem("project.map.deps.showOverlay", false);
+
+    private Consumer<Boolean> onShowDependenciesChanged = ignored -> {};
+    /** When the overlay last asked for the project's imports to be read again (System.nanoTime), 0 for never. */
+    private long dependencyOverlayReadAt;
     /** How often rows changed lately and who owns them (Map explore positions 3, 4). */
     final ProjectMapActivity activity = new ProjectMapActivity(this::activityChanged);
     /** Why rows are dimmed, and the project's facts for the Overview card and the folder rows (review 3 A11, B4). */
@@ -444,6 +450,7 @@ final class ProjectMapView extends VBox {
         layoutCompactRowsOption.setGraphic(Icons.compactRows());
         layoutHideIgnoredOption.setGraphic(Icons.hidden());
         activityRecentChangesOption.setGraphic(Icons.recent());
+        dependencyOverlayOption.setGraphic(Icons.dependencies());
         hideOpenNotes.setGraphic(Icons.notesHidden());
         followActiveFile.setGraphic(Icons.fileSelected());
         canvasFlowMenu.setGraphic(Icons.flow());
@@ -466,6 +473,7 @@ final class ProjectMapView extends VBox {
                         layoutCompactRowsOption,
                         layoutHideIgnoredOption,
                         activityRecentChangesOption,
+                        dependencyOverlayOption,
                         hideOpenNotes,
                         followActiveFile,
                         canvasFlowMenu,
@@ -526,6 +534,11 @@ final class ProjectMapView extends VBox {
         activityRecentChangesOption.selectedProperty().addListener((obs, old, selected) -> {
             activity.setHeat(selected);
             onShowRecentChangesChanged.accept(selected);
+        });
+        dependencyOverlayOption.selectedProperty().addListener((obs, old, selected) -> {
+            dependencyOverlayReadAt = 0; // turned on: read the imports afresh
+            dependencyOverlayUpdate(true);
+            onShowDependenciesChanged.accept(selected);
         });
 
         HBox row = new HBox(3, backButton, forwardButton, breadcrumbs, revealActiveButton, help, options);
@@ -633,6 +646,69 @@ final class ProjectMapView extends VBox {
     void setOnShowRecentChangesChanged(@Nullable Consumer<Boolean> callback) {
         onShowRecentChangesChanged = callback == null ? ignored -> {} : callback;
     }
+
+    /**
+     * Whether "Show dependencies of the selection" is on: the rows the selected file or folder uses, and those that
+     * use it, are tinted (round 2).
+     */
+    boolean isShowDependencies() {
+        return dependencyOverlayOption.isSelected();
+    }
+
+    void setShowDependencies(boolean show) {
+        dependencyOverlayOption.setSelected(show);
+    }
+
+    /** Told each time "Show dependencies of the selection" changes, for the workspace to remember it. */
+    void setOnShowDependenciesChanged(@Nullable Consumer<Boolean> callback) {
+        onShowDependenciesChanged = callback == null ? ignored -> {} : callback;
+    }
+
+    /**
+     * Works the dependency overlay out for the selection from the imports last read, and — when {@code reread} and
+     * the last reading is a few seconds old — reads the changed files again and works it out once more. Says on the
+     * status line how many files the selection uses and how many use it, when that changed.
+     */
+    private void dependencyOverlayUpdate(boolean reread) {
+        Path current = root;
+        if (!dependencyOverlayOption.isSelected() || current == null || disposed) {
+            surface.setDependencyOverlay(MapDependencyOverlay.NONE);
+            return;
+        }
+        ProjectMapModel.Entry entry = surface.selectedEntry().orElse(null);
+        ProjectMapModel.Symbol symbol = entry == null ? null : entry.symbol();
+        Path subject = entry == null || entry.isPlaceholder() ? null : symbol != null ? symbol.file() : entry.path();
+        boolean folder = entry != null && entry.directory() && symbol == null;
+        ProjectMapDependencies read = dependencyIndex.latest();
+        MapDependencyOverlay before = surface.dependencyOverlay();
+        MapDependencyOverlay overlay = subject == null || read == null
+                ? MapDependencyOverlay.NONE
+                : MapDependencyOverlay.of(read, current, subject, folder);
+        surface.setDependencyOverlay(overlay);
+        Path at = overlay.subject();
+        if (at != null
+                && (!at.equals(before.subject())
+                        || overlay.uses() != before.uses()
+                        || overlay.users() != before.users())) {
+            Path name = at.getFileName();
+            String label = name == null ? at.toString() : name.toString();
+            onStatus.accept(
+                    overlay.read()
+                            ? tr("project.map.deps.overlayStatus", label, overlay.uses(), overlay.users())
+                            : tr("project.map.deps.overlayNotRead", label));
+        }
+        long now = System.nanoTime();
+        if (reread
+                && subject != null
+                && !dependencyIndex.loading()
+                && (read == null || now - dependencyOverlayReadAt > DEPENDENCY_OVERLAY_REREAD_NANOS)) {
+            dependencyOverlayReadAt = now;
+            dependencyIndex.load(found -> dependencyOverlayUpdate(false));
+        }
+    }
+
+    /** How old the imports read may be before a new selection reads the changed files again. */
+    private static final long DEPENDENCY_OVERLAY_REREAD_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
 
     /** The window's Git service: the recent changes are read on its activity lane. Null: none are read. */
     void setActivityGit(com.editora.git.@Nullable GitService service) {
@@ -1255,6 +1331,8 @@ final class ProjectMapView extends VBox {
         orientation.setRoot(normalized);
         surface.setProblems(new ProjectMapProblems(problemSource, normalized)); // counted below the new root
         dependencyIndex.setRoot(normalized);
+        dependencyOverlayReadAt = 0;
+        surface.setDependencyOverlay(MapDependencyOverlay.NONE);
         metricsIndex.setRoot(normalized);
         activity.setRoot(normalized);
         surface.resetForRoot();
@@ -3615,6 +3693,9 @@ final class ProjectMapView extends VBox {
             pendingSelection = null;
             viewsRestoredSelection = null;
         }
+        // A selection that landed with the load (a reveal, a search, a history step) is not a select(): the
+        // dependency overlay follows it here.
+        dependencyOverlayUpdate(!java.util.Objects.equals(surface.selectedPath(), selectedBefore));
         searchResolveSymbol(); // a search landing on a declaration: its file's row may have just arrived
         viewsLoadLanded(); // a trail stop's card waiting for its row
         finishLoadMore(loaded, loadedPaths, selectedBefore);
@@ -3964,6 +4045,7 @@ final class ProjectMapView extends VBox {
         updateNavigation();
         resultsFollowSelection(path);
         bearingsChanged();
+        dependencyOverlayUpdate(true);
     }
 
     private void previewSelection(Path path) {

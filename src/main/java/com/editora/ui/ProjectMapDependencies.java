@@ -148,6 +148,31 @@ final class ProjectMapDependencies {
                 folder ? mine.size() : 0);
     }
 
+    /**
+     * The files {@code subject} uses ({@code uses}) and those that use it ({@code users}), each once; for a folder,
+     * only the files outside it. The Map's dependency overlay tints their rows.
+     */
+    record Neighbours(Set<String> uses, Set<String> users) {}
+
+    /** The files around {@code subject}, the file or folder at that root-relative path. */
+    Neighbours neighbours(String subject, boolean folder) {
+        Set<String> uses = new TreeSet<>();
+        Set<String> users = new TreeSet<>();
+        for (String file : filesOf(subject, folder)) {
+            for (ProjectMapImports.Edge edge : out.getOrDefault(file, List.of())) {
+                if (!folder || !inside(edge.to(), subject)) {
+                    uses.add(edge.to());
+                }
+            }
+            for (ProjectMapImports.Edge edge : in.getOrDefault(file, List.of())) {
+                if (!folder || !inside(edge.from(), subject)) {
+                    users.add(edge.from());
+                }
+            }
+        }
+        return new Neighbours(Set.copyOf(uses), Set.copyOf(users));
+    }
+
     private static String key(String file, Grouping grouping) {
         return grouping == Grouping.FOLDERS ? ProjectMapImports.folderOf(file) : file;
     }
