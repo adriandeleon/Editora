@@ -55,6 +55,7 @@ com.editora.ui.RubyDebugProbeFxTest
 com.editora.ui.PhpDebugProbeFxTest
 com.editora.ui.DebugHistoryProbeFxTest
 com.editora.ui.EvaluateProbeFxTest
+com.editora.ui.JsColumnBreakpointsProbeFxTest
 com.editora.ui.SeveralSessionsProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest

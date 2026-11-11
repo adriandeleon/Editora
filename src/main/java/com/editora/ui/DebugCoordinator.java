@@ -1635,11 +1635,11 @@ final class DebugCoordinator {
         // session started has no place in it, and waits for the next session.
         LaunchedLines.Mapping map = lineMap(buffer);
         var mgr = buffer.getBreakpointManager();
-        boolean java = BreakpointTargets.javaLanguage(buffer.getLanguage());
+        String language = buffer.getLanguage();
         for (Breakpoint bp : mgr.documentSnapshot()) {
             int line = map.toLaunched(bp.line());
             if (bp.enabled() && !breakpointsMuted && line >= 0) { // Mute Breakpoints: the adapter is told none
-                lines.addAll(BreakpointTargets.of(bp, line, documentLineText(buffer, bp.line()), java));
+                lines.addAll(BreakpointTargets.of(bp, line, documentLineText(buffer, bp.line()), language));
             }
         }
         return new DapModels.FileBreakpoints(file, lines);

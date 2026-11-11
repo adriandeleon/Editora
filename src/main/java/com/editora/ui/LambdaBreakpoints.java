@@ -8,14 +8,15 @@ import javafx.scene.control.MenuItem;
 
 import com.editora.config.Breakpoint;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.debug.JavaLambdas;
+import com.editora.editor.debug.LineFunctions;
 
 import static com.editora.i18n.Messages.tr;
 
 /**
- * Lambda breakpoints (VS Code's inline breakpoints, IntelliJ's lambda breakpoints): a line breakpoint in Java that
- * also stops — or only stops — inside lambdas that start on its line, each time a lambda's body runs, which a line
- * breakpoint does not: it stops once, when the line itself runs. The breakpoint keeps the lambdas by number on the
+ * Lambda breakpoints (VS Code's inline breakpoints, IntelliJ's lambda breakpoints): a line breakpoint in Java,
+ * JavaScript or TypeScript that also stops — or only stops — inside functions that start on its line (lambdas, arrow
+ * functions, function expressions), each time a function's body runs, which a line breakpoint does not: it stops
+ * once, when the line itself runs. The breakpoint keeps the lambdas by number on the
  * line ({@link Breakpoint#lambdas()}); {@link BreakpointTargets} turns them into the adapter's column breakpoints.
  */
 final class LambdaBreakpoints {
@@ -29,9 +30,10 @@ final class LambdaBreakpoints {
     /** Whether the caret's line of {@code b} is Java that starts a lambda (the editor menu then offers the command). */
     static boolean caretLineHasLambdas(EditorBuffer b) {
         var area = b.getFocusedArea();
-        return BreakpointTargets.javaLanguage(b.getLanguage())
-                && !JavaLambdas.on(area.getParagraph(area.getCurrentParagraph()).getText())
-                        .isEmpty();
+        return !LineFunctions.on(
+                        b.getLanguage(),
+                        area.getParagraph(area.getCurrentParagraph()).getText())
+                .isEmpty();
     }
 
     /**
@@ -41,16 +43,16 @@ final class LambdaBreakpoints {
     void toggleAtCaret(EditorBuffer b) {
         var area = b.getFocusedArea();
         int line = area.getCurrentParagraph();
-        if (!BreakpointTargets.javaLanguage(b.getLanguage())) {
+        if (!BreakpointTargets.functionsLanguage(b.getLanguage())) {
             host.setStatus(tr("status.debug.lambdaJavaOnly"));
             return;
         }
-        var found = JavaLambdas.on(area.getParagraph(line).getText());
+        var found = LineFunctions.on(b.getLanguage(), area.getParagraph(line).getText());
         if (found.isEmpty()) {
             host.setStatus(tr("status.debug.noLambdaHere", line + 1));
             return;
         }
-        toggle(b, line, JavaLambdas.numberAt(found, area.getCaretColumn()));
+        toggle(b, line, LineFunctions.numberAt(found, area.getCaretColumn()));
     }
 
     /** Adds lambda {@code number} of {@code line} to its breakpoint (making one), or takes it away; says which. */
@@ -83,17 +85,17 @@ final class LambdaBreakpoints {
 
     /**
      * The gutter menu's "Stop on the Line" and "Stop in Lambda n" choices for breakpoint {@code bp} on {@code line}:
-     * none outside Java or on a line that starts no lambda.
+     * none in a language whose functions it cannot stop in, or on a line that starts no function.
      */
     List<MenuItem> choices(EditorBuffer b, int line, Breakpoint bp) {
         List<MenuItem> items = new ArrayList<>();
         var area = b.getArea();
-        if (!BreakpointTargets.javaLanguage(b.getLanguage())
+        if (!BreakpointTargets.functionsLanguage(b.getLanguage())
                 || line < 0
                 || line >= area.getParagraphs().size()) {
             return items;
         }
-        var found = JavaLambdas.on(area.getParagraph(line).getText());
+        var found = LineFunctions.on(b.getLanguage(), area.getParagraph(line).getText());
         if (found.isEmpty()) {
             return items;
         }
