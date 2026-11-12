@@ -315,6 +315,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 setTooltip(new Tooltip(f.fileKey()));
                 MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());
+                deleteAll.getStyleClass().add("danger"); // a destructive row reads red
                 deleteAll.setOnAction(e -> actions.deleteAll(f.projectKey(), f.fileKey()));
                 setContextMenu(new ContextMenu(deleteAll));
             } else if (item instanceof NoteRow n) {
@@ -350,6 +351,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                     n.projectKey(), n.fileKey(), n.note(), resolved ? NoteStatus.ACTIVE : NoteStatus.RESOLVED));
             MenuItem delete = new MenuItem(tr("notes.delete"));
             delete.setGraphic(Icons.trash());
+            delete.getStyleClass().add("danger");
             delete.setOnAction(e -> actions.delete(n.projectKey(), n.fileKey(), n.note()));
             return new ContextMenu(edit, toggle, new SeparatorMenuItem(), delete);
         }

@@ -81,6 +81,7 @@ final class ProjectMapWorkingSets {
             items.add(disabled(tr("project.map.workingSets.none")));
         }
         Menu delete = new Menu(tr("project.map.workingSets.delete"));
+        delete.getStyleClass().add("danger"); // a destructive row reads red, and so does each set under it
         for (ProjectMapWorkingSet set : mine) {
             MenuItem show = new MenuItem(set.getName());
             show.setMnemonicParsing(false);
@@ -88,6 +89,7 @@ final class ProjectMapWorkingSets {
             items.add(show);
             MenuItem remove = new MenuItem(set.getName());
             remove.setMnemonicParsing(false);
+            remove.getStyleClass().add("danger");
             remove.setOnAction(event -> delete(set.getName()));
             delete.getItems().add(remove);
         }

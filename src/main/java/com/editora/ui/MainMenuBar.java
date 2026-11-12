@@ -247,7 +247,7 @@ final class MainMenuBar {
         if (systemMenu) {
             // The system menu bar owns rendering and shows no item graphics — which is also the macOS
             // convention, so there is nothing to add here.
-            return new Row(new MenuItem(), null, null);
+            return new Row(danger(new MenuItem(), commandId), null, null);
         }
         Label title = new Label();
         title.getStyleClass().add("menu-item-title");
@@ -255,7 +255,19 @@ final class MainMenuBar {
         chord.getStyleClass().add("menu-item-chord");
         CustomMenuItem item = new CustomMenuItem(rowContent(iconColumn(commandId), title, chord));
         item.setHideOnClick(true);
-        return new Row(item, title, chord);
+        return new Row(danger(item, commandId), title, chord);
+    }
+
+    /**
+     * Marks a destructive command's row ({@link MenuBarModel#isDestructive}) with the {@code danger} style
+     * class, which draws its title in the danger colour (app.css). Here, where every row is built, so no menu
+     * has to remember it. The system menu bar draws its own rows and ignores the class.
+     */
+    private static <T extends MenuItem> T danger(T item, String commandId) {
+        if (MenuBarModel.isDestructive(commandId)) {
+            item.getStyleClass().add("danger");
+        }
+        return item;
     }
 
     /** The in-window row layout shared by command rows and submenus: icon, title, spacer, chord. */

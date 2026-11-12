@@ -155,6 +155,8 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
             menu.getItems().setAll(rowMenu(list.getSelectionModel().getSelectedItem()));
             if (menu.getItems().isEmpty()) {
                 e.consume(); // no row selected: nothing to offer
+            } else if (RowContextMenu.showAtSelectedRow(list, menu, e)) {
+                e.consume(); // the keyboard's request: at the selected row, not in the middle of the list
             }
         });
         VBox.setVgrow(list, Priority.ALWAYS);

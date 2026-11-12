@@ -145,6 +145,7 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
                         "project.map.metrics.hotspotTip",
                         ProjectMapMetrics.Row::hotspot));
         table.setRowFactory(view -> new MetricsRow());
+        RowContextMenu.install(table); // the rows carry the menus; the Menu key / Shift+F10 arrive at the table
         table.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ENTER
                     && enter(table.getSelectionModel().getSelectedItem())) {

@@ -144,6 +144,7 @@ final class DebugValuePopup implements DebugValuePresenter {
             pin.setDisable(expr.isEmpty() || anchorLine < 0 || owner == null);
         });
         tree.setContextMenu(menu);
+        RowContextMenu.anchor(tree, menu); // the Menu key / Shift+F10: at the selected row
         // A plain value is one line: Copy Value and Pin to Line on it too.
         MenuItem copyLine = new MenuItem(tr("debugpanel.copyValue"));
         copyLine.setOnAction(e -> DebugPanel.copyToClipboard(line.getText()));

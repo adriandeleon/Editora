@@ -603,8 +603,11 @@
 .command-palette.branch-popup .branch-more:hover {
     -fx-text-fill: -color-fg-default;
 }
-/* A destructive entry in a branch row's secondary menu (delete). */
-.menu-item.danger > .label {
+/* A destructive menu row (delete, discard, revert, reset): its text in the danger colour. `> .label` is an
+   ordinary MenuItem's text; `.menu-item-title` is the title of an in-window menu bar row, a CustomMenuItem
+   whose label is not a direct child (MainMenuBar). The chord keeps its own colour. */
+.menu-item.danger > .label,
+.menu-item.danger .menu-item-title {
     -fx-text-fill: -color-danger-fg;
 }
 /* Git remotes / work trees managers (GitManagerOverlay). */
@@ -1990,6 +1993,17 @@
 }
 .project-map-changes-card .project-map-changes-code .list-cell:selected {
     -fx-background-color: -color-accent-muted;
+}
+/* The words a changed line changes (round 3, item 3), deeper than the line's own wash, as GitHub marks them. */
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-added .label.project-map-changes-word {
+    -fx-background-color: -color-success-muted;
+}
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-removed .label.project-map-changes-word {
+    -fx-background-color: -color-danger-muted;
+}
+.project-map-changes-card .project-map-changes-against {
+    -fx-font-size: 12px;
+    -fx-padding: 2 6 2 6;
 }
 /* The Project Map's Dependencies card (gap 14): what uses a file or folder and what it uses; a folder's parts' matrix. */
 .project-map-deps-card .label {

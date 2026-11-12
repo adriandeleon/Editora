@@ -534,6 +534,55 @@ class GitPanelFxTest {
         return names;
     }
 
+    /**
+     * The Menu key / Shift+F10 arrive at the tree: the focused row's menu opens under that row, not at the
+     * request's own point in the middle of the tree.
+     */
+    @Test
+    void theKeyboardOpensTheFocusedRowsMenuAtThatRow() throws Exception {
+        GitStatus status = new GitStatus(
+                true,
+                "main",
+                "",
+                0,
+                0,
+                List.of(new FileEntry("first.txt", '.', 'M', null), new FileEntry("second.txt", '.', 'M', null)));
+        FxTestSupport.runOnFx(() -> {
+            GitPanel p = new GitPanel(NOOP);
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(new javafx.scene.Scene(new javafx.scene.layout.StackPane(p), 320, 480));
+            stage.show();
+            p.setStatus(status);
+            p.applyCss();
+            p.layout();
+            TreeView<Object> t = tree(p);
+            TreeItem<Object> second =
+                    t.getRoot().getChildren().get(0).getChildren().get(1);
+            t.getSelectionModel().clearSelection();
+            t.getSelectionModel().select(second);
+            int index = t.getRow(second);
+            t.fireEvent(new javafx.scene.input.ContextMenuEvent(
+                    javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 0, 0, 0, 0, true, null));
+            javafx.scene.control.ContextMenu menu = FxTestSupport.field(p, "openMenu");
+            assertTrue(menu != null && menu.isShowing(), "the keyboard's request opened the row's menu");
+            javafx.geometry.Bounds row = null;
+            for (javafx.scene.Node node : t.lookupAll(".tree-cell")) {
+                if (node instanceof javafx.scene.control.TreeCell<?> c && c.getIndex() == index && !c.isEmpty()) {
+                    row = c.localToScreen(c.getBoundsInLocal());
+                }
+            }
+            assertTrue(row != null, "the focused row is in view");
+            assertTrue(
+                    menu.getAnchorX() >= row.getMinX() - 0.5 && menu.getAnchorX() <= row.getMaxX() + 0.5,
+                    menu.getAnchorX() + " in " + row);
+            assertTrue(
+                    menu.getAnchorY() >= row.getMinY() - 0.5 && menu.getAnchorY() <= row.getMaxY() + 0.5,
+                    menu.getAnchorY() + " in " + row);
+            menu.hide();
+            stage.hide();
+        });
+    }
+
     /** Double-click / Enter on a conflicted row opens the resolver; its menu resolves instead of staging. */
     @Test
     void aConflictRowOpensTheResolverAndOffersTheResolveActions() throws Exception {

@@ -77,6 +77,7 @@ final class TabContextMenu {
                 tr("project.menu.git.revert"),
                 Icons.undo(),
                 () -> c.git.ifEnabled(() -> c.git.gitRevertPath(buffer.getPath())));
+        revert.getStyleClass().add("danger"); // discards the file's changes: a destructive row reads red
         MenuItem ignore = LazyContextMenu.item(
                 tr("project.menu.git.addToGitignore"),
                 Icons.git(),
@@ -116,6 +117,8 @@ final class TabContextMenu {
         MenuChords.tag(pin, "buffer.togglePin");
         MenuChords.tag(rename, "buffer.rename");
         MenuChords.tag(stage, "git.stageFile");
+        MenuChords.tag(unstage, "git.unstageFile");
+        MenuChords.tag(revert, "git.discardFile");
         MenuChords.tag(ignore, "git.addToGitignore");
         MenuChords.tag(diffHead, "diff.vsHead");
         MenuChords.tag(diffBranch, "diff.vsBranch");
@@ -149,9 +152,9 @@ final class TabContextMenu {
                         annotate,
                         history);
         // "Compare With…" (any two files) and "Open in Diff Viewer" (a .patch/.diff file) are not Git
-        // actions, so they stay outside the Git submenu.
+        // actions, so they stay outside the Git submenu. This tab's file, which need not be the active one.
         MenuItem compareWith = LazyContextMenu.item(
-                tr("menu.compareWith"), Icons.diff(), () -> c.diffCoordinator.compareActiveWithFile());
+                tr("menu.compareWith"), Icons.diff(), () -> c.diffCoordinator.compareWithFile(buffer.getPath()));
         MenuItem openPatch = LazyContextMenu.item(
                 tr("menu.openInDiffViewer"), Icons.diff(), () -> c.diffCoordinator.openPatchFile(buffer));
         MenuItem reveal = LazyContextMenu.item(
@@ -165,10 +168,16 @@ final class TabContextMenu {
                 c.projectPanel().showInMap(file);
             }
         });
+        MenuChords.tag(revealInMap, "projectMap.revealActiveFile");
         MenuItem terminal = LazyContextMenu.item(
                 tr("menu.openTerminal"),
                 Icons.terminal(),
                 () -> c.openTerminalAt(buffer.getPath(), false, c.isLocalBuffer(buffer)));
+        MenuChords.tag(history, "git.fileHistory");
+        MenuChords.tag(compareWith, "diff.compareWith");
+        MenuChords.tag(openPatch, "diff.openPatchFile");
+        MenuChords.tag(reveal, "file.revealInFileManager");
+        MenuChords.tag(terminal, "file.openTerminal");
 
         menu.getItems()
                 .setAll(
@@ -202,6 +211,9 @@ final class TabContextMenu {
             boolean simple = c.chrome.simpleModeActive();
             boolean encrypted = buffer.encryption().isEncrypted();
             encryption.setText(tr(encrypted ? "menu.lockFile" : "menu.encrypt"));
+            // The row is one of two commands, by the file's state: its chord follows the title.
+            MenuChords.tag(
+                    encryption, encrypted ? EncryptionCoordinator.LOCK_FILE : EncryptionCoordinator.ENCRYPT_FILE);
             encryption.setDisable(encrypted && (buffer.encryption().isLocked() || buffer.getPath() == null));
             closeUnmodified.setVisible(!simple);
             closeLeft.setVisible(!simple);

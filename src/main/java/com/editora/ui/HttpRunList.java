@@ -147,7 +147,9 @@ final class HttpRunList extends VBox {
                 e.consume();
             }
         });
-        list.setContextMenu(buildMenu());
+        ContextMenu menu = buildMenu();
+        list.setContextMenu(menu);
+        RowContextMenu.anchor(list, menu); // the Menu key / Shift+F10: at the selected request's row
         VBox.setVgrow(list, Priority.ALWAYS);
         // Preview ↔ Split, a resize or a new run changes its height: the selected row stays in view.
         list.heightProperty().addListener((o, a, b) -> Platform.runLater(() -> reveal(false)));

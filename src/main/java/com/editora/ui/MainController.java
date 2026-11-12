@@ -52,6 +52,7 @@ import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.MenuChords;
 import com.editora.editor.TabContent;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
@@ -967,6 +968,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem close = new MenuItem(tr("menu.close"));
         close.setGraphic(Icons.closeTab());
         close.setOnAction(e -> closeTab(tab));
+        MenuChords.tag(close, "buffer.close"); // as on a file's tab: the shortcut closes the active tab
         tab.setContextMenu(new ContextMenu(close));
         tab.setOnClosed(e -> {
             if (welcomeTab == tab) {
@@ -992,6 +994,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem close = new MenuItem(tr("menu.close"));
         close.setGraphic(Icons.closeTab());
         close.setOnAction(e -> closeTab(tab));
+        MenuChords.tag(close, "buffer.close"); // as on a file's tab: the shortcut closes the active tab
         tab.setContextMenu(new ContextMenu(close));
         tab.setOnClosed(e -> {
             if (doctorTab == tab) {
@@ -1014,10 +1017,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         MenuItem rename = new MenuItem(tr("terminal.tab.rename"), Icons.edit());
         rename.setOnAction(e -> terminalCoordinator.rename(terminal));
+        MenuChords.tag(rename, "terminal.rename");
         MenuItem back = new MenuItem(tr("terminal.tab.moveToToolWindow"), Icons.dock());
         back.setOnAction(e -> terminalCoordinator.moveToToolWindow(terminal));
+        MenuChords.tag(back, "terminal.moveToToolWindow");
         MenuItem close = new MenuItem(tr("menu.close"), Icons.closeTab());
         close.setOnAction(e -> terminalCoordinator.requestClose(terminal));
+        MenuChords.tag(close, "buffer.close"); // closeTab on a terminal tab is this same requestClose
         tab.setContextMenu(new ContextMenu(rename, back, new javafx.scene.control.SeparatorMenuItem(), close));
     }
 
@@ -1992,7 +1998,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // unchanged, so anyone who wants the icon back can add it in Settings → Toolbar.)
         recentButton.getItems().add(new SeparatorMenuItem());
         MenuItem clear = new MenuItem(tr("tooltip.clearRecent"), Icons.trash());
+        clear.getStyleClass().add("danger"); // a destructive row reads red
         clear.setOnAction(e -> onClearRecent());
+        MenuChords.tag(clear, "file.clearRecent");
         recentButton.getItems().add(clear);
     }
 

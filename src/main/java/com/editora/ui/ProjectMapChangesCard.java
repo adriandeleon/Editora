@@ -13,6 +13,10 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
@@ -23,7 +27,9 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.diff.InlineDiff;
 import com.editora.git.GitChanges;
+import com.editora.git.GitService;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -31,9 +37,11 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The working tree's changes on the Project Map (Map code browser round 2): every file changed against HEAD below the
  * Map's folder — untracked ones too — with the lines it adds and removes, and under them the picked file's diff, its
- * lines numbered as in the old and the new file. Next and Previous Change (F7, Shift+F7, or the editor's keys on the
- * Map) step through the hunks of every file; Enter or a double click on a line opens the file's card at that line on
- * the map, Open in Editor the file there, Compare with HEAD the editor's diff of it. One is open at a time.
+ * lines numbered as in the old and the new file, the words a changed line changes marked. Next and Previous Change
+ * (F7, Shift+F7, or the editor's keys on the Map) step through the hunks of every file; Enter or a double click on a
+ * line opens the file's card at that line on the map, Open in Editor the file there, Compare the editor's diff of it.
+ * Against (round 3, item 3) compares with where the branch left its default branch, or another branch, instead of
+ * HEAD: what the branch changes, as a pull request shows it. One is open at a time.
  */
 final class ProjectMapChangesCard extends MapFloatingCard {
 
@@ -50,12 +58,21 @@ final class ProjectMapChangesCard extends MapFloatingCard {
     private final Button openInEditor = new Button(tr("project.map.changes.openInEditor"));
     private final Button compare = new Button(tr("project.map.changes.compare"));
     private final Button refresh = new Button(tr("project.map.changes.refresh"));
+    private final MenuButton against = new MenuButton(tr("project.map.changes.againstHead"));
 
     private BiConsumer<Path, Integer> onOpenLine = (file, line) -> {};
     private BiConsumer<Path, Integer> onOpenInEditor = (file, line) -> {};
     private Consumer<Path> onCompare = file -> {};
     private Runnable onRefresh = () -> {};
     private Consumer<String> onStatus = message -> {};
+    private Consumer<GitService.ChangesBase> onBaseChanged = base -> {};
+    private Runnable onClosed = () -> {};
+    /** What the working tree is compared with. */
+    private GitService.ChangesBase base = GitService.ChangesBase.HEAD;
+    /** The branches it may be compared with. */
+    private GitService.ReviewRefs refs = GitService.ReviewRefs.NONE;
+    /** The picked file's changed words: the diff line's index → its changed character ranges. */
+    private java.util.Map<Integer, int[][]> words = java.util.Map.of();
 
     private @Nullable Path root;
     private GitChanges.@Nullable Result result;
@@ -144,7 +161,16 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         split.setOrientation(Orientation.VERTICAL);
         split.setDividerPositions(0.3);
         split.getStyleClass().add("project-map-changes-split");
-        VBox body = new VBox(summary, split);
+        against.getStyleClass().addAll("flat", "project-map-changes-against");
+        against.setMnemonicParsing(false);
+        against.setFocusTraversable(false);
+        against.setTooltip(new Tooltip(tr("project.map.changes.againstTip")));
+        against.setAccessibleText(tr("project.map.changes.againstTip"));
+        HBox head = new HBox(against);
+        head.setPadding(new Insets(4, 6, 0, 6));
+        head.setAlignment(Pos.CENTER_LEFT);
+        setRefs(GitService.ReviewRefs.NONE);
+        VBox body = new VBox(head, summary, split);
         VBox.setVgrow(split, Priority.ALWAYS);
         frame.setCenter(body);
         title.setText(tr("project.map.changes.title"));
@@ -177,10 +203,97 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         }
     }
 
+    // --- Against (Map gaps round 3, item 3) ---
+
+    /**
+     * The branches it may be compared with: Against offers the uncommitted changes, this branch since it left the
+     * default branch (when there is one and it is another), and since it left any other branch.
+     */
+    void setRefs(GitService.ReviewRefs found) {
+        refs = found;
+        List<MenuItem> items = new ArrayList<>();
+        items.add(baseItem(tr("project.map.changes.againstHeadItem"), GitService.ChangesBase.HEAD));
+        String main = found.defaultBranch();
+        if (main != null && !main.equals(found.branch())) {
+            items.add(
+                    baseItem(tr("project.map.changes.againstForkItem", main), new GitService.ChangesBase(main, true)));
+        }
+        List<String> others = found.refs().stream()
+                .filter(ref -> !ref.equals(found.branch()) && !ref.equals(main))
+                .toList();
+        if (!others.isEmpty()) {
+            Menu since = new Menu(tr("project.map.changes.againstOther"));
+            for (String ref : others) {
+                since.getItems().add(baseItem(ref, new GitService.ChangesBase(ref, true)));
+            }
+            items.add(new SeparatorMenuItem());
+            items.add(since);
+        }
+        against.getItems().setAll(items);
+    }
+
+    private MenuItem baseItem(String text, GitService.ChangesBase to) {
+        MenuItem item = new MenuItem(text);
+        item.setMnemonicParsing(false);
+        item.setOnAction(event -> setBase(to));
+        return item;
+    }
+
+    /** Compares the working tree with {@code to} from now on: the changes are read again. */
+    void setBase(GitService.ChangesBase to) {
+        against.setText(againstText(to));
+        compare.setText(tr(to.head() ? "project.map.changes.compare" : "project.map.changes.compareBase"));
+        if (to.equals(base)) {
+            return;
+        }
+        base = to;
+        result = null;
+        summary.setText(tr("project.map.changes.reading"));
+        onBaseChanged.accept(to);
+    }
+
+    /** What the working tree is compared with. */
+    GitService.ChangesBase base() {
+        return base;
+    }
+
+    /** The branches offered, as last given. */
+    GitService.ReviewRefs refs() {
+        return refs;
+    }
+
+    /** Against's own words for {@code base}. Pure but for the language. */
+    static String againstText(GitService.ChangesBase base) {
+        return base.head()
+                ? tr("project.map.changes.againstHead")
+                : base.sinceFork()
+                        ? tr("project.map.changes.againstFork", base.ref())
+                        : tr("project.map.changes.againstRef", base.ref());
+    }
+
+    /** The items Against offers. For tests. */
+    List<MenuItem> againstItems() {
+        return List.copyOf(against.getItems());
+    }
+
+    /** Told when Against changes what the working tree is compared with. */
+    void setOnBaseChanged(Consumer<GitService.ChangesBase> action) {
+        onBaseChanged = action;
+    }
+
+    /** Told when the card closes. */
+    void setOnClosed(Runnable action) {
+        onClosed = action;
+    }
+
+    /** The card closed. */
+    void closed() {
+        onClosed.run();
+    }
+
     /** The changes read; the file wanted (or the one picked before) is picked, else the first. */
     void setChanges(GitChanges.Result found) {
-        Path base = root;
-        if (base == null) {
+        if (root == null) {
             return;
         }
         String keep = wanted;
@@ -191,7 +304,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         int keptHunk = before != null && before.path().equals(keep) ? hunk : -1;
         result = found;
         wanted = null;
-        summary.setText(summaryText(found));
+        summary.setText(summaryText(found, base));
         files.getItems().setAll(found.files());
         GitChanges.FileDiff pick = null;
         if (keep != null) {
@@ -224,11 +337,18 @@ final class ProjectMapChangesCard extends MapFloatingCard {
 
     /** What the line above the files says of {@code found}. Pure but for the language. */
     static String summaryText(GitChanges.Result found) {
+        return summaryText(found, GitService.ChangesBase.HEAD);
+    }
+
+    /** What the line above the files says of {@code found}, read against {@code base}. Pure but for the language. */
+    static String summaryText(GitChanges.Result found, GitService.ChangesBase base) {
         if (!found.ok()) {
-            return tr("project.map.changes.unavailable");
+            return base.head() || found == GitChanges.Result.UNAVAILABLE
+                    ? tr("project.map.changes.unavailable")
+                    : tr("project.map.changes.noBase", base.ref());
         }
         if (found.files().isEmpty()) {
-            return tr("project.map.changes.none");
+            return tr(base.head() ? "project.map.changes.none" : "project.map.changes.noneSince", base.ref());
         }
         int added = 0;
         int removed = 0;
@@ -309,6 +429,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
 
     private void filePicked(GitChanges.@Nullable FileDiff file) {
         hunk = -1;
+        words = file == null ? java.util.Map.of() : wordSpans(file.lines());
         if (file == null) {
             diff.getItems().clear();
             diff.setPlaceholder(placeholder(""));
@@ -352,9 +473,11 @@ final class ProjectMapChangesCard extends MapFloatingCard {
     /** The picked file's path, or null. */
     @Nullable
     Path pickedPath() {
-        Path base = root;
+        Path folder = root;
         GitChanges.FileDiff file = files.getSelectionModel().getSelectedItem();
-        return base == null || file == null ? null : base.resolve(file.path()).normalize();
+        return folder == null || file == null
+                ? null
+                : folder.resolve(file.path()).normalize();
     }
 
     private static String relative(Path root, Path path) {
@@ -427,6 +550,78 @@ final class ProjectMapChangesCard extends MapFloatingCard {
     }
 
     // --- rows -----------------------------------------------------------------------------------------------
+
+    /** Lines longer than this get no word marks: the whole line is the change. */
+    static final int MAX_WORD_LINE = 2_000;
+
+    /**
+     * The changed words of {@code lines} (a file's diff): in each run of removed lines and the added lines right after
+     * it, the n-th removed line is paired with the n-th added one, as GitHub pairs them, and each gets the character
+     * ranges ({@code [start, end)}) where the two differ. Lines with no partner get none. Pure.
+     */
+    static java.util.Map<Integer, int[][]> wordSpans(List<GitChanges.Line> lines) {
+        java.util.Map<Integer, int[][]> out = new java.util.HashMap<>();
+        int i = 0;
+        while (i < lines.size()) {
+            if (lines.get(i).kind() != GitChanges.Kind.REMOVED) {
+                i++;
+                continue;
+            }
+            int removedStart = i;
+            while (i < lines.size() && lines.get(i).kind() == GitChanges.Kind.REMOVED) {
+                i++;
+            }
+            int addedStart = i;
+            while (i < lines.size() && lines.get(i).kind() == GitChanges.Kind.ADDED) {
+                i++;
+            }
+            int pairs = Math.min(addedStart - removedStart, i - addedStart);
+            for (int p = 0; p < pairs; p++) {
+                String old = lines.get(removedStart + p).text();
+                String now = lines.get(addedStart + p).text();
+                if (old.length() > MAX_WORD_LINE || now.length() > MAX_WORD_LINE) {
+                    continue;
+                }
+                InlineDiff.Spans spans = InlineDiff.compute(old, now);
+                out.put(removedStart + p, spans.left());
+                out.put(addedStart + p, spans.right());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * {@code text} cut at {@code spans}' edges: pieces in order, each with whether it is a changed word. Pure.
+     */
+    static List<Piece> pieces(String text, int @Nullable [][] spans) {
+        List<Piece> out = new ArrayList<>();
+        int at = 0;
+        if (spans != null) {
+            for (int[] span : spans) {
+                int start = Math.max(at, Math.min(span[0], text.length()));
+                int end = Math.max(start, Math.min(span[1], text.length()));
+                if (start > at) {
+                    out.add(new Piece(text.substring(at, start), false));
+                }
+                if (end > start) {
+                    out.add(new Piece(text.substring(start, end), true));
+                }
+                at = end;
+            }
+        }
+        if (at < text.length() || out.isEmpty()) {
+            out.add(new Piece(text.substring(at), false));
+        }
+        return out;
+    }
+
+    /** A piece of a diff line: its text, and whether it is a word the change changed. */
+    record Piece(String text, boolean changed) {}
+
+    /** The picked file's changed words. For tests. */
+    java.util.Map<Integer, int[][]> words() {
+        return words;
+    }
 
     /** A file's counts: the lines it adds and removes, or that it is binary or too large to show. */
     static String fileCounts(GitChanges.FileDiff file) {
@@ -525,7 +720,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
                 "project-map-changes-context");
         private final Label oldNumber = new Label();
         private final Label newNumber = new Label();
-        private final Label code = new Label();
+        private final HBox code = new HBox();
         private final HBox box = new HBox(0, oldNumber, newNumber, code);
 
         LineCell() {
@@ -537,8 +732,8 @@ final class ProjectMapChangesCard extends MapFloatingCard {
             }
             code.getStyleClass().add("project-map-changes-line");
             code.setMinWidth(0);
-            code.setMnemonicParsing(false);
             code.setPadding(new Insets(0, 0, 0, 8));
+            code.setAlignment(Pos.CENTER_LEFT);
             box.setAlignment(Pos.CENTER_LEFT);
             setOnMouseClicked(event -> {
                 if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2 && !isEmpty()) {
@@ -566,7 +761,12 @@ final class ProjectMapChangesCard extends MapFloatingCard {
                 case CONTEXT -> "  ";
                 default -> "";
             };
-            code.setText(marker + item.text().replace("\t", "    "));
+            List<javafx.scene.Node> shown = new ArrayList<>();
+            shown.add(piece(marker, false));
+            for (Piece piece : pieces(item.text(), words.get(getIndex()))) {
+                shown.add(piece(piece.text().replace("\t", "    "), piece.changed()));
+            }
+            code.getChildren().setAll(shown);
             setText(null);
             setGraphic(box);
             getStyleClass()
@@ -584,6 +784,14 @@ final class ProjectMapChangesCard extends MapFloatingCard {
                         case REMOVED -> tr("project.map.changes.lineRemoved", item.oldLine(), item.text());
                         default -> item.text();
                     });
+        }
+
+        private Label piece(String text, boolean changed) {
+            Label piece = new Label(text);
+            piece.setMnemonicParsing(false);
+            piece.setMinWidth(Region.USE_PREF_SIZE);
+            piece.getStyleClass().add(changed ? "project-map-changes-word" : "project-map-changes-text");
+            return piece;
         }
     }
 }

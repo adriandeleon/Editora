@@ -334,6 +334,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
         }
 
+        /** As above, against {@code base} (Map gaps round 3, item 3). */
+        default void gitWorkingChanges(
+                Path folder,
+                com.editora.git.GitService.ChangesBase base,
+                java.util.function.Consumer<com.editora.git.GitChanges.Result> found) {
+            if (base.head()) {
+                gitWorkingChanges(folder, found);
+            } else {
+                found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
+            }
+        }
+
+        /** The branches the Changes card may compare with; on the FX thread, none when Git is off. */
+        default void gitReviewRefs(
+                Path folder, java.util.function.Consumer<com.editora.git.GitService.ReviewRefs> found) {
+            found.accept(com.editora.git.GitService.ReviewRefs.NONE);
+        }
+
+        /** Opens the editor's diff of {@code file} against the commit {@code ref}, named {@code label} there. */
+        default void gitCompareWithRef(Path file, String ref, String label) {}
+
         /** The permalink of a file (its lines) or folder at HEAD; on the FX thread, none when Git is off. */
         default void gitPermalink(
                 Path target,
@@ -3211,6 +3232,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 actions.gitCompareWithHead(file);
                 raiseEditorWindow();
             }
+
+            @Override
+            public void workingChanges(
+                    Path folder,
+                    com.editora.git.GitService.ChangesBase base,
+                    Consumer<com.editora.git.GitChanges.Result> found) {
+                actions.gitWorkingChanges(folder, base, found);
+            }
+
+            @Override
+            public void reviewRefs(Path folder, Consumer<com.editora.git.GitService.ReviewRefs> found) {
+                actions.gitReviewRefs(folder, found);
+            }
+
+            @Override
+            public void compareWith(Path file, String ref, String label) {
+                actions.gitCompareWithRef(file, ref, label);
+                raiseEditorWindow();
+            }
         };
     }
 
@@ -4515,6 +4555,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (!isDir) {
             MenuItem delete = new MenuItem(tr("project.menu.delete"));
             delete.setGraphic(Icons.trash());
+            delete.getStyleClass().add("danger"); // a destructive row reads red, as in every menu
             // Deletes the whole multi-file selection when this row is part of it, else just this file
             // (the confirm dialog shows the count).
             delete.setOnAction(e -> deleteSelected(treeItem));
@@ -4594,6 +4635,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             unstage.setOnAction(e -> fileOps.gitUnstage(file));
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
+            revert.getStyleClass().add("danger"); // discards the file's changes
             revert.setOnAction(e -> fileOps.gitRevert(file));
             MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
             ignore.setGraphic(Icons.git());
@@ -4672,6 +4714,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             stage.setOnAction(e -> fileOps.gitStage(dir));
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
+            revert.getStyleClass().add("danger"); // discards the folder's changes
             revert.setOnAction(e -> fileOps.gitRevert(dir));
             MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
             compareHead.setGraphic(Icons.diff());

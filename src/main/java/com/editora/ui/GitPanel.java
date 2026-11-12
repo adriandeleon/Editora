@@ -31,6 +31,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.MenuChords;
 import com.editora.git.CommitMessages;
 import com.editora.git.GitConflicts;
 import com.editora.git.GitFileStatus;
@@ -288,8 +289,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         Button stageAll = iconButton(Icons.stageAll(), tr("gitpanel.stageAllTip"), actions::stageAll);
         reviewWorkingItem = new MenuItem(tr("gitpanel.reviewWorking"));
         reviewWorkingItem.setOnAction(e -> actions.review(false));
+        MenuChords.tag(reviewWorkingItem, "diff.reviewUnstaged");
         reviewStagedItem = new MenuItem(tr("gitpanel.reviewStaged"));
         reviewStagedItem.setOnAction(e -> actions.review(true));
+        MenuChords.tag(reviewStagedItem, "diff.reviewStaged");
         reviewButton = new MenuButton();
         reviewButton.setGraphic(Icons.diff());
         reviewButton.getItems().setAll(reviewWorkingItem, reviewStagedItem);
@@ -346,13 +349,15 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             }
         });
         // Keyboard menu key / Shift+F10: the event targets the focused *TreeView* (cells aren't focusable),
-        // so a cell handler never sees it — open the menu for the focused row instead. Mouse requests are
-        // consumed by the cell, so they never reach here.
+        // so a cell handler never sees it — open the menu for the focused row instead, under that row (scrolled
+        // into view first) rather than at the request's own point, which is somewhere in the middle of the tree.
+        // Mouse requests are consumed by the cell, so they never reach here.
         tree.setOnContextMenuRequested(e -> {
             TreeItem<Row> focused =
                     tree.getFocusModel() == null ? null : tree.getFocusModel().getFocusedItem();
             if (focused != null && focused.getValue() != null) {
-                showMenu(tree, focused, e.getScreenX(), e.getScreenY());
+                javafx.geometry.Point2D at = RowContextMenu.menuPoint(tree, tree.getRow(focused), e);
+                showMenu(tree, focused, at.getX(), at.getY());
                 e.consume();
             }
         });
@@ -410,6 +415,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(commitButton, Priority.ALWAYS);
         commitAndPushItem.setGraphic(Icons.gitPush());
         commitAndPushItem.setOnAction(e -> doCommit(true));
+        MenuChords.tag(commitAndPushItem, "git.commitAndPush");
         commitMenu.getItems().setAll(commitAndPushItem);
         commitMenu.getStyleClass().add("git-commit-more");
         commitMenu.setAccessibleText(tr("gitpanel.commitMoreTip"));
@@ -1241,6 +1247,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             MenuItem unstage = new MenuItem(tr("gitpanel.menu.unstageAll"));
             unstage.setGraphic(Icons.remove());
             unstage.setOnAction(a -> actions.unstageAll());
+            MenuChords.tag(unstage, "git.unstageAll");
             menu.getItems().add(unstage);
             return menu;
         }
@@ -1250,6 +1257,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         boolean untracked = group == Group.UNTRACKED;
         MenuItem discard = new MenuItem(tr(untracked ? "gitpanel.menu.deleteGroup" : "gitpanel.menu.discardGroup"));
         discard.setGraphic(Icons.trash());
+        discard.getStyleClass().add("danger"); // a destructive row reads red
         discard.setOnAction(a -> actions.discard(untracked ? List.of() : all, untracked ? all : List.of()));
         menu.getItems().addAll(stage, discard);
         return menu;
@@ -1328,11 +1336,17 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             ours.setOnAction(a -> actions.acceptSide(conflicted, true));
             MenuItem theirs = new MenuItem(tr(GitCoordinator.acceptSideKey(operation.kind(), false)));
             theirs.setOnAction(a -> actions.acceptSide(conflicted, false));
+            // Either one discards the other side of the conflict for good: destructive rows read red.
+            ours.getStyleClass().add("danger");
+            theirs.getStyleClass().add("danger");
             // Staging is how git is told a conflict is resolved; the controller asks first when the file
             // still has conflict markers in it.
             MenuItem resolved = new MenuItem(tr("gitpanel.menu.markResolved"));
             resolved.setGraphic(Icons.stageAll());
             resolved.setOnAction(a -> actions.stage(conflicted));
+            if (paths(targets, false).isEmpty()) { // nothing else to stage: the command stages exactly these
+                MenuChords.tag(resolved, "git.stageSelected");
+            }
             menu.getItems().addAll(ours, theirs, resolved);
         }
         List<String> toStage = paths(targets, false);
@@ -1341,6 +1355,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                     toStage.size() == 1 ? tr("gitpanel.menu.stage") : tr("gitpanel.menu.stageMany", toStage.size()));
             stage.setGraphic(Icons.stageAll());
             stage.setOnAction(a -> actions.stage(toStage));
+            if (conflicted.isEmpty()) { // with conflicted rows selected too, the command also marks those resolved
+                MenuChords.tag(stage, "git.stageSelected");
+            }
             menu.getItems().add(stage);
         }
         List<String> toUnstage = paths(targets, true);
@@ -1351,6 +1368,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                             : tr("gitpanel.menu.unstageMany", toUnstage.size()));
             unstage.setGraphic(Icons.remove());
             unstage.setOnAction(a -> actions.unstage(toUnstage));
+            MenuChords.tag(unstage, "git.unstageSelected");
             menu.getItems().add(unstage);
         }
         addDiscardItem(menu, targets);
@@ -1383,6 +1401,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         List<String> untrackedPaths = List.copyOf(untracked);
         MenuItem discard = new MenuItem(label);
         discard.setGraphic(Icons.trash());
+        discard.getStyleClass().add("danger"); // a destructive row reads red
         discard.setOnAction(a -> actions.discard(trackedPaths, untrackedPaths));
         menu.getItems().add(discard);
     }

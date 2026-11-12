@@ -690,6 +690,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setTooltip(new Tooltip(f.file().toString()));
                 MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());
+                deleteAll.getStyleClass().add("danger"); // a destructive row reads red
                 deleteAll.setOnAction(e -> deleteFile(f));
                 ContextMenu menu = new ContextMenu(deleteAll);
                 addMoveItems(menu);
@@ -713,6 +714,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 edit.setOnAction(e -> editNote(m));
                 MenuItem delete = new MenuItem(tr("bookmarks.deleteItem"));
                 delete.setGraphic(Icons.trash());
+                delete.getStyleClass().add("danger");
                 delete.setOnAction(e -> deleteMark(m));
                 ContextMenu menu = new ContextMenu(edit, delete);
                 addMoveItems(menu);

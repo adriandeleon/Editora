@@ -20,6 +20,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.MenuChords;
 import com.editora.vfs.RemoteConnection;
 
 import static com.editora.i18n.Messages.tr;
@@ -80,7 +81,9 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
                 e.consume();
             }
         });
-        list.setContextMenu(buildMenu());
+        ContextMenu menu = buildMenu();
+        list.setContextMenu(menu);
+        RowContextMenu.anchor(list, menu); // the Menu key / Shift+F10: at the selected connection's row
 
         Button add = new Button(tr("remotePanel.new"));
         add.setGraphic(Icons.newFile());
@@ -134,8 +137,10 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
         MenuItem add = new MenuItem(tr("remotePanel.new"));
         add.setGraphic(Icons.newFile());
         add.setOnAction(e -> actions.newConnection());
+        MenuChords.tag(add, "remote.connect"); // the same fresh connection form (RemoteCoordinator.connect())
         MenuItem remove = new MenuItem(tr("remotePanel.remove"));
         remove.setGraphic(Icons.trash());
+        remove.getStyleClass().add("danger"); // a destructive row reads red
         remove.setOnAction(e -> removeSelected());
         return new ContextMenu(connect, add, new SeparatorMenuItem(), remove);
     }

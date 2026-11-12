@@ -47,6 +47,7 @@ import javafx.stage.Popup;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
+import com.editora.editor.MenuChords;
 import com.editora.git.GitFileStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -442,6 +443,7 @@ final class ProjectMapView extends VBox {
         revealActiveButton.setOnAction(event -> onRevealActiveFile.run());
         revealActiveItem.setGraphic(Icons.locateFile());
         revealActiveItem.setOnAction(event -> onRevealActiveFile.run());
+        MenuChords.tag(revealActiveItem, "projectMap.revealActiveFile");
 
         Button help = new Button("?");
         help.getStyleClass().addAll("project-map-nav-button", "project-map-help-button");
@@ -517,6 +519,8 @@ final class ProjectMapView extends VBox {
         exportPdfButton.setDisable(true);
         printButton.setOnAction(event -> onPrint.accept(mapOutput()));
         exportPdfButton.setOnAction(event -> onExportPdf.accept(mapOutput()));
+        MenuChords.tag(printButton, "projectMap.print"); // the commands fire these two items
+        MenuChords.tag(exportPdfButton, "projectMap.exportPdf");
         // Listeners rather than action handlers, so a restored value applies exactly like a click.
         hideOpenNotes.selectedProperty().addListener((obs, old, selected) -> updateCardVisibility());
         keepZoomOnOpen
@@ -578,7 +582,8 @@ final class ProjectMapView extends VBox {
         List<MenuItem> items = new ArrayList<>();
         Runnable switcher = onSwitchCard;
         if (switcher != null && !cards.visibleCards().isEmpty()) {
-            MenuItem switchItem = new MenuItem(tr("project.map.switch.menu"));
+            // Recent Files and Switch File typed in the Map window both open this switcher; one key can show.
+            MenuItem switchItem = MenuChords.tag(new MenuItem(tr("project.map.switch.menu")), "recent.jump");
             switchItem.setOnAction(event -> switcher.run());
             items.add(switchItem);
             items.add(new SeparatorMenuItem());
@@ -974,15 +979,32 @@ final class ProjectMapView extends VBox {
             });
             made.setOnCompare(file -> {
                 FollowCode code = followCode;
-                if (code != null) {
+                if (code == null) {
+                    return;
+                }
+                com.editora.git.GitService.ChangesBase base = made.base();
+                com.editora.git.GitChanges.Result read = made.changes();
+                if (base.head() || read == null || !read.ok()) {
                     code.compareWithHead(file);
+                } else {
+                    code.compareWith(file, read.base(), ProjectMapChangesCard.againstText(base));
                 }
             });
             made.setOnRefresh(() -> readChanges(made));
             made.setOnStatus(message -> onStatus.accept(message));
+            made.setOnBaseChanged(base -> readChanges(made));
+            made.setOnClosed(() -> surface.setReviewChanges(Map.of()));
         });
         card.show(current, select == null ? null : select.toAbsolutePath().normalize());
         readChanges(card);
+        FollowCode code = followCode;
+        if (code != null) {
+            code.reviewRefs(current, refs -> {
+                if (cards.changesCard() == card && current.equals(card.root())) {
+                    card.setRefs(refs);
+                }
+            });
+        }
         return card;
     }
 
@@ -996,11 +1018,29 @@ final class ProjectMapView extends VBox {
             card.setChanges(com.editora.git.GitChanges.Result.UNAVAILABLE);
             return;
         }
-        code.workingChanges(folder, found -> {
-            if (cards.changesCard() == card && folder.equals(card.root())) {
+        com.editora.git.GitService.ChangesBase base = card.base();
+        code.workingChanges(folder, base, found -> {
+            if (cards.changesCard() == card && folder.equals(card.root()) && base.equals(card.base())) {
                 card.setChanges(found);
+                surface.setReviewChanges(reviewChanges(folder, base, found));
             }
         });
+    }
+
+    /**
+     * The files a branch changes, by absolute path with their status letters, for the Map's rows (round 3, item 3):
+     * none while the card shows the uncommitted changes, which the rows' Git marks show already. Pure.
+     */
+    static Map<Path, Character> reviewChanges(
+            Path folder, com.editora.git.GitService.ChangesBase base, com.editora.git.GitChanges.Result found) {
+        if (base.head() || !found.ok()) {
+            return Map.of();
+        }
+        Map<Path, Character> out = new HashMap<>();
+        for (com.editora.git.GitChanges.FileDiff file : found.files()) {
+            out.put(ProjectMapModel.normalize(folder.resolve(file.path())), file.status());
+        }
+        return out;
     }
 
     /**
@@ -2954,11 +2994,16 @@ final class ProjectMapView extends VBox {
 
     /** A declaration row's menu: its card, the file opened at it, the file opened narrowed to its block. */
     private ContextMenu symbolMenu(ProjectMapModel.Entry entry) {
-        return symbolMenu(entry, () -> previewSymbol(entry));
+        return symbolMenu(entry, () -> previewSymbol(entry), true);
     }
 
-    /** {@link #symbolMenu(ProjectMapModel.Entry)} whose Preview runs {@code previewAction}: a file card's column's. */
-    private ContextMenu symbolMenu(ProjectMapModel.Entry entry, Runnable previewAction) {
+    /**
+     * {@link #symbolMenu(ProjectMapModel.Entry)} whose Preview runs {@code previewAction}: a file card's column's.
+     * {@code onMap}: the menu is a declaration row's on the map itself, where the code navigation commands typed with
+     * the row selected ask what its rows ask ({@link #rowNavigation}), so those rows show the commands' keys; typed in
+     * a card's Structure column the same commands go to the editor.
+     */
+    private ContextMenu symbolMenu(ProjectMapModel.Entry entry, Runnable previewAction, boolean onMap) {
         ProjectMapModel.Symbol symbol = entry.symbol();
         ContextMenu menu = new ContextMenu();
         if (symbol == null) {
@@ -2975,7 +3020,7 @@ final class ProjectMapView extends VBox {
                         ? symbol.block()
                         : new com.editora.text.FoldRegions.Region(symbol.line(), symbol.endLine())));
         menu.getItems().setAll(preview, openAt, openNarrowed);
-        menu.getItems().addAll(linksItems(entry));
+        menu.getItems().addAll(linksItems(entry, onMap));
         menu.getItems().addAll(followItems(symbol.file(), symbol.line(), followName(symbol.label()), () -> {
             previewAction.run(); // the declaration's card first: its History card opens beside it
             ProjectMapPreview card = cards.codeCard(entry.path());
@@ -2992,7 +3037,7 @@ final class ProjectMapView extends VBox {
      * supertypes and subtypes — opens as cards beside it, joined to it by labelled edges. Its definition and
      * declaration are the row itself, so those are not offered. Empty without a source.
      */
-    private List<MenuItem> linksItems(ProjectMapModel.Entry entry) {
+    private List<MenuItem> linksItems(ProjectMapModel.Entry entry, boolean onMap) {
         if (!cards.linksAvailable()) {
             return List.of();
         }
@@ -3004,11 +3049,19 @@ final class ProjectMapView extends VBox {
             }
             MenuItem item = new MenuItem(MapCardLinks.menuLabel(kind));
             item.setOnAction(event -> cards.showLinks(entry, kind));
+            String command = onMap ? ProjectMapPreview.linkCommand(kind) : null;
+            if (command != null) {
+                MenuChords.tag(item, command);
+            }
             items.add(item);
         }
         for (MapCardLinks.Kind kind : MapCardLinks.HIERARCHY_MENU_KINDS) {
             MenuItem item = new MenuItem(MapCardLinks.hierarchyMenuLabel(kind));
             item.setOnAction(event -> cards.showHierarchy(entry, kind));
+            String command = onMap ? ProjectMapPreview.hierarchyCommand(kind) : null;
+            if (command != null) {
+                MenuChords.tag(item, command);
+            }
             items.add(item);
         }
         MenuItem graph = new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph());
@@ -3321,6 +3374,26 @@ final class ProjectMapView extends VBox {
 
         /** Opens the editor's diff of {@code file} against HEAD. */
         default void compareWithHead(Path file) {}
+
+        /** As {@link #workingChanges(Path, Consumer)}, against {@code base} (Map gaps round 3, item 3). */
+        default void workingChanges(
+                Path folder,
+                com.editora.git.GitService.ChangesBase base,
+                Consumer<com.editora.git.GitChanges.Result> found) {
+            if (base.head()) {
+                workingChanges(folder, found);
+            } else {
+                found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
+            }
+        }
+
+        /** The branches the Changes card may compare with; on the FX thread. */
+        default void reviewRefs(Path folder, Consumer<com.editora.git.GitService.ReviewRefs> found) {
+            found.accept(com.editora.git.GitService.ReviewRefs.NONE);
+        }
+
+        /** Opens the editor's diff of {@code file} against the commit {@code ref}, named {@code label} there. */
+        default void compareWith(Path file, String ref, String label) {}
     }
 
     private @Nullable FollowCode followCode;
@@ -4447,7 +4520,7 @@ final class ProjectMapView extends VBox {
 
             @Override
             public ContextMenu symbolMenu(ProjectMapModel.Entry entry, Runnable preview) {
-                return ProjectMapView.this.symbolMenu(entry, preview);
+                return ProjectMapView.this.symbolMenu(entry, preview, false);
             }
 
             @Override

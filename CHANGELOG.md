@@ -85,6 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked, as VS Code shows it. Before, Editora said there was no source. The tab is opened once per session and shown
   again at the next stop there. You can set breakpoints in it too; they last for that debug session. Pausing a program
   that waits in a timer still shows your own line.
+- **Review a branch on the Project Map.** The Changes card's *Against* menu now shows what your branch changes
+  since it left the default branch, or any other branch, committed or not, as a pull request does. The branch's
+  changed files get a stripe on the Map, and the folders holding them a muted one. *Compare with base* opens the
+  editor's diff of a file against that commit. In every mode the card marks the words a changed line changes.
 - **The Project Map follows the debugger.** When a debug session pauses, the Map opens the card of the method it
   stopped in, marks the line with the editor's amber execution line and arrow (red on an exception), and shows the
   call stack beside it. Click a frame there, or press Enter, to show it in the debugger; the card follows. Each step
@@ -447,6 +451,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Right-click menus and drop-downs show each command's keyboard shortcut beside its row**, as the menu bar
+  does, read from the active keymap and from your own key bindings each time a menu opens. More than 120
+  rows that showed none now show one where their command is bound: in the Commit window, the Git log, the GitHub panel, the diff
+  viewer, the Debug panel, the terminal's tabs, Project Map cards and declaration rows, the editor's and a
+  tab's menus, tool window headers, the HTTP Client, the CSV grid and Markdown lint. An external tool's row
+  shows the shortcut you gave that tool.
+- **The keymap's Copy and Select All keys work in a Project Map card.** A card answered only the built-in
+  Ctrl+C and Ctrl+A (Cmd on macOS); M-w in the Emacs keymap, or a shortcut of your own, did nothing there.
+- **The Menu key and Shift+F10 open the selected row's menu in every list, tree and table**, at that row, after
+  scrolling it into view. In the Problems panel the keys did nothing; in the Commit window, the Debug call
+  stack and threads, Test Results, the HTTP headers table, the CSV grid and several others the menu opened in
+  the middle of the panel instead of at the row. Shift+F10 is the same on macOS.
+- **Menu rows that delete, discard, revert or reset something are drawn in red**, in right-click menus,
+  drop-downs and the menu bar: Delete in the Project panel, the Git discards and resets, Drop Stash, Delete Tag,
+  Purge in Local History, deleting bookmarks and notes, removing breakpoints and watches, and the like.
 - **Pressing Find again while a find bar is open goes to the next match** in the consoles and in the terminal,
   as it does in the editor. In the terminal it used to only put the cursor back in the field.
 - **Typing in a console's find bar searches from where the caret was when the bar opened**, so narrowing the
@@ -561,6 +580,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Compare With… on a background tab compares that tab's file.** Right-clicking a tab that was not the active one
+  and choosing Compare With… compared the active file with the one you picked. Every other row of the tab menu
+  already acted on the tab you clicked.
+- **One-key shortcuts for Go to Line, Related File, the matching bracket and Back / Forward work in a Project Map
+  card.** A card runs these on its own text and file, but only a multi-key chord reached it: Ctrl+G (Go to Line in the
+  CUA, VS Code, Sublime and IntelliJ keymaps), Ctrl+Shift+T (Related File in IntelliJ) and the like did nothing while
+  a card had the keyboard, and Emacs's `C-M-a` / `C-M-e` did not move to a definition's start or end. Back and
+  Forward typed on the Map itself now walk its history from a one-key chord too. The card menu's **Go to Line…** and
+  **Related Test / Subject** rows show their shortcut.
 - **An unexpected error now shows a message in the status bar.** An uncaught exception was written to the
   Application Log and nothing else, so the action you took simply did nothing. The status bar now says an
   unexpected error occurred and where the details are, at most once every ten seconds.

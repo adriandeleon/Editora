@@ -819,11 +819,18 @@ final class DiffCoordinator {
     /** Pick a second file and diff it against the active file. */
     void compareActiveWithFile() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null) {
+        compareWithFile(b == null ? null : b.getPath());
+    }
+
+    /**
+     * Pick a second file and diff it against {@code basePath}: the tab menu's Compare With…, which is about the
+     * tab that was right-clicked and not the active one. A null path (an untitled buffer) says there is no file.
+     */
+    void compareWithFile(@Nullable Path basePath) {
+        if (basePath == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
-        Path basePath = b.getPath();
         String leftName = basePath.getFileName().toString();
         FileFinder picker = new FileFinder(
                 ops::finderStartDir,
@@ -1117,6 +1124,23 @@ final class DiffCoordinator {
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
         });
+    }
+
+    /**
+     * Compares {@code path} — a file, or a folder's changed files — with the commit {@code ref}, named {@code
+     * displayRef} on the diff (the Map's Changes card against a branch: Map gaps round 3, item 3).
+     */
+    void diffPathVsRef(Path path, String ref, String displayRef) {
+        Path root = git.repoRootOrReport();
+        if (root == null) {
+            return;
+        }
+        String rel = GitService.repoRelative(root, path);
+        if (rel == null) {
+            host.setStatus(tr("status.diff.notInRepo"));
+            return;
+        }
+        openPathVsRef(path, root, rel, ref, displayRef);
     }
 
     /** Diff a project-tree file or folder against a branch chosen from the repo's branches. */

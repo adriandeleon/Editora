@@ -20,6 +20,7 @@ import javafx.collections.ObservableList;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 
+import com.editora.editor.MenuChords;
 import com.editora.editor.MenuIcons;
 import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CodeArea;
@@ -422,10 +423,10 @@ public final class BufferSpell {
             }));
         }
         items.add(new SeparatorMenuItem());
-        MenuItem add = new MenuItem(tr("editmenu.addToDictionary"));
+        MenuItem add = MenuChords.tag(new MenuItem(tr("editmenu.addToDictionary")), "spell.addWord");
         add.setGraphic(MenuIcons.add());
         add.setOnAction(e -> addToDictionary(hit.word()));
-        MenuItem ignore = new MenuItem(tr("editmenu.ignore"));
+        MenuItem ignore = MenuChords.tag(new MenuItem(tr("editmenu.ignore")), "spell.ignoreWord");
         ignore.setGraphic(MenuIcons.block());
         ignore.setOnAction(e -> ignore(hit.word()));
         items.add(add);

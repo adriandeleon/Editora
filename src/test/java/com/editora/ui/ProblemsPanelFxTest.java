@@ -73,6 +73,48 @@ class ProblemsPanelFxTest {
         assertEquals(3, totalDiagnostics, "all diagnostics rendered as leaf rows");
     }
 
+    /**
+     * The Menu key / Shift+F10 arrive at the tree (cells are not focusable): the selected problem's menu, which
+     * lives on its cell, opens for it, at that row.
+     */
+    @Test
+    void theKeyboardOpensTheSelectedProblemsMenuAtItsRow() throws Exception {
+        Path java = Path.of("/proj/Main.java");
+        LspDiagnostic boom = diag(2, Severity.ERROR, "boom");
+        FxTestSupport.runOnFx(() -> {
+            ProblemsPanel p = new ProblemsPanel(NOOP);
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(new javafx.scene.Scene(new javafx.scene.layout.StackPane(p), 300, 400));
+            stage.show();
+            p.setProblems(Map.of(java, List.of(boom, diag(1, Severity.WARNING, "meh"))));
+            assertTrue(p.reveal(java, boom));
+            p.applyCss();
+            p.layout();
+            TreeView<Object> tree = tree(p);
+            int index = tree.getSelectionModel().getSelectedIndex();
+            tree.fireEvent(new javafx.scene.input.ContextMenuEvent(
+                    javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 0, 0, 0, 0, true, null));
+            javafx.scene.control.TreeCell<?> cell = null;
+            for (javafx.scene.Node node : tree.lookupAll(".tree-cell")) {
+                if (node instanceof javafx.scene.control.TreeCell<?> c && c.getIndex() == index && !c.isEmpty()) {
+                    cell = c;
+                }
+            }
+            assertTrue(cell != null && cell.getContextMenu() != null, "the selected problem's cell has a menu");
+            javafx.scene.control.ContextMenu menu = cell.getContextMenu();
+            assertTrue(menu.isShowing(), "the keyboard's request opened the row's menu");
+            javafx.geometry.Bounds row = cell.localToScreen(cell.getBoundsInLocal());
+            assertTrue(
+                    menu.getAnchorX() >= row.getMinX() - 0.5 && menu.getAnchorX() <= row.getMaxX() + 0.5,
+                    menu.getAnchorX() + " in " + row);
+            assertTrue(
+                    menu.getAnchorY() >= row.getMinY() - 0.5 && menu.getAnchorY() <= row.getMaxY() + 0.5,
+                    menu.getAnchorY() + " in " + row);
+            menu.hide();
+            stage.hide();
+        });
+    }
+
     /** Next / Previous Problem select their row, opening a folded header; a closed window is left alone. */
     @Test
     void revealSelectsTheDiagnosticsRowAndOpensItsFoldedHeader() throws Exception {

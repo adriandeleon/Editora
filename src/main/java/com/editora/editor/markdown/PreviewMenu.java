@@ -239,7 +239,7 @@ public final class PreviewMenu {
                     new MenuItem(tr("command.markwhen.exportJson")), "markwhen.exportJson");
             json.setGraphic(MenuIcons.download());
             json.setOnAction(ev -> exportJson.run());
-            MenuItem viewToggle = new MenuItem();
+            MenuItem viewToggle = com.editora.editor.MenuChords.tag(new MenuItem(), "markwhen.toggleView");
             viewToggle.setGraphic(MenuIcons.table());
             viewToggle.setOnAction(ev -> b.toggleMarkwhenView());
             MenuItem pdf =

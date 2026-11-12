@@ -104,13 +104,23 @@ public final class GitChanges {
 
     /**
      * A reading: the changed files in path order, whether there were more than {@link #MAX_FILES} (or more output than
-     * could be read), and why there are none when Git could not answer ({@code error} not empty).
+     * could be read), why there are none when Git could not answer ({@code error} not empty), and the commit the
+     * working tree was compared with ({@code base}: {@code HEAD}, or a commit's id; Map gaps round 3, item 3).
      */
-    public record Result(List<FileDiff> files, boolean truncated, String error) {
+    public record Result(List<FileDiff> files, boolean truncated, String error, String base) {
         public static final Result UNAVAILABLE = new Result(List.of(), false, "unavailable");
 
         public Result {
             files = List.copyOf(files);
+        }
+
+        public Result(List<FileDiff> files, boolean truncated, String error) {
+            this(files, truncated, error, "HEAD");
+        }
+
+        /** This reading, compared with {@code commit}. */
+        public Result withBase(String commit) {
+            return new Result(files, truncated, error, commit);
         }
 
         public boolean ok() {

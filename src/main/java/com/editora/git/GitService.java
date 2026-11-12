@@ -832,13 +832,63 @@ public final class GitService {
         }
     }
 
+    /**
+     * What the Changes card compares the working tree with (Map gaps round 3, item 3): {@code ref} itself, or — {@code
+     * sinceFork} — the commit where the current branch left it ({@code git merge-base HEAD ref}), which shows what the
+     * branch changes, as a pull request does.
+     */
+    public record ChangesBase(String ref, boolean sinceFork) {
+        /** The uncommitted changes: the working tree against HEAD. */
+        public static final ChangesBase HEAD = new ChangesBase("HEAD", false);
+
+        public boolean head() {
+            return equals(HEAD);
+        }
+    }
+
+    /** As {@link #workingChanges(Path, Consumer)}, against {@code base}. */
+    public void workingChanges(Path folder, ChangesBase base, Consumer<GitChanges.Result> onResult) {
+        boolean queued = submit(exec, () -> {
+            GitChanges.Result result = workingChangesNow(folder, base);
+            Platform.runLater(() -> onResult.accept(result));
+        });
+        if (!queued) {
+            Platform.runLater(() -> onResult.accept(GitChanges.Result.UNAVAILABLE));
+        }
+    }
+
     /** {@link #workingChanges} on the calling thread (a lane). */
     GitChanges.Result workingChangesNow(@Nullable Path folder) {
+        return workingChangesNow(folder, ChangesBase.HEAD);
+    }
+
+    /** {@link #workingChanges(Path, ChangesBase, Consumer)} on the calling thread (a lane). */
+    GitChanges.Result workingChangesNow(@Nullable Path folder, ChangesBase against) {
         if (folder == null || !mayBeRepository(folder) || !gitAvailable(folder)) {
             return GitChanges.Result.UNAVAILABLE;
         }
-        ProcessRunner.Result head = git(folder, QUICK, "rev-parse", "--verify", "--quiet", "HEAD");
-        String base = head.ok() ? "HEAD" : EMPTY_TREE;
+        String base;
+        if (against.head()) {
+            ProcessRunner.Result head = git(folder, QUICK, "rev-parse", "--verify", "--quiet", "HEAD");
+            base = head.ok() ? "HEAD" : EMPTY_TREE;
+        } else if (!GitSafety.isSafeRevision(against.ref())) {
+            // A ref name is repository data: one beginning with "-" would be read as an option.
+            return new GitChanges.Result(List.of(), false, "unsafe revision: " + against.ref());
+        } else {
+            List<String> args = new ArrayList<>(
+                    against.sinceFork() ? List.of("merge-base") : List.of("rev-parse", "--verify", "--quiet"));
+            args.addAll(GitSafety.revisionArgs(
+                    endOfOptions(folder),
+                    against.sinceFork()
+                            ? new String[] {"HEAD", against.ref()}
+                            : new String[] {against.ref() + "^{commit}"}));
+            ProcessRunner.Result found = git(folder, QUICK, args.toArray(String[]::new));
+            String commit = found.ok() ? found.out().strip() : "";
+            if (commit.isEmpty() || commit.contains("\n")) {
+                return new GitChanges.Result(List.of(), false, "no base: " + against.ref());
+            }
+            base = commit;
+        }
         ProcessRunner.Result diff = git(
                 folder,
                 QUICK,
@@ -876,7 +926,88 @@ public final class GitService {
                 untracked.add(readUntracked(folder, rel));
             }
         }
-        return GitChanges.merge(GitChanges.parse(diff.out()), untracked, diff.outTruncated());
+        return GitChanges.merge(GitChanges.parse(diff.out()), untracked, diff.outTruncated())
+                .withBase(base);
+    }
+
+    /**
+     * The refs the Changes card offers to compare with (Map gaps round 3, item 3): the current branch ("" when HEAD is
+     * detached), the repository's default branch (origin's HEAD, else the first of main, master, trunk and develop
+     * there is; null when none is known), and the branches, local then remote, most recently committed to first.
+     */
+    public record ReviewRefs(String branch, @Nullable String defaultBranch, List<String> refs) {
+        public static final ReviewRefs NONE = new ReviewRefs("", null, List.of());
+
+        public ReviewRefs {
+            refs = List.copyOf(refs);
+        }
+    }
+
+    /** The most refs {@link ReviewRefs} lists. */
+    static final int MAX_REVIEW_REFS = 40;
+
+    /** {@link ReviewRefs} of the repository holding {@code folder}, on the FX thread. */
+    public void reviewRefs(Path folder, Consumer<ReviewRefs> onResult) {
+        boolean queued = submit(exec, () -> {
+            ReviewRefs result = reviewRefsNow(folder);
+            Platform.runLater(() -> onResult.accept(result));
+        });
+        if (!queued) {
+            Platform.runLater(() -> onResult.accept(ReviewRefs.NONE));
+        }
+    }
+
+    /**
+     * The short names of {@code for-each-ref --format=%(refname)} output, at most {@link #MAX_REVIEW_REFS}: a local
+     * branch by its name, a remote one as {@code remote/name}, the remotes' {@code HEAD} left out. Pure.
+     */
+    static List<String> reviewRefNames(String out) {
+        List<String> refs = new ArrayList<>();
+        for (String line : out.split("\n")) {
+            String ref = line.strip();
+            String name = ref.startsWith("refs/heads/")
+                    ? ref.substring("refs/heads/".length())
+                    : ref.startsWith("refs/remotes/") && !ref.endsWith("/HEAD")
+                            ? ref.substring("refs/remotes/".length())
+                            : "";
+            if (!name.isEmpty() && !refs.contains(name) && refs.size() < MAX_REVIEW_REFS) {
+                refs.add(name);
+            }
+        }
+        return refs;
+    }
+
+    /** {@link #reviewRefs} on the calling thread (a lane). */
+    ReviewRefs reviewRefsNow(@Nullable Path folder) {
+        if (folder == null || !mayBeRepository(folder) || !gitAvailable(folder)) {
+            return ReviewRefs.NONE;
+        }
+        ProcessRunner.Result head = git(folder, QUICK, "symbolic-ref", "--short", "-q", "HEAD");
+        String branch = head.ok() ? head.out().strip() : "";
+        String defaultBranch = null;
+        ProcessRunner.Result origin =
+                git(folder, QUICK, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD");
+        if (origin.ok() && !origin.out().isBlank()) {
+            defaultBranch = origin.out().strip();
+        } else {
+            for (String name : List.of("main", "master", "trunk", "develop")) {
+                if (git(folder, QUICK, "show-ref", "--verify", "--quiet", "refs/heads/" + name)
+                        .ok()) {
+                    defaultBranch = name;
+                    break;
+                }
+            }
+        }
+        ProcessRunner.Result listed = git(
+                folder,
+                QUICK,
+                "for-each-ref",
+                "--sort=-committerdate",
+                "--format=%(refname)",
+                "refs/heads",
+                "refs/remotes");
+        List<String> refs = listed.ok() ? reviewRefNames(listed.out()) : List.of();
+        return new ReviewRefs(branch, defaultBranch, refs);
     }
 
     private static GitChanges.FileDiff readUntracked(Path folder, String rel) {

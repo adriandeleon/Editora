@@ -123,6 +123,9 @@ final class GitStashPopup {
                 menu.getItems().add(new SeparatorMenuItem());
             }
             MenuItem item = new MenuItem(tr(action.key));
+            if (action == Action.DROP) {
+                item.getStyleClass().add("danger"); // red in the menu as on its button
+            }
             item.setOnAction(e -> run(action));
             menu.getItems().add(item);
         }
@@ -271,10 +274,15 @@ final class GitStashPopup {
         e.consume();
     }
 
-    /** Opens the actions of the selected stash under the list (the Menu key, Shift+F10, or a right-click). */
+    /** Opens the actions of the selected stash under its row (the Menu key, Shift+F10, or a right-click). */
     void showMenu() {
         if (selected() != null && list.getScene() != null) {
-            menu.show(list, Side.BOTTOM, 24, 0);
+            javafx.geometry.Bounds row = RowContextMenu.selectedRowOnScreen(list);
+            if (row == null) {
+                menu.show(list, Side.BOTTOM, 24, 0);
+            } else {
+                menu.show(list, row.getMinX() + RowContextMenu.anchorX(row.getWidth()), row.getMaxY());
+            }
         }
     }
 

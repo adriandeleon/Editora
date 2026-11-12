@@ -9,6 +9,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.MenuChords;
 import com.editora.markdown.CsvTableDocument;
 import org.jspecify.annotations.Nullable;
 
@@ -838,13 +839,19 @@ final class ExportCoordinator {
     java.util.List<javafx.scene.control.MenuItem> editorMenuItems(
             EditorBuffer buffer, java.util.List<javafx.scene.control.MenuItem> others) {
         java.util.List<javafx.scene.control.MenuItem> items = new java.util.ArrayList<>();
-        items.add(LazyContextMenu.item(tr("menu.print"), Icons.print(), this::printActive));
-        items.add(LazyContextMenu.item(tr("menu.exportPdf"), Icons.saveAs(), this::exportActivePdf));
+        items.add(MenuChords.tag(
+                LazyContextMenu.item(tr("menu.print"), Icons.print(), this::printActive), "editor.print"));
+        items.add(MenuChords.tag(
+                LazyContextMenu.item(tr("menu.exportPdf"), Icons.saveAs(), this::exportActivePdf), "editor.exportPdf"));
         org.fxmisc.richtext.CodeArea area =
                 buffer.getFocusedArea() == null ? buffer.getArea() : buffer.getFocusedArea();
         if (area.getSelection().getLength() > 0) {
-            items.add(LazyContextMenu.item(tr("menu.printSelection"), Icons.print(), this::printSelection));
-            items.add(LazyContextMenu.item(tr("menu.exportSelectionPdf"), Icons.saveAs(), this::exportSelectionPdf));
+            items.add(MenuChords.tag(
+                    LazyContextMenu.item(tr("menu.printSelection"), Icons.print(), this::printSelection),
+                    "editor.printSelection"));
+            items.add(MenuChords.tag(
+                    LazyContextMenu.item(tr("menu.exportSelectionPdf"), Icons.saveAs(), this::exportSelectionPdf),
+                    "editor.exportSelectionPdf"));
         }
         if (others != null && !others.isEmpty()) {
             items.add(new javafx.scene.control.SeparatorMenuItem());

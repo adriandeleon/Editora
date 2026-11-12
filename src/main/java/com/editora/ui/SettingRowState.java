@@ -60,6 +60,7 @@ final class SettingRowState {
         row.setOnContextMenuRequested(e -> {
             if (resetAction != null && modified.get()) {
                 MenuItem item = new MenuItem(tr("settings.row.reset"));
+                item.getStyleClass().add("danger"); // a reset of a setting: a destructive row reads red
                 item.setOnAction(a -> resetNow());
                 new ContextMenu(item).show(row, e.getScreenX(), e.getScreenY());
                 e.consume();

@@ -115,6 +115,8 @@ final class TerminalCoordinator {
                                         .startsWith("mac")
                                 ? "Meta+F"
                                 : "Ctrl+Shift+F"));
+                // That is the terminal's own fixed key. A chord the user gives the Find command replaces it.
+                com.editora.editor.MenuChords.tag(find, "terminal.find");
                 return List.of(here, find);
             });
             p.setEditorHost(new TerminalPanel.EditorHost() {
