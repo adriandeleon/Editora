@@ -152,8 +152,15 @@ public class WindowManager {
         // swallowing them — a setting/session change would otherwise vanish next launch with no sign (#418).
         shared.setOnWriteError((file, err) -> javafx.application.Platform.runLater(() -> notifyConfigWriteError(file)));
         // An uncaught exception goes to the Debug Log; say so in the window the user is in, or the action
-        // they took just silently does nothing.
-        DebugLog.setUncaughtEcho(this::announceUncaughtError);
+        // they took just silently does nothing. Through a weak reference: the echo is held by a static, and a
+        // strong one would keep this manager, and with it every window it has closed, reachable for good.
+        java.lang.ref.WeakReference<WindowManager> self = new java.lang.ref.WeakReference<>(this);
+        DebugLog.setUncaughtEcho(message -> {
+            WindowManager manager = self.get();
+            if (manager != null) {
+                manager.announceUncaughtError(message);
+            }
+        });
         // A second Editora process on this config dir (a launch that was not forwarded to the running editor)
         // works from its own in-memory copy of settings, notes, bookmarks, breakpoints, projects and recents.
         // Say so once, after the first window exists, instead of letting one editor silently undo the other.
