@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Git actions that existed only behind a button or a context menu are commands — so the palette, a key
- * binding and the VCS menu reach them — and a branch-dropdown action runs in the repository it was listed for.
+ * binding and the Git menu reach them — and a branch-dropdown action runs in the repository it was listed for.
  */
 @Tag("fx")
 class GitCommandReachabilityFxTest {

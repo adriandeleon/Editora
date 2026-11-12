@@ -398,7 +398,7 @@ final class MainMenuBar {
      * run on those events and on every menu open.
      *
      * <p>The context half of the gate used to be frozen at window-build time, when Git detection (which is
-     * asynchronous and off-thread) had not yet reported a repo: the entire VCS menu came up greyed out and
+     * asynchronous and off-thread) had not yet reported a repo: the entire Git menu came up greyed out and
      * stayed that way until some unrelated settings apply happened to call {@link #refresh()}. The status bar
      * beside it showed the branch the whole time.
      *

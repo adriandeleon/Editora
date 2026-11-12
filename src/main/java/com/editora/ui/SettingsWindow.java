@@ -1081,6 +1081,8 @@ public class SettingsWindow {
         });
         markdownPage.buildMarkdownControls();
         adminSaveCheck = viewCheck(tr("settings.adminSave"), Settings::setAdminSave);
+        // Windows has no prompt Editora can elevate one save through. The row stays, disabled, and its note says so.
+        adminSaveCheck.setDisable(!com.editora.process.ElevatedSave.supportedOnOs(com.editora.Os.current()));
         whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
         notesCheck = viewCheck(tr("settings.enableNotes"), Settings::setNotesSupport);
         noteIndicatorsCheck = viewCheck(tr("settings.showNoteIndicators"), Settings::setShowNoteIndicators);

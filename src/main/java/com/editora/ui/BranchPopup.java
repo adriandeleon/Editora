@@ -50,7 +50,7 @@ public final class BranchPopup {
      * One of the popup's command rows.
      *
      * <p>{@code commandId} is carried so the row can take its glyph from {@link MenuBarIcons} — the same
-     * table the VCS menu draws from — rather than naming a glyph here. The two surfaces offer the same
+     * table the Git menu draws from — rather than naming a glyph here. The two surfaces offer the same
      * actions, so picking icons independently would let them drift apart for no reason.
      */
     public record MenuAction(String label, String commandId, Runnable run) {}

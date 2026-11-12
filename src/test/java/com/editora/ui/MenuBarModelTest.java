@@ -180,6 +180,29 @@ class MenuBarModelTest {
     }
 
     /**
+     * Simple UI mode's menus hold plain editing actions only: Toggle Comment and Encrypt File are for the full
+     * menu bar, which has both — Toggle Comment in Edit, Encrypt File in Tools ▸ Encryption.
+     */
+    @Test
+    void toggleCommentAndEncryptFileAreInTheFullMenusOnly() {
+        for (String id : List.of("edit.toggleComment", EncryptionCoordinator.ENCRYPT_FILE)) {
+            assertTrue(
+                    MenuBarModel.menus(false).stream()
+                            .anyMatch(m -> m.allEntries().contains(id)),
+                    id + " is on the full menu bar");
+            assertFalse(
+                    MenuBarModel.menus(true).stream()
+                            .anyMatch(m -> m.allEntries().contains(id)),
+                    id + " is not on the Simple UI mode menu bar");
+        }
+        MenuBarModel.MenuSpec edit = MenuBarModel.menus(false).stream()
+                .filter(m -> "menubar.edit".equals(m.titleKey()))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(edit.entries().contains("edit.toggleComment"), edit.entries().toString());
+    }
+
+    /**
      * The documentation link is in Help, in <b>both</b> menu tables.
      *
      * <p>Simple UI mode's Help is a deliberately short list, and this is the one entry that most belongs
@@ -200,18 +223,18 @@ class MenuBarModelTest {
     }
 
     /**
-     * VCS is the one menu with submenus: what is used daily stays at its top level, the rest is one level
-     * down, and a submenu has no submenus of its own (the bar builds exactly two levels).
+     * Git (named VCS until Git was plainly the one system it serves) keeps what is used daily at its top level
+     * and the rest one level down, and a submenu has no submenus of its own (the bar builds exactly two levels).
      */
     @Test
-    void theVcsMenuKeepsTheDailyActionsAtTheTopAndGroupsTheRest() {
+    void theGitMenuKeepsTheDailyActionsAtTheTopAndGroupsTheRest() {
         MenuBarModel.MenuSpec vcs = MenuBarModel.menus().stream()
-                .filter(m -> "menubar.vcs".equals(m.titleKey()))
+                .filter(m -> "menubar.git".equals(m.titleKey()))
                 .findFirst()
                 .orElseThrow();
         for (String daily :
                 List.of("git.commit", "git.push", "git.pull", "git.fetch", "git.switchBranch", "tool.gitLog")) {
-            assertTrue(vcs.entries().contains(daily), daily + " is a top-level VCS entry");
+            assertTrue(vcs.entries().contains(daily), daily + " is a top-level Git entry");
         }
         long topLevel = vcs.entries().stream()
                 .filter(e -> !MenuBarModel.SEPARATOR.equals(e))
@@ -233,13 +256,13 @@ class MenuBarModelTest {
     @Test
     void theVcsMenuHasALocalHistorySubmenuBesideGitsHistory() {
         MenuBarModel.MenuSpec vcs = MenuBarModel.menus().stream()
-                .filter(m -> "menubar.vcs".equals(m.titleKey()))
+                .filter(m -> "menubar.git".equals(m.titleKey()))
                 .findFirst()
                 .orElseThrow();
         List<String> titles =
                 vcs.submenus().stream().map(MenuBarModel.MenuSpec::titleKey).toList();
-        int git = titles.indexOf("menubar.vcs.history");
-        assertEquals(git + 1, titles.indexOf("menubar.vcs.localHistory"), titles.toString());
+        int git = titles.indexOf("menubar.git.history");
+        assertEquals(git + 1, titles.indexOf("menubar.git.localHistory"), titles.toString());
         assertEquals(
                 List.of("tool.fileHistory", "history.putLabel", "history.recentChanges"),
                 vcs.submenus().get(git + 1).entries());
@@ -323,19 +346,61 @@ class MenuBarModelTest {
 
     /** Review 3, choice 5: Start / Continue covers Continue; "Debug: Continue" read unevenly among bare rows. */
     @Test
-    void theDebuggerSubmenuHasNoSeparateContinue() {
-        MenuBarModel.MenuSpec run = MenuBarModel.menus().stream()
+    void theSteppingSubmenuHasNoSeparateContinue() {
+        MenuBarModel.MenuSpec run = runMenu();
+        MenuBarModel.MenuSpec stepping = submenuOf(run, "menubar.run.stepping");
+        assertFalse(
+                run.allEntries().contains("debug.continue"), run.allEntries().toString());
+        assertTrue(run.entries().contains("debug.start"), "Start / Continue is in the Run menu itself");
+        assertTrue(stepping.entries().contains("debug.pause"));
+    }
+
+    /**
+     * The debugger's rows are in four submenus of Run by what they are for. As one Debugger submenu they were
+     * fifty rows, taller than the screen, and the popup scrolled.
+     */
+    @Test
+    void theDebuggerRowsAreSplitIntoSubmenusThatFitTheScreen() {
+        MenuBarModel.MenuSpec run = runMenu();
+        assertTrue(submenuOf(run, "menubar.run.launch")
+                .entries()
+                .containsAll(List.of("debug.startConfiguration", "debug.attachToProcess", "debug.browser")));
+        assertTrue(submenuOf(run, "menubar.run.stepping")
+                .entries()
+                .containsAll(List.of("debug.stepOver", "debug.stepInto", "debug.stepOut", "debug.runToCursor")));
+        assertTrue(submenuOf(run, "menubar.run.breakpoints")
+                .entries()
+                .containsAll(List.of(
+                        "debug.toggleBreakpoint",
+                        "debug.breakpoints",
+                        "debug.muteBreakpoints",
+                        "debug.exceptions.caught")));
+        assertTrue(submenuOf(run, "menubar.run.debugger")
+                .entries()
+                .containsAll(List.of("debug.evaluate", "debug.addWatch", "debug.showHistory", "debug.threads")));
+        for (MenuBarModel.MenuSpec submenu : run.submenus()) {
+            long rows = submenu.entries().stream()
+                    .filter(e -> !MenuBarModel.SEPARATOR.equals(e))
+                    .count();
+            assertTrue(rows <= 20, submenu.titleKey() + " fits a laptop screen: " + rows + " rows");
+            assertTrue(submenu.submenus().isEmpty(), submenu.titleKey() + " nests a further submenu");
+            assertTrue(
+                    run.entries().contains(MenuBarModel.submenu(submenu.titleKey())),
+                    submenu.titleKey() + " is placed in Run");
+        }
+    }
+
+    private static MenuBarModel.MenuSpec runMenu() {
+        return MenuBarModel.menus().stream()
                 .filter(m -> m.titleKey().equals("menubar.run"))
                 .findFirst()
                 .orElseThrow();
-        MenuBarModel.MenuSpec debugger = run.submenus().stream()
-                .filter(m -> m.titleKey().equals("menubar.run.debugger"))
+    }
+
+    private static MenuBarModel.MenuSpec submenuOf(MenuBarModel.MenuSpec menu, String titleKey) {
+        return menu.submenus().stream()
+                .filter(m -> m.titleKey().equals(titleKey))
                 .findFirst()
-                .orElseThrow();
-        assertFalse(
-                debugger.entries().contains("debug.continue"),
-                debugger.entries().toString());
-        assertTrue(run.entries().contains("debug.start"), "Start / Continue is in the Run menu itself");
-        assertTrue(debugger.entries().contains("debug.pause"));
+                .orElseThrow(() -> new AssertionError(menu.titleKey() + " has no submenu " + titleKey));
     }
 }

@@ -32,7 +32,10 @@ class SameOnEveryOsFxTest {
             TreeSet<String> commands,
             List<String> menuRows,
             List<String> settingsRows,
-            boolean extendedWindowOffered) {}
+            boolean extendedWindowOffered,
+            boolean adminSaveOffered,
+            String adminSaveReason,
+            String adminSaveToggleReason) {}
 
     @AfterEach
     void reset() {
@@ -69,8 +72,17 @@ class SameOnEveryOsFxTest {
                 // belongs to the system bar, so the window cannot draw its own title bar.
                 boolean offered = !FxTestSupport.<javafx.scene.Node>field(settings, "extendedWindowCheck")
                         .isDisable();
+                boolean adminSave = !FxTestSupport.<javafx.scene.Node>field(settings, "adminSaveCheck")
+                        .isDisable();
                 FxTestSupport.<Stage>field(settings, "stage").hide();
-                return new Surface(commands, menuRows, settingsRows, offered);
+                return new Surface(
+                        commands,
+                        menuRows,
+                        settingsRows,
+                        offered,
+                        adminSave,
+                        String.valueOf(fx.controller.disabledCommandReason("file.saveAsAdmin")),
+                        String.valueOf(fx.controller.disabledCommandReason("view.toggleAdminSave")));
             });
         } finally {
             fx.dispose();
@@ -112,6 +124,33 @@ class SameOnEveryOsFxTest {
             assertEquals(new TreeSet<String>(), onlyOther, "commands on " + kind + " and not on Linux");
             assertEquals(linux.menuRows(), other.menuRows(), "the menu bar on " + kind);
             assertEquals(linux.settingsRows(), other.settingsRows(), "the Settings rows on " + kind);
+        }
+    }
+
+    /**
+     * Save as Administrator has no Windows form (there is no prompt to elevate one save through): the command,
+     * its switch and its Settings row are all there on Windows, grayed, and say why. They are never left out.
+     */
+    @Test
+    void whatWindowsCannotDoStaysWhereItIsDisabledAndSaysWhy() throws Exception {
+        Surface windows = surfaceAs(Os.Kind.WINDOWS);
+        // Read after a window exists: the message catalog is loaded with the first one.
+        String why = com.editora.i18n.Messages.tr("palette.disabled.adminSaveWindows");
+        assertEquals(true, windows.commands().contains("file.saveAsAdmin"), "registered on Windows too");
+        assertEquals(true, windows.commands().contains("view.toggleAdminSave"));
+        assertEquals(why, windows.adminSaveReason());
+        assertEquals(why, windows.adminSaveToggleReason());
+        assertEquals(false, windows.adminSaveOffered(), "the Settings row is disabled on Windows, and still a row");
+        assertEquals(
+                true,
+                windows.settingsRows().stream().anyMatch(row -> row.contains("pkexec") && !row.endsWith("hidden")),
+                "the Settings row is there");
+
+        for (Os.Kind kind : List.of(Os.Kind.LINUX, Os.Kind.MAC)) {
+            Surface other = surfaceAs(kind);
+            assertEquals(true, other.adminSaveOffered(), "offered on " + kind);
+            assertEquals(false, why.equals(other.adminSaveReason()), "no OS reason on " + kind);
+            assertEquals(false, why.equals(other.adminSaveToggleReason()), "no OS reason on " + kind);
         }
     }
 }

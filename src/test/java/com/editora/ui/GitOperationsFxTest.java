@@ -72,7 +72,7 @@ class GitOperationsFxTest {
             assertNoDialog();
             awaitThat(() -> git.operation().kind() == GitOperation.Kind.REBASE, "the rebase to be detected");
 
-            assertTrue(operationCommandsEnabled(fx), "the palette and VCS menu light the three commands up");
+            assertTrue(operationCommandsEnabled(fx), "the palette and Git menu light the three commands up");
 
             // The state is visible: status bar, banner, Conflicts group, Commit blocked with a reason.
             assertTrue(FxTestSupport.callOnFx(() -> gitSegment(fx).getText())
@@ -611,7 +611,7 @@ class GitOperationsFxTest {
         return state.get();
     }
 
-    /** Whether the palette / VCS menu currently enable the continue, skip and abort commands. */
+    /** Whether the palette / Git menu currently enable the continue, skip and abort commands. */
     private static boolean operationCommandsEnabled(FxWindowFixture fx) throws Exception {
         Chrome.PaletteContext context = FxTestSupport.callOnFx(
                 () -> (Chrome.PaletteContext) FxTestSupport.call(fx.controller, "paletteContext", new Class<?>[] {}));

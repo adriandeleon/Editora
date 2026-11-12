@@ -843,7 +843,7 @@ final class Icons {
     }
 
     /**
-     * UI Kit line "plus" — New Branch, on the VCS menu and in the branch dropdown.
+     * UI Kit line "plus" — New Branch, on the Git menu and in the branch dropdown.
      *
      * <p>The dropdown used to spell this as a fullwidth {@code ＋} at the head of the label, which a real
      * icon column makes redundant. Mapping the command to a plus rather than to the generic git node keeps

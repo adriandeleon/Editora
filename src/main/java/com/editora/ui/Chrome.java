@@ -257,6 +257,10 @@ final class Chrome {
      * also being able to explain it.
      */
     private static @Nullable DisabledReason featureReason(String id, PaletteGates g) {
+        DisabledReason os = osReason(id, com.editora.Os.current());
+        if (os != null) {
+            return os; // what the OS cannot do comes first: no setting of Editora's would change it
+        }
         for (FeatureRule r : FEATURE_RULES) {
             if (!r.enabled().test(g) && r.covers(id)) {
                 // Pointing at the feature's own toggle would be a dead end while Simple UI mode is forcing
@@ -270,6 +274,22 @@ final class Chrome {
             if (id.startsWith(buildToolId + ".") || id.equals("tool." + buildToolId)) {
                 return new DisabledReason("palette.disabled.buildToolOff", null);
             }
+        }
+        return null;
+    }
+
+    /** The commands of Save as Administrator: the save itself and the switch that offers it. */
+    private static final java.util.Set<String> ADMIN_SAVE_COMMANDS =
+            java.util.Set.of("file.saveAsAdmin", "view.toggleAdminSave");
+
+    /**
+     * Why operating system {@code os} cannot serve command {@code id}, or null when it can. Such a command is
+     * registered and listed on every OS all the same: it is grayed where it cannot run, with this as the reason,
+     * never left out. Pure.
+     */
+    static @Nullable DisabledReason osReason(String id, com.editora.Os.Kind os) {
+        if (ADMIN_SAVE_COMMANDS.contains(id) && !com.editora.process.ElevatedSave.supportedOnOs(os)) {
+            return new DisabledReason("palette.disabled.adminSaveWindows", null);
         }
         return null;
     }

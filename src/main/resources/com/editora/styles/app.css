@@ -535,7 +535,7 @@
     -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 12px;
 }
-/* Branch dropdown (BranchPopup): reads as the VCS menu it duplicates, not as the command palette whose
+/* Branch dropdown (BranchPopup): reads as the Git menu it duplicates, not as the command palette whose
    card chrome it borrows. The popup carries BOTH classes, so this needs the higher specificity to beat
    `.command-palette .list-cell`'s 12.5px wherever the two rules sit in this file. */
 .command-palette.branch-popup .list-cell {

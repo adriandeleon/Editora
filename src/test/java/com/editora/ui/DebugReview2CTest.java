@@ -116,7 +116,7 @@ class DebugReview2CTest {
     // --- C103: the Run menu -----------------------------------------------------------------------------
 
     @Test
-    void theRunMenuKeepsSessionActionsOnTopAndTheRestInADebuggerSubmenu() {
+    void theRunMenuKeepsSessionActionsOnTopAndTheRestInSubmenus() {
         MenuBarModel.MenuSpec run = MenuBarModel.menus().stream()
                 .filter(m -> m.titleKey().equals("menubar.run"))
                 .findFirst()
@@ -126,13 +126,14 @@ class DebugReview2CTest {
             assertTrue(top.contains(id), id + " stays at the top of Run");
         }
         for (String id : List.of("debug.stepOver", "debug.evaluate", "debug.breakpoints", "debug.exceptions.caught")) {
-            assertFalse(top.contains(id), id + " is in the Debugger submenu");
+            assertFalse(top.contains(id), id + " is in a submenu");
         }
-        MenuBarModel.MenuSpec debugger = run.submenus().stream()
-                .filter(m -> m.titleKey().equals("menubar.run.debugger"))
-                .findFirst()
-                .orElseThrow();
-        assertTrue(debugger.entries().containsAll(List.of("debug.stepOver", "debug.stepInto", "debug.evaluate")));
+        // One Debugger submenu at first; four by purpose since it grew past the screen's height.
+        for (String key : List.of(
+                "menubar.run.launch", "menubar.run.stepping", "menubar.run.breakpoints", "menubar.run.debugger")) {
+            assertTrue(run.submenus().stream().anyMatch(m -> m.titleKey().equals(key)), key);
+        }
+        assertTrue(run.allEntries().containsAll(List.of("debug.stepOver", "debug.stepInto", "debug.evaluate")));
         long rows =
                 top.stream().filter(id -> !id.equals(MenuBarModel.SEPARATOR)).count();
         assertTrue(rows <= 20, "Run fits a laptop screen: " + rows + " rows");

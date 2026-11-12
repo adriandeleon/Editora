@@ -78,6 +78,27 @@ class MenuBarFxTest {
                 "a row with no twin still drops its prefix");
     }
 
+    /**
+     * File ▸ New Maven Project… names Maven. The command was "Maven: New Project…", and a row drops the prefix:
+     * "New Project…" in File named no build tool.
+     */
+    @Test
+    void theNewMavenProjectRowNamesMaven() throws Exception {
+        java.util.Map<String, String> titles = FxTestSupport.callOnFx(
+                () -> new java.util.HashMap<String, String>(FxTestSupport.field(menuBar, "menuTitles")));
+        assertEquals("New Maven Project…", titles.get("maven.newProject"));
+    }
+
+    /** The version-control menu is named for the one system it serves. */
+    @Test
+    void theVersionControlMenuIsNamedGit() throws Exception {
+        java.util.List<String> names = FxTestSupport.callOnFx(() -> bar().getMenus().stream()
+                .map(javafx.scene.control.Menu::getText)
+                .toList());
+        assertTrue(names.contains("Git"), names.toString());
+        assertFalse(names.contains("VCS"), names.toString());
+    }
+
     @Test
     void theMenuBarIsBuiltAndInTheWindow() throws Exception {
         assertNotNull(menuBar, "the controller built a menu bar");
@@ -138,7 +159,7 @@ class MenuBarFxTest {
     void aGatedCommandIsDisabledRatherThanMissing() throws Exception {
         MenuBar bar = bar();
         MenuItem commit = itemFor(bar, "git.commit");
-        assertNotNull(commit, "VCS > Commit is present regardless of whether Git is on");
+        assertNotNull(commit, "Git > Commit is present regardless of whether Git is on");
 
         setFlag(s -> s.setGitSupport(false));
         assertTrue(commit.isDisable(), "with Git off the item is disabled, not hidden");
