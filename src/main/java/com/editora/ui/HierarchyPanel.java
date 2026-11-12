@@ -18,6 +18,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 import com.editora.lsp.LspManager;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -98,6 +99,13 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
                 e.consume();
             }
         });
+        // The row's menu: each row is a command's, so the palette and a key binding reach it too.
+        RowMenus.install(
+                tree,
+                () -> selectedNode() != null,
+                RowMenus.row("hierarchy.openSelected", Icons.openInTab(), this::openSelected),
+                RowMenus.row("hierarchy.copySelected", "edit.copy", Icons.copy(), this::copySelected));
+        RowMenus.onCopyKey(tree, this::copySelected);
         VBox.setVgrow(tree, Priority.ALWAYS);
         getChildren().addAll(toolbar, tree);
         relabel();
@@ -178,17 +186,31 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
         return item;
     }
 
-    private void openSelected() {
+    /** The selected node, or null when nothing is selected (or only the "loading" placeholder is). */
+    private LspManager.@Nullable HierarchyNode selectedNode() {
         TreeItem<LspManager.HierarchyNode> sel = tree.getSelectionModel().getSelectedItem();
         LspManager.HierarchyNode n = sel == null ? null : sel.getValue();
-        if (n == null || n == PENDING) {
-            return;
+        return n == PENDING ? null : n;
+    }
+
+    /** Opens the selected node where it is declared; false when no node is selected. */
+    boolean openSelected() {
+        LspManager.HierarchyNode n = selectedNode();
+        if (n == null) {
+            return false;
         }
         if (n.file() != null) {
             loader.open(n.file(), n.line(), n.col());
         } else if (n.libraryUri() != null) {
             loader.openLibrary(n.libraryUri(), n.line());
         }
+        return true;
+    }
+
+    /** Copies the selected node's name; false when no node is selected. */
+    boolean copySelected() {
+        LspManager.HierarchyNode n = selectedNode();
+        return n != null && RowMenus.copy(n.name());
     }
 
     private static final class NodeCell extends TreeCell<LspManager.HierarchyNode> {

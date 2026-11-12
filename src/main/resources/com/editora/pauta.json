@@ -517,7 +517,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/menus/#menu-05",
       "kind": "pending",
-      "reason": "Some trees, lists and read-only consoles have no right-click menu, among them the Hierarchy and References panels and the Debug Log, and many right-click rows do something no command does.",
+      "reason": "Some lists and trees still have no right-click menu, among them those on the Settings pages, in several Project Map cards and in the debugger's memory and disassembly views, and many right-click rows do something no command does.",
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {

@@ -160,6 +160,19 @@ final class DebugSession {
     /** Stops recorded by recording breakpoints this session. */
     int recordedStops;
 
+    /** The state the session last reported: a run is timed from a stop only. */
+    DapManager.@Nullable State lastState;
+
+    /** When the program last went on from a stop the user saw ({@link System#nanoTime}); 0: not timed. */
+    long runStartNanos;
+
+    /** How long the run to this stop took, as shown after its line (Visual Studio's PerfTip); null: not shown. */
+    @Nullable
+    String stepTime;
+
+    /** The frame whose line shows {@link #stepTime}: the one the stop showed first. */
+    int stepTimeFrameId = -1;
+
     /** The Memory view's memory reference (an address, or one an expression's value has), or null before any. */
     @Nullable
     String memoryReference;

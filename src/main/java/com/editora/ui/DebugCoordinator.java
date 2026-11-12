@@ -28,6 +28,7 @@ import com.editora.config.RunConfiguration;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
+import com.editora.dap.LogpointTokens;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.debug.BreakpointManager;
 import com.editora.lsp.LspManager;
@@ -2047,6 +2048,7 @@ final class DebugCoordinator {
             @Override
             public void onState(DapManager.State state) {
                 closeSmartStepPicker(state); // review E108
+                timeRun(state);
                 if (state != DapManager.State.SUSPENDED) {
                     hideExceptionCard(); // Continue, a step, the session's end: the stop it described is over
                     s().stopException = null;
@@ -2172,20 +2174,24 @@ final class DebugCoordinator {
                 // Selects the first frame that has source to show → selectFrame highlights + loads vars. A step
                 // that went into library code shows that code (B5): the user asked to go there.
                 int shown = frameToShow(reason, frames, DebugCoordinator.this::showsOnStop);
-                // A logpoint the adapter does not log itself (netcoredbg) stopped the program: Editora logs its
-                // message and goes on, so it never stops there, as with any other adapter (logAndContinue).
-                String logMessage = emulatedLogpointHit(reason, frames);
-                if (logMessage != null) {
-                    s().quietStop = s().stopSerial;
-                    panel().skipHistoryStop();
-                    logAndContinue(frames.getFirst(), logMessage);
-                    return;
-                }
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
+                // A logpoint with $FUNCTION, $CALLSTACK…, or any logpoint of an adapter that does not log them
+                // (netcoredbg): Editora writes its message, and the program goes on.
+                String logMessage = recording ? null : logpointToWrite(reason, frames);
                 armTriggered(reason, frames); // a breakpoint others wait for: they stop from now on
-                s().quietStop = recording ? s().stopSerial : -1;
+                s().quietStop = recording || logMessage != null ? s().stopSerial : -1;
+                if (logMessage != null) {
+                    logAndContinue(threadId, logMessage, frames);
+                    return;
+                }
+                if (!recording) {
+                    // Before the call stack is set: that shows the stop's line, and the time goes after it.
+                    s().stepTime = stepTime(reason);
+                    s().stepTimeFrameId =
+                            frames.isEmpty() ? -1 : frames.get(shown).id();
+                }
                 if (!recording && !shown()) {
                     focusSession(s()); // another session stopped: it is shown now, as in VS Code and IntelliJ
                 }
@@ -2520,6 +2526,17 @@ final class DebugCoordinator {
             }
 
             @Override
+            public boolean canJumpToType() {
+                Path anchor = typeAnchor();
+                return anchor != null && lspManager.supportsWorkspaceSymbols(anchor);
+            }
+
+            @Override
+            public void jumpToType(String type, String value) {
+                jumpToTypeSource(type, value);
+            }
+
+            @Override
             public void setVariable(
                     int parentRef, String name, String value, String assignTo, int frameId, Consumer<String> cb) {
                 dap().setVariable(parentRef, name, value, assignTo, frameId, cb);
@@ -2755,6 +2772,131 @@ final class DebugCoordinator {
         picker.show(host.window());
     }
 
+    // --- logpoints with tokens: Editora writes the message, then goes on ------------------------------
+
+    /**
+     * The message of the logpoint the program stopped on ({@code reason}) at the top frame's line, when Editora writes
+     * it: it uses a token ({@link LogpointTokens}), so the adapter was sent it as a plain breakpoint, or the adapter does
+     * not log logpoints at all (netcoredbg ignores {@code logMessage} and stops, after checking the condition). Null for
+     * any other stop.
+     */
+    private @Nullable String logpointToWrite(String reason, List<DapModels.StackFrameInfo> frames) {
+        if (!"breakpoint".equals(reason) || frames.isEmpty()) {
+            return null;
+        }
+        DapModels.StackFrameInfo top = frames.getFirst();
+        Path file = top.file();
+        if (file == null) {
+            return null;
+        }
+        boolean adapterLogs = dap().supportsLogPoints();
+        DapModels.LineBreakpoint lb = sentBreakpointAt(
+                file,
+                top.line(),
+                b -> b.column() <= 0
+                        && (LogpointTokens.uses(b.logMessage())
+                                || !adapterLogs
+                                        && b.logMessage() != null
+                                        && !b.logMessage().isBlank()));
+        return lb == null ? null : lb.logMessage();
+    }
+
+    /**
+     * Writes a token logpoint's message to the console as the adapter writes a logpoint's: its {@code {expression}}
+     * parts evaluated in the top frame one after another, the tokens from the stack and the thread. Then the program
+     * goes on, unless the user acted first (a step, Stop) or it stopped again meanwhile.
+     */
+    private void logAndContinue(int threadId, String message, List<DapModels.StackFrameInfo> frames) {
+        // The stopped session's own: another may be in front by the time the answers come.
+        DebugSession session = s();
+        DapManager dap = session.dap;
+        int serial = session.stopSerial;
+        DebugPanel panel = panel();
+        DapModels.StackFrameInfo top = frames.getFirst();
+        List<String> expressions = LogpointTokens.expressions(message);
+        Map<String, String> values = new LinkedHashMap<>();
+        Runnable write = () -> dap.threads(threads -> {
+            if (serial != session.stopSerial || dap.state() != DapManager.State.SUSPENDED) {
+                return;
+            }
+            String threadName = threads.stream()
+                    .filter(t -> t.id() == threadId)
+                    .map(DapModels.ThreadInfo::name)
+                    .findFirst()
+                    .orElse(String.valueOf(threadId));
+            LogpointTokens.Stop stop = new LogpointTokens.Stop(
+                    DebugPanelText.frameName(top.name()),
+                    frames.size() > 1 ? DebugPanelText.frameName(frames.get(1).name()) : "",
+                    frames.stream().map(DebugPanelText::frameText).toList(),
+                    threadId,
+                    threadName);
+            panel.appendOutput(LogpointTokens.expand(message, e -> values.getOrDefault(e, ""), stop) + "\n", "console");
+            dap.resume();
+        });
+        evaluateEach(session, top.id(), serial, expressions, 0, values, write);
+    }
+
+    /**
+     * Evaluates {@code expressions} from {@code index} on in frame {@code frameId} of {@code session} into
+     * {@code values}, then runs {@code then}; stops when the program moved on meanwhile.
+     */
+    private void evaluateEach(
+            DebugSession session,
+            int frameId,
+            int serial,
+            List<String> expressions,
+            int index,
+            Map<String, String> values,
+            Runnable then) {
+        if (index >= expressions.size()) {
+            then.run();
+            return;
+        }
+        if (serial != session.stopSerial) {
+            return;
+        }
+        String expression = expressions.get(index);
+        session.dap.evaluateFull(expression, frameId, "watch", r -> {
+            values.put(expression, r == null ? "" : DebugValues.display(r.result()));
+            evaluateEach(session, frameId, serial, expressions, index + 1, values, then);
+        });
+    }
+
+    // --- step timing: how long the program ran to this stop (Visual Studio's PerfTips) ----------------
+
+    /**
+     * Times each run from a stop the user saw: a step or Continue starts the clock, and a stop that only records (a
+     * recording breakpoint) or logs goes on without restarting it. A launch or attach is not timed.
+     */
+    private void timeRun(DapManager.State state) {
+        DebugSession session = s();
+        DapManager.State before = session.lastState;
+        session.lastState = state;
+        if (state == DapManager.State.RUNNING) {
+            if (before == DapManager.State.SUSPENDED && session.quietStop != session.stopSerial) {
+                session.runStartNanos = System.nanoTime();
+            }
+        } else if (state != DapManager.State.SUSPENDED) {
+            session.runStartNanos = 0;
+        }
+        if (state != DapManager.State.SUSPENDED) {
+            session.stepTime = null;
+        }
+    }
+
+    /**
+     * The text after the stop's line saying how long the run to it took ({@code ≤ 1 ms elapsed}); null when it was not
+     * timed, the setting is off, or the stop is a Pause's or the program's first (its time is the user's or the
+     * launch's, not the code's).
+     */
+    private @Nullable String stepTime(String reason) {
+        long start = s().runStartNanos;
+        if (start == 0 || !host.settings().isDebugStepTiming() || "pause".equals(reason) || "entry".equals(reason)) {
+            return null;
+        }
+        return tr("debug.stepTime", DebugPanelText.elapsed(System.nanoTime() - start));
+    }
+
     // --- recording breakpoints: record the stop, then go on ------------------------------------------
 
     /** A session records at most this many stops; the next hit stops as a plain breakpoint does, and says why. */
@@ -2810,61 +2952,6 @@ final class DebugCoordinator {
             }
         }
         return null;
-    }
-
-    // --- logpoints the adapter does not log: log the message, then go on -----------------------------
-
-    /**
-     * The log message of the logpoint the program stopped ({@code reason}) on at the top frame's line, when the
-     * adapter does not log logpoints itself (netcoredbg ignores {@code logMessage} and stops); else null. Such an
-     * adapter still checks the breakpoint's condition, so the stop is one the message is due for.
-     */
-    private @Nullable String emulatedLogpointHit(String reason, List<DapModels.StackFrameInfo> frames) {
-        if (!"breakpoint".equals(reason) || frames.isEmpty() || dap().supportsLogPoints()) {
-            return null;
-        }
-        DapModels.StackFrameInfo top = frames.getFirst();
-        Path file = top.file();
-        DapModels.LineBreakpoint lb = file == null
-                ? null
-                : sentBreakpointAt(
-                        file,
-                        top.line(),
-                        b -> b.logMessage() != null && !b.logMessage().isBlank());
-        return lb == null ? null : lb.logMessage();
-    }
-
-    /**
-     * Logs {@code message} in the Debug console with each {@code {expression}} evaluated in {@code top}, as an adapter
-     * that supports logpoints would, then lets the program go on. An expression that fails to evaluate logs the
-     * debugger's error in its place. A stop the user acts on first (a step, Stop) or another stop meanwhile is left
-     * as it is.
-     */
-    private void logAndContinue(DapModels.StackFrameInfo top, String message) {
-        int serial = s().stopSerial;
-        DebugPanel panel = panel();
-        List<LogpointMessage.Part> parts = LogpointMessage.parse(message);
-        List<String> expressions = parts.stream()
-                .filter(LogpointMessage.Part::expression)
-                .map(LogpointMessage.Part::text)
-                .toList();
-        List<String> values = new ArrayList<>();
-        Runnable[] next = new Runnable[1];
-        next[0] = () -> {
-            if (serial != s().stopSerial || dap().state() != DapManager.State.SUSPENDED) {
-                return;
-            }
-            if (values.size() < expressions.size()) {
-                dap().evaluateFull(expressions.get(values.size()), top.id(), "watch", r -> {
-                    values.add(r == null ? "" : r.result());
-                    next[0].run();
-                });
-                return;
-            }
-            panel.appendNotice(LogpointMessage.fill(parts, values));
-            dap().resume();
-        };
-        next[0].run();
     }
 
     /**
@@ -4166,6 +4253,9 @@ final class DebugCoordinator {
                 // there (a stop outside the region has no line to show and paints nothing).
                 b.setExecutionLine(frame.line() - b.getBreakpointManager().regionFirstLine());
                 b.setExecutionLineException(frame.id() == s().exceptionFrameId);
+                if (frame.id() == s().stepTimeFrameId && s().stepTime != null) {
+                    b.setStepTime(frame.line() - b.getBreakpointManager().regionFirstLine(), s().stepTime);
+                }
                 paintedFrame = frame;
                 if (frame.id() == s().exceptionFrameId) {
                     later(() -> showExceptionCard(false)); // once the line has been laid out
@@ -6030,15 +6120,79 @@ final class DebugCoordinator {
     /** Resumes and stops at the active buffer's caret line via a one-shot temporary breakpoint. */
     void debugRunToCursor() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || dap().state() != DapManager.State.SUSPENDED) {
+        if (b != null) {
+            runToLine(b, fileLineAtCaret(b), false);
+        }
+    }
+
+    /**
+     * Run to Cursor at 0-based file line {@code fileLine} of {@code b} — the caret's, or the line whose number was
+     * clicked in the gutter; {@code force}: every breakpoint on the way is ignored (Force Run to Cursor).
+     */
+    void runToLine(EditorBuffer b, int fileLine, boolean force) {
+        Path path = b.getPath();
+        if (path == null || dap().state() != DapManager.State.SUSPENDED) {
             return;
         }
-        int line = lineMap(b).toLaunched(fileLineAtCaret(b));
+        int line = lineMap(b).toLaunched(fileLine);
         if (line < 0) {
             host.setStatus(tr("status.debug.lineAddedSinceLaunch"));
             return;
         }
-        dap().runToCursor(b.getPath(), line);
+        if (force) {
+            dap().forceRunToCursor(path, line);
+        } else {
+            dap().runToCursor(path, line);
+        }
+    }
+
+    /**
+     * The file a type is looked up from: the shown frame's (its language server knows the code that stopped), else
+     * the file the session debugs; {@code null} when neither is a file.
+     */
+    private @Nullable Path typeAnchor() {
+        DapModels.StackFrameInfo frame = s().shownFrame;
+        if (frame != null && frame.file() != null && hasSource(frame)) {
+            return frame.file();
+        }
+        return dap().debugFile();
+    }
+
+    /**
+     * IntelliJ's Jump to Type Source: opens the class, struct or interface a value has — its own type, which may be a
+     * subclass of the variable's declared one — found by the language server's workspace symbols, and for Java among
+     * the JDK's and the dependencies' classes too. Says so when nothing declares it.
+     */
+    void jumpToTypeSource(String type, String value) {
+        DebugTypeSource.TypeName name = DebugTypeSource.parse(type, value);
+        String shown = type == null || type.isBlank() ? value : type;
+        Path anchor = typeAnchor();
+        if (name == null || anchor == null || !lspManager.supportsWorkspaceSymbols(anchor)) {
+            host.setStatus(tr("status.debug.typeNotFound", DebugPanelText.oneLine(shown, 60)));
+            return;
+        }
+        lspManager.workspaceSymbols(anchor, name.simple(), matches -> {
+            LspManager.WorkspaceSymbolMatch found = DebugTypeSource.best(name, matches);
+            // The project's own class, or the one its qualifier names, is the answer; a library namesake may not be
+            // (Arrays.ArrayList for ArrayList), so the library's classes are asked too.
+            if (found != null
+                    && (DebugTypeSource.sameQualifier(name.qualifier(), found.container())
+                            || (name.qualifier().isEmpty() && found.file() != null))) {
+                lsp.navigation.openWorkspaceSymbol(anchor, found);
+                return;
+            }
+            // Not the project's own (java.util.ArrayList): jdtls finds the JDK's and the dependencies' classes apart.
+            lsp.libraryTypes(name.simple(), library -> {
+                List<LspManager.WorkspaceSymbolMatch> all = new ArrayList<>(matches);
+                all.addAll(library);
+                LspManager.WorkspaceSymbolMatch best = DebugTypeSource.best(name, all);
+                if (best == null) {
+                    host.setStatus(tr("status.debug.typeNotFound", DebugPanelText.oneLine(shown, 60)));
+                } else {
+                    lsp.navigation.openWorkspaceSymbol(anchor, best);
+                }
+            });
+        });
     }
 
     /** Debug: Show Numbers as Hexadecimal — on or off, in Variables, watches, hover and inline values. */
@@ -6049,15 +6203,9 @@ final class DebugCoordinator {
     /** Debug: Force Run to Cursor — Run to Cursor with every breakpoint on the way ignored. */
     void debugForceRunToCursor() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || dap().state() != DapManager.State.SUSPENDED) {
-            return;
+        if (b != null) {
+            runToLine(b, fileLineAtCaret(b), true);
         }
-        int line = lineMap(b).toLaunched(fileLineAtCaret(b));
-        if (line < 0) {
-            host.setStatus(tr("status.debug.lineAddedSinceLaunch"));
-            return;
-        }
-        dap().forceRunToCursor(b.getPath(), line);
     }
 
     /** Jump to Line: move the execution pointer to the caret line without executing in-between code.
@@ -7659,6 +7807,27 @@ final class DebugCoordinator {
             if (b.getBreakpointManager().isBreakpoint(line)
                     || b.getBreakpointManager().memberMark(line) == null) {
                 addLogpoint(b, line); // IntelliJ's Shift+click: a breakpoint that logs and does not suspend
+            }
+        });
+        buffer.setGutterRunToHere(new EditorBuffer.GutterRunToHere() {
+            @Override
+            public boolean offeredAt(EditorBuffer b, int line) {
+                return b.getPath() != null
+                        && dap().state() == DapManager.State.SUSPENDED
+                        && isDebuggableBuffer(b)
+                        && (s().panel == null || s().panel.viewing() == null); // not while an earlier stop is shown
+            }
+
+            @Override
+            public String tooltip(EditorBuffer b, int line) {
+                return tr(
+                        "debug.runToHere.tooltip",
+                        line + b.getBreakpointManager().regionFirstLine() + 1);
+            }
+
+            @Override
+            public void run(EditorBuffer b, int line, boolean force) {
+                runToLine(b, line + b.getBreakpointManager().regionFirstLine(), force);
             }
         });
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));

@@ -50,6 +50,11 @@ public class UndoHistoryPanel extends VBox implements ToolWindowContent {
                 e.consume();
             }
         });
+        // The row's menu: its row is a command's, so the palette and a key binding reach it too.
+        RowMenus.install(
+                list,
+                () -> list.getSelectionModel().getSelectedItem() != null,
+                RowMenus.row("undoHistory.restoreSelected", Icons.history(), this::restoreSelected));
         VBox.setVgrow(list, Priority.ALWAYS);
         getChildren().add(list);
     }
@@ -84,11 +89,14 @@ public class UndoHistoryPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private void restoreSelected() {
+    /** Restores the document to the selected state, as one undoable edit; false when no state is selected. */
+    boolean restoreSelected() {
         UndoHistory.Checkpoint c = list.getSelectionModel().getSelectedItem();
-        if (c != null && buffer != null) {
-            buffer.restoreUndoCheckpoint(c);
+        if (c == null || buffer == null) {
+            return false;
         }
+        buffer.restoreUndoCheckpoint(c);
+        return true;
     }
 
     @Override

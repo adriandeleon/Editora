@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Right-click menus in the References, Hierarchy, Find in Files and Undo History tool windows, the Message
+  Log, the Application Log and the External Tools console.** A reference, a hierarchy item or a match has
+  Open and Copy; an undo state has Restore This State; a message has Copy; the two logs have Select All and
+  Copy, and the Application Log has Find in place of the stock Cut, Paste and Delete. The Menu key and
+  Shift+F10 open each menu at the selected row.
+- **Eight commands for those rows**, so the palette and a key binding of your own reach them: References: Open
+  Reference and Copy Line, Hierarchy: Open Declaration and Copy Name, Find in Files: Open Match and Copy Line,
+  Undo History: Restore This State, and Message Log: Copy. Each acts on the row selected in its panel.
+- **The Copy key copies the selected row** in the References, Hierarchy and Find in Files trees: Ctrl+C (Cmd+C
+  on macOS), or the Copy chord of the active keymap (M-w in Emacs).
 - **Settings…, Zen Mode, TODO and Bookmarks have menu rows** (Tools, View and Window), so no toolbar button is
   the only way to its action.
 - **Five commands for buttons that had none**: Run: Run Selected Configuration and Debug: Debug Selected
@@ -52,6 +62,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the list as Markdown. About gains *Working toward Pauta 6.0.1* and *Pauta conformance: Partial*, and its
   *Copy details* text carries both. The conformance is worked out from the list, so it cannot claim more than
   the list shows.
+
+- **Debugger small wins: Copy as Expression, Jump to Type Source, Run to Here in the gutter, step timing and
+  logpoint tokens.** *Copy as Expression* on a variable copies what gives its value in the stopped code, as the
+  debugger itself names it (`items.get(0)` in Java, `d['k']` in Python, rather than `items[0]`); Add to Watches, Set
+  Value and View As use it too. *Jump to Type Source* opens the class a value really has, which may be a subclass of
+  the variable's type, in your code or the JDK's, through the language server. While the program is paused, hovering
+  a line number turns it into an arrow: click it to run to that line, Shift+click to ignore the breakpoints on the
+  way. After a step or Continue, the time the program ran appears faintly after the line it stopped on (*Show how
+  long each step took* in Settings → Debug turns it off). A logpoint's message can use `$FUNCTION`, `$CALLER`,
+  `$CALLSTACK`, `$TID` and `$TNAME` for the method, its caller, the call stack and the thread; such a logpoint
+  pauses the program briefly at each hit while Editora writes the message.
 
 - **Debug JavaScript in the browser.** *Debug in Browser…* opens a web page in Chrome, Edge or another Chromium
   browser (Chromium, Brave, Vivaldi) under the debugger, as VS Code does: breakpoints in the page's scripts stop it,
@@ -590,7 +611,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Logpoints work in C#.** netcoredbg doesn't support logpoints, so a C# logpoint stopped the program like a plain
   breakpoint and logged nothing. When a debugger can't log logpoints itself, Editora now logs the message in the Debug
   console, with each `{expression}` evaluated where the program stopped, and lets it go on. The editor is not taken to
-  the line, and the stop is not kept in Debug History. A condition on the logpoint still decides when it logs.
+  the line, and the stop is not kept in Debug History. The program pauses briefly at each hit, as it does for a
+  logpoint with `$FUNCTION` or another token. A condition on the logpoint still decides when it logs.
 - **Compare With… on a background tab compares that tab's file.** Right-clicking a tab that was not the active one
   and choosing Compare With… compared the active file with the one you picked. Every other row of the tab menu
   already acted on the tab you clicked.

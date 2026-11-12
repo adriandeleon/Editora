@@ -103,6 +103,8 @@ final class WindowCommandRegistrar {
 
         ToolWindow undoHistoryToolWindow();
 
+        UndoHistoryPanel undoHistoryPanel();
+
         BuildOutputPanel buildOutputPanel();
 
         ToolWindow fileHistoryToolWindow();
@@ -1919,6 +1921,7 @@ final class WindowCommandRegistrar {
             }
         }));
         host.registry().register(Command.of("view.debugLog", host::showDebugLog));
+        registerRowCommands(host);
         host.registry().register(Command.of("help.reportProblem", host::showReportProblem));
         // Pauta (pauta-project.dev): the conformance window, and the pages its links and About's open.
         host.registry().register(Command.of("help.pauta", host::showPauta));
@@ -3658,6 +3661,59 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of(EncryptionCoordinator.CLEAR_SIGN, e::clearSign));
         host.registry().register(Command.of(EncryptionCoordinator.SIGN_DETACHED, e::signDetached));
         host.registry().register(Command.of(EncryptionCoordinator.VERIFY, e::verifySignature));
+    }
+
+    /**
+     * The commands behind the right-click rows of the lists and trees that only the mouse and Enter reached:
+     * each acts on the row selected in its panel, and says so when none is.
+     */
+    private static void registerRowCommands(Host host) {
+        LspNavigation lsp = host.lspCoordinator().navigation;
+        row(
+                host,
+                "references.openSelected",
+                "toolwindow.references",
+                () -> lsp.referencesPanel().openSelected());
+        row(
+                host,
+                "references.copySelected",
+                "toolwindow.references",
+                () -> lsp.referencesPanel().copySelected());
+        row(
+                host,
+                "hierarchy.openSelected",
+                "toolwindow.hierarchy",
+                () -> lsp.hierarchyPanel().openSelected());
+        row(
+                host,
+                "hierarchy.copySelected",
+                "toolwindow.hierarchy",
+                () -> lsp.hierarchyPanel().copySelected());
+        row(
+                host,
+                "searchResults.openSelected",
+                "toolwindow.search",
+                () -> host.searchCoordinator().panel().openSelectedMatch());
+        row(
+                host,
+                "searchResults.copySelected",
+                "toolwindow.search",
+                () -> host.searchCoordinator().panel().copySelected());
+        row(
+                host,
+                "undoHistory.restoreSelected",
+                "toolwindow.undoHistory",
+                () -> host.undoHistoryPanel().restoreSelected());
+        row(host, "messageLog.copySelected", "messagelog.title", host.statusBar()::copySelectedMessages);
+    }
+
+    /** Registers {@code id}: {@code action} on a panel's selected row, which answers false when it has none. */
+    private static void row(Host host, String id, String panelNameKey, java.util.function.BooleanSupplier action) {
+        host.registry().register(Command.of(id, () -> {
+            if (!action.getAsBoolean()) {
+                host.setStatus(tr("status.rows.selectFirst", tr(panelNameKey)));
+            }
+        }));
     }
 
     /** The palette's "this feature is turned off" line, naming the command that turns Project support on. */

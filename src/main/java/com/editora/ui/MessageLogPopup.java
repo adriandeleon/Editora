@@ -12,8 +12,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.SelectionMode;
-import javafx.scene.input.Clipboard;
-import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
@@ -116,6 +114,12 @@ public final class MessageLogPopup {
 
         // Copy button: the discoverable replacement for the old per-row right-click menu. Copies the
         // selected messages, or all of them when nothing is selected.
+        // A row's menu: Copy is a command's (Message Log: Copy Selected Messages), and the keys that copy here
+        // are the platform's shortcut and the keymap's own Copy chord, which is the one the row shows.
+        RowMenus.install(
+                list,
+                () -> !list.getSelectionModel().getSelectedItems().isEmpty(),
+                RowMenus.row("messageLog.copySelected", "edit.copy", Icons.copy(), this::copySelection));
         Button copy = new Button(tr("messagelog.copy"));
         copy.setGraphic(Icons.copy());
         copy.getStyleClass().addAll("flat");
@@ -222,18 +226,19 @@ public final class MessageLogPopup {
         show(owner, anchor, log);
     }
 
-    /** Copies the selected messages (one per line) to the system clipboard. */
-    private void copySelection() {
+    /**
+     * Copies the selected messages (one per line) to the system clipboard; false when the log is not showing
+     * or no message is selected.
+     */
+    boolean copySelection() {
+        if (!showing) {
+            return false;
+        }
         String text = list.getSelectionModel().getSelectedItems().stream()
                 .filter(java.util.Objects::nonNull)
                 .map(MessageLog.Entry::text)
                 .collect(Collectors.joining("\n"));
-        if (text.isEmpty()) {
-            return;
-        }
-        ClipboardContent content = new ClipboardContent();
-        content.putString(text);
-        Clipboard.getSystemClipboard().setContent(content);
+        return RowMenus.copy(text);
     }
 
     /** Shows the log (newest first) anchored just above {@code anchor}. {@code owner} is unused (kept

@@ -1635,13 +1635,50 @@ plain click) open a one-field form for the log message, with the `{expression}` 
 disabled while the message is blank, so it never leaves a breakpoint that stops; the breakpoint is created only on OK,
 and on a line that has one only its message changes. A method breakpoint's mark ignores the Shift+click.
 `DebugReviewCWindowFxTest.shiftClickingTheGutterOrAddLogpointMakesTheLineALogpoint` covers it.
-**Logpoints an adapter does not log**: an adapter without `supportsLogPoints` (netcoredbg 3.2.0) ignores
-`logMessage` and stops on the breakpoint. On a `breakpoint` stop at a line whose sent breakpoint has a log message,
-`DebugCoordinator.logAndContinue` evaluates each `{expression}` of it ([`ui/LogpointMessage`](../../src/main/java/com/editora/ui/LogpointMessage.java)
-splits it; braces nest) in the top frame, logs the filled-in line with `appendNotice` (a failed one logs the
-debugger's error in its place) and resumes. The stop is quiet like a recording breakpoint's (`quietStop`) and is not
-kept in Debug History (`DebugPanel.skipHistoryStop`). The adapter still checks a condition; a hit count it does not
-support is not emulated. `LogpointWithoutAdapterSupportFxTest` and `LogpointMessageTest` cover it.
+**Logpoint tokens** ([`dap/LogpointTokens`](../../src/main/java/com/editora/dap/LogpointTokens.java)). A log message
+may use Visual Studio's tracepoint tokens `$FUNCTION`, `$CALLER`, `$CALLSTACK`, `$TID` and `$TNAME`. No adapter knows
+them, so `DapClient.sourceBreakpoints` sends such a logpoint without its `logMessage` (its condition and hit count
+kept): the adapter stops there, `DebugCoordinator.logpointToWrite` finds the logpoint at the top frame's line, and
+`logAndContinue` evaluates its `{expression}` parts one after another in that frame (`watch` context; a refusal shows
+the adapter's message), fills the tokens from the stop's frames (`DebugPanelText.frameText`, one per line after the
+message for `$CALLSTACK`) and the `threads` answer, writes the line to the console and resumes. The stop is quiet like
+a recording breakpoint's (`DebugSession.quietStop`): not shown, not in Debug History, and a step or Stop meanwhile wins.
+The program pauses briefly at each hit, which the form says; a message without tokens is the adapter's, as before.
+As with a recording breakpoint, the stop ends a Run to Cursor under way (`clearTempBreakpoint`).
+An adapter without `supportsLogPoints` (netcoredbg 3.2.0) ignores every `logMessage` and stops on the breakpoint after
+checking its condition, so `logpointToWrite` takes any logpoint of such a session the same way, tokens or not
+(`DapClient.supportsLogPoints`; capabilities not known yet count as supporting). A hit count the adapter does not
+support is not emulated. `LogpointWithoutAdapterSupportFxTest` covers it.
+**Copy as Expression** (VS Code's). `VariableInfo.evaluateName` and `VarRow.evaluateName` carry the adapter's own
+expression for a value (`items.get(0)` from java-debug, `d['k']` from debugpy, `obj.x` from js-debug), kept through
+lazy rows (`LazyValues`), Java's text tidying and string repair. `DebugPanel.expression` uses it, else the path of names
+(`pathExpression`, which reads `items[0]` — not Java for a list): Copy as Expression, Add to Watches, Set Value's
+assignment fallback, View As and the selected row of the evaluate window and hover popup all go through it.
+**Jump to Type Source** (IntelliJ's; [`ui/DebugTypeSource`](../../src/main/java/com/editora/ui/DebugTypeSource.java)).
+On a Variables, watch or result row whose type names a class, the menu opens that class's declaration — the value's
+own type, which may be a subclass of the declared one. `DebugTypeSource.parse` reads each adapter's way of naming a
+type (`java.util.ArrayList<String>`, `Main$Square`, `*main.Circle`, `main.Stack[int]`, `app::Point`, `const Shape &`;
+js-debug types every object `object`, so its value's leading class name is used) and refuses built-ins, arrays,
+slices, maps, tuples and anonymous classes. The language server of the shown frame's file answers `workspace/symbol`
+for the simple name; `best` takes a class, interface, enum or struct of that name whose container agrees with the
+qualifier, then a project file, then a library's top-level class before a nested or shaded namesake (java-debug names
+`ArrayList` without its package, and jdtls also has the private `Arrays.ArrayList`), then Search Everywhere's tie
+order. Unless the project declares it, jdtls's JDK and dependency classes are asked too (`LspCoordinator.libraryTypes`),
+and a library class opens in its read-only tab. The item is offered only while that server answers workspace symbols.
+**Run to Here in the gutter** (IntelliJ's). While paused, hovering a line number turns it into an arrow
+(`FoldManager.runToHere`: the number stays under it, transparent, so the gutter keeps its width; one shared tooltip);
+a click runs to that line and Shift+click ignores the breakpoints on the way (`DebugCoordinator.runToLine`, shared
+with Run to Cursor and Force Run to Cursor). Only an armed number keeps the press from the text. Not on the line it
+stopped on, not while an earlier stop is shown, and only in a file that takes breakpoints
+(`EditorBuffer.GutterRunToHere`).
+**Step timing** (Visual Studio's PerfTips; setting *Show how long each step took*, `debugStepTiming`, settings 169).
+`DebugCoordinator.timeRun` starts the clock when the program goes on from a stop the user saw (a step, Continue, Run to
+Cursor) and keeps it through a quiet stop; the next stop shows `≤ 1 ms elapsed`, `12 ms elapsed`, `1.5 s elapsed`
+(`DebugPanelText.elapsed`) faintly after the line it stopped on (`InlineValuesOverlay.setElapsed`, painted last on the
+line), in the frame the stop showed first. The first stop after a launch, a Pause's and the program's entry are not
+timed. The time is measured by Editora, so it includes the adapter's round trips: a hint, not a profiler.
+`DebugTypeSourceTest`, `LogpointTokensTest`, `DebugPanelTextTest`, `DebugSmallWinsWindowFxTest` (a fake adapter) and
+the opt-in `DebugSmallWinsProbeFxTest` (debugpy; java-debug with JDT LS) cover these.
 **Lambda breakpoints** ([`ui/LambdaBreakpoints`](../../src/main/java/com/editora/ui/LambdaBreakpoints.java),
 [`editor/debug/JavaLambdas`](../../src/main/java/com/editora/editor/debug/JavaLambdas.java)) are line breakpoints
 that also, or only, stop inside lambdas of their line: `Breakpoint.lambdas` holds their numbers on the line (from 1,

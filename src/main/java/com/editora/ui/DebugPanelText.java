@@ -161,15 +161,20 @@ final class DebugPanelText {
                     .append('\n');
         }
         for (com.editora.dap.DapModels.StackFrameInfo f : frames) {
-            out.append("    at ").append(frameName(f.name()));
-            if (f.file() != null) {
-                out.append('(').append(DebugValues.sourceName(f.file()));
-                if (f.line() >= 0) {
-                    out.append(':').append(f.line() + 1);
-                }
-                out.append(')');
+            out.append("    at ").append(frameText(f)).append('\n');
+        }
+        return out.toString();
+    }
+
+    /** Pure: a frame as a stack trace line names it, {@code Main.run(Main.java:12)}. */
+    static String frameText(com.editora.dap.DapModels.StackFrameInfo f) {
+        StringBuilder out = new StringBuilder(frameName(f.name()));
+        if (f.file() != null) {
+            out.append('(').append(DebugValues.sourceName(f.file()));
+            if (f.line() >= 0) {
+                out.append(':').append(f.line() + 1);
             }
-            out.append('\n');
+            out.append(')');
         }
         return out.toString();
     }
@@ -499,4 +504,23 @@ final class DebugPanelText {
 
     private static final java.time.format.DateTimeFormatter HISTORY_TIME =
             java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
+
+    /**
+     * A run's length as a PerfTip says it: {@code ≤ 1 ms} under a millisecond, whole milliseconds under a second, then
+     * seconds to a tenth, then minutes and seconds. Pure.
+     */
+    static String elapsed(long nanos) {
+        long ms = Math.max(0, nanos) / 1_000_000;
+        if (ms < 1) {
+            return "≤ 1 ms";
+        }
+        if (ms < 1000) {
+            return ms + " ms";
+        }
+        if (ms < 60_000) {
+            return String.format(java.util.Locale.ROOT, "%.1f s", ms / 1000.0);
+        }
+        long seconds = ms / 1000;
+        return (seconds / 60) + " min " + (seconds % 60) + " s";
+    }
 }

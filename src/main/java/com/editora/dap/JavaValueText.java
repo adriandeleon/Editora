@@ -48,7 +48,8 @@ final class JavaValueText {
                 v.namedVariables(),
                 v.indexedVariables(),
                 v.lazy(),
-                v.note());
+                v.note(),
+                v.evaluateName());
     }
 
     static List<DapModels.VariableInfo> tidyAll(List<DapModels.VariableInfo> vars) {
