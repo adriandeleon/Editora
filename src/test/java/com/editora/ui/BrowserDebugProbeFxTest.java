@@ -115,7 +115,7 @@ class BrowserDebugProbeFxTest {
             FxTestSupport.runOnFx(() -> html.toggleBreakpoint(PAGE_LINE));
 
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
-            awaitStop(dap, debug, PAGE_LINE, "index.html");
+            awaitStop(c, dap, debug, PAGE_LINE, "index.html");
             awaitRow(debug, "name", null);
             assertEquals(Browsers.knownName(browser) + ": index.html", call(() ->
                     (String) FxTestSupport.field(debug.panel(), "sessionFile")));
@@ -128,7 +128,7 @@ class BrowserDebugProbeFxTest {
                 js.toggleBreakpoint(SCRIPT_LINE);
             });
             resume(dap, debug);
-            awaitStop(dap, debug, SCRIPT_LINE, "app.js");
+            awaitStop(c, dap, debug, SCRIPT_LINE, "app.js");
             awaitRow(debug, "n", null);
 
             FxTestSupport.runOnFx(dap::stop);
@@ -176,7 +176,7 @@ class BrowserDebugProbeFxTest {
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
             FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
                     launchJson, root, parsed, parsed.configurations().getFirst(), js));
-            awaitStop(dap, debug, SCRIPT_LINE, "app.js");
+            awaitStop(c, dap, debug, SCRIPT_LINE, "app.js");
             awaitRow(debug, "n", null);
             assertEquals("Page in the browser", call(() -> (String) FxTestSupport.field(debug.panel(), "sessionFile")));
             FxTestSupport.runOnFx(dap::stop);
@@ -209,7 +209,7 @@ class BrowserDebugProbeFxTest {
     }
 
     /** A stop at {@code line} of {@code file} (the top frame's). */
-    private static void awaitStop(DapManager dap, DebugCoordinator debug, int line, String file)
+    private static void awaitStop(MainController c, DapManager dap, DebugCoordinator debug, int line, String file)
             throws InterruptedException {
         try {
             await(
@@ -228,8 +228,33 @@ class BrowserDebugProbeFxTest {
                             + (debug.panel().callStack().get(0).line() + 1));
             String console = call(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(debug.panel(), "console")
                     .getText());
-            throw new AssertionError(e.getMessage() + " (" + call(dap::state) + ", " + top + ")\n" + console, e);
+            throw new AssertionError(
+                    e.getMessage() + " (" + call(dap::state) + ", " + top + ")\nstatus: " + call(() -> status(c))
+                            + "\noverlay: " + call(() -> overlay(c)) + "\n" + console,
+                    e);
         }
+    }
+
+    /** What the status line says. FX thread. */
+    private static String status(MainController c) {
+        return FxTestSupport.<javafx.scene.control.Label>field(FxTestSupport.field(c, "statusBar"), "echo")
+                .getText();
+    }
+
+    /** The texts of what the overlay shows (a question the launch waits on), or "none". FX thread. */
+    private static String overlay(MainController c) {
+        if (!OverlayDriver.showing(c)) {
+            return "none";
+        }
+        List<String> texts = new java.util.ArrayList<>();
+        OverlayDriver.card(c).lookupAll(".label").forEach(n -> {
+            if (n instanceof javafx.scene.control.Labeled l
+                    && l.getText() != null
+                    && !l.getText().isBlank()) {
+                texts.add(l.getText());
+            }
+        });
+        return String.join(" | ", texts);
     }
 
     /** Resumes, and forgets the tree shown so far: a row is looked for only in the next stop's tree. */
