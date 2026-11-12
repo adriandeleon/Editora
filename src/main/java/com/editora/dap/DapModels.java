@@ -69,6 +69,12 @@ public final class DapModels {
     public record ThreadStatus(int id, String name, boolean paused, String reason, boolean shown) {}
 
     /**
+     * One thread of a thread dump: its status and its call stack, top frame first. {@code frames} is empty when the
+     * adapter gave none — a thread that was running, or one it would not walk.
+     */
+    public record ThreadStack(ThreadStatus thread, List<StackFrameInfo> frames) {}
+
+    /**
      * One frame of a thread's call stack. {@code file} may be null for frames with no source. {@code sourceUri}
      * is the adapter's own name for a source that is not a file on this machine — java-debug's
      * {@code jdt://contents/…} for a JDK or library class, whose text jdtls can supply

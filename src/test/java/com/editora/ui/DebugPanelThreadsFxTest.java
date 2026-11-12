@@ -51,6 +51,7 @@ class DebugPanelThreadsFxTest {
                         case "pauseThread" -> calls.add("pause " + a[0]);
                         case "resumeThread" -> calls.add("resume " + a[0]);
                         case "showThread" -> calls.add("show " + ((DapModels.ThreadStatus) a[0]).id());
+                        case "threadDump" -> calls.add("dump");
                         default -> {}
                     }
                     Class<?> rt = m.getReturnType();
@@ -155,14 +156,24 @@ class DebugPanelThreadsFxTest {
             ListView<DapModels.ThreadStatus> list = panel.threadList();
 
             list.getSelectionModel().select(1); // worker, running
-            assertEquals(List.of(tr("debugpanel.pauseThread")), menu(panel));
+            // Every thread's menu ends with Thread Dump, after a separator (a null text).
+            assertEquals(
+                    java.util.Arrays.asList(tr("debugpanel.pauseThread"), null, tr("debugpanel.threadDump")),
+                    menu(panel));
             item(panel, tr("debugpanel.pauseThread")).fire();
 
             list.getSelectionModel().select(2); // pool thread, suspended
-            assertEquals(List.of(tr("debugpanel.showFrames"), tr("debugpanel.resumeThread")), menu(panel));
+            assertEquals(
+                    java.util.Arrays.asList(
+                            tr("debugpanel.showFrames"),
+                            tr("debugpanel.resumeThread"),
+                            null,
+                            tr("debugpanel.threadDump")),
+                    menu(panel));
             item(panel, tr("debugpanel.resumeThread")).fire();
             item(panel, tr("debugpanel.showFrames")).fire();
-            assertEquals(List.of("list", "pause 2", "resume 4", "show 4"), calls);
+            item(panel, tr("debugpanel.threadDump")).fire();
+            assertEquals(List.of("list", "pause 2", "resume 4", "show 4", "dump"), calls);
             assertFalse(panel.threadsShown(), "Show Frames goes back to the frames");
         });
     }

@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Thread Dump in the debugger.** Debug: Thread Dump, also in the Threads view's and the call stack's menus, shows
+  every thread of the program with its call stack in a window of its own, as IntelliJ's Get Thread Dump does. Threads
+  whose stacks are the same are merged into one row (twenty pool workers waiting in one place read as one), a filter
+  finds a thread by its name or a frame, and a frame opens its code with Enter or a double-click, even after the
+  program went on. On a running program it pauses for a moment, takes the dump and lets the program go on without
+  moving the editor: the way to see what a program that hangs is doing. Copy puts the dump on the clipboard as text,
+  Open as Text opens it in a read-only tab, and Take Again takes a new one. Works with Java, Python, Go and every
+  other adapter that lists threads.
+
 - **A zoom for the whole interface.** View → Zoom → Zoom In Interface, Zoom Out Interface and Reset
   Interface Zoom (also in the command palette, and as Interface zoom under Settings → Appearance) scale the
   menus, toolbar, tabs, tool windows, dialogs and status bar together, from 80% to 200% in steps of 10. It

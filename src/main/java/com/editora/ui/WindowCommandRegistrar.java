@@ -2238,6 +2238,10 @@ final class WindowCommandRegistrar {
                         "debug.threads", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showThreads)));
         host.registry()
                 .register(Command.of(
+                        "debug.threadDump",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::threadDump)));
+        host.registry()
+                .register(Command.of(
                         "debug.showException",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showException)));
         host.registry()
