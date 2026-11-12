@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
@@ -309,6 +310,49 @@ final class HtmlPreviewCoordinator {
             }
         });
     }
+
+    /**
+     * Serves {@code buffer}'s site as a preview would (its text live, edits reloading the page) for the debugger to
+     * open in a browser of its own: hands {@code onUrl} the page's URL and the folder served — the file's own
+     * {@code file:} URL while the preview is off — or null after saying why not (the file is remote, encrypted,
+     * unsaved, or in an unsafe folder).
+     */
+    void serveForDebug(EditorBuffer buffer, Consumer<@Nullable Served> onUrl) {
+        Path page = buffer.getPath();
+        if (!isEnabled() && page != null && host.isLocalBuffer(buffer) && Vfs.isLocal(page)) {
+            onUrl.accept(new Served(page.toUri().toString(), null)); // no server: the file itself
+            return;
+        }
+        if (!isEnabled() || !previewable(buffer)) {
+            if (!isEnabled()) {
+                host.setStatus(tr("status.htmlPreview.remote"));
+            }
+            onUrl.accept(null);
+            return;
+        }
+        Path root = siteFor(buffer);
+        Path file = buffer.getPath();
+        if (root == null || file == null) {
+            onUrl.accept(null);
+            return;
+        }
+        watchEdits(true);
+        String text = tooLargeToServeLive(buffer) ? null : buffer.getContent();
+        service.serve(file, root, text, done -> {
+            if (!service.isServing()) {
+                watchEdits(false);
+            }
+            if (done.ok() && done.url() != null) {
+                onUrl.accept(new Served(done.url(), root));
+            } else {
+                host.setError(statusFor(done, ""));
+                onUrl.accept(null);
+            }
+        });
+    }
+
+    /** A page served for the debugger: its URL and the site folder behind it (null for a {@code file:} URL). */
+    record Served(String url, @Nullable Path root) {}
 
     /** (Un)wires every buffer's settled-edit report: only while a preview is served is there anything to reload. */
     private void watchEdits(boolean on) {

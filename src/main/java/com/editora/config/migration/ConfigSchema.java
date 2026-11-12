@@ -394,7 +394,9 @@ public enum ConfigSchema {
                     Map.entry(165, (Migration) ConfigMigrations::identity),
                     // v166→167: + debugPythonSubprocesses (on) — a Python program's subprocesses are debugged, each
                     // in a session of its own. Additive: absent is the default.
-                    Map.entry(166, (Migration) ConfigMigrations::identity)),
+                    Map.entry(166, (Migration) ConfigMigrations::identity),
+                    // v167→168: + debugBrowser (the browser web pages are debugged in; "" chooses one). Additive.
+                    Map.entry(167, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -490,7 +492,9 @@ public enum ConfigSchema {
                     // v33→34: + projectMapShowDependencies (additive; absent means off)
                     Map.entry(33, ConfigMigrations::identity),
                     // v34→35: + projectMapIgnoreDebugger (additive; absent means the Map follows the debugger)
-                    Map.entry(34, ConfigMigrations::identity))),
+                    Map.entry(34, ConfigMigrations::identity),
+                    // v35→36: + debugBrowserUrls (additive; absent means no page debugged before)
+                    Map.entry(35, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

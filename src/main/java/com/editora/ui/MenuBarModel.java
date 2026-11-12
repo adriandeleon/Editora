@@ -325,6 +325,8 @@ final class MenuBarModel {
                                                 "debug.startConfiguration",
                                                 "debug.startCompound",
                                                 "debug.editCompounds",
+                                                "debug.browser",
+                                                "debug.attachBrowser",
                                                 "debug.pause",
                                                 "debug.stepOver",
                                                 "debug.stepInto",

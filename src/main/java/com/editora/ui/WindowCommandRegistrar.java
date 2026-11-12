@@ -2191,6 +2191,14 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugAttachToProcess)));
         host.registry()
                 .register(Command.of(
+                        "debug.browser",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugInBrowser)));
+        host.registry()
+                .register(Command.of(
+                        "debug.attachBrowser",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugAttachToBrowser)));
+        host.registry()
+                .register(Command.of(
                         "debug.reattach",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugReattach)));
         host.registry()

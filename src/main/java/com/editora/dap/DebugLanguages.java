@@ -93,8 +93,9 @@ public final class DebugLanguages {
             "javascript",
             "JavaScript",
             // TypeScript too: Node 22.18+/23.6+ runs a .ts file itself, and a compiled project's .ts/.tsx sources
-            // are where its breakpoints go (source maps). One adapter, one "javascript" session.
-            Set.of("javascript", "typescript", "javascriptreact", "typescriptreact"),
+            // are where its breakpoints go (source maps). One adapter, one "javascript" session. HTML too: a page's
+            // inline scripts, debugged in a browser (BrowserLaunch).
+            Set.of("javascript", "typescript", "javascriptreact", "typescriptreact", "html"),
             Kind.SOCKET,
             "pwa-node",
             "pwa-node",

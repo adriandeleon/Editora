@@ -22,7 +22,7 @@ class WorkspaceStateV34Test {
         config.load();
         assertTrue(config.getWorkspaceState().isProjectMapShowRecentChanges());
         assertFalse(config.getWorkspaceState().isProjectMapShowDependencies());
-        assertEquals(35, ConfigSchema.WORKSPACE.currentVersion());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, ConfigSchema.WORKSPACE.currentVersion());
 
         config.getWorkspaceState().setProjectMapShowDependencies(true);
         config.save();

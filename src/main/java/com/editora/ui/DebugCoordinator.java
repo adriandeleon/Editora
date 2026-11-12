@@ -212,6 +212,28 @@ final class DebugCoordinator {
         /** Persists the attach addresses (workspace state + save). */
         default void persistDebugAttachTargets(List<String> targets) {}
 
+        /** The pages Debug in Browser opened in this project, most recent first (workspace state). */
+        default List<String> debugBrowserUrls() {
+            return List.of();
+        }
+
+        /** Persists the pages Debug in Browser opened (workspace state + save). */
+        default void persistDebugBrowserUrls(List<String> urls) {}
+
+        /**
+         * Serves an HTML buffer's page for the browser debugger, as the live preview serves it (its text live, edits
+         * reloading it): {@code onPage} gets its URL and the folder served, a {@code file:} URL (no folder) while
+         * the preview is off, or null after the status says why it cannot be.
+         */
+        default void servePage(
+                EditorBuffer b, java.util.function.Consumer<HtmlPreviewCoordinator.@Nullable Served> onPage) {
+            Path file = b.getPath();
+            onPage.accept(
+                    file == null
+                            ? null
+                            : new HtmlPreviewCoordinator.Served(file.toUri().toString(), null));
+        }
+
         /** Whether Mute Breakpoints was left on for this project (workspace state). */
         default boolean debugBreakpointsMuted() {
             return false;
@@ -3617,6 +3639,20 @@ final class DebugCoordinator {
                     withClosedBreakpoints(() -> dap().startConfigured(file, "javascript", route.request()));
                 }
             }
+            case BROWSER -> {
+                if (!debugEffectiveFor("javascript")) {
+                    host.setStatus(unavailableMessage("javascript", null));
+                } else {
+                    boolean edge = com.editora.dap.BrowserLaunch.EDGE.equals(
+                            route.request().get("type"));
+                    java.util.Map<String, Object> request = com.editora.dap.BrowserLaunch.configured(
+                            route.request(), workspace, browserProfile(edge ? "edge" : "chrome"));
+                    ops.openToolWindow();
+                    nameSession(name);
+                    s().relaunch = null;
+                    withClosedBreakpoints(() -> dap().startBrowser(workspace, request));
+                }
+            }
             case DELVE, CODELLDB, NETCOREDBG, RDBG, PHP_DEBUG, GDB, CUSTOM -> {
                 if (profile == null) {
                     return;
@@ -4758,6 +4794,10 @@ final class DebugCoordinator {
         }
         if (b != null && b.getPath() == null && !DapServerRegistry.isDebuggable(b.getLanguage())) {
             host.setStatus(tr("status.debug.languageNotDebuggable"));
+            return;
+        }
+        if (b != null && b.isHtml()) {
+            debugHtmlPage(b); // its scripts run in a browser
             return;
         }
         if (b == null || b.getPath() == null && !ops.saveBuffer(b)) {
@@ -6122,6 +6162,10 @@ final class DebugCoordinator {
      */
     void debugAttach() {
         EditorBuffer b = host.activeBuffer();
+        if (b != null && b.isHtml()) {
+            debugAttachToBrowser(); // a page's scripts run in a browser, not in Node.js
+            return;
+        }
         if (b != null && "javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))) {
             attachToNode(b); // review D7: a Node.js inspector, not a JVM
             return;
@@ -6449,6 +6493,221 @@ final class DebugCoordinator {
                                     dir,
                                     List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
                                     false));
+                });
+    }
+
+    // --- Debugging in a browser --------------------------------------------------------------------------------
+
+    /** The browsers found on this machine, by {@link com.editora.web.Browsers} id (run off the FX thread). */
+    java.util.function.Supplier<List<String>> browserIds = () -> com.editora.web.Browsers.detect().stream()
+            .map(com.editora.web.Browsers.Browser::id)
+            .toList();
+
+    /** A browser's program, for the debugger to start ({@link com.editora.web.Browsers#executable}). */
+    java.util.function.Function<String, @Nullable String> browserExecutable = com.editora.web.Browsers::executable;
+
+    /** More command-line arguments for a debugged browser (a test runs it headless). */
+    List<String> browserArgs = List.of();
+
+    /** The Debug in Browser picker's row for the active HTML file (no URL can look like it). */
+    private static final String THIS_PAGE_ROW = "\u0000page";
+
+    /**
+     * Debug: Debug in Browser… — opens a page in Chrome, Edge or another Chromium browser under the JavaScript
+     * debugger: the active HTML file (served as the live preview serves it), a page debugged before, or a URL typed
+     * in (a dev server's {@code localhost:5173}). Breakpoints in the page's scripts and in the project's sources
+     * (through source maps) stop it; Stop closes the browser.
+     */
+    void debugInBrowser() {
+        if (!debugEffectiveFor("javascript")) {
+            host.setStatus(unavailableMessage("javascript", null));
+            return;
+        }
+        EditorBuffer active = host.activeBuffer();
+        EditorBuffer b = active != null && active.isHtml() ? active : null;
+        boolean page = b != null;
+        List<String> earlier = ops.debugBrowserUrls();
+        if (!page && earlier.isEmpty()) {
+            promptBrowserUrl("");
+            return;
+        }
+        List<String> rows = new ArrayList<>();
+        if (page) {
+            rows.add(THIS_PAGE_ROW);
+        }
+        rows.addAll(earlier);
+        rows.add(""); // "Another page…"
+        String name = b == null ? "" : java.util.Objects.requireNonNullElse(b.getDisplayName(), "");
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("debug.browser.title"),
+                tr("debug.browser.pickPrompt"),
+                () -> rows,
+                r -> r.isEmpty()
+                        ? tr("debug.browser.another")
+                        : THIS_PAGE_ROW.equals(r) ? tr("debug.browser.thisPage", name) : r,
+                r -> "",
+                r -> {
+                    if (r == null) {
+                        return;
+                    }
+                    if (r.isEmpty()) {
+                        promptBrowserUrl(earlier.isEmpty() ? "" : earlier.getFirst());
+                    } else if (THIS_PAGE_ROW.equals(r) && b != null) {
+                        debugHtmlPage(b);
+                    } else {
+                        openInBrowser(r, null, null);
+                    }
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /** Asks for the URL of a page to debug, pre-filled with {@code initial} (a dev server's address when blank). */
+    private void promptBrowserUrl(String initial) {
+        host.promptText(
+                tr("debug.browser.title"),
+                tr("debug.browser.urlPrompt"),
+                initial.isBlank() ? "http://localhost:3000" : initial,
+                input -> {
+                    if (input == null) {
+                        return; // cancelled
+                    }
+                    java.util.Optional<String> url = com.editora.dap.BrowserLaunch.url(input);
+                    if (url.isEmpty()) {
+                        host.setStatus(tr("status.debug.badUrl", input.strip()));
+                        return;
+                    }
+                    openInBrowser(url.get(), null, null);
+                });
+    }
+
+    /**
+     * Debugs an HTML file's page in a browser (F5 on it): served as the live preview serves it, so its scripts,
+     * modules and stylesheets load as on a web server, its text live; a {@code file:} URL while the preview is off.
+     */
+    void debugHtmlPage(EditorBuffer b) {
+        if (!debugEffectiveFor("javascript")) {
+            host.setStatus(unavailableMessage("javascript", null));
+            return;
+        }
+        if (b.getPath() == null && !ops.saveBuffer(b)) {
+            host.setStatus(tr("status.debug.saveFirst"));
+            return;
+        }
+        Path file = b.getPath();
+        if (file == null) {
+            return;
+        }
+        ops.servePage(b, served -> {
+            if (served != null) {
+                openInBrowser(served.url(), served.root(), file);
+            }
+        });
+    }
+
+    /**
+     * Opens {@code url} in the browser the Debugging setting names (else one found: {@link
+     * com.editora.dap.BrowserLaunch#pick}) under the debugger. {@code servedRoot} is the folder Editora serves the
+     * page from (null for any other URL), {@code pageFile} the HTML file it is (null for a URL typed in, which is
+     * remembered).
+     */
+    private void openInBrowser(String url, @Nullable Path servedRoot, @Nullable Path pageFile) {
+        host.setStatus(tr("status.debug.findingBrowser"));
+        String chosen = host.settings().getDebugBrowser();
+        String preview = host.settings().getHtmlPreviewBrowser();
+        Thread.ofVirtual().name("editora-debug-browser").start(() -> {
+            List<String> found;
+            try {
+                found = browserIds.get();
+            } catch (RuntimeException e) {
+                found = List.of();
+            }
+            String id = com.editora.dap.BrowserLaunch.pick(found, chosen, preview);
+            String exe = id == null ? null : browserExecutable.apply(id);
+            Platform.runLater(() -> launchBrowser(url, servedRoot, pageFile, chosen, id, exe));
+        });
+    }
+
+    private void launchBrowser(
+            String url,
+            @Nullable Path servedRoot,
+            @Nullable Path pageFile,
+            String chosen,
+            @Nullable String id,
+            @Nullable String exe) {
+        String type = id == null ? null : com.editora.dap.BrowserLaunch.typeFor(id);
+        if (id == null || type == null) {
+            host.setError(tr("status.debug.noBrowser"));
+            return;
+        }
+        Path project = ops.projectRoot();
+        Path webRoot = servedRoot != null
+                ? servedRoot
+                : project != null ? project : pageFile != null ? pageFile.getParent() : null;
+        com.editora.dap.BrowserLaunch.Served served = servedRoot == null
+                ? null
+                : com.editora.dap.BrowserLaunch.Served.of(url, servedRoot).orElse(null);
+        java.util.Map<String, Object> request =
+                com.editora.dap.BrowserLaunch.launch(type, url, webRoot, served, exe, browserProfile(id), browserArgs);
+        if (pageFile == null) {
+            ops.persistDebugBrowserUrls(rememberAttachTarget(ops.debugBrowserUrls(), url));
+        }
+        String browser = com.editora.web.Browsers.knownName(id);
+        ops.openToolWindow();
+        nameSession(tr("debug.browser.session", browser, com.editora.dap.BrowserLaunch.label(url, pageFile)));
+        s().relaunch = null; // Restart opens the same page again
+        if (!chosen.isBlank() && !chosen.equals(id)) {
+            host.setStatus(tr("status.debug.browserFallback", com.editora.web.Browsers.knownName(chosen), browser));
+        } else {
+            host.setStatus(tr("status.debug.browserOpening", browser));
+        }
+        Path anchor = pageFile != null ? pageFile : webRoot;
+        withClosedBreakpoints(() -> dap().startBrowser(anchor, request));
+    }
+
+    /**
+     * The browser profile Editora keeps for debugging in browser {@code id}, apart from the everyday one; null (js-debug
+     * keeps its own) without a config folder.
+     */
+    private @Nullable Path browserProfile(String id) {
+        Path config = host.configDir();
+        return config == null ? null : config.resolve("browser-debug").resolve(id);
+    }
+
+    /**
+     * Debug: Attach to Browser… — asks for the debugging port of a Chrome or Edge started with
+     * {@code --remote-debugging-port} (9222) and attaches the JavaScript debugger to its pages. Stop detaches and
+     * leaves the browser open.
+     */
+    void debugAttachToBrowser() {
+        if (!debugEffectiveFor("javascript")) {
+            host.setStatus(unavailableMessage("javascript", null));
+            return;
+        }
+        host.promptText(
+                tr("debug.browser.attachTitle"),
+                tr("debug.browser.attachPrompt"),
+                "localhost:" + com.editora.dap.BrowserLaunch.DEFAULT_PORT,
+                input -> {
+                    if (input == null) {
+                        return;
+                    }
+                    var address = com.editora.dap.JsLaunch.parseAddress(input);
+                    if (address.isEmpty()) {
+                        host.setStatus(tr("status.debug.badAddress", input.strip()));
+                        return;
+                    }
+                    String label = address.get().host() + ":" + address.get().port();
+                    Path root = ops.projectRoot();
+                    java.util.Map<String, Object> request = com.editora.dap.BrowserLaunch.attach(
+                            com.editora.dap.BrowserLaunch.CHROME,
+                            address.get().host(),
+                            address.get().port(),
+                            root);
+                    ops.openToolWindow();
+                    nameSession(tr("debug.browser.attachSession", label));
+                    s().relaunch = null;
+                    withClosedBreakpoints(() -> dap().startBrowser(root, request));
                 });
     }
 

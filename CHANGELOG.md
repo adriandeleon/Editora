@@ -42,6 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *Copy details* text carries both. The conformance is worked out from the list, so it cannot claim more than
   the list shows.
 
+- **Debug JavaScript in the browser.** *Debug in Browser…* opens a web page in Chrome, Edge or another Chromium
+  browser (Chromium, Brave, Vivaldi) under the debugger, as VS Code does: breakpoints in the page's scripts stop it,
+  with its variables, call stack, console output, stepping and evaluate as for a Node.js program, and through source
+  maps a breakpoint in your TypeScript or framework source stops too. Pick the HTML file in the editor, a page you
+  debugged before, or type a URL such as your dev server's `localhost:5173`. F5 on an HTML file serves its folder the
+  way the live preview does and opens it, and an HTML file now takes breakpoints in its inline scripts. *Attach to
+  Browser…* (and Debug ▸ Attach on an HTML file) attaches to a Chrome or Edge started with
+  `--remote-debugging-port=9222`. launch.json `chrome` and `msedge` configurations work too. The browser runs with a
+  profile of Editora's own, kept between sessions, so your everyday profile is left alone; Stop closes it. Choose
+  the browser under Settings → Debugging → JavaScript.
+
 - **Mark Object.** Right-click a variable, watch or result that shows an object and choose *Mark Object…* to give
   it a label, as in IntelliJ. The label then shows before that object's value wherever it appears in the session (in
   Variables, watches, results, the hover popup and Debug History), so you can follow one object as it moves between
