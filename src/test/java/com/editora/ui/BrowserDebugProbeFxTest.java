@@ -229,16 +229,17 @@ class BrowserDebugProbeFxTest {
             String console = call(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(debug.panel(), "console")
                     .getText());
             throw new AssertionError(
-                    e.getMessage() + " (" + call(dap::state) + ", " + top + ")\nstatus: " + call(() -> status(c))
-                            + "\noverlay: " + call(() -> overlay(c)) + "\n" + console,
+                    e.getMessage() + " (" + call(dap::state) + ", " + top + ")\nstatus messages (newest first): "
+                            + call(() -> status(c)) + "\noverlay: " + call(() -> overlay(c)) + "\n" + console,
                     e);
         }
     }
 
-    /** What the status line says. FX thread. */
+    /** Every message the status line showed, newest first (a launch's error can be overwritten). FX thread. */
     private static String status(MainController c) {
-        return FxTestSupport.<javafx.scene.control.Label>field(FxTestSupport.field(c, "statusBar"), "echo")
-                .getText();
+        MessageLog log = FxTestSupport.field(FxTestSupport.field(c, "statusBar"), "messageLog");
+        return String.join(
+                " | ", log.entries().stream().map(MessageLog.Entry::text).toList());
     }
 
     /** The texts of what the overlay shows (a question the launch waits on), or "none". FX thread. */
