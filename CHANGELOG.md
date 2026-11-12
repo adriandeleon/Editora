@@ -619,6 +619,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Deleting a file on Windows moves it to the Recycle Bin.** Delete in the Project tree, Move Original to
+  Trash after encrypting, and the clean-up of unused pasted images deleted for good on Windows, where
+  Editora reached no trash at all. They now use the Recycle Bin, as Explorer does, for files on a local
+  drive. A file on a network share, a WSL distribution or a removable drive has no Recycle Bin, and the
+  question before deleting it still says the delete cannot be undone. Linux and macOS are unchanged.
 - **Logpoints work in C#.** netcoredbg doesn't support logpoints, so a C# logpoint stopped the program like a plain
   breakpoint and logged nothing. When a debugger can't log logpoints itself, Editora now logs the message in the Debug
   console, with each `{expression}` evaluated where the program stopped, and lets it go on. The editor is not taken to

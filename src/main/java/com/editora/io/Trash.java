@@ -34,7 +34,8 @@ import org.jspecify.annotations.Nullable;
  *       file manager lists it and can restore it. That "home trash" only takes files from its own volume; a
  *       file elsewhere goes through {@code gio trash} when GLib's tool is installed.
  *   <li><b>macOS</b> — the file is renamed into {@code ~/.Trash} (the user's trash for the home volume).
- *   <li><b>Windows</b> — not supported: the Recycle Bin is only reachable through the shell API.
+ *   <li><b>Windows</b> — the Recycle Bin, through the shell API ({@link WindowsRecycleBin}): files on a fixed
+ *       local drive, which are the ones that have a bin.
  * </ul>
  *
  * <p>A {@link Bin} says up front whether it {@linkplain Bin#accepts takes} a file, so a confirmation can state
@@ -101,7 +102,8 @@ public final class Trash {
         try {
             home = Path.of(userHome);
             if (os == com.editora.Os.Kind.WINDOWS) {
-                return NONE;
+                Bin recycleBin = WindowsRecycleBin.system();
+                return recycleBin == null ? NONE : recycleBin; // null only where there is no Windows shell
             }
             if (os == com.editora.Os.Kind.MAC) {
                 return directory(home.resolve(".Trash"));
@@ -173,14 +175,14 @@ public final class Trash {
         };
     }
 
-    private static boolean trashable(Path file) {
+    static boolean trashable(Path file) {
         return file != null
                 && file.getFileSystem() == FileSystems.getDefault()
                 && file.getFileName() != null
                 && Files.exists(file, LinkOption.NOFOLLOW_LINKS);
     }
 
-    private static Path requireTrashable(Path file) throws IOException {
+    static Path requireTrashable(Path file) throws IOException {
         if (!trashable(file)) {
             throw new IOException("Cannot move to the trash: " + file);
         }

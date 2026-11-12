@@ -87,6 +87,9 @@ module com.editora {
     // The keychain bindings (secrets/) pass JNA Structures, which JNA reads and writes by reflection.
     opens com.editora.secrets to
             com.sun.jna;
+    // The Recycle Bin binding (io/WindowsRecycleBin) passes a JNA Structure too.
+    opens com.editora.io to
+            com.sun.jna;
     opens com.editora to
             javafx.fxml;
     opens com.editora.ui to
