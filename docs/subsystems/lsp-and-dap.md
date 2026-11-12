@@ -1239,7 +1239,7 @@ the fields VS Code reads itself are left out (`name`, its tasks, `console`, `pre
 | `go` | Delve | as written, `output` in the temporary folder when not given; `mode: remote` is not supported. |
 | `debugpy`, `python` | debugpy | laid over the launch Editora plans for the program (`DapManager.startConfigured` → `overlay`, which keeps Editora's console); an attach connects to `connect`. |
 | `node`, `pwa-node` | vscode-js-debug | as Python; an attach to `address` / `port`. |
-| `chrome`, `pwa-chrome`, `msedge`, `pwa-msedge` | vscode-js-debug, driving the browser | as written with js-debug's type (`BrowserLaunch.configured`): `webRoot` defaults to the workspace folder, a launch's `userDataDir` to Editora's own profile; a launch needs a `url` or a `file`; an attach goes to `port` (9222 by default). |
+| `chrome`, `pwa-chrome`, `msedge`, `pwa-msedge` | vscode-js-debug, driving the browser | as written with js-debug's type (`BrowserLaunch.configured`): `webRoot` defaults to the workspace folder, a launch's `userDataDir` to Editora's own profile and its `timeout` to 30 s; a launch needs a `url` or a `file`; an attach goes to `port` (9222 by default). |
 | `coreclr` | netcoredbg | as written (`program` is the built assembly; a `preLaunchTask` builds it); an attach by `processId`. C# Dev Kit's `dotnet` type is not supported. |
 | `rdbg` | rdbg | a launch runs `rdbg … -- <command> <script> <args>` (`LaunchRoute.rdbgTail`: `command` defaults to `ruby`, `useBundler` puts `bundle exec` first) in its `cwd` with its `env`; an attach connects to a local `debugPort` (`rdbgPort`; `DapManager.startPortAttach`). |
 | `php` | vscode-php-debug | as written; without a `program` it listens for Xdebug ("Listen for Xdebug"). `${port}` is left for the adapter. |
@@ -1380,8 +1380,19 @@ for Node.js (`startJsRequest`, shared with `startJsAttach`) and sends it a `pwa-
 (`Browsers.executable`: the binary on PATH, the `.app`'s `Contents/MacOS` program, the Windows `.exe`; `stable`, which
 js-debug resolves itself, when none is found, as for a Flatpak) and a profile of Editora's own under
 `<config>/browser-debug/<browser>`, kept between sessions and apart from the everyday profile a running browser holds
-locked. Stop closes a launched browser (`terminateDebuggee`) and leaves an attached one open. Entry points in
-`DebugCoordinator`:
+locked. Stop closes a launched browser (`terminateDebuggee`) and leaves an attached one open.
+
+A launch gives the browser `BrowserLaunch.LAUNCH_TIMEOUT_MILLIS` (30 s, as long as Editora waits for any launch to
+be answered) to start and be ready, as js-debug's `timeout`: its own 10 s are too few for a browser's first start on
+a machine. js-debug 1.117 does not answer a launch it gives up on (the browser exited, or was not ready in time): it
+writes the error to its standard error and closes the connection. A session is RUNNING from the moment the adapter
+is connected, so `DapManager` keeps the launch it has not been answered (`UnansweredLaunch`), and a connection that
+closes before the answer is reported (`debug.error.browserNotReady`, with the adapter's stderr in the Debug console)
+instead of ending as a session whose program ran and finished, with nothing said. This is what made the first browser
+launch of a CI job fail now and then with no message; `BrowserDebugProbeFxTest` starts the browser once before its
+tests and prints how long that took.
+
+Entry points in `DebugCoordinator`:
 - *Debug: Debug in Browser…* (`debug.browser`): a picker of the active HTML file, the URLs debugged before in this
   project (`WorkspaceState.debugBrowserUrls`, schema 36, most recent first) and *Another page…*, which asks for a URL
   (`BrowserLaunch.url` adds `http://` to `localhost:5173`); a URL maps to files through `webRoot`, the project.

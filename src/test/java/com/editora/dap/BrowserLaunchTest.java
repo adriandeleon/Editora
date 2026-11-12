@@ -65,6 +65,11 @@ class BrowserLaunchTest {
         assertEquals("/usr/bin/google-chrome", launch.get("runtimeExecutable"));
         assertEquals(List.of("--headless=new"), launch.get("runtimeArgs"));
         assertEquals(profile.toString(), launch.get("userDataDir"));
+        assertEquals(
+                BrowserLaunch.LAUNCH_TIMEOUT_MILLIS,
+                launch.get("timeout"),
+                "a browser's first start takes longer than js-debug's own 10 s");
+        assertEquals(30_000, BrowserLaunch.LAUNCH_TIMEOUT_MILLIS, "as long as a launch may take to be answered");
     }
 
     @Test
@@ -102,11 +107,14 @@ class BrowserLaunchTest {
         assertEquals("pwa-chrome", launch.get("type"));
         assertEquals("/w/src", launch.get("webRoot"));
         assertEquals(profile.toString(), launch.get("userDataDir"));
+        assertEquals(BrowserLaunch.LAUNCH_TIMEOUT_MILLIS, launch.get("timeout"));
 
         body.put("userDataDir", false);
+        body.put("timeout", 5000);
         body.remove("webRoot");
         launch = BrowserLaunch.configured(body, SITE, profile);
         assertEquals(false, launch.get("userDataDir"), "the configuration's own profile choice");
+        assertEquals(5000, launch.get("timeout"), "and its own time for the browser to start");
         assertEquals(SITE.toString(), launch.get("webRoot"));
 
         Map<String, Object> attach = BrowserLaunch.configured(
@@ -114,6 +122,7 @@ class BrowserLaunchTest {
         assertEquals("pwa-msedge", attach.get("type"));
         assertEquals(BrowserLaunch.DEFAULT_PORT, attach.get("port"));
         assertFalse(attach.containsKey("userDataDir"), "an attach uses the browser's own profile");
+        assertFalse(attach.containsKey("timeout"), "and starts no browser to wait for");
     }
 
     @Test
