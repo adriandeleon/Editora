@@ -1,14 +1,6 @@
 {
   "exceptions": [
     {
-      "rule": "OS-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-01",
-      "kind": "pending",
-      "reason": "Save as Administrator is offered on Windows, where it does nothing, instead of being disabled there.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1553"
-    },
-    {
       "rule": "OS-04",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-04",

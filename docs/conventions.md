@@ -161,7 +161,10 @@ class asks it: `Os.isWindows()`, `Os.isMac()`, `Os.isLinux()`, or `Os.current()`
 - **Tests run as any OS** with `Os.override(Os.Kind.MAC)` (reset with `null` in `@AfterEach`), or a whole run
   with `-Deditora.os=mac`. `SameOnEveryOsFxTest` builds a window as each of the three and checks that the
   commands, the menu bar and the Settings rows are the same: a command, a menu row or a setting is never
-  added inside an OS check. Where the OS cannot serve one, it stays, disabled, and says why.
+  added inside an OS check. Where the OS cannot serve one, it stays, disabled, and says why: the command's
+  reason comes from `Chrome.osReason(id, os)` (which the palette and the menu bar both read, ahead of any
+  feature gate), and its Settings control calls `setDisable` with the reason in the row's note. Save as
+  Administrator on Windows is the worked example.
 - For display (About, Doctor, a problem report) use `Os.description()`, or `Os.name()`, `Os.version()` and
   `Os.arch()`.
 
