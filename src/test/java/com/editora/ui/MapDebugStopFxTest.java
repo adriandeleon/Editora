@@ -377,7 +377,6 @@ class MapDebugStopFxTest {
         }
     }
 
-    /** Lets the pulses that apply a stop pass. */
     /**
      * Runs the Map's check for cards whose rows went away now, as the first connector draw after a reload does, and
      * waits for it (it closes cards a pulse later, not from inside the draw).
@@ -397,6 +396,7 @@ class MapDebugStopFxTest {
         FxTestSupport.drainFx();
     }
 
+    /** Lets the pulses that apply a stop pass. */
     private static void settle() throws Exception {
         for (int i = 0; i < 5; i++) {
             FxTestSupport.runOnFx(() -> {});
