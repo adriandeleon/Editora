@@ -419,6 +419,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Questions before something is lost are asked the same way everywhere.** The button that confirms carries the
+  action's own name (Delete, Discard, Replace, Overwrite, Reset) in red, never OK, and Cancel is the default
+  button: it has the focus when the question opens, so Enter keeps what you have and the red action runs only
+  from its own button. Before, Enter confirmed many of them, among them the Git discards, the Local History
+  purges, moving a file to the trash, Revert and overwriting a file from Save As. Where a question offers a
+  safe action beside the red one (Save beside Discard, Pull then Push beside Force with Lease), the safe action
+  is the default.
+- **Every dialog draws its buttons in one order on Windows, macOS and Linux**, with Cancel left of every action.
+  The unsaved-changes question reads Cancel, Save, Discard. JavaFX's own order differed per system.
+- **Dialog buttons follow the interface language.** OK, Cancel, Yes, No, Apply and Close were worded by the Java
+  runtime in the system's language, so a dialog could say "Cancel" in another language than the menus.
+- **Editora asks before some removals that used to happen at once:** clearing a file's bookmarks, deleting a
+  bookmark from the Bookmarks panel, taking off a bookmark that has a note, deleting a personal note at the caret
+  or from the Notes panel, deleting all notes of a file, and removing a saved connection from the Remote panel.
+  A plain bookmark still toggles off without a question, since the same key puts it back.
+- **Deleting a remote site or an external tool says that it cannot be undone.**
+
 - **Settings names its two scopes plainly.** In a project window the top of Settings now reads "Edit settings for
   **All projects** | **This project: name**" instead of "Settings for User | Project: name", with a little space
   between the two buttons and a tooltip on All projects saying it is used in every window unless a project sets its

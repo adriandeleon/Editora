@@ -369,22 +369,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1562"
     },
     {
-      "rule": "WIN-04",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-04",
-      "kind": "pending",
-      "reason": "Some dialogs do not load Editora's own styles, so they can look slightly different.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
-      "rule": "WIN-11",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-11",
-      "kind": "pending",
-      "reason": "The order of a dialog's buttons follows the operating system instead of being the same everywhere.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
       "rule": "WIN-12",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/window-shell/#win-12",
@@ -845,39 +829,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-01",
       "kind": "pending",
-      "reason": "Clearing a file's bookmarks removes them and their notes at once, with no question and no undo.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
-      "rule": "CONF-03",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-03",
-      "kind": "pending",
-      "reason": "Some questions before a destructive action are answered with a plain OK, or name the action without marking it red.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
-      "rule": "CONF-14",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-14",
-      "kind": "pending",
-      "reason": "Many dialogs still use the system's stock OK and Cancel buttons.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
-      "rule": "CONF-13",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-13",
-      "kind": "pending",
-      "reason": "In some questions before a destructive action, Enter runs the action instead of cancelling.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
-      "rule": "CONF-05",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-05",
-      "kind": "pending",
-      "reason": "The Save, Discard and Cancel buttons of the unsaved-changes question are not in a fixed order on every system.",
+      "reason": "A few removals still happen at once with no question and no undo, such as deleting a merged Git branch.",
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {
@@ -886,14 +838,6 @@
       "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-07",
       "kind": "pending",
       "reason": "Editora asks before a few actions that can be undone, such as moving a file to the trash.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
-      "rule": "CONF-10",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-10",
-      "kind": "pending",
-      "reason": "Deleting a remote site or an external tool does not say that it cannot be undone.",
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {

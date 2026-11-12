@@ -209,7 +209,8 @@ final class GitPatchCoordinator {
     /** Shows git's reason for rejecting the patch and offers the three-way retry. */
     private boolean askThreeWay(String reason) {
         ButtonType retry = new ButtonType(tr("dialog.patch.threeWay"), ButtonBar.ButtonData.OK_DONE);
-        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, "", retry, ButtonType.CANCEL));
+        ButtonType cancel = Dialogs.cancel();
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, "", retry, cancel));
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.git.title"));
         alert.setHeaderText(tr("dialog.patch.rejected"));
@@ -221,7 +222,7 @@ final class GitPatchCoordinator {
         area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 4));
         area.getStyleClass().add("git-error-text");
         alert.getDialogPane().setContent(area);
-        return alert.showAndWait().orElse(ButtonType.CANCEL) == retry;
+        return alert.showAndWait().orElse(cancel) == retry;
     }
 
     private @Nullable Path askPatchFile() {

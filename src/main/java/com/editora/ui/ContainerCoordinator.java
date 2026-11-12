@@ -169,17 +169,17 @@ final class ContainerCoordinator {
                 : root.getFileName().toString();
         boolean wsl = target instanceof com.editora.wsl.WslExecTarget;
         String name = wsl ? ((com.editora.wsl.WslExecTarget) target).distro() : nameOf(target);
-        Alert alert = new Alert(
+        Alert alert = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 wsl
                         ? tr("dialog.wsl.content", name, folder)
                         : tr("dialog.container.content", name, folder, String.join(" ", engine().command())),
                 allow,
-                notNow);
+                notNow));
         alert.initOwner(host.window());
         alert.setTitle(tr(wsl ? "dialog.wsl.title" : "dialog.container.title"));
         alert.setHeaderText(tr(wsl ? "dialog.wsl.header" : "dialog.container.header", name));
-        return Dialogs.styled(alert).showAndWait().orElse(notNow) == allow;
+        return alert.showAndWait().orElse(notNow) == allow;
     }
 
     /** Containers: Run This Project's Tools in a Container… — the user picks a running container. */

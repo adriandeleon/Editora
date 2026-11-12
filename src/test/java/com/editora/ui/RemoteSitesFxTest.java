@@ -98,6 +98,7 @@ class RemoteSitesFxTest {
 
     @AfterEach
     void tearDown() throws Exception {
+        Confirm.answerWith(null);
         FxTestSupport.runOnFx(() -> {
             host.overlay.hide();
             stage.hide();
@@ -341,10 +342,29 @@ class RemoteSitesFxTest {
 
     @Test
     void removingASiteForgetsItAndKeepsTheOtherSelected() throws Exception {
+        // Remove asks first, with the question Settings asks before the same removal; Cancel keeps the site.
+        List<Confirm.Question> asked = new ArrayList<>();
+        boolean[] answer = {false};
+        Confirm.answerWith(question -> {
+            asked.add(question);
+            return answer[0];
+        });
         FxTestSupport.runOnFx(() -> {
             list().getSelectionModel().select(BUILD);
             button(panel, tr("remotePanel.remove")).fire();
         });
+        assertEquals(
+                List.of(new Confirm.Question(
+                        tr("settings.remote.remove"),
+                        null,
+                        tr("settings.remote.deleteConfirm", BUILD.displayLabel()),
+                        tr("settings.remote.delete"))),
+                asked);
+        assertEquals(List.of(), ops.removed, "Cancel keeps the site");
+        assertEquals(List.of(BUILD, DOCS), FxTestSupport.callOnFx(() -> List.copyOf(list().getItems())));
+
+        answer[0] = true;
+        FxTestSupport.runOnFx(() -> button(panel, tr("remotePanel.remove")).fire());
         assertEquals(List.of(BUILD.id()), ops.removed);
         assertEquals(List.of(DOCS), FxTestSupport.callOnFx(() -> List.copyOf(list().getItems())));
 

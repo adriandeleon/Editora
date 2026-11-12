@@ -1274,11 +1274,11 @@ final class GitHubCoordinator {
     }
 
     private boolean confirmOpenAll(int count) {
-        Alert confirm = new Alert(
+        Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 tr("dialog.github.openAllConfirm", count),
                 ButtonType.OK,
-                ButtonType.CANCEL);
+                ButtonType.CANCEL));
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.github.title"));
         confirm.setHeaderText(null);
@@ -1687,7 +1687,7 @@ final class GitHubCoordinator {
     private void ghError(String summary, String detail) {
         host.setStatus(summary);
         String body = detail == null || detail.isBlank() ? summary : detail.strip();
-        Alert alert = new Alert(Alert.AlertType.ERROR);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.github.title"));
         alert.setHeaderText(summary);

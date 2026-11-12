@@ -144,19 +144,21 @@ final class SettingsKeymapsPage {
      * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
      */
     private boolean confirmResetAllShortcuts() {
+        ButtonType reset = Dialogs.action(tr("confirm.action.reset"));
         Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 tr(
                         "dialog.shortcut.resetAll.body",
                         com.editora.command.KeymapManager.displayName(com.editora.command.KeymapManager.resolveName(
                                 config.getSettings().getKeymap()))),
-                ButtonType.OK,
-                ButtonType.CANCEL));
+                reset,
+                Dialogs.cancel()));
         confirm.initOwner(w.stage);
         confirm.setTitle(tr("dialog.shortcut.resetAll.title"));
         confirm.setHeaderText(null);
         confirm.getDialogPane().setMinWidth(460);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        Dialogs.destructive(confirm, reset);
+        return confirm.showAndWait().orElse(Dialogs.cancelOf(confirm)) == reset;
     }
 
     /**
@@ -378,9 +380,10 @@ final class SettingsKeymapsPage {
                         .append("  —  ")
                         .append(titleOf(actions, c.commandId()));
             }
-            if (!w.confirmLoss.test(
+            if (!w.askBeforeLoss(
                     tr("dialog.shortcut.conflict.title"),
-                    tr("dialog.shortcut.reclaim.body", titleOf(actions, commandId), lines.toString()))) {
+                    tr("dialog.shortcut.reclaim.body", titleOf(actions, commandId), lines.toString()),
+                    tr("confirm.action.reset"))) {
                 return;
             }
         }
@@ -419,16 +422,18 @@ final class SettingsKeymapsPage {
                         .append("  —  ")
                         .append(titleOf(w.shortcutActions, c.commandId()));
             }
+            ButtonType bind = Dialogs.action(tr("confirm.action.bind"));
             Alert confirm = Dialogs.styled(new Alert(
                     Alert.AlertType.CONFIRMATION,
                     tr("dialog.shortcut.conflict.body", w.shortcutActions.display(seq), affected.toString()),
-                    ButtonType.OK,
-                    ButtonType.CANCEL));
+                    bind,
+                    Dialogs.cancel()));
             confirm.initOwner(w.stage);
             confirm.setTitle(tr("dialog.shortcut.conflict.title"));
             confirm.setHeaderText(null);
             confirm.getDialogPane().setMinWidth(460);
-            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            Dialogs.destructive(confirm, bind);
+            if (confirm.showAndWait().orElse(Dialogs.cancelOf(confirm)) != bind) {
                 return false;
             }
         }

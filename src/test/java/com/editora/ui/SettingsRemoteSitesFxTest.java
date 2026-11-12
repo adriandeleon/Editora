@@ -215,7 +215,7 @@ class SettingsRemoteSitesFxTest {
             javafx.scene.control.DialogPane dialog = ask;
             FxTestSupport.runOnFx(() -> {
                 javafx.scene.control.Button cancel =
-                        (javafx.scene.control.Button) dialog.lookupButton(javafx.scene.control.ButtonType.CANCEL);
+                        FxDialogs.button(dialog, javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
                 assertTrue(cancel.isDefaultButton(), "Cancel is the default");
                 assertTrue(all(dialog, javafx.scene.control.CheckBox.class, new ArrayList<>()).stream()
                         .anyMatch(c ->

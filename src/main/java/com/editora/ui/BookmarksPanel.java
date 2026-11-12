@@ -9,9 +9,7 @@ import java.util.function.Supplier;
 
 import javafx.geometry.Pos;
 import javafx.scene.SnapshotParameters;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
@@ -550,20 +548,23 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         this.prompt = prompt;
     }
 
+    /** Removes one bookmark, after asking, as the editor's right-click menu does for the same removal. */
     private void deleteMark(MarkRow m) {
-        actions.delete(m.projectKey(), m.file(), m.bm().line());
+        if (Confirm.ask(
+                getScene() == null ? null : getScene().getWindow(),
+                tr("dialog.removeBookmark.title"),
+                tr("dialog.removeBookmark.body", m.bm().line() + 1),
+                tr("confirm.action.remove"))) {
+            actions.delete(m.projectKey(), m.file(), m.bm().line());
+        }
     }
 
     private void deleteFile(FileRow f) {
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
+        if (Confirm.ask(
+                getScene() == null ? null : getScene().getWindow(),
+                tr("bookmarks.deleteFileTitle"),
                 tr("bookmarks.deleteFileBody", PathDisplay.fileName(f.file())),
-                ButtonType.OK,
-                ButtonType.CANCEL);
-        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
-        confirm.setTitle(tr("bookmarks.deleteFileTitle"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+                tr("confirm.action.delete"))) {
             actions.deleteAll(f.projectKey(), f.file());
         }
     }

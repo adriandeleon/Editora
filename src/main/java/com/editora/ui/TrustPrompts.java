@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.List;
 
-import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -32,12 +31,12 @@ final class TrustPrompts {
     static Prompt httpSecrets(Window owner, Path root, List<String> reads, List<String> hosts) {
         Path name = root.getFileName();
         ButtonType trust = new ButtonType(tr("dialog.httpTrust.accept"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(
+        Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.WARNING,
                 tr("dialog.httpTrust.body", String.join(", ", reads), String.join(", ", hosts), root.toString())
                         + "\n\n" + tr("dialog.httpTrust.redirects"),
-                ButtonType.CANCEL,
-                trust);
+                Dialogs.cancel(),
+                trust));
         confirm.setTitle(tr("dialog.trust.title"));
         confirm.setHeaderText(tr("dialog.httpTrust.header", name == null ? root.toString() : name.toString()));
         return finish(confirm, owner, trust);
@@ -48,14 +47,14 @@ final class TrustPrompts {
         Path name = root.getFileName();
         ButtonType trust = new ButtonType(tr("dialog.httpScripts.accept"), ButtonBar.ButtonData.OK_DONE);
         Path fileName = file.getFileName();
-        Alert confirm = new Alert(
+        Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.WARNING,
                 tr(
                         "dialog.httpScripts.body",
                         fileName == null ? file.toString() : fileName.toString(),
                         root.toString()),
-                ButtonType.CANCEL,
-                trust);
+                Dialogs.cancel(),
+                trust));
         confirm.setTitle(tr("dialog.trust.title"));
         confirm.setHeaderText(tr("dialog.httpScripts.header", name == null ? root.toString() : name.toString()));
         return finish(confirm, owner, trust);
@@ -75,11 +74,11 @@ final class TrustPrompts {
         for (String item : summary.items()) {
             items.append("• ").append(item).append('\n');
         }
-        Alert confirm = new Alert(
+        Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.WARNING,
                 tr("dialog.trust.projectBody", items.toString().strip(), shown),
-                ButtonType.CANCEL,
-                trust);
+                Dialogs.cancel(),
+                trust));
         confirm.setTitle(tr("dialog.trust.title"));
         confirm.setHeaderText(tr("dialog.trust.projectHeader", name == null ? shown : name.toString()));
         return finish(confirm, owner, trust);
@@ -92,8 +91,8 @@ final class TrustPrompts {
     static Prompt folder(@Nullable Window owner, Path root) {
         Path name = root.getFileName();
         ButtonType trust = new ButtonType(tr("dialog.folderTrust.accept"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(
-                Alert.AlertType.WARNING, tr("dialog.folderTrust.body", root.toString()), ButtonType.CANCEL, trust);
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.WARNING, tr("dialog.folderTrust.body", root.toString()), Dialogs.cancel(), trust));
         confirm.setTitle(tr("dialog.trust.title"));
         confirm.setHeaderText(tr("dialog.folderTrust.header", name == null ? root.toString() : name.toString()));
         return finish(confirm, owner, trust);
@@ -104,13 +103,9 @@ final class TrustPrompts {
             confirm.initOwner(owner);
         }
         confirm.getDialogPane().setMinWidth(520);
-        Node trustNode = confirm.getDialogPane().lookupButton(trust);
-        Node cancelNode = confirm.getDialogPane().lookupButton(ButtonType.CANCEL);
-        if (trustNode instanceof Button t) {
-            t.setDefaultButton(false);
-        }
-        if (cancelNode instanceof Button c) {
-            c.setDefaultButton(true); // Enter cancels; Escape already did
+        ButtonType cancel = Dialogs.cancelOf(confirm);
+        Dialogs.defaultTo(confirm, cancel); // Enter cancels; Escape already did
+        if (confirm.getDialogPane().lookupButton(cancel) instanceof Button c) {
             confirm.setOnShown(e -> c.requestFocus()); // the focused button too, so Space cannot trust either
         }
         return new Prompt(confirm, trust);

@@ -428,13 +428,12 @@ final class RemoteSitesPane {
     }
 
     private java.util.Optional<Boolean> deleteDialog(RemoteConnection site, boolean askAboutHost) {
-        javafx.scene.control.ButtonType delete = new javafx.scene.control.ButtonType(
-                tr("settings.remote.delete"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.ButtonType delete = Dialogs.action(tr("settings.remote.delete"));
         javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.CONFIRMATION,
                 tr("settings.remote.deleteConfirm", site.displayLabel()),
                 delete,
-                javafx.scene.control.ButtonType.CANCEL));
+                Dialogs.cancel()));
         alert.initOwner(list.getScene() == null ? null : list.getScene().getWindow());
         alert.setTitle(tr("settings.remote.remove"));
         alert.setHeaderText(null);
@@ -446,8 +445,7 @@ final class RemoteSitesPane {
             alert.getDialogPane().setContent(new VBox(10, text, forget));
         }
         // Cancel is the default: Enter does not delete.
-        ((Button) alert.getDialogPane().lookupButton(delete)).setDefaultButton(false);
-        ((Button) alert.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL)).setDefaultButton(true);
+        Dialogs.destructive(alert, delete);
         return alert.showAndWait().filter(b -> b == delete).map(b -> forget.isSelected());
     }
 

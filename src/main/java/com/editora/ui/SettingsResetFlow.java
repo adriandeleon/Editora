@@ -11,8 +11,6 @@ import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
 import javafx.stage.Window;
@@ -87,19 +85,17 @@ final class SettingsResetFlow {
     void resetAll(Window owner) {
         LocalDateTime now = LocalDateTime.now();
         Path file = config.getSettingsFile();
-        ButtonType resetButton = new ButtonType(tr("settings.reset.button"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr(
-                        "settings.reset.confirm",
-                        SettingsResetBackup.target(file, now).getFileName().toString()),
-                resetButton,
-                ButtonType.CANCEL));
-        confirm.initOwner(owner);
-        confirm.setTitle(tr("settings.reset.title"));
-        confirm.setHeaderText(tr("settings.reset.header"));
-        cancelIsDefault(confirm, resetButton);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != resetButton) {
+        if (!Confirm.ask(
+                owner,
+                new Confirm.Question(
+                        tr("settings.reset.title"),
+                        tr("settings.reset.header"),
+                        tr(
+                                "settings.reset.confirm",
+                                SettingsResetBackup.target(file, now)
+                                        .getFileName()
+                                        .toString()),
+                        tr("settings.reset.button")))) {
             return;
         }
         Path backup = backUp(owner, now);
@@ -123,10 +119,9 @@ final class SettingsResetFlow {
             none.showAndWait();
             return;
         }
-        ChoiceDialog<String> pick = new ChoiceDialog<>(
+        ChoiceDialog<String> pick = Dialogs.styled(new ChoiceDialog<>(
                 backups.get(0).getFileName().toString(),
-                backups.stream().map(p -> p.getFileName().toString()).toList());
-        Dialogs.styled(pick);
+                backups.stream().map(p -> p.getFileName().toString()).toList()));
         pick.initOwner(owner);
         pick.setTitle(tr("settings.restore.title"));
         pick.setHeaderText(tr("settings.restore.header"));
@@ -187,15 +182,5 @@ final class SettingsResetFlow {
         failed.setTitle(tr("settings.reset.title"));
         failed.setHeaderText(null);
         failed.showAndWait();
-    }
-
-    /** Makes Cancel, not the destructive button, the one Enter presses. */
-    static void cancelIsDefault(Alert alert, ButtonType destructive) {
-        if (alert.getDialogPane().lookupButton(destructive) instanceof Button b) {
-            b.setDefaultButton(false);
-        }
-        if (alert.getDialogPane().lookupButton(ButtonType.CANCEL) instanceof Button b) {
-            b.setDefaultButton(true);
-        }
     }
 }

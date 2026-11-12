@@ -110,7 +110,7 @@ public final class SaveBackupRecovery {
         String when = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
                 .withZone(ZoneId.systemDefault())
                 .format(leftover.modified());
-        Alert alert = new Alert(Alert.AlertType.WARNING);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.WARNING));
         if (owner != null && owner.isShowing()) {
             alert.initOwner(owner);
         }
@@ -127,6 +127,10 @@ public final class SaveBackupRecovery {
                     leftover.backup(),
                     when));
             alert.getButtonTypes().setAll(restore, delete, later);
+            // Deleting the backup is red and never the default. Restore, which keeps the earlier contents,
+            // stays the default button, as Save does in the unsaved-changes question.
+            Dialogs.destructive(alert, delete);
+            Dialogs.defaultTo(alert, restore);
         } else {
             alert.setHeaderText(tr("dialog.saveBackup.headerUnknown"));
             alert.setContentText(tr(
@@ -135,8 +139,9 @@ public final class SaveBackupRecovery {
                     leftover.backup(),
                     when));
             alert.getButtonTypes().setAll(later, delete);
+            Dialogs.destructive(alert, delete); // red, never the default: Decide Later is the default button
         }
-        Dialogs.styled(alert).setOnHidden(closed -> {
+        alert.setOnHidden(closed -> {
             ButtonType choice = alert.getResult();
             if (choice == restore) {
                 restore(leftover, dir, owner);
@@ -154,7 +159,7 @@ public final class SaveBackupRecovery {
                 SaveBackups.restore(leftover, dir);
             } catch (IOException | RuntimeException failed) {
                 Platform.runLater(() -> {
-                    Alert error = new Alert(Alert.AlertType.ERROR);
+                    Alert error = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
                     if (owner != null && owner.isShowing()) {
                         error.initOwner(owner);
                     }
@@ -164,7 +169,7 @@ public final class SaveBackupRecovery {
                             "dialog.saveBackup.restoreFailedContent",
                             String.valueOf(failed.getMessage()),
                             leftover.backup()));
-                    Dialogs.styled(error).show();
+                    error.show();
                 });
             }
         });

@@ -4305,19 +4305,25 @@ final class DebugCoordinator {
                 bothOffered
                         ? javafx.scene.control.ButtonBar.ButtonData.OTHER
                         : javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        List<javafx.scene.control.ButtonType> buttons = bothOffered
-                ? List.of(both, stop, javafx.scene.control.ButtonType.CANCEL)
-                : List.of(stop, javafx.scene.control.ButtonType.CANCEL);
-        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
+        javafx.scene.control.ButtonType cancel = Dialogs.cancel();
+        List<javafx.scene.control.ButtonType> buttons =
+                bothOffered ? List.of(both, stop, cancel) : List.of(stop, cancel);
+        javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.CONFIRMATION,
                 question,
-                buttons.toArray(javafx.scene.control.ButtonType[]::new));
+                buttons.toArray(javafx.scene.control.ButtonType[]::new)));
         alert.setTitle(tr(bothOffered ? "dialog.debug.retargetBothTitle" : "dialog.debug.retargetTitle"));
         alert.setHeaderText(null);
         if (host.window() != null) {
             alert.initOwner(host.window());
         }
-        javafx.scene.control.ButtonType answer = alert.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL);
+        // Stopping ends the program being debugged: its button is red and never the default. Where running
+        // both is offered, that safe answer stays the default; otherwise Cancel is.
+        Dialogs.destructive(alert, stop);
+        if (bothOffered) {
+            Dialogs.defaultTo(alert, both);
+        }
+        javafx.scene.control.ButtonType answer = alert.showAndWait().orElse(cancel);
         return answer == both ? Retarget.BOTH : answer == stop ? Retarget.STOP : Retarget.CANCEL;
     }
 

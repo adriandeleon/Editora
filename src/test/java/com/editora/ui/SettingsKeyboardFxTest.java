@@ -9,7 +9,7 @@ import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
@@ -90,12 +90,13 @@ class SettingsKeyboardFxTest {
         return labels.get(1).getText();
     }
 
-    private static void answerNextAlert(ButtonType answer, boolean[] seen) {
+    /** Presses the next dialog's button of kind {@code answer}: its Cancel, or its named action. */
+    private static void answerNextAlert(ButtonBar.ButtonData answer, boolean[] seen) {
         Platform.runLater(() -> {
             for (Window w : Window.getWindows().stream().toList()) {
                 if (w.getScene() != null && w.getScene().getRoot() instanceof DialogPane pane) {
                     seen[0] = true;
-                    ((Button) pane.lookupButton(answer)).fire();
+                    FxDialogs.button(pane, answer).fire();
                 }
             }
         });
@@ -275,16 +276,16 @@ class SettingsKeyboardFxTest {
             assertNotNull(resetAll);
 
             boolean[] asked = {false};
-            answerNextAlert(ButtonType.CANCEL, asked);
+            answerNextAlert(ButtonBar.ButtonData.CANCEL_CLOSE, asked);
             resetAll.fire();
             assertTrue(asked[0], "a confirmation was shown");
             assertEquals(custom, chordOf(window, "file.save"), "Cancel keeps the custom binding");
 
             asked[0] = false;
-            answerNextAlert(ButtonType.OK, asked);
+            answerNextAlert(ButtonBar.ButtonData.OK_DONE, asked);
             resetAll.fire();
             assertTrue(asked[0]);
-            assertNotEquals(custom, chordOf(window, "file.save"), "OK resets it");
+            assertNotEquals(custom, chordOf(window, "file.save"), "Reset resets it");
             assertEquals(chordOf(window, "file.save"), listedChord(window, "file.save"));
         });
     }

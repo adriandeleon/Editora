@@ -8,8 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.VBox;
@@ -145,12 +143,18 @@ final class NotesCoordinator {
 
             @Override
             public void delete(String projectKey, String fileKey, PersonalNote note) {
-                noteDelete(projectKey, fileKey, note);
+                confirmDelete(() -> noteDelete(projectKey, fileKey, note));
             }
 
             @Override
             public void deleteAll(String projectKey, String fileKey) {
-                noteDeleteAll(projectKey, fileKey);
+                if (Confirm.ask(
+                        host.window(),
+                        tr("dialog.note.deleteConfirm.title"),
+                        tr("dialog.note.deleteAllConfirm.content", fileNameOf(fileKey)),
+                        tr("confirm.action.delete"))) {
+                    noteDeleteAll(projectKey, fileKey);
+                }
             }
         };
         this.jumpPalette = new QuickOpen<>(
@@ -644,17 +648,19 @@ final class NotesCoordinator {
                 true);
     }
 
+    /** The last segment of a stored file key (a local path or a remote address), for a question's text. */
+    private static String fileNameOf(String fileKey) {
+        int slash = Math.max(fileKey.lastIndexOf('/'), fileKey.lastIndexOf('\\'));
+        return slash >= 0 ? fileKey.substring(slash + 1) : fileKey;
+    }
+
     /** Confirms (native dialog) before running a destructive note delete from the editor popup. */
     private void confirmDelete(Runnable onConfirm) {
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
+        if (Confirm.ask(
+                host.window(),
+                tr("dialog.note.deleteConfirm.title"),
                 tr("dialog.note.deleteConfirm.content"),
-                ButtonType.OK,
-                ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.note.deleteConfirm.title"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+                tr("confirm.action.delete"))) {
             onConfirm.run();
         }
     }
@@ -726,7 +732,8 @@ final class NotesCoordinator {
             host.setStatus(tr("status.noNotesInFile"));
             return;
         }
-        b.getNoteManager().remove(ns.get(0).id());
+        java.util.UUID id = ns.get(0).id();
+        confirmDelete(() -> b.getNoteManager().remove(id));
     }
 
     void jumpNote(boolean forward) {

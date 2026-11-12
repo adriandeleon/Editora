@@ -373,16 +373,17 @@ final class LspRefactoringUndo {
                 tr("dialog.lsp.undoRefactoring.all", files), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
         javafx.scene.control.ButtonType one = new javafx.scene.control.ButtonType(
                 tr("dialog.lsp.undoRefactoring.thisFile"), javafx.scene.control.ButtonBar.ButtonData.OTHER);
+        javafx.scene.control.ButtonType cancel = Dialogs.cancel();
         javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.CONFIRMATION,
                 tr("dialog.lsp.undoRefactoring.body", files),
                 all,
                 one,
-                javafx.scene.control.ButtonType.CANCEL));
+                cancel));
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.lsp.undoRefactoring.title"));
         confirm.setHeaderText(null);
-        var chosen = confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL);
+        var chosen = confirm.showAndWait().orElse(cancel);
         return chosen == all
                 ? RefactoringUndoChoice.ALL_FILES
                 : chosen == one ? RefactoringUndoChoice.THIS_FILE : RefactoringUndoChoice.CANCEL;

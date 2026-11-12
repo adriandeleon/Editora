@@ -13,7 +13,7 @@ import javafx.event.ActionEvent;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DialogPane;
@@ -125,13 +125,13 @@ class SettingsListEditorsFxTest {
     }
 
     /** Runs {@code action}, answering the dialog it opens with {@code answer}; returns the dialog's text. */
-    private static String answeringDialogs(ButtonType answer, Runnable action) {
+    private static String answeringDialogs(ButtonBar.ButtonData answer, Runnable action) {
         java.util.concurrent.atomic.AtomicReference<String> text = new java.util.concurrent.atomic.AtomicReference<>();
         Platform.runLater(() -> {
             for (Window win : List.copyOf(Window.getWindows())) {
                 if (win.getScene() != null && win.getScene().getRoot() instanceof DialogPane pane && win.isShowing()) {
                     text.set(pane.getContentText());
-                    ((Button) pane.lookupButton(answer)).fire();
+                    FxDialogs.button(pane, answer).fire();
                 }
             }
         });
@@ -145,7 +145,7 @@ class SettingsListEditorsFxTest {
 
     /**
      * External Tools applies every edit as it is made (no Save button), and Remove asks first with Cancel as the
-     * default button: Cancel keeps the tool, OK deletes it.
+     * default button: Cancel keeps the tool, Delete deletes it.
      */
     @Test
     void anExternalToolIsSavedWithoutAButtonAndRemoveAsksFirst() throws Exception {
@@ -169,11 +169,11 @@ class SettingsListEditorsFxTest {
                 String name = fx.shared.getSettings().getExternalTools().get(0).getName();
 
                 Button remove = button(pg, tr("settings.externalTool.remove"));
-                String asked = answeringDialogs(ButtonType.CANCEL, remove::fire);
+                String asked = answeringDialogs(ButtonBar.ButtonData.CANCEL_CLOSE, remove::fire);
                 assertEquals(tr("settings.externalTool.confirmDelete", name), asked);
                 assertEquals(1, fx.shared.getSettings().getExternalTools().size(), "Cancel keeps the tool");
-                answeringDialogs(ButtonType.OK, remove::fire);
-                assertEquals(0, fx.shared.getSettings().getExternalTools().size(), "OK deletes it");
+                answeringDialogs(ButtonBar.ButtonData.OK_DONE, remove::fire);
+                assertEquals(0, fx.shared.getSettings().getExternalTools().size(), "Delete deletes it");
                 FxTestSupport.<Stage>field(w, "stage").hide();
             });
         }
@@ -631,7 +631,7 @@ class SettingsListEditorsFxTest {
                 ListView<ExternalTool> list = toolList(w);
                 list.getSelectionModel().select(0);
                 answeringDialogs(
-                        ButtonType.OK,
+                        ButtonBar.ButtonData.OK_DONE,
                         () -> button(page(w, "EXTERNAL_TOOLS"), tr("settings.externalTool.remove"))
                                 .fire());
             });

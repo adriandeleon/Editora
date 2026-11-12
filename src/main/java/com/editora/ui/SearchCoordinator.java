@@ -668,11 +668,14 @@ final class SearchCoordinator {
     }
 
     private static boolean showReplaceConfirmation(CoordinatorHost host, int fileCount) {
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION, tr("search.replaceConfirm", fileCount), ButtonType.OK, ButtonType.CANCEL);
+        ButtonType replace = Dialogs.action(tr("search.replaceAll"));
+        ButtonType cancel = Dialogs.cancel();
+        Alert confirm = Dialogs.styled(
+                new Alert(Alert.AlertType.CONFIRMATION, tr("search.replaceConfirm", fileCount), replace, cancel));
         confirm.initOwner(host.window());
         confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        Dialogs.destructive(confirm, replace);
+        return confirm.showAndWait().orElse(cancel) == replace;
     }
 
     private void runClosedReplacements(

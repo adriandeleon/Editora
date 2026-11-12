@@ -159,7 +159,7 @@ final class MermaidCoordinator {
                 } else {
                     String msg = r.message();
                     host.setStatus(tr("status.mermaid.exportFailed", msg));
-                    Alert err = new Alert(Alert.AlertType.ERROR);
+                    Alert err = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
                     err.initOwner(host.window());
                     err.setTitle(tr("dialog.mermaidExport.title"));
                     err.setHeaderText(tr("status.mermaid.exportFailed", ""));
