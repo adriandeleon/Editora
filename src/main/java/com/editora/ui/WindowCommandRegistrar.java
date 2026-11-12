@@ -3646,7 +3646,6 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of(EncryptionCoordinator.VERIFY, e::verifySignature));
     }
 
-    /** The palette's "this feature is turned off" line, naming the command that turns Project support on. */
     /**
      * The commands behind the right-click rows of the lists and trees that only the mouse and Enter reached:
      * each acts on the row selected in its panel, and says so when none is.
@@ -3700,6 +3699,7 @@ final class WindowCommandRegistrar {
         }));
     }
 
+    /** The palette's "this feature is turned off" line, naming the command that turns Project support on. */
     private static String projectsOff() {
         return tr("palette.disabled.featureOff", tr("command.view.toggleProjects"));
     }
