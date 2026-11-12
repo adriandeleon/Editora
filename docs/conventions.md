@@ -99,8 +99,21 @@ A control that works with the mouse but cannot be reached, seen or named from th
 - **Failures** go to the error channel. A message whose key is `status.…Failed` / `…Error` is routed
   there automatically wherever it is reported (`StatusSeverity`); `…cannot…` / `…invalid…` are warnings.
   Name new failure keys accordingly, or call `setError`.
-- **Native dialogs** are created through `Dialogs.styled(new Alert(…))`: a dialog has its own scene and
-  does not inherit `app.css`.
+- **Native dialogs** are created through `Dialogs.styled(new Alert(…))`, at the point they are built
+  (`DialogsSourceTest` scans for one that is not): a dialog has its own scene and does not inherit `app.css`.
+  `styled` also gives every dialog one button order on every OS, Cancel left of every action, and words the
+  stock OK, Cancel, Yes, No, Apply and Close from the message catalog instead of the JVM's locale.
+- **A question before something is lost** (removed, deleted, discarded, overwritten, reset, a running program
+  ended, a command that cannot be taken back) goes through `Confirm.ask(owner, title, message, verb)`: the
+  confirming button carries the action's own verb from the catalog (`confirm.action.delete`, …), never OK or
+  Yes, in red, and Cancel is the default button, so Enter keeps what the user has. A question that needs a
+  layout of its own (a checkbox, a third answer) builds its dialog with `Dialogs.action(verb)` and
+  `Dialogs.cancel()` and calls `Dialogs.destructive(dialog, action)` once its buttons are final; where it also
+  offers a safe action (Save beside Discard), `Dialogs.defaultTo(dialog, safe)` makes that one the default.
+  Use `Dialogs.cancel()`, not `ButtonType.CANCEL`, beside a named action. A removal that can be taken back
+  (a plain bookmark toggle) asks nothing. In a test, `Confirm.answerWith(question -> true)` answers without
+  showing a dialog (reset it with `null` afterwards), and a shown dialog is answered by button role
+  (`FxDialogs`), never by looking up a stock `ButtonType`.
 - A row that can run out of width **wraps** (`WrapRow`, `SettingRowPane`) rather than ellipsizing a label
   or a button to "…"; check German at 1024 px.
 

@@ -2207,17 +2207,18 @@ final class LspCoordinator {
     private boolean confirmTrustProjectSettings(Path root, List<String> requests) {
         javafx.scene.control.ButtonType trust = new javafx.scene.control.ButtonType(
                 tr("dialog.lsp.trust.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
+        javafx.scene.control.ButtonType cancel = Dialogs.cancel();
+        javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.WARNING,
                 TrustPromptText.body(root, requests), // a folder's own TypeScript said as such (JS review B110)
-                javafx.scene.control.ButtonType.CANCEL,
-                trust);
+                cancel,
+                trust));
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.trust.title"));
         Path name = root.getFileName();
         confirm.setHeaderText(TrustPromptText.header(name == null ? root.toString() : name.toString(), requests));
         confirm.getDialogPane().setMinWidth(520);
-        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == trust;
+        return confirm.showAndWait().orElse(cancel) == trust;
     }
 
     /**

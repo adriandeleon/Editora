@@ -370,20 +370,16 @@ final class LspRefactorings {
     private boolean confirmMoveProblems(String problems) {
         javafx.scene.control.ButtonType proceed = new javafx.scene.control.ButtonType(
                 tr("dialog.lsp.moveProblems.continue"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.WARNING,
-                problems,
-                javafx.scene.control.ButtonType.CANCEL,
-                proceed);
+        javafx.scene.control.ButtonType cancel = Dialogs.cancel();
+        javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.WARNING, problems, cancel, proceed));
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.lsp.moveProblems.title"));
         confirm.setHeaderText(tr("dialog.lsp.moveProblems.header"));
         confirm.getDialogPane().setMinWidth(520);
         // The move may break code: Enter cancels.
-        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(proceed)).setDefaultButton(false);
-        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL))
-                .setDefaultButton(true);
-        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == proceed;
+        Dialogs.defaultTo(confirm, cancel);
+        return confirm.showAndWait().orElse(cancel) == proceed;
     }
 
     private com.google.gson.JsonObject refactorEdit(

@@ -379,7 +379,7 @@ final class MarkdownLinkUpdater {
     }
 
     private boolean ask(Plan plan) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(host.window());
         alert.setTitle(tr("markdown.links.update.title"));
         alert.setHeaderText(tr(
@@ -391,6 +391,6 @@ final class MarkdownLinkUpdater {
         ButtonType update = new ButtonType(tr("markdown.links.update.apply"), ButtonBar.ButtonData.OK_DONE);
         ButtonType leave = new ButtonType(tr("markdown.links.update.skip"), ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(update, leave);
-        return Dialogs.styled(alert).showAndWait().filter(update::equals).isPresent();
+        return alert.showAndWait().filter(update::equals).isPresent();
     }
 }

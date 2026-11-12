@@ -685,13 +685,7 @@ final class GitCoordinator {
      * Cancel is the safe default.
      */
     boolean confirmDestructive(String title, String message, String actionLabel) {
-        ButtonType action = new ButtonType(actionLabel, ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message, action, ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setTitle(title);
-        confirm.setHeaderText(null);
-        confirm.getDialogPane().lookupButton(action).getStyleClass().add("danger");
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == action;
+        return Confirm.ask(host.window(), title, message, actionLabel);
     }
 
     /**
@@ -1588,12 +1582,13 @@ final class GitCoordinator {
     private @Nullable GitPullMode askDivergedPull() {
         ButtonType rebase = new ButtonType(tr("dialog.pullDiverged.rebase"), ButtonBar.ButtonData.OTHER);
         ButtonType merge = new ButtonType(tr("dialog.pullDiverged.merge"), ButtonBar.ButtonData.OTHER);
-        Alert ask = new Alert(
-                Alert.AlertType.CONFIRMATION, tr("dialog.pullDiverged.message"), rebase, merge, ButtonType.CANCEL);
+        ButtonType cancel = Dialogs.cancel();
+        Alert ask = Dialogs.styled(
+                new Alert(Alert.AlertType.CONFIRMATION, tr("dialog.pullDiverged.message"), rebase, merge, cancel));
         ask.initOwner(host.window());
         ask.setTitle(tr("dialog.pullDiverged.title"));
         ask.setHeaderText(null);
-        ButtonType chosen = ask.showAndWait().orElse(ButtonType.CANCEL);
+        ButtonType chosen = ask.showAndWait().orElse(cancel);
         return chosen == rebase ? GitPullMode.REBASE : chosen == merge ? GitPullMode.MERGE : null;
     }
 
@@ -1936,7 +1931,7 @@ final class GitCoordinator {
         }
         // A sign-in failure gets its next step appended: git's own line ("terminal prompts disabled") has none.
         String body = detail == null || detail.isBlank() ? summary : GitAuthFailure.withGuidance(detail.strip());
-        Alert alert = new Alert(Alert.AlertType.ERROR);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.git.title"));
         alert.setHeaderText(summary);

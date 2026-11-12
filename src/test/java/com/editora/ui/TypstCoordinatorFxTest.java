@@ -13,7 +13,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.DialogPane;
 
 import com.editora.config.Settings;
@@ -250,8 +249,12 @@ class TypstCoordinatorFxTest {
         DialogPane asked =
                 FxDialogs.duringContent(() -> typst.finishExport(first), question, ButtonBar.ButtonData.CANCEL_CLOSE);
         assertNotNull(asked);
-        assertTrue(((Button) asked.lookupButton(ButtonType.CANCEL)).isDefaultButton(), "Enter must not replace files");
-        assertFalse(((Button) asked.lookupButton(ButtonType.OK)).isDefaultButton());
+        Button cancel = FxDialogs.button(asked, ButtonBar.ButtonData.CANCEL_CLOSE);
+        Button replace = FxDialogs.button(asked, ButtonBar.ButtonData.OK_DONE);
+        assertTrue(cancel.isDefaultButton(), "Enter must not replace files");
+        assertFalse(replace.isDefaultButton());
+        assertEquals(tr("confirm.action.replace"), replace.getText(), "the action is named, not OK");
+        assertTrue(replace.getStyleClass().contains("danger"));
         assertEquals("kept", Files.readString(existing));
         assertFalse(Files.exists(dir.resolve("report-2.png")), "a declined export writes none of its pages");
         assertEquals(List.of(tr("status.typst.exportCancelled")), host.statuses);

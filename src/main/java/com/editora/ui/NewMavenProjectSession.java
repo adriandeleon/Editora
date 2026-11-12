@@ -157,12 +157,13 @@ final class NewMavenProjectSession {
             body.append("\n\n").append(tr("dialog.mavenProject.trustFrom", archetype.repository()));
         }
         body.append("\n\n").append(tr("dialog.mavenProject.trustRemember"));
-        Alert confirm = new Alert(Alert.AlertType.WARNING, body.toString(), ButtonType.CANCEL, always, proceed);
+        ButtonType cancel = Dialogs.cancel();
+        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.WARNING, body.toString(), cancel, always, proceed));
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.mavenProject.trustTitle"));
         confirm.setHeaderText(tr("dialog.mavenProject.trustHeader", archetype.artifactId()));
         confirm.getDialogPane().setMinWidth(560);
-        ButtonType answer = confirm.showAndWait().orElse(ButtonType.CANCEL);
+        ButtonType answer = confirm.showAndWait().orElse(cancel);
         return answer == proceed
                 ? MavenProjectCoordinator.Consent.ONCE
                 : answer == always ? MavenProjectCoordinator.Consent.ALWAYS : MavenProjectCoordinator.Consent.CANCEL;

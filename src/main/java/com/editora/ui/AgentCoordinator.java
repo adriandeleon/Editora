@@ -1140,7 +1140,7 @@ final class AgentCoordinator implements AcpClient.Host {
         CompletableFuture<String> f = new CompletableFuture<>();
         Platform.runLater(() -> {
             ops.openToolWindow(false); // make sure the user sees what the request belongs to
-            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
             alert.initOwner(host.window());
             alert.setTitle(tr("agent.permissionTitle"));
             alert.setHeaderText(tr("agent.permissionHeader"));
@@ -1149,7 +1149,7 @@ final class AgentCoordinator implements AcpClient.Host {
             for (int i = 0; i < options.size(); i++) {
                 buttons[i] = new ButtonType(options.get(i).name());
             }
-            buttons[options.size()] = ButtonType.CANCEL;
+            buttons[options.size()] = Dialogs.cancel();
             alert.getButtonTypes().setAll(buttons);
             guardPermissionDialog(alert, buttons, safePermissionChoice(options));
             var result = alert.showAndWait();

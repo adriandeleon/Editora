@@ -275,7 +275,7 @@ class XmlFolderTrustFxTest {
     void thePromptSaysWhatTrustAllowsAndCancelIsItsDefault() throws Exception {
         TrustPrompts.Prompt prompt = FxTestSupport.callOnFx(() -> TrustPrompts.folder(null, project));
         javafx.scene.control.Button cancel = FxTestSupport.callOnFx(() -> (javafx.scene.control.Button)
-                prompt.alert().getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL));
+                prompt.alert().getDialogPane().lookupButton(Dialogs.cancelOf(prompt.alert())));
         javafx.scene.control.Button accept = FxTestSupport.callOnFx(() ->
                 (javafx.scene.control.Button) prompt.alert().getDialogPane().lookupButton(prompt.trust()));
         assertTrue(cancel.isDefaultButton());

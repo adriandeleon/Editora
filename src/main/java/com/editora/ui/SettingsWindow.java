@@ -1656,18 +1656,24 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Asks before a step that loses something; Cancel is the default answer. Replaceable so a test can answer. */
-    java.util.function.BiPredicate<String, String> confirmLoss = this::confirmCancelDefault;
+    /**
+     * Answers {@link #askBeforeLoss} (given the title and the question) in place of its dialog; null, the
+     * default, shows the dialog. Set by tests.
+     */
+    java.util.function.@Nullable BiPredicate<String, String> confirmLoss;
 
-    private boolean confirmCancelDefault(String title, String body) {
-        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(title);
-        confirm.setHeaderText(null);
+    /**
+     * Asks before a step that loses something. The red button carries {@code action}, the step's own verb, and
+     * Cancel is the default answer.
+     */
+    boolean askBeforeLoss(String title, String body, String action) {
+        java.util.function.BiPredicate<String, String> answer = confirmLoss;
+        if (answer != null) {
+            return answer.test(title, body);
+        }
+        Alert confirm = Confirm.dialog(stage, new Confirm.Question(title, null, body, action));
         confirm.getDialogPane().setMinWidth(460);
-        ((Button) confirm.getDialogPane().lookupButton(ButtonType.OK)).setDefaultButton(false);
-        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return Confirm.confirmed(confirm, confirm.showAndWait());
     }
 
     /** Refreshes this window's toolbar selector after the separate editor persists a change. */
@@ -3180,16 +3186,16 @@ public class SettingsWindow {
 
     /** "Delete “name”?" with Cancel as the default button, so Enter does not delete. */
     private boolean confirmDelete(String name) {
+        ButtonType delete = Dialogs.action(tr("confirm.action.delete"));
         Alert a = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 tr("settings.externalTool.confirmDelete", name),
-                ButtonType.OK,
-                ButtonType.CANCEL));
+                delete,
+                Dialogs.cancel()));
         a.initOwner(stage);
         a.setHeaderText(null);
-        ((Button) a.getDialogPane().lookupButton(ButtonType.OK)).setDefaultButton(false);
-        ((Button) a.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
-        return a.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
+        Dialogs.destructive(a, delete);
+        return a.showAndWait().orElse(Dialogs.cancelOf(a)) == delete;
     }
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
@@ -3211,8 +3217,10 @@ public class SettingsWindow {
                                 config,
                                 this::apply,
                                 keymapsPage::macroWarn,
-                                name -> confirmLoss.test(
-                                        tr("settings.lists.deleteTitle"), tr("settings.lists.deleteConfirm", name))))
+                                name -> askBeforeLoss(
+                                        tr("settings.lists.deleteTitle"),
+                                        tr("settings.lists.deleteConfirm", name),
+                                        tr("confirm.action.delete"))))
                         .node(),
                 "abbrev abbreviation expand text replacement snippet shortcut dictionary emacs");
         return p;

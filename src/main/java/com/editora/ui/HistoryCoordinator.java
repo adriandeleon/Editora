@@ -558,18 +558,11 @@ final class HistoryCoordinator {
     }
 
     private boolean confirmTightening(HistoryRetention.Impact impact, javafx.stage.Window owner, String preface) {
-        javafx.scene.control.ButtonType delete = new javafx.scene.control.ButtonType(
-                tr("dialog.history.purge.button"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
+        return Confirm.ask(
+                owner != null && owner.isShowing() ? owner : host.window(),
+                tr("dialog.history.limits.title"),
                 preface + tr("dialog.history.limits.confirm", impact.revisions(), impact.files()),
-                delete,
-                ButtonType.CANCEL);
-        confirm.initOwner(owner != null && owner.isShowing() ? owner : host.window());
-        confirm.setTitle(tr("dialog.history.limits.title"));
-        confirm.setHeaderText(null);
-        confirm.getDialogPane().lookupButton(delete).getStyleClass().add("danger");
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == delete;
+                tr("dialog.history.purge.button"));
     }
 
     /** A private copy of the whole index, for work on the history worker. */
@@ -744,14 +737,7 @@ final class HistoryCoordinator {
     }
 
     private boolean confirmPurge(String message) {
-        javafx.scene.control.ButtonType delete = new javafx.scene.control.ButtonType(
-                tr("dialog.history.purge.button"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message, delete, ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.history.purge.title"));
-        confirm.setHeaderText(null);
-        confirm.getDialogPane().lookupButton(delete).getStyleClass().add("danger");
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == delete;
+        return Confirm.ask(host.window(), tr("dialog.history.purge.title"), message, tr("dialog.history.purge.button"));
     }
 
     /** Sets the history tool window's availability (local file + feature on) and reloads its list. */
@@ -1327,15 +1313,16 @@ final class HistoryCoordinator {
 
     /** The panel's Restore asks before it replaces text that was never saved (a saved file is one undo away). */
     private boolean confirmRestoreOverUnsaved(Path file) {
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("history.restoreUnsaved", file.getFileName()),
-                ButtonType.OK,
-                ButtonType.CANCEL);
+        // Not a question before a destructive action: Undo brings the replaced edits back. So the action is
+        // named and stays the default button, and is not red.
+        ButtonType restore = Dialogs.action(tr("confirm.action.restore"));
+        ButtonType cancel = Dialogs.cancel();
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("history.restoreUnsaved", file.getFileName()), restore, cancel));
         confirm.initOwner(host.window());
         confirm.setTitle(tr("history.menu.restore"));
         confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return confirm.showAndWait().orElse(cancel) == restore;
     }
 
     /**
@@ -1732,15 +1719,11 @@ final class HistoryCoordinator {
     }
 
     private boolean confirmRestoreOverwrite(Path file) {
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
+        return Confirm.ask(
+                host.window(),
+                tr("history.menu.restore"),
                 tr("history.restoreOverwrite", file.getFileName()),
-                ButtonType.OK,
-                ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("history.menu.restore"));
-        confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+                tr("confirm.action.overwrite"));
     }
 
     static boolean writeRestoredContent(

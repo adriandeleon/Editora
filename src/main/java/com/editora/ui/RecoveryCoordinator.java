@@ -12,9 +12,6 @@ import java.util.function.Supplier;
 
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.Tab;
 
 import com.editora.command.Command;
@@ -624,17 +621,11 @@ final class RecoveryCoordinator {
     }
 
     private boolean askDiscard(int count) {
-        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
-        alert.initOwner(host.window());
-        alert.setTitle(tr("recovery.discard.confirmTitle"));
-        alert.setHeaderText(null);
-        alert.setContentText(tr("recovery.discard.confirm", count));
-        ButtonType discard = new ButtonType(tr("recovery.discard.button"), ButtonBar.ButtonData.OTHER);
-        ButtonType keep = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(discard, keep);
         // Enter and Escape both keep the records: only a click on Discard deletes them.
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(discard)).setDefaultButton(false);
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(keep)).setDefaultButton(true);
-        return alert.showAndWait().filter(discard::equals).isPresent();
+        return Confirm.ask(
+                host.window(),
+                tr("recovery.discard.confirmTitle"),
+                tr("recovery.discard.confirm", count),
+                tr("recovery.discard.button"));
     }
 }

@@ -691,8 +691,8 @@ final class GitWindowCoordinator {
         // was selected in the log's repository, so that is captured first.
         Path root = gitLogRoot;
         String branch = gitLogBranch;
-        javafx.scene.control.ChoiceDialog<String> d =
-                new javafx.scene.control.ChoiceDialog<>("mixed", java.util.List.of("soft", "mixed", "hard"));
+        javafx.scene.control.ChoiceDialog<String> d = Dialogs.styled(
+                new javafx.scene.control.ChoiceDialog<>("mixed", java.util.List.of("soft", "mixed", "hard")));
         d.initOwner(host.stage());
         d.setTitle(tr("dialog.gitReset.title"));
         d.setHeaderText(null);
@@ -1140,12 +1140,12 @@ final class GitWindowCoordinator {
                     com.editora.git.GitFormat.shortHash(parents.get(i)),
                     parent == null ? "" : parent.subject()));
         }
-        javafx.scene.control.ChoiceDialog<String> d = new javafx.scene.control.ChoiceDialog<>(choices.get(0), choices);
+        javafx.scene.control.ChoiceDialog<String> d =
+                Dialogs.styled(new javafx.scene.control.ChoiceDialog<>(choices.get(0), choices));
         d.initOwner(host.stage());
         d.setTitle(tr("dialog.revertMerge.title"));
         d.setHeaderText(null);
         d.setContentText(tr("dialog.revertMerge.content", com.editora.git.GitFormat.shortHash(hash)));
-        Dialogs.styled(d);
         return d.showAndWait().map(choice -> choices.indexOf(choice) + 1).orElse(null);
     }
 

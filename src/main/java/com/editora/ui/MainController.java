@@ -18,7 +18,6 @@ import javafx.fxml.FXML;
 import javafx.geometry.Orientation;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
@@ -1623,15 +1622,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.noProjectOpen"));
             return;
         }
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("dialog.closeProject.body", windowProject.name()),
-                ButtonType.OK,
-                ButtonType.CANCEL);
+        // Closing a project loses nothing (its files are saved or asked about, its session kept): not red.
+        ButtonType close = Dialogs.action(tr("dialog.close"));
+        ButtonType cancel = Dialogs.cancel();
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("dialog.closeProject.body", windowProject.name()), close, cancel));
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.closeProject.title"));
         confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+        if (confirm.showAndWait().orElse(cancel) != close) {
             return;
         }
         if (windowManager != null) {
@@ -1659,15 +1658,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.noProjectToDelete"));
             return;
         }
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
+        if (!Confirm.ask(
+                stage,
+                tr("dialog.deleteProject.title"),
                 tr("dialog.deleteProject.body", p.name()),
-                ButtonType.OK,
-                ButtonType.CANCEL);
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.deleteProject.title"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                tr("confirm.action.delete"))) {
             return;
         }
         // Close the project's window first (persisting its session + saving dirty buffers); a cancelled
@@ -2043,9 +2038,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         alert.setHeaderText(tr("dialog.removeRecent.header", path.getFileName().toString()));
         alert.setContentText(path.toString());
         ButtonType remove = new ButtonType(tr("dialog.removeRecent.remove"));
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(remove, cancel);
-        if (alert.showAndWait().filter(b -> b == remove).isPresent()) {
+        Dialogs.destructive(alert, remove);
+        if (alert.showAndWait().orElse(cancel) == remove) {
             recentFiles.remove(path);
         }
     }
@@ -2947,13 +2943,14 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the Settings checkbox). Returns true to proceed. Mirrors {@link #confirmEnablePlugin}.
      */
     boolean confirmEnableMcp() {
-        Alert confirm =
-                new Alert(Alert.AlertType.WARNING, tr("dialog.mcp.enableBody"), ButtonType.OK, ButtonType.CANCEL);
+        ButtonType enable = Dialogs.action(tr("confirm.action.enable"));
+        ButtonType cancel = Dialogs.cancel();
+        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.WARNING, tr("dialog.mcp.enableBody"), enable, cancel));
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.mcp.enableTitle"));
         confirm.setHeaderText(tr("dialog.mcp.enableHeader"));
         confirm.getDialogPane().setMinWidth(480);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return confirm.showAndWait().orElse(cancel) == enable;
     }
 
     /** Opens Settings on the Workspace page, where the trusted-folder list lives ({@code workspace.manageTrust}). */
@@ -3036,7 +3033,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Path root = HttpSecretGate.trustRoot(file, projectRoot());
         TrustPrompts.Prompt prompt = TrustPrompts.httpSecrets(stage, root, reads, hosts);
-        if (prompt.alert().showAndWait().orElse(ButtonType.CANCEL) != prompt.trust()) {
+        if (prompt.alert().showAndWait().orElse(Dialogs.cancelOf(prompt.alert())) != prompt.trust()) {
             return false;
         }
         config.getTrustStore().trust(root);
@@ -3053,7 +3050,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Path root = HttpSecretGate.trustRoot(file, projectRoot());
         TrustPrompts.Prompt prompt = TrustPrompts.httpScripts(stage, root, file);
-        if (prompt.alert().showAndWait().orElse(ButtonType.CANCEL) != prompt.trust()) {
+        if (prompt.alert().showAndWait().orElse(Dialogs.cancelOf(prompt.alert())) != prompt.trust()) {
             return false;
         }
         config.getTrustStore().trust(root);
@@ -4093,15 +4090,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (recentFiles == null || recentFiles.getList().isEmpty()) {
             return;
         }
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(stage);
         alert.setTitle(tr("dialog.clearRecent.title"));
         alert.setHeaderText(tr("dialog.clearRecent.header"));
         alert.setContentText(null);
         ButtonType clear = new ButtonType(tr("dialog.clearRecent.clear"));
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(clear, cancel);
-        if (alert.showAndWait().filter(b -> b == clear).isPresent()) {
+        Dialogs.destructive(alert, clear);
+        if (alert.showAndWait().orElse(cancel) == clear) {
             recentFiles.clear();
             setStatus(tr("status.recentCleared"));
         }
@@ -5363,7 +5361,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());
                     String done = keysLeftOut ? "status.config.exportedNoKeys" : "status.config.exported";
                     setStatus(tr(failure == null ? done : "status.config.exportFailed", detail));
-                    Alert alert = new Alert(failure == null ? Alert.AlertType.INFORMATION : Alert.AlertType.ERROR);
+                    Alert alert = Dialogs.styled(
+                            new Alert(failure == null ? Alert.AlertType.INFORMATION : Alert.AlertType.ERROR));
                     alert.initOwner(stage);
                     alert.setTitle(tr("dialog.exportConfig.title"));
                     alert.setHeaderText(

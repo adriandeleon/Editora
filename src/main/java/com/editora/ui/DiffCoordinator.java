@@ -2124,17 +2124,18 @@ final class DiffCoordinator {
                 tr("merge.edited.useGit"), javafx.scene.control.ButtonBar.ButtonData.OTHER);
         javafx.scene.control.ButtonType file = new javafx.scene.control.ButtonType(
                 tr("merge.edited.useFile"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.Alert ask = new javafx.scene.control.Alert(
+        javafx.scene.control.ButtonType cancel = Dialogs.cancel();
+        javafx.scene.control.Alert ask = Dialogs.styled(new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                tr(hasMarkers ? "merge.edited.message" : "merge.edited.messageNoMarkers"));
-        ask.getButtonTypes().setAll(git, javafx.scene.control.ButtonType.CANCEL);
+                tr(hasMarkers ? "merge.edited.message" : "merge.edited.messageNoMarkers")));
+        ask.getButtonTypes().setAll(git, cancel);
         if (hasMarkers) {
             ask.getButtonTypes().add(0, file);
         }
         ask.initOwner(host.window());
         ask.setTitle(tr("merge.edited.title"));
         ask.setHeaderText(null);
-        javafx.scene.control.ButtonType chosen = ask.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL);
+        javafx.scene.control.ButtonType chosen = ask.showAndWait().orElse(cancel);
         return chosen == git
                 ? MergeSource.GIT_VERSIONS
                 : chosen == file ? MergeSource.FILE_MARKERS : MergeSource.CANCEL;

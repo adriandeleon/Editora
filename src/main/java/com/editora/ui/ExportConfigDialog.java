@@ -74,7 +74,7 @@ final class ExportConfigDialog {
                 "dialog.exportConfig.includePluginData.note");
         dialog.getDialogPane().setContent(content);
         ButtonType export = new ButtonType(tr("dialog.exportConfig.export"), ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().setAll(export, ButtonType.CANCEL);
+        dialog.getDialogPane().getButtonTypes().setAll(export, Dialogs.cancel());
         dialog.setResultConverter(button ->
                 button == export ? new Choice(http.isSelected(), keys.isSelected(), pluginData.isSelected()) : null);
         return dialog;

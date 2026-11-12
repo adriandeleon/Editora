@@ -17,7 +17,6 @@ import java.util.function.Function;
 
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
@@ -221,9 +220,9 @@ final class ConfigImportFlow {
         scroll.setPrefViewportHeight(420);
         dialog.getDialogPane().setContent(scroll);
         ButtonType importButton = new ButtonType(tr("dialog.importConfig.import"), ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().setAll(importButton, ButtonType.CANCEL);
-        ((Button) dialog.getDialogPane().lookupButton(importButton)).setDefaultButton(false);
-        ((Button) dialog.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        ButtonType cancel = Dialogs.cancel();
+        dialog.getDialogPane().getButtonTypes().setAll(importButton, cancel);
+        Dialogs.defaultTo(dialog, cancel);
         dialog.setResultConverter(button -> {
             if (button != importButton) {
                 return null;

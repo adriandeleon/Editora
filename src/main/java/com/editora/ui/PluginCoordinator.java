@@ -919,7 +919,10 @@ final class PluginCoordinator {
         if (q.kind() == Question.Kind.ENABLE) {
             return PluginDialogs.consent(dialogOwner(), q.header(), q.body(), q.capabilities(), q.acceptLabel());
         }
-        return PluginDialogs.confirm(dialogOwner(), q.header(), q.body(), q.acceptLabel());
+        // Removing a plugin is a question before a destructive action (a red button, Cancel as the default);
+        // downloading one is not.
+        return PluginDialogs.confirm(
+                dialogOwner(), q.header(), q.body(), q.acceptLabel(), q.kind() == Question.Kind.UNINSTALL);
     }
 
     /** Uninstalls the plugin with this id (the palette path); see {@link #uninstall(PluginDescriptor)}. */

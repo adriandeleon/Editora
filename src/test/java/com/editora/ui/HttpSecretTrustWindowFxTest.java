@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.DialogPane;
 import javafx.stage.Window;
 
@@ -103,11 +103,7 @@ class HttpSecretTrustWindowFxTest {
             assertTrue(body.contains(root.toString()), "the text names the folder it trusts: " + body);
             assertTrue(body.contains("$processEnv PATH"), "the text names the read as written: " + body);
             assertFalse(body.contains(SECRET), "the prompt shows the value: " + body);
-            Button trust = FxTestSupport.callOnFx(() -> prompt.getButtonTypes().stream()
-                    .filter(t -> t != ButtonType.CANCEL)
-                    .map(t -> (Button) prompt.lookupButton(t))
-                    .findFirst()
-                    .orElseThrow());
+            Button trust = FxTestSupport.callOnFx(() -> FxDialogs.button(prompt, ButtonBar.ButtonData.OK_DONE));
             FxTestSupport.runOnFx(trust::fire);
             awaitRunEnd(http, b);
 

@@ -155,7 +155,7 @@ class ConfigImportFxTest {
                     2);
             Dialog<java.util.Set<Part>> d = ConfigImportFlow.build(q);
             assertEquals(tr("dialog.importConfig.header", "editora-config.zip"), d.getHeaderText());
-            assertTrue(((Button) d.getDialogPane().lookupButton(ButtonType.CANCEL)).isDefaultButton());
+            assertTrue(((Button) d.getDialogPane().lookupButton(Dialogs.cancelOf(d))).isDefaultButton());
             javafx.scene.Node parts =
                     ((javafx.scene.control.ScrollPane) d.getDialogPane().getContent()).getContent();
             CheckBox snippets = (CheckBox) parts.lookup("#import-SNIPPETS");
@@ -168,7 +168,7 @@ class ConfigImportFxTest {
             assertEquals(
                     EnumSet.of(Part.PREFERENCES, Part.SNIPPETS),
                     d.getResultConverter().call(importButton));
-            assertNull(d.getResultConverter().call(ButtonType.CANCEL));
+            assertNull(d.getResultConverter().call(Dialogs.cancelOf(d)));
             assertEquals(
                     tr("dialog.importConfig.files", 3, 1, 2, 0),
                     ConfigImportFlow.describe(new ConfigImport.Summary(Part.SNIPPETS, 3, 1, 2, 0)));

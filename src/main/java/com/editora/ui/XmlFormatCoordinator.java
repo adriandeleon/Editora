@@ -142,7 +142,7 @@ final class XmlFormatCoordinator {
     private static boolean askGrowth(EditorBuffer buffer, long[] lines) {
         var format = new javafx.scene.control.ButtonType(
                 tr("dialog.xml.formatGrowth.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        var cancel = javafx.scene.control.ButtonType.CANCEL;
+        var cancel = Dialogs.cancel();
         var alert = Dialogs.styled(new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.CONFIRMATION,
                 tr("dialog.xml.formatGrowth.body", String.format("%,d", lines[0]), String.format("%,d", lines[1])),
@@ -154,8 +154,8 @@ final class XmlFormatCoordinator {
         }
         alert.setTitle(tr("noUndo.op.format"));
         alert.setHeaderText(growthHeader(buffer));
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(format)).setDefaultButton(false);
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(cancel)).setDefaultButton(true);
+        // Undo cannot take the change back: the action is red and Cancel is the default.
+        Dialogs.destructive(alert, format);
         return alert.showAndWait().orElse(cancel) == format;
     }
 

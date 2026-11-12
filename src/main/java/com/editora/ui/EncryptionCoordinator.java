@@ -878,18 +878,16 @@ final class EncryptionCoordinator {
     }
 
     private boolean askLeaveEncryption(Path target) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(host.stage());
         alert.setTitle(tr("encryption.leave.title"));
         alert.setHeaderText(tr("encryption.leave.header"));
         alert.setContentText(tr("encryption.leave.body", String.valueOf(target.getFileName())));
         ButtonType save = new ButtonType(tr("encryption.leave.save"), ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(cancel, save);
         // Cancel is the default: Enter must never be the key that writes a secret in plain text.
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(save)).setDefaultButton(false);
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(cancel)).setDefaultButton(true);
-        Dialogs.styled(alert);
+        Dialogs.defaultTo(alert, cancel);
         return alert.showAndWait().orElse(cancel) == save;
     }
 
@@ -914,17 +912,15 @@ final class EncryptionCoordinator {
     volatile Predicate<String> plaintextOutConfirm = this::askPlaintextOut;
 
     private boolean askPlaintextOut(String what) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(host.stage());
         alert.setTitle(tr("encryption.out.title"));
         alert.setHeaderText(what);
         alert.setContentText(tr("encryption.out.body"));
         ButtonType go = new ButtonType(tr("encryption.out.continue"), ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(cancel, go);
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(go)).setDefaultButton(false);
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(cancel)).setDefaultButton(true);
-        Dialogs.styled(alert);
+        Dialogs.defaultTo(alert, cancel);
         return alert.showAndWait().orElse(cancel) == go;
     }
 
