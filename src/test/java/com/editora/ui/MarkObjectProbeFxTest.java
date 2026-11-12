@@ -136,12 +136,13 @@ class MarkObjectProbeFxTest {
             await(
                     "said why",
                     30,
+                    // In the log of what the status line showed, not on the line itself: the line holds the newest
+                    // message, and a language server that is still starting writes its progress over this one.
                     () -> call(() -> {
                         StatusBar bar = FxTestSupport.field(c, "statusBar");
-                        return FxTestSupport.<javafx.scene.control.Label>field(bar, "echo")
-                                .getText()
-                                .startsWith(tr("status.debug.viewAsFailed", "XML", "")
-                                        .strip());
+                        String said = tr("status.debug.viewAsFailed", "XML", "").strip();
+                        return FxTestSupport.<MessageLog>field(bar, "messageLog").entries().stream()
+                                .anyMatch(message -> message.text().startsWith(said));
                     }));
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", 30, () -> !call(dap::isActive));
