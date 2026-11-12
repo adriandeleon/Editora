@@ -38,11 +38,23 @@ class KeymapSwitchOverridesTest {
         UserKeys.put(settings, keymap, store);
     }
 
-    /** A stored chord as this system types it in the active keymap: Cmd for Ctrl on a Mac, where it has a variant. */
-    private static String here(Settings settings, String chord) {
-        return KeymapManager.isMac()
-                ? UserKeyBindings.toMac(chord, KeymapManager.hasMacVariant(UserKeys.keymap(settings)))
-                : chord;
+    /** The chords that run {@code command} in {@code keymap} on a Mac or on Windows and Linux, whatever runs the test. */
+    private static List<String> pressed(Settings settings, String keymap, boolean mac, String command) {
+        Map<String, String> live = new java.util.LinkedHashMap<>(KeymapManager.defaults(keymap, mac));
+        UserKeyBindings.derive(
+                        UserKeys.store(settings, keymap),
+                        KeymapManager.defaults(keymap, mac),
+                        mac,
+                        KeymapManager.hasMacVariant(keymap))
+                .overrides()
+                .forEach((chord, bound) -> {
+                    if (bound.isBlank()) {
+                        live.remove(chord);
+                    } else {
+                        live.put(chord, bound);
+                    }
+                });
+        return KeybindingEdits.defaultChords(live, command);
     }
 
     private static Map<String, List<String>> shared(Settings settings, String keymap) {
@@ -138,9 +150,18 @@ class KeymapSwitchOverridesTest {
                 Map.of("macro.run.m2", List.of("C-c m"), "file.save", List.of("C-x s")),
                 shared(settings, "emacs"),
                 "a chord CUA makes dead stays behind, as an ordinary command's binding does");
-        assertEquals("macro.run.m1", rebuild(settings).bindings().get(here(settings, "C-M-S-f12")));
+        assertEquals(List.of("C-M-S-f12"), pressed(settings, "cua", false, "macro.run.m1"));
+        assertEquals(
+                List.of("C-M-S-f12"),
+                pressed(settings, "cua", true, "macro.run.m1"),
+                "the same keys on a Mac as in Emacs, though CUA reads a stored Ctrl as Cmd there");
 
-        bind(settings, "cua", "macro.run.m1", "C-M-S-f11"); // rebound while in CUA
+        // Rebound while in CUA, on a Mac as elsewhere: the Mac's own form from the switch goes with the old chord.
+        bind(settings, "cua", "macro.run.m1", "C-M-S-f11");
+        Store cua = UserKeys.store(settings, "cua");
+        cua.macOnly().clear();
+        UserKeys.put(settings, "cua", cua);
+        assertEquals(List.of("M-Cmd-S-f11"), pressed(settings, "cua", true, "macro.run.m1"), "Cmd on a Mac, in CUA");
         KeymapLayers.switchKeymap(settings, "emacs");
         assertEquals(
                 Map.of(
@@ -153,11 +174,15 @@ class KeymapSwitchOverridesTest {
                 shared(settings, "emacs"),
                 "the macro arrives with its new chord; the old one does not come back");
         assertFalse(settings.getKeyBindings().containsKey("cua"), "a keymap left with no bindings has no entry");
-        KeymapManager emacs = rebuild(settings);
-        assertEquals("macro.run.m1", emacs.bindings().get("C-M-S-f11"));
-        assertNull(emacs.bindings().get("C-M-S-f12"));
-        assertEquals("macro.run.m2", emacs.bindings().get("C-c m"));
-        assertEquals("file.save", emacs.bindings().get("C-x s"));
+        assertEquals(List.of("C-M-S-f11"), pressed(settings, "emacs", false, "macro.run.m1"));
+        assertEquals(
+                List.of("M-Cmd-S-f11"),
+                pressed(settings, "emacs", true, "macro.run.m1"),
+                "and the Mac still presses Cmd for it, as it did in CUA");
+        for (boolean mac : new boolean[] {false, true}) {
+            assertEquals(List.of("C-c m"), pressed(settings, "emacs", mac, "macro.run.m2"));
+            assertTrue(pressed(settings, "emacs", mac, "file.save").contains("C-x s"));
+        }
     }
 
     @Test
