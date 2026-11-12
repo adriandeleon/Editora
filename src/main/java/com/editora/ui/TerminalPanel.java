@@ -198,7 +198,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
         newTab.setGraphic(Icons.plus());
         newTab.getStyleClass().addAll("flat", "terminal-new-tab");
-        newTab.setTooltip(new Tooltip(tr("terminal.new")));
+        CommandTips.name(newTab, "terminal.new");
         newTab.setFocusTraversable(false);
         newTab.setOnAction(e -> newTerminal());
         StackPane.setAlignment(newTab, Pos.TOP_RIGHT);

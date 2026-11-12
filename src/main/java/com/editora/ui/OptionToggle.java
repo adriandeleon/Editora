@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.Region;
 
 /**
@@ -20,8 +19,7 @@ final class OptionToggle {
         ToggleButton button = new ToggleButton(state.getText());
         button.selectedProperty().bindBidirectional(state.selectedProperty());
         button.disableProperty().bind(state.disableProperty());
-        button.setTooltip(new Tooltip(name));
-        button.setAccessibleText(name);
+        Icons.name(button, name);
         button.getStyleClass().add("option-toggle");
         button.setMinWidth(Region.USE_PREF_SIZE); // never ellipsized to "…"
         return button;

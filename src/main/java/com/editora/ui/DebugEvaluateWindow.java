@@ -12,7 +12,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -125,8 +124,7 @@ final class DebugEvaluateWindow {
 
         expand.setGraphic(Icons.findNext());
         expand.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-expand");
-        expand.setTooltip(new Tooltip(tr("debugpanel.evaluateExpand")));
-        expand.setAccessibleText(tr("debugpanel.evaluateExpand"));
+        Icons.name(expand, tr("debugpanel.evaluateExpand"));
         expand.setFocusTraversable(false);
         expand.setOnAction(e -> {
             field.toggleMultiLine();
@@ -136,8 +134,7 @@ final class DebugEvaluateWindow {
 
         historyButton.setGraphic(Icons.history());
         historyButton.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-history");
-        historyButton.setTooltip(new Tooltip(tr("debugeval.history")));
-        historyButton.setAccessibleText(tr("debugeval.history"));
+        Icons.name(historyButton, tr("debugeval.history"));
         historyButton.setFocusTraversable(false);
         historyButton.setOnShowing(e -> fillHistory());
         historyButton.getItems().add(new MenuItem()); // a MenuButton with no items does not open
@@ -272,7 +269,7 @@ final class DebugEvaluateWindow {
         if (sel == tree.getRoot()) {
             return shownExpression;
         }
-        return DebugPanel.pathExpression(sel);
+        return DebugPanel.expression(sel);
     }
 
     private void fillHistory() {

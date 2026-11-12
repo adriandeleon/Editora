@@ -268,7 +268,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(header, Priority.ALWAYS);
         allBranchesButton.setGraphic(Icons.git());
         allBranchesButton.getStyleClass().addAll("flat", "git-toolbar-button");
-        Icons.name(allBranchesButton, tr("gitlog.allBranchesTip"));
+        CommandTips.name(allBranchesButton, "git.log.toggleAllBranches");
         // The button shows what is listed, not what was clicked: it follows the next setLog.
         allBranchesButton.setOnAction(e -> {
             allBranchesButton.setSelected(view.allBranches());
@@ -287,10 +287,12 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         searchChip.setVisible(false);
         searchChip.setManaged(false);
         Button refresh = iconButton(Icons.refresh(), tr("gitlog.refreshTip"), actions::refresh);
-        // Every toolbar control is a Tab stop: without a mouse there was no way to them at all.
-        for (javafx.scene.control.ButtonBase button : List.of(showAllButton, endSearch, allBranchesButton, refresh)) {
+        // The toolbar controls no command runs are Tab stops: without a mouse there was no way to them at
+        // all. The all-branches toggle has its command (git.log.toggleAllBranches), so it leaves the Tab order.
+        for (javafx.scene.control.ButtonBase button : List.of(showAllButton, endSearch, refresh)) {
             button.setFocusTraversable(true);
         }
+        allBranchesButton.setFocusTraversable(false);
         HBox toolbar = new HBox(2, header, searchChip, allBranchesButton, refresh);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -391,7 +393,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         // up to half of the lower pane, and scrolls beyond that — the file list always keeps room.
         detailsHash.getStyleClass().add("git-log-hash");
         detailsHash.setMinWidth(0);
-        Button copyHash = iconButton(Icons.copy(), tr("gitlog.menu.copyHash"), () -> {
+        Button copyHash = commandButton(Icons.copy(), "git.log.copyHash", () -> {
             if (detailsOf != null) {
                 actions.copyHash(detailsOf);
             }
@@ -510,6 +512,11 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
     private static Button iconButton(javafx.scene.Node icon, String tip, Runnable action) {
         return Icons.toolbarButton(icon, tip, action, "flat", "git-toolbar-button"); // tooltip + accessible name
+    }
+
+    /** A toolbar button that runs {@code commandId}: named after the command, with its live chord. */
+    private static Button commandButton(javafx.scene.Node icon, String commandId, Runnable action) {
+        return CommandTips.name(iconButton(icon, CommandTips.title(commandId), action), commandId);
     }
 
     /**

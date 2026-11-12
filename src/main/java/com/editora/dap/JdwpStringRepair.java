@@ -158,7 +158,10 @@ final class JdwpStringRepair {
                                     v.type(),
                                     v.variablesReference(),
                                     v.namedVariables(),
-                                    v.indexedVariables())));
+                                    v.indexedVariables(),
+                                    false,
+                                    null,
+                                    v.evaluateName())));
         }
         return CompletableFuture.allOf(each.toArray(new CompletableFuture<?>[0]))
                 .thenApply(done -> each.stream().map(CompletableFuture::join).toList());

@@ -171,10 +171,15 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         modelLabel.setOnMouseClicked(e -> onPickModel.run());
         modeLabel.getStyleClass().add("agent-header-label");
         modeLabel.setOnMouseClicked(e -> onPickMode.run());
-        iconButton(detachButton, Icons.detach(), "agent.detach", () -> onDetach.run());
-        iconButton(historyButton, Icons.history(), "agent.history", onResumeSession);
-        iconButton(newSessionButton, Icons.newFile(), "agent.newSession", onNewSession);
-        iconButton(stopButton, Icons.debugStop(), "agent.stop", onStop);
+        iconButton(detachButton, Icons.detach(), () -> onDetach.run());
+        Icons.name(detachButton, tr("agent.detach"));
+        // The other three are commands: each is named after its own, with the chord the keymap binds to it.
+        iconButton(historyButton, Icons.history(), onResumeSession);
+        CommandTips.name(historyButton, "agent.resumeSession");
+        iconButton(newSessionButton, Icons.newFile(), onNewSession);
+        CommandTips.name(newSessionButton, "agent.newSession");
+        iconButton(stopButton, Icons.debugStop(), onStop);
+        CommandTips.name(stopButton, "agent.stop");
         stopButton.setDisable(true);
         HBox header = new HBox(
                 8,
@@ -253,9 +258,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         this.onDetach = onDetach == null ? () -> {} : onDetach;
     }
 
-    /** Updates the detach button's tooltip to reflect the current state (docked ⇢ pop out, floating ⇢ dock). */
+    /** Updates the detach button's name to reflect the current state (docked ⇢ pop out, floating ⇢ dock). */
     public void setDetached(boolean detached) {
-        detachButton.setTooltip(new Tooltip(tr(detached ? "agent.redock" : "agent.detach")));
+        Icons.name(detachButton, tr(detached ? "agent.redock" : "agent.detach"));
     }
 
     private void send() {
@@ -624,11 +629,10 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         return r;
     }
 
-    /** Icon-only header button (mirrors {@code DebugPanel.btn}): the {@code key}'s translated string
-     *  becomes the tooltip instead of the button's (now absent) text, keeping the header compact. */
-    private static void iconButton(Button b, Node icon, String key, Runnable action) {
+    /** Icon-only header button (mirrors {@code DebugPanel.btn}), out of the Tab order; the caller names it
+     *  ({@code Icons.name}, or {@code CommandTips.name} when it runs a command), keeping the header compact. */
+    private static void iconButton(Button b, Node icon, Runnable action) {
         b.setGraphic(icon);
-        b.setTooltip(new Tooltip(tr(key)));
         b.getStyleClass().addAll("flat", "agent-toolbar-button");
         b.setFocusTraversable(false);
         b.setOnAction(e -> action.run());

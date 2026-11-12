@@ -75,9 +75,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         exceptionsButton.setGraphic(Icons.warning());
         exceptionsButton.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-exceptions");
         exceptionsButton.setFocusTraversable(false);
-        exceptionsButton.setAccessibleText(tr("debugpanel.exceptions"));
-        exceptionsButton.setTooltip(new Tooltip());
-        showExceptionState();
+        showExceptionState(); // names the button: what it is and which exceptions stop the program now
         return exceptionsButton;
     }
 
@@ -92,8 +90,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         boolean caught = caughtToggle.isSelected();
         boolean uncaught = uncaughtToggle.isSelected();
         String tip = DebugPanelText.exceptionsTip(caught, uncaught);
-        exceptionsButton.getTooltip().setText(tip);
-        exceptionsButton.setAccessibleHelp(tip);
+        if (!tip.equals(exceptionsButton.getAccessibleText())) {
+            Icons.name(exceptionsButton, tip); // one string: a screen reader says the state the tooltip shows
+        }
         exceptionsButton.pseudoClassStateChanged(EXCEPTIONS_ON, caught || uncaught);
     }
 
@@ -204,6 +203,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         /** A field watchpoint on {@code name}, a variable of container {@code parentRef}, when it is a field. */
         default void watchField(int parentRef, String name) {}
+
+        /** Whether a value's type can be looked up (a language server finds the stopped code's types). */
+        default boolean canJumpToType() {
+            return false;
+        }
+
+        /** Jump to Type Source: opens the declaration of the type a value has ({@code type}, else read from {@code value}). */
+        default void jumpToType(String type, String value) {}
 
         /** Load a row the stop's time budget left unloaded (a click on it); delivers the loaded row (B201). */
         default void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
@@ -454,7 +461,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** A variables-tree row; {@code ref > 0} means expandable, {@code parentRef} is the DAP container
      *  reference (for set-variable), and {@code kind} drives rendering + context actions. {@code named} /
      *  {@code indexed} are the child counts the adapter reported (0 = unknown). {@code failed} marks a watch
-     *  the adapter could not evaluate: its {@code value} is the adapter's message, drawn as an error. */
+     *  the adapter could not evaluate: its {@code value} is the adapter's message, drawn as an error.
+     *  {@code evaluateName}: the expression the adapter says gives the value ({@code null}: it gave none). */
     record VarRow(
             String name,
             String value,
@@ -465,7 +473,22 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             int named,
             int indexed,
             boolean failed,
-            DapModels.@Nullable ValueNote note) {
+            DapModels.@Nullable ValueNote note,
+            @Nullable String evaluateName) {
+        VarRow(
+                String name,
+                String value,
+                String type,
+                int ref,
+                int parentRef,
+                Kind kind,
+                int named,
+                int indexed,
+                boolean failed,
+                DapModels.@Nullable ValueNote note) {
+            this(name, value, type, ref, parentRef, kind, named, indexed, failed, note, null);
+        }
+
         VarRow(String name, String value, String type, int ref, int parentRef, Kind kind) {
             this(name, value, type, ref, parentRef, kind, 0, 0, false);
         }
@@ -555,8 +578,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 groupSeparator(),
                 exceptionsButton(),
                 groupSeparator(),
-                historyButton(historyBack, "debugpanel.history.back", this::historyBack, Icons.chevronLeft()),
-                historyButton(historyForward, "debugpanel.history.forward", this::historyForward, Icons.chevronRight()),
+                historyButton(historyBack, "debug.historyBack", this::historyBack, Icons.chevronLeft()),
+                historyButton(historyForward, "debug.historyForward", this::historyForward, Icons.chevronRight()),
                 historyLabel,
                 spacer(),
                 busy,
@@ -1166,11 +1189,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return l;
     }
 
-    /** An icon-only toolbar button: the command title, its keymap chord and its panel letter live in the
-     *  tooltip (IntelliJ-style); the title is also its accessible name, for a screen reader (review C9). */
+    /** An icon-only toolbar button: the command title, its keymap chord and its panel letter are its name,
+     *  the tooltip (IntelliJ-style) and the accessible text alike, for a screen reader (review C9). */
     private Button btn(Button b, DebugPanelText.Control control, Runnable action, Node icon) {
         b.setGraphic(icon);
-        b.setTooltip(new Tooltip());
+        Icons.name(b, toolbarName(control));
         b.getProperties().put(DebugPanelText.Control.class, control);
         b.getStyleClass().addAll("flat", "debug-toolbar-button");
         // Not a Tab stop: a click would then put focus in the panel, where the letters are commands.
@@ -1179,23 +1202,31 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return b;
     }
 
-    /** The toolbar tooltips and accessible names, from the keymap (and Start / Continue as the state says). */
+    /**
+     * A toolbar button's name: its command's title (Start reads Continue while paused), the chord the keymap
+     * binds to it and the panel's own letter — "Step Over  (F10 · in this window: N)".
+     */
+    private String toolbarName(DebugPanelText.Control c) {
+        String id = c == DebugPanelText.Control.START && lastState == DapManager.State.SUSPENDED
+                ? "debug.continue"
+                : c.commandId;
+        return DebugPanelText.tooltip(
+                tr("command." + id),
+                DebugPanelText.chordOf(chordFor::apply, c.commandId),
+                c.keyLabel(),
+                tr("debugpanel.inPanel"));
+    }
+
+    /** The toolbar's names, tooltip and accessible text as one string, from the keymap and the state. */
     private void refreshTooltips() {
         for (Button b : List.of(start, pause, stop, restart, stepOver, stepInto, stepOut, runToCursor)) {
             if (!(b.getProperties().get(DebugPanelText.Control.class) instanceof DebugPanelText.Control c)) {
                 continue; // every toolbar button is made by btn(), which records its control
             }
-            String id = c == DebugPanelText.Control.START && lastState == DapManager.State.SUSPENDED
-                    ? "debug.continue"
-                    : c.commandId;
-            String title = DebugPanelText.bareTitle(tr("command." + id));
-            b.getTooltip()
-                    .setText(DebugPanelText.tooltip(
-                            title,
-                            DebugPanelText.chordOf(chordFor::apply, c.commandId),
-                            c.keyLabel(),
-                            tr("debugpanel.inPanel")));
-            b.setAccessibleText(title);
+            String name = toolbarName(c);
+            if (!name.equals(b.getAccessibleText())) {
+                Icons.name(b, name);
+            }
         }
         stackHint.setText(lastState == DapManager.State.INACTIVE ? emptyHint() : "");
     }
@@ -2150,7 +2181,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 menu.getItems().addAll(toWatches, clearResult);
             }
             if (row.kind() == Kind.VARIABLE) {
-                String expression = pathExpression(variables.getSelectionModel().getSelectedItem());
+                String expression = expression(variables.getSelectionModel().getSelectedItem());
+                // VS Code's Copy as Expression: what evaluates to this value in the stopped frame, for a watch,
+                // a condition or the console.
+                javafx.scene.control.MenuItem copyExpression =
+                        new javafx.scene.control.MenuItem(tr("debugpanel.copyExpression"));
+                copyExpression.setOnAction(e -> copyToClipboard(expression));
+                menu.getItems().add(copyExpression);
                 javafx.scene.control.MenuItem toWatches =
                         new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
                 toWatches.setGraphic(Icons.newFile());
@@ -2170,6 +2207,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     watchField.setOnAction(e -> actions.watchField(row.parentRef(), row.name()));
                     menu.getItems().add(watchField);
                 }
+            }
+            if (row.kind() != Kind.EXCEPTION
+                    && DebugTypeSource.parse(row.type(), row.value()) != null
+                    && actions.canJumpToType()) {
+                // IntelliJ's Jump to Type Source: the class of the value, which may be a subclass of the declared one.
+                javafx.scene.control.MenuItem jumpToType =
+                        new javafx.scene.control.MenuItem(tr("debugpanel.jumpToTypeSource"));
+                jumpToType.setOnAction(e -> actions.jumpToType(row.type(), row.value()));
+                menu.getItems().add(jumpToType);
             }
             if (row.kind() != Kind.EXCEPTION) {
                 menu.getItems().addAll(markItems(row));
@@ -2336,7 +2382,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             if (value == null) {
                 return;
             }
-            actions.setVariable(row.parentRef(), row.name(), value, pathExpression(item), selectedFrameId, newValue -> {
+            actions.setVariable(row.parentRef(), row.name(), value, expression(item), selectedFrameId, newValue -> {
                 item.setValue(new VarRow(
                         row.name(),
                         newValue,
@@ -2345,7 +2391,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         row.parentRef(),
                         Kind.VARIABLE,
                         row.named(),
-                        row.indexed()));
+                        row.indexed(),
+                        false,
+                        null,
+                        row.evaluateName()));
                 if (!actions.refreshValues()) { // the inline values and other rows may show it too (B205)
                     refreshWatchesNode();
                 }
@@ -2408,7 +2457,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private javafx.scene.control.Menu viewAsMenu(VarRow row) {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("debugpanel.viewAs"));
         String expression = row.kind() == Kind.VARIABLE
-                ? pathExpression(variables.getSelectionModel().getSelectedItem())
+                ? expression(variables.getSelectionModel().getSelectedItem())
                 : row.name();
         for (ViewAs how : ViewAs.values()) {
             javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(
@@ -2451,6 +2500,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             actions.openText(title, text, ViewAs.TEXT.language);
             actions.say(tr("status.debug.viewAsFailed", how.name(), e.getMessage() == null ? "" : e.getMessage()));
         }
+    }
+
+    /**
+     * The expression that gives {@code item}'s value in the stopped frame: the adapter's own ({@code evaluateName}:
+     * {@code list.get(0)}, {@code d['key']}, where a path would read {@code list[0]} or {@code d.key}), else the path
+     * of names down to it ({@link #pathExpression}). Pure.
+     */
+    static String expression(TreeItem<VarRow> item) {
+        VarRow row = item == null ? null : item.getValue();
+        String given = row == null || row.kind() != Kind.VARIABLE ? null : row.evaluateName();
+        return given != null && !given.isBlank() ? given : pathExpression(item);
     }
 
     /**
@@ -2515,8 +2575,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalExpand.setGraphic(Icons.findNext());
         evalExpand.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-expand");
         evalExpand.setFocusTraversable(false);
-        evalExpand.setTooltip(new Tooltip(tr("debugpanel.evaluateExpand")));
-        evalExpand.setAccessibleText(tr("debugpanel.evaluateExpand"));
+        Icons.name(evalExpand, tr("debugpanel.evaluateExpand"));
         evalExpand.setOnAction(e -> {
             evalField.toggleMultiLine();
             evalExpand.setSelected(evalField.isMultiLine());
@@ -2525,8 +2584,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalToWatches.setGraphic(Icons.newFile());
         evalToWatches.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-watch");
         evalToWatches.setFocusTraversable(false);
-        evalToWatches.setTooltip(new Tooltip(tr("debugpanel.evaluateToWatches")));
-        evalToWatches.setAccessibleText(tr("debugpanel.evaluateToWatches"));
+        Icons.name(evalToWatches, tr("debugpanel.evaluateToWatches"));
         evalToWatches.setOnAction(e -> {
             String text =
                     evalField.getText().isBlank() && resultExpression != null ? resultExpression : evalField.getText();
@@ -3118,7 +3176,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 v.namedVariables(),
                 v.indexedVariables(),
                 false,
-                note);
+                note,
+                v.evaluateName());
     }
 
     /**
@@ -3140,9 +3199,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 row.named(),
                 row.indexed(),
                 false,
-                DapModels.ValueNote.LOADING));
+                DapModels.ValueNote.LOADING,
+                row.evaluateName()));
         DapModels.VariableInfo asked = new DapModels.VariableInfo(
-                row.name(), row.value(), row.type(), row.ref(), row.named(), row.indexed(), true);
+                row.name(),
+                row.value(),
+                row.type(),
+                row.ref(),
+                row.named(),
+                row.indexed(),
+                true,
+                null,
+                row.evaluateName());
         actions.loadValue(asked, v -> {
             TreeItem<VarRow> parent = item.getParent();
             int idx = parent == null ? -1 : parent.getChildren().indexOf(item);
@@ -3283,10 +3351,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 && stopHistory.last() != null;
     }
 
-    private Button historyButton(Button b, String key, Runnable action, Node icon) {
+    /** A Debug History toolbar button, named after the command it runs (title and live chord). */
+    private Button historyButton(Button b, String commandId, Runnable action, Node icon) {
         b.setGraphic(icon);
-        b.setTooltip(new Tooltip(tr(key)));
-        b.setAccessibleText(tr(key));
+        CommandTips.name(b, commandId);
         b.getStyleClass().addAll("flat", "debug-toolbar-button");
         b.setFocusTraversable(false);
         b.setOnAction(e -> action.run());

@@ -134,12 +134,7 @@ public final class MessageLogPopup {
         Button clear = new Button(tr("messagelog.clear"));
         clear.getStyleClass().addAll("flat");
         clear.setFocusTraversable(false);
-        clear.setOnAction(e -> {
-            if (log != null) {
-                log.clear();
-            }
-            refreshItems();
-        });
+        clear.setOnAction(e -> clear());
         // A message about a missing tool or a server that would not start is where Doctor helps, and messages
         // carry no actions of their own, so the log offers it (review C4).
         doctor.setGraphic(Icons.doctor());
@@ -264,6 +259,14 @@ public final class MessageLogPopup {
             showing = false;
             lastHiddenAt = System.currentTimeMillis();
         });
+    }
+
+    /** Message Log: Clear: empties the log this popup last showed, and the list if it is open. */
+    void clear() {
+        if (log != null) {
+            log.clear();
+        }
+        refreshItems();
     }
 
     private void refreshItems() {

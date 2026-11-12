@@ -11,7 +11,6 @@ import javafx.scene.control.MenuButton;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tab;
 import javafx.scene.control.ToolBar;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
@@ -307,7 +306,7 @@ final class WindowChromeCoordinator {
         zenExitButton = new Button();
         zenExitButton.setGraphic(Icons.zen());
         zenExitButton.getStyleClass().addAll("zen-exit", "flat");
-        zenExitButton.setTooltip(new Tooltip(tr("tooltip.zenExit")));
+        CommandTips.name(zenExitButton, "view.toggleZen", () -> tr("tooltip.zenExit"));
         zenExitButton.setFocusTraversable(false);
         zenExitButton.setOnAction(e -> host.setZenMode(false));
         StackPane.setAlignment(zenExitButton, Pos.TOP_RIGHT);
@@ -318,7 +317,7 @@ final class WindowChromeCoordinator {
         expertExitButton = new Button();
         expertExitButton.setGraphic(Icons.expert());
         expertExitButton.getStyleClass().addAll("expert-exit", "flat");
-        expertExitButton.setTooltip(new Tooltip(tr("tooltip.expertExit")));
+        CommandTips.name(expertExitButton, "view.toggleExpert", () -> tr("tooltip.expertExit"));
         expertExitButton.setFocusTraversable(false);
         expertExitButton.setOnAction(e -> host.setExpertMode(false));
 
@@ -327,7 +326,7 @@ final class WindowChromeCoordinator {
         toolbarRestoreButton = new Button();
         toolbarRestoreButton.setGraphic(Icons.tools());
         toolbarRestoreButton.getStyleClass().addAll("toolbar-restore", "flat");
-        toolbarRestoreButton.setTooltip(new Tooltip(tr("tooltip.showToolbar")));
+        CommandTips.name(toolbarRestoreButton, "view.toggleToolbar", () -> tr("tooltip.showToolbar"));
         toolbarRestoreButton.setFocusTraversable(false);
         toolbarRestoreButton.setOnAction(e -> toggleToolbar());
         StackPane.setAlignment(toolbarRestoreButton, Pos.TOP_RIGHT);

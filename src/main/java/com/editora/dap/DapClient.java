@@ -1468,7 +1468,8 @@ public final class DapClient implements IDebugProtocolClient {
             if (lb.condition() != null && !lb.condition().isBlank()) {
                 sb.setCondition(lb.condition());
             }
-            if (lb.logMessage() != null && !lb.logMessage().isBlank()) {
+            if (lb.logMessage() != null && !lb.logMessage().isBlank() && !LogpointTokens.uses(lb.logMessage())) {
+                // A message with $FUNCTION, $CALLSTACK…: no adapter knows those, so it stops and Editora logs it.
                 sb.setLogMessage(lb.logMessage());
             }
             if (lb.hitCondition() != null && !lb.hitCondition().isBlank()) {
@@ -1854,7 +1855,9 @@ public final class DapClient implements IDebugProtocolClient {
                             count(v.getIndexedVariables()),
                             v.getPresentationHint() != null
                                     && Boolean.TRUE.equals(
-                                            v.getPresentationHint().getLazy())));
+                                            v.getPresentationHint().getLazy()),
+                            null,
+                            v.getEvaluateName()));
                 }
             }
             return out;

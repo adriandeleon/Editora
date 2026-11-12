@@ -72,9 +72,9 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     private final Label elapsed = new Label();
     private final TextField filterField = new TextField();
 
-    private final Button rerunButton = iconButton(Icons.run(), "testrunner.rerun");
-    private final Button rerunFailedButton = iconButton(Icons.testFailed(), "testrunner.rerunFailed");
-    private final Button stopButton = iconButton(Icons.stopSquare(), "testrunner.stop");
+    private final Button rerunButton = commandButton(Icons.run(), "test.rerun");
+    private final Button rerunFailedButton = commandButton(Icons.testFailed(), "test.rerunFailed");
+    private final Button stopButton = commandButton(Icons.stopSquare(), "test.stop");
     private final ToggleButton followToggle = new ToggleButton();
 
     private final TreeItem<TestNode> rootItem = new TreeItem<>(null);
@@ -115,7 +115,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         followToggle.setGraphic(Icons.arrowDown());
         followToggle.getStyleClass().add("toolbar-restore");
         followToggle.setSelected(true);
-        followToggle.setTooltip(new Tooltip(tr("testrunner.followRunning")));
+        Icons.name(followToggle, tr("testrunner.followRunning"));
 
         HBox toolbar = new HBox(2, rerunButton, rerunFailedButton, stopButton, followToggle);
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -687,8 +687,15 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         return b;
     }
 
-    private static Button iconButton(Node graphic, String tooltipKey) {
-        return Icons.button(graphic, tr(tooltipKey), null, "toolbar-restore"); // the flat floating-button look
+    /**
+     * A header toolbar button that runs {@code commandId}: named after the command (title and live chord) and
+     * out of the Tab order, where the command reaches the action instead.
+     */
+    private static Button commandButton(Node graphic, String commandId) {
+        Button b = Icons.button(
+                graphic, CommandTips.title(commandId), null, "toolbar-restore"); // the flat floating-button look
+        b.setFocusTraversable(false);
+        return CommandTips.name(b, commandId);
     }
 
     private static Region spacer() {

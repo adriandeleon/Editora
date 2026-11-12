@@ -659,6 +659,20 @@ public class EditorBuffer implements TabContent {
             (buffer, line) -> buffer.gutterBreakpointClick.accept(buffer, line);
     /** A right-click on a breakpoint's gutter glyph (the controller shows Edit / Disable / Remove). */
     private BreakpointGutterMenu gutterBreakpointMenu = (buffer, line, e) -> {};
+
+    /**
+     * IntelliJ's Run to Cursor in the gutter, which the controller answers: whether a line's number offers it now (the
+     * debugger paused), what its arrow says on hover, and the run to that line ({@code force}: ignoring breakpoints).
+     */
+    public interface GutterRunToHere {
+        boolean offeredAt(EditorBuffer buffer, int line);
+
+        String tooltip(EditorBuffer buffer, int line);
+
+        void run(EditorBuffer buffer, int line, boolean force);
+    }
+
+    private @Nullable GutterRunToHere gutterRunToHere;
     /** Personal Notes for this buffer (inline marker + highlight + hover). */
     final NoteManager notes = new NoteManager(area);
 
@@ -894,6 +908,14 @@ public class EditorBuffer implements TabContent {
         folds.setBreakpointTooltip(breakpoints::glyphTooltip);
         folds.setDebugGutterHooks(
                 i -> executionLine.isMarked(area, i), (l, e) -> gutterBreakpointMenu.show(this, l, e));
+        folds.setRunToHereHooks(
+                i -> gutterRunToHere != null && !executionLine.isMarked(area, i) && gutterRunToHere.offeredAt(this, i),
+                (i, force) -> {
+                    if (gutterRunToHere != null) {
+                        gutterRunToHere.run(this, i, force);
+                    }
+                },
+                i -> gutterRunToHere == null ? "" : gutterRunToHere.tooltip(this, i));
         // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
         // author/date/heatmap come from the controller-supplied list, click shows that line's commit.
         folds.setBlameHooks(
@@ -3137,6 +3159,17 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * How long the last step or Continue ran (Visual Studio's PerfTip), painted faintly after 0-based {@code line}, the
+     * one the program stopped on; null clears it.
+     */
+    public void setStepTime(int line, @Nullable String text) {
+        String shown = hugeFile ? null : text;
+        if (shown != null || inlineValues != null) {
+            inlineValues().setElapsed(line, shown);
+        }
+    }
+
     /** The values pinned to this buffer's lines. */
     public com.editora.editor.debug.PinManager getPinManager() {
         return pins;
@@ -4269,8 +4302,14 @@ public class EditorBuffer implements TabContent {
         executionLine.setHistory(area, history);
     }
 
-    /** Removes the execution-point highlight (if any). */
+    /** Sets who answers the gutter's Run to Here arrow (see {@link GutterRunToHere}); {@code null}: no arrow. */
+    public void setGutterRunToHere(@Nullable GutterRunToHere runToHere) {
+        this.gutterRunToHere = runToHere;
+    }
+
+    /** Removes the execution-point highlight (if any), and the time the run to it took. */
     public void clearExecutionLine() {
+        setStepTime(-1, null);
         executionLine.clear(area, this::refreshGutterLine);
     }
 

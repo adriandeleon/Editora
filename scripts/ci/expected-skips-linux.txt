@@ -62,6 +62,7 @@ com.editora.ui.LoadedSourcesProbeFxTest
 com.editora.ui.SourcelessFramesProbeFxTest
 com.editora.ui.MarkObjectProbeFxTest
 com.editora.ui.BrowserDebugProbeFxTest
+com.editora.ui.DebugSmallWinsProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

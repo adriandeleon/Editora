@@ -98,6 +98,11 @@ final class SettingsDebugPage {
             config.getSettings().setDebugPythonSubprocesses(now);
             w.apply();
         });
+        debugStepTimingCheck = new CheckBox(tr("settings.debug.stepTiming"));
+        debugStepTimingCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugStepTiming(now);
+            w.apply();
+        });
         debugSuspendAllThreadsCheck = new CheckBox(tr("settings.debug.suspendAllThreads"));
         debugSuspendAllThreadsCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugSuspendAllThreads(now);
@@ -229,6 +234,7 @@ final class SettingsDebugPage {
     private CheckBox debugShowStaticsCheck;
     private CheckBox debugShowToStringCheck;
     private CheckBox debugSuspendAllThreadsCheck;
+    private CheckBox debugStepTimingCheck;
     private CheckBox debugPythonSubprocessesCheck;
     private TextField debugExceptionTypesField;
     /** C and C++ debugging, on the Rust card: they run on the same CodeLLDB. */
@@ -262,6 +268,13 @@ final class SettingsDebugPage {
                 debugCheck,
                 tr("settings.debug.note"),
                 "debug dap breakpoint step variables enable install plugin vscode mason jdtls debugpy js-debug");
+        w.checkRow(
+                master,
+                Category.DEBUG,
+                debugStepTimingCheck,
+                tr("settings.debug.stepTiming.hint"),
+                "debug step timing elapsed time perftips milliseconds how long continue run");
+        SettingsDependents.bind(debugCheck.selectedProperty(), debugStepTimingCheck);
         // The Python interpreter is on the LSP page, editable with debugging off (Python review 2, C101).
         Hyperlink pythonLink = new Hyperlink(tr("settings.debug.pythonInterpreterLink"));
         pythonLink.setWrapText(true);
@@ -626,6 +639,7 @@ final class SettingsDebugPage {
         }
         debugBrowserCombo.setValue(browser);
         debugGdbPathField.setText(settings.getGdbPath());
+        debugStepTimingCheck.setSelected(settings.isDebugStepTiming());
         int stops = settings.getDebugHistoryStops();
         if (!debugHistoryCombo.getItems().contains(stops)) {
             debugHistoryCombo.getItems().add(stops); // a value set in settings.json

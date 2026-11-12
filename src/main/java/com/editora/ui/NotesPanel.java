@@ -103,7 +103,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         Button clear = new Button("✕");
         clear.getStyleClass().add("project-filter-clear");
         clear.setFocusTraversable(false);
-        clear.setTooltip(new Tooltip(tr("project.filterClear")));
+        Icons.name(clear, tr("project.filterClear"));
         clear.setOnAction(e -> {
             filterField.clear();
             filterField.requestFocus();
@@ -117,7 +117,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         showAll.setGraphic(Icons.project());
         showAll.getStyleClass().addAll("flat", "scope-toggle");
         showAll.setFocusTraversable(false);
-        showAll.setTooltip(new Tooltip(tr("notes.showAllTip")));
+        Icons.name(showAll, tr("notes.showAllTip"));
         showAll.setSelected(true);
         showAll.selectedProperty().addListener((o, w, n) -> refresh());
 

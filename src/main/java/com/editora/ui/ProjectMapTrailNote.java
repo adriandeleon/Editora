@@ -6,7 +6,6 @@ import javafx.scene.Node;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
@@ -101,8 +100,8 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         Button close = new Button("×");
         close.getStyleClass().addAll("flat", "project-map-sticky-note-close");
         close.setFocusTraversable(false);
-        close.setTooltip(new Tooltip(tr("project.map.trails.note.closeHelp")));
-        close.setAccessibleText(tr("project.map.trails.note.close"));
+        // One name, for the tooltip and a screen reader alike: what closing does, and that the note is kept.
+        Icons.name(close, tr("project.map.trails.note.closeHelp"));
         close.setOnAction(event -> onClose.run());
         HBox top = new HBox(where, close);
         top.getStyleClass().add("project-map-sticky-note-header");

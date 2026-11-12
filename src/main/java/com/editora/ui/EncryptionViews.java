@@ -348,6 +348,7 @@ final class EncryptionViews {
             banner.getChildren().add(detailLabel);
         }
         Button close = new Button("×");
+        Icons.name(close, tr("dialog.close"));
         close.getStyleClass().addAll("lsp-install-dismiss", "flat");
         close.setOnAction(e -> dismiss.run());
         row.getChildren().add(close);
@@ -377,6 +378,7 @@ final class EncryptionViews {
             row.getChildren().add(b);
         }
         Button close = new Button("×");
+        Icons.name(close, tr("dialog.close"));
         close.getStyleClass().addAll("lsp-install-dismiss", "flat");
         close.setOnAction(e -> dismiss.run());
         row.getChildren().add(close);

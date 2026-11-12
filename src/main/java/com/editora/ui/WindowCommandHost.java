@@ -145,6 +145,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public BuildOutputPanel buildOutputPanel() {
+        return mc.buildOutputPanel;
+    }
+
+    @Override
     public ToolWindow undoHistoryToolWindow() {
         return mc.undoHistoryToolWindow;
     }

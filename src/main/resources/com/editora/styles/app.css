@@ -5472,6 +5472,11 @@
    (ExecutionLine), and the gutter strip carries an arrow. */
 .editor-area .paragraph-text.exec-line { -fx-background-color: rgba(210, 153, 34, 0.32); }
 .exec-arrow { -fx-fill: #f0b429; -fx-stroke: #7a5200; -fx-stroke-width: 1.6; }
+/* While paused, a hovered line number turns into Run to Here's arrow (IntelliJ's gutter Run to Cursor): the number
+   is hidden under it, so the gutter keeps its width. */
+.editor-area .lineno.run-to-here,
+.editor-area .lineno.run-to-here > .text { -fx-text-fill: transparent; -fx-fill: transparent; }
+.run-to-here-arrow { -fx-fill: -color-accent-fg; }
 /* Stopped on an exception: the execution line in red (review C13). */
 .editor-area .paragraph-text.exec-line.exec-exception { -fx-background-color: rgba(229, 20, 0, 0.22); }
 /* An earlier stop's line, gone back to in the Debug window's history: grey, not the live amber. */

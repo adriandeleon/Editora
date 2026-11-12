@@ -94,7 +94,12 @@ class NamedControlsFxTest {
                 m.register(tw);
                 m.open(tw);
                 Map<ToolWindow, Button> stripe = FxTestSupport.field(m, "stripeButtons");
-                assertEquals("Probe", stripe.get(tw).getAccessibleText(), "stripe button is named by its window");
+                assertTrue(
+                        stripe.get(tw).getAccessibleText().startsWith("Probe"), "stripe button is named by its window");
+                assertEquals(
+                        stripe.get(tw).getAccessibleText(),
+                        stripe.get(tw).getTooltip().getText());
+                assertFalse(stripe.get(tw).isFocusTraversable(), "a stripe button is not a Tab stop");
                 Map<ToolWindow, Region> panels = FxTestSupport.field(m, "panels");
                 List<Button> header = all(panels.get(tw), Button.class, new ArrayList<>());
                 assertEquals(3, header.size(), "float, maximize, hide");
@@ -105,13 +110,11 @@ class NamedControlsFxTest {
                             "an icon-only header button has no accessible name");
                     assertEquals(b.getAccessibleText(), b.getTooltip().getText());
                 }
-                assertTrue(header.stream().anyMatch(b -> tr("toolwindow.hide").equals(b.getAccessibleText())));
-                assertTrue(
-                        header.stream().anyMatch(b -> tr("toolwindow.maximize").equals(b.getAccessibleText())));
+                assertTrue(header.stream().anyMatch(b -> b.getAccessibleText().startsWith(tr("toolwindow.hide"))));
+                assertTrue(header.stream().anyMatch(b -> b.getAccessibleText().startsWith(tr("toolwindow.maximize"))));
                 m.toggleMaximized(tw);
                 assertTrue(
-                        header.stream()
-                                .anyMatch(b -> tr("toolwindow.restoreSize").equals(b.getAccessibleText())),
+                        header.stream().anyMatch(b -> b.getAccessibleText().startsWith(tr("toolwindow.restoreSize"))),
                         "the name follows the toggle's direction");
             } catch (Exception e) {
                 throw new AssertionError(e);

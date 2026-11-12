@@ -100,10 +100,8 @@ final class ProjectMapOverviewCard extends StackPane {
             button.getStyleClass().add("project-map-preview-button");
             button.setMinWidth(Region.USE_PREF_SIZE);
         }
-        zoomOut.setTooltip(new Tooltip(tr("project.map.overview.zoomOut")));
-        zoomOut.setAccessibleText(tr("project.map.overview.zoomOut"));
-        zoomIn.setTooltip(new Tooltip(tr("project.map.overview.zoomIn")));
-        zoomIn.setAccessibleText(tr("project.map.overview.zoomIn"));
+        Icons.name(zoomOut, tr("project.map.overview.zoomOut"));
+        Icons.name(zoomIn, tr("project.map.overview.zoomIn"));
         zoomOut.setOnAction(event -> {
             setTextZoom(textZoom / 1.1);
             onTextZoomed.accept(textZoom); // the next Overview opens at this zoom
@@ -114,8 +112,7 @@ final class ProjectMapOverviewCard extends StackPane {
         });
         close.getStyleClass().add("project-map-preview-button");
         close.setMinWidth(Region.USE_PREF_SIZE);
-        close.setTooltip(new Tooltip(tr("project.map.preview.close")));
-        close.setAccessibleText(tr("project.map.preview.close"));
+        Icons.name(close, tr("project.map.preview.close"));
         close.setOnAction(event -> onClose.run());
         titleBar.getStyleClass().addAll("project-map-preview-header", "project-map-overview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);

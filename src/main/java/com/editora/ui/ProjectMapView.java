@@ -439,7 +439,9 @@ final class ProjectMapView extends VBox {
         revealActiveButton.setGraphic(Icons.locateFile());
         revealActiveButton.getStyleClass().addAll("project-map-nav-button", "project-map-reveal-active");
         revealActiveButton.setMinWidth(Region.USE_PREF_SIZE);
-        Icons.name(revealActiveButton, tr("project.map.revealActiveFile"));
+        // The header bar's one button that is a command: named after it with its chord, and out of the Tab order.
+        CommandTips.name(revealActiveButton, "projectMap.revealActiveFile");
+        revealActiveButton.setFocusTraversable(false);
         revealActiveButton.setOnAction(event -> onRevealActiveFile.run());
         revealActiveItem.setGraphic(Icons.locateFile());
         revealActiveItem.setOnAction(event -> onRevealActiveFile.run());

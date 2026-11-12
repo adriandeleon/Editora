@@ -100,6 +100,101 @@ class TabContextMenuFxTest {
     }
 
     /**
+     * Compare With… compares the file of the tab that was right-clicked. The row ran the command, which is about
+     * the active file, so on a background tab it compared the wrong one.
+     */
+    @Test
+    void compareWithComparesTheTabThatWasRightClicked(@TempDir Path dir) throws Exception {
+        Path first = Files.writeString(dir.resolve("first.txt"), "one\n");
+        Path second = Files.writeString(dir.resolve("second.txt"), "two\n");
+        Path other = Files.writeString(dir.resolve("zeta.txt"), "three\n");
+        FxWindowFixture fx = FxWindowFixture.create(
+                Files.createDirectories(dir.resolve("config")),
+                false,
+                false,
+                false,
+                List.of(new MainController.OpenTarget(first, 0, 0), new MainController.OpenTarget(second, 0, 0)),
+                c -> {});
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            String[] names = new String[2]; // the right-clicked tab's file, the active one's
+            javafx.scene.Scene[] scene = new javafx.scene.Scene[1];
+            FxTestSupport.runOnFx(() -> {
+                MainController c = fx.controller;
+                EditorBuffer active = (EditorBuffer) FxTestSupport.call(c, "activeBuffer", new Class<?>[] {});
+                EditorArea area = FxTestSupport.field(c, "editorArea");
+                Tab background = null;
+                EditorBuffer backgroundBuffer = null;
+                for (Tab tab : area.tabs()) {
+                    Object content = FxTestSupport.call(c, "bufferOf", new Class<?>[] {Tab.class}, tab);
+                    if (content instanceof EditorBuffer b && b != active) {
+                        background = tab;
+                        backgroundBuffer = b;
+                    }
+                }
+                assertTrue(background != null, "two files are open, one of them in the background");
+                names[0] = backgroundBuffer.getPath().getFileName().toString();
+                names[1] = active.getPath().getFileName().toString();
+                scene[0] = background.getTabPane().getScene();
+
+                ContextMenu menu = background.getContextMenu();
+                menu.getOnShowing().handle(null); // builds the lazy menu, as its first showing does
+                menu.getItems().stream()
+                        .filter(item -> tr("menu.compareWith").equals(item.getText()))
+                        .findFirst()
+                        .orElseThrow()
+                        .fire();
+                assertSame(
+                        active,
+                        FxTestSupport.call(c, "activeBuffer", new Class<?>[] {}),
+                        "picking the other file does not need the tab brought forward");
+            });
+            // The file picker is up: name the other file in it and accept.
+            SaveGuardsFxTest.awaitOnFx(async, "the Compare With picker", () -> pickerField(scene[0]) != null);
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.TextField field = pickerField(scene[0]);
+                field.setText(other.toString());
+                javafx.event.Event.fireEvent(
+                        field,
+                        new javafx.scene.input.KeyEvent(
+                                javafx.scene.input.KeyEvent.KEY_PRESSED,
+                                "",
+                                "",
+                                javafx.scene.input.KeyCode.ENTER,
+                                false,
+                                false,
+                                false,
+                                false));
+            });
+            EditorArea area = FxTestSupport.field(fx.controller, "editorArea");
+            SaveGuardsFxTest.awaitOnFx(async, "the diff tab", () -> diffTitle(area) != null);
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(
+                        tr("diff.title.compare", names[0], "zeta.txt"),
+                        diffTitle(area),
+                        "the right-clicked tab's file is the one compared, not the active " + names[1]);
+            });
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    /** The path field of the file picker shown over the window, or null while there is none. */
+    private static javafx.scene.control.TextField pickerField(javafx.scene.Scene scene) {
+        javafx.scene.Node card = scene.getRoot().lookup(".command-palette");
+        return card == null ? null : (javafx.scene.control.TextField) card.lookup(".text-field");
+    }
+
+    /** The title of the window's diff tab, or null while there is none. */
+    private static String diffTitle(EditorArea area) {
+        return area.tabs().stream()
+                .map(Tab::getUserData)
+                .filter(DiffViewerPane.class::isInstance)
+                .map(content -> ((DiffViewerPane) content).title())
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
      * Reveal in Map sits beside Reveal in File Manager and selects the tab's file on the Project Map, opening the
      * Map window for it (Map explore, position 18).
      */

@@ -1,7 +1,6 @@
 package com.editora.editor.markdown;
 
 import javafx.scene.control.Button;
-import javafx.scene.control.Tooltip;
 
 import com.editora.i18n.Messages;
 
@@ -70,7 +69,6 @@ public final class PreviewButtons {
 
     /** Sets the tooltip and the accessible name together, so the two can never drift apart. */
     public static void name(Button button, String name) {
-        button.setAccessibleText(name);
-        button.setTooltip(new Tooltip(name));
+        com.editora.editor.ControlNames.name(button, name);
     }
 }

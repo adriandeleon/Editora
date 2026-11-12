@@ -335,7 +335,8 @@ class ToolbarCustomizeModeFxTest {
         FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
             Button button = (Button) nodes().get(1);
-            assertTrue(button.getTooltip().getText().startsWith(tr("command.view.toggleZen")));
+            assertTrue(button.getTooltip().getText().startsWith(CommandTips.title("view.toggleZen")));
+            assertEquals(button.getTooltip().getText(), button.getAccessibleText());
             com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
             assertFalse(config.getWorkspaceState().isZenMode());
             button.fire();

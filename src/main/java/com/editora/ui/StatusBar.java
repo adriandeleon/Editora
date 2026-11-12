@@ -374,8 +374,8 @@ public final class StatusBar extends HBox {
 
     /** The text-zoom control: {@code [ −  100%  + ]}, dispatching the zoom commands. */
     private HBox zoomGroup() {
-        Button out = zoomButton("−", "view.textZoomOut", tr("statusbar.tip.zoomOut"));
-        Button in = zoomButton("+", "view.textZoomIn", tr("statusbar.tip.zoomIn"));
+        Button out = zoomButton("−", "view.textZoomOut");
+        Button in = zoomButton("+", "view.textZoomIn");
         zoomPercent.getStyleClass().addAll("status-segment", "status-segment-clickable", "text-zoom-percent");
         zoomPercent.setTooltip(new Tooltip(tr("statusbar.tip.zoomReset")));
         zoomPercent.setOnMouseClicked(e -> registry.run("view.textZoomReset"));
@@ -384,11 +384,12 @@ public final class StatusBar extends HBox {
         return group;
     }
 
-    private Button zoomButton(String text, String commandId, String hint) {
+    /** A "−" or "+" that runs {@code commandId}, named after it: the command's title and its chord. */
+    private Button zoomButton(String text, String commandId) {
         Button b = new Button(text);
         b.getStyleClass().addAll("text-zoom-button", "flat");
         b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(hint));
+        CommandTips.name(b, commandId);
         b.setOnAction(e -> registry.run(commandId));
         return b;
     }
@@ -544,6 +545,12 @@ public final class StatusBar extends HBox {
     /** Injects the shared in-scene overlay host into the message-log popup. */
     public void setOverlayHost(OverlayHost overlayHost) {
         messageLogPopup.setOverlayHost(overlayHost);
+    }
+
+    /** Message Log: Clear: empties the session's message log, open or not. */
+    public void clearMessageLog() {
+        messageLog.clear();
+        messageLogPopup.clear();
     }
 
     /** Toggles the session message-log popup (anchored just above the echo area). */

@@ -228,4 +228,26 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
             content.focusFirstItem();
         }
     }
+
+    /** The console of the tab that is showing, or null before anything has run. */
+    private @Nullable BuildToolPanel shownConsole() {
+        Tab selected = getSelectionModel().getSelectedItem();
+        return selected != null && selected.getContent() instanceof BuildToolPanel console ? console : null;
+    }
+
+    /** Saves the shown console's output to a file the user picks; false when there is no console. */
+    boolean saveShownOutput() {
+        BuildToolPanel console = shownConsole();
+        if (console == null) {
+            return false;
+        }
+        console.saveOutput();
+        return true;
+    }
+
+    /** Shows the shown console's previous run, or goes back to the current one; false when it has none. */
+    boolean toggleShownPreviousRun() {
+        BuildToolPanel console = shownConsole();
+        return console != null && console.togglePreviousRun();
+    }
 }

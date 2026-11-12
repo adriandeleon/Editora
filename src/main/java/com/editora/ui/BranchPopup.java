@@ -734,8 +734,7 @@ public final class BranchPopup {
             javafx.scene.control.Button more = new javafx.scene.control.Button("\u22ef");
             more.getStyleClass().addAll("flat", "branch-more");
             more.setFocusTraversable(false);
-            more.setAccessibleText(tr("branchpopup.more", br.name()));
-            more.setTooltip(new Tooltip(tr("branchpopup.more", br.name())));
+            Icons.name(more, tr("branchpopup.more", br.name()));
             more.setOnAction(e -> {
                 list.getSelectionModel().select(getIndex());
                 showRowMenu(br, more, javafx.geometry.Side.BOTTOM, 0, 0);

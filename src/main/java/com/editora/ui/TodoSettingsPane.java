@@ -111,8 +111,8 @@ final class TodoSettingsPane {
         caseSensitive.setTooltip(new Tooltip(tr("settings.todo.caseTip")));
         caseSensitive.setAccessibleText(tr("settings.todo.caseTip") + " — " + shownName);
         Button remove = new Button("✕");
-        remove.setTooltip(new Tooltip(tr("settings.todo.removeTip")));
-        remove.setAccessibleText(tr("settings.todo.removeTip") + " — " + shownName);
+        // One name for the tooltip and the screen reader: which pattern it removes, as this row's other controls say.
+        Icons.name(remove, tr("settings.todo.removeTip") + " — " + shownName);
 
         Runnable commit = () -> {
             List<TodoPattern> cur = mutablePatterns();

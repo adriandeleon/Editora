@@ -294,6 +294,18 @@ caret/text chords it repurposes for local navigation, identified by id prefix in
 (`nav.*` and `edit.*`). Jump/window/view commands (`M-x`, `M-1`, `M-g`, …) and prefixes (`C-x …`)
 stay global so they work even while a tool window is focused.
 
+One exception: an editor-context command the window **runs itself**. A window that declares
+`editora.handlesCommands` (`KeyDispatcher.HANDLED_COMMANDS`, a `Predicate<String>` that is handed a
+command id and answers whether it ran it) is asked before a one-key editor-context chord is left to
+it, and a chord it answers `true` for is consumed. A Project Map card runs `nav.goToLine`,
+`nav.matchingBracket`, `nav.relatedFile` and `nav.back` / `nav.forward` on its own text and file this
+way: left to the card as a key, Ctrl+G did nothing there, because the card handles the command, not
+the key. The predicate must answer `false` for the caret chords the window handles as keys
+(`nav.lineDown`), which are then left to it as before. A text field inside the window is not asked
+(`runsOwnCommand`): its editing chords are the field's. Nor is the window asked about a key it
+claimed (`editora.claimsKeys`, below), which stays a key. Global commands and multi-key chords reach
+the same predicate where every command is dispatched, further down in `handle`.
+
 The completion popup and the quick-fix list are different: they float over the *editor*, whose
 caret and editing chords must keep working. Marking the area `ownsKeys` took every `nav.*`/`edit.*`
 chord off the keymap and left it to RichTextFX's built-ins (`C-a` selected the whole document, `M-f`
@@ -451,6 +463,23 @@ earlier in the keymap being switched to. `Settings.setKeymap` is the bare proper
   the command (`registerRowCommands` in `WindowCommandRegistrar`) on the same panel method the row calls,
   which answers false when no row is selected so the command can say so. A Copy row whose control answers
   the keymap's Copy chord (`RowMenus.onCopyKey`) shows that chord.
+- **Naming a button**: an icon-only button gets its tooltip and its accessible text in one call, from one
+  string: `Icons.button` / `Icons.toolbarButton` when it is built, `Icons.name(control, name)` afterwards and
+  again whenever the name changes (`com.editora.editor.ControlNames.name` is the same call for the editor
+  package). A `setTooltip` beside a separate `setAccessibleText` is the thing to avoid: the two drift.
+  A button that runs a command is named with
+  [`CommandTips.name(control, "command.id")`](../../src/main/java/com/editora/ui/CommandTips.java): the
+  command's title without its category and the keymap's chord, "Save (C-x C-s)", named again on a keymap
+  switch (`CommandTips.refresh()`, from `SettingsReapply`). A third argument supplies the title where the
+  command's would mislead (a toggle that reads Maximize or Restore); a fourth adds a line under the name
+  (what the diff bar's Swap does). A supplier must not capture the view the button sits in more than it
+  needs to: the tip lives in the control's own properties so that it cannot pin a closed window.
+- **Toolbar buttons stay out of the Tab order** (`setFocusTraversable(false)`, which `Icons.toolbarButton`
+  does) when a command also runs what they do. A toolbar button with no command behind it stays a Tab stop
+  until it has one: taking it out would leave it to the mouse alone.
+- **Tooltip delay**: `ControlNames.TOOLTIP_DELAY` (400 ms), which `ControlNames.name` and `LazyTooltip`
+  set on every tooltip they make; a tooltip built by hand sets the same constant. It cannot live in the
+  stylesheet: `-fx-show-delay` does not survive the precompiled `.bss` form (`StylesheetBinaryTest`).
 - **Chords on menu rows**: a right-click or drop-down row that does what a command does is tagged with that
   command's id, [`MenuChords.tag(item, "command.id")`](../../src/main/java/com/editora/editor/MenuChords.java),
   and then shows the command's chord in the menu's right-hand column. The chord is read from the live

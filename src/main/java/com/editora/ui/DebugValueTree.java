@@ -105,7 +105,10 @@ final class DebugValueTree {
                     parent.ref(),
                     DebugPanel.Kind.VARIABLE,
                     v.namedVariables(),
-                    v.indexedVariables())));
+                    v.indexedVariables(),
+                    false,
+                    null,
+                    v.evaluateName())));
         }
         return out;
     }

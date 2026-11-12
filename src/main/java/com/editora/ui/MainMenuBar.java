@@ -283,7 +283,20 @@ final class MainMenuBar {
         // The popup sizes itself to its widest item and stretches the rest; without this the row would
         // hug its content and every chord would sit at a different x.
         box.setMaxWidth(Double.MAX_VALUE);
+        // A row drawn from nodes has no text of its own: a screen reader reads a CustomMenuItem from its
+        // content's accessible text, so the row says its title and its chord, and follows both.
+        box.accessibleTextProperty()
+                .bind(javafx.beans.binding.Bindings.createStringBinding(
+                        () -> accessibleRowText(title.getText(), chord.getText()),
+                        title.textProperty(),
+                        chord.textProperty()));
         return box;
+    }
+
+    /** What a screen reader says for a row: its title, then its chord when it has one. Pure. */
+    static String accessibleRowText(@Nullable String title, @Nullable String chord) {
+        String name = title == null ? "" : title;
+        return chord == null || chord.isBlank() ? name : name + ", " + chord;
     }
 
     /**

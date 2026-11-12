@@ -84,10 +84,7 @@ final class ProblemCounter extends HBox {
         LazyTooltip.install(counts, this::summary);
         previous.setOnAction(e -> onPrevious.run());
         next.setOnAction(e -> onNext.run());
-        LazyTooltip.install(previous, () -> withChord(tr("editor.problemCounter.previous"), "lsp.previousProblem"));
-        LazyTooltip.install(next, () -> withChord(tr("editor.problemCounter.next"), "lsp.nextProblem"));
-        previous.setAccessibleText(tr("editor.problemCounter.previous")); // a screen reader named two bare buttons
-        next.setAccessibleText(tr("editor.problemCounter.next"));
+        nameArrows(); // a screen reader named two bare buttons
         getChildren().setAll(counts, previous, next);
         // the row it sits in is put into the code pane after this: follow it there and hide in a narrow pane
         parentProperty().addListener((o, was, row) -> {
@@ -102,6 +99,18 @@ final class ProblemCounter extends HBox {
     /** The active keymap's chords for command ids, for the tooltips; set by the window. */
     void setChords(java.util.function.Function<String, @Nullable String> chords) {
         this.chords = chords == null ? id -> null : chords;
+        nameArrows();
+    }
+
+    /**
+     * Names the arrows after the commands they run, each with its chord from the keymap: one string for the
+     * tooltip and for a screen reader (the chord used to be in the tooltip alone).
+     */
+    private void nameArrows() {
+        String previousName = withChord(tr("editor.problemCounter.previous"), "lsp.previousProblem");
+        ControlNames.name(previous, previousName);
+        String nextName = withChord(tr("editor.problemCounter.next"), "lsp.nextProblem");
+        ControlNames.name(next, nextName);
     }
 
     private String withChord(String text, String commandId) {

@@ -310,6 +310,75 @@ class KeyDispatcherTest {
         assertEquals(java.util.List.of("palette.show"), ran);
     }
 
+    /**
+     * A key-owning window keeps the caret chords it handles as keys, but a command it declared it runs itself
+     * arrives from a one-key chord too: Ctrl+G is nav.goToLine in the VS Code keymap, and a Project Map card runs
+     * Go to Line on its own text.
+     */
+    @Test
+    void aKeyOwningWindowRunsTheEditorContextCommandsItDeclaresFromOneKey() {
+        KeymapManager km = new KeymapManager();
+        km.loadNamed("emacs", false); // C-n is nav.lineDown, C-M-a is nav.beginningOfDefun
+        km.applyOverrides(java.util.Map.of("C-g", "nav.goToLine"));
+        java.util.List<String> ran = new java.util.ArrayList<>();
+        java.util.List<String> asked = new java.util.ArrayList<>();
+        java.util.List<String> own = new java.util.ArrayList<>();
+        CommandRegistry registry = new CommandRegistry();
+        for (String id : java.util.List.of("nav.goToLine", "nav.lineDown", "nav.beginningOfDefun")) {
+            registry.register(Command.of(id, id, () -> ran.add(id)));
+        }
+        KeyDispatcher d = new KeyDispatcher(registry, km, s -> {}, false);
+
+        javafx.scene.layout.Region text = new javafx.scene.layout.Region();
+        javafx.scene.layout.Pane card = new javafx.scene.layout.Pane(text);
+        card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        card.getProperties().put(KeyDispatcher.HANDLED_COMMANDS, (java.util.function.Predicate<String>) id -> {
+            asked.add(id);
+            return "nav.goToLine".equals(id) && own.add(id);
+        });
+
+        KeyEvent goToLine =
+                new KeyEvent(text, text, KeyEvent.KEY_PRESSED, "", "", KeyCode.G, false, true, false, false);
+        d.handle(goToLine);
+        assertEquals(java.util.List.of("nav.goToLine"), own, "the window's own Go to Line ran");
+        assertTrue(goToLine.isConsumed(), "…so the key is spent");
+        KeyEvent paired = typed("", false);
+        d.handleTyped(paired);
+        assertTrue(paired.isConsumed(), "and its KEY_TYPED with it");
+
+        KeyEvent down = new KeyEvent(text, text, KeyEvent.KEY_PRESSED, "", "", KeyCode.N, false, true, false, false);
+        d.handle(down);
+        assertFalse(down.isConsumed(), "C-n is not a command the window runs: the key is still left to it");
+        assertEquals(java.util.List.of("nav.goToLine", "nav.lineDown"), asked);
+
+        KeyEvent defun = new KeyEvent(text, text, KeyEvent.KEY_PRESSED, "", "", KeyCode.A, false, true, true, false);
+        d.handle(defun);
+        assertFalse(defun.isConsumed(), "nor is C-M-a here");
+        assertTrue(ran.isEmpty(), "and no editor-context command ran on the document behind the window");
+
+        // A key the window claimed stays a key, even bound to a command the window runs.
+        card.getProperties().put(KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("C-g"));
+        KeyEvent claimed = new KeyEvent(text, text, KeyEvent.KEY_PRESSED, "", "", KeyCode.G, false, true, false, false);
+        d.handle(claimed);
+        assertFalse(claimed.isConsumed());
+        assertEquals(java.util.List.of("nav.goToLine"), own, "not run a second time");
+
+        javafx.scene.layout.Region elsewhere = new javafx.scene.layout.Region(); // owns no keys
+        d.handle(
+                new KeyEvent(elsewhere, elsewhere, KeyEvent.KEY_PRESSED, "", "", KeyCode.G, false, true, false, false));
+        assertEquals(java.util.List.of("nav.goToLine"), ran, "outside the window the key is the keymap's command");
+    }
+
+    @Test
+    void onlyAKeyOwningWindowIsOfferedItsOwnEditorContextCommandsAndNeverFromATextField() {
+        assertTrue(KeyDispatcher.runsOwnCommand("nav.goToLine", true, false));
+        assertFalse(KeyDispatcher.runsOwnCommand("nav.goToLine", true, true), "a field in the window edits itself");
+        assertFalse(KeyDispatcher.runsOwnCommand("nav.goToLine", false, true), "a bare text field");
+        assertFalse(KeyDispatcher.runsOwnCommand("nav.goToLine", false, false), "the editor: dispatched as usual");
+        assertFalse(KeyDispatcher.runsOwnCommand("file.save", true, false), "a global command is asked further down");
+        assertFalse(KeyDispatcher.runsOwnCommand(null, true, false));
+    }
+
     /** A transient list over the editor takes a chord only while the keymap binds it to the command it stands in for. */
     @Test
     void ownedChordsYieldOnlyTheNamedChordBoundToTheNamedCommand() {

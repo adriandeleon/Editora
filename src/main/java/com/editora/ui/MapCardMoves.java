@@ -12,7 +12,6 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
@@ -163,8 +162,7 @@ final class MapCardMoves {
         lineClose.getStyleClass().add("project-map-preview-button");
         lineClose.setMinWidth(Region.USE_PREF_SIZE);
         lineClose.setFocusTraversable(false);
-        lineClose.setTooltip(new Tooltip(tr("project.map.preview.goToLine.close")));
-        lineClose.setAccessibleText(tr("project.map.preview.goToLine.close"));
+        Icons.name(lineClose, tr("project.map.preview.goToLine.close"));
         lineClose.setOnAction(event -> closeLineBar());
         lineField.textProperty().addListener((obs, old, now) -> lineField.pseudoClassStateChanged(MISSING, false));
         lineField.addEventHandler(KeyEvent.KEY_PRESSED, event -> {

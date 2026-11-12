@@ -6,7 +6,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
@@ -179,12 +178,8 @@ final class TerminalFindBar extends HBox {
     }
 
     private static Button iconButton(Node graphic, String name) {
-        Button button = new Button();
-        button.setGraphic(graphic);
-        button.setTooltip(new Tooltip(name));
-        button.setAccessibleText(name);
-        button.setFocusTraversable(false);
-        button.getStyleClass().addAll("button-icon", "flat", "find-bar-icon");
+        Button button = Icons.button(graphic, name, null, "button-icon", "flat", "find-bar-icon");
+        button.setFocusTraversable(false); // Enter, Shift+Enter and Escape in the field do what these do
         return button;
     }
 }

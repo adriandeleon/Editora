@@ -372,6 +372,7 @@ class DebugPanelWatchesFxTest {
                             tr("debugpanel.copyValue"),
                             tr("debugpanel.copyName"),
                             tr("debugpanel.history.valueHistory"),
+                            tr("debugpanel.copyExpression"),
                             tr("debugpanel.addToWatches", "count"),
                             null, // separator
                             tr("debugpanel.addWatch"),
@@ -844,7 +845,10 @@ class DebugPanelWatchesFxTest {
             assertEquals(
                     DebugPanelText.tooltip(tr("command.debug.stepOver"), "F10", "N", tr("debugpanel.inPanel")),
                     stepOver.getTooltip().getText());
-            assertEquals(DebugPanelText.bareTitle(tr("command.debug.stepOver")), stepOver.getAccessibleText());
+            assertEquals(
+                    stepOver.getTooltip().getText(),
+                    stepOver.getAccessibleText(),
+                    "a screen reader says what the tooltip shows");
             ListView<?> stack = FxTestSupport.field(panel, "stack");
             assertEquals(
                     tr("debugpanel.emptyHintChord", "F5"),

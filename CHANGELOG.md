@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Undo History: Restore This State, and Message Log: Copy. Each acts on the row selected in its panel.
 - **The Copy key copies the selected row** in the References, Hierarchy and Find in Files trees: Ctrl+C (Cmd+C
   on macOS), or the Copy chord of the active keymap (M-w in Emacs).
+- **Settings…, Zen Mode, TODO and Bookmarks have menu rows** (Tools, View and Window), so no toolbar button is
+  the only way to its action.
+- **Five commands for buttons that had none**: Run: Run Selected Configuration and Debug: Debug Selected
+  Configuration (the toolbar's buttons beside the configuration box, now also under Run → Debugger), Message Log:
+  Clear, Output: Save Output… and Output: Show Previous Run.
 - **Find in every console and in the Application Log.** The Run, External Tools and Debug consoles, the test
   output of Test Results and the Application Log window now have a find bar, as the build console did. Press
   your keymap's Find key in the view (the Application Log also has a Find button): it searches as you type and
@@ -57,6 +62,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the list as Markdown. About gains *Working toward Pauta 6.0.1* and *Pauta conformance: Partial*, and its
   *Copy details* text carries both. The conformance is worked out from the list, so it cannot claim more than
   the list shows.
+
+- **Debugger small wins: Copy as Expression, Jump to Type Source, Run to Here in the gutter, step timing and
+  logpoint tokens.** *Copy as Expression* on a variable copies what gives its value in the stopped code, as the
+  debugger itself names it (`items.get(0)` in Java, `d['k']` in Python, rather than `items[0]`); Add to Watches, Set
+  Value and View As use it too. *Jump to Type Source* opens the class a value really has, which may be a subclass of
+  the variable's type, in your code or the JDK's, through the language server. While the program is paused, hovering
+  a line number turns it into an arrow: click it to run to that line, Shift+click to ignore the breakpoints on the
+  way. After a step or Continue, the time the program ran appears faintly after the line it stopped on (*Show how
+  long each step took* in Settings → Debug turns it off). A logpoint's message can use `$FUNCTION`, `$CALLER`,
+  `$CALLSTACK`, `$TID` and `$TNAME` for the method, its caller, the call stack and the thread; such a logpoint
+  pauses the program briefly at each hit while Editora writes the message.
 
 - **Debug JavaScript in the browser.** *Debug in Browser…* opens a web page in Chrome, Edge or another Chromium
   browser (Chromium, Brave, Vivaldi) under the debugger, as VS Code does: breakpoints in the page's scripts stop it,
@@ -450,6 +466,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Toolbar buttons are named after the commands they run**, with the shortcut from the active keymap, and a
+  screen reader now says the same words the tooltip shows. The main toolbar's tooltips change with it: Open is
+  "Find File…", Find is "Incremental Search", Close Tab is "Close", Simple UI mode is "Toggle Simple UI Mode",
+  and Stop shows the shortcut of Run: Stop Program. More than 150 icon-only buttons across the panels, the
+  Project Map, the diff viewer and Settings got one name for both; several had a tooltip and no name for a
+  screen reader, and a few had neither.
+- **Tab no longer stops on toolbar buttons.** The main toolbar, the tool window stripes, a tool window's header
+  buttons and the panel toolbar buttons that a command also runs are skipped, so Tab moves through the
+  content. Each is still reached by its command, the palette and the menus.
+- **Button and gutter tooltips appear after the same 400 ms.** The gutter's markers used 300 ms, the diff viewer
+  and the Map 350 ms, and toolbar buttons JavaFX's one second. Tooltips on labels and list rows still take a
+  second.
+- **A tool window stripe button's tooltip follows its window's title** (the Project window's "Current Folder").
 - **Right-click menus and drop-downs show each command's keyboard shortcut beside its row**, as the menu bar
   does, read from the active keymap and from your own key bindings each time a menu opens. More than 120
   rows that showed none now show one where their command is bound: in the Commit window, the Git log, the GitHub panel, the diff
@@ -579,6 +608,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Compare With… on a background tab compares that tab's file.** Right-clicking a tab that was not the active one
+  and choosing Compare With… compared the active file with the one you picked. Every other row of the tab menu
+  already acted on the tab you clicked.
+- **One-key shortcuts for Go to Line, Related File, the matching bracket and Back / Forward work in a Project Map
+  card.** A card runs these on its own text and file, but only a multi-key chord reached it: Ctrl+G (Go to Line in the
+  CUA, VS Code, Sublime and IntelliJ keymaps), Ctrl+Shift+T (Related File in IntelliJ) and the like did nothing while
+  a card had the keyboard, and Emacs's `C-M-a` / `C-M-e` did not move to a definition's start or end. Back and
+  Forward typed on the Map itself now walk its history from a one-key chord too. The card menu's **Go to Line…** and
+  **Related Test / Subject** rows show their shortcut.
 - **An unexpected error now shows a message in the status bar.** An uncaught exception was written to the
   Application Log and nothing else, so the action you took simply did nothing. The status bar now says an
   unexpected error occurred and where the details are, at most once every ten seconds.
