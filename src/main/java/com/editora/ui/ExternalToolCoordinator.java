@@ -135,7 +135,9 @@ final class ExternalToolCoordinator {
         submenu.setGraphic(Icons.tools());
         for (ExternalTool t : tools) {
             ExternalTool tool = t;
-            MenuItem item = new MenuItem(t.getName());
+            // The tool's own command runs it too, so a chord the user gave that command shows here.
+            MenuItem item = com.editora.editor.MenuChords.tag(
+                    new MenuItem(t.getName()), ExternalTool.commandIdFor(t.getName()));
             item.setOnAction(e -> run(tool));
             submenu.getItems().add(item);
         }

@@ -536,7 +536,9 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
                 });
                 menu.getItems().add(debug);
             }
-            menu.show(tree, e.getScreenX(), e.getScreenY());
+            // The Menu key / Shift+F10 open it under the selected row (scrolled into view first), not mid-tree.
+            javafx.geometry.Point2D at = RowContextMenu.menuPoint(tree, e);
+            menu.show(tree, at.getX(), at.getY());
             e.consume();
         });
     }

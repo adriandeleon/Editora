@@ -4555,6 +4555,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (!isDir) {
             MenuItem delete = new MenuItem(tr("project.menu.delete"));
             delete.setGraphic(Icons.trash());
+            delete.getStyleClass().add("danger"); // a destructive row reads red, as in every menu
             // Deletes the whole multi-file selection when this row is part of it, else just this file
             // (the confirm dialog shows the count).
             delete.setOnAction(e -> deleteSelected(treeItem));
@@ -4634,6 +4635,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             unstage.setOnAction(e -> fileOps.gitUnstage(file));
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
+            revert.getStyleClass().add("danger"); // discards the file's changes
             revert.setOnAction(e -> fileOps.gitRevert(file));
             MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
             ignore.setGraphic(Icons.git());
@@ -4712,6 +4714,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             stage.setOnAction(e -> fileOps.gitStage(dir));
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
+            revert.getStyleClass().add("danger"); // discards the folder's changes
             revert.setOnAction(e -> fileOps.gitRevert(dir));
             MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
             compareHead.setGraphic(Icons.diff());

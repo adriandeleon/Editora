@@ -90,6 +90,11 @@ final class ToolWindowPanel extends BorderPane {
         maximizeItem.setOnAction(e -> onToggleMaximize.run());
         MenuItem hideItem = new MenuItem(tr("toolwindow.hide"), Icons.closeSmall());
         hideItem.setOnAction(e -> onClose.run());
+        // The chords are the commands that do the same to the tool window with the keyboard, as a tab's menu
+        // shows the chords for the active tab.
+        com.editora.editor.MenuChords.tag(floatItem, "view.floatToolWindow");
+        com.editora.editor.MenuChords.tag(maximizeItem, "view.maximizeToolWindow");
+        com.editora.editor.MenuChords.tag(hideItem, "view.closeFocusedToolWindow");
 
         ContextMenu menu = new ContextMenu(floatItem, maximizeItem, hideItem);
         header.setOnContextMenuRequested(e -> {

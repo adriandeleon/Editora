@@ -48,6 +48,7 @@ import com.editora.diff.DiffModels.RowType;
 import com.editora.diff.DiffModels.UnifiedRow;
 import com.editora.diff.DiffText;
 import com.editora.diff.PatchWriter;
+import com.editora.editor.MenuChords;
 import com.editora.editor.TabContent;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
@@ -782,9 +783,11 @@ public final class DiffViewerPane implements TabContent {
         ignoreCaseItem.setText(tr("diff.ignoreCase"));
         ignoreCaseItem.setSelected(options.ignoreCase());
         ignoreCaseItem.setOnAction(e -> updateIgnoreCase(ignoreCaseItem.isSelected()));
+        MenuChords.tag(ignoreCaseItem, "diff.toggleIgnoreCase");
         smartAlignmentItem.setText(tr("diff.smartAlignment"));
         smartAlignmentItem.setSelected(options.smartAlignment());
         smartAlignmentItem.setOnAction(e -> updateSmartAlignment(smartAlignmentItem.isSelected()));
+        MenuChords.tag(smartAlignmentItem, "diff.toggleSmartAlignment");
         rulesButton.getItems().addAll(ignoreCaseItem, smartAlignmentItem);
         configureToggle(
                 contextButton, tr("diff.collapseContext"), tr("diff.tooltip.context"), collapseContext, selected -> {
@@ -1719,12 +1722,12 @@ public final class DiffViewerPane implements TabContent {
             changeCursor = changeBlockIndexContaining(sourceRow);
             updateChangeNav();
             ContextMenu menu = new ContextMenu();
-            addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageHunk"), sourceRow, false);
-            addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageLine"), sourceRow, true);
-            addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageHunk"), sourceRow, false);
-            addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageLine"), sourceRow, true);
-            addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertHunk"), sourceRow, false);
-            addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertLine"), sourceRow, true);
+            addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageHunk"), "diff.stageHunk", sourceRow, false);
+            addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageLine"), null, sourceRow, true);
+            addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageHunk"), "diff.unstageHunk", sourceRow, false);
+            addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageLine"), null, sourceRow, true);
+            addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertHunk"), "diff.revertHunk", sourceRow, false);
+            addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertLine"), null, sourceRow, true);
             MenuItem copy = new MenuItem(tr("diff.copyHunk"));
             copy.setOnAction(a -> copyHunk(sourceRow));
             menu.getItems().add(copy);
@@ -1738,12 +1741,28 @@ public final class DiffViewerPane implements TabContent {
         });
     }
 
-    private void addGitMenuItem(ContextMenu menu, GitHunkAction action, String label, int sourceRow, boolean lineOnly) {
+    /**
+     * {@code commandId}: the command that does the same to the change the menu was opened on (the whole-hunk
+     * rows have one, and show its chord; the single-line rows have none).
+     */
+    private void addGitMenuItem(
+            ContextMenu menu,
+            GitHunkAction action,
+            String label,
+            @Nullable String commandId,
+            int sourceRow,
+            boolean lineOnly) {
         if (!gitHunkActions.contains(action)) {
             return;
         }
         MenuItem item = new MenuItem(label);
+        if (action == GitHunkAction.REVERT) {
+            item.getStyleClass().add("danger"); // discards the change: a destructive row reads red
+        }
         item.setOnAction(e -> performGitAction(action, sourceRow, lineOnly));
+        if (commandId != null) {
+            MenuChords.tag(item, commandId);
+        }
         menu.getItems().add(item);
     }
 

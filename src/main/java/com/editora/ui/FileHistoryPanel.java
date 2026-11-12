@@ -867,8 +867,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 }
                 setGraphic(box);
                 setTooltip(new Tooltip(g.path()));
-                setContextMenu(new ContextMenu(
-                        item(tr("history.menu.purge"), Icons.trash(), () -> actions.purgeFile(g.path()))));
+                MenuItem purge = item(tr("history.menu.purge"), Icons.trash(), () -> actions.purgeFile(g.path()));
+                purge.getStyleClass().add("danger"); // a destructive row reads red
+                setContextMenu(new ContextMenu(purge));
             } else if (value instanceof HistoryRevision r) {
                 String what = r.label().isBlank() ? reasonLabel(r.reason()) : r.label();
                 Label when = new Label(HistoryRowText.dateTimeText(r.timestamp(), ZoneId.systemDefault(), locale()));

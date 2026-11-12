@@ -1366,7 +1366,12 @@ final class GitBranchCoordinator {
                 default -> () -> deleteRemoteBranch(root, name, branches.remoteNames());
             };
             boolean danger = id.equals("delete") || id.equals("deleteRemote");
-            actions.add(new BranchPopup.RowAction(tr("branch.row." + id, name, nz(current)), danger, guard.apply(run)));
+            // Set Upstream and Unset Upstream are commands for the current branch: on its row they are these rows.
+            String command = name.equals(current) && (id.equals("setUpstream") || id.equals("unsetUpstream"))
+                    ? "git." + id
+                    : null;
+            actions.add(new BranchPopup.RowAction(
+                    tr("branch.row." + id, name, nz(current)), danger, guard.apply(run), command));
         }
         return actions;
     }

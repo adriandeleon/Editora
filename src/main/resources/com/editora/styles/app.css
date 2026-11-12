@@ -603,8 +603,11 @@
 .command-palette.branch-popup .branch-more:hover {
     -fx-text-fill: -color-fg-default;
 }
-/* A destructive entry in a branch row's secondary menu (delete). */
-.menu-item.danger > .label {
+/* A destructive menu row (delete, discard, revert, reset): its text in the danger colour. `> .label` is an
+   ordinary MenuItem's text; `.menu-item-title` is the title of an in-window menu bar row, a CustomMenuItem
+   whose label is not a direct child (MainMenuBar). The chord keeps its own colour. */
+.menu-item.danger > .label,
+.menu-item.danger .menu-item-title {
     -fx-text-fill: -color-danger-fg;
 }
 /* Git remotes / work trees managers (GitManagerOverlay). */

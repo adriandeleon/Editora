@@ -219,6 +219,49 @@ class MenuBarFxTest {
         assertTrue(checked > 0, "some menu has a submenu to check");
     }
 
+    /**
+     * A destructive command's row is drawn in the danger colour. The in-window rows are custom items whose
+     * title is a label of their own, which {@code .menu-item.danger > .label} does not reach: the rule names
+     * the title too.
+     */
+    @Test
+    void aDestructiveRowsTitleIsDrawnInTheDangerColour() throws Exception {
+        Assumptions.assumeFalse(KeymapManager.isMac(), "the system menu bar draws its own rows");
+        MenuBar bar = bar();
+        Menu file = FxTestSupport.callOnFx(() -> bar.getMenus().get(0));
+        FxTestSupport.runOnFx(file::show);
+        try {
+            Parent popup = awaitPopup();
+            FxTestSupport.runOnFx(() -> {
+                popup.applyCss();
+                javafx.scene.paint.Paint danger = null;
+                javafx.scene.paint.Paint plain = null;
+                int dangerRows = 0;
+                for (Node n : popup.lookupAll(".menu-item")) {
+                    Node title = n.lookup(".menu-item-title");
+                    if (!(title instanceof javafx.scene.control.Label label) || n.isDisabled()) {
+                        continue;
+                    }
+                    if (n.getStyleClass().contains("danger")) {
+                        danger = label.getTextFill();
+                        dangerRows++;
+                    } else if (!n.getStyleClass().contains("menu-submenu")) {
+                        plain = label.getTextFill();
+                    }
+                }
+                assertTrue(dangerRows > 0, "the File menu has a destructive row (Clear Recent Files) to check");
+                assertNotNull(plain, "and an ordinary one beside it");
+                assertFalse(danger.equals(plain), "a destructive row's title is not the ordinary text colour");
+                javafx.scene.paint.Color red = (javafx.scene.paint.Color) danger;
+                assertTrue(
+                        red.getRed() > red.getGreen() && red.getRed() > red.getBlue(),
+                        "the danger colour is a red: " + red);
+            });
+        } finally {
+            FxTestSupport.runOnFx(file::hide);
+        }
+    }
+
     /** The root of the showing menu popup, once it has been laid out. */
     private static Parent awaitPopup() throws Exception {
         long deadline = System.nanoTime() + 5_000_000_000L;

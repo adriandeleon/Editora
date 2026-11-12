@@ -15,6 +15,7 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.MenuChords;
 import com.editora.editor.markdown.MarkdownLintText;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownLint.Diagnostic;
@@ -885,6 +886,14 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
 
     /** The actions on {@code d} as menu items (shared by the editor's menu and the tool window's rows). */
     List<MenuItem> menuItems(Diagnostic d) {
+        return menuItems(d, false);
+    }
+
+    /**
+     * {@link #menuItems(Diagnostic)}; {@code atCaret}: {@code d} is the issue at the editor's caret, so each row is
+     * that issue's "at Caret" command and shows its chord.
+     */
+    private List<MenuItem> menuItems(Diagnostic d, boolean atCaret) {
         MenuItem fix = new MenuItem(tr("markdownLint.menu.fix"));
         fix.setDisable(!MarkdownLint.fixable(d.code()));
         fix.setOnAction(e -> fix(d));
@@ -898,6 +907,14 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         rule.setOnAction(e -> disableRule(d));
         MenuItem help = new MenuItem(tr("markdownLint.menu.help"));
         help.setOnAction(e -> help(d));
+        if (atCaret) {
+            MenuChords.tag(fix, "markdownLint.fixAtCaret");
+            MenuChords.tag(line, "markdownLint.disableLine");
+            MenuChords.tag(file, "markdownLint.disableFile");
+            MenuChords.tag(project, "markdownLint.disableProject");
+            MenuChords.tag(rule, "markdownLint.disableRule");
+            MenuChords.tag(help, "markdownLint.ruleHelp");
+        }
         return List.of(fix, line, file, project, rule, help);
     }
 
@@ -912,7 +929,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         }
         Menu menu = new Menu(tr("markdownLint.menu.title", MarkdownLintText.labelled(d)));
         menu.setGraphic(Icons.warning());
-        menu.getItems().setAll(menuItems(d));
+        menu.getItems().setAll(menuItems(d, true)); // d is the issue at the caret
         return List.of(menu);
     }
 }

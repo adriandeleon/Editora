@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 
 import com.editora.config.RunConfiguration;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.MenuChords;
 import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.JavaLaunchInfo;
 import com.editora.run.JavaMainClass;
@@ -2161,6 +2162,7 @@ final class RunCoordinator {
         }
         javafx.scene.control.MenuItem trace = new javafx.scene.control.MenuItem(tr("editmenu.runWithTrace"));
         trace.setOnAction(e -> runActiveFileWithTrace());
+        MenuChords.tag(trace, "run.trace");
         return List.of(trace);
     }
 

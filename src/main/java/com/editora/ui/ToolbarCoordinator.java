@@ -28,6 +28,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import com.editora.editor.MenuChords;
 import com.editora.toolbar.ToolbarCatalog;
 import com.editora.toolbar.ToolbarLayout;
 import org.jspecify.annotations.Nullable;
@@ -252,9 +253,12 @@ final class ToolbarCoordinator {
         MenuItem configure = new MenuItem(tr("toolbar.menu.configure"));
         configure.setGraphic(Icons.settings());
         configure.setOnAction(e -> ops.openSettingsToolbarPage());
+        MenuChords.tag(configure, "view.customizeToolbar");
         MenuItem restore = new MenuItem(tr("toolbar.menu.restoreDefault"));
         restore.setGraphic(Icons.refresh());
+        restore.getStyleClass().add("danger"); // resets the user's toolbar: a destructive row reads red
         restore.setOnAction(e -> restoreDefault());
+        MenuChords.tag(restore, "toolbar.restoreDefault");
         contextMenu.getItems().setAll(toggle, new SeparatorMenuItem(), configure, restore);
         contextMenu.show(ops.toolBar(), screenX, screenY);
     }
