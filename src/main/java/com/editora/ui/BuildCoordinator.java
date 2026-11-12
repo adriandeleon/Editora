@@ -200,6 +200,7 @@ final class BuildCoordinator {
             t.setOnRefresh(this::refreshMarker);
             t.setOnRunCustom(this::runCustom);
             t.setOnStop(this::stop);
+            t.nameAfterCommands(tool.id()); // Refresh, Stop and Run Custom are this tool's commands
             t.setOnSelectProject(this::selectRoot);
             t.setOnRevokeTrust(this::revokeTrust);
             tool.taskLoadLabel().ifPresent(key -> t.setSecondaryAction(tr(key), this::loadAllTasks));

@@ -15,7 +15,6 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SplitPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -98,8 +97,7 @@ final class DirectoryReviewPane implements TabContent {
         Button previous = button(Icons.arrowUp(), tr("diff.previousFile"), () -> selectRelative(-1));
         Button next = button(Icons.arrowDown(), tr("diff.nextFile"), () -> selectRelative(1));
         exitDiffUiButton.setGraphic(Icons.editora());
-        exitDiffUiButton.setAccessibleText(tr("tooltip.diffUiExit"));
-        exitDiffUiButton.setTooltip(new Tooltip(tr("tooltip.diffUiExit")));
+        Icons.name(exitDiffUiButton, tr("tooltip.diffUiExit"));
         exitDiffUiButton.getStyleClass().addAll("flat", "diff-toolbar-button", "diff-ui-exit");
         exitDiffUiButton.setFocusTraversable(false);
         exitDiffUiButton.setVisible(false);
@@ -223,14 +221,7 @@ final class DirectoryReviewPane implements TabContent {
     }
 
     private static Button button(Node icon, String tip, Runnable action) {
-        Button button = new Button();
-        button.setGraphic(icon);
-        button.setAccessibleText(tip);
-        button.setTooltip(new Tooltip(tip));
-        button.setFocusTraversable(false);
-        button.getStyleClass().addAll("flat", "diff-toolbar-button");
-        button.setOnAction(e -> action.run());
-        return button;
+        return Icons.toolbarButton(icon, tip, action, "flat", "diff-toolbar-button"); // tooltip + accessible name
     }
 
     @Override

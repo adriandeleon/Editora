@@ -351,6 +351,7 @@ final class RecipientPicker {
             for (GpgKey k : chosen) {
                 Label chipName = new Label(k.secret() ? tr("encryption.you", k.name()) : k.name());
                 Button x = new Button("×");
+                Icons.name(x, tr("settings.plugins.removeNamed", k.name()));
                 x.getStyleClass().addAll("flat", "encryption-chip-remove");
                 x.setFocusTraversable(false);
                 x.setOnAction(e -> {

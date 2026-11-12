@@ -10,7 +10,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -45,10 +44,10 @@ final class DebugMemoryView extends VBox {
         where.getStyleClass().addAll("debug-eval", "debug-memory-address");
         where.setOnAction(e -> onGo.accept(where.getText().strip()));
         Button back = new Button("◀");
-        back.setTooltip(new Tooltip(tr("debugpanel.memory.previous", PAGE)));
+        Icons.name(back, tr("debugpanel.memory.previous", PAGE));
         back.setOnAction(e -> page(-1));
         Button next = new Button("▶");
-        next.setTooltip(new Tooltip(tr("debugpanel.memory.next", PAGE)));
+        Icons.name(next, tr("debugpanel.memory.next", PAGE));
         next.setOnAction(e -> page(1));
         for (Button b : List.of(back, next)) {
             b.getStyleClass().add("small");

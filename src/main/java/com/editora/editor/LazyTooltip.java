@@ -6,7 +6,6 @@ import javafx.event.EventHandler;
 import javafx.scene.Node;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
-import javafx.util.Duration;
 
 import org.jspecify.annotations.Nullable;
 
@@ -27,14 +26,14 @@ public final class LazyTooltip {
     private LazyTooltip() {}
 
     public static void install(Node node, Supplier<String> text) {
-        install(node, text, null, -1);
+        install(node, text, null);
     }
 
     /**
-     * As {@link #install(Node, Supplier)}, with a style class for the tooltip (may be {@code null}) and its
-     * show delay in milliseconds (negative keeps the platform default).
+     * As {@link #install(Node, Supplier)}, with a style class for the tooltip (may be {@code null}). The show
+     * delay is the stylesheet's, the same for every tooltip in the app.
      */
-    public static void install(Node node, Supplier<String> text, @Nullable String styleClass, double showDelayMillis) {
+    public static void install(Node node, Supplier<String> text, @Nullable String styleClass) {
         node.addEventHandler(MouseEvent.MOUSE_ENTERED, new EventHandler<>() {
             @Override
             public void handle(MouseEvent e) {
@@ -46,9 +45,6 @@ public final class LazyTooltip {
                 Tooltip tip = new Tooltip(value);
                 if (styleClass != null) {
                     tip.getStyleClass().add(styleClass);
-                }
-                if (showDelayMillis >= 0) {
-                    tip.setShowDelay(Duration.millis(showDelayMillis));
                 }
                 created++;
                 Tooltip.install(node, tip);

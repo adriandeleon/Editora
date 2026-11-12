@@ -99,6 +99,7 @@ final class DebugExceptionCard {
             b.setFocusTraversable(false);
         }
         close.getStyleClass().add("flat");
+        Icons.name(close, tr("dialog.close"));
         close.setOnAction(e -> hide());
         copy.setOnAction(e -> {
             DapModels.ExceptionInfo info = shown;

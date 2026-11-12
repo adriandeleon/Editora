@@ -64,8 +64,7 @@ final class Icons {
 
     /** Sets a control's tooltip and accessible name together (use again when a toggle's meaning flips). */
     static void name(javafx.scene.control.Control control, String name) {
-        control.setAccessibleText(name);
-        control.setTooltip(new javafx.scene.control.Tooltip(name));
+        com.editora.editor.ControlNames.name(control, name);
     }
 
     /** Scale for a kit line glyph: its 16-unit box rendered at the same visual size as a 24dp Material one. */

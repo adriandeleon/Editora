@@ -8,7 +8,6 @@ import java.util.function.Consumer;
 import javafx.css.PseudoClass;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -98,7 +97,6 @@ final class MapHierarchyTree extends MapSideColumn {
         this.kind = asked.kind();
         this.name = asked.name();
 
-        flip.setTooltip(new Tooltip());
         flip.setOnAction(event -> turn());
         addHeaderButton(flip);
         tree.getStyleClass().addAll("project-map-card-structure-tree", "project-map-hierarchy-tree");
@@ -260,8 +258,7 @@ final class MapHierarchyTree extends MapSideColumn {
     private void relabel() {
         setTitle(titleText(kind, rootText()), tree);
         String other = turnText(opposite(kind));
-        flip.getTooltip().setText(other);
-        flip.setAccessibleText(other);
+        Icons.name(flip, other);
     }
 
     /** The tree's title: what it lists of {@code name}. Pure. */

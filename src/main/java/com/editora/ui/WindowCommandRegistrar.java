@@ -103,6 +103,8 @@ final class WindowCommandRegistrar {
 
         ToolWindow undoHistoryToolWindow();
 
+        BuildOutputPanel buildOutputPanel();
+
         ToolWindow fileHistoryToolWindow();
 
         BookmarkCoordinator bookmarkCoordinator();
@@ -1904,6 +1906,18 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("view.welcome", host::showWelcome));
         host.registry().register(Command.of("view.doctor", host::showDoctor));
         host.registry().register(Command.of("view.messageLog", host.statusBar()::showMessageLog));
+        host.registry().register(Command.of("messageLog.clear", host.statusBar()::clearMessageLog));
+        // The Output console's Save Output and Previous Run buttons, as commands on the console that is showing.
+        host.registry().register(Command.of("buildOutput.saveOutput", () -> {
+            if (!host.buildOutputPanel().saveShownOutput()) {
+                host.setStatus(tr("status.output.noConsole"));
+            }
+        }));
+        host.registry().register(Command.of("buildOutput.previousRun", () -> {
+            if (!host.buildOutputPanel().toggleShownPreviousRun()) {
+                host.setStatus(tr("status.output.noPreviousRun"));
+            }
+        }));
         host.registry().register(Command.of("view.debugLog", host::showDebugLog));
         host.registry().register(Command.of("help.reportProblem", host::showReportProblem));
         // Pauta (pauta-project.dev): the conformance window, and the pages its links and About's open.
@@ -2070,6 +2084,9 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("deploy.terminal", host.deployments()::openTerminal));
         host.registry().register(Command.of("run.rerun", host.runCoordinator()::rerunLast));
         host.registry().register(Command.of("run.stop", host.runCoordinator()::stopRun));
+        // The toolbar's Run and Debug buttons beside the configuration box, as commands.
+        host.registry().register(Command.of("run.selectedConfig", host.runConfigurations()::runSelectedConfig));
+        host.registry().register(Command.of("debug.selectedConfig", host.runConfigurations()::debugSelectedConfig));
         host.registry().register(Command.of("run.clear", host.runCoordinator()::clearConsole));
         host.registry().register(Command.of("run.endInput", host.runCoordinator()::endInput));
         host.registry().register(Command.of("tool.run", () -> host.toolWindows().toggle(host.runToolWindow())));

@@ -914,11 +914,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         searchCoordinator.refreshHistory(); // fill the query combo's dropdown from the shared history
         recentButton.setGraphic(Icons.recent());
         recentButton.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
-        recentButton.setTooltip(new Tooltip(tr("tooltip.recent")));
+        Icons.name(recentButton, tr("tooltip.recent"));
+        recentButton.setFocusTraversable(false); // a toolbar button: the mouse and the Recent Files command reach it
 
         rebuildRecentMenu(); // later changes arrive through sharedHistoryChanged()
 
-        toolbar.setupButton(clearRecentButton, Icons.trash(), tr("tooltip.clearRecent"), "file.clearRecent");
+        toolbar.setupButton(clearRecentButton, Icons.trash(), "file.clearRecent");
     }
 
     /**

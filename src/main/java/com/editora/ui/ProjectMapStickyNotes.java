@@ -182,8 +182,8 @@ final class ProjectMapStickyNotes implements CardAttachment {
             javafx.scene.control.Button close = new javafx.scene.control.Button("×");
             close.getStyleClass().addAll("flat", "project-map-sticky-note-close");
             close.setFocusTraversable(false);
-            close.setTooltip(new Tooltip(tr("project.map.sticky.closeHelp")));
-            close.setAccessibleText(tr("project.map.sticky.close"));
+            // One name, for the tooltip and a screen reader alike: what closing does, and that the note is kept.
+            Icons.name(close, tr("project.map.sticky.closeHelp"));
             close.setOnAction(event -> closeNote(this.note));
             HBox header = new HBox(where, close);
             header.getStyleClass().add("project-map-sticky-note-header");

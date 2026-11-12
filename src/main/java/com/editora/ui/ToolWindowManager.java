@@ -22,7 +22,6 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.SplitPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
@@ -329,8 +328,8 @@ public class ToolWindowManager {
         Button button = new Button();
         button.setGraphic(stripeIcon(tw));
         button.getStyleClass().addAll("tool-stripe-button", "flat");
-        button.setTooltip(new Tooltip(tooltipFor(tw)));
-        button.accessibleTextProperty().bind(tw.titleProperty()); // the tooltip also carries the chord
+        button.setFocusTraversable(false); // a toolbar button: the tool window's command reaches it
+        nameStripeButton(tw, button);
         button.setOnAction(e -> toggle(tw));
         // Right-click → Hide the icon (persisted; re-show from Settings → Tool Windows).
         MenuItem hide = new MenuItem(tr("toolwindow.hide"), Icons.closeSmall());
@@ -344,7 +343,10 @@ public class ToolWindowManager {
         button.setContextMenu(menu);
         enableReorderDrag(tw, button);
         // A retitle (the Project window's "Current Folder" swap) must reach a labeled bottom button.
-        tw.titleProperty().addListener((o, was, now) -> applyStripeLabel(tw, button));
+        tw.titleProperty().addListener((o, was, now) -> {
+            applyStripeLabel(tw, button);
+            nameStripeButton(tw, button); // the tooltip and the accessible name follow the title too
+        });
         stripeButtons.put(tw, button);
         if (shouldShowButton(tw)) {
             addButtonOrdered(tw, button);
@@ -707,21 +709,25 @@ public class ToolWindowManager {
         return null;
     }
 
-    /** Re-applies every stripe button's tooltip from the current keymap (after a live keymap switch). */
+    /** Re-applies every stripe button's name from the current keymap (after a live keymap switch). */
     public void refreshTooltips() {
         for (Map.Entry<ToolWindow, Button> e : stripeButtons.entrySet()) {
-            e.getValue().setTooltip(new Tooltip(tooltipFor(e.getKey())));
+            nameStripeButton(e.getKey(), e.getValue());
         }
     }
 
-    /** Tooltip text: title plus the chord for the tool window's command, if one is bound. */
+    /**
+     * A stripe button's name, as tooltip and accessible text alike: its tool window's title and the chord of
+     * the command that toggles the window, if one is bound.
+     */
+    private void nameStripeButton(ToolWindow tw, Button button) {
+        Icons.name(button, tooltipFor(tw));
+    }
+
+    /** The title plus the chord for the tool window's command, if one is bound. */
     private String tooltipFor(ToolWindow tw) {
         String cmd = tw.getCommandId();
-        if (cmd == null) {
-            return tw.getTitle();
-        }
-        String chord = keymap.displayChord(cmd);
-        return chord == null ? tw.getTitle() : tw.getTitle() + " (" + chord + ")";
+        return CommandTips.withChord(tw.getTitle(), cmd == null ? null : keymap.displayChord(cmd));
     }
 
     /** The side this tool window is currently assigned to (settings override, falling back to the registered default). */

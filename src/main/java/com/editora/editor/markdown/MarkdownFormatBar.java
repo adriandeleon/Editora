@@ -7,7 +7,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Separator;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.FlowPane;
 import javafx.util.StringConverter;
 
@@ -195,7 +194,9 @@ public final class MarkdownFormatBar {
                 b.pseudoClassStateChanged(SELECTED, buffer.markdown().isMarked(marker)));
         for (Node n : node.getChildren()) {
             if (n instanceof Button b && b.getProperties().get(HINT) instanceof String key) {
-                b.getTooltip().setText(hint(tr(key), buffer.markdown().chord(commandFor(key, buffer.isTypst()))));
+                // one string again, so a screen reader hears the chord the tooltip shows
+                String name = hint(tr(key), buffer.markdown().chord(commandFor(key, buffer.isTypst())));
+                com.editora.editor.ControlNames.name(b, name);
             }
         }
         syncing = true;
@@ -236,9 +237,9 @@ public final class MarkdownFormatBar {
         b.setGraphic(icon);
         b.getStyleClass().addAll("flat", "md-fmt-btn");
         b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tr(tooltipKey)));
+        String name = tr(tooltipKey); // icon-only: the tooltip text is its name (sync adds the command's chord)
+        com.editora.editor.ControlNames.name(b, name);
         b.getProperties().put(HINT, tooltipKey);
-        b.setAccessibleText(tr(tooltipKey)); // icon-only: the tooltip text is its name
         b.setOnAction(e -> action.run());
         return b;
     }

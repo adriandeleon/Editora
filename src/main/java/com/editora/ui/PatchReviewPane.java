@@ -11,7 +11,6 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SplitPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -128,14 +127,7 @@ final class PatchReviewPane implements TabContent {
     }
 
     private static Button button(Node icon, String tip, Runnable action) {
-        Button button = new Button();
-        button.setGraphic(icon);
-        button.setAccessibleText(tip);
-        button.setTooltip(new Tooltip(tip));
-        button.setFocusTraversable(false);
-        button.getStyleClass().addAll("flat", "diff-toolbar-button");
-        button.setOnAction(e -> action.run());
-        return button;
+        return Icons.toolbarButton(icon, tip, action, "flat", "diff-toolbar-button"); // tooltip + accessible name
     }
 
     @Override

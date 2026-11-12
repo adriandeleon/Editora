@@ -241,7 +241,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         Button clearFilter = new Button("✕");
         clearFilter.getStyleClass().add("project-filter-clear");
         clearFilter.setFocusTraversable(false);
-        clearFilter.setTooltip(new Tooltip(tr("project.filterClear")));
+        Icons.name(clearFilter, tr("project.filterClear"));
         clearFilter.setOnAction(e -> {
             filterField.clear();
             filterField.requestFocus();
@@ -253,7 +253,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // while this panel narrowed the buffer; narrowed some other way (C-x n n), an amber border says so.
         narrowFold.setGraphic(Icons.foldRegion());
         narrowFold.getStyleClass().addAll("structure-narrow-fold", "flat");
-        narrowFold.setAccessibleText(tr("structure.narrow.fold"));
+        // refreshNarrowTooltips names it: what narrowing does and its keys, one string for the tooltip and a
+        // screen reader.
         narrowFold.setFocusTraversable(false);
         narrowFold.setOnAction(e -> toggleFoldMode());
         refreshNarrowTooltips();
@@ -291,8 +292,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // label never fit beside the sort combo at the window's default width ("Filter b…"), the tooltip has it.
         kindFilter.getStyleClass().add("structure-kind-filter");
         kindFilter.setGraphic(Icons.find());
-        kindFilter.setTooltip(new Tooltip(tr("structure.filter.kinds")));
-        kindFilter.setAccessibleText(tr("structure.filter.kinds"));
+        Icons.name(kindFilter, tr("structure.filter.kinds"));
 
         javafx.scene.layout.Region toolbarSpacer = new javafx.scene.layout.Region();
         HBox.setHgrow(toolbarSpacer, Priority.ALWAYS);
@@ -794,7 +794,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         });
     }
 
-    /** The tip, then the keys: the panel's own letter (and the command's chord when one is bound), the editor's. */
+    /**
+     * The toggle's name, for its tooltip and a screen reader alike: the tip, then the keys — the panel's own letter
+     * (and the command's chord when one is bound), the editor's. Read from the keymap each time it is called.
+     */
     private void refreshNarrowTooltips() {
         String chord = chordFor.apply("structure.narrowFold");
         String keys = chord == null || chord.isBlank() ? "f" : chord + " · f";
@@ -805,9 +808,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (editorChord != null && !editorChord.isBlank()) {
             text.append('\n').append(tr("structure.narrow.editorKeys", editorChord));
         }
-        Tooltip tip = new Tooltip(text.toString());
-        tip.setShowDelay(javafx.util.Duration.millis(400));
-        narrowFold.setTooltip(tip);
+        Icons.name(narrowFold, text.toString());
     }
 
     private void syncNarrowToggle() {
@@ -1609,7 +1610,6 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                     Tooltip tip = new Tooltip(item.doc());
                     tip.setWrapText(true);
                     tip.setMaxWidth(480);
-                    tip.setShowDelay(javafx.util.Duration.millis(400));
                     setTooltip(tip);
                 } else {
                     setTooltip(null);

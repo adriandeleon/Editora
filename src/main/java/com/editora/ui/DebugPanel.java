@@ -75,9 +75,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         exceptionsButton.setGraphic(Icons.warning());
         exceptionsButton.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-exceptions");
         exceptionsButton.setFocusTraversable(false);
-        exceptionsButton.setAccessibleText(tr("debugpanel.exceptions"));
-        exceptionsButton.setTooltip(new Tooltip());
-        showExceptionState();
+        showExceptionState(); // names the button: what it is and which exceptions stop the program now
         return exceptionsButton;
     }
 
@@ -92,8 +90,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         boolean caught = caughtToggle.isSelected();
         boolean uncaught = uncaughtToggle.isSelected();
         String tip = DebugPanelText.exceptionsTip(caught, uncaught);
-        exceptionsButton.getTooltip().setText(tip);
-        exceptionsButton.setAccessibleHelp(tip);
+        if (!tip.equals(exceptionsButton.getAccessibleText())) {
+            Icons.name(exceptionsButton, tip); // one string: a screen reader says the state the tooltip shows
+        }
         exceptionsButton.pseudoClassStateChanged(EXCEPTIONS_ON, caught || uncaught);
     }
 
@@ -555,8 +554,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 groupSeparator(),
                 exceptionsButton(),
                 groupSeparator(),
-                historyButton(historyBack, "debugpanel.history.back", this::historyBack, Icons.chevronLeft()),
-                historyButton(historyForward, "debugpanel.history.forward", this::historyForward, Icons.chevronRight()),
+                historyButton(historyBack, "debug.historyBack", this::historyBack, Icons.chevronLeft()),
+                historyButton(historyForward, "debug.historyForward", this::historyForward, Icons.chevronRight()),
                 historyLabel,
                 spacer(),
                 busy,
@@ -1166,11 +1165,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return l;
     }
 
-    /** An icon-only toolbar button: the command title, its keymap chord and its panel letter live in the
-     *  tooltip (IntelliJ-style); the title is also its accessible name, for a screen reader (review C9). */
+    /** An icon-only toolbar button: the command title, its keymap chord and its panel letter are its name,
+     *  the tooltip (IntelliJ-style) and the accessible text alike, for a screen reader (review C9). */
     private Button btn(Button b, DebugPanelText.Control control, Runnable action, Node icon) {
         b.setGraphic(icon);
-        b.setTooltip(new Tooltip());
+        Icons.name(b, toolbarName(control));
         b.getProperties().put(DebugPanelText.Control.class, control);
         b.getStyleClass().addAll("flat", "debug-toolbar-button");
         // Not a Tab stop: a click would then put focus in the panel, where the letters are commands.
@@ -1179,23 +1178,31 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return b;
     }
 
-    /** The toolbar tooltips and accessible names, from the keymap (and Start / Continue as the state says). */
+    /**
+     * A toolbar button's name: its command's title (Start reads Continue while paused), the chord the keymap
+     * binds to it and the panel's own letter — "Step Over  (F10 · in this window: N)".
+     */
+    private String toolbarName(DebugPanelText.Control c) {
+        String id = c == DebugPanelText.Control.START && lastState == DapManager.State.SUSPENDED
+                ? "debug.continue"
+                : c.commandId;
+        return DebugPanelText.tooltip(
+                tr("command." + id),
+                DebugPanelText.chordOf(chordFor::apply, c.commandId),
+                c.keyLabel(),
+                tr("debugpanel.inPanel"));
+    }
+
+    /** The toolbar's names, tooltip and accessible text as one string, from the keymap and the state. */
     private void refreshTooltips() {
         for (Button b : List.of(start, pause, stop, restart, stepOver, stepInto, stepOut, runToCursor)) {
             if (!(b.getProperties().get(DebugPanelText.Control.class) instanceof DebugPanelText.Control c)) {
                 continue; // every toolbar button is made by btn(), which records its control
             }
-            String id = c == DebugPanelText.Control.START && lastState == DapManager.State.SUSPENDED
-                    ? "debug.continue"
-                    : c.commandId;
-            String title = DebugPanelText.bareTitle(tr("command." + id));
-            b.getTooltip()
-                    .setText(DebugPanelText.tooltip(
-                            title,
-                            DebugPanelText.chordOf(chordFor::apply, c.commandId),
-                            c.keyLabel(),
-                            tr("debugpanel.inPanel")));
-            b.setAccessibleText(title);
+            String name = toolbarName(c);
+            if (!name.equals(b.getAccessibleText())) {
+                Icons.name(b, name);
+            }
         }
         stackHint.setText(lastState == DapManager.State.INACTIVE ? emptyHint() : "");
     }
@@ -2515,8 +2522,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalExpand.setGraphic(Icons.findNext());
         evalExpand.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-expand");
         evalExpand.setFocusTraversable(false);
-        evalExpand.setTooltip(new Tooltip(tr("debugpanel.evaluateExpand")));
-        evalExpand.setAccessibleText(tr("debugpanel.evaluateExpand"));
+        Icons.name(evalExpand, tr("debugpanel.evaluateExpand"));
         evalExpand.setOnAction(e -> {
             evalField.toggleMultiLine();
             evalExpand.setSelected(evalField.isMultiLine());
@@ -2525,8 +2531,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalToWatches.setGraphic(Icons.newFile());
         evalToWatches.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-watch");
         evalToWatches.setFocusTraversable(false);
-        evalToWatches.setTooltip(new Tooltip(tr("debugpanel.evaluateToWatches")));
-        evalToWatches.setAccessibleText(tr("debugpanel.evaluateToWatches"));
+        Icons.name(evalToWatches, tr("debugpanel.evaluateToWatches"));
         evalToWatches.setOnAction(e -> {
             String text =
                     evalField.getText().isBlank() && resultExpression != null ? resultExpression : evalField.getText();
@@ -3283,10 +3288,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 && stopHistory.last() != null;
     }
 
-    private Button historyButton(Button b, String key, Runnable action, Node icon) {
+    /** A Debug History toolbar button, named after the command it runs (title and live chord). */
+    private Button historyButton(Button b, String commandId, Runnable action, Node icon) {
         b.setGraphic(icon);
-        b.setTooltip(new Tooltip(tr(key)));
-        b.setAccessibleText(tr(key));
+        CommandTips.name(b, commandId);
         b.getStyleClass().addAll("flat", "debug-toolbar-button");
         b.setFocusTraversable(false);
         b.setOnAction(e -> action.run());

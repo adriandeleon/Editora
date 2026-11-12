@@ -131,10 +131,8 @@ final class ProjectMapChangesCard extends MapFloatingCard {
             button.setMnemonicParsing(false);
             button.setFocusTraversable(false);
         }
-        previous.setTooltip(new Tooltip(tr("project.map.changes.previousTip")));
-        previous.setAccessibleText(tr("project.map.changes.previousTip"));
-        next.setTooltip(new Tooltip(tr("project.map.changes.nextTip")));
-        next.setAccessibleText(tr("project.map.changes.nextTip"));
+        Icons.name(previous, tr("project.map.changes.previousTip"));
+        Icons.name(next, tr("project.map.changes.nextTip"));
         openInEditor.setTooltip(new Tooltip(tr("project.map.changes.openInEditorTip")));
         compare.setTooltip(new Tooltip(tr("project.map.changes.compareTip")));
         refresh.setTooltip(new Tooltip(tr("project.map.changes.refreshTip")));

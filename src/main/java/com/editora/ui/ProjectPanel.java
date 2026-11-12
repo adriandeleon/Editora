@@ -729,7 +729,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         Button clear = new Button("✕");
         clear.getStyleClass().add("project-filter-clear");
         clear.setFocusTraversable(false);
-        clear.setTooltip(new Tooltip(tr("project.filterClear")));
+        Icons.name(clear, tr("project.filterClear"));
         clear.setOnAction(e -> {
             filterField.clear();
             filterField.requestFocus();

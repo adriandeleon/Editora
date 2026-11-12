@@ -108,8 +108,9 @@ final class ProjectMapTrails {
         }
         previous.setOnAction(event -> step(-1));
         next.setOnAction(event -> step(1));
-        Icons.name(previous, tr("project.map.trails.bar.previous"));
-        Icons.name(next, tr("project.map.trails.bar.next"));
+        // The bar's ‹, › and × are the trail commands: named after them, with whatever chord the keymap gives them.
+        CommandTips.name(previous, "projectMap.trailPrevious");
+        CommandTips.name(next, "projectMap.trailNext");
         editButton.setGraphic(Icons.edit());
         Icons.name(editButton, tr("project.map.trails.bar.edit"));
         editButton.setOnAction(event -> {
@@ -118,7 +119,7 @@ final class ProjectMapTrails {
                 edit(shown.name());
             }
         });
-        Icons.name(closeButton, tr("project.map.trails.bar.close"));
+        CommandTips.name(closeButton, "projectMap.trailClose");
         closeButton.setOnAction(event -> close());
         position.getStyleClass().add("project-map-trail-bar-position");
         position.setMinWidth(Region.USE_PREF_SIZE);

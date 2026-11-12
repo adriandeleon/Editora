@@ -143,6 +143,9 @@ public final class DiffViewerPane implements TabContent {
     private final Label summary = new Label();
     private final Label changeNav = new Label();
     private final Button toggleButton = new Button();
+    /** What {@link #toggleButton} says now ("Unified view" / "Side-by-side view"); see {@link #buildToolbar}. */
+    private final String[] toggleName = {""};
+
     private final Button swapButton = new Button();
     private final Button exportButton;
     private final Button applyAllButton = new Button();
@@ -764,9 +767,9 @@ public final class DiffViewerPane implements TabContent {
         summary.getStyleClass().add("diff-summary");
         changeNav.getStyleClass().add("diff-summary");
         updateSummary();
-        Button next = iconButton(Icons.arrowDown(), tr("diff.nextChange"), this::nextChange);
-        Button prev = iconButton(Icons.arrowUp(), tr("diff.prevChange"), this::prevChange);
-        exportButton.setAccessibleText(tr("diff.exportPatch"));
+        // The buttons that run a diff.* command are named after it (title and live chord).
+        Button next = commandButton(Icons.arrowDown(), "diff.nextChange", this::nextChange);
+        Button prev = commandButton(Icons.arrowUp(), "diff.previousChange", this::prevChange);
         whitespaceButton.getStyleClass().addAll("flat", "diff-option-button");
         whitespaceButton.setFocusTraversable(false);
         whitespaceButton.setOnAction(e -> cycleWhitespace());
@@ -813,6 +816,7 @@ public final class DiffViewerPane implements TabContent {
         // "Apply all": replace the editable file with the other side entirely. Shown only when a side is
         // editable (set by setEditable, which runs after construction), so it starts hidden.
         updateApplyAllButton();
+        CommandTips.name(applyAllButton, "diff.applyAll");
         applyAllButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         applyAllButton.setFocusTraversable(false);
         applyAllButton.setOnAction(e -> applyAll());
@@ -842,8 +846,11 @@ public final class DiffViewerPane implements TabContent {
         saveButton.getStyleClass().add("success");
         updateEditButtons();
         editResultButton.setGraphic(Icons.edit());
-        editResultButton.setAccessibleText(tr("diff.editResult"));
-        editResultButton.setTooltip(descriptiveTooltip(tr("diff.tooltip.editResult")));
+        CommandTips.name(
+                editResultButton,
+                "diff.editResult",
+                () -> CommandTips.title("diff.editResult"),
+                () -> tr("diff.tooltip.editResult"));
         editResultButton.getStyleClass().addAll("flat", "diff-toolbar-button", "diff-option-button");
         editResultButton.setFocusTraversable(false);
         editResultButton.setOnAction(e -> toggleResultEditor());
@@ -852,18 +859,26 @@ public final class DiffViewerPane implements TabContent {
         toggleButton.setOnAction(e -> toggleView());
         toggleButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         toggleButton.setFocusTraversable(false);
+        // Says which view a click switches to, with the chord of the command that switches. The supplier
+        // reads a holder, not this pane: CommandTips keeps it for as long as the button lives, and a
+        // supplier that reached the pane (and through it the button) would keep every closed diff alive.
+        String[] name = toggleName;
+        name[0] = toggleName();
+        CommandTips.name(toggleButton, "diff.toggleView", () -> CommandTips.title("diff.toggleView"), () -> name[0]);
         updateToggleButton();
         swapButton.setGraphic(Icons.diff());
-        swapButton.setAccessibleText(tr("diff.swapSides"));
-        swapButton.setTooltip(descriptiveTooltip(tr("diff.tooltip.swapSides")));
+        CommandTips.name(
+                swapButton,
+                "diff.swapSides",
+                () -> CommandTips.title("diff.swapSides"),
+                () -> tr("diff.tooltip.swapSides"));
         swapButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         swapButton.setFocusTraversable(false);
         swapButton.setOnAction(e -> requestSwap());
         swapButton.setVisible(false);
         swapButton.setManaged(false);
         exitDiffUiButton.setGraphic(Icons.editora());
-        exitDiffUiButton.setAccessibleText(tr("tooltip.diffUiExit"));
-        exitDiffUiButton.setTooltip(new Tooltip(tr("tooltip.diffUiExit")));
+        Icons.name(exitDiffUiButton, tr("tooltip.diffUiExit"));
         exitDiffUiButton.getStyleClass().addAll("flat", "diff-toolbar-button", "diff-ui-exit");
         exitDiffUiButton.setFocusTraversable(false);
         exitDiffUiButton.setOnAction(e -> onExitDiffUi.run());
@@ -1107,8 +1122,7 @@ public final class DiffViewerPane implements TabContent {
     /** Configures an editable-only toolbar button (hidden until {@link #setEditable} shows it). */
     private void editButton(Button b, Node icon, String tip, Runnable action) {
         b.setGraphic(icon);
-        b.setAccessibleText(tip);
-        b.setTooltip(new Tooltip(tip));
+        Icons.name(b, tip);
         b.getStyleClass().addAll("flat", "diff-toolbar-button");
         b.setFocusTraversable(false);
         b.setOnAction(e -> action.run());
@@ -1120,28 +1134,32 @@ public final class DiffViewerPane implements TabContent {
     private void updateApplyAllButton() {
         applyAllButton.setGraphic(
                 editableSide == EditableSide.LEFT ? Icons.doubleChevronLeft() : Icons.doubleChevronRight());
-        applyAllButton.setAccessibleText(tr("diff.applyAll"));
-        applyAllButton.setTooltip(new Tooltip(tr("diff.applyAll")));
     }
 
     private void updateToggleButton() {
         toggleButton.setGraphic(unified ? Icons.splitVertical() : Icons.previewOnly());
-        toggleButton.setAccessibleText(unified ? tr("diff.viewSideBySide") : tr("diff.viewUnified"));
-        toggleButton.setTooltip(
-                descriptiveTooltip(unified ? tr("diff.tooltip.viewSideBySide") : tr("diff.tooltip.viewUnified")));
+        toggleName[0] = toggleName();
+        CommandTips.refresh(toggleButton); // the name follows the view (a no-op until the button is named)
     }
 
+    private String toggleName() {
+        return unified ? tr("diff.tooltip.viewSideBySide") : tr("diff.tooltip.viewUnified");
+    }
+
+    /** An icon button of the diff bar: one name for its tooltip and for a screen reader. */
     private Button iconButton(Node icon, String tip, Runnable action) {
-        Button b = Icons.toolbarButton(icon, tip, action, "flat", "diff-toolbar-button");
-        b.setTooltip(descriptiveTooltip(tip)); // same text as the accessible name, in the diff's tooltip style
-        return b;
+        return Icons.toolbarButton(icon, tip, action, "flat", "diff-toolbar-button");
+    }
+
+    /** An icon button of the diff bar that runs {@code commandId}: named after it, with its live chord. */
+    private Button commandButton(Node icon, String commandId, Runnable action) {
+        return CommandTips.name(iconButton(icon, CommandTips.title(commandId), action), commandId);
     }
 
     private static Tooltip descriptiveTooltip(String text) {
         Tooltip tooltip = new Tooltip(text);
         tooltip.setWrapText(true);
         tooltip.setMaxWidth(360);
-        tooltip.setShowDelay(javafx.util.Duration.millis(350));
         return tooltip;
     }
 

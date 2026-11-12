@@ -277,8 +277,8 @@ final class PrintPreview {
     private void build(Window owner) {
         prev.setOnAction(e -> navigate(index - 1));
         next.setOnAction(e -> navigate(index + 1));
-        describe(prev, tr("print.preview.previous"));
-        describe(next, tr("print.preview.next"));
+        Icons.name(prev, tr("print.preview.previous"));
+        Icons.name(next, tr("print.preview.next"));
         setup.setOnAction(e -> pageSetup());
         // Print… stays the default button: Enter opens the system print dialog, which is itself the
         // confirmation — nothing is printed by Enter alone. Initial focus goes to the page (see below),
@@ -421,10 +421,9 @@ final class PrintPreview {
     private void buildZoomControls() {
         zoomOut.setOnAction(e -> zoomOut());
         zoomIn.setOnAction(e -> zoomIn());
-        describe(zoomOut, tr("print.preview.zoomOut"));
-        describe(zoomIn, tr("print.preview.zoomIn"));
-        zoomMenu.setAccessibleText(tr("print.preview.zoom"));
-        zoomMenu.setTooltip(new Tooltip(tr("print.preview.zoom")));
+        Icons.name(zoomOut, tr("print.preview.zoomOut"));
+        Icons.name(zoomIn, tr("print.preview.zoomIn"));
+        Icons.name(zoomMenu, tr("print.preview.zoom"));
         zoomMenu.setMinWidth(Region.USE_PREF_SIZE);
         zoomMenu.getItems().add(zoomChoice(tr("print.preview.fitPage"), PrintZoom.Setting.FIT_PAGE));
         zoomMenu.getItems().add(zoomChoice(tr("print.preview.fitWidth"), PrintZoom.Setting.FIT_WIDTH));
@@ -504,11 +503,6 @@ final class PrintPreview {
             zoomOut();
         }
         e.consume();
-    }
-
-    private static void describe(Button button, String text) {
-        button.setAccessibleText(text);
-        button.setTooltip(new Tooltip(text));
     }
 
     /** The paper size of {@code layout} as it is read — width and height swapped for landscape. */

@@ -132,11 +132,10 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             }
         });
 
-        Button refreshBtn = new Button();
-        refreshBtn.setGraphic(Icons.refresh());
-        refreshBtn.getStyleClass().add("todo-refresh");
-        refreshBtn.setTooltip(new Tooltip(tr("todo.refresh")));
-        refreshBtn.setOnAction(e -> actions.refresh());
+        // The header's one icon runs the todo.refresh command: named after it with its chord, and reached by the
+        // command, not by Tab.
+        Button refreshBtn = Icons.toolbarButton(Icons.refresh(), tr("todo.refresh"), actions::refresh, "todo-refresh");
+        CommandTips.name(refreshBtn, "todo.refresh");
         summary.getStyleClass().add("todo-summary");
         HBox.setHgrow(summary, Priority.ALWAYS);
         HBox toolbar = new HBox(6, groupLabel, groupBy, summary, refreshBtn);

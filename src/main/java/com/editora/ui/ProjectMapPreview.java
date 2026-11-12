@@ -733,10 +733,8 @@ final class ProjectMapPreview extends StackPane {
         for (Button button : java.util.List.of(zoomOut, zoomIn)) {
             button.getStyleClass().add("project-map-preview-button");
         }
-        zoomOut.setTooltip(new Tooltip(tr("project.map.preview.zoomOut")));
-        zoomOut.setAccessibleText(tr("project.map.preview.zoomOut"));
-        zoomIn.setTooltip(new Tooltip(tr("project.map.preview.zoomIn")));
-        zoomIn.setAccessibleText(tr("project.map.preview.zoomIn"));
+        Icons.name(zoomOut, tr("project.map.preview.zoomOut"));
+        Icons.name(zoomIn, tr("project.map.preview.zoomIn"));
         zoomOut.setOnAction(event -> {
             setContentZoom(contentZoom / 1.1);
             onContentZoomed.accept(contentZoom); // the owner opens its next card at this zoom
@@ -763,7 +761,6 @@ final class ProjectMapPreview extends StackPane {
         });
         structure.getStyleClass().addAll("project-map-preview-button", "project-map-preview-structure");
         structure.setGraphic(Icons.structure());
-        structure.setTooltip(new Tooltip());
         structure.setVisible(false);
         structure.setManaged(false);
         structure.setOnAction(event -> {
@@ -773,7 +770,6 @@ final class ProjectMapPreview extends StackPane {
         updateStructureButton();
         notes.getStyleClass().addAll("project-map-preview-button", "project-map-preview-notes");
         notes.setGraphic(Icons.notes());
-        notes.setTooltip(new Tooltip());
         notes.setVisible(false);
         notes.setManaged(false);
         notes.setOnAction(event -> {
@@ -797,8 +793,7 @@ final class ProjectMapPreview extends StackPane {
                 zoomOut, zoomIn, structure, notes, pin, previousDeclaration, nextDeclaration, open, close)) {
             button.setMinWidth(Region.USE_PREF_SIZE); // "Open" stays "Open", never "O…"
         }
-        close.setTooltip(new Tooltip(tr("project.map.preview.close")));
-        close.setAccessibleText(tr("project.map.preview.close"));
+        Icons.name(close, tr("project.map.preview.close"));
         close.setOnAction(event -> onClose.run());
 
         titleBar.getStyleClass().add("project-map-preview-header");
@@ -2450,8 +2445,7 @@ final class ProjectMapPreview extends StackPane {
         String help = structure.isSelected()
                 ? tr("project.map.preview.hideStructure")
                 : tr("project.map.preview.showStructure");
-        structure.getTooltip().setText(help);
-        structure.setAccessibleText(help);
+        Icons.name(structure, help);
     }
 
     /**
@@ -2523,8 +2517,7 @@ final class ProjectMapPreview extends StackPane {
                         : notesOn
                                 ? tr("project.map.preview.hideNotes")
                                 : tr("project.map.preview.showNotes", noteCount);
-        notes.getTooltip().setText(help);
-        notes.setAccessibleText(help);
+        Icons.name(notes, help);
         requestLayout(); // pressed, the button no longer gives way
     }
 
@@ -3426,7 +3419,6 @@ final class ProjectMapPreview extends StackPane {
     private void installPinAndStepping() {
         pin.getStyleClass().addAll("project-map-preview-button", "project-map-preview-pin");
         pin.setGraphic(Icons.pin());
-        pin.setTooltip(new Tooltip());
         pin.setOnAction(event -> {
             updatePinButton();
             onPinned.accept(pin.isSelected());
@@ -3438,10 +3430,8 @@ final class ProjectMapPreview extends StackPane {
                 "project.map.preview.previousDeclaration", ProjectMapHelp.chord("alt", ProjectMapHelp.key("pageUp")));
         String forward =
                 tr("project.map.preview.nextDeclaration", ProjectMapHelp.chord("alt", ProjectMapHelp.key("pageDown")));
-        previousDeclaration.setTooltip(new Tooltip(back));
-        previousDeclaration.setAccessibleText(back);
-        nextDeclaration.setTooltip(new Tooltip(forward));
-        nextDeclaration.setAccessibleText(forward);
+        Icons.name(previousDeclaration, back);
+        Icons.name(nextDeclaration, forward);
         for (Button button : java.util.List.of(previousDeclaration, nextDeclaration)) {
             button.getStyleClass().addAll("project-map-preview-button", "project-map-preview-step");
         }
@@ -3452,8 +3442,7 @@ final class ProjectMapPreview extends StackPane {
 
     private void updatePinButton() {
         String help = pin.isSelected() ? tr("project.map.preview.unpin") : tr("project.map.preview.pin");
-        pin.getTooltip().setText(help);
-        pin.setAccessibleText(help);
+        Icons.name(pin, help);
         requestLayout(); // pressed, the pin no longer gives way
     }
 
@@ -3720,14 +3709,10 @@ final class ProjectMapPreview extends StackPane {
         findCount.setMinWidth(Region.USE_PREF_SIZE);
         findPrevious.setGraphic(Icons.chevronLeft());
         findNext.setGraphic(Icons.chevronRight());
-        findPrevious.setTooltip(new Tooltip(tr("project.map.preview.find.previous")));
-        findPrevious.setAccessibleText(tr("project.map.preview.find.previous"));
-        findNext.setTooltip(new Tooltip(tr("project.map.preview.find.next")));
-        findNext.setAccessibleText(tr("project.map.preview.find.next"));
-        findCase.setTooltip(new Tooltip(tr("project.map.preview.find.matchCase")));
-        findCase.setAccessibleText(tr("project.map.preview.find.matchCase"));
-        findClose.setTooltip(new Tooltip(tr("project.map.preview.find.close")));
-        findClose.setAccessibleText(tr("project.map.preview.find.close"));
+        Icons.name(findPrevious, tr("project.map.preview.find.previous"));
+        Icons.name(findNext, tr("project.map.preview.find.next"));
+        Icons.name(findCase, tr("project.map.preview.find.matchCase"));
+        Icons.name(findClose, tr("project.map.preview.find.close"));
         for (javafx.scene.control.Control control : java.util.List.of(findPrevious, findNext, findCase, findClose)) {
             control.getStyleClass().add("project-map-preview-button");
             control.setMinWidth(Region.USE_PREF_SIZE);

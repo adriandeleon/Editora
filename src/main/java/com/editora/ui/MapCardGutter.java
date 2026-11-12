@@ -240,7 +240,7 @@ final class MapCardGutter {
             Node glyph = FoldManager.runGlyph(run.test() != null ? "test-run-marker" : null);
             glyph.setCursor(Cursor.HAND);
             String tip = run.tooltip();
-            LazyTooltip.install(glyph, () -> tip, null, 300);
+            LazyTooltip.install(glyph, () -> tip, null);
             glyph.setAccessibleRole(AccessibleRole.BUTTON);
             glyph.setAccessibleText(tip);
             ownPointer(glyph);
@@ -272,7 +272,7 @@ final class MapCardGutter {
                 bar.getChildren().add(wedge);
             }
             if (tooltip != null) {
-                LazyTooltip.install(bar, () -> tooltip, "git-diff-tooltip", 300);
+                LazyTooltip.install(bar, () -> tooltip, "git-diff-tooltip");
             }
         }
         return bar;

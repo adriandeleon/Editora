@@ -19,7 +19,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -149,12 +148,16 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
                 clearConsole();
             }
         });
-        iconButton(findButton, Icons.find(), tr("console.find"));
+        // Each of the three is a command's, so the keyboard and the palette reach what the mouse does here; the
+        // icon-only two are named after their commands, chord and all.
+        iconButton(findButton, Icons.find());
+        CommandTips.name(findButton, "find.show", () -> tr("console.find"));
         findButton.setOnAction(e -> openFind());
-        iconButton(saveButton, Icons.save(), tr("console.saveOutput"));
+        iconButton(saveButton, Icons.save());
+        CommandTips.name(saveButton, "buildOutput.saveOutput");
         saveButton.setOnAction(e -> saveOutput());
         previousButton.setText(tr("console.previousRun"));
-        previousButton.setTooltip(new Tooltip(tr("console.previousRun.tip")));
+        CommandTips.name(previousButton, "buildOutput.previousRun", () -> tr("console.previousRun.tip"));
         previousButton.setMinWidth(Region.USE_PREF_SIZE);
         previousButton.setFocusTraversable(false);
         previousButton.setDisable(true);
@@ -187,10 +190,8 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         idle();
     }
 
-    private static void iconButton(Button button, Node graphic, String name) {
+    private static void iconButton(Button button, Node graphic) {
         button.setGraphic(graphic);
-        button.setTooltip(new Tooltip(name));
-        button.setAccessibleText(name);
         button.setFocusTraversable(false);
         button.getStyleClass().addAll("button-icon", "flat");
     }
@@ -423,8 +424,17 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         return findBar;
     }
 
-    /** <b>Save output…</b>: writes the buffer on screen to a file the user picks. */
-    private void saveOutput() {
+    /** Build Output: Show Previous Run, and back again; false when there is no earlier run to show. */
+    boolean togglePreviousRun() {
+        if (previousButton.isDisable() || !previousButton.isVisible()) {
+            return false;
+        }
+        previousButton.setSelected(!previousButton.isSelected());
+        return true;
+    }
+
+    /** Build Output: Save Output…: asks where, and writes what the console shows. */
+    void saveOutput() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("console.saveOutput"));
         chooser.setInitialFileName(title.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-") + "-output.txt");

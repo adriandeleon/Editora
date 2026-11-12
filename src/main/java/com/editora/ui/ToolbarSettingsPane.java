@@ -17,7 +17,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -77,10 +76,8 @@ final class ToolbarSettingsPane {
         VBox.setVgrow(available, Priority.ALWAYS);
         VBox.setVgrow(current, Priority.ALWAYS);
 
-        up.setAccessibleText(tr("bookmarks.moveUp"));
-        up.setTooltip(new Tooltip(tr("bookmarks.moveUp")));
-        down.setAccessibleText(tr("bookmarks.moveDown"));
-        down.setTooltip(new Tooltip(tr("bookmarks.moveDown")));
+        Icons.name(up, tr("bookmarks.moveUp"));
+        Icons.name(down, tr("bookmarks.moveDown"));
         up.getStyleClass().addAll("flat", "reorder-button");
         down.getStyleClass().addAll("flat", "reorder-button");
         add.setMaxWidth(Double.MAX_VALUE);

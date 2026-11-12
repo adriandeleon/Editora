@@ -113,10 +113,10 @@ public final class ImageViewerPane implements TabContent {
     }
 
     private Node buildToolbar() {
-        Button out = zoomButton("−", tr("imageviewer.zoomOut"), () -> setZoom(zoom / ZOOM_STEP));
-        Button in = zoomButton("+", tr("imageviewer.zoomIn"), () -> setZoom(zoom * ZOOM_STEP));
+        Button out = symbolButton("−", tr("imageviewer.zoomOut"), () -> setZoom(zoom / ZOOM_STEP));
+        Button in = symbolButton("+", tr("imageviewer.zoomIn"), () -> setZoom(zoom * ZOOM_STEP));
         Button fit = zoomButton(tr("imageviewer.fit"), tr("imageviewer.fitTip"), this::fitToWindow);
-        Button actual = zoomButton(tr("imageviewer.actualSize"), tr("imageviewer.actualSizeTip"), () -> {
+        Button actual = symbolButton(tr("imageviewer.actualSize"), tr("imageviewer.actualSizeTip"), () -> {
             fitMode = false;
             setZoom(1.0);
         });
@@ -133,11 +133,24 @@ public final class ImageViewerPane implements TabContent {
         return bar;
     }
 
+    /** A button that shows a word ("Fit"), which is its name; {@code tip} says more. */
     private Button zoomButton(String text, String tip, Runnable action) {
+        Button b = barButton(text, action);
+        b.setTooltip(new Tooltip(tip));
+        return b;
+    }
+
+    /** A button that shows a symbol and no word ("−", "+", "1:1"): {@code name} is its tooltip and what is read out. */
+    private Button symbolButton(String symbol, String name, Runnable action) {
+        Button b = barButton(symbol, action);
+        Icons.name(b, name);
+        return b;
+    }
+
+    private Button barButton(String text, Runnable action) {
         Button b = new Button(text);
         b.getStyleClass().add("image-viewer-btn");
         b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tip));
         b.setOnAction(e -> action.run());
         return b;
     }

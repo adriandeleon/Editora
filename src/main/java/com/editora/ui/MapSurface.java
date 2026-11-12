@@ -521,7 +521,6 @@ final class MapSurface extends Region {
         // position 14 one more child, canvasA11y, is a tree of the rows on screen, each a tree item.
         setAccessibleRole(AccessibleRole.PARENT);
         setAccessibleHelp(tr("project.map.accessibleHelp"));
-        nodeTooltip.setShowDelay(Duration.millis(350));
         nodeTooltip.setHideDelay(Duration.millis(100));
         nodeTooltip.setWrapText(true);
         nodeTooltip.setMaxWidth(520);
@@ -2198,17 +2197,15 @@ final class MapSurface extends Region {
         ColumnLayout layout = columnLayouts.get(id);
         boolean locked = layout != null && layout.locked;
         pin.setSelected(locked);
-        pin.setTooltip(new Tooltip(tr(locked ? "project.map.column.unpin" : "project.map.column.pin")));
-        pin.setAccessibleText(tr("project.map.column.pin"));
+        Icons.name(pin, tr(locked ? "project.map.column.unpin" : "project.map.column.pin"));
         pin.selectedProperty().addListener((obs, old, selected) -> {
             columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout()).locked = selected;
-            pin.setTooltip(new Tooltip(tr(selected ? "project.map.column.unpin" : "project.map.column.pin")));
+            Icons.name(pin, tr(selected ? "project.map.column.unpin" : "project.map.column.pin"));
         });
 
         Button close = new Button("×");
         close.getStyleClass().add("project-map-column-close");
-        close.setTooltip(new Tooltip(tr("project.map.column.close")));
-        close.setAccessibleText(tr("project.map.column.close"));
+        Icons.name(close, tr("project.map.column.close"));
         close.setOnAction(event -> onCloseColumn.accept(closeTarget(id)));
 
         ColumnControls made = new ColumnControls(filter, showHidden, pin, close);

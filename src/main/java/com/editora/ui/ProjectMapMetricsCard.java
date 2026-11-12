@@ -81,8 +81,7 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         super("project-map-metrics-card", Icons.metrics(), MIN_WIDTH, MIN_HEIGHT);
         back.getStyleClass().add("flat");
         back.setMnemonicParsing(false);
-        back.setTooltip(new Tooltip(tr("project.map.metrics.backTip")));
-        back.setAccessibleText(tr("project.map.metrics.backTip"));
+        Icons.name(back, tr("project.map.metrics.backTip"));
         back.setOnAction(event -> goBack());
         filesButton.setToggleGroup(groupings);
         partsButton.setToggleGroup(groupings);
@@ -96,8 +95,7 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         });
         refresh.getStyleClass().add("flat");
         refresh.setGraphic(Icons.refresh());
-        refresh.setTooltip(new Tooltip(tr("project.map.metrics.refreshTip")));
-        refresh.setAccessibleText(tr("project.map.metrics.refreshTip"));
+        Icons.name(refresh, tr("project.map.metrics.refreshTip"));
         refresh.setOnAction(event -> onRefresh.run());
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);

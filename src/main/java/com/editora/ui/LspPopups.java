@@ -363,8 +363,9 @@ final class LspPopups {
             javafx.scene.control.Button next = new javafx.scene.control.Button("›");
             previous.setFocusTraversable(false);
             next.setFocusTraversable(false);
-            previous.setAccessibleText(tr("command.lsp.previousSignature"));
-            next.setAccessibleText(tr("command.lsp.nextSignature"));
+            // Each arrow is its command's: named after it, chord and all, for the tooltip and a screen reader.
+            CommandTips.name(previous, "lsp.previousSignature");
+            CommandTips.name(next, "lsp.nextSignature");
             previous.setOnAction(e -> ops.executeCommand("lsp.previousSignature"));
             next.setOnAction(e -> ops.executeCommand("lsp.nextSignature"));
             box.getChildren().add(0, new javafx.scene.layout.HBox(6, previous, count, next));

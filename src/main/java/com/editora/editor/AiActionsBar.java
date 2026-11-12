@@ -4,7 +4,6 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 
 import org.jspecify.annotations.Nullable;
@@ -32,9 +31,16 @@ final class AiActionsBar {
         node.setPadding(new Insets(3));
         node.setAlignment(Pos.CENTER_LEFT);
 
-        Button explainButton =
-                button(MenuIcons.explain(), "tooltip.ai.explainSelection", buffer::requestExplainSelection);
-        rewriteButton = button(MenuIcons.rewrite(), "tooltip.ai.rewriteSelection", buffer::requestRewriteSelection);
+        Button explainButton = button(
+                MenuIcons.explain(),
+                "tooltip.ai.explainSelection",
+                "ai.explainSelection",
+                buffer::requestExplainSelection);
+        rewriteButton = button(
+                MenuIcons.rewrite(),
+                "tooltip.ai.rewriteSelection",
+                "ai.rewriteSelection",
+                buffer::requestRewriteSelection);
         node.getChildren().addAll(explainButton, rewriteButton);
     }
 
@@ -60,12 +66,13 @@ final class AiActionsBar {
         rewriteButton.setManaged(editable);
     }
 
-    private static Button button(Node icon, String tooltipKey, Runnable action) {
+    private static Button button(Node icon, String tooltipKey, String commandId, Runnable action) {
         Button b = new Button();
         b.setGraphic(icon);
         b.getStyleClass().addAll("flat", "ai-actions-btn");
         b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tr(tooltipKey)));
+        // Icon-only: one string is its tooltip and its name for a screen reader, with its command's chord.
+        ControlNames.name(b, ControlNames.withChord(tr(tooltipKey), commandId));
         b.setOnAction(e -> action.run());
         return b;
     }

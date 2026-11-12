@@ -245,7 +245,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-01",
       "kind": "pending",
-      "reason": "A few buttons have no command behind them, among them Clear in the Message Log and Save Output and Previous Run in the build console, so the palette and the keyboard cannot reach them.",
+      "reason": "Many buttons and right-click rows have no command behind them, so the palette and the keyboard cannot reach them.",
       "link": "https://github.com/adriandeleon/Editora/issues/1560"
     },
     {
@@ -269,7 +269,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-15",
       "kind": "pending",
-      "reason": "Clear in the Message Log and Save Output and Previous Run in the build console can only be pressed with the mouse.",
+      "reason": "Some buttons can only be pressed with the mouse, among them the zoom buttons of the PDF and image viewers and a few in the diff viewer and the Project Map.",
       "link": "https://github.com/adriandeleon/Editora/issues/1560"
     },
     {
@@ -277,7 +277,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-01",
       "kind": "pending",
-      "reason": "Not every control has a name for screen readers, the rows of the in-window menus among them, and no test sweeps every window for them.",
+      "reason": "Not every control has a name for screen readers, and no test sweeps every window for them.",
       "link": "https://github.com/adriandeleon/Editora/issues/1561"
     },
     {
@@ -409,27 +409,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1563"
     },
     {
-      "rule": "TBAR-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-01",
-      "kind": "pending",
-      "reason": "The main toolbar's buttons and the buttons that leave Zen and Expert mode have a tooltip but no name for screen readers.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1564"
-    },
-    {
       "rule": "TBAR-03",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-03",
       "kind": "pending",
-      "reason": "Some toolbar tooltips use a name of their own instead of the command's title, and the Stop button shows no shortcut.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1564"
-    },
-    {
-      "rule": "TBAR-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-14",
-      "kind": "pending",
-      "reason": "Tooltips do not all appear after the same delay.",
+      "reason": "The tool window header buttons keep words of their own instead of their command's title, and the debugger's toolbar does not rename itself after a keymap switch.",
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
     },
     {
@@ -437,15 +421,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-02",
       "kind": "pending",
-      "reason": "Toolbar and tool-stripe buttons take the keyboard focus when you press Tab.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1564"
-    },
-    {
-      "rule": "TBAR-08",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-08",
-      "kind": "pending",
-      "reason": "Three buttons you can add to the toolbar, TODO, Bookmarks and Zen Mode, have no menu row.",
+      "reason": "Some panel toolbar buttons that no command runs still take the keyboard focus on Tab, in the Project Map and the Git log among them.",
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
     },
     {
@@ -454,14 +430,6 @@
       "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-17",
       "kind": "pending",
       "reason": "A few toolbar buttons stay enabled when their command cannot run, Save As among them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1564"
-    },
-    {
-      "rule": "TBAR-12",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-12",
-      "kind": "pending",
-      "reason": "A tool-stripe button's tooltip does not update when its panel's title changes.",
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
     },
     {

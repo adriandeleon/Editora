@@ -9,7 +9,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -111,7 +110,7 @@ public class ProjectCombo extends ComboBox<Project> {
             delete.setGraphic(Icons.trash());
             delete.getStyleClass().addAll("button-icon", "flat", "recent-remove");
             delete.setFocusTraversable(false);
-            delete.setTooltip(new Tooltip(tr("projectcombo.deleteTip")));
+            Icons.name(delete, tr("projectcombo.deleteTip"));
             // Delete on press without selecting the row / closing the popup unexpectedly.
             delete.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
                 Consumer<Project> handler = onDelete;

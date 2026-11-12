@@ -88,8 +88,7 @@ abstract class MapSideColumn implements CardAttachment {
         HBox.setHgrow(title, Priority.ALWAYS);
         Button close = new Button("×");
         close.getStyleClass().add("project-map-preview-button");
-        close.setTooltip(new Tooltip(closeText));
-        close.setAccessibleText(closeText);
+        Icons.name(close, closeText);
         close.setFocusTraversable(false);
         close.setOnAction(event -> onClose.run());
         header = new HBox(6, title, close);

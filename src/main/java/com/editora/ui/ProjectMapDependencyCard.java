@@ -117,8 +117,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         super("project-map-deps-card", Icons.dependencies(), MIN_WIDTH, MIN_HEIGHT);
         back.getStyleClass().addAll("flat", "project-map-deps-back");
         back.setMnemonicParsing(false);
-        back.setTooltip(new Tooltip(tr("project.map.deps.backTip")));
-        back.setAccessibleText(tr("project.map.deps.backTip"));
+        Icons.name(back, tr("project.map.deps.backTip"));
         back.setOnAction(event -> goBack());
         aroundButton.setToggleGroup(views);
         insideButton.setToggleGroup(views);
@@ -149,8 +148,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         });
         refresh.getStyleClass().add("flat");
         refresh.setGraphic(Icons.refresh());
-        refresh.setTooltip(new Tooltip(tr("project.map.deps.refreshTip")));
-        refresh.setAccessibleText(tr("project.map.deps.refreshTip"));
+        Icons.name(refresh, tr("project.map.deps.refreshTip"));
         refresh.setOnAction(event -> onRefresh.run());
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);

@@ -13,7 +13,6 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
@@ -341,8 +340,7 @@ final class ConsoleFindBar extends HBox {
     private static Button iconButton(Node graphic, String name) {
         Button button = new Button();
         button.setGraphic(graphic);
-        button.setTooltip(new Tooltip(name));
-        button.setAccessibleText(name);
+        Icons.name(button, name);
         button.setFocusTraversable(false);
         button.getStyleClass().addAll("button-icon", "flat", "find-bar-icon");
         return button;

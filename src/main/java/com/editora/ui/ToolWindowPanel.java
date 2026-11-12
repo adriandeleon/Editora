@@ -54,8 +54,13 @@ final class ToolWindowPanel extends BorderPane {
         floatButton.getStyleClass().addAll("button-icon", "flat", "tool-window-float");
         floatButton.setOnAction(e -> onToggleFloat.run());
 
-        Button close = Icons.button(
+        Button close = Icons.toolbarButton(
                 Icons.closeSmall(), tr("toolwindow.hide"), onClose, "button-icon", "flat", "tool-window-close");
+        // The header's buttons are a toolbar: out of the Tab order, and named with the chord of the command
+        // that does the same to the tool window with the keyboard.
+        CommandTips.name(close, "view.closeFocusedToolWindow", () -> tr("toolwindow.hide"));
+        maximize.setFocusTraversable(false);
+        floatButton.setFocusTraversable(false);
 
         HBox header = new HBox(8, title, spacer, floatButton, maximize, close);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -126,7 +131,8 @@ final class ToolWindowPanel extends BorderPane {
     void setFloating(boolean floating) {
         this.floating = floating;
         floatButton.setGraphic(floating ? Icons.dock() : Icons.detach());
-        Icons.name(floatButton, tr(floating ? "toolwindow.dock" : "toolwindow.float"));
+        CommandTips.name(
+                floatButton, "view.floatToolWindow", () -> tr(this.floating ? "toolwindow.dock" : "toolwindow.float"));
         maximize.setVisible(!floating);
         maximize.setManaged(!floating);
         refreshMenuLabels();
@@ -139,7 +145,10 @@ final class ToolWindowPanel extends BorderPane {
     void setMaximized(boolean maximized) {
         this.maximized = maximized;
         maximize.setGraphic(maximized ? Icons.restoreSize() : Icons.maximize());
-        Icons.name(maximize, tr(maximized ? "toolwindow.restoreSize" : "toolwindow.maximize"));
+        CommandTips.name(
+                maximize,
+                "view.maximizeToolWindow",
+                () -> tr(this.maximized ? "toolwindow.restoreSize" : "toolwindow.maximize"));
         refreshMenuLabels();
     }
 }

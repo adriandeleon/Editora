@@ -455,6 +455,22 @@ earlier in the keymap being switched to. `Settings.setKeymap` is the bare proper
   their text in `-color-danger-fg` (`app.css`). A right-click menu adds it to the item; the menu bar's
   destructive commands are the set in `MenuBarModel`, applied where `MainMenuBar` builds a row. Rows that
   close, hide or stop something, clear output or edit text are not marked.
+- **Naming a button**: an icon-only button gets its tooltip and its accessible text in one call, from one
+  string: `Icons.button` / `Icons.toolbarButton` when it is built, `Icons.name(control, name)` afterwards and
+  again whenever the name changes (`com.editora.editor.ControlNames.name` is the same call for the editor
+  package). A `setTooltip` beside a separate `setAccessibleText` is the thing to avoid: the two drift.
+  A button that runs a command is named with
+  [`CommandTips.name(control, "command.id")`](../../src/main/java/com/editora/ui/CommandTips.java): the
+  command's title without its category and the keymap's chord, "Save (C-x C-s)", named again on a keymap
+  switch (`CommandTips.refresh()`, from `SettingsReapply`). A third argument supplies the title where the
+  command's would mislead (a toggle that reads Maximize or Restore); a fourth adds a line under the name
+  (what the diff bar's Swap does). A supplier must not capture the view the button sits in more than it
+  needs to: the tip lives in the control's own properties so that it cannot pin a closed window.
+- **Toolbar buttons stay out of the Tab order** (`setFocusTraversable(false)`, which `Icons.toolbarButton`
+  does) when a command also runs what they do. A toolbar button with no command behind it stays a Tab stop
+  until it has one: taking it out would leave it to the mouse alone.
+- **Tooltip delay**: `.tooltip { -fx-show-delay: 400ms }` in `app.css` is the only place it is set. No
+  tooltip calls `setShowDelay`.
 - **Chords on menu rows**: a right-click or drop-down row that does what a command does is tagged with that
   command's id, [`MenuChords.tag(item, "command.id")`](../../src/main/java/com/editora/editor/MenuChords.java),
   and then shows the command's chord in the menu's right-hand column. The chord is read from the live

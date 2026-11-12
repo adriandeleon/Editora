@@ -77,8 +77,8 @@ public final class PdfViewerPane implements TabContent {
     private final StackPane holder = new StackPane(imageView);
     private final Label zoomLabel = new Label();
     private final Label pageLabel = new Label();
-    private final Button prevButton = button("◀", tr("pdfviewer.prevPage"), () -> showPage(this.currentPage - 1));
-    private final Button nextButton = button("▶", tr("pdfviewer.nextPage"), () -> showPage(this.currentPage + 1));
+    private final Button prevButton = symbolButton("◀", tr("pdfviewer.prevPage"), () -> showPage(this.currentPage - 1));
+    private final Button nextButton = symbolButton("▶", tr("pdfviewer.nextPage"), () -> showPage(this.currentPage + 1));
     private Node toolbar;
 
     /** Single daemon thread: loads the document + rasterizes pages (PDDocument is not thread-safe). */
@@ -138,10 +138,10 @@ public final class PdfViewerPane implements TabContent {
 
     private Node buildToolbar() {
         pageLabel.getStyleClass().add("pdf-viewer-page");
-        Button out = button("−", tr("imageviewer.zoomOut"), () -> setZoom(zoom / ZOOM_STEP));
-        Button in = button("+", tr("imageviewer.zoomIn"), () -> setZoom(zoom * ZOOM_STEP));
+        Button out = symbolButton("−", tr("imageviewer.zoomOut"), () -> setZoom(zoom / ZOOM_STEP));
+        Button in = symbolButton("+", tr("imageviewer.zoomIn"), () -> setZoom(zoom * ZOOM_STEP));
         Button fit = button(tr("imageviewer.fit"), tr("imageviewer.fitTip"), this::fitToWindow);
-        Button actual = button(tr("imageviewer.actualSize"), tr("imageviewer.actualSizeTip"), () -> {
+        Button actual = symbolButton(tr("imageviewer.actualSize"), tr("imageviewer.actualSizeTip"), () -> {
             fitMode = false;
             setZoom(1.0);
         });
@@ -166,11 +166,24 @@ public final class PdfViewerPane implements TabContent {
         return l;
     }
 
+    /** A button that shows a word ("Fit"), which is its name; {@code tip} says more. */
     private Button button(String text, String tip, Runnable action) {
+        Button b = barButton(text, action);
+        b.setTooltip(new Tooltip(tip));
+        return b;
+    }
+
+    /** A button that shows a symbol and no word ("◀", "−", "1:1"): {@code name} is its tooltip and what is read out. */
+    private Button symbolButton(String symbol, String name, Runnable action) {
+        Button b = barButton(symbol, action);
+        Icons.name(b, name);
+        return b;
+    }
+
+    private Button barButton(String text, Runnable action) {
         Button b = new Button(text);
         b.getStyleClass().add("pdf-viewer-btn");
         b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tip));
         b.setOnAction(e -> action.run());
         return b;
     }

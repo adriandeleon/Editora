@@ -495,16 +495,30 @@ final class RunConfigurationCoordinator {
 
     /** Runs the selected configuration. The button chooses the verb; the configuration never does. */
     void onRunSelectedConfig() {
-        com.editora.config.RunConfiguration cfg = selectedRunConfig();
-        if (cfg != null) {
-            host.runCoordinator().runConfig(cfg);
-        }
+        runSelectedConfig();
     }
 
     /** Debugs the selected configuration — the same entry, the other verb. */
     void onDebugSelectedConfig() {
+        debugSelectedConfig();
+    }
+
+    /** Run: Run Selected Configuration. With none selected (or none saved) it says so. */
+    void runSelectedConfig() {
         com.editora.config.RunConfiguration cfg = selectedRunConfig();
-        if (cfg != null) {
+        if (cfg == null) {
+            host.setStatus(tr("status.run.noSelectedConfig"));
+        } else {
+            host.runCoordinator().runConfig(cfg);
+        }
+    }
+
+    /** Debug: Debug Selected Configuration. With none selected (or none saved) it says so. */
+    void debugSelectedConfig() {
+        com.editora.config.RunConfiguration cfg = selectedRunConfig();
+        if (cfg == null) {
+            host.setStatus(tr("status.run.noSelectedConfig"));
+        } else {
             host.debugCoordinator().debugConfig(cfg);
         }
     }

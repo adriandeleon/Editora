@@ -1788,7 +1788,7 @@ public final class FoldManager {
             Node marker = bulbMarker(bulb);
             StackPane slot = new StackPane(marker);
             slot.setCursor(Cursor.HAND);
-            LazyTooltip.install(slot, bulbTooltip::get, null, 300);
+            LazyTooltip.install(slot, bulbTooltip::get, null);
             slot.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON); // it was announced as nothing (EV4)
             slot.setAccessibleText(bulbTooltip.get());
             ownPointer(slot);
@@ -1830,7 +1830,7 @@ public final class FoldManager {
                 marker.setCursor(Cursor.HAND);
                 String runTip = runTooltip.apply(idx);
                 if (runTip != null && !runTip.isBlank()) {
-                    LazyTooltip.install(marker, () -> runTip, null, 300);
+                    LazyTooltip.install(marker, () -> runTip, null);
                 }
                 final int runIdx = idx;
                 ownPointer(marker);
@@ -1925,7 +1925,7 @@ public final class FoldManager {
             }
             String hunk = changeTooltip.apply(idx);
             if (hunk != null && !hunk.isBlank()) {
-                LazyTooltip.install(bar, () -> hunk, "git-diff-tooltip", 300);
+                LazyTooltip.install(bar, () -> hunk, "git-diff-tooltip");
             }
             box.getChildren().add(bar);
         }
@@ -1992,7 +1992,7 @@ public final class FoldManager {
         date.getStyleClass().add("blame-date");
         slot.getChildren().addAll(author, date);
         if (info.tooltip() != null && !info.tooltip().isBlank()) {
-            LazyTooltip.install(slot, info::tooltip, "blame-tooltip", 400);
+            LazyTooltip.install(slot, info::tooltip, "blame-tooltip");
         }
         slot.setCursor(Cursor.HAND);
         final int blameIdx = idx;

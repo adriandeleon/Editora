@@ -647,7 +647,9 @@ class GitFileHistoryFxTest {
                 return traversable;
             });
             assertTrue(stops.size() >= 3, "all branches, refresh and the chip's ✕: " + stops);
-            assertFalse(stops.contains(false), "every toolbar control is a Tab stop");
+            // The controls no command runs are Tab stops (without a mouse there was no way to them); the
+            // all-branches toggle has its command, so like every command's toolbar button it is not one.
+            assertEquals(1, stops.stream().filter(stop -> !stop).count(), "only All Branches leaves the Tab order");
         }
     }
 }
