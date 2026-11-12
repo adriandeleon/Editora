@@ -5,10 +5,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import com.editora.command.KeymapManager;
+import com.editora.command.UserKeyBindings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -777,6 +780,92 @@ public final class ConfigMigrations {
     static JsonNode splitKeybindingsByPlatform(JsonNode input) {
         boolean mac = com.editora.Os.isMac();
         return input instanceof ObjectNode o ? splitKeybindings(o, mac) : input;
+    }
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** The four keys key bindings were kept under before v171: by chord, apart for macOS, active and parked. */
+    private static final List<String> SPLIT_KEYBINDING_KEYS =
+            List.of("keybindings", "keybindingsMac", "keymapKeybindings", "keymapKeybindingsMac");
+
+    /**
+     * v170 → v171 for the settings file: the user's key bindings become one set for every operating system.
+     * They were overrides by chord, kept apart for macOS and for Windows and Linux (v81), so a chord rebound on
+     * one system was not rebound on the other. Now they are kept by command, per keymap, in {@code keyBindings}
+     * (and {@code keyBindingsMacOnly} for the chords only a Mac can type); what each system unbinds is worked
+     * out when its keymap loads ({@link UserKeyBindings}). Nothing is lost: a binding both systems agree on is
+     * stored once, one made on a single system becomes everyone's, and where the two differ the Mac keeps its
+     * own beside the shared one ({@link UserKeyBindings#fromSplit}).
+     *
+     * <p>Safe to repeat: a file without the old keys is left as it is, and a keymap that already has bindings
+     * in the new shape keeps them.
+     */
+    static JsonNode keyBindingsByCommand(JsonNode input) {
+        if (!(input instanceof ObjectNode o) || SPLIT_KEYBINDING_KEYS.stream().noneMatch(o::has)) {
+            return input;
+        }
+        // An unknown configured name ran as the default keymap, so that is where its overrides were made.
+        String active = KeymapManager.resolveName(o.path("keymap").asText(KeymapManager.DEFAULT));
+        Map<String, Map<String, String>> windowsLinux = new LinkedHashMap<>();
+        Map<String, Map<String, String>> mac = new LinkedHashMap<>();
+        parked(o.get("keymapKeybindings"), active, windowsLinux);
+        parked(o.get("keymapKeybindingsMac"), active, mac);
+        windowsLinux.put(active, chordMap(o.get("keybindings")));
+        mac.put(active, chordMap(o.get("keybindingsMac")));
+
+        ObjectNode shared = o.get("keyBindings") instanceof ObjectNode s ? s : JsonNodeFactory.instance.objectNode();
+        ObjectNode macOnly =
+                o.get("keyBindingsMacOnly") instanceof ObjectNode m ? m : JsonNodeFactory.instance.objectNode();
+        java.util.Set<String> keymaps = new java.util.LinkedHashSet<>(windowsLinux.keySet());
+        keymaps.addAll(mac.keySet());
+        for (String keymap : keymaps) {
+            UserKeyBindings.Store store = UserKeyBindings.fromSplit(
+                    windowsLinux.getOrDefault(keymap, Map.of()),
+                    mac.getOrDefault(keymap, Map.of()),
+                    KeymapManager.defaults(keymap, false),
+                    KeymapManager.defaults(keymap, true),
+                    KeymapManager.hasMacVariant(keymap));
+            if (!store.shared().isEmpty() && !shared.has(keymap)) {
+                shared.set(keymap, MAPPER.valueToTree(store.shared()));
+            }
+            if (!store.macOnly().isEmpty() && !macOnly.has(keymap)) {
+                macOnly.set(keymap, MAPPER.valueToTree(store.macOnly()));
+            }
+        }
+        o.set("keyBindings", shared);
+        o.set("keyBindingsMacOnly", macOnly);
+        SPLIT_KEYBINDING_KEYS.forEach(o::remove);
+        return o;
+    }
+
+    /** The overrides parked for the bundled keymaps other than {@code active}, each under its keymap. */
+    private static void parked(@Nullable JsonNode byKeymap, String active, Map<String, Map<String, String>> into) {
+        if (byKeymap == null || !byKeymap.isObject()) {
+            return;
+        }
+        byKeymap.fields().forEachRemaining(e -> {
+            // The active keymap's overrides are the live maps, never the parked ones; a name that is not a
+            // bundled keymap has no defaults to read its overrides against.
+            if (!e.getKey().equals(active) && KeymapManager.AVAILABLE.containsKey(e.getKey())) {
+                into.put(e.getKey(), chordMap(e.getValue()));
+            }
+        });
+    }
+
+    /** A chord → command object as a map; a blank command is an unbind. Anything else in it is dropped. */
+    private static Map<String, String> chordMap(@Nullable JsonNode node) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (node != null && node.isObject()) {
+            node.fields().forEachRemaining(e -> {
+                if (!e.getKey().isBlank()
+                        && (e.getValue().isTextual() || e.getValue().isNull())) {
+                    out.put(
+                            e.getKey(),
+                            e.getValue().isNull() ? "" : e.getValue().asText());
+                }
+            });
+        }
+        return out;
     }
 
     /**

@@ -402,7 +402,11 @@ public enum ConfigSchema {
                     Map.entry(168, (Migration) ConfigMigrations::identity),
                     // v169→170: + uiZoom (100) — the UI zoom, in percent: the whole interface, as against the
                     // editor's text zoom (fontZoom). Additive.
-                    Map.entry(169, (Migration) ConfigMigrations::identity)),
+                    Map.entry(169, (Migration) ConfigMigrations::identity),
+                    // v170→171: the user's key bindings, kept by chord and apart for macOS and for Windows and
+                    // Linux since v81, become one set by command for every system (keyBindings, with
+                    // keyBindingsMacOnly for the chords only a Mac can type). Nothing is lost.
+                    Map.entry(170, (Migration) ConfigMigrations::keyBindingsByCommand)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -415,7 +419,8 @@ public enum ConfigSchema {
                     "astroLspEnabled", 102,
                     "mavenJdkHome", 103,
                     "aiApiKeyLmstudio", 104,
-                    "aiEndpointOpenai", 127)),
+                    "aiEndpointOpenai", 127,
+                    "keyBindings", 171)),
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive

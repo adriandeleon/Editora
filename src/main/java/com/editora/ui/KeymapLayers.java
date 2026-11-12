@@ -1,11 +1,12 @@
 package com.editora.ui;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.editora.command.KeymapManager;
+import com.editora.command.UserKeyBindings.Store;
 import com.editora.config.Settings;
-import org.jspecify.annotations.Nullable;
 
 /**
  * The order the shared keymap's layers are applied in: base keymap → the user's overrides → plugin keymaps →
@@ -19,6 +20,26 @@ import org.jspecify.annotations.Nullable;
 final class KeymapLayers {
 
     private KeymapLayers() {}
+
+    /**
+     * Reloads {@code keymap} as the one {@code settings} names and layers the plugin keymaps and the user's
+     * bindings on it. The user's bindings are worked out against the keymap with the plugins' chords in it, so
+     * a command the user rebound loses a plugin's chord for it as it loses the keymap's own.
+     */
+    static void rebuild(KeymapManager keymap, Settings settings, Iterable<Map<String, String>> pluginKeymaps) {
+        keymap.loadNamed(settings.getKeymap());
+        Map<String, String> base = new LinkedHashMap<>(keymap.bindings());
+        for (Map<String, String> plugin : pluginKeymaps) {
+            plugin.forEach((chord, command) -> {
+                if (command == null || command.isBlank()) {
+                    base.remove(chord);
+                } else {
+                    base.put(chord, command);
+                }
+            });
+        }
+        rebuild(keymap, settings.getKeymap(), pluginKeymaps, UserKeys.overrides(settings, base));
+    }
 
     /** Reloads {@code keymap} as {@code name} and layers the plugin keymaps and the user's overrides on it. */
     static void rebuild(
@@ -35,70 +56,54 @@ final class KeymapLayers {
     }
 
     /**
-     * Makes {@code id} the keymap in {@code settings}, parking the current key-binding overrides under the
-     * keymap that was <em>in force</em>: a configured name that is not a bundled keymap was running as the
-     * default one, so that is the keymap its overrides were made against.
+     * Makes {@code id} the keymap in {@code settings}. The bindings made in the keymap being left stay with
+     * it, except those of commands no bundled keymap binds (a saved macro, an external tool, a run
+     * configuration): such a command has no keymap-specific meaning, so its binding moves to the new keymap,
+     * unless the chord is taken there. A configured name that is not a bundled keymap was running as the
+     * default one, so that is the keymap its bindings were made in.
      */
     static void switchKeymap(Settings settings, String id) {
-        settings.setKeymap(KeymapManager.resolveName(settings.getKeymap()));
-        String from = settings.getKeymap();
-        Map<String, String> carry = portable(settings.keybindingsFor(false), false);
-        Map<String, String> carryMac = portable(settings.keybindingsFor(true), true);
-        settings.switchKeymap(id);
-        if (!java.util.Objects.equals(from, settings.getKeymap())) {
-            carry(
-                    carry,
-                    settings.keybindingsFor(false),
-                    settings.getKeymapKeybindings().get(from),
-                    id,
-                    false);
-            carry(
-                    carryMac,
-                    settings.keybindingsFor(true),
-                    settings.getKeymapKeybindingsMac().get(from),
-                    id,
-                    true);
-            settings.getKeymapKeybindings().remove(from, Map.of()); // nothing left behind: no empty entry
-            settings.getKeymapKeybindingsMac().remove(from, Map.of());
+        String from = KeymapManager.resolveName(settings.getKeymap());
+        settings.setKeymap(id);
+        String to = KeymapManager.resolveName(id);
+        if (from.equals(to)) {
+            return;
         }
-    }
-
-    /** The bindings of commands no bundled keymap binds by default (macros, external tools, run configurations). */
-    private static Map<String, String> portable(Map<String, String> overrides, boolean mac) {
-        Map<String, String> out = new LinkedHashMap<>();
-        overrides.forEach((chord, command) -> {
-            if (command != null && !command.isBlank() && !KeymapManager.boundByAnyKeymap(command, mac)) {
-                out.put(chord, command);
-            }
-        });
-        return out;
+        Store left = UserKeys.store(settings, from);
+        Store entered = UserKeys.store(settings, to);
+        carry(left.shared(), entered.shared(), to, false);
+        carry(left.macOnly(), entered.macOnly(), to, true);
+        UserKeys.put(settings, from, left);
+        UserKeys.put(settings, to, entered);
     }
 
     /**
-     * Moves {@code bindings} from the keymap just left ({@code parked}) into the new one's {@code active}
-     * overrides — unless the chord is taken there or collides with the new keymap's own chords; such a
-     * binding stays with the keymap it was made in and comes back with it.
+     * Moves the bindings of commands no keymap binds from {@code left} into {@code entered}, the bindings of
+     * keymap {@code to}: unless the command is bound there already, or one of its chords is in use there (by
+     * the keymap or by another of the user's bindings); such a binding stays with the keymap it was made in.
+     * {@code mac} says which notation the chords are in.
      */
     private static void carry(
-            Map<String, String> bindings,
-            Map<String, String> active,
-            @Nullable Map<String, String> parked,
-            String keymap,
-            boolean mac) {
-        Map<String, String> live = new LinkedHashMap<>(KeymapManager.defaults(keymap, mac));
-        live.putAll(active);
-        bindings.forEach((chord, command) -> {
-            if (!active.containsKey(chord)
-                    && !active.containsValue(command)
-                    && com.editora.command.KeybindingEdits.conflicts(live, chord, command)
-                            .isEmpty()) {
-                active.put(chord, command);
-                live.put(chord, command);
-                if (parked != null) {
-                    parked.remove(chord);
-                }
+            Map<String, List<String>> left, Map<String, List<String>> entered, String to, boolean mac) {
+        Map<String, String> live = new LinkedHashMap<>(KeymapManager.defaults(to, mac));
+        entered.forEach((command, chords) -> chords.forEach(chord -> live.put(chord, command)));
+        for (var it = left.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<String, List<String>> e = it.next();
+            String command = e.getKey();
+            if (KeymapManager.boundByAnyKeymap(command, false)
+                    || KeymapManager.boundByAnyKeymap(command, true)
+                    || entered.containsKey(command)) {
+                continue;
             }
-        });
+            boolean free = e.getValue().stream()
+                    .allMatch(chord -> com.editora.command.KeybindingEdits.conflicts(live, chord, command)
+                            .isEmpty());
+            if (free) {
+                entered.put(command, e.getValue());
+                e.getValue().forEach(chord -> live.put(chord, command));
+                it.remove();
+            }
+        }
     }
 
     /**

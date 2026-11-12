@@ -1,11 +1,15 @@
 package com.editora.sync;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import com.editora.command.KeymapManager;
+import com.editora.command.UserKeyBindings;
 import com.editora.config.Settings;
 import com.fasterxml.jackson.core.util.DefaultIndenter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
@@ -16,25 +20,27 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The user's key-binding overrides as the sync repository holds them. In the config directory they are part
- * of {@code settings.json} — the active keymap's in {@link Settings#getKeybindings()} /
- * {@link Settings#getKeybindingsMac()}, the other keymaps' parked in {@link Settings#getKeymapKeybindings()} /
- * {@link Settings#getKeymapKeybindingsMac()} — and only those maps are synced, never the rest of the file.
+ * The user's key bindings as the sync repository holds them. In the config directory they are part of
+ * {@code settings.json} ({@link Settings#getKeyBindings()} and {@link Settings#getKeyBindingsMacOnly()}), and
+ * only those are synced, never the rest of the file.
  *
  * <pre>{
- *   "formatVersion" : 1,
+ *   "formatVersion" : 2,
  *   "keymaps" : {
- *     "emacs" : {
- *       "macOS" : { "Cmd-k" : "editor.killLine" },
- *       "windowsLinux" : { "C-x C-s" : "", "C-x s" : "file.save" }
+ *     "vscode" : {
+ *       "shared" : { "file.save" : [ "C-M-s" ], "view.toggleZen" : [ ] },
+ *       "macOnly" : { "nav.goToLine" : [ "C-l" ] }
  *     }
  *   }
  * }</pre>
  *
- * <p>Overrides are kept per keymap, so a computer running another keymap takes them for when it switches, and
- * which keymap is active stays a choice of each computer. A blank command is an unbind
- * ({@link com.editora.command.KeymapManager#UNBIND}). The merge unit is one chord of one keymap and platform.
- * Pure.
+ * <p>Bindings are kept per keymap, so a computer running another keymap takes them for when it switches, and
+ * which keymap is active stays a choice of each computer. They are kept by command and are the same on every
+ * operating system ({@link UserKeyBindings}): {@code shared} in Windows/Linux notation, {@code macOnly} the
+ * chords only a Mac can type. An empty list unbinds the command. The merge unit is one command of one keymap.
+ *
+ * <p>A file in layout 1 (overrides by chord, apart for macOS and for Windows and Linux) is still read: it is
+ * converted as a settings file of that time is ({@link UserKeyBindings#fromSplit}). Pure.
  */
 public final class KeybindingsFile {
 
@@ -42,13 +48,21 @@ public final class KeybindingsFile {
     public static final String PATH = "keybindings.json";
 
     /** The layout this build writes; a file with a higher one was written by a newer Editora. */
-    public static final int FORMAT_VERSION = 1;
+    public static final int FORMAT_VERSION = 2;
 
-    static final String WINDOWS_LINUX = "windowsLinux";
-    static final String MAC = "macOS";
+    static final String SHARED = "shared";
+    static final String MAC_ONLY = "macOnly";
 
-    /** Joins the parts of an entry name: keymap, platform and chord never hold a tab. */
+    /** Layout 1's two sections. */
+    private static final String V1_WINDOWS_LINUX = "windowsLinux";
+
+    private static final String V1_MAC = "macOS";
+
+    /** Joins the parts of an entry name: keymap, section and command never hold a tab. */
     private static final char SEP = '\t';
+
+    /** Joins the chords of an entry's value: a chord never holds a line break. */
+    private static final String CHORDS = "\n";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final ObjectWriter PRETTY =
@@ -61,44 +75,31 @@ public final class KeybindingsFile {
         private static final long serialVersionUID = 1L;
     }
 
-    /** The file for {@code settings}' overrides; null when there are none. */
+    /** The file for {@code settings}' bindings; null when there are none. */
     public static @Nullable String render(Settings settings) {
         Map<String, String> entries = new LinkedHashMap<>();
-        String active = String.valueOf(settings.getKeymap());
-        put(entries, active, WINDOWS_LINUX, settings.getKeybindings());
-        put(entries, active, MAC, settings.getKeybindingsMac());
-        parked(entries, settings.getKeymapKeybindings(), active, WINDOWS_LINUX);
-        parked(entries, settings.getKeymapKeybindingsMac(), active, MAC);
+        put(entries, SHARED, settings.getKeyBindings());
+        put(entries, MAC_ONLY, settings.getKeyBindingsMacOnly());
         return text(entries);
     }
 
-    /**
-     * Replaces {@code settings}' overrides, of every keymap, with those of {@code text} (null: no file, so no
-     * overrides). The keymap {@code settings} runs gets its overrides as the active ones.
-     */
+    /** Replaces {@code settings}' bindings, of every keymap, with those of {@code text} (null: no file, so none). */
     public static void apply(Settings settings, @Nullable String text) throws IOException {
-        Map<String, Map<String, String>> parked = new LinkedHashMap<>();
-        Map<String, Map<String, String>> parkedMac = new LinkedHashMap<>();
-        String active = String.valueOf(settings.getKeymap());
-        Map<String, String> mine = new LinkedHashMap<>();
-        Map<String, String> mineMac = new LinkedHashMap<>();
+        Map<String, Map<String, List<String>>> shared = new LinkedHashMap<>();
+        Map<String, Map<String, List<String>>> macOnly = new LinkedHashMap<>();
         for (Map.Entry<String, String> e : entries(text).entrySet()) {
             String[] parts = split(e.getKey());
-            boolean mac = MAC.equals(parts[1]);
-            Map<String, String> target = active.equals(parts[0])
-                    ? (mac ? mineMac : mine)
-                    : (mac ? parkedMac : parked).computeIfAbsent(parts[0], k -> new LinkedHashMap<>());
-            target.put(parts[2], e.getValue());
+            (MAC_ONLY.equals(parts[1]) ? macOnly : shared)
+                    .computeIfAbsent(parts[0], k -> new LinkedHashMap<>())
+                    .put(parts[2], chords(e.getValue()));
         }
-        settings.setKeybindings(mine);
-        settings.setKeybindingsMac(mineMac);
-        settings.setKeymapKeybindings(parked);
-        settings.setKeymapKeybindingsMac(parkedMac);
+        settings.setKeyBindings(shared);
+        settings.setKeyBindingsMacOnly(macOnly);
     }
 
     /**
-     * The entries of {@code text} — {@code keymap \t platform \t chord} to command — in file order. Empty for
-     * null or blank text.
+     * The entries of {@code text} — {@code keymap \t section \t command} to its chords, one per line — in file
+     * order. Empty for null or blank text.
      *
      * @throws NewerFormatException when a newer Editora wrote the file
      * @throws IOException when it is not this layout
@@ -112,7 +113,8 @@ public final class KeybindingsFile {
         if (tree == null || !tree.isObject()) {
             throw new IOException("not an object");
         }
-        if (tree.path("formatVersion").asInt(0) > FORMAT_VERSION) {
+        int format = tree.path("formatVersion").asInt(0);
+        if (format > FORMAT_VERSION) {
             throw new NewerFormatException();
         }
         JsonNode keymaps = tree.path("keymaps");
@@ -124,16 +126,47 @@ public final class KeybindingsFile {
         }
         for (Iterator<Map.Entry<String, JsonNode>> it = keymaps.fields(); it.hasNext(); ) {
             Map.Entry<String, JsonNode> keymap = it.next();
-            for (String platform : new String[] {WINDOWS_LINUX, MAC}) {
-                JsonNode chords = keymap.getValue().path(platform);
-                for (Iterator<Map.Entry<String, JsonNode>> c = chords.fields(); c.hasNext(); ) {
-                    Map.Entry<String, JsonNode> chord = c.next();
-                    if (chord.getValue().isTextual() && valid(keymap.getKey(), chord.getKey())) {
-                        out.put(
-                                name(keymap.getKey(), platform, chord.getKey()),
-                                chord.getValue().asText());
+            if (format < 2) {
+                UserKeyBindings.Store store = fromLayout1(keymap.getKey(), keymap.getValue());
+                put(out, keymap.getKey(), SHARED, store.shared());
+                put(out, keymap.getKey(), MAC_ONLY, store.macOnly());
+                continue;
+            }
+            for (String section : new String[] {SHARED, MAC_ONLY}) {
+                JsonNode commands = keymap.getValue().path(section);
+                for (Iterator<Map.Entry<String, JsonNode>> c = commands.fields(); c.hasNext(); ) {
+                    Map.Entry<String, JsonNode> command = c.next();
+                    if (command.getValue().isArray() && valid(keymap.getKey(), command.getKey())) {
+                        List<String> chords = new ArrayList<>();
+                        command.getValue().forEach(chord -> {
+                            if (chord.isTextual() && !chord.asText().isBlank()) {
+                                chords.add(chord.asText());
+                            }
+                        });
+                        out.put(name(keymap.getKey(), section, command.getKey()), String.join(CHORDS, chords));
                     }
                 }
+            }
+        }
+        return out;
+    }
+
+    /** One keymap of a layout 1 file, as the store it becomes. */
+    private static UserKeyBindings.Store fromLayout1(String keymap, JsonNode sections) {
+        return UserKeyBindings.fromSplit(
+                overrides(sections.path(V1_WINDOWS_LINUX)),
+                overrides(sections.path(V1_MAC)),
+                KeymapManager.defaults(keymap, false),
+                KeymapManager.defaults(keymap, true),
+                KeymapManager.hasMacVariant(keymap));
+    }
+
+    private static Map<String, String> overrides(JsonNode chords) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Iterator<Map.Entry<String, JsonNode>> c = chords.fields(); c.hasNext(); ) {
+            Map.Entry<String, JsonNode> chord = c.next();
+            if (chord.getValue().isTextual() && !chord.getKey().isBlank()) {
+                out.put(chord.getKey(), chord.getValue().asText());
             }
         }
         return out;
@@ -144,12 +177,12 @@ public final class KeybindingsFile {
         if (entries.isEmpty()) {
             return null;
         }
-        Map<String, Map<String, Map<String, String>>> sorted = new TreeMap<>();
-        entries.forEach((name, command) -> {
+        Map<String, Map<String, Map<String, List<String>>>> sorted = new TreeMap<>();
+        entries.forEach((name, chords) -> {
             String[] parts = split(name);
             sorted.computeIfAbsent(parts[0], k -> new TreeMap<>())
                     .computeIfAbsent(parts[1], k -> new TreeMap<>())
-                    .put(parts[2], command);
+                    .put(parts[2], chords(chords));
         });
         ObjectNode root = MAPPER.createObjectNode();
         root.put("formatVersion", FORMAT_VERSION);
@@ -161,45 +194,43 @@ public final class KeybindingsFile {
         }
     }
 
-    /** How an entry is named in a sync report: {@code emacs: C-x C-s}, {@code emacs (macOS): Cmd-s}. */
+    /** How an entry is named in a sync report: {@code emacs: file.save}, {@code vscode (macOS only): nav.goToLine}. */
     static String label(String name) {
         String[] parts = split(name);
-        return parts[0] + (MAC.equals(parts[1]) ? " (macOS)" : "") + ": " + parts[2];
+        return parts[0] + (MAC_ONLY.equals(parts[1]) ? " (macOS only)" : "") + ": " + parts[2];
     }
 
     private static void put(
-            Map<String, String> entries, String keymap, String platform, @Nullable Map<String, String> overrides) {
-        if (overrides == null) {
+            Map<String, String> entries, String section, @Nullable Map<String, Map<String, List<String>>> byKeymap) {
+        if (byKeymap == null) {
             return;
         }
-        overrides.forEach((chord, command) -> {
-            if (chord != null && valid(keymap, chord)) {
-                entries.put(name(keymap, platform, chord), command == null ? "" : command);
+        byKeymap.forEach((keymap, bindings) -> {
+            if (keymap != null && bindings != null) {
+                put(entries, keymap, section, bindings);
             }
         });
     }
 
-    private static void parked(
-            Map<String, String> entries,
-            @Nullable Map<String, Map<String, String>> parked,
-            String active,
-            String platform) {
-        if (parked == null) {
-            return;
-        }
-        parked.forEach((keymap, overrides) -> {
-            if (keymap != null && !keymap.equals(active)) { // the active keymap's are the live maps, never these
-                put(entries, keymap, platform, overrides);
+    private static void put(
+            Map<String, String> entries, String keymap, String section, Map<String, List<String>> bindings) {
+        bindings.forEach((command, chords) -> {
+            if (command != null && valid(keymap, command)) {
+                entries.put(name(keymap, section, command), chords == null ? "" : String.join(CHORDS, chords));
             }
         });
     }
 
-    private static boolean valid(String keymap, String chord) {
-        return !keymap.isBlank() && !chord.isBlank() && keymap.indexOf(SEP) < 0 && chord.indexOf(SEP) < 0;
+    private static List<String> chords(@Nullable String value) {
+        return value == null || value.isEmpty() ? new ArrayList<>() : new ArrayList<>(List.of(value.split(CHORDS)));
     }
 
-    private static String name(String keymap, String platform, String chord) {
-        return keymap + SEP + platform + SEP + chord;
+    private static boolean valid(String keymap, String command) {
+        return !keymap.isBlank() && !command.isBlank() && keymap.indexOf(SEP) < 0 && command.indexOf(SEP) < 0;
+    }
+
+    private static String name(String keymap, String section, String command) {
+        return keymap + SEP + section + SEP + command;
     }
 
     private static String[] split(String name) {
