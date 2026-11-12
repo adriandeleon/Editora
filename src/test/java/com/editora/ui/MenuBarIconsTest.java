@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -18,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * this test exists — a mapping whose id is a TYPO is indistinguishable from one: the item simply renders
  * with an empty icon column, which is a legitimate state for half the entries.
  */
+@Tag("guard")
 class MenuBarIconsTest {
 
     private static List<String> menuCommandIds() {

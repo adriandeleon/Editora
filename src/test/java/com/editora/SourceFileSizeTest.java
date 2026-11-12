@@ -4,11 +4,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Keeps production source files within the agreed upper bound as features grow. */
+@Tag("guard")
 class SourceFileSizeTest {
     @Test
     void productionJavaFilesStayWithinTenThousandLines() throws Exception {

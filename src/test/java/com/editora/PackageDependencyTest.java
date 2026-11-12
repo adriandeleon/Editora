@@ -8,6 +8,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>Sources are scanned as text, like {@link SourceFileSizeTest}: imports and fully qualified names both
  * count, comments do not.
  */
+@Tag("guard")
 class PackageDependencyTest {
 
     private static final Path SOURCE_ROOT = Path.of("src/main/java/com/editora");

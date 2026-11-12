@@ -10,6 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Debug consoles each kept every line they had ever shown — 111 MB after 200,000 lines, and growing — though
  * their text is capped at 200,000 characters.
  */
+@Tag("guard")
 class RichTextAreaUndoPolicyTest {
 
     private static final String AREA_TYPES = "CodeArea|StyleClassedTextArea|InlineCssTextArea|StyledTextArea"

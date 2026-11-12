@@ -10,6 +10,7 @@ import java.util.Properties;
 import java.util.Set;
 
 import com.editora.text.LanguageRegistry;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * each listed extension's <em>class</em> machine-wide rather than merely adding an "Open with" entry — no
  * type that Windows runs on double-click is claimed.
  */
+@Tag("guard")
 class WindowsFileAssociationsTest {
 
     /** Left to the browser and the image viewer — the same call the Linux .deb's postinst makes. */

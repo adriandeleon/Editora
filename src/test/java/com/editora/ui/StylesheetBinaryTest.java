@@ -9,6 +9,7 @@ import javafx.css.ParsedValue;
 import javafx.css.Rule;
 import javafx.css.Stylesheet;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Pure: the CSS parser and the binary reader need no toolkit.
  */
+@Tag("guard")
 class StylesheetBinaryTest {
 
     private static final List<String> PRECOMPILED = List.of(

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * request can test a virtual host by IP. That also lets every other {@code java.net.http} client in Editora send a
  * {@code Host} header; this keeps it to the HTTP Client, the one place that takes headers from user content.
  */
+@Tag("guard")
 class RestrictedHostHeaderTest {
 
     private static final Pattern SETS_HOST = Pattern.compile("(?i)\\.(header|setHeader|headers)\\(\\s*\"host\"");

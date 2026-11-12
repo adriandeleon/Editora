@@ -17,6 +17,7 @@ import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.search.GitignoreFilter;
 import com.editora.text.LanguageRegistry;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -40,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  * Runs against the source tree (cwd = module root under Maven); skipped gracefully if {@code samples/}
  * isn't present. The generated {@code samples/perf/} tree is git-ignored and excluded.
  */
+@Tag("guard")
 class SamplesCorpusTest {
 
     private static final Path SAMPLES = Path.of("samples");

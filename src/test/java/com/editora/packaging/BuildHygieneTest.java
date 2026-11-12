@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>The coverage floors quoted in {@code docs/testing.md} against the ones the build enforces.
  * </ul>
  */
+@Tag("guard")
 class BuildHygieneTest {
 
     private static final Path REPO = Path.of(System.getProperty("user.dir"));

@@ -280,6 +280,10 @@ testing through the UI. Real controller behavior is covered by the headless-FX h
 [testing.md](testing.md). `mvn verify` enforces JaCoCo per-package line-coverage floors on the
 well-covered pure packages — when you raise a package's coverage, ratchet its floor up.
 
+Before a push, run the narrow tests for the change and the guard tests (`mvn test -Dgroups=guard`), then
+open the pull request and move on without waiting for CI
+([testing.md](testing.md#guard-tests), [`AGENTS.md`](../AGENTS.md)).
+
 ## Docs in the same PR
 
 A feature PR updates `CHANGELOG.md` and `TODO.md` in the same change, not as a follow-up.
