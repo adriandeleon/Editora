@@ -407,6 +407,14 @@ final class WindowCommandRegistrar {
 
         void showReportProblem();
 
+        void showPauta();
+
+        void openPautaRules();
+
+        void openPautaDocs();
+
+        void copyPautaConformance();
+
         void exportConfig();
 
         void importConfig();
@@ -1901,6 +1909,11 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("view.messageLog", host.statusBar()::showMessageLog));
         host.registry().register(Command.of("view.debugLog", host::showDebugLog));
         host.registry().register(Command.of("help.reportProblem", host::showReportProblem));
+        // Pauta (pauta-project.dev): the conformance window, and the pages its links and About's open.
+        host.registry().register(Command.of("help.pauta", host::showPauta));
+        host.registry().register(Command.of("help.pautaRules", host::openPautaRules));
+        host.registry().register(Command.of("help.pautaDocs", host::openPautaDocs));
+        host.registry().register(Command.of("help.copyPauta", host::copyPautaConformance));
         host.registry().register(Command.of("view.openAsHex", host::openActiveAsHex));
         host.registry().register(Command.of("view.openAsText", host::openActiveAsText));
         host.registry().register(Command.of("tool.project", () -> {

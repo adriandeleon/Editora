@@ -33,6 +33,27 @@ public final class AppInfo {
     public static String docsUrl() {
         return HOMEPAGE + "/docs/v-" + releaseVersion();
     }
+
+    /**
+     * The Pauta edition this app works toward (pauta-project.dev): {@code pauta.version} in {@code pom.xml},
+     * Maven-filtered into {@code build-info.properties} like the version. About and the Pauta window show it;
+     * no edition number is written anywhere else in the code.
+     */
+    public static final String PAUTA_EDITION = loadProperty("pauta.version", "unknown");
+
+    /**
+     * The edition's own address, which never changes: {@code https://pauta-project.dev/<edition>/}, never
+     * {@code latest/}, which moves on to newer editions.
+     */
+    public static String pautaUrl() {
+        return "https://pauta-project.dev/" + PAUTA_EDITION + "/";
+    }
+
+    /** The user guide's page on this version's Pauta conformance and exceptions: {@code <docs>/pauta/}. */
+    public static String pautaDocsUrl() {
+        return docsUrl() + "/pauta/";
+    }
+
     /** Copyright notice (matches the bundled {@code LICENSE} file). */
     public static final String COPYRIGHT = "© 2026 Adrián Arturo De León Saldivar";
     /** Short license name; full terms are in the bundled {@code LICENSE} file. */
@@ -77,6 +98,23 @@ public final class AppInfo {
             // fall through to the dev fallback
         }
         return "0.0.0";
+    }
+
+    /** One Maven-filtered value of {@code build-info.properties}, or {@code fallback} for an unfiltered run. */
+    private static String loadProperty(String key, String fallback) {
+        try (InputStream in = AppInfo.class.getResourceAsStream("/com/editora/build-info.properties")) {
+            if (in != null) {
+                Properties props = new Properties();
+                props.load(in);
+                String v = props.getProperty(key, "");
+                if (!v.isBlank() && !v.startsWith("${")) {
+                    return v.strip();
+                }
+            }
+        } catch (IOException ignored) {
+            // fall through to the fallback
+        }
+        return fallback;
     }
 
     /** The Maven-filtered build timestamp; falls back gracefully for unfiltered/dev runs. */

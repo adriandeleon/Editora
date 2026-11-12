@@ -8,6 +8,19 @@ subsystem history belong in [`docs/`](docs/README.md); do not grow this file int
 When documentation and code disagree, verify the code and update the documentation in the same
 change.
 
+## Pauta
+
+This app is working toward Pauta 6.0.1. Its rules: https://pauta-project.dev/6.0.1/llms.txt
+(every rule in one file: https://pauta-project.dev/6.0.1/llms-full.txt).
+
+- Before building a feature, read the rules on its page and copy from the code each rule's Reference names.
+- Cite a rule by its ID and edition: "KBD-07 (Pauta 6.0.1)".
+- Read the numbered edition, never the newest one. Moving to a newer edition is its own change: `pauta.version`
+  in `pom.xml`, this file and the README change together.
+- A rule the app does not meet is an entry in `src/main/resources/com/editora/pauta.json`, with an issue. A
+  change that meets one removes its entry in the same change; one that stops meeting a rule adds an entry.
+  [Pauta conformance](docs/pauta.md) says how, and how to audit the app again.
+
 ## Essential commands
 
 Run Maven from the repository root.

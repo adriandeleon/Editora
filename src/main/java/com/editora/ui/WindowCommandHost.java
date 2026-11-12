@@ -880,6 +880,29 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void showPauta() {
+        new PautaWindow(mc.stage, mc.registry::run, mc::openExternalUrl).show();
+    }
+
+    @Override
+    public void openPautaRules() {
+        mc.openExternalUrl(com.editora.AppInfo.pautaUrl());
+    }
+
+    @Override
+    public void openPautaDocs() {
+        mc.openExternalUrl(com.editora.AppInfo.pautaDocsUrl());
+    }
+
+    @Override
+    public void copyPautaConformance() {
+        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+        content.putString(PautaWindow.markdown(com.editora.PautaConformance.exceptions()));
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+        mc.setStatus(com.editora.i18n.Messages.tr("status.pautaCopied"));
+    }
+
+    @Override
     public void showReportProblem() {
         ReportProblemWindow window = reportProblem;
         if (window == null) {

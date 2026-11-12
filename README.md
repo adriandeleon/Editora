@@ -8,6 +8,7 @@
 ![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk&logoColor=white)
 ![JavaFX](https://img.shields.io/badge/JavaFX-27-1e90ff)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+[![Pauta](https://img.shields.io/badge/Pauta-6.0.1%20%C2%B7%20Partial-d29922)](https://editora-project.dev/docs/pauta/)
 [![Stars](https://img.shields.io/github/stars/adriandeleon/Editora?style=flat)](https://github.com/adriandeleon/Editora/stargazers)
 
 A keyboard-driven, cross-platform programmer's text editor built with **JDK 25**, **JavaFX 27**,
@@ -25,6 +26,8 @@ The site's source is [adriandeleon/editora-website](https://github.com/adriandel
   <source media="(prefers-color-scheme: dark)" srcset="https://editora-project.dev/screenshots/hero/editor.dark.jpg">
   <img alt="Editora editing a Java file" src="https://editora-project.dev/screenshots/hero/editor.jpg">
 </picture></a>
+
+Working toward [Pauta (the adl desktop apps guidelines)](https://pauta-project.dev/), edition [6.0.1](https://pauta-project.dev/6.0.1/), [Pauta conformance: Partial](https://editora-project.dev/docs/pauta/).
 
 Editora is built with the help of AI coding tools.
 

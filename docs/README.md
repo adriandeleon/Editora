@@ -19,6 +19,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 - [gotchas.md](gotchas.md) — the non-obvious traps (JPMS opens, macOS classloader, the
   headless-AWT guard, the texture-pool black window, …) with symptom and fix.
 - [diff.md](diff.md) — concise guide to opening, reviewing, applying, and testing comparisons.
+- [pauta.md](pauta.md) — the Pauta edition Editora works toward, `pauta.json` and its exceptions, the
+  conformance helper and the Pauta window, and what a change that touches a rule must update.
 
 ## Roadmaps
 
