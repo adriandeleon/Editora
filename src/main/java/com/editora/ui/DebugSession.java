@@ -122,6 +122,9 @@ final class DebugSession {
     /** A read-only tab holding code the debugger has only by reference, and that code's source. */
     record SourceDoc(com.editora.dap.DapModels.LoadedSource source, com.editora.editor.EditorBuffer buffer) {}
 
+    /** The objects marked in this session (Mark Object); cleared when it starts again. */
+    final ObjectMarks marks = new ObjectMarks();
+
     /** What the live session said about each file's breakpoints, by document line (cleared between sessions). */
     final Map<Path, Map<Integer, DapModels.BreakpointStatus>> breakpointStatus = new java.util.HashMap<>();
 

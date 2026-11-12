@@ -60,6 +60,14 @@ final class DebugValuePopup implements DebugValuePresenter {
         default void pin(CodeArea area, int line, String expression) {}
     }
 
+    /** The Mark Object label of the object a value shows, or null (see {@link ObjectMarks}). */
+    private java.util.function.Function<String, @Nullable String> marks = value -> null;
+
+    /** Where the popup's rows find the labels of marked objects. */
+    void setMarks(java.util.function.Function<String, @Nullable String> marks) {
+        this.marks = marks == null ? value -> null : marks;
+    }
+
     /** The line the popup was opened for (where Pin to Line pins), or -1. */
     private int anchorLine = -1;
 
@@ -112,7 +120,7 @@ final class DebugValuePopup implements DebugValuePresenter {
             protected void updateItem(DebugPanel.VarRow row, boolean empty) {
                 super.updateItem(row, empty);
                 setText(null);
-                setGraphic(empty || row == null ? null : DebugPanel.renderRow(row));
+                setGraphic(empty || row == null ? null : DebugPanel.renderRow(row, false, marks.apply(row.value())));
             }
         });
         tree.setOnMouseClicked(e -> {

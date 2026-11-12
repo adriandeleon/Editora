@@ -239,6 +239,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
          */
         default void showHistoryFrame(DebugHistory.Stop stop, int frame) {}
 
+        /** Opens {@code text} read-only in a tab titled {@code title}, highlighted as {@code language} (View As). */
+        default void openText(String title, String text, String language) {}
+
+        /** The session's language (an editor language id; "" without a session): how its adapter shows strings. */
+        default String language() {
+            return "";
+        }
+
+        /** Says {@code message} on the status line. */
+        default void say(String message) {}
+
         /** The Debug window came back from an earlier stop: the editor shows the live stop again, if any. */
         default void leaveHistory() {}
 
@@ -348,6 +359,19 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private Runnable onWatchesChanged = () -> {};
     private OverlayInput.@Nullable Prompt prompt;
+
+    /** The objects marked in this session (Mark Object): their labels show beside their values. */
+    private ObjectMarks marks = new ObjectMarks();
+
+    /** Uses the session's marks (shared with the hover popup). */
+    void setObjectMarks(ObjectMarks marks) {
+        this.marks = marks == null ? new ObjectMarks() : marks;
+        variables.refresh();
+    }
+
+    ObjectMarks objectMarks() {
+        return marks;
+    }
 
     /** The prompt of Add / Edit Watch: as {@link #prompt}, with completion in its field (null: {@link #prompt}). */
     private OverlayInput.@Nullable Prompt expressionPrompt;
@@ -681,7 +705,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             protected void updateItem(VarRow row, boolean empty) {
                 super.updateItem(row, empty);
                 setText(null);
-                setGraphic(empty || row == null ? null : renderRow(row, changed(getTreeItem(), row)));
+                setGraphic(
+                        empty || row == null
+                                ? null
+                                : renderRow(row, changed(getTreeItem(), row), marks.labelOf(row.value())));
             }
         });
         // Watches interactions: double-click "+ Add watch…" adds, double-click a watch edits; the
@@ -1039,6 +1066,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** {@link #renderRow(VarRow)}, highlighted when {@code changed}: its value differs from the previous stop's. */
     static TextFlow renderRow(VarRow row, boolean changed) {
+        return renderRow(row, changed, null);
+    }
+
+    /** {@link #renderRow(VarRow, boolean)}, with {@code mark} — the object's Mark Object label — before its value. */
+    static TextFlow renderRow(VarRow row, boolean changed, @Nullable String mark) {
         TextFlow flow = new TextFlow();
         if (changed) {
             flow.getStyleClass().add("debug-row-changed");
@@ -1087,6 +1119,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 Text eq = new Text(" = ");
                 eq.getStyleClass().add("debug-var-eq");
                 flow.getChildren().addAll(name, eq);
+                if (mark != null && !row.failed()) {
+                    Text label = new Text(tr("debugpanel.markLabel", mark) + " ");
+                    label.getStyleClass().add("debug-val-mark");
+                    flow.getChildren().add(label);
+                }
                 if (row.failed()) {
                     // A watch that did not evaluate shows the adapter's message where its value would be: it
                     // must not be coloured as one ("Cannot evaluate…" is not a string or a number).
@@ -2131,6 +2168,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     menu.getItems().add(watchField);
                 }
             }
+            if (row.kind() != Kind.EXCEPTION) {
+                menu.getItems().addAll(markItems(row));
+                if (StringViews.isString(row.value())) {
+                    menu.getItems().add(viewAsMenu(row));
+                }
+            }
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
         TreeItem<VarRow> selectedItem = variables.getSelectionModel().getSelectedItem();
@@ -2153,6 +2196,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             removeAll.setGraphic(Icons.remove());
             removeAll.setOnAction(e -> removeAllWatches());
             menu.getItems().add(removeAll);
+        }
+        if (!marks.isEmpty()) {
+            javafx.scene.control.MenuItem unmarkAll = new javafx.scene.control.MenuItem(tr("debugpanel.unmarkAll"));
+            unmarkAll.setOnAction(e -> {
+                marks.clear();
+                variables.refresh();
+            });
+            menu.getItems().add(unmarkAll);
         }
         javafx.scene.control.CheckMenuItem hex = new javafx.scene.control.CheckMenuItem(tr("debugpanel.hexValues"));
         hex.setSelected(actions.hexValues());
@@ -2294,6 +2345,106 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 }
             });
         });
+    }
+
+    // --- Mark Object and View As -----------------------------------------------------------------------------
+
+    /** Mark Object… (or Edit Mark…) and Unmark Object for a row whose value shows an object's identity. */
+    private List<javafx.scene.control.MenuItem> markItems(VarRow row) {
+        if (ObjectMarks.identity(row.value()) == null) {
+            return List.of();
+        }
+        String current = marks.labelOf(row.value());
+        javafx.scene.control.MenuItem mark = new javafx.scene.control.MenuItem(
+                tr(current == null ? "debugpanel.markObject" : "debugpanel.editMark"));
+        mark.setOnAction(e -> markPrompt(row));
+        if (current == null) {
+            return List.of(mark);
+        }
+        javafx.scene.control.MenuItem unmark = new javafx.scene.control.MenuItem(tr("debugpanel.unmarkObject"));
+        unmark.setOnAction(e -> {
+            marks.mark(row.value(), "");
+            variables.refresh();
+        });
+        return List.of(mark, unmark);
+    }
+
+    /** Asks for the label of the object {@code row} shows (its name to start with), then marks it. */
+    void markPrompt(VarRow row) {
+        if (prompt == null) {
+            return;
+        }
+        String current = marks.labelOf(row.value());
+        String start =
+                current != null ? current : ObjectMarks.tidy(DebugPanelText.oneLine(row.name(), ObjectMarks.MAX_LABEL));
+        prompt.show(tr("debugpanel.markObjectTitle"), tr("debugpanel.markObjectLabel"), start, label -> {
+            if (label != null) {
+                marks.mark(row.value(), label);
+                variables.refresh();
+            }
+        });
+    }
+
+    /** How View As shows a string. */
+    enum ViewAs {
+        JSON("json"),
+        XML("xml"),
+        TEXT("plaintext");
+
+        final String language;
+
+        ViewAs(String language) {
+            this.language = language;
+        }
+    }
+
+    /** View As ▸ JSON / XML / Text, for a string value. */
+    private javafx.scene.control.Menu viewAsMenu(VarRow row) {
+        javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("debugpanel.viewAs"));
+        String expression = row.kind() == Kind.VARIABLE
+                ? pathExpression(variables.getSelectionModel().getSelectedItem())
+                : row.name();
+        for (ViewAs how : ViewAs.values()) {
+            javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(
+                    tr("debugpanel.viewAs." + how.name().toLowerCase(java.util.Locale.ROOT)));
+            item.setOnAction(e -> viewAs(row, expression, how));
+            menu.getItems().add(item);
+        }
+        return menu;
+    }
+
+    /**
+     * Opens {@code row}'s string read-only, laid out as {@code how} says. The whole text is asked for again (the
+     * row may hold a shortened one: js-debug cuts a watch at 1,000 characters) while the program is paused; an
+     * earlier stop of Debug History shows what it kept.
+     */
+    void viewAs(VarRow row, String expression, ViewAs how) {
+        String title = tr("debugpanel.viewAs.title", DebugPanelText.oneLine(row.name(), 40), how.name());
+        if (lastState != DapManager.State.SUSPENDED || expression.isBlank() || viewing() != null) {
+            showAs(title, row.value(), how);
+            return;
+        }
+        actions.evaluate(expression, selectedFrameId, ev -> {
+            boolean whole = ev != null && !ev.failed() && StringViews.isString(ev.text());
+            showAs(title, whole ? ev.text() : row.value(), how);
+        });
+    }
+
+    private void showAs(String title, String shown, ViewAs how) {
+        String text = StringViews.content(shown, actions.language());
+        String laidOut = text;
+        try {
+            laidOut = switch (how) {
+                case JSON -> StringViews.prettyJson(text);
+                case XML -> StringViews.prettyXml(text);
+                case TEXT -> text;
+            };
+            actions.openText(title, laidOut, how.language);
+        } catch (IllegalArgumentException e) {
+            // Not what it was asked to be: shown as it is, and said why.
+            actions.openText(title, text, ViewAs.TEXT.language);
+            actions.say(tr("status.debug.viewAsFailed", how.name(), e.getMessage() == null ? "" : e.getMessage()));
+        }
     }
 
     /**

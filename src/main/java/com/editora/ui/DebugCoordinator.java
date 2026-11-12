@@ -589,6 +589,7 @@ final class DebugCoordinator {
                     () -> ops.persistDebugEvaluateHistory(evaluateHistory().entries()));
             built.setChordLookup(id -> java.util.Objects.requireNonNullElse(ops.chordFor(id), ""));
             built.setSourceCheck(this::canShow);
+            built.setObjectMarks(session.marks);
             built.history().setCapacity(host.settings().getDebugHistoryStops());
             built.setOnWatchesChanged(() -> {
                 List<String> watches = new ArrayList<>(built.getWatches());
@@ -2084,6 +2085,7 @@ final class DebugCoordinator {
                 }
                 if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
                     if (state == DapManager.State.STARTING) {
+                        s().marks.clear(); // an object id or address means nothing to a new run
                         snapshotLaunchedLines(); // B1: what the program is built from (the files were saved)
                     } else {
                         s().launchedLines.clear();
@@ -2510,6 +2512,21 @@ final class DebugCoordinator {
                             refreshValues();
                         });
                 host.setStatus(tr(on ? "status.debug.hexOn" : "status.debug.hexOff"));
+            }
+
+            @Override
+            public void openText(String title, String text, String language) {
+                ops.openReadOnlyDoc(title, text, language);
+            }
+
+            @Override
+            public String language() {
+                return dap().sessionLanguage(); // the last session's while Debug History is read after it
+            }
+
+            @Override
+            public void say(String message) {
+                host.setStatus(message);
             }
 
             @Override
@@ -8374,6 +8391,7 @@ final class DebugCoordinator {
             if (valuePopup.popup().getSkin() != null) {
                 DebugPanel.setPlainValueColours(valuePopup.popup().getSkin().getNode(), plainValueColours()); // C111
             }
+            valuePopup.setMarks(value -> s().marks.labelOf(value)); // the focused session's marks
         }
         return valuePopup;
     }

@@ -1580,6 +1580,25 @@ nothing to the next session. debugpy, with its default `justMyCode`, leaves `exe
 is js-debug's in practice. `DebugFrameSourceTest`, `SourcelessFramesWindowFxTest` (a fake adapter) and the opt-in
 `SourcelessFramesProbeFxTest` (js-debug: a `debugger` statement in `eval` code, a step into it, a breakpoint set in it)
 cover it.
+**Mark Object and View As** ([`ui/ObjectMarks`](../../src/main/java/com/editora/ui/ObjectMarks.java),
+[`ui/StringViews`](../../src/main/java/com/editora/ui/StringViews.java)). *Mark Object…* on a Variables, watch or
+result row gives the object it shows a label, drawn as `[label]` before its value wherever that object appears —
+Variables, watches, evaluation results, the hover popup (`DebugValuePopup.setMarks`) and Debug History — as
+IntelliJ's Mark Object does. An object is told by what its adapter shows of its identity (measured):
+java-debug's object id (`ArrayList@10 size=2`), else an address (debugpy's `<Box object at 0x7f…>`, a native pointer);
+js-debug shows none (`Box`), so a JavaScript object, a number or a string cannot be marked and the item is not
+offered (`ObjectMarks.identity`). Marks are the session's (`DebugSession.marks`), cleared when it starts again — an id
+means nothing to another run — and kept after Stop so Debug History still shows them; the label can be used only to
+recognize the object, not in expressions (java-debug offers no way to name an object). IntelliJ's Referring Objects
+is not offered: it needs JDI's `referringObjects`, which java-debug does not expose and DAP has no request for.
+*View As ▸ JSON / XML / Text* on a string row opens its text in a read-only tab (`Actions.openText` →
+`Ops.openReadOnlyDoc`), laid out and highlighted as JSON (Jackson) or XML (no DTDs or external entities: the value is
+the debuggee's), or as it is; text that is not what it was asked to be opens as text and the status line says why.
+The whole text is evaluated again (`repl`: js-debug cuts a watch or hover at ~1,000 characters) while paused; an
+earlier stop shows what it kept. Each adapter quotes a string its own way (measured): java-debug as `"…"` with the
+text as it is, debugpy and js-debug as a literal of their language, escapes and all (`StringViews.content`).
+`ObjectMarksTest`, `StringViewsTest`, `MarkObjectWindowFxTest` (a fake adapter) and the opt-in
+`MarkObjectProbeFxTest` (java-debug, debugpy) cover it.
 **Add Logpoint** (`DebugCoordinator.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
 (`FoldManager.setBreakpointShiftClick` → `EditorBuffer.setGutterLogpointClick`; unset, a Shift+click toggles like a
 plain click) open a one-field form for the log message, with the `{expression}` completion of the full form. OK is
