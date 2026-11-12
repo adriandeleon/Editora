@@ -163,6 +163,82 @@ class ProjectMapCardsReviewFxTest {
         }
     }
 
+    // ---- the commands a card runs itself arrive from a one-key chord too ----
+
+    /**
+     * Go to Line and Related File are {@code nav.*} commands, and most keymaps give them one key (Ctrl+G,
+     * Ctrl+Shift+T). A card owns its keys, so the dispatcher left every such chord to it without asking whether
+     * the card runs the command: the keys did nothing in a card, while Emacs's two-key {@code M-g g} arrived.
+     */
+    @Test
+    void goToLineAndRelatedFileTypedAsOneKeyInACardAreTheCards(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("App.java"), "one\ntwo\nthree\n");
+        try (Rig r = new Rig()) {
+            List<String> ran = new ArrayList<>();
+            List<Path> related = new ArrayList<>();
+            FxTestSupport.runOnFx(() -> {
+                KeymapManager keymap = new KeymapManager();
+                keymap.loadNamed("emacs"); // C-n is nav.lineDown there: a chord the card keeps for itself
+                // As the CUA, VS Code, Sublime and IntelliJ keymaps bind them, whatever the platform.
+                keymap.applyOverrides(java.util.Map.of("C-g", "nav.goToLine", "C-S-t", "nav.relatedFile"));
+                CommandRegistry registry = new CommandRegistry();
+                for (String id : List.of("nav.goToLine", "nav.relatedFile", "nav.lineDown")) {
+                    registry.register(Command.of(id, id, () -> ran.add(id)));
+                }
+                new KeyDispatcher(registry, keymap, status -> {}).install(r.stage.getScene());
+                r.card.setFollowActions(new ProjectMapPreview.FollowActions() {
+                    @Override
+                    public void follow(Path at, int line, int column, String commandId) {}
+
+                    @Override
+                    public void related(Path of) {
+                        related.add(of);
+                    }
+
+                    @Override
+                    public void fileHistory(Path of) {}
+                });
+                r.card.showFile(file, new Content("one\ntwo\nthree\n", false), null);
+                r.host.layout();
+                r.card.editor().requestFocus();
+                r.card.editor().moveTo(1, 1);
+            });
+            FxTestSupport.runOnFx(() -> {
+                press(r.card.editor(), KeyCode.N, false); // C-n: the card's own line move
+                assertEquals(List.of(), ran, "left to the card, as before");
+                assertFalse(r.card.moves().lineBarShown());
+
+                press(r.card.editor(), KeyCode.T, true); // C-S-t: nav.relatedFile
+                assertEquals(List.of(file.toAbsolutePath().normalize()), related, "the card's file");
+
+                press(r.card.editor(), KeyCode.G, false); // C-g: nav.goToLine
+                assertTrue(r.card.moves().lineBarShown(), "Go to Line typed in the card is the card's");
+                assertEquals("2", r.card.moves().lineField().getText(), "from the card's caret line");
+                assertEquals(List.of(), ran, "none reached the global command, which acts on the active tab");
+
+                // In the bar's field the key is the field's, as in any text field: what was typed stays.
+                r.card.moves().lineField().setText("3");
+                press(r.card.moves().lineField(), KeyCode.G, false);
+                assertEquals("3", r.card.moves().lineField().getText());
+                assertEquals(List.of(), ran);
+
+                // The card menu's rows that do the same say so: each shows the chord of its command.
+                FxTestSupport.call(r.card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
+                assertEquals(
+                        "nav.goToLine",
+                        com.editora.editor.MenuChords.commandOf(r.item("project.map.preview.goToLine.menu")));
+                assertEquals(
+                        "nav.relatedFile",
+                        com.editora.editor.MenuChords.commandOf(r.item("project.map.follow.related")));
+            });
+        }
+    }
+
+    /** Ctrl + {@code code} pressed on {@code target}, with Shift for {@code shift}. */
+    private static void press(javafx.scene.Node target, KeyCode code, boolean shift) {
+        Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, true, false, false));
+    }
+
     // ---- C6: the keyboard-opened card menu acts on the caret line ----
 
     @Test

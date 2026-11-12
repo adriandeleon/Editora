@@ -152,9 +152,9 @@ final class TabContextMenu {
                         annotate,
                         history);
         // "Compare With…" (any two files) and "Open in Diff Viewer" (a .patch/.diff file) are not Git
-        // actions, so they stay outside the Git submenu.
+        // actions, so they stay outside the Git submenu. This tab's file, which need not be the active one.
         MenuItem compareWith = LazyContextMenu.item(
-                tr("menu.compareWith"), Icons.diff(), () -> c.diffCoordinator.compareActiveWithFile());
+                tr("menu.compareWith"), Icons.diff(), () -> c.diffCoordinator.compareWithFile(buffer.getPath()));
         MenuItem openPatch = LazyContextMenu.item(
                 tr("menu.openInDiffViewer"), Icons.diff(), () -> c.diffCoordinator.openPatchFile(buffer));
         MenuItem reveal = LazyContextMenu.item(

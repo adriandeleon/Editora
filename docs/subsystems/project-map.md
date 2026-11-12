@@ -301,7 +301,8 @@ bar first and leaves the match selected; the next Escape closes the card. The fi
 
 **Moving inside a card.** `MapCardMoves` runs the editor's movement commands typed in a focused card on the card's
 text, through the same `HANDLED_COMMANDS` predicate (taken even with nothing to move to, so they never reach the active
-tab). **Go to Line** (`nav.goToLine`, or the menu's **Go to Line…**) opens a bar under the title bar, like find's: a
+tab). They are `nav.*` commands, which a key-owning window otherwise keeps as keys: the dispatcher asks the predicate
+before it leaves a one-key chord of one to the card, so Ctrl+G arrives as Emacs's `M-g g` does. **Go to Line** (`nav.goToLine`, or the menu's **Go to Line…**) opens a bar under the title bar, like find's: a
 field holding the caret's line and "Lines a–b", numbered as the file numbers them, so a declaration card's lines keep
 their file numbers. It takes `line` or `line:column`; a line outside the card goes to its first or last line, as the
 editor clamps, and what is not a number marks the field and leaves the bar open. Enter goes and closes the bar;

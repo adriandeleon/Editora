@@ -2819,7 +2819,7 @@ final class ProjectMapPreview extends StackPane {
         MenuItem find = MenuChords.tag(new MenuItem(tr("project.map.preview.find"), Icons.find()), "find.show");
         find.setDisable(empty);
         find.setOnAction(ignored -> showFind());
-        MenuItem goToLine = new MenuItem(tr("project.map.preview.goToLine.menu"));
+        MenuItem goToLine = MenuChords.tag(new MenuItem(tr("project.map.preview.goToLine.menu")), "nav.goToLine");
         goToLine.setDisable(empty);
         goToLine.setOnAction(ignored -> moves.showLineBar());
         java.util.List<MenuItem> items = new java.util.ArrayList<>(java.util.List.of(copy, selectAll, find, goToLine));
@@ -3218,7 +3218,7 @@ final class ProjectMapPreview extends StackPane {
             items.addAll(inEditor);
         }
         items.add(new SeparatorMenuItem());
-        MenuItem related = new MenuItem(tr("project.map.follow.related"));
+        MenuItem related = MenuChords.tag(new MenuItem(tr("project.map.follow.related")), RELATED_COMMAND);
         related.setOnAction(ignored -> actions.related(file));
         MenuItem history =
                 MenuChords.tag(new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog()), "git.fileHistory");

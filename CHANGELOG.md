@@ -569,6 +569,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Compare With… on a background tab compares that tab's file.** Right-clicking a tab that was not the active one
+  and choosing Compare With… compared the active file with the one you picked. Every other row of the tab menu
+  already acted on the tab you clicked.
+- **One-key shortcuts for Go to Line, Related File, the matching bracket and Back / Forward work in a Project Map
+  card.** A card runs these on its own text and file, but only a multi-key chord reached it: Ctrl+G (Go to Line in the
+  CUA, VS Code, Sublime and IntelliJ keymaps), Ctrl+Shift+T (Related File in IntelliJ) and the like did nothing while
+  a card had the keyboard, and Emacs's `C-M-a` / `C-M-e` did not move to a definition's start or end. Back and
+  Forward typed on the Map itself now walk its history from a one-key chord too. The card menu's **Go to Line…** and
+  **Related Test / Subject** rows show their shortcut.
 - **An unexpected error now shows a message in the status bar.** An uncaught exception was written to the
   Application Log and nothing else, so the action you took simply did nothing. The status bar now says an
   unexpected error occurred and where the details are, at most once every ten seconds.
