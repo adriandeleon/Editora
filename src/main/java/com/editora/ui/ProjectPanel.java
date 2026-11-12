@@ -334,6 +334,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
         }
 
+        /** As above, against {@code base} (Map gaps round 3, item 3). */
+        default void gitWorkingChanges(
+                Path folder,
+                com.editora.git.GitService.ChangesBase base,
+                java.util.function.Consumer<com.editora.git.GitChanges.Result> found) {
+            if (base.head()) {
+                gitWorkingChanges(folder, found);
+            } else {
+                found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
+            }
+        }
+
+        /** The branches the Changes card may compare with; on the FX thread, none when Git is off. */
+        default void gitReviewRefs(
+                Path folder, java.util.function.Consumer<com.editora.git.GitService.ReviewRefs> found) {
+            found.accept(com.editora.git.GitService.ReviewRefs.NONE);
+        }
+
+        /** Opens the editor's diff of {@code file} against the commit {@code ref}, named {@code label} there. */
+        default void gitCompareWithRef(Path file, String ref, String label) {}
+
         /** The permalink of a file (its lines) or folder at HEAD; on the FX thread, none when Git is off. */
         default void gitPermalink(
                 Path target,
@@ -3209,6 +3230,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             @Override
             public void compareWithHead(Path file) {
                 actions.gitCompareWithHead(file);
+                raiseEditorWindow();
+            }
+
+            @Override
+            public void workingChanges(
+                    Path folder,
+                    com.editora.git.GitService.ChangesBase base,
+                    Consumer<com.editora.git.GitChanges.Result> found) {
+                actions.gitWorkingChanges(folder, base, found);
+            }
+
+            @Override
+            public void reviewRefs(Path folder, Consumer<com.editora.git.GitService.ReviewRefs> found) {
+                actions.gitReviewRefs(folder, found);
+            }
+
+            @Override
+            public void compareWith(Path file, String ref, String label) {
+                actions.gitCompareWithRef(file, ref, label);
                 raiseEditorWindow();
             }
         };

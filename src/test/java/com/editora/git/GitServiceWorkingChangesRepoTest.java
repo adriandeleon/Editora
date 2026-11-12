@@ -78,6 +78,76 @@ class GitServiceWorkingChangesRepoTest {
     }
 
     @Test
+    void aBranchsChangesSinceItLeftMainAndTheRefsOffered() throws Exception {
+        Path repo = Files.createDirectories(temp.resolve("branch"));
+        GitServiceRecentChangesTest.git(repo, null, "init", "-q", "-b", "main");
+        Files.writeString(repo.resolve("A.txt"), "a\n");
+        GitServiceRecentChangesTest.commit(repo, 3, "Ada", "start");
+        GitServiceRecentChangesTest.git(repo, null, "checkout", "-q", "-b", "feature");
+        Files.writeString(repo.resolve("A.txt"), "a\nb\n");
+        Files.writeString(repo.resolve("B.txt"), "b\n");
+        GitServiceRecentChangesTest.commit(repo, 2, "Ada", "feature work");
+        GitServiceRecentChangesTest.git(repo, null, "checkout", "-q", "main");
+        Files.writeString(repo.resolve("C.txt"), "c\n");
+        GitServiceRecentChangesTest.commit(repo, 1, "Bo", "main moves on");
+        GitServiceRecentChangesTest.git(repo, null, "checkout", "-q", "feature");
+        Files.writeString(repo.resolve("A.txt"), "a\nb\nc\n"); // and an uncommitted change
+
+        GitChanges.Result head = service.workingChangesNow(repo);
+        assertEquals(
+                List.of("A.txt"),
+                head.files().stream().map(GitChanges.FileDiff::path).toList());
+        assertEquals("HEAD", head.base());
+
+        GitChanges.Result branch = service.workingChangesNow(repo, new GitService.ChangesBase("main", true));
+        assertTrue(branch.ok(), branch.error());
+        assertEquals(
+                List.of("A.txt", "B.txt"),
+                branch.files().stream().map(GitChanges.FileDiff::path).toList(),
+                "what the branch changes, not what main did since");
+        assertEquals(2, branch.file("A.txt").added());
+        assertTrue(branch.base().matches("[0-9a-f]{40}"), branch.base());
+
+        GitChanges.Result tip = service.workingChangesNow(repo, new GitService.ChangesBase("main", false));
+        assertEquals('D', tip.file("C.txt").status(), "against main's tip: its new file is not here");
+
+        assertTrue(service.workingChangesNow(repo, new GitService.ChangesBase("-x", true))
+                .error()
+                .startsWith("unsafe"));
+        assertTrue(service.workingChangesNow(repo, new GitService.ChangesBase("nope", true))
+                .error()
+                .startsWith("no base"));
+        assertFalse(GitService.ChangesBase.HEAD.equals(new GitService.ChangesBase("main", true)));
+        assertTrue(GitService.ChangesBase.HEAD.head());
+
+        GitService.ReviewRefs refs = service.reviewRefsNow(repo);
+        assertEquals("feature", refs.branch());
+        assertEquals("main", refs.defaultBranch(), "no origin: the main branch there is");
+        assertEquals(List.of("feature", "main"), refs.refs().stream().sorted().toList());
+        GitServiceRecentChangesTest.git(repo, null, "update-ref", "refs/remotes/origin/main", "main");
+        GitServiceRecentChangesTest.git(
+                repo, null, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+        GitServiceRecentChangesTest.git(repo, null, "checkout", "-q", "--detach");
+        GitService.ReviewRefs detached = service.reviewRefsNow(repo);
+        assertEquals("", detached.branch(), "a detached HEAD is on no branch");
+        assertEquals("origin/main", detached.defaultBranch(), "origin's HEAD names it");
+        assertTrue(detached.refs().contains("origin/main"));
+        StringBuilder many = new StringBuilder();
+        for (int i = 0; i < GitService.MAX_REVIEW_REFS + 5; i++) {
+            many.append("refs/heads/b").append(i).append('\n');
+        }
+        assertEquals(
+                GitService.MAX_REVIEW_REFS,
+                GitService.reviewRefNames(many.toString()).size());
+        assertSame(GitService.ReviewRefs.NONE, service.reviewRefsNow(Files.createDirectories(temp.resolve("none"))));
+        assertSame(GitService.ReviewRefs.NONE, service.reviewRefsNow(null));
+        assertEquals(
+                List.of("a", "origin/a"),
+                GitService.reviewRefNames(
+                        "refs/heads/a\nrefs/remotes/origin/HEAD\nrefs/remotes/origin/a\nrefs/tags/x\nrefs/heads/a\n\n"));
+    }
+
+    @Test
     void aRepositoryWithNoCommitAndAFolderOutsideAny() throws Exception {
         Path fresh = Files.createDirectories(temp.resolve("fresh"));
         GitServiceRecentChangesTest.git(fresh, null, "init", "-q", "-b", "main");

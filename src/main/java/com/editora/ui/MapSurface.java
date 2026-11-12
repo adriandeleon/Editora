@@ -296,6 +296,10 @@ final class MapSurface extends Region {
     private Set<Path> emphasized = Set.of();
     /** The rows the selection uses and that use it, under ⋯ "Show dependencies of the selection" (round 2). */
     private MapDependencyOverlay dependencyOverlay = MapDependencyOverlay.NONE;
+    /** The files the Changes card's branch changes, with their status letters (round 3, item 3). */
+    private Map<Path, Character> reviewFiles = Map.of();
+    /** The folders holding any of {@link #reviewFiles}. */
+    private Set<Path> reviewFolders = Set.of();
 
     FlowDirection flowDirection = DEFAULT_FLOW;
     private @Nullable Path selected;
@@ -3760,6 +3764,10 @@ final class MapSurface extends Region {
             g.strokeRoundRect(box.x() - 3, box.y() - 3, box.width() + 6, box.height() + 6, 8 * zoom + 6, 8 * zoom + 6);
         }
         g.setGlobalAlpha(dimmed ? DIMMED_MARK_ALPHA : 1.0);
+        char review = entry.isSymbol() ? 0 : reviewMark(entry.path());
+        if (review != 0) {
+            drawReviewMark(g, box, review);
+        }
         activityDrawHeatMeter(g, box, heat, focusedSelection, fill);
         drawOpenMarker(g, entry, content, focusedSelection);
 
@@ -4266,6 +4274,45 @@ final class MapSurface extends Region {
 
     MapDependencyOverlay dependencyOverlay() {
         return dependencyOverlay;
+    }
+
+    /**
+     * The files the Changes card's comparison with a branch changes (round 3, item 3), by path with their status
+     * letters: each of their rows, and the rows of the folders holding them, get a stripe at their left edge — green
+     * for an added file, red for a removed one, the accent for the rest. Empty takes the stripes away.
+     */
+    void setReviewChanges(Map<Path, Character> files) {
+        Map<Path, Character> given = Map.copyOf(files);
+        if (given.equals(reviewFiles)) {
+            return;
+        }
+        Set<Path> folders = new HashSet<>();
+        for (Path file : given.keySet()) {
+            for (Path parent = file.getParent(); parent != null && folders.add(parent); parent = parent.getParent()) {
+                // every folder above it, once
+            }
+        }
+        reviewFiles = given;
+        reviewFolders = Set.copyOf(folders);
+        repaint();
+    }
+
+    /** The status letter of the branch's change to {@code path}: its own, {@code '*'} for a folder holding some, or 0. */
+    char reviewMark(Path path) {
+        Character own = reviewFiles.get(path);
+        return own != null ? own : reviewFolders.contains(path) ? '*' : 0;
+    }
+
+    private void drawReviewMark(GraphicsContext g, NodeBox box, char mark) {
+        g.setFill(
+                switch (mark) {
+                    case 'A', 'U' -> color(successProbe, Color.web("#3fb950"));
+                    case 'D' -> color(dangerProbe, Color.web("#f85149"));
+                    case '*' -> color(mutedProbe, Color.web("#8b949e"));
+                    default -> color(accentProbe, Color.web("#388bfd"));
+                });
+        double inset = 5 * zoom;
+        g.fillRoundRect(box.x() + 1.5 * zoom, box.y() + inset, 3 * zoom, box.height() - 2 * inset, 3 * zoom, 3 * zoom);
     }
 
     /**
@@ -4886,6 +4933,12 @@ final class MapSurface extends Region {
             case MapDependencyOverlay.USED_BY -> statuses.add(tr("project.map.tooltip.depUses"));
             case MapDependencyOverlay.BOTH -> statuses.add(tr("project.map.tooltip.depBoth"));
             default -> {}
+        }
+        char review = reviewMark(entry.path());
+        if (review == '*') {
+            statuses.add(tr("project.map.tooltip.reviewHolds"));
+        } else if (review != 0) {
+            statuses.add(tr("project.map.tooltip.reviewChanged"));
         }
         if (!statuses.isEmpty()) {
             lines.add(tr("project.map.tooltip.status", String.join(", ", statuses)));

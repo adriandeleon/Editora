@@ -974,15 +974,32 @@ final class ProjectMapView extends VBox {
             });
             made.setOnCompare(file -> {
                 FollowCode code = followCode;
-                if (code != null) {
+                if (code == null) {
+                    return;
+                }
+                com.editora.git.GitService.ChangesBase base = made.base();
+                com.editora.git.GitChanges.Result read = made.changes();
+                if (base.head() || read == null || !read.ok()) {
                     code.compareWithHead(file);
+                } else {
+                    code.compareWith(file, read.base(), ProjectMapChangesCard.againstText(base));
                 }
             });
             made.setOnRefresh(() -> readChanges(made));
             made.setOnStatus(message -> onStatus.accept(message));
+            made.setOnBaseChanged(base -> readChanges(made));
+            made.setOnClosed(() -> surface.setReviewChanges(Map.of()));
         });
         card.show(current, select == null ? null : select.toAbsolutePath().normalize());
         readChanges(card);
+        FollowCode code = followCode;
+        if (code != null) {
+            code.reviewRefs(current, refs -> {
+                if (cards.changesCard() == card && current.equals(card.root())) {
+                    card.setRefs(refs);
+                }
+            });
+        }
         return card;
     }
 
@@ -996,11 +1013,29 @@ final class ProjectMapView extends VBox {
             card.setChanges(com.editora.git.GitChanges.Result.UNAVAILABLE);
             return;
         }
-        code.workingChanges(folder, found -> {
-            if (cards.changesCard() == card && folder.equals(card.root())) {
+        com.editora.git.GitService.ChangesBase base = card.base();
+        code.workingChanges(folder, base, found -> {
+            if (cards.changesCard() == card && folder.equals(card.root()) && base.equals(card.base())) {
                 card.setChanges(found);
+                surface.setReviewChanges(reviewChanges(folder, base, found));
             }
         });
+    }
+
+    /**
+     * The files a branch changes, by absolute path with their status letters, for the Map's rows (round 3, item 3):
+     * none while the card shows the uncommitted changes, which the rows' Git marks show already. Pure.
+     */
+    static Map<Path, Character> reviewChanges(
+            Path folder, com.editora.git.GitService.ChangesBase base, com.editora.git.GitChanges.Result found) {
+        if (base.head() || !found.ok()) {
+            return Map.of();
+        }
+        Map<Path, Character> out = new HashMap<>();
+        for (com.editora.git.GitChanges.FileDiff file : found.files()) {
+            out.put(ProjectMapModel.normalize(folder.resolve(file.path())), file.status());
+        }
+        return out;
     }
 
     /**
@@ -3321,6 +3356,26 @@ final class ProjectMapView extends VBox {
 
         /** Opens the editor's diff of {@code file} against HEAD. */
         default void compareWithHead(Path file) {}
+
+        /** As {@link #workingChanges(Path, Consumer)}, against {@code base} (Map gaps round 3, item 3). */
+        default void workingChanges(
+                Path folder,
+                com.editora.git.GitService.ChangesBase base,
+                Consumer<com.editora.git.GitChanges.Result> found) {
+            if (base.head()) {
+                workingChanges(folder, found);
+            } else {
+                found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
+            }
+        }
+
+        /** The branches the Changes card may compare with; on the FX thread. */
+        default void reviewRefs(Path folder, Consumer<com.editora.git.GitService.ReviewRefs> found) {
+            found.accept(com.editora.git.GitService.ReviewRefs.NONE);
+        }
+
+        /** Opens the editor's diff of {@code file} against the commit {@code ref}, named {@code label} there. */
+        default void compareWith(Path file, String ref, String label) {}
     }
 
     private @Nullable FollowCode followCode;
