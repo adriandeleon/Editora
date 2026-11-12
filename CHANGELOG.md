@@ -436,6 +436,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Right-click menus and drop-downs show each command's keyboard shortcut beside its row**, as the menu bar
+  does, read from the active keymap and from your own key bindings each time a menu opens. More than 120
+  rows that showed none now show one where their command is bound: in the Commit window, the Git log, the GitHub panel, the diff
+  viewer, the Debug panel, the terminal's tabs, Project Map cards and declaration rows, the editor's and a
+  tab's menus, tool window headers, the HTTP Client, the CSV grid and Markdown lint. An external tool's row
+  shows the shortcut you gave that tool.
+- **The keymap's Copy and Select All keys work in a Project Map card.** A card answered only the built-in
+  Ctrl+C and Ctrl+A (Cmd on macOS); M-w in the Emacs keymap, or a shortcut of your own, did nothing there.
 - **The Menu key and Shift+F10 open the selected row's menu in every list, tree and table**, at that row, after
   scrolling it into view. In the Problems panel the keys did nothing; in the Commit window, the Debug call
   stack and threads, Test Results, the HTTP headers table, the CSV grid and several others the menu opened in

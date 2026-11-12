@@ -513,14 +513,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {
-      "rule": "MENU-15",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/menus/#menu-15",
-      "kind": "pending",
-      "reason": "Many right-click menus and drop-downs do not show the shortcuts of their rows.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1566"
-    },
-    {
       "rule": "MENU-16",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/menus/#menu-16",
@@ -549,7 +541,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/menus/#menu-05",
       "kind": "pending",
-      "reason": "Some trees, lists and read-only consoles have no right-click menu, among them the Hierarchy and References panels and the Debug Log.",
+      "reason": "Some trees, lists and read-only consoles have no right-click menu, among them the Hierarchy and References panels and the Debug Log, and many right-click rows do something no command does.",
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {
