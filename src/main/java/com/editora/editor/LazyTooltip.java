@@ -31,7 +31,7 @@ public final class LazyTooltip {
 
     /**
      * As {@link #install(Node, Supplier)}, with a style class for the tooltip (may be {@code null}). The show
-     * delay is the stylesheet's, the same for every tooltip in the app.
+     * delay is {@link ControlNames#TOOLTIP_DELAY}, the one every named control's tooltip has.
      */
     public static void install(Node node, Supplier<String> text, @Nullable String styleClass) {
         node.addEventHandler(MouseEvent.MOUSE_ENTERED, new EventHandler<>() {
@@ -46,6 +46,7 @@ public final class LazyTooltip {
                 if (styleClass != null) {
                     tip.getStyleClass().add(styleClass);
                 }
+                tip.setShowDelay(ControlNames.TOOLTIP_DELAY);
                 created++;
                 Tooltip.install(node, tip);
             }

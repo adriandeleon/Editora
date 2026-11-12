@@ -34,10 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Settings…, Zen Mode, TODO and Bookmarks have menu rows** (File, View and Window), so no toolbar button is
+- **Settings…, Zen Mode, TODO and Bookmarks have menu rows** (Tools, View and Window), so no toolbar button is
   the only way to its action.
 - **Five commands for buttons that had none**: Run: Run Selected Configuration and Debug: Debug Selected
-  Configuration (the toolbar's buttons beside the configuration box, now also in the Run menu), Message Log:
+  Configuration (the toolbar's buttons beside the configuration box, now also under Run → Debugger), Message Log:
   Clear, Output: Save Output… and Output: Show Previous Run.
 - **Find in every console and in the Application Log.** The Run, External Tools and Debug consoles, the test
   output of Test Results and the Application Log window now have a find bar, as the build console did. Press
@@ -454,8 +454,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tab no longer stops on toolbar buttons.** The main toolbar, the tool window stripes, a tool window's header
   buttons and the panel toolbar buttons that a command also runs are skipped, so Tab moves through the
   content. Each is still reached by its command, the palette and the menus.
-- **Every tooltip appears after the same 400 ms.** The gutter's markers used 300 ms, the diff viewer and the
-  Map 350 ms, and most others JavaFX's one second.
+- **Button and gutter tooltips appear after the same 400 ms.** The gutter's markers used 300 ms, the diff viewer
+  and the Map 350 ms, and toolbar buttons JavaFX's one second. Tooltips on labels and list rows still take a
+  second.
 - **A tool window stripe button's tooltip follows its window's title** (the Project window's "Current Folder").
 - **Right-click menus and drop-downs show each command's keyboard shortcut beside its row**, as the menu bar
   does, read from the active keymap and from your own key bindings each time a menu opens. More than 120

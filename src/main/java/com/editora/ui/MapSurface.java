@@ -521,6 +521,7 @@ final class MapSurface extends Region {
         // position 14 one more child, canvasA11y, is a tree of the rows on screen, each a tree item.
         setAccessibleRole(AccessibleRole.PARENT);
         setAccessibleHelp(tr("project.map.accessibleHelp"));
+        nodeTooltip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
         nodeTooltip.setHideDelay(Duration.millis(100));
         nodeTooltip.setWrapText(true);
         nodeTooltip.setMaxWidth(520);

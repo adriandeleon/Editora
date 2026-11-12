@@ -1160,6 +1160,7 @@ public final class DiffViewerPane implements TabContent {
         Tooltip tooltip = new Tooltip(text);
         tooltip.setWrapText(true);
         tooltip.setMaxWidth(360);
+        tooltip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
         return tooltip;
     }
 

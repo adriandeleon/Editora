@@ -74,6 +74,10 @@ class CommandTipsFxTest {
                 assertEquals("Save", CommandTips.title("file.save"), "the title without its palette category");
                 assertEquals(name, save.getTooltip().getText());
                 assertEquals(name, save.getAccessibleText(), "a screen reader says what the tooltip shows");
+                assertEquals(
+                        com.editora.editor.ControlNames.TOOLTIP_DELAY,
+                        save.getTooltip().getShowDelay(),
+                        "the one delay every named control's tooltip has");
 
                 // A keymap switch: the same button, named again from the new keymap.
                 KeymapManager emacs = keymap("emacs");

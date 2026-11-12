@@ -6148,8 +6148,6 @@
 .context-menu,
 .tooltip {
     -fx-background-radius: 8px, 7px;
-    /* Every tooltip shows after the same delay, set here and nowhere else: no tooltip sets its own. */
-    -fx-show-delay: 400ms;
 }
 /* The offset must be >= the radius, and this is not a cosmetic choice.
    A context menu is a real native WINDOW, and JavaFX sizes it to its root's bounds INCLUDING the effect —

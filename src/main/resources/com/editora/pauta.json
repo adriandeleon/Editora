@@ -417,6 +417,14 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
     },
     {
+      "rule": "TBAR-14",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-14",
+      "kind": "pending",
+      "reason": "Tooltips on labels, list rows and badges still appear after one second, not the 400 ms that buttons and gutter markers use.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
       "rule": "TBAR-02",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-02",

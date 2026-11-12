@@ -469,8 +469,9 @@ earlier in the keymap being switched to. `Settings.setKeymap` is the bare proper
 - **Toolbar buttons stay out of the Tab order** (`setFocusTraversable(false)`, which `Icons.toolbarButton`
   does) when a command also runs what they do. A toolbar button with no command behind it stays a Tab stop
   until it has one: taking it out would leave it to the mouse alone.
-- **Tooltip delay**: `.tooltip { -fx-show-delay: 400ms }` in `app.css` is the only place it is set. No
-  tooltip calls `setShowDelay`.
+- **Tooltip delay**: `ControlNames.TOOLTIP_DELAY` (400 ms), which `ControlNames.name` and `LazyTooltip`
+  set on every tooltip they make; a tooltip built by hand sets the same constant. It cannot live in the
+  stylesheet: `-fx-show-delay` does not survive the precompiled `.bss` form (`StylesheetBinaryTest`).
 - **Chords on menu rows**: a right-click or drop-down row that does what a command does is tagged with that
   command's id, [`MenuChords.tag(item, "command.id")`](../../src/main/java/com/editora/editor/MenuChords.java),
   and then shows the command's chord in the menu's right-hand column. The chord is read from the live

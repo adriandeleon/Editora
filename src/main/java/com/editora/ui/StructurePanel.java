@@ -1608,6 +1608,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             if (!same) {
                 if (item.doc() != null && !item.doc().isEmpty()) {
                     Tooltip tip = new Tooltip(item.doc());
+                    tip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
                     tip.setWrapText(true);
                     tip.setMaxWidth(480);
                     setTooltip(tip);
