@@ -7,7 +7,6 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 
 import com.sun.jna.Library;
@@ -33,9 +32,8 @@ final class ChildProcesses {
 
     private ChildProcesses() {}
 
-    private static final String OS = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-    private static final boolean LINUX = OS.contains("linux");
-    private static final boolean MAC = OS.startsWith("mac");
+    private static final boolean LINUX = com.editora.Os.isLinux();
+    private static final boolean MAC = com.editora.Os.isMac();
 
     /** The children's pids, in no particular order; empty when there are none or the process is gone. */
     static List<Long> of(long pid) {

@@ -2,7 +2,6 @@ package com.editora.git;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -62,8 +61,7 @@ public final class GitSafety {
     private static final Pattern VERSION = Pattern.compile("(\\d+)\\.(\\d+)");
 
     /** {@code -c} overrides for the current platform; see the class comment. */
-    static final List<String> BACKGROUND_CONFIG = backgroundConfig(
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win"));
+    static final List<String> BACKGROUND_CONFIG = backgroundConfig(com.editora.Os.isWindows());
 
     /**
      * The variables that bind a git process to one particular repository — what

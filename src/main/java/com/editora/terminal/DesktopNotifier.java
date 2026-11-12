@@ -5,7 +5,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -70,13 +69,12 @@ public final class DesktopNotifier {
      * The command that posts a notification on this platform, or null where there is none to run. Pure, so each
      * platform's command — and that the text stays out of the code — is tested.
      *
-     * @param os the {@code os.name} property
+     * @param os the operating system to post on
      * @param find a program's absolute path, or null when it is not installed
      */
     static @Nullable Command command(
-            @Nullable String os, String title, String body, Function<String, @Nullable Path> find) {
-        String name = os == null ? "" : os.toLowerCase(Locale.ROOT);
-        if (name.startsWith("mac")) {
+            com.editora.Os.Kind os, String title, String body, Function<String, @Nullable Path> find) {
+        if (os == com.editora.Os.Kind.MAC) {
             return new Command(
                     List.of(
                             "/usr/bin/osascript",
@@ -90,7 +88,7 @@ public final class DesktopNotifier {
                             body),
                     Map.of());
         }
-        if (name.startsWith("windows")) {
+        if (os == com.editora.Os.Kind.WINDOWS) {
             String encoded = Base64.getEncoder().encodeToString(WINDOWS_SCRIPT.getBytes(StandardCharsets.UTF_16LE));
             return new Command(
                     List.of("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded),
@@ -159,7 +157,7 @@ public final class DesktopNotifier {
     public static void post(String title, String body) {
         WORKER.execute(() -> {
             Command command =
-                    command(System.getProperty("os.name"), title.isBlank() ? APP : title, body, PrimarySelection::find);
+                    command(com.editora.Os.current(), title.isBlank() ? APP : title, body, PrimarySelection::find);
             if (command == null) {
                 LOG.warning("Desktop notification not shown: no notify-send or gdbus on the PATH");
                 return;

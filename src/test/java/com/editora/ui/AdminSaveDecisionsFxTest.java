@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("fx")
 class AdminSaveDecisionsFxTest {
 
-    private static final String OS = System.getProperty("os.name");
+    private static final com.editora.Os.Kind OS = com.editora.Os.current();
 
     @TempDir
     Path dir;
@@ -164,7 +164,7 @@ class AdminSaveDecisionsFxTest {
             FxTestSupport.runOnFx(() -> buffer.getArea().appendText("edited\n"));
             enableAdminSave(fx, workflows);
             // What pkexec (exit 126) and osascript ("User canceled. (-128)") report for a dismissed prompt.
-            workflows.elevatedWriter = (target, bytes) -> ElevatedSave.isMac(OS)
+            workflows.elevatedWriter = (target, bytes) -> (OS == com.editora.Os.Kind.MAC)
                     ? new FileWorkflowCoordinator.AdminResult(1, "execution error: User canceled. (-128)", -1, -1)
                     : new FileWorkflowCoordinator.AdminResult(126, "", -1, -1);
 
@@ -234,7 +234,7 @@ class AdminSaveDecisionsFxTest {
 
     @Test
     void theElevatedCopyRewritesTheFileInPlaceThroughAPrivateTempFile() throws Exception {
-        Assumptions.assumeTrue(ElevatedSave.isLinux(OS), "runs the pkexec form of the elevated script");
+        Assumptions.assumeTrue((OS == com.editora.Os.Kind.LINUX), "runs the pkexec form of the elevated script");
         Assumptions.assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
@@ -278,7 +278,7 @@ class AdminSaveDecisionsFxTest {
 
     @Test
     void theElevatedCopyReportsWhatTheToolReportedAndAlwaysRemovesItsTempFile() throws Exception {
-        Assumptions.assumeTrue(ElevatedSave.isLinux(OS), "runs the pkexec form of the elevated script");
+        Assumptions.assumeTrue((OS == com.editora.Os.Kind.LINUX), "runs the pkexec form of the elevated script");
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             FileWorkflowCoordinator workflows = SaveDecisionsFxTest.workflows(fx);
@@ -337,7 +337,7 @@ class AdminSaveDecisionsFxTest {
 
     @Test
     void theToolIsProbedOnlyWhenTheFeatureIsOnAndItsAnswerDecidesTheOffer() throws Exception {
-        Assumptions.assumeTrue(ElevatedSave.isLinux(OS), "macOS always has osascript; Linux probes pkexec");
+        Assumptions.assumeTrue((OS == com.editora.Os.Kind.LINUX), "macOS always has osascript; Linux probes pkexec");
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             FileWorkflowCoordinator workflows = SaveDecisionsFxTest.workflows(fx);

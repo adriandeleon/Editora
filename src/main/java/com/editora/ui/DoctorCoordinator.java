@@ -985,15 +985,15 @@ final class DoctorCoordinator {
             why = why != null ? why : com.editora.io.WatchServices.fallbackReason();
             return why == null ? base.ok(tr("doctor.fileWatch.native")) : base.warn(why, "doctor.tip.fileWatchPolling");
         }));
-        String os = System.getProperty("os.name", "");
+        com.editora.Os.Kind os = com.editora.Os.current();
         if (s.isAdminSave() && ElevatedSave.supportedOnOs(os)) {
             DoctorCheck admin = DoctorCheck.checking(
                             "adminSave",
                             "system",
                             tr("doctor.label.adminSave"),
-                            ElevatedSave.isMac(os) ? ElevatedSave.OSASCRIPT : ElevatedSave.PKEXEC)
+                            os == com.editora.Os.Kind.MAC ? ElevatedSave.OSASCRIPT : ElevatedSave.PKEXEC)
                     .withSettings("editor");
-            if (ElevatedSave.isMac(os)) {
+            if (os == com.editora.Os.Kind.MAC) {
                 specs.add(terminal(admin.ok(""))); // osascript ships with macOS
             } else {
                 specs.add(probe(admin, base -> {
@@ -1121,7 +1121,7 @@ final class DoctorCoordinator {
                 && row.status() != com.editora.doctor.DoctorStatus.WARN) {
             return row; // an outdated (WARN) install runs on a Java too, and says which (fifth review CV5)
         }
-        boolean windows = java.io.File.separatorChar == '\\';
+        boolean windows = com.editora.Os.isWindows();
         if (!windows && DoctorProbes.resolvedPath(List.of("python3")).isEmpty()) {
             return row.warn(row.detail(), "doctor.tip.jdtlsNeedsPython");
         }
@@ -1563,9 +1563,7 @@ final class DoctorCoordinator {
     }
 
     private static boolean isWindows() {
-        return System.getProperty("os.name", "")
-                .toLowerCase(java.util.Locale.ROOT)
-                .startsWith("windows");
+        return com.editora.Os.isWindows();
     }
 
     // --- helpers -----------------------------------------------------------------------------------

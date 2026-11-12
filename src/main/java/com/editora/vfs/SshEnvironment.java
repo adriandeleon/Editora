@@ -4,7 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -21,9 +20,7 @@ public record SshEnvironment(Path sshDir, Map<String, String> env, boolean windo
     /** This user's: {@code ~/.ssh} and the process environment. */
     public static SshEnvironment standard() {
         return new SshEnvironment(
-                Path.of(System.getProperty("user.home", "."), ".ssh"),
-                System.getenv(),
-                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows"));
+                Path.of(System.getProperty("user.home", "."), ".ssh"), System.getenv(), com.editora.Os.isWindows());
     }
 
     /** A folder of a test's own, with no environment. */

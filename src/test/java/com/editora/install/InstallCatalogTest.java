@@ -238,12 +238,14 @@ class InstallCatalogTest {
 
     @Test
     void platformKeyBucketsOsAndArch() {
-        assertEquals(Platform.MAC_ARM, InstallCatalog.platformKey("Mac OS X", "aarch64"));
-        assertEquals(Platform.MAC_X64, InstallCatalog.platformKey("Mac OS X", "x86_64"));
-        assertEquals(Platform.LINUX_X64, InstallCatalog.platformKey("Linux", "amd64"));
-        assertEquals(Platform.LINUX_ARM, InstallCatalog.platformKey("Linux", "aarch64"));
-        assertEquals(Platform.WIN_X64, InstallCatalog.platformKey("Windows 11", "amd64"));
-        assertEquals(Platform.WIN_X64, InstallCatalog.platformKey("Windows 11", "aarch64")); // win-arm → x64
+        assertEquals(Platform.MAC_ARM, InstallCatalog.platformKey(com.editora.Os.parse("Mac OS X"), "aarch64"));
+        assertEquals(Platform.MAC_X64, InstallCatalog.platformKey(com.editora.Os.parse("Mac OS X"), "x86_64"));
+        assertEquals(Platform.LINUX_X64, InstallCatalog.platformKey(com.editora.Os.parse("Linux"), "amd64"));
+        assertEquals(Platform.LINUX_ARM, InstallCatalog.platformKey(com.editora.Os.parse("Linux"), "aarch64"));
+        assertEquals(Platform.WIN_X64, InstallCatalog.platformKey(com.editora.Os.parse("Windows 11"), "amd64"));
+        assertEquals(
+                Platform.WIN_X64,
+                InstallCatalog.platformKey(com.editora.Os.parse("Windows 11"), "aarch64")); // win-arm → x64
     }
 
     /**

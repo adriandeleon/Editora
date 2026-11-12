@@ -78,7 +78,7 @@ public record InstalledAdapter(
      * else a VS Code extension's. Empty when none — the caller may still look on the PATH. Blocking: it lists folders.
      */
     public Optional<Path> locate(@Nullable String configured, Path home) {
-        boolean windows = java.io.File.pathSeparatorChar == ';';
+        boolean windows = com.editora.Os.isWindows();
         if (configured != null && !configured.isBlank()) {
             Path p;
             try {

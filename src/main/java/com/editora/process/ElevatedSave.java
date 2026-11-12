@@ -138,34 +138,20 @@ public final class ElevatedSave {
     }
 
     /** True where a graphical elevation path exists — Linux (pkexec) or macOS (osascript); Windows: no. */
-    public static boolean supportedOnOs(String osName) {
-        return isLinux(osName) || isMac(osName);
-    }
-
-    public static boolean isLinux(String osName) {
-        return osName != null && osName.toLowerCase(Locale.ROOT).contains("linux");
-    }
-
-    public static boolean isMac(String osName) {
-        if (osName == null) {
-            return false;
-        }
-        String o = osName.toLowerCase(Locale.ROOT);
-        return o.contains("mac") || o.contains("darwin");
+    public static boolean supportedOnOs(com.editora.Os.Kind os) {
+        return os == com.editora.Os.Kind.LINUX || os == com.editora.Os.Kind.MAC;
     }
 
     /**
-     * The elevated argv for {@code osName}: macOS → {@link #osascriptArgv}, Linux → {@link #pkexecArgv},
+     * The elevated argv for {@code os}: macOS → {@link #osascriptArgv}, Linux → {@link #pkexecArgv},
      * else {@code null} (unsupported OS).
      */
-    public static @Nullable List<String> elevatedArgv(String osName, String pkexec, Path source, Path target) {
-        if (isMac(osName)) {
-            return osascriptArgv(source, target);
-        }
-        if (isLinux(osName)) {
-            return pkexecArgv(pkexec, source, target);
-        }
-        return null;
+    public static @Nullable List<String> elevatedArgv(com.editora.Os.Kind os, String pkexec, Path source, Path target) {
+        return switch (os) {
+            case MAC -> osascriptArgv(source, target);
+            case LINUX -> pkexecArgv(pkexec, source, target);
+            case WINDOWS -> null;
+        };
     }
 
     /**
@@ -212,8 +198,8 @@ public final class ElevatedSave {
      * macOS {@code osascript} exits non-zero with {@code -128}/"User canceled" in stderr; on Linux
      * {@code pkexec} returns 126 (dismissed / not authorized).
      */
-    public static boolean isCancellation(String osName, int exit, String stderr) {
-        if (isMac(osName)) {
+    public static boolean isCancellation(com.editora.Os.Kind os, int exit, String stderr) {
+        if (os == com.editora.Os.Kind.MAC) {
             String e = stderr == null ? "" : stderr.toLowerCase(Locale.ROOT);
             return e.contains("-128") || e.contains("user canceled") || e.contains("user cancelled");
         }

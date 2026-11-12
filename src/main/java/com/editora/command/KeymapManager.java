@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -56,7 +55,7 @@ public class KeymapManager {
 
     /** Whether the running OS is macOS — selects the {@code .mac} keymap variant and the Cmd-based override map. */
     public static boolean isMac() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+        return com.editora.Os.isMac();
     }
 
     private final Map<String, String> bindings = new LinkedHashMap<>();

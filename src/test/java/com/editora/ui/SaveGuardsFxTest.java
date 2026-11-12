@@ -224,7 +224,7 @@ class SaveGuardsFxTest {
     @Test
     void theElevatedSaveChecksForAnExternalChangeFirst(@TempDir Path dir) throws Exception {
         Assumptions.assumeTrue(
-                com.editora.process.ElevatedSave.supportedOnOs(System.getProperty("os.name")),
+                com.editora.process.ElevatedSave.supportedOnOs(com.editora.Os.current()),
                 "elevated save is not offered on this platform");
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());

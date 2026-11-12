@@ -282,11 +282,14 @@ class MarkdownPdfWriterTest {
 
         assertEquals(
                 List.of(Path.of("C:\\Windows", "Fonts")),
-                SystemFontFiles.roots("Windows 11", "C:\\Users\\me", java.util.Map.of("WINDIR", "C:\\Windows")));
-        assertTrue(SystemFontFiles.roots("Mac OS X", "/Users/me", java.util.Map.of())
+                SystemFontFiles.roots(
+                        com.editora.Os.parse("Windows 11"),
+                        "C:\\Users\\me",
+                        java.util.Map.of("WINDIR", "C:\\Windows")));
+        assertTrue(SystemFontFiles.roots(com.editora.Os.parse("Mac OS X"), "/Users/me", java.util.Map.of())
                 .contains(Path.of("/System/Library/Fonts")));
-        assertTrue(
-                SystemFontFiles.roots("Linux", "/home/me", java.util.Map.of()).contains(Path.of("/usr/share/fonts")));
+        assertTrue(SystemFontFiles.roots(com.editora.Os.parse("Linux"), "/home/me", java.util.Map.of())
+                .contains(Path.of("/usr/share/fonts")));
         SystemFontFiles.get(); // discovery on the real machine never throws
     }
 

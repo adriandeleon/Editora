@@ -1961,8 +1961,7 @@ public final class TerminalView extends Region {
     /** One row's worth of an underline: a line index and the slots it covers. */
     private record LinkSpan(int line, int fromSlot, int toSlot) {}
 
-    private static final boolean MAC =
-            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("mac");
+    private static final boolean MAC = com.editora.Os.isMac();
 
     /**
      * How far to look either side for the rest of a wrapped line.
@@ -2590,8 +2589,7 @@ public final class TerminalView extends Region {
     /** The kitty keyboard protocol's view of the keys: repeats, and the releases owed. */
     private final KittyKeyInput kittyInput = new KittyKeyInput();
 
-    private static final boolean LINUX =
-            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("linux");
+    private static final boolean LINUX = com.editora.Os.isLinux();
 
     /** Whether AltGr is down: Linux reports it as its own key, so Ctrl+Alt there is a chord, not composing. */
     private boolean altGrHeld;

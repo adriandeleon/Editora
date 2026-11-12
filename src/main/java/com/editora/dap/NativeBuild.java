@@ -135,7 +135,7 @@ public final class NativeBuild {
         String stem = name.contains(".") ? name.substring(0, name.lastIndexOf('.')) : name;
         String hash =
                 Integer.toHexString(file.toAbsolutePath().normalize().toString().hashCode());
-        boolean windows = java.io.File.pathSeparatorChar == ';';
+        boolean windows = com.editora.Os.isWindows();
         Path out = outputDir.resolve(stem + "-" + hash + (windows ? ".exe" : ""));
         return new Plan(
                 Tool.COMPILER,

@@ -155,8 +155,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         boolean confirm(String title, List<String> programs);
     }
 
-    private static final boolean MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("mac");
+    private static final boolean MAC = com.editora.Os.isMac();
 
     private final TabPane tabs = new TabPane();
     private final TerminalFindBar findBar = new TerminalFindBar();
