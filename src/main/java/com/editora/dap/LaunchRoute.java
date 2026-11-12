@@ -29,6 +29,8 @@ public final class LaunchRoute {
         DEBUGPY,
         /** vscode-js-debug ({@code node}, {@code pwa-node}). */
         JS_DEBUG,
+        /** vscode-js-debug driving a browser ({@code chrome}, {@code pwa-chrome}, {@code msedge}, {@code pwa-msedge}). */
+        BROWSER,
         /** netcoredbg ({@code coreclr}). */
         NETCOREDBG,
         /** rdbg ({@code rdbg}): a launch runs the script under it; an attach connects to its {@code debugPort}. */
@@ -98,6 +100,15 @@ public final class LaunchRoute {
             case "node", "pwa-node" -> {
                 request.put("type", "pwa-node");
                 return new Route(Kind.JS_DEBUG, DebugLanguages.JAVASCRIPT, request, attach, "");
+            }
+            case "chrome", "pwa-chrome", "msedge", "pwa-msedge" -> {
+                if (!attach
+                        && text(body.get("url")).isBlank()
+                        && text(body.get("file")).isBlank()) {
+                    return unsupported(body, "a browser launch without a url or file");
+                }
+                request.put("type", BrowserLaunch.adapterType(type));
+                return new Route(Kind.BROWSER, DebugLanguages.JAVASCRIPT, request, attach, "");
             }
             case "coreclr" -> {
                 request.put("type", "coreclr");

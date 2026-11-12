@@ -73,9 +73,9 @@ class LaunchRouteTest {
                 LaunchRoute.Kind.UNSUPPORTED,
                 LaunchRoute.of(config("type", "java", "request", "attach"), none)
                         .kind());
-        LaunchRoute.Route chrome = LaunchRoute.of(config("type", "chrome"), none);
-        assertEquals(LaunchRoute.Kind.UNSUPPORTED, chrome.kind());
-        assertEquals("type \"chrome\"", chrome.reason());
+        LaunchRoute.Route firefox = LaunchRoute.of(config("type", "firefox"), none);
+        assertEquals(LaunchRoute.Kind.UNSUPPORTED, firefox.kind());
+        assertEquals("type \"firefox\"", firefox.reason());
         assertEquals(
                 "a configuration without a type", LaunchRoute.of(config(), none).reason());
         DebugLanguage mine = ExternalAdapterTest.profile(
@@ -238,5 +238,29 @@ class LaunchRouteTest {
         assertEquals(-1, LaunchRoute.rdbgPort(config("debugPort", "example.com:12345")), "another machine");
         assertEquals(-1, LaunchRoute.rdbgPort(config("debugPort", "0")));
         assertEquals(-1, LaunchRoute.rdbgPort(config()));
+    }
+
+    @Test
+    void browserConfigurationsGoToJsDebugAsABrowser() {
+        Map<String, DebugLanguage> none = Map.of();
+        LaunchRoute.Route chrome = LaunchRoute.of(
+                config("name", "c", "type", "chrome", "request", "launch", "url", "http://localhost:3000"), none);
+        assertSame(LaunchRoute.Kind.BROWSER, chrome.kind());
+        assertSame(DebugLanguages.JAVASCRIPT, chrome.profile());
+        assertEquals("pwa-chrome", chrome.request().get("type"));
+        assertFalse(chrome.request().containsKey("name"));
+
+        LaunchRoute.Route edge = LaunchRoute.of(config("type", "msedge", "request", "attach", "port", 9222), none);
+        assertSame(LaunchRoute.Kind.BROWSER, edge.kind());
+        assertTrue(edge.attach());
+        assertEquals("pwa-msedge", edge.request().get("type"));
+
+        LaunchRoute.Route file =
+                LaunchRoute.of(config("type", "pwa-chrome", "request", "launch", "file", "/w/index.html"), none);
+        assertSame(LaunchRoute.Kind.BROWSER, file.kind());
+
+        LaunchRoute.Route neither = LaunchRoute.of(config("type", "chrome", "request", "launch"), none);
+        assertSame(LaunchRoute.Kind.UNSUPPORTED, neither.kind());
+        assertEquals("a browser launch without a url or file", neither.reason());
     }
 }

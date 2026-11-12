@@ -239,7 +239,7 @@ class LaunchJsonWindowFxTest {
         LaunchJson.File parsed = LaunchJson.parse(LAUNCH);
         EditorBuffer b = FxTestSupport.callOnFx(fx.controller::activeBuffer);
         String[][] cases = {
-            {"Chrome", tr("status.debug.launchUnsupported", "Chrome", "type \"chrome\"")},
+            {"Chrome", tr("status.debug.launchUnsupported", "Chrome", "a browser launch without a url or file")},
             {"No task", tr("status.debug.taskMissing", "missing")},
             {"Cargo task", tr("status.debug.taskUnsupported", "cargo-build")},
             {

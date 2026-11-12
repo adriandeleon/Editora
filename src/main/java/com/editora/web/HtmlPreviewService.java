@@ -159,6 +159,32 @@ public final class HtmlPreviewService {
         });
     }
 
+    /**
+     * Serves {@code root} as {@link #preview} does, without opening a browser: the debugger opens the page itself.
+     * Posts an {@link Outcome#OPENED} result with the page's URL, or {@link Outcome#SERVER_FAILED}, on the FX thread.
+     */
+    public void serve(Path file, Path root, @Nullable String liveText, Consumer<Result> onResult) {
+        long at = epoch.get();
+        Path abs = normalized(file);
+        Path site = normalized(root);
+        if (liveText != null) {
+            live.put(abs, liveText);
+        }
+        roots.add(site);
+        exec.submit(() -> {
+            if (at != epoch.get()) {
+                return;
+            }
+            try {
+                server.start();
+                post(at, onResult, new Result(Outcome.OPENED, server.serve(site, abs), null));
+            } catch (IOException e) {
+                roots.remove(site);
+                post(at, onResult, new Result(Outcome.SERVER_FAILED, null, detail(e)));
+            }
+        });
+    }
+
     /** True when {@code file} lies under a served site (so its edits and saves reload the browser). */
     public boolean serves(Path file) {
         Path p = normalized(file);

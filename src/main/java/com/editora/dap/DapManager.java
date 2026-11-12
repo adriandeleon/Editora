@@ -3398,6 +3398,29 @@ public final class DapManager {
      */
     public void startJsAttach(
             String host, int port, String name, @Nullable Path cwd, List<String> skipFiles, boolean continueOnAttach) {
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("javascript");
+        String type = spec == null ? "pwa-node" : spec.launchType();
+        startJsRequest(
+                cwd,
+                () -> LaunchConfig.nodeAttach(type, name, host, port, skipFiles, continueOnAttach),
+                () -> startJsAttach(host, port, name, cwd, skipFiles, continueOnAttach));
+    }
+
+    /**
+     * Debugs a web page in a browser: js-debug is started as for Node.js and sent {@code request}, a
+     * {@link BrowserLaunch} {@code launch} (it opens the browser, which Stop closes) or {@code attach} (to a browser
+     * listening on its debugging port, which Stop leaves open). Each page is a child session js-debug asks for
+     * ({@code startDebugging}), as a Node.js worker is. {@code anchor} names the session's folder or page; Restart
+     * sends the same request again.
+     */
+    public void startBrowser(@Nullable Path anchor, Map<String, Object> request) {
+        Map<String, Object> copy = Map.copyOf(request);
+        startJsRequest(anchor, () -> new java.util.LinkedHashMap<>(copy), () -> startBrowser(anchor, copy));
+    }
+
+    /** Starts js-debug and sends it the request {@code body} makes; {@code restart} repeats it. */
+    private void startJsRequest(
+            @Nullable Path anchor, java.util.function.Supplier<Map<String, Object>> body, Runnable restart) {
         if (managerClosed) {
             return;
         }
@@ -3413,14 +3436,13 @@ public final class DapManager {
         if (client != null) {
             stop(); // one session at a time
         }
-        restartAction = () -> startJsAttach(host, port, name, cwd, skipFiles, continueOnAttach);
-        debugFile = cwd;
+        restartAction = restart;
+        debugFile = anchor;
         long epoch = beginSession();
         setState(State.STARTING);
         List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor("javascript");
-        Map<String, Object> attach =
-                LaunchConfig.nodeAttach(spec.launchType(), name, host, port, skipFiles, continueOnAttach);
+        Map<String, Object> request = body.get();
         jsClientConsole = false;
         startupTask = io.submit(() -> {
             try {
@@ -3454,7 +3476,7 @@ public final class DapManager {
                         filters,
                         epoch,
                         DapPaths.LOCAL,
-                        attach,
+                        request,
                         false,
                         null);
             } catch (Exception e) {

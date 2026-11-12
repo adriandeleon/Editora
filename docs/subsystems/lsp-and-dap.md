@@ -1239,6 +1239,7 @@ the fields VS Code reads itself are left out (`name`, its tasks, `console`, `pre
 | `go` | Delve | as written, `output` in the temporary folder when not given; `mode: remote` is not supported. |
 | `debugpy`, `python` | debugpy | laid over the launch Editora plans for the program (`DapManager.startConfigured` → `overlay`, which keeps Editora's console); an attach connects to `connect`. |
 | `node`, `pwa-node` | vscode-js-debug | as Python; an attach to `address` / `port`. |
+| `chrome`, `pwa-chrome`, `msedge`, `pwa-msedge` | vscode-js-debug, driving the browser | as written with js-debug's type (`BrowserLaunch.configured`): `webRoot` defaults to the workspace folder, a launch's `userDataDir` to Editora's own profile; a launch needs a `url` or a `file`; an attach goes to `port` (9222 by default). |
 | `coreclr` | netcoredbg | as written (`program` is the built assembly; a `preLaunchTask` builds it); an attach by `processId`. C# Dev Kit's `dotnet` type is not supported. |
 | `rdbg` | rdbg | a launch runs `rdbg … -- <command> <script> <args>` (`LaunchRoute.rdbgTail`: `command` defaults to `ruby`, `useBundler` puts `bundle exec` first) in its `cwd` with its `env`; an attach connects to a local `debugPort` (`rdbgPort`; `DapManager.startPortAttach`). |
 | `php` | vscode-php-debug | as written; without a `program` it listens for Xdebug ("Listen for Xdebug"). `${port}` is left for the adapter. |
@@ -1370,6 +1371,35 @@ moves the focus there). `FakeDebugAdapter` (test
 sources) plays js-debug's handshake over real sockets in the default suite; the opt-in
 `JsDebugProbeFxTest` drives the real adapter and Node through `DapManager`
 (`./mvnw test -Dtest=JsDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true`).
+
+**Debugging in a browser** ([`dap/BrowserLaunch`](../../src/main/java/com/editora/dap/BrowserLaunch.java)). The same
+vscode-js-debug debugs a web page in Chrome, Edge or another Chromium browser (Chromium, Brave, Vivaldi: the
+browsers that speak the DevTools protocol; Firefox and Safari do not). `DapManager.startBrowser` starts js-debug as
+for Node.js (`startJsRequest`, shared with `startJsAttach`) and sends it a `pwa-chrome` or `pwa-msedge` `launch` or
+`attach`; each page is a child session, as a Node.js worker is. A launch names the browser's own program
+(`Browsers.executable`: the binary on PATH, the `.app`'s `Contents/MacOS` program, the Windows `.exe`; `stable`, which
+js-debug resolves itself, when none is found, as for a Flatpak) and a profile of Editora's own under
+`<config>/browser-debug/<browser>`, kept between sessions and apart from the everyday profile a running browser holds
+locked. Stop closes a launched browser (`terminateDebuggee`) and leaves an attached one open. Entry points in
+`DebugCoordinator`:
+- *Debug: Debug in Browser…* (`debug.browser`): a picker of the active HTML file, the URLs debugged before in this
+  project (`WorkspaceState.debugBrowserUrls`, schema 36, most recent first) and *Another page…*, which asks for a URL
+  (`BrowserLaunch.url` adds `http://` to `localhost:5173`); a URL maps to files through `webRoot`, the project.
+- F5 on an HTML file (`launchBuffer` → `debugHtmlPage`): the page is served as the live preview serves it
+  (`HtmlPreviewCoordinator.serveForDebug` → `HtmlPreviewService.serve`, no browser opened), so modules and fetches work
+  and edits reload it; the served URL `http://127.0.0.1:<port>/<token>/…` maps back through `pathMapping`
+  `{"/<token>/": site}` with `webRoot` the site folder (`BrowserLaunch.Served`). With the preview off it opens the
+  file's `file:` URL. HTML is one of the JavaScript profile's editor languages, so an HTML tab takes breakpoints (its
+  inline scripts), and Debug ▸ Attach on one goes to the browser.
+- *Debug: Attach to Browser…* (`debug.attachBrowser`): a browser started with `--remote-debugging-port`, 9222 by default.
+- launch.json `chrome` / `msedge` configurations (`LaunchRoute.Kind.BROWSER`).
+
+The browser is the Debugging setting `debugBrowser` (settings schema 168; "" = automatic): `BrowserLaunch.pick` takes
+it when found, else the HTML preview's browser when it is a Chromium one, else the first of Chrome, Edge, Chromium,
+Brave, Vivaldi found; a chosen browser that is gone falls back and the status line says so. `BrowserLaunchTest`,
+`BrowsersTest`, `LaunchRouteTest` and `BrowserDebugWindowFxTest` (a stand-in js-debug relaying to `FakeDebugAdapter`)
+cover it; the opt-in `BrowserDebugProbeFxTest` drives the real js-debug and a headless Chrome: F5 on an HTML file
+stops in its inline script and in a script it loads, and a launch.json `chrome` configuration opens a `file:` URL.
 
 ### DapManager & the java-debug bundle
 

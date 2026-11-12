@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 167;
+    public static final int SCHEMA_VERSION = 168;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -875,6 +875,12 @@ public class Settings {
      * all (java-debug's {@code suspendAllThreads}; IntelliJ's "Suspend: All"). Off stops only the thread that hit it.
      */
     private boolean debugSuspendAllThreads = false;
+
+    /**
+     * The browser web pages are debugged in (a {@link com.editora.web.Browsers} id: Chrome, Edge or another
+     * Chromium browser); {@code ""} picks one ({@link com.editora.dap.BrowserLaunch#pick}).
+     */
+    private String debugBrowser = "";
     /**
      * Python debugging: a subprocess the program starts ({@code multiprocessing}, {@code subprocess} running Python)
      * is debugged too, in a session of its own (debugpy's {@code subProcess}). Off, subprocesses run without the
@@ -3636,6 +3642,14 @@ public class Settings {
 
     public void setDebugSuspendAllThreads(boolean debugSuspendAllThreads) {
         this.debugSuspendAllThreads = debugSuspendAllThreads;
+    }
+
+    public String getDebugBrowser() {
+        return debugBrowser == null ? "" : debugBrowser;
+    }
+
+    public void setDebugBrowser(@Nullable String debugBrowser) {
+        this.debugBrowser = debugBrowser == null ? "" : debugBrowser;
     }
 
     public String getDebugExceptionTypes() {
