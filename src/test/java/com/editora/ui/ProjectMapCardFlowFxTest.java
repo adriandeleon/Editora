@@ -12,6 +12,7 @@ import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Region;
+import javafx.stage.Stage;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -546,6 +547,10 @@ class ProjectMapCardFlowFxTest {
         Path root = Files.createDirectories(temp.resolve("project"));
         Path app = Files.writeString(root.resolve("App.java"), APP);
         Fixture map = openMap(root, ProjectMapView.FlowDirection.LEFT_TO_RIGHT);
+        // In a window: the file card's Structure column is a list, laid out by the scene's pulses. A scene with no
+        // window has none, and was laid out only when the Map happened to snapshot an icon, so the column's rows were
+        // drawn late or never and the card's connector was read before them.
+        Stage stage = showInWindow(map);
         try {
             waitFor(() -> nodeBox(map, app) != null, "App.java's row");
             FxTestSupport.runOnFx(() -> FxTestSupport.call(
@@ -611,7 +616,10 @@ class ProjectMapCardFlowFxTest {
             });
             awaitConnectedTo(map, sub, () -> column.rowBounds(sub), "the file card's column again");
         } finally {
-            FxTestSupport.runOnFx(map.view()::dispose);
+            FxTestSupport.runOnFx(() -> {
+                map.view().dispose();
+                stage.close();
+            });
         }
     }
 
@@ -672,6 +680,16 @@ class ProjectMapCardFlowFxTest {
     }
 
     private record Fixture(ProjectMapView view, Scene scene, Region surface) {}
+
+    /** Shows {@code map}'s scene in a window, so that each pulse lays it out as the app's window does. */
+    private static Stage showInWindow(Fixture map) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            Stage stage = new Stage();
+            stage.setScene(map.scene());
+            stage.show();
+            return stage;
+        });
+    }
 
     private static Fixture openMap(Path root, ProjectMapView.FlowDirection flow) throws Exception {
         return openMap(root, flow, false);
