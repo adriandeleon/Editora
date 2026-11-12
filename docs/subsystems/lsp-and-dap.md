@@ -1638,13 +1638,17 @@ and on a line that has one only its message changes. A method breakpoint's mark 
 **Logpoint tokens** ([`dap/LogpointTokens`](../../src/main/java/com/editora/dap/LogpointTokens.java)). A log message
 may use Visual Studio's tracepoint tokens `$FUNCTION`, `$CALLER`, `$CALLSTACK`, `$TID` and `$TNAME`. No adapter knows
 them, so `DapClient.sourceBreakpoints` sends such a logpoint without its `logMessage` (its condition and hit count
-kept): the adapter stops there, `DebugCoordinator.tokenLogpointHit` finds the logpoint at the top frame's line, and
+kept): the adapter stops there, `DebugCoordinator.logpointToWrite` finds the logpoint at the top frame's line, and
 `logAndContinue` evaluates its `{expression}` parts one after another in that frame (`watch` context; a refusal shows
 the adapter's message), fills the tokens from the stop's frames (`DebugPanelText.frameText`, one per line after the
 message for `$CALLSTACK`) and the `threads` answer, writes the line to the console and resumes. The stop is quiet like
 a recording breakpoint's (`DebugSession.quietStop`): not shown, not in Debug History, and a step or Stop meanwhile wins.
 The program pauses briefly at each hit, which the form says; a message without tokens is the adapter's, as before.
 As with a recording breakpoint, the stop ends a Run to Cursor under way (`clearTempBreakpoint`).
+An adapter without `supportsLogPoints` (netcoredbg 3.2.0) ignores every `logMessage` and stops on the breakpoint after
+checking its condition, so `logpointToWrite` takes any logpoint of such a session the same way, tokens or not
+(`DapClient.supportsLogPoints`; capabilities not known yet count as supporting). A hit count the adapter does not
+support is not emulated. `LogpointWithoutAdapterSupportFxTest` covers it.
 **Copy as Expression** (VS Code's). `VariableInfo.evaluateName` and `VarRow.evaluateName` carry the adapter's own
 expression for a value (`items.get(0)` from java-debug, `d['k']` from debugpy, `obj.x` from js-debug), kept through
 lazy rows (`LazyValues`), Java's text tidying and string repair. `DebugPanel.expression` uses it, else the path of names

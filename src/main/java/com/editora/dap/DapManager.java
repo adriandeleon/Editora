@@ -4192,6 +4192,15 @@ public final class DapManager {
         resume();
     }
 
+    /**
+     * Whether the connected adapter logs logpoints itself; when it does not (netcoredbg), the window logs the message
+     * of a logpoint the program stopped on and goes on. True with no session.
+     */
+    public boolean supportsLogPoints() {
+        DapClient c = client;
+        return c == null || c.supportsLogPoints();
+    }
+
     /** Whether the connected adapter supports Jump to Line ({@code gotoTargets}/{@code goto}) —
      *  debugpy does; java-debug and vscode-js-debug currently do not. */
     public boolean supportsJumpToLine() {

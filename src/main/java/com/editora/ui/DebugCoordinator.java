@@ -2177,8 +2177,9 @@ final class DebugCoordinator {
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
-                // A logpoint with $FUNCTION, $CALLSTACK…: Editora writes its message, and the program goes on.
-                String logMessage = recording ? null : tokenLogpointHit(reason, frames);
+                // A logpoint with $FUNCTION, $CALLSTACK…, or any logpoint of an adapter that does not log them
+                // (netcoredbg): Editora writes its message, and the program goes on.
+                String logMessage = recording ? null : logpointToWrite(reason, frames);
                 armTriggered(reason, frames); // a breakpoint others wait for: they stop from now on
                 s().quietStop = recording || logMessage != null ? s().stopSerial : -1;
                 if (logMessage != null) {
@@ -2774,10 +2775,12 @@ final class DebugCoordinator {
     // --- logpoints with tokens: Editora writes the message, then goes on ------------------------------
 
     /**
-     * The message of the logpoint the program stopped on ({@code reason}) at the top frame's line, when it uses a
-     * token ({@link LogpointTokens}) — the adapter was sent it as a plain breakpoint; null for any other stop.
+     * The message of the logpoint the program stopped on ({@code reason}) at the top frame's line, when Editora writes
+     * it: it uses a token ({@link LogpointTokens}), so the adapter was sent it as a plain breakpoint, or the adapter does
+     * not log logpoints at all (netcoredbg ignores {@code logMessage} and stops, after checking the condition). Null for
+     * any other stop.
      */
-    private @Nullable String tokenLogpointHit(String reason, List<DapModels.StackFrameInfo> frames) {
+    private @Nullable String logpointToWrite(String reason, List<DapModels.StackFrameInfo> frames) {
         if (!"breakpoint".equals(reason) || frames.isEmpty()) {
             return null;
         }
@@ -2786,20 +2789,16 @@ final class DebugCoordinator {
         if (file == null) {
             return null;
         }
-        String wanted = key(file);
-        List<DapModels.FileBreakpoints> sent =
-                new ArrayList<>(s().sentBreakpoints.values());
-        sent.addAll(closedBreakpoints);
-        for (DapModels.FileBreakpoints fb : sent) {
-            if (fb.file() != null && key(fb.file()).equals(wanted)) {
-                for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
-                    if (lb.line() == top.line() && lb.column() <= 0 && LogpointTokens.uses(lb.logMessage())) {
-                        return lb.logMessage();
-                    }
-                }
-            }
-        }
-        return null;
+        boolean adapterLogs = dap().supportsLogPoints();
+        DapModels.LineBreakpoint lb = sentBreakpointAt(
+                file,
+                top.line(),
+                b -> b.column() <= 0
+                        && (LogpointTokens.uses(b.logMessage())
+                                || !adapterLogs
+                                        && b.logMessage() != null
+                                        && !b.logMessage().isBlank()));
+        return lb == null ? null : lb.logMessage();
     }
 
     /**
@@ -2930,6 +2929,15 @@ final class DebugCoordinator {
 
     /** Whether a recording breakpoint was sent for 0-based line {@code line} of {@code file}. */
     private boolean recordingBreakpointAt(Path file, int line) {
+        return sentBreakpointAt(file, line, DapModels.LineBreakpoint::recording) != null;
+    }
+
+    /**
+     * The first breakpoint sent for 0-based line {@code line} of {@code file} (open files' and closed ones') that
+     * {@code which} accepts, or null.
+     */
+    private DapModels.@Nullable LineBreakpoint sentBreakpointAt(
+            Path file, int line, java.util.function.Predicate<DapModels.LineBreakpoint> which) {
         String wanted = key(file);
         List<DapModels.FileBreakpoints> sent =
                 new ArrayList<>(s().sentBreakpoints.values());
@@ -2937,13 +2945,13 @@ final class DebugCoordinator {
         for (DapModels.FileBreakpoints fb : sent) {
             if (fb.file() != null && key(fb.file()).equals(wanted)) {
                 for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
-                    if (lb.line() == line && lb.recording()) {
-                        return true;
+                    if (lb.line() == line && which.test(lb)) {
+                        return lb;
                     }
                 }
             }
         }
-        return false;
+        return null;
     }
 
     /**
