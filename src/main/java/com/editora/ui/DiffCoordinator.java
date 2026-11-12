@@ -1120,6 +1120,23 @@ final class DiffCoordinator {
     }
 
     /** Diff a project-tree file or folder against a branch chosen from the repo's branches. */
+    /**
+     * Compares {@code path} — a file, or a folder's changed files — with the commit {@code ref}, named {@code
+     * displayRef} on the diff (the Map's Changes card against a branch: Map gaps round 3, item 3).
+     */
+    void diffPathVsRef(Path path, String ref, String displayRef) {
+        Path root = git.repoRootOrReport();
+        if (root == null) {
+            return;
+        }
+        String rel = GitService.repoRelative(root, path);
+        if (rel == null) {
+            host.setStatus(tr("status.diff.notInRepo"));
+            return;
+        }
+        openPathVsRef(path, root, rel, ref, displayRef);
+    }
+
     void diffPathVsBranch(@Nullable Path path) {
         if (path == null) {
             host.setStatus(tr("status.diff.noFile"));

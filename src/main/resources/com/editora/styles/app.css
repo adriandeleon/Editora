@@ -1991,6 +1991,17 @@
 .project-map-changes-card .project-map-changes-code .list-cell:selected {
     -fx-background-color: -color-accent-muted;
 }
+/* The words a changed line changes (round 3, item 3), deeper than the line's own wash, as GitHub marks them. */
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-added .label.project-map-changes-word {
+    -fx-background-color: -color-success-muted;
+}
+.project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-removed .label.project-map-changes-word {
+    -fx-background-color: -color-danger-muted;
+}
+.project-map-changes-card .project-map-changes-against {
+    -fx-font-size: 12px;
+    -fx-padding: 2 6 2 6;
+}
 /* The Project Map's Dependencies card (gap 14): what uses a file or folder and what it uses; a folder's parts' matrix. */
 .project-map-deps-card .label {
     -fx-font-size: 12px;

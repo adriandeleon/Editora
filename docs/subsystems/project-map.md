@@ -581,6 +581,21 @@ by the pure `git/GitChanges` (at most 500 files and 5,000 lines a file; an untra
 is listed without lines). One Changes card is open at a time; it moves, resizes and zooms as the other cards, and
 Escape closes it.
 
+**Branch review** (Map gaps round 3, item 3). The card's **Against** menu compares the working tree with something
+other than HEAD (`GitService.ChangesBase`): **This branch, since it left main** — the default branch, origin's
+`HEAD`, else the first of `main`, `master`, `trunk` and `develop` there is — and, under **Since it left another
+branch**, any of the 40 branches last committed to (`GitService.reviewRefs`: `for-each-ref` of `refs/heads` and
+`refs/remotes`, the remotes' `HEAD` left out). The base is `git merge-base HEAD <branch>`, so the card shows what the
+branch changes, committed or not, as a pull request does, and not what the other branch did since; a ref that is not
+safe as a revision is refused, and one Git cannot find says so on the summary line. Its files are then marked on the
+Map (`MapSurface.setReviewChanges`): a stripe at each changed file row's left edge (green for an added or untracked
+file, red for a removed one, the accent for the rest) and a muted one on the folders holding them, with "changed on
+this branch" in the rows' tooltips; going back to HEAD or closing the card takes them away. **Compare with base**
+opens the editor's diff of the file against that commit (`DiffCoordinator.diffPathVsRef`). The read answers only the
+base it was asked for: one left since is dropped. In every mode the words a changed line changes are marked
+(`ProjectMapChangesCard.wordSpans`, on `diff/InlineDiff`): in each run of removed lines and the added lines after it,
+the n-th removed line is paired with the n-th added one, as GitHub pairs them; lines over 2,000 characters are not.
+
 **Hierarchy trees** (Map code browser gap 4, `MapHierarchyTree`). The cards answer one level of a hierarchy; a
 tree goes as deep as the reader opens it. Call Hierarchy (`lsp.callHierarchy`) and Type Hierarchy
 (`lsp.typeHierarchy`) typed in a card or on a declaration row, and the card and declaration-row menus' **Show Call

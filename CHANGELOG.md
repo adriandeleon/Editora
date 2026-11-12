@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked, as VS Code shows it. Before, Editora said there was no source. The tab is opened once per session and shown
   again at the next stop there. You can set breakpoints in it too; they last for that debug session. Pausing a program
   that waits in a timer still shows your own line.
+- **Review a branch on the Project Map.** The Changes card's *Against* menu now shows what your branch changes
+  since it left the default branch, or any other branch, committed or not, as a pull request does. The branch's
+  changed files get a stripe on the Map, and the folders holding them a muted one. *Compare with base* opens the
+  editor's diff of a file against that commit. In every mode the card marks the words a changed line changes.
 - **The Project Map follows the debugger.** When a debug session pauses, the Map opens the card of the method it
   stopped in, marks the line with the editor's amber execution line and arrow (red on an exception), and shows the
   call stack beside it. Click a frame there, or press Enter, to show it in the debugger; the card follows. Each step

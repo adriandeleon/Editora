@@ -1204,6 +1204,9 @@ final class MapCards {
         ProjectMapChangesCard card = changesCard;
         changesCard = null;
         dropSoloCard(card);
+        if (card != null) {
+            card.closed();
+        }
     }
 
     /**

@@ -253,6 +253,32 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
     }
 
     @Override
+    public void gitWorkingChanges(
+            Path folder,
+            com.editora.git.GitService.ChangesBase base,
+            java.util.function.Consumer<com.editora.git.GitChanges.Result> found) {
+        if (git.isEnabled()) {
+            git.service().workingChanges(folder, base, found);
+        } else {
+            found.accept(com.editora.git.GitChanges.Result.UNAVAILABLE);
+        }
+    }
+
+    @Override
+    public void gitReviewRefs(Path folder, java.util.function.Consumer<com.editora.git.GitService.ReviewRefs> found) {
+        if (git.isEnabled()) {
+            git.service().reviewRefs(folder, found);
+        } else {
+            found.accept(com.editora.git.GitService.ReviewRefs.NONE);
+        }
+    }
+
+    @Override
+    public void gitCompareWithRef(Path file, String ref, String label) {
+        git.withRepositoryOf(file, () -> diff.diffPathVsRef(file, ref, label));
+    }
+
+    @Override
     public void gitOpenCommitFile(Path root, String hash, String path, @Nullable String previousPath) {
         git.ifEnabled(() -> diff.diffCommitFile(root, hash, path, previousPath));
     }
