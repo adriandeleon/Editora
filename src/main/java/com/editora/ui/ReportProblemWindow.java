@@ -161,12 +161,12 @@ public final class ReportProblemWindow {
         Scene scene = new Scene(root, 820, 620);
         scene.getStylesheets()
                 .addAll(
-                        ReportProblemWindow.class
+                        com.editora.editor.UiZoom.sheet(ReportProblemWindow.class
                                 .getResource("/com/editora/styles/app.css")
-                                .toExternalForm(),
-                        ReportProblemWindow.class
+                                .toExternalForm()),
+                        com.editora.editor.UiZoom.sheet(ReportProblemWindow.class
                                 .getResource("/com/editora/styles/syntax.css")
-                                .toExternalForm());
+                                .toExternalForm()));
         stage.setScene(scene);
         this.stage = stage;
         this.area = area;

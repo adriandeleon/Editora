@@ -204,9 +204,9 @@ final class DebugCompoundsWindow {
         root.setPrefSize(WIDTH, HEIGHT);
         Scene scene = new Scene(root, WIDTH, HEIGHT);
         scene.getStylesheets()
-                .add(DebugCompoundsWindow.class
+                .add(com.editora.editor.UiZoom.sheet(DebugCompoundsWindow.class
                         .getResource("/com/editora/styles/app.css")
-                        .toExternalForm());
+                        .toExternalForm()));
         stage.setScene(scene);
         stage.setMinWidth(520);
         stage.setMinHeight(360);

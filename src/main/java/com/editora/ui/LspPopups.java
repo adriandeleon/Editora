@@ -385,8 +385,12 @@ final class LspPopups {
         box.setMaxWidth(560);
         box.getStylesheets()
                 .addAll(
-                        getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
-                        getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
+                        com.editora.editor.UiZoom.sheet(getClass()
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm()),
+                        com.editora.editor.UiZoom.sheet(getClass()
+                                .getResource("/com/editora/styles/syntax.css")
+                                .toExternalForm()));
         com.editora.editor.PopupSheets.followOwnerTheme(
                 box, area.getScene() == null ? null : area.getScene().getWindow());
 

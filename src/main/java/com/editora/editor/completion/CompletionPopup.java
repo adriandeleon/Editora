@@ -92,7 +92,7 @@ public final class CompletionPopup {
         // falls back to bare default colors. Attach it to the content subtree (the note-tooltip idiom).
         java.net.URL css = CompletionPopup.class.getResource("/com/editora/styles/app.css");
         if (css != null) {
-            box.getStylesheets().add(css.toExternalForm());
+            box.getStylesheets().add(com.editora.editor.UiZoom.sheet(css.toExternalForm()));
         }
         popup.getContent().add(box);
         popup.setAutoHide(true);

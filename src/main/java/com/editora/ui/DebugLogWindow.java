@@ -126,12 +126,12 @@ public final class DebugLogWindow {
         Scene scene = new Scene(root, 900, 600);
         scene.getStylesheets()
                 .addAll(
-                        DebugLogWindow.class
+                        com.editora.editor.UiZoom.sheet(DebugLogWindow.class
                                 .getResource("/com/editora/styles/app.css")
-                                .toExternalForm(),
-                        DebugLogWindow.class
+                                .toExternalForm()),
+                        com.editora.editor.UiZoom.sheet(DebugLogWindow.class
                                 .getResource("/com/editora/styles/syntax.css")
-                                .toExternalForm());
+                                .toExternalForm()));
         scene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
             if (ConsoleFindBar.isFindChord(e)) {
                 findBar.openOrNext(area.getSelectedText());

@@ -519,15 +519,15 @@ public final class RunConfigurationsWindow {
 
         Scene scene = new Scene(root);
         scene.getStylesheets()
-                .add(RunConfigurationsWindow.class
+                .add(com.editora.editor.UiZoom.sheet(RunConfigurationsWindow.class
                         .getResource("/com/editora/styles/app.css")
-                        .toExternalForm());
+                        .toExternalForm()));
         // App.installUiFont attaches this too, but only once the window shows: fitToContent measures before
         // that, and should measure in the font the form is drawn in. (installUiFont skips a sheet already there.)
         scene.getStylesheets()
-                .add(RunConfigurationsWindow.class
+                .add(com.editora.editor.UiZoom.sheet(RunConfigurationsWindow.class
                         .getResource("/com/editora/styles/ui-font.css")
-                        .toExternalForm());
+                        .toExternalForm()));
         stage.setScene(scene);
         stage.setMinWidth(MIN_WIDTH);
         stage.setMinHeight(MIN_HEIGHT);

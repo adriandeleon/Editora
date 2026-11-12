@@ -132,7 +132,9 @@ public class App extends Application {
         // Discover user-defined themes from <configDir>/themes + /editor-themes before the theme is applied,
         // so a user theme saved as the active one resolves on launch (see ui/UserThemes).
         Themes.loadUserThemes(shared.getConfigDir());
-        Application.setUserAgentStylesheet(Themes.stylesheetFor(settings.getTheme()));
+        // The UI zoom is set before any sheet is named: every window built from here on is built at it.
+        com.editora.editor.UiZoom.init(settings.getUiZoom());
+        Application.setUserAgentStylesheet(Themes.userAgentStylesheetFor(settings.getTheme()));
         // Each window is told whether that theme is light or dark as it opens, so the frame and the window
         // buttons JavaFX draws follow the app theme rather than the desktop's. See WindowColorScheme.
         com.editora.ui.WindowColorScheme.install(Themes.isDark(settings.getTheme()));
@@ -298,6 +300,8 @@ public class App extends Application {
      * explicitly. A listener on the live window list covers windows opened later.
      */
     private static void installUiFont() {
+        // First, so a window's sheets are at the UI zoom before the font sheet joins them.
+        com.editora.editor.UiZoom.install();
         javafx.stage.Window.getWindows().addListener((javafx.collections.ListChangeListener<javafx.stage.Window>)
                 change -> {
                     while (change.next()) {
@@ -322,10 +326,11 @@ public class App extends Application {
 
     /** Adds the UI-font stylesheet to a scene (idempotent). */
     private static void addFontStylesheet(javafx.scene.Scene scene) {
-        if (scene == null || scene.getStylesheets().contains(UI_FONT_CSS)) {
+        String sheet = com.editora.editor.UiZoom.sheet(UI_FONT_CSS);
+        if (scene == null || scene.getStylesheets().contains(sheet)) {
             return;
         }
-        scene.getStylesheets().add(UI_FONT_CSS);
+        scene.getStylesheets().add(sheet);
     }
 
     /**

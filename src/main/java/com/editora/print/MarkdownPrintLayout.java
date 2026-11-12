@@ -1621,6 +1621,8 @@ public final class MarkdownPrintLayout {
     private static void attachStyles(Scene scene) {
         addStylesheet(scene, "/com/editora/styles/app.css");
         addStylesheet(scene, "/com/editora/styles/syntax.css");
+        // Paper: a page is laid out at 100% whatever the UI zoom, or the print would follow the screen.
+        com.editora.editor.UiZoom.pin(scene);
     }
 
     private static void addStylesheet(Scene scene, String resource) {

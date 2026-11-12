@@ -260,7 +260,7 @@ final class AgentCoordinator implements AcpClient.Host {
         for (String css : new String[] {"/com/editora/styles/app.css", "/com/editora/styles/syntax.css"}) {
             var url = getClass().getResource(css);
             if (url != null) {
-                scene.getStylesheets().add(url.toExternalForm());
+                scene.getStylesheets().add(com.editora.editor.UiZoom.sheet(url.toExternalForm()));
             }
         }
     }

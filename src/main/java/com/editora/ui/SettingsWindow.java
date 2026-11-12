@@ -215,6 +215,7 @@ public class SettingsWindow {
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
+    private Spinner<Integer> uiZoom;
     private ComboBox<String> editorThemeCombo;
     /** "Text zoom is 160% …  Reset zoom", in its own row under Font size; shown only while zoomed. */
     private @Nullable HBox zoomNote;
@@ -862,12 +863,12 @@ public class SettingsWindow {
         // The live preview needs the editor surface + token colors; the dialog controls keep AtlantaFX.
         scene.getStylesheets()
                 .addAll(
-                        SettingsWindow.class
+                        com.editora.editor.UiZoom.sheet(SettingsWindow.class
                                 .getResource("/com/editora/styles/app.css")
-                                .toExternalForm(),
-                        SettingsWindow.class
+                                .toExternalForm()),
+                        com.editora.editor.UiZoom.sheet(SettingsWindow.class
                                 .getResource("/com/editora/styles/syntax.css")
-                                .toExternalForm());
+                                .toExternalForm()));
         SettingsKeys.install(
                 scene,
                 stage,
@@ -968,6 +969,18 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setFontSize(now);
+            apply();
+        });
+
+        uiZoom = IntSpinners.editable(
+                Settings.MIN_UI_ZOOM, Settings.MAX_UI_ZOOM, Settings.DEFAULT_UI_ZOOM, com.editora.editor.UiZoom.STEP);
+        uiZoom.setPrefWidth(90);
+        uiZoom.valueProperty().addListener((obs, old, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setUiZoom(now);
+            Themes.applyUiZoom(config.getSettings().getUiZoom());
             apply();
         });
 
@@ -1613,6 +1626,13 @@ public class SettingsWindow {
         zoomNote.setAlignment(Pos.CENTER_LEFT);
         zoomNote.getStyleClass().add("settings-row");
         mainCard.body().getChildren().add(zoomNote); // not a search row: it shows only while zoomed
+        controlRow(
+                mainCard,
+                Category.APPEARANCE,
+                tr("settings.uiZoom"),
+                tr("settings.uiZoomNote"),
+                uiZoom,
+                "interface ui zoom scale size larger smaller menus toolbar percent");
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
@@ -4104,6 +4124,7 @@ public class SettingsWindow {
     private void commitReset() {
         Settings s = config.getSettings();
         config.save();
+        Themes.applyUiZoom(s.getUiZoom());
         Themes.applyAppTheme(s.getTheme());
         onApply.accept(s);
         load();
@@ -4233,6 +4254,7 @@ public class SettingsWindow {
             keymapsPage.keymapCombo.setValue(settings.getKeymap());
             fontFamily.setValue(settings.getFontFamily());
             fontSize.getValueFactory().setValue(settings.getFontSize());
+            uiZoom.getValueFactory().setValue(settings.getUiZoom());
             String theme = Themes.normalize(settings.getTheme());
             if (!theme.equals(settings.getTheme())) {
                 settings.setTheme(theme);

@@ -219,7 +219,7 @@ public final class NoteHover {
     private static void addStylesheet(Parent parent, String resource) {
         URL url = NoteHover.class.getResource(resource);
         if (url != null) {
-            parent.getStylesheets().add(url.toExternalForm());
+            parent.getStylesheets().add(com.editora.editor.UiZoom.sheet(url.toExternalForm()));
         }
     }
 }

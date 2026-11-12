@@ -184,9 +184,9 @@ final class RecoveryOfferWindow {
         root.setPadding(new Insets(14));
         Scene scene = new Scene(root, 720, 460);
         scene.getStylesheets()
-                .add(RecoveryOfferWindow.class
+                .add(com.editora.editor.UiZoom.sheet(RecoveryOfferWindow.class
                         .getResource("/com/editora/styles/app.css")
-                        .toExternalForm());
+                        .toExternalForm()));
         stage.setScene(scene);
     }
 

@@ -5265,6 +5265,33 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.textZoom", Math.round(z * 100)));
     }
 
+    /**
+     * The UI zoom: scales the whole interface, in every window. {@code >0} zooms in, {@code <0} out (10% steps
+     * within {@link Settings#MIN_UI_ZOOM}–{@link Settings#MAX_UI_ZOOM}), {@code 0} goes back to 100%. Saved
+     * with the settings; the editor's text keeps its own zoom ({@link #textZoom}).
+     */
+    public void uiZoom(int direction) {
+        Settings s = config.getSettings();
+        int now = s.getUiZoom();
+        int next = direction > 0
+                ? com.editora.editor.UiZoom.in(now)
+                : direction < 0 ? com.editora.editor.UiZoom.out(now) : Settings.DEFAULT_UI_ZOOM;
+        if (next == now) {
+            setStatus(
+                    direction > 0
+                            ? tr("status.uiZoom.largest", now)
+                            : direction < 0 ? tr("status.uiZoom.smallest", now) : tr("status.uiZoom.default"));
+            return;
+        }
+        s.setUiZoom(next);
+        requestSave();
+        Themes.applyUiZoom(next);
+        if (settingsWindow != null) {
+            settingsWindow.syncAll();
+        }
+        setStatus(tr("status.uiZoom", next));
+    }
+
     /** This window's snippets, for {@link WindowManager} to tell about a change made in another window. */
     SnippetCoordinator snippetCoordinator() {
         return snippetCoordinator;

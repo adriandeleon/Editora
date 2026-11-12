@@ -217,7 +217,8 @@ public final class PreviewSnapshots {
         Scene sc = new Scene(new Group());
         Scene live = b.getNode().getScene();
         if (live != null) {
-            sc.getStylesheets().setAll(live.getStylesheets());
+            // The 100% sheets: a snapshot is for print or export, laid out at the sizes the page was measured at.
+            sc.getStylesheets().setAll(com.editora.editor.UiZoom.bases(live.getStylesheets()));
         }
         if (lightUa != null) {
             sc.setUserAgentStylesheet(lightUa);

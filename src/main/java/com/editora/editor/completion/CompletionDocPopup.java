@@ -69,7 +69,7 @@ final class CompletionDocPopup {
     private void addCss(String resource) {
         java.net.URL url = CompletionDocPopup.class.getResource(resource);
         if (url != null) {
-            card.getStylesheets().add(url.toExternalForm());
+            card.getStylesheets().add(com.editora.editor.UiZoom.sheet(url.toExternalForm()));
         }
     }
 

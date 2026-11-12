@@ -1362,6 +1362,7 @@ public class WindowManager {
         if (issues == null) {
             return Messages.tr("status.settings.reloadFailed");
         }
+        Themes.applyUiZoom(shared.getSettings().getUiZoom());
         Themes.applyAppTheme(shared.getSettings().getTheme());
         reloadSharedKeymap(); // rebuilds the keymap the file may name, and re-applies everything everywhere
         for (Holder h : new ArrayList<>(windows)) {
@@ -1663,12 +1664,12 @@ public class WindowManager {
             scene.setFill(Themes.backgroundFor(settings.getTheme()));
             scene.getStylesheets()
                     .addAll(
-                            WindowManager.class
+                            com.editora.editor.UiZoom.sheet(WindowManager.class
                                     .getResource("/com/editora/styles/app.css")
-                                    .toExternalForm(),
-                            WindowManager.class
+                                    .toExternalForm()),
+                            com.editora.editor.UiZoom.sheet(WindowManager.class
                                     .getResource("/com/editora/styles/syntax.css")
-                                    .toExternalForm());
+                                    .toExternalForm()));
 
             KeyDispatcher keyDispatcher = new KeyDispatcher(registry, keymap, controller::setStatus);
             keyDispatcher.install(scene);

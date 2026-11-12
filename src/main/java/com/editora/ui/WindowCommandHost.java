@@ -875,6 +875,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void uiZoom(int direction) {
+        mc.uiZoom(direction);
+    }
+
+    @Override
     public SnippetCoordinator snippetCoordinator() {
         return mc.snippetCoordinator;
     }
