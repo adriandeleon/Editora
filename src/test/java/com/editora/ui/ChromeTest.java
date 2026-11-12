@@ -718,6 +718,31 @@ class ChromeTest {
         assertEquals("view.toggleCsvGrid", r.commandArg());
     }
 
+    /** What an OS cannot do is grayed with its own reason, ahead of any setting: the command is still listed. */
+    @Test
+    void whatAnOsCannotDoIsGrayedWithItsOwnReason() {
+        for (String id : java.util.List.of("file.saveAsAdmin", "view.toggleAdminSave")) {
+            Chrome.DisabledReason windows = Chrome.osReason(id, com.editora.Os.Kind.WINDOWS);
+            assertNotNull(windows, id);
+            assertEquals("palette.disabled.adminSaveWindows", windows.messageKey());
+            assertNull(windows.commandArg(), "no command of Editora's would enable it");
+            assertNull(Chrome.osReason(id, com.editora.Os.Kind.LINUX), id);
+            assertNull(Chrome.osReason(id, com.editora.Os.Kind.MAC), id);
+        }
+        assertNull(Chrome.osReason("file.save", com.editora.Os.Kind.WINDOWS));
+        try {
+            com.editora.Os.override(com.editora.Os.Kind.WINDOWS);
+            assertFalse(Chrome.paletteEnabled("file.saveAsAdmin", allOn(), ctx()));
+            assertEquals(
+                    "palette.disabled.adminSaveWindows",
+                    Chrome.disabledReason("file.saveAsAdmin", allOn(), ctx()).messageKey());
+            com.editora.Os.override(com.editora.Os.Kind.LINUX);
+            assertTrue(Chrome.paletteEnabled("file.saveAsAdmin", allOn(), ctx()));
+        } finally {
+            com.editora.Os.override(null);
+        }
+    }
+
     @Test
     void paletteEnabledCombinesBothDimensions() {
         // Feature on + context present -> enabled.
