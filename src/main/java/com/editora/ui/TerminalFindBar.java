@@ -70,6 +70,9 @@ final class TerminalFindBar extends HBox {
             }
         });
 
+        // The keymap's caret and editing chords (C-a, C-e, C-k, C-y; Ctrl+V/X/C/Z) act on the field.
+        com.editora.command.TextInputKeymap.installShared(query);
+
         getChildren().addAll(query, OptionToggle.viewOf(matchCase, tr("search.caseTip")), count, older, newer, close);
         setVisible(false);
         setManaged(false);
@@ -91,6 +94,20 @@ final class TerminalFindBar extends HBox {
         run();
         query.requestFocus();
         query.selectAll();
+    }
+
+    /**
+     * Find, asked for again: with the bar already open over {@code target} it steps to the next match (up, to
+     * older output, as Enter does) and keeps the field focused; otherwise it opens the bar.
+     */
+    void openOrNext(TerminalView target, String seed) {
+        if (isShowing() && view == target) {
+            typing.stop();
+            step(true);
+            query.requestFocus();
+        } else {
+            open(target, seed);
+        }
     }
 
     /** Searches {@code target} instead (another tab was selected); keeps the query. */

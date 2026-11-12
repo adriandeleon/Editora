@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Find in every console and in the Application Log.** The Run, External Tools and Debug consoles, the test
+  output of Test Results and the Application Log window now have a find bar, as the build console did. Press
+  your keymap's Find key in the view (the Application Log also has a Find button): it searches as you type and
+  shows a count, Enter goes to the next match and Shift+Enter to the previous one, wrapping around, and Escape
+  closes the bar and gives the keyboard back to the text.
+
 - **Pauta conformance.** Editora now says which edition of [Pauta](https://pauta-project.dev/), the guidelines
   its family of apps follows, it is working toward and how far it has come. *Help → Pauta Conformance* (also in
   the Command Palette) lists every rule of Pauta 6.0.1 that Editora does not meet yet, each with one sentence on
@@ -429,6 +435,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step stops every thread of the program, and Continue resumes them all — IntelliJ's "Suspend: All".
 
 ### Changed
+
+- **Pressing Find again while a find bar is open goes to the next match** in the consoles and in the terminal,
+  as it does in the editor. In the terminal it used to only put the cursor back in the field.
+- **Typing in a console's find bar searches from where the caret was when the bar opened**, so narrowing the
+  query no longer runs on down the output.
+- **The keymap's editing keys work in every find field.** In the find bars of the consoles, the terminal and
+  Project Map cards, C-a, C-e, C-k and C-y in the Emacs keymap (Ctrl+V/X/C/Z in the others) now act on the
+  field, as they already did in the editor's.
 
 - **Questions before something is lost are asked the same way everywhere.** The button that confirms carries the
   action's own name (Delete, Discard, Replace, Overwrite, Reset) in red, never OK, and Cancel is the default

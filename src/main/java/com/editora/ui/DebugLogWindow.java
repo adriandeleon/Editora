@@ -33,6 +33,7 @@ public final class DebugLogWindow {
     // Built on the first show(): a Stage and a TextArea are not free, and most sessions never open this.
     private @Nullable Stage stage;
     private @Nullable TextArea area;
+    private @Nullable ConsoleFindBar findBar;
     private @Nullable Label fileLabel;
     private @Nullable Path sessionFile;
     private @Nullable Runnable onReport;
@@ -77,6 +78,12 @@ public final class DebugLogWindow {
         area.setPromptText(tr("debuglog.empty"));
         VBox.setVgrow(area, Priority.ALWAYS);
 
+        // A find bar over the log, part of this window: the Find button and the keymap's find chord open it,
+        // the chord pressed again steps to the next match, and Escape gives the keyboard back to the log.
+        ConsoleFindBar findBar = ConsoleFindBar.overText(() -> area);
+        Button find = new Button(tr("find.prompt"));
+        find.setOnAction(e -> findBar.openOrNext(area.getSelectedText()));
+
         Button refresh = new Button(tr("debuglog.refresh"));
         refresh.setOnAction(e -> refresh());
         Button copy = new Button(tr("debuglog.copy"));
@@ -97,7 +104,7 @@ public final class DebugLogWindow {
 
         javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
         HBox.setHgrow(spacer, Priority.ALWAYS); // pushes Close to the right
-        HBox buttons = new HBox(8, refresh, copy, clear, export);
+        HBox buttons = new HBox(8, find, refresh, copy, clear, export);
         Runnable onReport = this.onReport;
         if (onReport != null) {
             Button report = new Button(tr("debuglog.report"));
@@ -110,7 +117,7 @@ public final class DebugLogWindow {
         fileLabel.getStyleClass().add("debug-log-file");
         fileLabel.setWrapText(true);
 
-        VBox root = new VBox(8, area, fileLabel, buttons);
+        VBox root = new VBox(8, findBar, area, fileLabel, buttons);
         root.setPadding(new Insets(10));
         VBox.setVgrow(area, Priority.ALWAYS);
 
@@ -123,8 +130,15 @@ public final class DebugLogWindow {
                         DebugLogWindow.class
                                 .getResource("/com/editora/styles/syntax.css")
                                 .toExternalForm());
+        scene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (ConsoleFindBar.isFindChord(e)) {
+                findBar.openOrNext(area.getSelectedText());
+                e.consume();
+            }
+        });
         stage.setScene(scene);
         this.stage = stage;
+        this.findBar = findBar;
         this.area = area;
         this.fileLabel = fileLabel;
         return stage;

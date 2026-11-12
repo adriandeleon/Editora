@@ -907,7 +907,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         consoleContentNode = consoleContent;
         HBox consoleHeader = new HBox(4, consoleTab, disassemblyTab, memoryTab);
         consoleHeader.setAlignment(Pos.CENTER_LEFT);
-        VBox consoleBox = new VBox(2, consoleHeader, consoleArea);
+        // The keymap's find chord, pressed in the console, opens a find bar over it (Escape closes it).
+        VBox consoleBox = new VBox(2, consoleHeader, ConsoleFindBar.install(console), consoleArea);
         VBox.setVgrow(consoleArea, Priority.ALWAYS);
         javafx.scene.control.ContextMenu consoleMenu = new javafx.scene.control.ContextMenu();
         javafx.scene.control.MenuItem clear = new javafx.scene.control.MenuItem(tr("debugpanel.clearConsole"));
