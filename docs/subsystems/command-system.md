@@ -443,6 +443,14 @@ earlier in the keymap being switched to. `Settings.setKeymap` is the bare proper
   their text in `-color-danger-fg` (`app.css`). A right-click menu adds it to the item; the menu bar's
   destructive commands are the set in `MenuBarModel`, applied where `MainMenuBar` builds a row. Rows that
   close, hide or stop something, clear output or edit text are not marked.
+- **A row menu for a list or tree** is built with
+  [`RowMenus`](../../src/main/java/com/editora/ui/RowMenus.java): `RowMenus.row("panel.verbSelected", icon,
+  this::verbSelected)` makes a row titled as the command is (without its category), showing the command's
+  chord, and `RowMenus.install(control, hasRow, rows…)` gives the control that one menu, opened at the
+  selected row by the keyboard and disabled while nothing is selected. Every row is a command's: register
+  the command (`registerRowCommands` in `WindowCommandRegistrar`) on the same panel method the row calls,
+  which answers false when no row is selected so the command can say so. A Copy row whose control answers
+  the keymap's Copy chord (`RowMenus.onCopyKey`) shows that chord.
 - **Chords on menu rows**: a right-click or drop-down row that does what a command does is tagged with that
   command's id, [`MenuChords.tag(item, "command.id")`](../../src/main/java/com/editora/editor/MenuChords.java),
   and then shows the command's chord in the menu's right-hand column. The chord is read from the live

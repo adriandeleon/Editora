@@ -122,6 +122,13 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
                 activateSelected();
             }
         });
+        // The row's menu: each row is a command's, so the palette and a key binding reach it too.
+        RowMenus.install(
+                tree,
+                () -> tree.getSelectionModel().getSelectedItem() != null,
+                RowMenus.row("references.openSelected", Icons.openInTab(), this::openSelected),
+                RowMenus.row("references.copySelected", "edit.copy", Icons.copy(), this::copySelected));
+        RowMenus.onCopyKey(tree, this::copySelected);
         VBox.setVgrow(tree, Priority.ALWAYS);
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         getChildren().addAll(summary, tree);
@@ -177,9 +184,14 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
     }
 
     private void activateSelected() {
+        openSelected();
+    }
+
+    /** Opens the selected reference (a file's heading folds or unfolds); false when no row is selected. */
+    boolean openSelected() {
         TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
         if (item == null) {
-            return;
+            return false;
         }
         Row row = item.getValue();
         if (row.ref() != null) {
@@ -187,6 +199,19 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
         } else {
             item.setExpanded(!item.isExpanded());
         }
+        return true;
+    }
+
+    /** Copies the selected reference's line, or a file heading's path; false when no row is selected. */
+    boolean copySelected() {
+        TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+        Row row = item == null ? null : item.getValue();
+        if (row == null) {
+            return false;
+        }
+        Reference ref = row.ref();
+        String line = ref == null ? "" : ref.preview().strip();
+        return RowMenus.copy(ref == null || line.isEmpty() ? String.valueOf(row.file()) : line);
     }
 
     /** Rebuilds the tree, grouping {@code refs} by file (called on the FX thread). Selects the first row. */

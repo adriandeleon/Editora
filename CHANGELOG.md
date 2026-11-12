@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Right-click menus in the References, Hierarchy, Find in Files and Undo History tool windows, the Message
+  Log, the Application Log and the External Tools console.** A reference, a hierarchy item or a match has
+  Open and Copy; an undo state has Restore This State; a message has Copy; the two logs have Select All and
+  Copy, and the Application Log has Find in place of the stock Cut, Paste and Delete. The Menu key and
+  Shift+F10 open each menu at the selected row.
+- **Eight commands for those rows**, so the palette and a key binding of your own reach them: References: Open
+  Reference and Copy Line, Hierarchy: Open Declaration and Copy Name, Find in Files: Open Match and Copy Line,
+  Undo History: Restore This State, and Message Log: Copy. Each acts on the row selected in its panel.
+- **The Copy key copies the selected row** in the References, Hierarchy and Find in Files trees: Ctrl+C (Cmd+C
+  on macOS), or the Copy chord of the active keymap (M-w in Emacs).
 - **Find in every console and in the Application Log.** The Run, External Tools and Debug consoles, the test
   output of Test Results and the Application Log window now have a find bar, as the build console did. Press
   your keymap's Find key in the view (the Application Log also has a Find button): it searches as you type and

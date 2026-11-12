@@ -206,6 +206,13 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
                 activateSelected();
             }
         });
+        // The row's menu: each row is a command's, so the palette and a key binding reach it too.
+        RowMenus.install(
+                tree,
+                () -> tree.getSelectionModel().getSelectedItem() != null,
+                RowMenus.row("searchResults.openSelected", Icons.openInTab(), this::openSelectedMatch),
+                RowMenus.row("searchResults.copySelected", "edit.copy", Icons.copy(), this::copySelected));
+        RowMenus.onCopyKey(tree, this::copySelected);
         VBox.setVgrow(tree, Priority.ALWAYS);
         // Standard Emacs-style navigation within the panel (mirrors the other tool windows). Native
         // arrow keys also work in the tree; text fields keep their own keys.
@@ -338,9 +345,17 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
     /** Double-click / Enter: open the selected match and move focus into the editor (else toggle a header). */
     private void activateSelected() {
+        openSelectedMatch();
+    }
+
+    /**
+     * Opens the selected match and moves the keyboard into the editor (a file's heading folds or unfolds);
+     * false when no row is selected.
+     */
+    boolean openSelectedMatch() {
         TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
         if (item == null) {
-            return;
+            return false;
         }
         Row row = item.getValue();
         if (row.match() != null) {
@@ -348,6 +363,19 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         } else {
             item.setExpanded(!item.isExpanded());
         }
+        return true;
+    }
+
+    /** Copies the selected match's line, or a file heading's path; false when no row is selected. */
+    boolean copySelected() {
+        TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+        Row row = item == null ? null : item.getValue();
+        if (row == null) {
+            return false;
+        }
+        LineMatch match = row.match();
+        String line = match == null ? "" : match.lineText().strip();
+        return RowMenus.copy(match == null || line.isEmpty() ? String.valueOf(row.file()) : line);
     }
 
     /** Single click / keyboard selection: preview the selected match (jump there, keep focus in the panel). */
