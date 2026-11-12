@@ -1027,7 +1027,7 @@ public final class JavaRuntimes {
         if (pick == null) {
             return new ServerJava(null, true);
         }
-        boolean windows = java.io.File.separatorChar == '\\';
+        boolean windows = com.editora.Os.isWindows();
         return new ServerJava(
                 java.nio.file.Path.of(pick.path(), "bin", windows ? "java.exe" : "java")
                         .toString(),
@@ -1052,7 +1052,7 @@ public final class JavaRuntimes {
      * over, as the launcher runs the {@code PATH}'s then (sixth review CV5).
      */
     public static java.nio.file.@Nullable Path launcherJava() {
-        boolean windows = java.io.File.separatorChar == '\\';
+        boolean windows = com.editora.Os.isWindows();
         String javaHome = System.getenv("JAVA_HOME");
         java.nio.file.Path exe = null;
         if (javaHome != null && !javaHome.isBlank()) {

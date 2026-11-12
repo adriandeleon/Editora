@@ -15,7 +15,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import com.editora.process.ProcessRunner;
@@ -81,7 +80,7 @@ public final class Trash {
         Bin bin = system;
         if (bin == null) {
             bin = forPlatform(
-                    System.getProperty("os.name", ""),
+                    com.editora.Os.current(),
                     System.getProperty("user.home"),
                     System.getenv(),
                     System.getProperty(PROPERTY));
@@ -91,21 +90,20 @@ public final class Trash {
     }
 
     /** Chooses the trash for a platform. Pure apart from looking for {@code gio} on the given PATH. */
-    static Bin forPlatform(String osName, String userHome, Map<String, String> env, String property) {
+    static Bin forPlatform(com.editora.Os.Kind os, String userHome, Map<String, String> env, String property) {
         if ("off".equalsIgnoreCase(property == null ? "" : property.strip())) {
             return NONE;
         }
         if (userHome == null || userHome.isBlank()) {
             return NONE;
         }
-        String os = osName == null ? "" : osName.toLowerCase(Locale.ROOT);
         Path home;
         try {
             home = Path.of(userHome);
-            if (os.contains("win")) {
+            if (os == com.editora.Os.Kind.WINDOWS) {
                 return NONE;
             }
-            if (os.contains("mac") || os.contains("darwin")) {
+            if (os == com.editora.Os.Kind.MAC) {
                 return directory(home.resolve(".Trash"));
             }
             String dataHome = env == null ? null : env.get("XDG_DATA_HOME");

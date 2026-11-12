@@ -109,7 +109,7 @@ public class App extends Application {
         // Folders bind-mounted into a container the user works in: their tools run there once allowed.
         com.editora.process.ExecTargets.registerMapped(com.editora.container.ContainerBindings.shared());
         // Folders inside a WSL distribution (\\wsl.localhost\…): their tools run in it once allowed.
-        if (System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win")) {
+        if (com.editora.Os.isWindows()) {
             com.editora.process.ExecTargets.registerMapped(com.editora.wsl.WslTargets.shared());
         }
         // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking
@@ -280,9 +280,7 @@ public class App extends Application {
 
     /** True when running on macOS (Finder "Open With" delivers files via an Apple Event, not argv). */
     private static boolean isMac() {
-        return System.getProperty("os.name", "")
-                .toLowerCase(java.util.Locale.ROOT)
-                .contains("mac");
+        return com.editora.Os.isMac();
     }
 
     /** The UI-chrome font stylesheet (the {@code .root} Inter rule). See {@code styles/ui-font.css}. */

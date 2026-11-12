@@ -775,9 +775,7 @@ public final class ConfigMigrations {
      * the platform running the migration and move it into that slot, clearing the other so the leak can't happen.
      */
     static JsonNode splitKeybindingsByPlatform(JsonNode input) {
-        boolean mac = System.getProperty("os.name", "")
-                .toLowerCase(java.util.Locale.ROOT)
-                .contains("mac");
+        boolean mac = com.editora.Os.isMac();
         return input instanceof ObjectNode o ? splitKeybindings(o, mac) : input;
     }
 

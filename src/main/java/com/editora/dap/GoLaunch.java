@@ -124,7 +124,7 @@ public final class GoLaunch {
         String name = "editora-dlv-"
                 + Long.toUnsignedString(
                         java.util.concurrent.ThreadLocalRandom.current().nextLong(), 36)
-                + (java.io.File.pathSeparatorChar == ';' ? ".exe" : "");
+                + (com.editora.Os.isWindows() ? ".exe" : "");
         return Path.of(System.getProperty("java.io.tmpdir"), name).toString();
     }
 

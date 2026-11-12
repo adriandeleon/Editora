@@ -9,7 +9,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
@@ -624,6 +623,5 @@ final class ListingService implements AutoCloseable {
         return counts;
     }
 
-    private static final boolean LINUX =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("linux");
+    private static final boolean LINUX = com.editora.Os.isLinux();
 }

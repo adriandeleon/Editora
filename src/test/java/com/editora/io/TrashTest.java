@@ -171,20 +171,27 @@ class TrashTest {
         String home = dir.toString();
         Path file = Files.writeString(dir.resolve("f.txt"), "x");
 
-        assertSame(Trash.NONE, Trash.forPlatform("Windows 11", home, Map.of(), null), "no Recycle Bin without AWT");
-        assertSame(Trash.NONE, Trash.forPlatform("Linux", home, Map.of(), "off"), "the test suite's switch");
-        assertSame(Trash.NONE, Trash.forPlatform("Linux", null, Map.of(), null));
+        assertSame(
+                Trash.NONE,
+                Trash.forPlatform(com.editora.Os.parse("Windows 11"), home, Map.of(), null),
+                "no Recycle Bin without AWT");
+        assertSame(
+                Trash.NONE,
+                Trash.forPlatform(com.editora.Os.parse("Linux"), home, Map.of(), "off"),
+                "the test suite's switch");
+        assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Linux"), null, Map.of(), null));
 
-        Trash.forPlatform("Mac OS X", home, Map.of(), null).trash(file);
+        Trash.forPlatform(com.editora.Os.parse("Mac OS X"), home, Map.of(), null)
+                .trash(file);
         assertEquals("x", Files.readString(dir.resolve(".Trash/f.txt")));
 
         Path second = Files.writeString(dir.resolve("g.txt"), "y");
-        Trash.forPlatform("Linux", home, Map.of(), null).trash(second);
+        Trash.forPlatform(com.editora.Os.parse("Linux"), home, Map.of(), null).trash(second);
         assertEquals("y", Files.readString(dir.resolve(".local/share/Trash/files/g.txt")));
 
         Path third = Files.writeString(dir.resolve("h.txt"), "z");
         Path data = dir.resolve("xdg-data");
-        Trash.forPlatform("Linux", home, Map.of("XDG_DATA_HOME", data.toString()), null)
+        Trash.forPlatform(com.editora.Os.parse("Linux"), home, Map.of("XDG_DATA_HOME", data.toString()), null)
                 .trash(third);
         assertEquals("z", Files.readString(data.resolve("Trash/files/h.txt")));
     }

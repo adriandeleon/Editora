@@ -4,7 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import org.jspecify.annotations.Nullable;
@@ -101,8 +100,7 @@ public final class JvmTools {
         if (spec == null) {
             return null;
         }
-        boolean windows =
-                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
+        boolean windows = com.editora.Os.isWindows();
         Path userHome = Path.of(System.getProperty("user.home", "."));
         List<Path> candidates = candidates(tool, System.getenv(), userHome, windows);
         if (!candidates.isEmpty() && Files.isExecutable(candidates.get(0)) && hasHomeVariable(spec)) {

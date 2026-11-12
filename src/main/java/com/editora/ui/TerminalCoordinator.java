@@ -109,12 +109,8 @@ final class TerminalCoordinator {
                 here.setOnAction(e -> p.newTerminalHere());
                 MenuItem find = new MenuItem(tr("terminal.menu.find"));
                 find.setOnAction(e -> p.find());
-                find.setAccelerator(com.editora.terminal.TerminalView.chord(
-                        System.getProperty("os.name", "")
-                                        .toLowerCase(java.util.Locale.ROOT)
-                                        .startsWith("mac")
-                                ? "Meta+F"
-                                : "Ctrl+Shift+F"));
+                find.setAccelerator(
+                        com.editora.terminal.TerminalView.chord(com.editora.Os.isMac() ? "Meta+F" : "Ctrl+Shift+F"));
                 // That is the terminal's own fixed key. A chord the user gives the Find command replaces it.
                 com.editora.editor.MenuChords.tag(find, "terminal.find");
                 return List.of(here, find);

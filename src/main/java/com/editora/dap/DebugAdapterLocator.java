@@ -220,7 +220,7 @@ public final class DebugAdapterLocator {
      * {@code codelldb} on the PATH. Blocking: it lists folders.
      */
     public static Optional<Path> locateCodelldb(@Nullable String configured, Path home) {
-        boolean windows = java.io.File.pathSeparatorChar == ';';
+        boolean windows = com.editora.Os.isWindows();
         if (configured != null && !configured.isBlank()) {
             Path p;
             try {

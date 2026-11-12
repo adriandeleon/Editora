@@ -31,8 +31,7 @@ final class KittyKeyInput {
 
     private static final byte[] NOTHING = new byte[0];
 
-    private static final boolean MAC =
-            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("mac");
+    private static final boolean MAC = com.editora.Os.isMac();
 
     /** Keys down now, whatever happened to their presses: what makes the next press a repeat. */
     private final Set<KeyCode> held = new HashSet<>();

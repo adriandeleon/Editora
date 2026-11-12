@@ -738,7 +738,7 @@ class DoctorCatalogFxTest {
     @Test
     void theElevatedSaveRowAppearsOnlyWhereItIsSupportedAndSwitchedOn() throws Exception {
         Host host = new Host();
-        String os = System.getProperty("os.name", "");
+        com.editora.Os.Kind os = com.editora.Os.current();
         host.settings.setAdminSave(false);
         assertFalse(has(specs(host, new Ops()), "adminSave"));
 
@@ -749,7 +749,7 @@ class DoctorCatalogFxTest {
             DoctorCheck row = spec(specs, "adminSave").placeholder();
             assertEquals("editor", row.settingsKey());
             assertEquals(
-                    com.editora.process.ElevatedSave.isMac(os)
+                    os == com.editora.Os.Kind.MAC
                             ? com.editora.process.ElevatedSave.OSASCRIPT
                             : com.editora.process.ElevatedSave.PKEXEC,
                     row.command());

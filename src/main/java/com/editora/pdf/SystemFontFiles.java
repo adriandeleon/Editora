@@ -84,24 +84,23 @@ final class SystemFontFiles {
     static List<Path> get() {
         List<Path> c = cached;
         if (c == null) {
-            c = find(roots(System.getProperty("os.name", ""), System.getProperty("user.home", ""), System.getenv()));
+            c = find(roots(com.editora.Os.current(), System.getProperty("user.home", ""), System.getenv()));
             cached = c;
         }
         return c;
     }
 
-    /** The font directories of the platform named by {@code osName}. Pure. */
-    static List<Path> roots(String osName, String home, Map<String, String> env) {
-        String os = osName.toLowerCase(Locale.ROOT);
+    /** The font directories of operating system {@code os}. Pure. */
+    static List<Path> roots(com.editora.Os.Kind os, String home, Map<String, String> env) {
         List<Path> out = new ArrayList<>();
-        if (os.contains("win")) {
+        if (os == com.editora.Os.Kind.WINDOWS) {
             String windir = env.getOrDefault("WINDIR", env.getOrDefault("SystemRoot", "C:\\Windows"));
             out.add(Path.of(windir, "Fonts"));
             String local = env.get("LOCALAPPDATA");
             if (local != null && !local.isBlank()) {
                 out.add(Path.of(local, "Microsoft", "Windows", "Fonts"));
             }
-        } else if (os.contains("mac") || os.contains("darwin")) {
+        } else if (os == com.editora.Os.Kind.MAC) {
             out.add(Path.of("/System/Library/Fonts"));
             out.add(Path.of("/Library/Fonts"));
             out.add(Path.of(home, "Library", "Fonts"));

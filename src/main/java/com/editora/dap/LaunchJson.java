@@ -5,7 +5,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -290,9 +289,12 @@ public final class LaunchJson {
     }
 
     /** VS Code's name of this operating system's part of a configuration: {@code linux}, {@code osx}, {@code windows}. */
-    public static String osKey(String osName) {
-        String os = osName.toLowerCase(Locale.ROOT);
-        return os.contains("win") ? "windows" : os.contains("mac") ? "osx" : "linux";
+    public static String osKey(com.editora.Os.Kind os) {
+        return switch (os) {
+            case WINDOWS -> "windows";
+            case MAC -> "osx";
+            case LINUX -> "linux";
+        };
     }
 
     /** {@code body} with its {@code osKey} part laid over it (and none of the three parts left in). */

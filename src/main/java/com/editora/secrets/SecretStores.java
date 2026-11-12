@@ -1,7 +1,5 @@
 package com.editora.secrets;
 
-import java.util.Locale;
-
 /** Picks the keychain of the machine Editora runs on. */
 public final class SecretStores {
 
@@ -22,12 +20,11 @@ public final class SecretStores {
         if ("none".equalsIgnoreCase(System.getProperty(PROPERTY, ""))) {
             return SecretStore.NONE;
         }
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         try {
-            if (os.contains("mac")) {
+            if (com.editora.Os.isMac()) {
                 return new MacKeychainStore(SERVICE);
             }
-            if (os.contains("win")) {
+            if (com.editora.Os.isWindows()) {
                 return new WindowsCredentialStore(SERVICE);
             }
             return new LinuxSecretServiceStore(SERVICE);

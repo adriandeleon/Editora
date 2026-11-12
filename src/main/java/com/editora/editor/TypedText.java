@@ -11,8 +11,7 @@ import javafx.scene.input.KeyEvent;
  */
 final class TypedText {
 
-    private static final boolean WINDOWS =
-            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+    private static final boolean WINDOWS = com.editora.Os.isWindows();
 
     private TypedText() {}
 

@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -745,8 +744,7 @@ public final class NodeResponseScripts implements ResponseScripts {
         // The user's locale and the augmented PATH (a script's log is read by the user), then nothing else.
         ProcessRunner.applyUserEnv(pb);
         Map<String, String> env = pb.environment();
-        boolean windows =
-                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        boolean windows = com.editora.Os.isWindows();
         Map<String, String> minimal = HttpScripts.environment(env, ProcessRunner.augmentedPath(), windows);
         env.clear();
         env.putAll(minimal);
