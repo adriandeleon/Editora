@@ -1635,6 +1635,13 @@ plain click) open a one-field form for the log message, with the `{expression}` 
 disabled while the message is blank, so it never leaves a breakpoint that stops; the breakpoint is created only on OK,
 and on a line that has one only its message changes. A method breakpoint's mark ignores the Shift+click.
 `DebugReviewCWindowFxTest.shiftClickingTheGutterOrAddLogpointMakesTheLineALogpoint` covers it.
+**Logpoints an adapter does not log**: an adapter without `supportsLogPoints` (netcoredbg 3.2.0) ignores
+`logMessage` and stops on the breakpoint. On a `breakpoint` stop at a line whose sent breakpoint has a log message,
+`DebugCoordinator.logAndContinue` evaluates each `{expression}` of it ([`ui/LogpointMessage`](../../src/main/java/com/editora/ui/LogpointMessage.java)
+splits it; braces nest) in the top frame, logs the filled-in line with `appendNotice` (a failed one logs the
+debugger's error in its place) and resumes. The stop is quiet like a recording breakpoint's (`quietStop`) and is not
+kept in Debug History (`DebugPanel.skipHistoryStop`). The adapter still checks a condition; a hit count it does not
+support is not emulated. `LogpointWithoutAdapterSupportFxTest` and `LogpointMessageTest` cover it.
 **Lambda breakpoints** ([`ui/LambdaBreakpoints`](../../src/main/java/com/editora/ui/LambdaBreakpoints.java),
 [`editor/debug/JavaLambdas`](../../src/main/java/com/editora/editor/debug/JavaLambdas.java)) are line breakpoints
 that also, or only, stop inside lambdas of their line: `Breakpoint.lambdas` holds their numbers on the line (from 1,

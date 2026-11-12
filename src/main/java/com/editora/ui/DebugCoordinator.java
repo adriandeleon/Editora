@@ -2172,6 +2172,15 @@ final class DebugCoordinator {
                 // Selects the first frame that has source to show → selectFrame highlights + loads vars. A step
                 // that went into library code shows that code (B5): the user asked to go there.
                 int shown = frameToShow(reason, frames, DebugCoordinator.this::showsOnStop);
+                // A logpoint the adapter does not log itself (netcoredbg) stopped the program: Editora logs its
+                // message and goes on, so it never stops there, as with any other adapter (logAndContinue).
+                String logMessage = emulatedLogpointHit(reason, frames);
+                if (logMessage != null) {
+                    s().quietStop = s().stopSerial;
+                    panel().skipHistoryStop();
+                    logAndContinue(frames.getFirst(), logMessage);
+                    return;
+                }
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
@@ -2778,6 +2787,15 @@ final class DebugCoordinator {
 
     /** Whether a recording breakpoint was sent for 0-based line {@code line} of {@code file}. */
     private boolean recordingBreakpointAt(Path file, int line) {
+        return sentBreakpointAt(file, line, DapModels.LineBreakpoint::recording) != null;
+    }
+
+    /**
+     * The first breakpoint sent for 0-based line {@code line} of {@code file} (open files' and closed ones') that
+     * {@code which} accepts, or null.
+     */
+    private DapModels.@Nullable LineBreakpoint sentBreakpointAt(
+            Path file, int line, java.util.function.Predicate<DapModels.LineBreakpoint> which) {
         String wanted = key(file);
         List<DapModels.FileBreakpoints> sent =
                 new ArrayList<>(s().sentBreakpoints.values());
@@ -2785,13 +2803,68 @@ final class DebugCoordinator {
         for (DapModels.FileBreakpoints fb : sent) {
             if (fb.file() != null && key(fb.file()).equals(wanted)) {
                 for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
-                    if (lb.line() == line && lb.recording()) {
-                        return true;
+                    if (lb.line() == line && which.test(lb)) {
+                        return lb;
                     }
                 }
             }
         }
-        return false;
+        return null;
+    }
+
+    // --- logpoints the adapter does not log: log the message, then go on -----------------------------
+
+    /**
+     * The log message of the logpoint the program stopped ({@code reason}) on at the top frame's line, when the
+     * adapter does not log logpoints itself (netcoredbg ignores {@code logMessage} and stops); else null. Such an
+     * adapter still checks the breakpoint's condition, so the stop is one the message is due for.
+     */
+    private @Nullable String emulatedLogpointHit(String reason, List<DapModels.StackFrameInfo> frames) {
+        if (!"breakpoint".equals(reason) || frames.isEmpty() || dap().supportsLogPoints()) {
+            return null;
+        }
+        DapModels.StackFrameInfo top = frames.getFirst();
+        Path file = top.file();
+        DapModels.LineBreakpoint lb = file == null
+                ? null
+                : sentBreakpointAt(
+                        file,
+                        top.line(),
+                        b -> b.logMessage() != null && !b.logMessage().isBlank());
+        return lb == null ? null : lb.logMessage();
+    }
+
+    /**
+     * Logs {@code message} in the Debug console with each {@code {expression}} evaluated in {@code top}, as an adapter
+     * that supports logpoints would, then lets the program go on. An expression that fails to evaluate logs the
+     * debugger's error in its place. A stop the user acts on first (a step, Stop) or another stop meanwhile is left
+     * as it is.
+     */
+    private void logAndContinue(DapModels.StackFrameInfo top, String message) {
+        int serial = s().stopSerial;
+        DebugPanel panel = panel();
+        List<LogpointMessage.Part> parts = LogpointMessage.parse(message);
+        List<String> expressions = parts.stream()
+                .filter(LogpointMessage.Part::expression)
+                .map(LogpointMessage.Part::text)
+                .toList();
+        List<String> values = new ArrayList<>();
+        Runnable[] next = new Runnable[1];
+        next[0] = () -> {
+            if (serial != s().stopSerial || dap().state() != DapManager.State.SUSPENDED) {
+                return;
+            }
+            if (values.size() < expressions.size()) {
+                dap().evaluateFull(expressions.get(values.size()), top.id(), "watch", r -> {
+                    values.add(r == null ? "" : r.result());
+                    next[0].run();
+                });
+                return;
+            }
+            panel.appendNotice(LogpointMessage.fill(parts, values));
+            dap().resume();
+        };
+        next[0].run();
     }
 
     /**

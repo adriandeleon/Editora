@@ -587,6 +587,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Logpoints work in C#.** netcoredbg doesn't support logpoints, so a C# logpoint stopped the program like a plain
+  breakpoint and logged nothing. When a debugger can't log logpoints itself, Editora now logs the message in the Debug
+  console, with each `{expression}` evaluated where the program stopped, and lets it go on. The editor is not taken to
+  the line, and the stop is not kept in Debug History. A condition on the logpoint still decides when it logs.
 - **Compare With… on a background tab compares that tab's file.** Right-clicking a tab that was not the active one
   and choosing Compare With… compared the active file with the one you picked. Every other row of the tab menu
   already acted on the tab you clicked.

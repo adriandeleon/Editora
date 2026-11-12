@@ -327,6 +327,15 @@ public final class DapClient implements IDebugProtocolClient {
                 .toList();
     }
 
+    /**
+     * Whether the adapter logs a breakpoint's {@code logMessage} itself (DAP {@code supportsLogPoints}). netcoredbg
+     * does not, and stops on such a breakpoint as on any other. Before the capabilities arrive it is taken to.
+     */
+    public boolean supportsLogPoints() {
+        Capabilities caps = target().capabilities;
+        return caps == null || Boolean.TRUE.equals(caps.getSupportsLogPoints());
+    }
+
     /** Whether the adapter supports {@code gotoTargets}/{@code goto} (debugpy does; java-debug and
      *  vscode-js-debug currently do not). */
     public boolean supportsGotoTargets() {

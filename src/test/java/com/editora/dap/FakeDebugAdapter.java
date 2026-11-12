@@ -119,6 +119,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
      */
     public volatile boolean memberBreakpoints;
 
+    /**
+     * When set (before the client connects), sessions advertise {@code supportsLogPoints}, as java-debug, js-debug and
+     * debugpy do; unset, as netcoredbg, the window logs a logpoint's message itself when the program stops on it.
+     */
+    public volatile boolean logPoints;
+
     /** When set (before the client connects), sessions advertise {@code supportsStepInTargetsRequest}. */
     public volatile boolean stepInTargets;
 
@@ -606,6 +612,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             if (stepInTargets) {
                 capabilities.setSupportsStepInTargetsRequest(true);
+            }
+            if (logPoints) {
+                capabilities.setSupportsLogPoints(true);
             }
             if (memberBreakpoints) {
                 capabilities.setSupportsFunctionBreakpoints(true);

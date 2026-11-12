@@ -3275,6 +3275,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return viewing;
     }
 
+    /**
+     * The stop is not kept in Debug History: a logpoint the adapter could not log stopped the program only for Editora
+     * to log its message (the coordinator's logAndContinue), so it is not a stop the user saw.
+     */
+    void skipHistoryStop() {
+        historyStopPending = false;
+    }
+
     /** The thread that stopped, for the stop recorded next (the coordinator says it before the call stack). */
     void setStoppedThread(int threadId) {
         historyThreadId = threadId;
