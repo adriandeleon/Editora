@@ -235,15 +235,31 @@ class MapDebugStopFxTest {
             FxTestSupport.runOnFx(() -> assertEquals(4, view.debugStopCard().executionLine(), "not while hidden"));
             FxTestSupport.runOnFx(() -> view.setShowing(true));
             waitFor(() -> view.debugStopCard() != null && view.debugStopCard().executionLine() == 9);
+            // Showing reloads the Map, and app/ is not open on it: the check for cards whose rows went away leaves the
+            // card the debugger is paused on (it used to close it, a pulse after the reload landed).
+            ProjectMapPreview shown = FxTestSupport.callOnFx(view::debugStopCard);
+            awaitOrphanCheck(view);
+            FxTestSupport.runOnFx(() -> assertSame(shown, view.debugStopCard(), "the stop card stays"));
 
             // A root with nothing paused, and a stop with no stack: the card marks the line, no call stack.
             FxTestSupport.runOnFx(() -> view.setDebugStop(new MapDebugStop(add, List.of(), false)));
             waitFor(() -> view.debugCallStack() == null && view.debugStopCard().executionLine() == 4);
             ProjectMapPreview last = FxTestSupport.callOnFx(view::debugStopCard);
+            awaitOrphanCheck(view);
             FxTestSupport.runOnFx(() -> {
+                assertSame(last, view.debugStopCard(), "still paused there: the card stays");
                 last.clearExecutionLine();
                 last.clearExecutionLine(); // nothing marked: nothing to do
                 assertSame(last, view.debugStopCard());
+            });
+
+            // A resume lets it go: the next check closes it, its folder not open on the Map.
+            FxTestSupport.runOnFx(() -> view.setDebugStop(MapDebugStop.RUNNING));
+            FxTestSupport.drainFx();
+            awaitOrphanCheck(view);
+            FxTestSupport.runOnFx(() -> {
+                assertNull(view.debugStopCard());
+                assertNull(last.getParent(), "closed");
             });
         } finally {
             FxTestSupport.runOnFx(() -> {
@@ -362,6 +378,25 @@ class MapDebugStopFxTest {
     }
 
     /** Lets the pulses that apply a stop pass. */
+    /**
+     * Runs the Map's check for cards whose rows went away now, as the first connector draw after a reload does, and
+     * waits for it (it closes cards a pulse later, not from inside the draw).
+     */
+    private static void awaitOrphanCheck(ProjectMapView view) throws Exception {
+        MapCards cards = FxTestSupport.field(view, "cards");
+        FxTestSupport.runOnFx(() -> {
+            try {
+                java.lang.reflect.Field checked = MapCards.class.getDeclaredField("cardsCheckedAgainst");
+                checked.setAccessible(true);
+                checked.set(cards, null);
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError(e);
+            }
+            FxTestSupport.invoke(cards, "repaintPreviewConnectors");
+        });
+        FxTestSupport.drainFx();
+    }
+
     private static void settle() throws Exception {
         for (int i = 0; i < 5; i++) {
             FxTestSupport.runOnFx(() -> {});

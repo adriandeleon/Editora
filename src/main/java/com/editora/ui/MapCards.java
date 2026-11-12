@@ -3350,9 +3350,10 @@ final class MapCards {
         }
         List<ProjectMapPreview> closing = previews.entrySet().stream()
                 // A linked result card stays while the card it was found from does (explore 5), a pinned card always
-                // (review 4, position 3).
+                // (review 4, position 3), the card the debugger is paused on while it is (Map gaps round 3, item 2).
                 .filter(entry -> cardOrphaned(root, entry.getKey(), entry.getValue(), shown)
                         && !links.isResult(entry.getValue())
+                        && !links.holdsStop(entry.getValue())
                         && !pinnedCards.contains(entry.getValue()))
                 .map(Map.Entry::getValue)
                 .toList();

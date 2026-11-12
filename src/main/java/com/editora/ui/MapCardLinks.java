@@ -1136,6 +1136,16 @@ final class MapCardLinks {
         }
     }
 
+    /**
+     * Whether the debugger is paused on {@code card}: it is the stop card, marking the stop's line or with the call
+     * stack beside it. Such a card stays while its folder is not open on the Map (the next stop replaces it, a resume
+     * lets it go), or every reload's orphan check would close the card a stop just opened.
+     */
+    boolean holdsStop(Region card) {
+        ProjectMapPreview stop = stopCard;
+        return stop != null && card == stop && (stop.executionLine() >= 0 || callStackCard == card);
+    }
+
     /** The card the debugger's last stop marked, or null. For tests. */
     @Nullable
     ProjectMapPreview stopCard() {
