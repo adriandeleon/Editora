@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.List;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -19,6 +18,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.editor.crypto.EncryptionState;
 import org.jspecify.annotations.Nullable;
 
@@ -110,7 +110,7 @@ final class EncryptionViews {
         icon.setScaleX(2.0);
         icon.setScaleY(2.0);
         StackPane iconBox = new StackPane(icon);
-        iconBox.setMinHeight(48);
+        UiZoom.minHeight(iconBox, 48);
 
         Label title = new Label(
                 switch (lock) {
@@ -121,11 +121,11 @@ final class EncryptionViews {
         title.getStyleClass().add("encryption-locked-title");
         title.setWrapText(true);
 
-        VBox box = new VBox(8, iconBox, title);
+        VBox box = UiZoom.spacing(new VBox(iconBox, title), 8);
         box.getStyleClass().add("encryption-locked");
         box.setAlignment(Pos.CENTER);
-        box.setMaxWidth(560);
-        box.setPadding(new Insets(28));
+        UiZoom.maxWidth(box, 560);
+        UiZoom.padding(box, 28);
 
         String who = state.recipients().isEmpty() && state.mode() == EncryptionState.Mode.PUBLIC_KEY
                 ? null
@@ -149,13 +149,13 @@ final class EncryptionViews {
             box.getChildren().add(body(message));
         }
 
-        HBox buttons = new HBox(8);
+        HBox buttons = UiZoom.spacing(new HBox(), 8);
         buttons.setAlignment(Pos.CENTER);
         Button primary = null;
         switch (lock) {
             case DECRYPTING -> {
                 ProgressIndicator spinner = new ProgressIndicator();
-                spinner.setPrefSize(18, 18);
+                UiZoom.prefSize(spinner, 18, 18);
                 buttons.getChildren().add(spinner);
                 primary = add(buttons, tr("dialog.cancel"), actions.cancel(), false);
             }
@@ -280,7 +280,7 @@ final class EncryptionViews {
             detail.setVisible(show);
             detail.setManaged(show);
         });
-        VBox v = new VBox(2, toggle, detail);
+        VBox v = UiZoom.spacing(new VBox(toggle, detail), 2);
         v.setAlignment(Pos.CENTER);
         return v;
     }
@@ -314,10 +314,10 @@ final class EncryptionViews {
         Label text = new Label(reason);
         text.getStyleClass().add("encryption-banner-text");
         text.setWrapText(true);
-        text.setMinWidth(120);
+        UiZoom.minWidth(text, 120);
         text.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(text, Priority.ALWAYS);
-        HBox row = new HBox(8, lead, text);
+        HBox row = UiZoom.spacing(new HBox(lead, text), 8);
         row.setAlignment(Pos.CENTER_LEFT);
         boolean first = true;
         for (BannerAction a : actions) {
@@ -330,7 +330,7 @@ final class EncryptionViews {
             b.setOnAction(e -> a.action().run());
             row.getChildren().add(b);
         }
-        VBox banner = new VBox(4, row);
+        VBox banner = UiZoom.spacing(new VBox(row), 4);
         if (detail != null && !detail.isBlank()) {
             Label detailLabel = new Label(detail);
             detailLabel.getStyleClass().add("encryption-details");
@@ -361,10 +361,10 @@ final class EncryptionViews {
         Label text = new Label(message);
         text.setWrapText(true);
         text.getStyleClass().add("lsp-install-title");
-        text.setMinWidth(120);
+        UiZoom.minWidth(text, 120);
         text.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(text, Priority.ALWAYS);
-        HBox row = new HBox(8, text);
+        HBox row = UiZoom.spacing(new HBox(text), 8);
         row.setAlignment(Pos.CENTER_LEFT);
         boolean first = true;
         for (BannerAction a : actions) {
@@ -400,13 +400,13 @@ final class EncryptionViews {
         Node icon = Icons.lock();
         Label heading = new Label(tr("encryption.info.title"));
         heading.getStyleClass().add("overlay-title");
-        HBox head = new HBox(8, icon, heading);
+        HBox head = UiZoom.spacing(new HBox(icon, heading), 8);
         head.setAlignment(Pos.CENTER_LEFT);
 
-        VBox card = new VBox(10, head);
+        VBox card = UiZoom.spacing(new VBox(head), 10);
         card.getStyleClass().addAll("command-palette", "overlay-form", "encryption-info");
-        card.setPadding(new Insets(14));
-        card.setPrefWidth(360);
+        UiZoom.padding(card, 14);
+        UiZoom.prefWidth(card, 360);
         card.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
 
         VBox people = section(tr("encryption.info.readableBy"));
@@ -452,7 +452,7 @@ final class EncryptionViews {
         buttons.add(actionButton(tr("encryption.action.changeRecipients"), actions.changeRecipients(), close));
         buttons.add(actionButton(tr("encryption.action.removeEncryption"), actions.removeEncryption(), close));
         buttons.add(actionButton(tr("encryption.action.lock"), actions.lock(), close));
-        VBox acts = new VBox(2);
+        VBox acts = UiZoom.spacing(new VBox(), 2);
         acts.getStyleClass().add("encryption-info-actions");
         acts.getChildren().addAll(buttons);
         card.getChildren().add(acts);
@@ -477,14 +477,14 @@ final class EncryptionViews {
     private static VBox section(String title) {
         Label l = new Label(title.toUpperCase(java.util.Locale.ROOT));
         l.getStyleClass().add("encryption-info-section");
-        return new VBox(4, l);
+        return UiZoom.spacing(new VBox(l), 4);
     }
 
     private static HBox infoRow(String text) {
         Label l = new Label(text);
         l.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(l, Priority.ALWAYS);
-        HBox row = new HBox(6, l);
+        HBox row = UiZoom.spacing(new HBox(l), 6);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }

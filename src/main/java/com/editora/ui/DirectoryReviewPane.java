@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import javafx.collections.FXCollections;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -24,6 +23,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.diff.DirectoryDiff;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -90,8 +90,8 @@ final class DirectoryReviewPane implements TabContent {
         files.setItems(FXCollections.observableList(this.entries));
         files.getStyleClass().add("patch-file-list");
         files.setCellFactory(v -> new FileCell());
-        files.setPrefWidth(275);
-        files.setMinWidth(185);
+        UiZoom.prefWidth(files, 275);
+        UiZoom.minWidth(files, 185);
         files.getSelectionModel().selectedIndexProperty().addListener((o, old, next) -> show(next.intValue()));
 
         Button previous = button(Icons.arrowUp(), tr("diff.previousFile"), () -> selectRelative(-1));
@@ -107,11 +107,11 @@ final class DirectoryReviewPane implements TabContent {
         scanSummary.getStyleClass().add("diff-summary");
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox nav = new HBox(3, position, previous, next, spacer, exitDiffUiButton);
+        HBox nav = UiZoom.spacing(new HBox(position, previous, next, spacer, exitDiffUiButton), 3);
         nav.setAlignment(Pos.CENTER_LEFT);
-        nav.setPadding(new Insets(4, 6, 2, 6));
+        UiZoom.padding(nav, 4, 6, 2, 6);
         VBox header = new VBox(nav, scanSummary);
-        header.setPadding(new Insets(0, 6, 4, 6));
+        UiZoom.padding(header, 0, 6, 4, 6);
         header.getStyleClass().add("diff-toolbar");
         VBox left = new VBox(header, new Separator(), files);
         VBox.setVgrow(files, Priority.ALWAYS);
@@ -289,7 +289,7 @@ final class DirectoryReviewPane implements TabContent {
                     : sizeSummary(entry.leftSize, entry.rightSize);
             Label stat = new Label(detail);
             stat.getStyleClass().add("diff-summary");
-            HBox row = new HBox(8, badge, name, stat);
+            HBox row = UiZoom.spacing(new HBox(badge, name, stat), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             setGraphic(row);
             setText(null);

@@ -20,6 +20,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -64,7 +65,7 @@ public final class MessageLogPopup {
         header.getStyleClass().add("message-log-header");
 
         list.getStyleClass().add("message-log-list");
-        list.setPrefSize(WIDTH, LIST_HEIGHT);
+        UiZoom.prefSize(list, WIDTH, LIST_HEIGHT);
         // Rows are selectable (multiple) so they can be copied to the clipboard.
         list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         Label empty = new Label(tr("messagelog.empty"));
@@ -73,7 +74,7 @@ public final class MessageLogPopup {
         list.setCellFactory(v -> new ListCell<>() {
             private final Label time = new Label();
             private final Label msg = new Label();
-            private final HBox box = new HBox(10, time, msg);
+            private final HBox box = UiZoom.spacing(new HBox(time, msg), 10);
 
             {
                 time.getStyleClass().add("message-log-time");
@@ -85,7 +86,9 @@ public final class MessageLogPopup {
                 // wrapText needs a DEFINITE width to compute its (multi-line) height and grow the row;
                 // bind the message to the list viewport minus the time column + gaps + scrollbar/padding,
                 // so even an unbroken long path wraps within the popup and never scrolls sideways.
-                msg.maxWidthProperty().bind(list.widthProperty().subtract(110));
+                msg.maxWidthProperty()
+                        .bind(list.widthProperty()
+                                .subtract(UiZoom.factorProperty().multiply(110)));
                 msg.setMinHeight(Region.USE_PREF_SIZE);
                 setPrefWidth(0);
             }
@@ -152,7 +155,7 @@ public final class MessageLogPopup {
         HBox.setHgrow(spacer, Priority.ALWAYS);
         Label hint = new Label(tr("messagelog.hint"));
         hint.getStyleClass().add("message-log-hint");
-        HBox footer = new HBox(8, copy, clear, doctor, spacer, hint);
+        HBox footer = UiZoom.spacing(new HBox(copy, clear, doctor, spacer, hint), 8);
         footer.getStyleClass().add("message-log-footer");
         footer.setAlignment(Pos.CENTER_LEFT);
 
@@ -165,9 +168,9 @@ public final class MessageLogPopup {
         // windows; the list's own keys (⌘C, Esc) still work once focus is there.
         FilterFieldNav.install(filter, list, () -> {});
 
-        root = new VBox(6, header, filter, list, footer);
+        root = UiZoom.spacing(new VBox(header, filter, list, footer), 6);
         root.getStyleClass().add("message-log");
-        root.setMaxSize(WIDTH, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        UiZoom.maxSize(root, WIDTH, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         root.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep nav/copy keys for the popup
         root.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             // Close on Esc or on the chord the active keymap binds to cancel (C-g in Emacs). Not on a fixed

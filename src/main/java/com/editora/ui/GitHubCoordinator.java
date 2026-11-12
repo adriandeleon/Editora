@@ -21,6 +21,7 @@ import com.editora.command.TextInputKeymap;
 import com.editora.config.Settings;
 import com.editora.diff.PatchParser;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.git.GitService;
 import com.editora.github.ChecksParser;
 import com.editora.github.ChecksPoll;
@@ -1405,7 +1406,7 @@ final class GitHubCoordinator {
         host.setStatus(tr("status.github.prExists", pr.number()));
         Label message = new Label(tr("dialog.createPr.exists", pr.number(), pr.title()));
         message.setWrapText(true);
-        message.setMaxWidth(420);
+        UiZoom.maxWidth(message, 420);
         OverlayInput.show(
                 host.overlayHost(),
                 tr("dialog.createPr.title"),
@@ -1461,8 +1462,7 @@ final class GitHubCoordinator {
         push.setSelected(true);
 
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         grid.add(new Label(tr("dialog.createPr.titleLabel")), 0, 0);
         grid.add(titleField, 1, 0);
         grid.add(new Label(tr("dialog.createPr.bodyLabel")), 0, 1);
@@ -1596,8 +1596,7 @@ final class GitHubCoordinator {
         TextInputKeymap.install(body, keymap);
 
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         grid.add(new Label(tr("dialog.review.action")), 0, 0);
         grid.add(actionBox, 1, 0);
         grid.add(new Label(tr("dialog.review.body")), 0, 1);

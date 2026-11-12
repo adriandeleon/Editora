@@ -17,6 +17,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -72,22 +73,24 @@ final class AboutDialog {
         Label tagline = new Label(tr("about.tagline"));
         tagline.getStyleClass().add("about-tagline");
         tagline.setWrapText(true);
-        VBox titleBox = new VBox(2, name, version, tagline);
+        VBox titleBox = UiZoom.spacing(new VBox(name, version, tagline), 2);
         titleBox.setAlignment(Pos.CENTER_LEFT);
 
-        HBox header = new HBox(16, titleBox);
+        HBox header = UiZoom.spacing(new HBox(titleBox), 16);
         var iconStream = AboutDialog.class.getResourceAsStream("/com/editora/icons/icon-128.png");
         if (iconStream != null) {
             ImageView logo = new ImageView(new Image(iconStream));
-            logo.setFitWidth(72);
-            logo.setFitHeight(72);
+            UiZoom.follow(logo, () -> {
+                logo.setFitWidth(UiZoom.px(72));
+                logo.setFitHeight(UiZoom.px(72));
+            });
             logo.setPreserveRatio(true);
             header.getChildren().add(0, logo);
         }
         header.setAlignment(Pos.TOP_LEFT);
 
         // --- update status: what the last check found, when, and a way to check again ------------------
-        VBox updateStatus = new VBox(2);
+        VBox updateStatus = UiZoom.spacing(new VBox(), 2);
         updateStatus.getStyleClass().add("about-update-status");
         showUpdateStatus(updateStatus, updates, alert, openUrl, null);
 
@@ -95,7 +98,7 @@ final class AboutDialog {
         Label copyright = new Label(com.editora.AppInfo.COPYRIGHT);
         copyright.getStyleClass().add("about-copyright");
 
-        VBox links = new VBox(2);
+        VBox links = UiZoom.spacing(new VBox(), 2);
         links.getChildren().add(aboutLink(com.editora.AppInfo.LICENSE, () -> {
             if (openUrl != null) {
                 openUrl.accept(com.editora.AppInfo.HOMEPAGE);
@@ -156,7 +159,7 @@ final class AboutDialog {
         HBox footer = new HBox(copyDetails);
         footer.setAlignment(Pos.CENTER_LEFT);
 
-        VBox content = new VBox(14, header, updateStatus, copyright, links, env, footer);
+        VBox content = UiZoom.spacing(new VBox(header, updateStatus, copyright, links, env, footer), 14);
         content.getStyleClass().add("about-content");
         alert.getDialogPane().setContent(content);
         // A single Close button; "Copy details" lives in the content so pressing it keeps the panel open.
@@ -244,7 +247,7 @@ final class AboutDialog {
                 panel.sizeToScene(); // a new line (the verdict, a failure) needs the room
             });
         });
-        HBox line = new HBox(8, when, check);
+        HBox line = UiZoom.spacing(new HBox(when, check), 8);
         line.setAlignment(Pos.BASELINE_LEFT);
         box.getChildren().add(line);
     }

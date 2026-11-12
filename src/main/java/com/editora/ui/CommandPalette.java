@@ -26,6 +26,7 @@ import javafx.scene.layout.VBox;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import com.editora.editor.UiZoom;
 import com.editora.search.FuzzyMatch;
 import org.jspecify.annotations.Nullable;
 
@@ -166,9 +167,14 @@ public class CommandPalette {
         input.setPromptText(tr("palette.prompt"));
         list.setItems(items);
         // A whole number of rows: a fixed 280px cut the eighth row in half.
-        list.setFixedCellSize(ROW_HEIGHT);
-        list.setPrefHeight(listHeight(0));
-        list.insetsProperty().addListener((o, was, in) -> list.setPrefHeight(listHeight(in.getTop() + in.getBottom())));
+        UiZoom.follow(list, () -> {
+            list.setFixedCellSize(UiZoom.px(ROW_HEIGHT));
+            list.setPrefHeight(UiZoom.px(listHeight(0))
+                    + (list.getInsets().getTop() + list.getInsets().getBottom()));
+        });
+        list.insetsProperty()
+                .addListener(
+                        (o, was, in) -> list.setPrefHeight(UiZoom.px(listHeight(0)) + (in.getTop() + in.getBottom())));
         list.setCellFactory(v -> new CommandCell());
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
@@ -184,7 +190,7 @@ public class CommandPalette {
         // chord that opened the palette (so the palette introduces itself by its keyboard identity).
         prefixChip.getStyleClass().add("palette-prefix");
         input.getStyleClass().add("palette-input");
-        javafx.scene.layout.HBox inputRow = new javafx.scene.layout.HBox(9, prefixChip, input);
+        javafx.scene.layout.HBox inputRow = UiZoom.spacing(new javafx.scene.layout.HBox(prefixChip, input), 9);
         inputRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         inputRow.getStyleClass().add("palette-input-row");
         javafx.scene.layout.HBox.setHgrow(input, javafx.scene.layout.Priority.ALWAYS);
@@ -199,10 +205,10 @@ public class CommandPalette {
         });
         hint.getStyleClass().add("palette-hint");
         refreshKeyHints();
-        content = new VBox(6, inputRow, list, desc, hint);
+        content = UiZoom.spacing(new VBox(inputRow, list, desc, hint), 6);
         content.getStyleClass().add("command-palette");
-        content.setPrefWidth(620);
-        content.setMaxSize(620, Region.USE_PREF_SIZE); // hug its content; don't stretch to fill the overlay
+        UiZoom.prefWidth(content, 620);
+        UiZoom.maxSize(content, 620, Region.USE_PREF_SIZE); // hug its content; don't stretch to fill the overlay
         // Editor-context chords (C-n/C-p/arrows) are left to the palette's own handler while it's open.
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE);
         // What is typed here picks a command, and a macro records that command — not the keys that found it.
@@ -456,7 +462,7 @@ public class CommandPalette {
     private final class CommandCell extends ListCell<Command> {
         private final javafx.scene.text.TextFlow title = new javafx.scene.text.TextFlow();
         private final Label key = new Label();
-        private final HBox box = new HBox(10, title, spacer(), key);
+        private final HBox box = UiZoom.spacing(new HBox(title, spacer(), key), 10);
 
         CommandCell() {
             box.setAlignment(Pos.CENTER_LEFT);
@@ -496,7 +502,7 @@ public class CommandPalette {
                 if (why != null && !why.isBlank()) {
                     Tooltip tip = new Tooltip(why);
                     tip.setWrapText(true);
-                    tip.setMaxWidth(380);
+                    tip.setMaxWidth(UiZoom.px(380));
                     tip.getStyleClass().add("palette-disabled-tooltip");
                     setTooltip(tip);
                 }

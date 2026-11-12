@@ -21,6 +21,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.text.Text;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -47,7 +48,7 @@ final class HttpTabStrip extends HBox {
     private final Map<HttpResponseTab, Label> counts = new EnumMap<>(HttpResponseTab.class);
     private final Map<HttpResponseTab, String> names = new EnumMap<>(HttpResponseTab.class);
     private final Set<HttpResponseTab> available = EnumSet.of(HttpResponseTab.BODY);
-    private final HBox tabBox = new HBox(TAB_GAP);
+    private final HBox tabBox = new HBox(UiZoom.px(TAB_GAP));
     private final List<? extends Region> icons;
     private final Region more;
     private final Consumer<Boolean> onIconsFolded;
@@ -81,7 +82,8 @@ final class HttpTabStrip extends HBox {
         this.onIconsFolded = onIconsFolded;
         getStyleClass().add("http-tabs");
         setAlignment(Pos.CENTER_LEFT);
-        setSpacing(HttpPanelLayout.GAP);
+        UiZoom.spacing(this, HttpPanelLayout.GAP);
+        UiZoom.follow(this, this::requestLayout); // the fit below is measured in zoomed pixels
         tabBox.getStyleClass().add("http-tab-box");
         tabBox.setAlignment(Pos.BOTTOM_LEFT);
         tabBox.setMinWidth(0);
@@ -119,7 +121,7 @@ final class HttpTabStrip extends HBox {
         group.selectToggle(tabs.get(HttpResponseTab.BODY));
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox actions = new HBox(2);
+        HBox actions = UiZoom.spacing(new HBox(), 2);
         actions.getStyleClass().add("http-actions");
         actions.setAlignment(Pos.CENTER_RIGHT);
         actions.getChildren().addAll(icons);
@@ -282,21 +284,21 @@ final class HttpTabStrip extends HBox {
             double pad = fullPad;
             probe.setFont(b.getFont());
             probe.setText(b.getText());
-            double name = Math.ceil(probe.getLayoutBounds().getWidth()) + 2;
+            double name = Math.ceil(probe.getLayoutBounds().getWidth()) + UiZoom.px(2);
             double count = hasCount(t) ? c.prefWidth(-1) : 0;
             full += pad + name + (count > 0 ? b.getGraphicTextGap() + count : 0);
             counted += pad + (count > 0 ? count : name);
             shown++;
         }
-        double gaps = Math.max(0, shown - 1) * TAB_GAP;
+        double gaps = Math.max(0, shown - 1) * UiZoom.px(TAB_GAP);
         full += gaps;
         counted += gaps;
         double iconsWidth = 0;
         for (Region r : icons) {
-            iconsWidth += r.prefWidth(-1) + 2;
+            iconsWidth += r.prefWidth(-1) + UiZoom.px(2);
         }
-        HttpPanelLayout.StripFit now =
-                HttpPanelLayout.strip(room, full, counted, iconsWidth, more.prefWidth(-1) + HttpPanelLayout.GAP);
+        HttpPanelLayout.StripFit now = HttpPanelLayout.strip(
+                room, full, counted, iconsWidth, more.prefWidth(-1) + UiZoom.px(HttpPanelLayout.GAP));
         boolean folded = now != HttpPanelLayout.StripFit.FULL;
         for (Region r : icons) {
             setShown(r, !folded);
@@ -311,7 +313,7 @@ final class HttpTabStrip extends HBox {
         }
         boolean compact = now == HttpPanelLayout.StripFit.COUNTS;
         pseudoClassStateChanged(COMPACT, compact);
-        tabBox.setSpacing(compact ? 0 : TAB_GAP);
+        tabBox.setSpacing(compact ? 0 : UiZoom.px(TAB_GAP));
         if (now != fit) {
             boolean wasFolded = fit != HttpPanelLayout.StripFit.FULL;
             fit = now;

@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 169;
+    public static final int SCHEMA_VERSION = 170;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -75,6 +75,11 @@ public class Settings {
     public static final int MAX_FONT_SIZE = 72;
     public static final double MIN_FONT_ZOOM = 0.5;
     public static final double MAX_FONT_ZOOM = 3.0;
+    /** The UI zoom, in percent: the whole interface, not the editor's text ({@link #fontZoom}). */
+    public static final int DEFAULT_UI_ZOOM = 100;
+
+    public static final int MIN_UI_ZOOM = 80;
+    public static final int MAX_UI_ZOOM = 200;
     public static final int MIN_TAB_SIZE = 1;
     public static final int MAX_TAB_SIZE = 16;
 
@@ -97,6 +102,9 @@ public class Settings {
     /** Text zoom factor applied on top of {@link #fontSize} (1.0 = 100%). A quick, persisted zoom that
      *  is intentionally NOT shown in the Settings window; effective size = round(fontSize * fontZoom). */
     private double fontZoom = 1.0;
+    /** The UI zoom in percent (100 = the sizes the interface is drawn at): menus, toolbar, tabs, panels and
+     *  status bar scale together. Independent of {@link #fontZoom}, which changes the editor's text alone. */
+    private int uiZoom = DEFAULT_UI_ZOOM;
 
     /** App (AtlantaFX) theme. First-run default is the "Caret & Ink" flagship — see {@code Themes.DEFAULT}
      *  (kept as a literal here so config stays free of a {@code ui} dependency). An existing install keeps
@@ -1164,6 +1172,19 @@ public class Settings {
 
     public void setFontZoom(double fontZoom) {
         this.fontZoom = Double.isNaN(fontZoom) ? 1.0 : Math.clamp(fontZoom, MIN_FONT_ZOOM, MAX_FONT_ZOOM);
+    }
+
+    public int getUiZoom() {
+        return uiZoom;
+    }
+
+    public void setUiZoom(int uiZoom) {
+        this.uiZoom = clampUiZoom(uiZoom);
+    }
+
+    /** {@code percent} within the range the UI zoom takes. Pure. */
+    public static int clampUiZoom(int percent) {
+        return Math.clamp(percent, MIN_UI_ZOOM, MAX_UI_ZOOM);
     }
 
     public String getTheme() {

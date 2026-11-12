@@ -8,7 +8,6 @@ import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Dimension2D;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -32,6 +31,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.RunConfiguration;
+import com.editora.editor.UiZoom;
 import com.editora.run.RunConfigDefaults;
 import com.editora.run.RunConfigFields;
 import org.jspecify.annotations.Nullable;
@@ -158,8 +158,8 @@ public final class RunConfigurationsWindow {
         stage.initOwner(owner);
         stage.initModality(Modality.NONE);
 
-        list.setPrefWidth(220);
-        list.setMinWidth(180);
+        UiZoom.prefWidth(list, 220);
+        UiZoom.minWidth(list, 180);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(RunConfiguration value, boolean empty) {
@@ -230,7 +230,7 @@ public final class RunConfigurationsWindow {
         editDeploymentsButton.setId("run-config-edit-deployments");
         editDeploymentsButton.setMinWidth(Region.USE_PREF_SIZE);
         editDeploymentsButton.setOnAction(e -> editDeployments.accept(runOn.getValue()));
-        HBox runOnRow = new HBox(6, runOn, editDeploymentsButton);
+        HBox runOnRow = UiZoom.spacing(new HBox(runOn, editDeploymentsButton), 6);
         runOnRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(runOn, Priority.ALWAYS);
         runOn.setMaxWidth(Double.MAX_VALUE);
@@ -240,15 +240,14 @@ public final class RunConfigurationsWindow {
         inTerminal.setTooltip(new javafx.scene.control.Tooltip(tr("settings.runConfig.runInTerminal.hint")));
 
         GridPane form = new GridPane();
-        form.setHgap(8);
-        form.setVgap(8);
+        UiZoom.gaps(form, 8, 8);
         formRow(form, 0, "settings.runConfig.name", name);
         formRow(form, 1, "settings.runConfig.type", type);
         // A script's path can be picked rather than typed (Python and shell only: make and npm name targets).
         Button browse = new Button(tr("settings.runConfig.browse"));
         browse.setId("run-config-browse");
         browse.setMinWidth(Region.USE_PREF_SIZE);
-        HBox targetRow = new HBox(6, target, browse);
+        HBox targetRow = UiZoom.spacing(new HBox(target, browse), 6);
         targetRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(target, Priority.ALWAYS);
         target.setMaxWidth(Double.MAX_VALUE);
@@ -259,7 +258,7 @@ public final class RunConfigurationsWindow {
         Button browseClass = new Button(tr("settings.runConfig.browse"));
         browseClass.setId("run-config-browse-main-class");
         browseClass.setMinWidth(Region.USE_PREF_SIZE);
-        HBox mainClassRow = new HBox(6, mainClass, browseClass);
+        HBox mainClassRow = UiZoom.spacing(new HBox(mainClass, browseClass), 6);
         mainClassRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(mainClass, Priority.ALWAYS);
         mainClass.setMaxWidth(Double.MAX_VALUE);
@@ -494,7 +493,7 @@ public final class RunConfigurationsWindow {
         close.getStyleClass().add("accent");
         close.setOnAction(e -> stage.close());
 
-        VBox left = new VBox(8, list);
+        VBox left = UiZoom.spacing(new VBox(list), 8);
         VBox.setVgrow(list, Priority.ALWAYS);
         // The form scrolls and the button row below it does not: a window shorter than the form (a larger UI
         // font, a small screen, the user dragging it smaller) still shows Save and Close.
@@ -504,33 +503,35 @@ public final class RunConfigurationsWindow {
         formScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         formScroll.getStyleClass().add("edge-to-edge");
         // Room for the vertical scroll bar inside the viewport, so it never covers the Browse… buttons.
-        form.setPadding(new Insets(0, 4, 0, 0));
-        VBox right = new VBox(8, formScroll);
+        UiZoom.padding(form, 0, 4, 0, 0);
+        VBox right = UiZoom.spacing(new VBox(formScroll), 8);
         VBox.setVgrow(formScroll, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
-        HBox editor = new HBox(12, left, right);
+        HBox editor = UiZoom.spacing(new HBox(left, right), 12);
         VBox.setVgrow(editor, Priority.ALWAYS);
-        HBox buttons = new HBox(8, add, remove, spacer(), save, close);
+        HBox buttons = UiZoom.spacing(new HBox(add, remove, spacer(), save, close), 8);
         buttons.setId("run-config-buttons");
         buttons.setAlignment(Pos.CENTER_LEFT);
         buttons.setMinHeight(Region.USE_PREF_SIZE);
-        VBox root = new VBox(12, editor, buttons);
-        root.setPadding(new Insets(16));
+        VBox root = UiZoom.spacing(new VBox(editor, buttons), 12);
+        UiZoom.padding(root, 16);
 
         Scene scene = new Scene(root);
         scene.getStylesheets()
-                .add(RunConfigurationsWindow.class
+                .add(com.editora.editor.UiZoom.sheet(RunConfigurationsWindow.class
                         .getResource("/com/editora/styles/app.css")
-                        .toExternalForm());
+                        .toExternalForm()));
         // App.installUiFont attaches this too, but only once the window shows: fitToContent measures before
         // that, and should measure in the font the form is drawn in. (installUiFont skips a sheet already there.)
         scene.getStylesheets()
-                .add(RunConfigurationsWindow.class
+                .add(com.editora.editor.UiZoom.sheet(RunConfigurationsWindow.class
                         .getResource("/com/editora/styles/ui-font.css")
-                        .toExternalForm());
+                        .toExternalForm()));
         stage.setScene(scene);
-        stage.setMinWidth(MIN_WIDTH);
-        stage.setMinHeight(MIN_HEIGHT);
+        UiZoom.follow(stage, () -> {
+            stage.setMinWidth(UiZoom.px(MIN_WIDTH));
+            stage.setMinHeight(UiZoom.px(MIN_HEIGHT));
+        });
     }
 
     /**
@@ -541,8 +542,8 @@ public final class RunConfigurationsWindow {
     private Dimension2D fitToContent(Window owner) {
         Parent root = stage.getScene().getRoot();
         root.applyCss();
-        double width = Math.max(WIDTH, root.prefWidth(-1));
-        double height = Math.max(HEIGHT, root.prefHeight(width));
+        double width = Math.max(UiZoom.px(WIDTH), root.prefWidth(-1));
+        double height = Math.max(UiZoom.px(HEIGHT), root.prefHeight(width));
         Dimension2D size = WindowPlacement.clampSize(width, height, WindowPlacement.screenOf(owner), SCREEN_FRACTION);
         // The root's size, not the stage's, so the title bar is added on top rather than taken from the form.
         if (root instanceof Region region) {

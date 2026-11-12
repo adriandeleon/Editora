@@ -1,6 +1,5 @@
 package com.editora.editor;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -27,8 +26,8 @@ final class AiActionsBar {
         node.getStyleClass().add("ai-actions-bar");
         node.setManaged(false); // free-positioned by EditorBuffer via resizeRelocate
         node.setFocusTraversable(false);
-        node.setSpacing(2);
-        node.setPadding(new Insets(3));
+        UiZoom.spacing(node, 2);
+        UiZoom.padding(node, 3);
         node.setAlignment(Pos.CENTER_LEFT);
 
         Button explainButton = button(

@@ -15,6 +15,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 import org.jspecify.annotations.Nullable;
@@ -119,15 +120,16 @@ final class SettingsSyncPage {
             }
             refreshSyncControls();
         });
-        syncCredentialsWarning = new VBox(
-                6,
-                SettingsWindow.noteBox(tr("settings.sync.credentials.stored")),
-                new HBox(8, removeSecret, keepSecret));
+        syncCredentialsWarning = UiZoom.spacing(
+                new VBox(
+                        SettingsWindow.noteBox(tr("settings.sync.credentials.stored")),
+                        UiZoom.spacing(new HBox(removeSecret, keepSecret), 8)),
+                6);
         p.getChildren().add(syncCredentialsWarning);
         Card repo = w.card(p, null);
         syncUrlField = urlField;
         syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
-        syncUrlField.setPrefWidth(SettingsWindow.REPO_URL_FIELD_WIDTH);
+        UiZoom.prefWidth(syncUrlField, SettingsWindow.REPO_URL_FIELD_WIDTH);
         // A password or token in the URL would be stored in plain text: refused, with the reason, until removed.
         syncUrlField.textProperty().addListener((o, was, now) -> {
             boolean secret = com.editora.sync.SyncEngine.hasCredentials(now);
@@ -151,7 +153,7 @@ final class SettingsSyncPage {
                 "sync repository url git remote github gitlab clone ssh https");
         TextField branchField = new TextField();
         syncBranchField = branchField;
-        syncBranchField.setPrefWidth(140);
+        UiZoom.prefWidth(syncBranchField, 140);
         syncBranchField.textProperty().addListener((o, was, now) -> {
             boolean bad = !now.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(now.strip());
             branchField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
@@ -186,14 +188,20 @@ final class SettingsSyncPage {
                 SettingsWindow.settingRow(
                         tr("settings.sync.branch"),
                         tr("settings.sync.branch.desc"),
-                        new HBox(8, syncBranchField, syncConnectButton, syncDisconnectButton, syncCreateGithubButton)),
+                        UiZoom.spacing(
+                                new HBox(
+                                        syncBranchField,
+                                        syncConnectButton,
+                                        syncDisconnectButton,
+                                        syncCreateGithubButton),
+                                8)),
                 "sync branch connect disconnect enable turn on off create private repository github gh");
         syncStateLabel = new Label();
         syncStateLabel.setWrapText(true);
-        syncStateLabel.setMaxWidth(420);
+        UiZoom.maxWidth(syncStateLabel, 420);
         syncPill = new Label();
         syncPill.setWrapText(true);
-        syncPill.setMaxWidth(420);
+        UiZoom.maxWidth(syncPill, 420);
         // "synced 5 min ago" moves on while the window is open.
         javafx.animation.Timeline syncPillTick = new javafx.animation.Timeline(
                 new javafx.animation.KeyFrame(javafx.util.Duration.seconds(30), e -> refreshSyncControls()));
@@ -208,7 +216,7 @@ final class SettingsSyncPage {
         syncAccountLabel = new Label();
         syncAccountLabel.getStyleClass().add("settings-row-desc");
         syncAccountLabel.setWrapText(true);
-        syncAccountLabel.setMaxWidth(420);
+        UiZoom.maxWidth(syncAccountLabel, 420);
         syncNowButton = new Button(tr("settings.sync.now"));
         syncNowButton.setOnAction(e -> {
             if (settingsSync != null) {
@@ -243,12 +251,15 @@ final class SettingsSyncPage {
                 SettingsWindow.settingRow(
                         tr("settings.sync.status"),
                         null,
-                        new VBox(
-                                6,
-                                new HBox(syncPill), // a pill as wide as its words
-                                syncStateLabel,
-                                syncAccountLabel,
-                                new HBox(8, syncNowButton, syncAnywayButton, syncCancelButton, openFolder))),
+                        UiZoom.spacing(
+                                new VBox(
+                                        new HBox(syncPill), // a pill as wide as its words
+                                        syncStateLabel,
+                                        syncAccountLabel,
+                                        UiZoom.spacing(
+                                                new HBox(syncNowButton, syncAnywayButton, syncCancelButton, openFolder),
+                                                8)),
+                                6)),
                 "sync now status last synced received sent conflict backups folder github account signed in");
 
         Card what = w.card(p, tr("settings.sync.what"));
@@ -287,7 +298,7 @@ final class SettingsSyncPage {
         });
         syncIntervalSpinner =
                 IntSpinners.editable(1, Settings.MAX_GIT_AUTO_FETCH_MINUTES, settings.getSyncIntervalMinutes(), 1);
-        syncIntervalSpinner.setPrefWidth(90);
+        UiZoom.prefWidth(syncIntervalSpinner, 90);
         syncIntervalSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
         syncIntervalSpinner.valueProperty().addListener((obs, was, now) -> {
             if (w.loading || now == null) {
@@ -304,7 +315,8 @@ final class SettingsSyncPage {
                 SettingsWindow.settingRow(
                         tr("settings.sync.auto"),
                         tr("settings.sync.auto.desc"),
-                        new HBox(8, syncIntervalSpinner, unit, SettingsWindow.switchFor(syncAutoCheck))),
+                        UiZoom.spacing(
+                                new HBox(syncIntervalSpinner, unit, SettingsWindow.switchFor(syncAutoCheck)), 8)),
                 "sync automatically auto background interval minutes startup");
 
         w.row(

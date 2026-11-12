@@ -16,7 +16,6 @@ import java.util.Set;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.geometry.HPos;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -28,6 +27,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.markdown.WordCount;
 import com.editora.text.LanguageRegistry;
 import org.jspecify.annotations.Nullable;
@@ -80,7 +80,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
 
     public FileInformationPanel() {
         getStyleClass().add("file-info-panel");
-        setSpacing(6);
+        UiZoom.spacing(this, 6);
         buildUI();
         // A closed tool window is removed from the scene (getScene() == null), so the caret/edit refreshes below
         // no-op while hidden; refresh once when it's (re)opened so a freshly-shown panel is current.
@@ -132,13 +132,14 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     }
 
     private Region buildFileView() {
-        VBox box = new VBox(
-                10,
-                section(tr("fileinfo.section.file"), buildFileGrid()),
-                section(tr("fileinfo.section.textSettings"), buildTextSettingsGrid()),
-                section(tr("fileinfo.section.count"), buildCountBox()),
-                section(tr("fileinfo.section.character"), buildCharacterGrid()));
-        box.setPadding(new Insets(8));
+        VBox box = UiZoom.spacing(
+                new VBox(
+                        section(tr("fileinfo.section.file"), buildFileGrid()),
+                        section(tr("fileinfo.section.textSettings"), buildTextSettingsGrid()),
+                        section(tr("fileinfo.section.count"), buildCountBox()),
+                        section(tr("fileinfo.section.character"), buildCharacterGrid())),
+                10);
+        UiZoom.padding(box, 8);
         ScrollPane scroll = new ScrollPane(box);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("file-info-scroll");
@@ -184,7 +185,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         addRow(caret, 1, tr("fileinfo.row.line"), lineValue);
         addRow(caret, 2, tr("fileinfo.row.column"), columnValue);
 
-        return new VBox(10, totals, caret);
+        return UiZoom.spacing(new VBox(totals, caret), 10);
     }
 
     private GridPane buildCharacterGrid() {
@@ -199,8 +200,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     private GridPane grid() {
         GridPane g = new GridPane();
         g.getStyleClass().add("file-info-grid");
-        g.setHgap(12);
-        g.setVgap(6);
+        UiZoom.gaps(g, 12, 6);
         GridPane.setHgrow(new Region(), Priority.ALWAYS);
         return g;
     }

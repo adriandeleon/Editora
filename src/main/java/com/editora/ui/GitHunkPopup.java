@@ -10,6 +10,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.editor.git.GitHunk;
 import org.jspecify.annotations.Nullable;
 
@@ -58,10 +59,10 @@ final class GitHunkPopup {
         newCaption.getStyleClass().add("git-hunk-caption");
         WrapRow buttons = new WrapRow(6, 6, previous, next, revert, stage, copyOld, openDiff);
         buttons.getStyleClass().add("git-hunk-actions");
-        card = new VBox(4, title, oldCaption, oldText, newCaption, newText, buttons);
+        card = UiZoom.spacing(new VBox(title, oldCaption, oldText, newCaption, newText, buttons), 4);
         card.getStyleClass().addAll("command-palette", "git-hunk-popup");
-        card.setPrefWidth(640);
-        card.setMaxSize(640, Region.USE_PREF_SIZE);
+        UiZoom.prefWidth(card, 640);
+        UiZoom.maxSize(card, 640, Region.USE_PREF_SIZE);
         // Claim the keys, as every in-scene card does, or the global dispatcher runs editor chords
         // (and Escape never reaches the host).
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
@@ -150,7 +151,7 @@ final class GitHunkPopup {
         int rows = Math.clamp(lines.size(), 1, MAX_ROWS);
         area.setPrefRowCount(rows);
         // A TextArea's own preferred height ignores the font set by style until it has been laid out once.
-        double height = rows * fontSize * 1.45 + 14;
+        double height = rows * fontSize * 1.45 + UiZoom.px(14);
         area.setMinHeight(height);
         area.setPrefHeight(height);
         area.setMaxHeight(height);

@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
@@ -21,6 +20,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.agent.AcpJson;
+import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
 import org.jspecify.annotations.Nullable;
 
@@ -88,8 +88,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private final Label agentLabel = new Label();
     private final Label modelLabel = new Label();
     private final Label modeLabel = new Label();
-    private final VBox planBox = new VBox(2);
-    private final VBox transcriptBox = new VBox(4);
+    private final VBox planBox = UiZoom.spacing(new VBox(), 2);
+    private final VBox transcriptBox = UiZoom.spacing(new VBox(), 4);
     private final ScrollPane transcriptScroll = new ScrollPane(transcriptBox);
     private final TextArea input = new TextArea();
     private final Button sendButton = new Button();
@@ -161,8 +161,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         this.onStop = onStop;
         getStyleClass().add("agent-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
 
         status.getStyleClass().add("agent-status");
         agentLabel.getStyleClass().add("agent-header-label");
@@ -181,17 +181,18 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         iconButton(stopButton, Icons.debugStop(), onStop);
         CommandTips.name(stopButton, "agent.stop");
         stopButton.setDisable(true);
-        HBox header = new HBox(
-                8,
-                status,
-                agentLabel,
-                modelLabel,
-                modeLabel,
-                spacer(),
-                detachButton,
-                historyButton,
-                newSessionButton,
-                stopButton);
+        HBox header = UiZoom.spacing(
+                new HBox(
+                        status,
+                        agentLabel,
+                        modelLabel,
+                        modeLabel,
+                        spacer(),
+                        detachButton,
+                        historyButton,
+                        newSessionButton,
+                        stopButton),
+                8);
         header.setAlignment(Pos.CENTER_LEFT);
 
         planBox.setManaged(false);
@@ -231,7 +232,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
                 send();
             }
         });
-        HBox inputRow = new HBox(6, input, sendButton);
+        HBox inputRow = UiZoom.spacing(new HBox(input, sendButton), 6);
         inputRow.setAlignment(Pos.BOTTOM_RIGHT);
         HBox.setHgrow(input, Priority.ALWAYS);
 

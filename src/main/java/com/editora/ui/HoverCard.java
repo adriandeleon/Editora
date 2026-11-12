@@ -168,12 +168,12 @@ final class HoverCard {
         box.setMaxWidth(maxWidth(markdown));
         box.getStylesheets()
                 .addAll(
-                        HoverCard.class
+                        com.editora.editor.UiZoom.sheet(HoverCard.class
                                 .getResource("/com/editora/styles/app.css")
-                                .toExternalForm(),
-                        HoverCard.class
+                                .toExternalForm()),
+                        com.editora.editor.UiZoom.sheet(HoverCard.class
                                 .getResource("/com/editora/styles/syntax.css")
-                                .toExternalForm());
+                                .toExternalForm()));
         com.editora.editor.PopupSheets.followOwnerTheme(
                 box, area.getScene() == null ? null : area.getScene().getWindow());
 

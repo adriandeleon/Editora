@@ -6,7 +6,6 @@ import java.util.Locale;
 
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ContextMenu;
@@ -30,6 +29,7 @@ import javafx.util.Callback;
 import com.editora.csv.CsvColumns;
 import com.editora.csv.CsvColumns.ColumnType;
 import com.editora.editor.MenuChords;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -131,8 +131,8 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     CsvGridPanel(Jump jump) {
         this.jump = jump;
         getStyleClass().add("csv-grid");
-        setSpacing(4);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 4);
+        UiZoom.padding(this, 6);
 
         headerToggle.setSelected(true);
         headerToggle.getStyleClass().add("csv-grid-header-toggle");
@@ -148,7 +148,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         summary.getStyleClass().add("csv-grid-summary");
         // Summary sits left-of-spacer so the bar's top-right corner stays clear for the floating
         // Editor/Split/Preview toggle overlaid there in PREVIEW mode (mirroring the Markdown preview).
-        HBox top = new HBox(8, headerToggle, filterField, summary, spacer());
+        HBox top = UiZoom.spacing(new HBox(headerToggle, filterField, summary, spacer()), 8);
         top.getStyleClass().add("csv-grid-bar");
         top.setAlignment(Pos.CENTER_LEFT);
 
@@ -306,7 +306,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
             // rarely needs a manual resize; the header is bold, so give the title a little extra headroom.
             int contentChars = col < contentLengths.size() ? contentLengths.get(col) : 0;
             int chars = Math.max(contentChars, title.length() + HEADER_EXTRA_CHARS);
-            tc.setPrefWidth(columnWidthFor(chars));
+            tc.setPrefWidth(UiZoom.px(columnWidthFor(chars)));
             tc.setSortable(false);
             tc.setCellFactory(dataCellFactory(numeric));
             if (editable) {
@@ -447,8 +447,8 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         num.setSortable(false);
         num.setEditable(false);
         // Fit the largest row number (e.g. 5 digits for a 10k-row file) so the gutter never truncates.
-        num.setPrefWidth(Math.max(
-                40, String.valueOf(Math.max(1, totalPhysicalRows)).length() * CHAR_PX + 22));
+        num.setPrefWidth(UiZoom.px(Math.max(
+                40, String.valueOf(Math.max(1, totalPhysicalRows)).length() * CHAR_PX + 22)));
         num.setReorderable(false);
         num.getStyleClass().add("csv-grid-rownum");
         num.setCellValueFactory(

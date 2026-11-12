@@ -21,6 +21,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.todo.TodoPattern;
 import com.editora.todo.TodoPatterns;
 import org.jspecify.annotations.Nullable;
@@ -37,7 +38,7 @@ final class TodoSettingsPane {
 
     private final Supplier<Settings> settings;
     private final Runnable apply;
-    private final VBox patternsBox = new VBox(4);
+    private final VBox patternsBox = UiZoom.spacing(new VBox(), 4);
     private @Nullable ColorPicker tagPicker;
     private @Nullable ColorPicker criticalPicker;
     private @Nullable ColorPicker highPicker;
@@ -70,7 +71,7 @@ final class TodoSettingsPane {
             apply.run();
             ((HBox) patternsBox.getChildren().getLast()).getChildren().get(1).requestFocus();
         });
-        VBox box = new VBox(6, patternsBox, add);
+        VBox box = UiZoom.spacing(new VBox(patternsBox, add), 6);
         rebuildRows();
         return box;
     }
@@ -97,7 +98,7 @@ final class TodoSettingsPane {
         TextField name = new TextField(shownName);
         name.setPromptText(tr("settings.todo.namePrompt"));
         name.setAccessibleText(tr("settings.todo.namePrompt"));
-        name.setPrefWidth(110);
+        UiZoom.prefWidth(name, 110);
         TextField regex = new TextField(p.getPattern());
         regex.setPromptText(tr("settings.todo.regexPrompt"));
         regex.setAccessibleText(tr("settings.todo.regexPrompt") + " — " + shownName);
@@ -105,7 +106,7 @@ final class TodoSettingsPane {
         ColorPicker color = new ColorPicker(parseColor(p.getColor()));
         color.setTooltip(new Tooltip(tr("settings.todo.colorPrompt")));
         color.setAccessibleText(tr("settings.todo.colorPrompt") + " — " + shownName);
-        color.setPrefWidth(56);
+        UiZoom.prefWidth(color, 56);
         CheckBox caseSensitive = new CheckBox(tr("settings.todo.case"));
         caseSensitive.setSelected(p.isCaseSensitive());
         caseSensitive.setTooltip(new Tooltip(tr("settings.todo.caseTip")));
@@ -175,7 +176,7 @@ final class TodoSettingsPane {
             rebuildRows();
             apply.run();
         });
-        HBox row = new HBox(6, enabled, name, regex, color, caseSensitive, remove);
+        HBox row = UiZoom.spacing(new HBox(enabled, name, regex, color, caseSensitive, remove), 6);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }
@@ -212,8 +213,7 @@ final class TodoSettingsPane {
         // every locale, so a per-row minimum width leaves the pickers ragged the moment one label outgrows
         // it. A shared first column sizes itself to the widest label, whatever that turns out to be.
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(6);
+        UiZoom.gaps(grid, 8, 6);
         addPartColorRow(grid, 0, tr("settings.todo.part.tag"), tagPicker);
         addPartColorRow(grid, 1, tr("settings.todo.part.critical"), criticalPicker);
         addPartColorRow(grid, 2, tr("settings.todo.part.high"), highPicker);
@@ -224,7 +224,7 @@ final class TodoSettingsPane {
 
     private ColorPicker partColorPicker(@Nullable String web, Consumer<String> setter) {
         ColorPicker cp = new ColorPicker(parseColor(web));
-        cp.setPrefWidth(56);
+        UiZoom.prefWidth(cp, 56);
         cp.valueProperty().addListener((o, a, b) -> {
             if (syncing) {
                 return;

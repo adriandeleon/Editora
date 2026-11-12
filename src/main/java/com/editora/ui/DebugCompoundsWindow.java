@@ -11,7 +11,6 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -32,6 +31,7 @@ import javafx.stage.Window;
 import com.editora.config.ConfigManager;
 import com.editora.config.RunCompound;
 import com.editora.config.RunConfiguration;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -89,7 +89,7 @@ final class DebugCompoundsWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
-            WindowPlacement.centerOnOwner(stage, owner, WIDTH, HEIGHT);
+            WindowPlacement.centerOnOwner(stage, owner, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
             stage.show();
         }
     }
@@ -127,8 +127,8 @@ final class DebugCompoundsWindow {
         stage.initModality(Modality.NONE);
 
         list.setId("compounds-list");
-        list.setPrefWidth(200);
-        list.setMinWidth(160);
+        UiZoom.prefWidth(list, 200);
+        UiZoom.minWidth(list, 160);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(RunCompound value, boolean empty) {
@@ -154,7 +154,8 @@ final class DebugCompoundsWindow {
         stopAll.setOnAction(e -> commit());
 
         Label membersLabel = new Label(tr("debug.compound.members"));
-        VBox form = new VBox(8, new Label(tr("debug.compound.name")), name, membersLabel, members, stopAll);
+        VBox form =
+                UiZoom.spacing(new VBox(new Label(tr("debug.compound.name")), name, membersLabel, members, stopAll), 8);
         VBox.setVgrow(members, Priority.ALWAYS);
         form.disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
@@ -190,26 +191,26 @@ final class DebugCompoundsWindow {
             stage.close();
         });
 
-        VBox left = new VBox(8, list);
+        VBox left = UiZoom.spacing(new VBox(list), 8);
         VBox.setVgrow(list, Priority.ALWAYS);
         HBox.setHgrow(form, Priority.ALWAYS);
-        HBox editor = new HBox(12, left, form);
+        HBox editor = UiZoom.spacing(new HBox(left, form), 12);
         VBox.setVgrow(editor, Priority.ALWAYS);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox buttons = new HBox(8, add, remove, spacer, debugButton, close);
+        HBox buttons = UiZoom.spacing(new HBox(add, remove, spacer, debugButton, close), 8);
         buttons.setAlignment(Pos.CENTER_LEFT);
-        VBox root = new VBox(12, editor, buttons);
-        root.setPadding(new Insets(16));
-        root.setPrefSize(WIDTH, HEIGHT);
-        Scene scene = new Scene(root, WIDTH, HEIGHT);
+        VBox root = UiZoom.spacing(new VBox(editor, buttons), 12);
+        UiZoom.padding(root, 16);
+        UiZoom.prefSize(root, WIDTH, HEIGHT);
+        Scene scene = new Scene(root, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
         scene.getStylesheets()
-                .add(DebugCompoundsWindow.class
+                .add(com.editora.editor.UiZoom.sheet(DebugCompoundsWindow.class
                         .getResource("/com/editora/styles/app.css")
-                        .toExternalForm());
+                        .toExternalForm()));
         stage.setScene(scene);
-        stage.setMinWidth(520);
-        stage.setMinHeight(360);
+        UiZoom.follow(stage, () -> stage.setMinWidth(UiZoom.px(520)));
+        UiZoom.follow(stage, () -> stage.setMinHeight(UiZoom.px(360)));
     }
 
     private BooleanProperty tickedProperty(String configuration) {

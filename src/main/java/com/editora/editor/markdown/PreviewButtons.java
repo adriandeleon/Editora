@@ -2,6 +2,7 @@ package com.editora.editor.markdown;
 
 import javafx.scene.control.Button;
 
+import com.editora.editor.UiZoom;
 import com.editora.i18n.Messages;
 
 /**
@@ -58,12 +59,12 @@ public final class PreviewButtons {
         Button button = new Button(Messages.tr("markdown.preview.refresh"));
         button.getStyleClass().add("md-preview-paused-button");
         button.setOnAction(e -> refresh.run());
-        javafx.scene.layout.HBox strip = new javafx.scene.layout.HBox(10, note, button);
+        javafx.scene.layout.HBox strip = UiZoom.spacing(new javafx.scene.layout.HBox(note, button), 10);
         strip.getStyleClass().add("md-preview-paused");
         strip.setAlignment(javafx.geometry.Pos.CENTER);
         strip.setMaxSize(javafx.scene.layout.Region.USE_PREF_SIZE, javafx.scene.layout.Region.USE_PREF_SIZE);
         javafx.scene.layout.StackPane.setAlignment(strip, javafx.geometry.Pos.BOTTOM_CENTER);
-        javafx.scene.layout.StackPane.setMargin(strip, new javafx.geometry.Insets(0, 0, 12, 0));
+        UiZoom.follow(strip, () -> javafx.scene.layout.StackPane.setMargin(strip, UiZoom.insets(0, 0, 12, 0)));
         return strip;
     }
 

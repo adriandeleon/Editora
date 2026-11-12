@@ -19,6 +19,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 
 import com.editora.editor.CodeLensShift;
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.Inlay;
 import org.fxmisc.richtext.model.PlainTextChange;
@@ -331,10 +332,11 @@ public final class HttpResultMarks {
             if (tooltip == null) {
                 tooltip = new Tooltip();
                 tooltip.setWrapText(true);
-                tooltip.setMaxWidth(420);
+                Tooltip made = tooltip;
+                UiZoom.follow(made, () -> made.setMaxWidth(UiZoom.px(420)));
             }
             tooltip.setText(r.tooltip());
-            tooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
+            tooltip.show(a, e.getScreenX() + UiZoom.px(12), e.getScreenY() + UiZoom.px(16));
         }
     }
 }

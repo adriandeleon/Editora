@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
@@ -28,6 +27,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -48,9 +48,9 @@ final class ProjectMapOverviewCard extends StackPane {
     static final double TEXT_SIZE = 12;
 
     private final BorderPane frame = new BorderPane();
-    private final HBox titleBar = new HBox(7);
+    private final HBox titleBar = UiZoom.spacing(new HBox(), 7);
     private final Label title = new Label();
-    private final VBox sections = new VBox(10);
+    private final VBox sections = UiZoom.spacing(new VBox(), 10);
     private final ScrollPane scroll = new ScrollPane(sections);
     private final Button zoomOut = new Button("−");
     private final Button zoomIn = new Button("+");
@@ -69,7 +69,7 @@ final class ProjectMapOverviewCard extends StackPane {
 
     private @Nullable Path root;
     /** The most changed folders and the owners (Map explore positions 3, 4), refilled as they arrive. */
-    private final VBox activityBox = new VBox(10);
+    private final VBox activityBox = UiZoom.spacing(new VBox(), 10);
 
     private ProjectMapActivity.@Nullable Summary activity;
 
@@ -119,7 +119,7 @@ final class ProjectMapOverviewCard extends StackPane {
         titleBar.getChildren().setAll(title, zoomOut, zoomIn, close);
         titleBar.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
         titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
-        sections.setPadding(new Insets(10, 12, 12, 12));
+        UiZoom.padding(sections, 10, 12, 12, 12);
         sections.getStyleClass().add("project-map-overview-sections");
         setTextZoom(1.0);
         scroll.setFitToWidth(true);
@@ -133,6 +133,7 @@ final class ProjectMapOverviewCard extends StackPane {
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
         getChildren().addAll(frame, resizeGrip);
         getTransforms().add(mapZoom);
+        UiZoom.follow(this, this::requestLayout);
         // A filter, not a handler: the title bar (its drag) and the content (the text area) consume the press, so a
         // handler never heard a click there and a card under another stayed under it.
         addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
@@ -315,7 +316,7 @@ final class ProjectMapOverviewCard extends StackPane {
     @Override
     protected void layoutChildren() {
         frame.resizeRelocate(0, 0, getWidth(), getHeight());
-        double grip = 18;
+        double grip = UiZoom.px(18);
         resizeGrip.resizeRelocate(Math.max(0, getWidth() - grip), Math.max(0, getHeight() - grip), grip, grip);
     }
 
@@ -386,7 +387,7 @@ final class ProjectMapOverviewCard extends StackPane {
         }
         Path base = root;
         long now = System.currentTimeMillis() / 1000;
-        VBox rows = new VBox(1);
+        VBox rows = UiZoom.spacing(new VBox(), 1);
         for (ProjectMapActivity.Hot hot : summary.mostChanged()) {
             Button link = link(hot.folder() + "/", base == null ? null : base.resolve(hot.folder()));
             link.setTextOverrun(javafx.scene.control.OverrunStyle.LEADING_ELLIPSIS); // a deep folder keeps its name
@@ -397,7 +398,7 @@ final class ProjectMapOverviewCard extends StackPane {
                             hot.stat().lastAuthor(),
                             GitBlameCoordinator.relativeTimeLabel(hot.stat().lastEpochSeconds(), now)),
                     "project-map-overview-muted");
-            meta.setPadding(new Insets(0, 0, 3, 4));
+            UiZoom.padding(meta, 0, 0, 3, 4);
             rows.getChildren().addAll(link, meta); // two lines: long paths and their counts never squeeze each other
         }
         content.add(rows);
@@ -413,7 +414,7 @@ final class ProjectMapOverviewCard extends StackPane {
     private void activityOwners(List<Node> content, List<ProjectMapActivity.Owned> owners) {
         content.add(heading(tr("project.map.activity.ownersHeading")));
         Path base = root;
-        VBox rows = new VBox(1);
+        VBox rows = UiZoom.spacing(new VBox(), 1);
         for (ProjectMapActivity.Owned owned : owners) {
             Node name;
             if (owned.folder().isEmpty()) {
@@ -431,7 +432,7 @@ final class ProjectMapOverviewCard extends StackPane {
                             : ProjectMapActivity.names(owned.owners().approvers()),
                     "project-map-overview-muted");
             meta.setTooltip(new Tooltip(String.join("\n", ProjectMapActivity.ownerLines(owned.owners()))));
-            meta.setPadding(new Insets(0, 0, 3, 4));
+            UiZoom.padding(meta, 0, 0, 3, 4);
             // Two lines, as Most changed: a long owner list never squeezes the folder's name to "…" (B8).
             rows.getChildren().addAll(name, meta);
         }
@@ -516,14 +517,14 @@ final class ProjectMapOverviewCard extends StackPane {
         }
         content.add(heading(tr("project.map.overview.folders")));
         Path base = root;
-        VBox rows = new VBox(1);
+        VBox rows = UiZoom.spacing(new VBox(), 1);
         for (ProjectMapOverview.Folder folder : facts.topFolders()) {
             Button link = link(folder.name() + "/", base == null ? null : base.resolve(folder.name()));
             String detail = folder.language() == null
                     ? tr("project.map.overview.files", count(folder.files()))
                     : tr("project.map.overview.filesIn", count(folder.files()), folder.language());
             Label meta = text(detail, "project-map-overview-muted");
-            HBox row = new HBox(8, link, meta);
+            HBox row = UiZoom.spacing(new HBox(link, meta), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             rows.getChildren().add(row);
         }
@@ -542,7 +543,11 @@ final class ProjectMapOverviewCard extends StackPane {
     }
 
     private FlowPane links(List<String> paths, boolean folders) {
-        FlowPane flow = new FlowPane(4, 2);
+        FlowPane flow = new FlowPane();
+        UiZoom.follow(flow, () -> {
+            flow.setHgap(UiZoom.px(4));
+            flow.setVgap(UiZoom.px(2));
+        });
         Path base = root;
         for (String rel : paths) {
             flow.getChildren().add(link(folders ? rel + "/" : rel, base == null ? null : base.resolve(rel)));

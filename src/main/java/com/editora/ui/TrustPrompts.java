@@ -9,6 +9,7 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -102,7 +103,7 @@ final class TrustPrompts {
         if (owner != null) {
             confirm.initOwner(owner);
         }
-        confirm.getDialogPane().setMinWidth(520);
+        UiZoom.minWidth(confirm.getDialogPane(), 520);
         ButtonType cancel = Dialogs.cancelOf(confirm);
         Dialogs.defaultTo(confirm, cancel); // Enter cancels; Escape already did
         if (confirm.getDialogPane().lookupButton(cancel) instanceof Button c) {

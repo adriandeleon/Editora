@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 
+import com.editora.editor.UiZoom;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
@@ -74,11 +75,12 @@ public final class MarkdownLintHover {
                 tooltip = new Tooltip();
                 tooltip.getStyleClass().add("mermaid-lint-tooltip");
                 tooltip.setWrapText(true);
-                tooltip.setMaxWidth(420);
+                Tooltip made = tooltip;
+                UiZoom.follow(made, () -> made.setMaxWidth(UiZoom.px(420)));
             }
             tooltip.setText(text);
             shown = text;
-            tooltip.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
+            tooltip.show(area, e.getScreenX() + UiZoom.px(12), e.getScreenY() + UiZoom.px(16));
         } catch (RuntimeException ignored) {
             // viewport mid-layout / hit miss — ignore
         }

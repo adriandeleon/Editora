@@ -96,6 +96,10 @@ final class MenuBarIcons {
         add("view.togglePreview", Icons::previewOnly);
         add("view.toggleSplitPreview", Icons::previewOnly);
         add("view.toggleSimpleMode", Icons::simpleMode);
+        add("view.textZoomIn", Icons::zoomIn);
+        add("view.textZoomOut", Icons::zoomOut);
+        add("view.uiZoomIn", Icons::zoomIn);
+        add("view.uiZoomOut", Icons::zoomOut);
         add("view.doctor", Icons::doctor);
         add("window.fullScreen", Icons::maximize);
         add("window.maximize", Icons::maximize);

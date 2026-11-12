@@ -17,6 +17,7 @@ import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -182,8 +183,10 @@ final class ProjectMapWindow {
     private Stage build() {
         Stage s = new Stage();
         s.setTitle(title);
-        s.setMinWidth(480);
-        s.setMinHeight(320);
+        UiZoom.follow(s, () -> {
+            s.setMinWidth(UiZoom.px(480));
+            s.setMinHeight(UiZoom.px(320));
+        });
         StackPane root = new StackPane(content);
         overlay.install(root);
         Scene scene = new Scene(root);
@@ -283,7 +286,10 @@ final class ProjectMapWindow {
         Rectangle2D visual =
                 editorWindow == null ? Screen.getPrimary().getVisualBounds() : WindowPlacement.screenOf(editorWindow);
         javafx.geometry.Dimension2D size = WindowPlacement.clampSize(
-                b == null ? DEFAULT_WIDTH : b.width(), b == null ? DEFAULT_HEIGHT : b.height(), visual, 0.9);
+                b == null ? UiZoom.px(DEFAULT_WIDTH) : b.width(),
+                b == null ? UiZoom.px(DEFAULT_HEIGHT) : b.height(),
+                visual,
+                0.9);
         Rectangle2D around = editorWindow == null
                 ? visual
                 : new Rectangle2D(

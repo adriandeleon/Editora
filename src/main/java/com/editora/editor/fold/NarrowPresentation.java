@@ -11,6 +11,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.logviewer.LogView;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -131,7 +132,7 @@ public final class NarrowPresentation {
         widen.getStyleClass().add("narrow-bar-widen");
         widen.setFocusTraversable(false);
         widen.setOnAction(e -> buffer.widen()); // the narrow-changed hook reconciles the rest of the UI
-        HBox box = new HBox(10, text, spacer, widen);
+        HBox box = UiZoom.spacing(new HBox(text, spacer, widen), 10);
         box.getStyleClass().add("narrow-bar");
         box.setAlignment(Pos.CENTER_LEFT);
         javafx.scene.control.Tooltip.install(box, new javafx.scene.control.Tooltip(tr("editor.narrow.tip")));

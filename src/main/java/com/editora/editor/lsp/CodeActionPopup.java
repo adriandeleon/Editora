@@ -16,6 +16,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import com.editora.editor.completion.CompletionPopup;
 
 /**
@@ -56,7 +57,7 @@ public final class CodeActionPopup {
     public CodeActionPopup() {
         list.getStyleClass().addAll("completion-list", "code-action-list");
         list.setFocusTraversable(false);
-        list.setFixedCellSize(ROW_HEIGHT);
+        UiZoom.follow(list, () -> list.setFixedCellSize(UiZoom.px(ROW_HEIGHT)));
         list.setCellFactory(v -> new ActionCell());
         list.setOnMouseClicked(e -> {
             // Only a click on a row accepts. A click on the list's scroll bar (more than nine actions) or
@@ -215,7 +216,7 @@ public final class CodeActionPopup {
         list.scrollTo(preferred);
 
         int rows = Math.min(actions.size(), VISIBLE_ROWS);
-        double h = rows * ROW_HEIGHT + 2; // +2 for the list's 1px top/bottom border
+        double h = rows * UiZoom.px(ROW_HEIGHT) + 2; // +2 for the list's 1px top/bottom border
         list.setPrefHeight(h);
         list.setMinHeight(h);
         list.setMaxHeight(h);
@@ -255,7 +256,7 @@ public final class CodeActionPopup {
                     + (a.kind() == null || a.kind().isBlank() ? 0 : a.kind().length() + 3);
             widest = Math.max(widest, len);
         }
-        return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, widest * CHAR_PX + H_PADDING + KIND_GAP));
+        return UiZoom.px(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, widest * CHAR_PX + H_PADDING + KIND_GAP)));
     }
 
     /** Title on the left, the LSP kind muted on the right — the completion popup's detail-column idiom. */
@@ -272,7 +273,7 @@ public final class CodeActionPopup {
             title.getStyleClass().add("completion-label");
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
-            HBox row = new HBox(6, title, spacer);
+            HBox row = UiZoom.spacing(new HBox(title, spacer), 6);
             if (item.kind() != null && !item.kind().isBlank()) {
                 Label kind = new Label(item.kind());
                 kind.getStyleClass().add("completion-detail");

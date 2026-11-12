@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 
 import javafx.application.Platform;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -21,6 +20,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -90,7 +90,7 @@ public final class ImageViewerPane implements TabContent {
         // when larger, which is what lets the ScrollPane scroll a zoomed-in image.
         StackPane holder = new StackPane(imageView);
         holder.getStyleClass().add("image-viewer-holder");
-        holder.setPadding(new Insets(12));
+        UiZoom.padding(holder, 12);
         holder.minWidthProperty()
                 .bind(javafx.beans.binding.Bindings.createDoubleBinding(
                         () -> scroll.getViewportBounds().getWidth(), scroll.viewportBoundsProperty()));
@@ -126,10 +126,10 @@ public final class ImageViewerPane implements TabContent {
         Label readOnly = new Label(tr("imageviewer.readOnly"));
         readOnly.getStyleClass().add("image-viewer-readonly");
         noteLabel.getStyleClass().add("image-viewer-note");
-        HBox bar = new HBox(6, out, in, fit, actual, zoomLabel, noteLabel, spacer, readOnly);
+        HBox bar = UiZoom.spacing(new HBox(out, in, fit, actual, zoomLabel, noteLabel, spacer, readOnly), 6);
         bar.getStyleClass().add("image-viewer-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new Insets(6, 10, 6, 10));
+        UiZoom.padding(bar, 6, 10, 6, 10);
         return bar;
     }
 
@@ -234,7 +234,7 @@ public final class ImageViewerPane implements TabContent {
         label.getStyleClass().add(styleClass);
         label.setWrapText(true);
         StackPane center = new StackPane(label);
-        center.setPadding(new Insets(24));
+        UiZoom.padding(center, 24);
         root.setCenter(center);
         root.setTop(null); // no zoom controls when there's nothing to show
     }
@@ -258,8 +258,8 @@ public final class ImageViewerPane implements TabContent {
         double natW = naturalWidth; // zoom is relative to the picture's real size, even when decoded reduced
         double natH = naturalHeight;
         if (fitMode) {
-            double viewW = scroll.getViewportBounds().getWidth() - 24; // minus the holder padding
-            double viewH = scroll.getViewportBounds().getHeight() - 24;
+            double viewW = scroll.getViewportBounds().getWidth() - UiZoom.px(24); // minus the holder padding
+            double viewH = scroll.getViewportBounds().getHeight() - UiZoom.px(24);
             if (viewW > 1 && viewH > 1) {
                 zoom = Math.min(1.0, Math.min(viewW / natW, viewH / natH)); // fit, but never upscale past 100%
             } else {

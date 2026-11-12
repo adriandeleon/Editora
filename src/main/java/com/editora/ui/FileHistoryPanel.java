@@ -42,6 +42,7 @@ import com.editora.config.HistoryRevision;
 import com.editora.config.Settings;
 import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels.DiffModel;
+import com.editora.editor.UiZoom;
 import com.editora.git.RelativeTime;
 import com.editora.history.HistoryBlobStore;
 import org.jspecify.annotations.Nullable;
@@ -197,7 +198,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         backToFile.setVisible(false);
         backToFile.setManaged(false);
         Button refresh = iconButton(Icons.refresh(), tr("history.refreshTip"), actions::refresh);
-        HBox toolbar = new HBox(2, backToFile, fileLabel, refresh);
+        HBox toolbar = UiZoom.spacing(new HBox(backToFile, fileLabel, refresh), 2);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
@@ -247,10 +248,10 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         folderTree.setVisible(false);
         folderTree.setManaged(false);
 
-        VBox left = new VBox(4, toolbar, filter, revisions, folderTree);
-        left.setPadding(new Insets(4));
+        VBox left = UiZoom.spacing(new VBox(toolbar, filter, revisions, folderTree), 4);
+        UiZoom.padding(left, 4);
         left.getStyleClass().add("history-window-left");
-        left.setMinWidth(200);
+        UiZoom.minWidth(left, 200);
 
         // Right side (diff) ------------------------------------------------------------------------------
         // The header gives way first when the pane is narrow (its full text is in the tooltip); the
@@ -267,7 +268,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         restore.setTooltip(new Tooltip(tr("history.window.revertTip")));
         restore.setOnAction(e -> restoreShown());
         restore.setMinWidth(Region.USE_PREF_SIZE);
-        diffToolbar = new HBox(8, headerInfo, ignoreWs, wordLevel, restore);
+        diffToolbar = UiZoom.spacing(new HBox(headerInfo, ignoreWs, wordLevel, restore), 8);
         diffToolbar.setAlignment(Pos.CENTER_LEFT);
         diffToolbar.getStyleClass().add("history-window-toolbar");
         // The pane's width, not the toolbar's own: a toolbar that cannot shrink is laid out at its minimum,
@@ -852,8 +853,12 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             }
             if (value instanceof FileGroup g) {
                 Label name = new Label(g.display());
-                HBox box = new HBox(
-                        6, FileIcons.forFileName(Path.of(g.path()).getFileName().toString()), name);
+                HBox box = UiZoom.spacing(
+                        new HBox(
+                                FileIcons.forFileName(
+                                        Path.of(g.path()).getFileName().toString()),
+                                name),
+                        6);
                 box.setAlignment(Pos.CENTER_LEFT);
                 if (g.deleted()) {
                     // The strike-through goes on the name's own text: set on the cell it never reached it.
@@ -875,7 +880,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 Label when = new Label(HistoryRowText.dateTimeText(r.timestamp(), ZoneId.systemDefault(), locale()));
                 Label tag = new Label(what);
                 tag.getStyleClass().add(r.label().isBlank() ? "history-row-reason" : "history-label");
-                HBox box = new HBox(8, Icons.history(), when, tag);
+                HBox box = UiZoom.spacing(new HBox(Icons.history(), when, tag), 8);
                 box.setAlignment(Pos.CENTER_LEFT);
                 setGraphic(box);
                 setTooltip(new Tooltip(tooltipText(r)));
@@ -894,6 +899,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     private final class RevisionCell extends ListCell<HistoryRevision> {
         RevisionCell() {
             setPrefWidth(0); // as wide as the list, never wider: the label is cut short, not scrolled sideways
+            UiZoom.follow(this, this::requestLayout);
         }
 
         /** The row is as high as what it holds — a day caption makes it taller — not the theme's fixed 3em. */
@@ -901,7 +907,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         protected double computePrefHeight(double width) {
             javafx.scene.Node content = getGraphic();
             double inner = content == null ? 0 : content.prefHeight(-1);
-            return Math.max(MIN_ROW_HEIGHT, snappedTopInset() + inner + snappedBottomInset());
+            return Math.max(UiZoom.px(MIN_ROW_HEIGHT), snappedTopInset() + inner + snappedBottomInset());
         }
 
         @Override
@@ -917,13 +923,13 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             }
             boolean labelled = !r.label().isBlank();
             String tag = tagFor(r);
-            HBox line = new HBox(6);
+            HBox line = UiZoom.spacing(new HBox(), 6);
             line.setAlignment(Pos.CENTER_LEFT);
             line.getChildren().add(Icons.history());
             if (labelled) {
                 Label lbl = new Label(r.label());
                 lbl.getStyleClass().add("history-label");
-                lbl.setMinWidth(40);
+                UiZoom.minWidth(lbl, 40);
                 line.getChildren().add(lbl);
             }
             Label when = new Label(rowTime(r.timestamp()));
@@ -944,7 +950,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             if (HistoryRowText.startsDay(revisions.getItems(), getIndex(), ZoneId.systemDefault())) {
                 Label day = new Label(dayCaption(r.timestamp()));
                 day.getStyleClass().add("history-day");
-                setGraphic(new VBox(2, day, line));
+                setGraphic(UiZoom.spacing(new VBox(day, line), 2));
             } else {
                 setGraphic(line);
             }

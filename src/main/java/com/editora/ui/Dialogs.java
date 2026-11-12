@@ -61,7 +61,7 @@ final class Dialogs {
         DialogPane pane = dialog.getDialogPane();
         var css = Dialogs.class.getResource(APP_CSS);
         if (css != null) {
-            String url = css.toExternalForm();
+            String url = com.editora.editor.UiZoom.sheet(css.toExternalForm());
             var sheets = pane.getStylesheets();
             if (!sheets.contains(url)) {
                 sheets.add(url);

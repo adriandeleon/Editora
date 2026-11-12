@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
@@ -24,6 +23,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 
 import com.editora.config.PathDisplay;
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.jspecify.annotations.Nullable;
 
@@ -107,8 +107,8 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         getStyleClass().add("references-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
         build();
     }
 

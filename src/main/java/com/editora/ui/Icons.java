@@ -83,8 +83,7 @@ final class Icons {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("icon-line");
-        svg.setScaleX(LINE_SCALE);
-        svg.setScaleY(LINE_SCALE);
+        com.editora.editor.UiZoom.scale(svg, LINE_SCALE);
         return new Group(svg);
     }
 
@@ -100,8 +99,7 @@ final class Icons {
         if (extraClasses != null) {
             svg.getStyleClass().addAll(extraClasses);
         }
-        svg.setScaleX(ICON_SCALE);
-        svg.setScaleY(ICON_SCALE);
+        com.editora.editor.UiZoom.scale(svg, ICON_SCALE);
         return new Group(svg);
     }
 
@@ -909,6 +907,16 @@ final class Icons {
     }
 
     // ---- The Project Map's options (⋯) menu --------------------------------------------------------------
+
+    /** A magnifier holding a plus: Zoom In, of the text or of the whole interface. */
+    static Node zoomIn() {
+        return line("M2.5 7a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0M10.2 10.2l3.6 3.6M5.2 7h3.6M7 5.2v3.6");
+    }
+
+    /** A magnifier holding a minus: Zoom Out. */
+    static Node zoomOut() {
+        return line("M2.5 7a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0M10.2 10.2l3.6 3.6M5.2 7h3.6");
+    }
 
     /** A magnifier holding an equals sign — the Map's "Keep current zoom" when a column opens. */
     static Node keepZoom() {

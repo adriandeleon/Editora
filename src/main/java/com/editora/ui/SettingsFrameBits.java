@@ -8,6 +8,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 
 import com.editora.AppInfo;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -75,7 +76,7 @@ final class SettingsFrameBits {
         if (!beta && modified <= 0) {
             return null;
         }
-        HBox box = new HBox(4);
+        HBox box = UiZoom.spacing(new HBox(), 4);
         box.setAlignment(Pos.CENTER_LEFT);
         if (modified > 0) {
             Label count = new Label(Integer.toString(modified));

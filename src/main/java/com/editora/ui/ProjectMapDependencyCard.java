@@ -9,7 +9,6 @@ import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Group;
@@ -39,6 +38,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.CubicCurve;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -153,34 +153,34 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
         Region divider = new Region();
-        divider.setMinWidth(8);
-        HBox bar = new HBox(4, back, aroundButton, insideButton, divider, filesButton, foldersButton, gap, refresh);
+        UiZoom.minWidth(divider, 8);
+        HBox bar = UiZoom.spacing(
+                new HBox(back, aroundButton, insideButton, divider, filesButton, foldersButton, gap, refresh), 4);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.getStyleClass().add("project-map-deps-bar");
-        bar.setPadding(new Insets(4, 6, 4, 6));
+        UiZoom.padding(bar, 4, 6, 4, 6);
 
         summary.getStyleClass().add("project-map-deps-summary");
         summary.setWrapText(true);
         summary.setMnemonicParsing(false);
         summary.setMinHeight(Region.USE_PREF_SIZE);
-        summary.setPadding(new Insets(6, 10, 6, 10));
+        UiZoom.padding(summary, 6, 10, 6, 10);
 
         graphScroll.setFitToWidth(true);
         graphScroll.getStyleClass().add("project-map-deps-scroll");
         matrix.getStyleClass().add("project-map-deps-matrix");
-        matrix.setHgap(2);
-        matrix.setVgap(2);
-        matrix.setPadding(new Insets(8));
+        UiZoom.gaps(matrix, 2, 2);
+        UiZoom.padding(matrix, 8);
         matrixScroll.getStyleClass().add("project-map-deps-scroll");
         empty.getStyleClass().add("project-map-deps-empty");
         empty.setWrapText(true);
-        empty.setPadding(new Insets(16));
+        UiZoom.padding(empty, 16);
         StackPane.setAlignment(empty, Pos.TOP_LEFT);
         StackPane content = new StackPane(graphScroll, matrixScroll, empty);
 
         whyTitle.getStyleClass().add("project-map-deps-why-title");
         whyTitle.setMnemonicParsing(false);
-        whyTitle.setPadding(new Insets(4, 8, 4, 8));
+        UiZoom.padding(whyTitle, 4, 8, 4, 8);
         whyTitle.setMaxWidth(Double.MAX_VALUE);
         why.getStyleClass().add("project-map-deps-why");
         why.setAccessibleText(tr("project.map.deps.whyAccessible"));
@@ -375,7 +375,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             Label number = new Label(Integer.toString(c + 1));
             number.getStyleClass().add("project-map-deps-column");
             number.setTooltip(new Tooltip(partName(found.folder(), parts.get(c))));
-            number.setMinWidth(CELL);
+            UiZoom.minWidth(number, CELL);
             number.setAlignment(Pos.CENTER);
             matrix.add(number, c + 1, 0);
         }
@@ -412,8 +412,8 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         if (count == 0) {
             Region blank = new Region();
             blank.getStyleClass().add(r == c ? "project-map-deps-self" : "project-map-deps-blank");
-            blank.setMinSize(CELL, CELL);
-            blank.setPrefSize(CELL, CELL);
+            UiZoom.minSize(blank, CELL, CELL);
+            UiZoom.prefSize(blank, CELL, CELL);
             return blank;
         }
         List<ProjectMapDependencies.Part> parts = found.parts();
@@ -425,9 +425,9 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             cell.getStyleClass().add("project-map-deps-cycle");
         }
         cell.setMnemonicParsing(false);
-        cell.setMinSize(CELL, CELL);
-        cell.setPrefSize(CELL, CELL);
-        cell.setMaxSize(CELL, CELL);
+        UiZoom.minSize(cell, CELL, CELL);
+        UiZoom.prefSize(cell, CELL, CELL);
+        UiZoom.maxSize(cell, CELL, CELL);
         String tip =
                 tr(found.cycle()[r][c] ? "project.map.deps.cellCycleTip" : "project.map.deps.cellTip", from, to, count);
         cell.setTooltip(new Tooltip(tip));
@@ -676,7 +676,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             count.getStyleClass().add("project-map-deps-count");
             setGraphic(count);
             setContentDisplay(ContentDisplay.RIGHT);
-            setGraphicTextGap(6);
+            UiZoom.follow(this, () -> setGraphicTextGap(UiZoom.px(6)));
             setAlignment(Pos.CENTER_LEFT);
             String path = node.rel().isEmpty() ? displayName("", true) : node.rel();
             String tip = tr(
@@ -742,6 +742,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             }
             curves.setManaged(false);
             curves.setMouseTransparent(true);
+            UiZoom.follow(this, this::requestLayout);
         }
 
         void clear() {
@@ -784,7 +785,9 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
                 if (node.mutual()) {
                     curve.getStyleClass().add("project-map-deps-mutual");
                 }
-                curve.setStrokeWidth(1 + Math.min(3, Math.log(node.count()) / Math.log(2)));
+                UiZoom.follow(
+                        curve,
+                        () -> curve.setStrokeWidth(UiZoom.px(1 + Math.min(3, Math.log(node.count()) / Math.log(2)))));
                 buttons.add(button);
                 lines.add(curve);
                 curves.getChildren().add(curve);
@@ -812,13 +815,13 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         }
 
         private double columnWidth(double width) {
-            return Math.max(90, (width - 2 * PAD - 2 * GAP) / 3);
+            return Math.max(UiZoom.px(90), (width - 2 * UiZoom.px(PAD) - 2 * UiZoom.px(GAP)) / 3);
         }
 
         private double sideHeight(List<NodeButton> buttons, Label header, Label more, double column) {
-            double h = header.prefHeight(column) + ROW;
+            double h = header.prefHeight(column) + UiZoom.px(ROW);
             for (NodeButton button : buttons) {
-                h += button.prefHeight(column) + ROW;
+                h += button.prefHeight(column) + UiZoom.px(ROW);
             }
             if (getChildren().contains(more)) {
                 h += more.prefHeight(column);
@@ -828,13 +831,13 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
 
         @Override
         protected double computePrefWidth(double height) {
-            return 3 * 90 + 2 * GAP + 2 * PAD;
+            return UiZoom.px(3 * 90 + 2 * GAP + 2 * PAD);
         }
 
         @Override
         protected double computePrefHeight(double width) {
             double column = columnWidth(width > 0 ? width : computePrefWidth(-1));
-            return 2 * PAD
+            return 2 * UiZoom.px(PAD)
                     + Math.max(
                             subject.prefHeight(column),
                             Math.max(
@@ -849,21 +852,21 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             }
             double width = getWidth();
             double column = columnWidth(width);
-            double height = Math.max(getHeight() - 2 * PAD, 0);
+            double height = Math.max(getHeight() - 2 * UiZoom.px(PAD), 0);
             double subjectHeight = subject.prefHeight(column);
-            double middleX = PAD + column + GAP;
-            double subjectWidth = Math.min(column, Math.max(subject.prefWidth(-1), 80));
+            double middleX = UiZoom.px(PAD) + column + UiZoom.px(GAP);
+            double subjectWidth = Math.min(column, Math.max(subject.prefWidth(-1), UiZoom.px(80)));
             double subjectX = middleX + (column - subjectWidth) / 2;
-            double subjectY = PAD + Math.max(0, (height - subjectHeight) / 2);
+            double subjectY = UiZoom.px(PAD) + Math.max(0, (height - subjectHeight) / 2);
             subject.resizeRelocate(subjectX, subjectY, subjectWidth, subjectHeight);
             double midY = subjectY + subjectHeight / 2;
-            layoutSide(users, usersHeader, usersMore, userCurves, PAD, column, height, subjectX, midY, true);
+            layoutSide(users, usersHeader, usersMore, userCurves, UiZoom.px(PAD), column, height, subjectX, midY, true);
             layoutSide(
                     uses,
                     usesHeader,
                     usesMore,
                     useCurves,
-                    PAD + 2 * (column + GAP),
+                    UiZoom.px(PAD) + 2 * (column + UiZoom.px(GAP)),
                     column,
                     height,
                     subjectX + subjectWidth,
@@ -883,10 +886,10 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
                 double midY,
                 boolean left) {
             double total = sideHeight(buttons, header, more, column);
-            double y = PAD + Math.max(0, (height - total) / 2);
+            double y = UiZoom.px(PAD) + Math.max(0, (height - total) / 2);
             double headerHeight = header.prefHeight(column);
             header.resizeRelocate(x, y, column, headerHeight);
-            y += headerHeight + ROW;
+            y += headerHeight + UiZoom.px(ROW);
             for (int i = 0; i < buttons.size(); i++) {
                 NodeButton button = buttons.get(i);
                 double w = Math.min(column, button.prefWidth(-1));
@@ -905,7 +908,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
                 curve.setControlY1(startY);
                 curve.setControlX2(left ? subjectEdge - bend : subjectEdge + bend);
                 curve.setControlY2(midY);
-                y += h + ROW;
+                y += h + UiZoom.px(ROW);
             }
             if (getChildren().contains(more)) {
                 more.resizeRelocate(x, y, column, more.prefHeight(column));
@@ -917,7 +920,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
     private final class WhyCell extends ListCell<ProjectMapImports.Edge> {
         private final Label where = new Label();
         private final Label line = new Label();
-        private final VBox box = new VBox(1, where, line);
+        private final VBox box = UiZoom.spacing(new VBox(where, line), 1);
 
         WhyCell() {
             where.getStyleClass().add("project-map-deps-where");

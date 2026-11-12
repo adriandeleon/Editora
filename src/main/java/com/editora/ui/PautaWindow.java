@@ -29,6 +29,7 @@ import com.editora.PautaConformance;
 import com.editora.PautaConformance.Conformance;
 import com.editora.PautaConformance.Entry;
 import com.editora.PautaConformance.Kind;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -49,7 +50,7 @@ final class PautaWindow {
     private final Consumer<String> openUrl;
     private final List<Entry> exceptions;
     private final Dialog<Void> dialog = Dialogs.styled(new Dialog<>());
-    private final VBox list = new VBox(2);
+    private final VBox list = UiZoom.spacing(new VBox(), 2);
     private final Button copy = new Button(tr("pauta.copy"));
 
     PautaWindow(@Nullable Window owner, Consumer<String> runCommand, Consumer<String> openUrl) {
@@ -74,13 +75,13 @@ final class PautaWindow {
         Label meaning = new Label(meaning(conformance, exceptions));
         meaning.getStyleClass().add("about-tagline");
         meaning.setWrapText(true);
-        VBox titleBox = new VBox(4, edition, new HBox(pill), meaning);
+        VBox titleBox = UiZoom.spacing(new VBox(edition, new HBox(pill), meaning), 4);
         titleBox.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(titleBox, Priority.ALWAYS);
-        HBox head = new HBox(16, mark(), titleBox);
+        HBox head = UiZoom.spacing(new HBox(mark(), titleBox), 16);
         head.setAlignment(Pos.CENTER_LEFT);
 
-        VBox content = new VBox(14, head);
+        VBox content = UiZoom.spacing(new VBox(head), 14);
         String counts = counts(exceptions);
         if (!counts.isEmpty()) {
             Label countsLabel = new Label(counts);
@@ -93,10 +94,11 @@ final class PautaWindow {
         scroll.getStyleClass().add("pauta-list");
         content.getChildren().add(scroll);
 
-        VBox links = new VBox(
-                2,
-                link(tr("pauta.rules", AppInfo.PAUTA_EDITION), "help.pautaRules"),
-                link(tr("pauta.docs"), "help.pautaDocs"));
+        VBox links = UiZoom.spacing(
+                new VBox(
+                        link(tr("pauta.rules", AppInfo.PAUTA_EDITION), "help.pautaRules"),
+                        link(tr("pauta.docs"), "help.pautaDocs")),
+                2);
         // In the content, not the button bar, like About's Copy details: pressing it keeps the window open.
         copy.setOnAction(e -> {
             runCommand.accept("help.copyPauta");
@@ -104,7 +106,7 @@ final class PautaWindow {
         });
         content.getChildren().addAll(links, copy);
         content.getStyleClass().add("about-content");
-        content.setPrefWidth(560);
+        UiZoom.prefWidth(content, 560);
 
         dialog.getDialogPane().setContent(content);
         // One Close button, the default: Enter and Esc both close.
@@ -140,10 +142,10 @@ final class PautaWindow {
         Hyperlink id = new Hyperlink(entry.rule());
         id.getStyleClass().add("pauta-rule");
         id.setOnAction(e -> openUrl.accept(entry.url()));
-        id.setMinWidth(84);
+        UiZoom.minWidth(id, 84);
         Label level = new Label(entry.level());
         level.getStyleClass().add("pauta-level");
-        level.setMinWidth(56);
+        UiZoom.minWidth(level, 56);
         TextFlow reason = new TextFlow(new Text(entry.reason()));
         reason.getStyleClass().add("pauta-reason");
         String target = entry.link();
@@ -153,7 +155,7 @@ final class PautaWindow {
             reason.getChildren().addAll(new Text(" "), link);
         }
         HBox.setHgrow(reason, Priority.ALWAYS);
-        HBox row = new HBox(8, id, level, reason);
+        HBox row = UiZoom.spacing(new HBox(id, level, reason), 8);
         row.setAlignment(Pos.TOP_LEFT);
         row.getStyleClass().add("pauta-row");
         return row;
@@ -178,9 +180,11 @@ final class PautaWindow {
         if (url == null) {
             return new Label();
         }
-        ImageView view = new ImageView(new Image(url.toExternalForm(), 72, 72, true, true, true));
-        view.setFitWidth(72);
-        view.setFitHeight(72);
+        ImageView view = new ImageView(new Image(url.toExternalForm(), UiZoom.px(72), UiZoom.px(72), true, true, true));
+        UiZoom.follow(view, () -> {
+            view.setFitWidth(UiZoom.px(72));
+            view.setFitHeight(UiZoom.px(72));
+        });
         return view;
     }
 

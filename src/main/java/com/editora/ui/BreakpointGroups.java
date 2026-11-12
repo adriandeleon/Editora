@@ -22,6 +22,7 @@ import com.editora.config.Breakpoint;
 import com.editora.config.BreakpointExport;
 import com.editora.config.MemberBreakpoint;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.debug.BreakpointManager;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
@@ -99,8 +100,7 @@ final class BreakpointGroups {
         }
         ComboBox<String> group = groupField(bp.group());
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         Label lineText = new Label(
                 BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
         lineText.getStyleClass().add("debug-breakpoint-line");

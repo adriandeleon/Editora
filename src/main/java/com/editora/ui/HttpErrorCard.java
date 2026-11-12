@@ -1,7 +1,6 @@
 package com.editora.ui;
 
 import javafx.beans.value.ObservableBooleanValue;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -11,6 +10,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -33,8 +33,8 @@ final class HttpErrorCard extends VBox {
 
     HttpErrorCard(Runnable onRunAgain, Runnable onCopyCurl, ObservableBooleanValue copyDisabled, Runnable onShowTests) {
         getStyleClass().add("http-error-card");
-        setSpacing(8);
-        setPadding(new Insets(12, 14, 12, 14));
+        UiZoom.spacing(this, 8);
+        UiZoom.padding(this, 12, 14, 12, 14);
         setMaxHeight(Region.USE_PREF_SIZE);
         title.getStyleClass().add("http-error-title");
         title.setWrapText(true);
@@ -53,7 +53,7 @@ final class HttpErrorCard extends VBox {
             b.setMinWidth(Region.USE_PREF_SIZE);
             b.setMnemonicParsing(false);
         }
-        HBox actions = new HBox(8, runAgain, copyCurl, showTests);
+        HBox actions = UiZoom.spacing(new HBox(runAgain, copyCurl, showTests), 8);
         actions.setAlignment(Pos.CENTER_LEFT);
         getChildren().addAll(title, explanation, actions);
         TextInputKeymap.installSharedReadOnly(explanation);

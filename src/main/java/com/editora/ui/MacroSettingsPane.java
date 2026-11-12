@@ -38,6 +38,7 @@ import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.config.ConfigManager;
 import com.editora.config.MacroStore;
+import com.editora.editor.UiZoom;
 import com.editora.macro.Macro;
 import com.editora.macro.MacroKey;
 import com.editora.macro.MacroService;
@@ -90,7 +91,7 @@ final class MacroSettingsPane extends HBox {
     private final WrapRow keybinding = new WrapRow(8, 6);
 
     private final javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-    private final VBox stepDetail = new VBox(6);
+    private final VBox stepDetail = UiZoom.spacing(new VBox(), 6);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
 
     /** The id of the macro whose working copy is on screen, or null. */
@@ -100,16 +101,16 @@ final class MacroSettingsPane extends HBox {
     private final EventHandler<WindowEvent> saveOnHide = e -> saveIfDirty();
 
     MacroSettingsPane(Host host) {
-        super(12);
+        UiZoom.spacing(this, 12);
         this.host = host;
         setAlignment(Pos.TOP_LEFT);
 
-        list.setPrefSize(220, 440);
+        UiZoom.prefSize(list, 220, 440);
         Label none = new Label(tr("settings.macro.empty"));
         none.getStyleClass().add("settings-hint");
         none.setWrapText(true);
         none.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
-        none.setMaxWidth(190);
+        UiZoom.maxWidth(none, 190);
         list.setPlaceholder(none);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -123,7 +124,7 @@ final class MacroSettingsPane extends HBox {
             }
         });
 
-        stepList.setPrefHeight(190);
+        UiZoom.prefHeight(stepList, 190);
         stepList.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(MacroStep s, boolean empty) {
@@ -175,13 +176,12 @@ final class MacroSettingsPane extends HBox {
         addText.setOnAction(e -> addStep(MacroStep.text("")));
         Button addKey = new Button(tr("settings.macro.addKey"));
         addKey.setOnAction(e -> addStep(MacroStep.key("")));
-        HBox reorder = new HBox(6, up, down);
+        HBox reorder = UiZoom.spacing(new HBox(up, down), 6);
         // No button may shrink below its label: a squeezed button reads "…" (and wraps to the next line instead).
         fitToLabel(addCommand, addText, addKey, remove, up, down, reorder);
         WrapRow stepButtons = new WrapRow(6, 6, addCommand, addText, addKey, reorder, remove);
 
-        form.setHgap(8);
-        form.setVgap(6);
+        UiZoom.gaps(form, 8, 6);
         formRow(form, 0, tr("settings.macro.name"), name);
         nameClash.getStyleClass().add("settings-hint");
         nameClash.setWrapText(true);
@@ -201,7 +201,7 @@ final class MacroSettingsPane extends HBox {
 
         Label stepsLabel = new Label(tr("settings.macro.steps"));
         stepsLabel.getStyleClass().add("settings-section");
-        VBox stepEditor = new VBox(6, stepsLabel, stepList, stepDetail, stepButtons);
+        VBox stepEditor = UiZoom.spacing(new VBox(stepsLabel, stepList, stepDetail, stepButtons), 6);
         VBox.setVgrow(stepList, Priority.ALWAYS);
         form.setDisable(true);
         // No macro selected, no steps to edit: Add Command used to add a step that belonged to nothing.
@@ -226,11 +226,11 @@ final class MacroSettingsPane extends HBox {
         fitToLabel(save, revert, delete, unsaved);
         WrapRow formButtons = new WrapRow(8, 6, delete, WrapRow.setGrow(gap), unsaved, revert, save);
 
-        VBox right = new VBox(8, form, stepEditor, formButtons);
+        VBox right = UiZoom.spacing(new VBox(form, stepEditor, formButtons), 8);
         VBox.setVgrow(stepEditor, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
         right.setMinWidth(0);
-        VBox left = new VBox(6, list);
+        VBox left = UiZoom.spacing(new VBox(list), 6);
         left.setMinWidth(Region.USE_PREF_SIZE);
         VBox.setVgrow(list, Priority.ALWAYS);
         getChildren().addAll(left, right);
@@ -572,7 +572,7 @@ final class MacroSettingsPane extends HBox {
                     showStepDetail();
                 }
             });
-            HBox row = new HBox(8, kind, value, choose);
+            HBox row = UiZoom.spacing(new HBox(kind, value, choose), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             stepDetail.getChildren().add(row);
             return;
@@ -611,7 +611,7 @@ final class MacroSettingsPane extends HBox {
             prompt.setOnAction(
                     e -> replaceStep(index, MacroStep.key(steps.get(index).value(), prompt.isSelected())));
             // The prompt text says how ("Click the field and press the key."); a hint under it said it again.
-            HBox row = new HBox(8, kind, capture);
+            HBox row = UiZoom.spacing(new HBox(kind, capture), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             stepDetail.getChildren().addAll(row, prompt);
             return;
@@ -628,7 +628,7 @@ final class MacroSettingsPane extends HBox {
                         replaceStep(index, MacroStep.text(now == null ? "" : now, prompt.isSelected())));
         prompt.setOnAction(
                 e -> replaceStep(index, MacroStep.text(steps.get(index).value(), prompt.isSelected())));
-        HBox row = new HBox(8, kind, text);
+        HBox row = UiZoom.spacing(new HBox(kind, text), 8);
         row.setAlignment(Pos.TOP_LEFT);
         Label hint = new Label(tr("settings.macro.textHint"));
         hint.getStyleClass().add("settings-hint");
@@ -728,7 +728,7 @@ final class MacroSettingsPane extends HBox {
         TextField filter = new TextField();
         filter.setPromptText(tr("settings.macro.chooseCommand.filter"));
         ListView<SettingsWindow.Shortcut> commands = new ListView<>(shown);
-        commands.setPrefSize(520, 360);
+        UiZoom.prefSize(commands, 520, 360);
         commands.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(SettingsWindow.Shortcut s, boolean empty) {
@@ -755,7 +755,7 @@ final class MacroSettingsPane extends HBox {
         Dialog<ButtonType> dialog = Dialogs.styled(new Dialog<ButtonType>());
         dialog.initOwner(getScene() == null ? null : getScene().getWindow());
         dialog.setTitle(tr("settings.macro.chooseCommand.title"));
-        dialog.getDialogPane().setContent(new VBox(8, filter, commands));
+        dialog.getDialogPane().setContent(UiZoom.spacing(new VBox(filter, commands), 8));
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         Node ok = dialog.getDialogPane().lookupButton(ButtonType.OK);
         ok.disableProperty()

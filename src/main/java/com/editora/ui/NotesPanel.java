@@ -29,6 +29,7 @@ import javafx.scene.text.Text;
 import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -93,7 +94,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         getStyleClass().add("notes-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(4);
+        UiZoom.spacing(this, 4);
 
         filterField.setPromptText(tr("notes.filterPrompt"));
         filterField.getStyleClass().add("notes-filter");
@@ -126,10 +127,10 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         info.getStyleClass().add("info-badge");
         Tooltip infoTip = new Tooltip(SCOPE_HINT);
         infoTip.setWrapText(true);
-        infoTip.setMaxWidth(320);
+        UiZoom.follow(info, () -> infoTip.setMaxWidth(UiZoom.px(320)));
         Tooltip.install(info, infoTip);
 
-        header = new HBox(6, filterField, clear, showAll, info);
+        header = UiZoom.spacing(new HBox(filterField, clear, showAll, info), 6);
         header.getStyleClass().add("project-filter-bar");
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -320,7 +321,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 setContextMenu(new ContextMenu(deleteAll));
             } else if (item instanceof NoteRow n) {
                 setText(null);
-                HBox row = new HBox(4);
+                HBox row = UiZoom.spacing(new HBox(), 4);
                 row.setAlignment(Pos.CENTER_LEFT);
                 Text label = new Text(noteLabel(n.note()));
                 label.getStyleClass().add("note-label");

@@ -22,6 +22,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import com.editora.search.FuzzyMatch;
 import org.jspecify.annotations.Nullable;
 
@@ -143,7 +144,7 @@ public final class BranchPopup {
     public BranchPopup() {
         search.setPromptText(tr("branchpopup.searchPrompt"));
         list.setItems(items);
-        list.setPrefHeight(LIST_HEIGHT);
+        UiZoom.prefHeight(list, LIST_HEIGHT);
         list.setFocusTraversable(false);
         // Activation by mouse belongs to the cell (see RowCell): a handler on the list fired for a click
         // anywhere inside it — a section header, the empty space under the rows — and ran whichever row
@@ -160,13 +161,13 @@ public final class BranchPopup {
         remoteUrlLabel.setMaxWidth(Double.MAX_VALUE);
         remoteUrlLabel.setAlignment(Pos.CENTER_RIGHT);
         HBox.setHgrow(remoteUrlLabel, Priority.ALWAYS);
-        HBox header = new HBox(8, titleLabel, remoteUrlLabel);
+        HBox header = UiZoom.spacing(new HBox(titleLabel, remoteUrlLabel), 8);
         header.setAlignment(Pos.CENTER_LEFT);
         hint.getStyleClass().add("palette-hint");
-        content = new VBox(6, header, search, list, hint);
+        content = UiZoom.spacing(new VBox(header, search, list, hint), 6);
         content.getStyleClass().addAll("command-palette", "branch-popup");
-        content.setPrefWidth(WIDTH);
-        content.setMaxSize(WIDTH, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        UiZoom.prefWidth(content, WIDTH);
+        UiZoom.maxSize(content, WIDTH, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p for the picker
     }
 
@@ -556,7 +557,7 @@ public final class BranchPopup {
                 break;
             }
         }
-        showRowMenu(row, anchor, javafx.geometry.Side.BOTTOM, 24, 0);
+        showRowMenu(row, anchor, javafx.geometry.Side.BOTTOM, UiZoom.px(24), 0);
     }
 
     /** Builds and shows {@code row}'s secondary menu beside {@code anchor}; nothing when it has no actions. */
@@ -655,11 +656,11 @@ public final class BranchPopup {
             Node chevron = Icons.chevronRight();
             chevron.setRotate(folded ? 0 : 90);
             javafx.scene.layout.StackPane box = new javafx.scene.layout.StackPane(chevron);
-            box.setMinSize(CHEVRON_BOX, CHEVRON_BOX);
-            box.setPrefSize(CHEVRON_BOX, CHEVRON_BOX);
-            box.setMaxSize(CHEVRON_BOX, CHEVRON_BOX);
+            UiZoom.minSize(box, CHEVRON_BOX, CHEVRON_BOX);
+            UiZoom.prefSize(box, CHEVRON_BOX, CHEVRON_BOX);
+            UiZoom.maxSize(box, CHEVRON_BOX, CHEVRON_BOX);
             box.getStyleClass().add("branch-popup-chevron");
-            HBox row = new HBox(4, box, new Label(h.title()));
+            HBox row = UiZoom.spacing(new HBox(box, new Label(h.title())), 4);
             if (folded) {
                 Label count = new Label(Integer.toString(h.count()));
                 count.getStyleClass().add("branch-popup-count");
@@ -674,8 +675,8 @@ public final class BranchPopup {
             HBox.setHgrow(spacer, Priority.ALWAYS);
             HBox box = new HBox(0, icon, left, spacer, right);
             // The same two gaps the menu uses: a small one after the glyph, a wide one before the chord.
-            HBox.setMargin(left, new javafx.geometry.Insets(0, 0, 0, 8));
-            HBox.setMargin(right, new javafx.geometry.Insets(0, 0, 0, 18));
+            UiZoom.follow(left, () -> HBox.setMargin(left, UiZoom.insets(0, 0, 0, 8)));
+            UiZoom.follow(right, () -> HBox.setMargin(right, UiZoom.insets(0, 0, 0, 18)));
             box.setAlignment(Pos.CENTER_LEFT);
             return box;
         }
@@ -689,9 +690,9 @@ public final class BranchPopup {
          */
         private javafx.scene.layout.StackPane iconColumn(@Nullable Node glyph) {
             javafx.scene.layout.StackPane holder = new javafx.scene.layout.StackPane();
-            holder.setMinWidth(ICON_COLUMN);
-            holder.setPrefWidth(ICON_COLUMN);
-            holder.setMaxWidth(ICON_COLUMN);
+            UiZoom.minWidth(holder, ICON_COLUMN);
+            UiZoom.prefWidth(holder, ICON_COLUMN);
+            UiZoom.maxWidth(holder, ICON_COLUMN);
             holder.setAlignment(Pos.CENTER);
             if (glyph != null) {
                 holder.getChildren().add(glyph);
@@ -710,7 +711,7 @@ public final class BranchPopup {
             if (br.current()) {
                 name.getStyleClass().add("branch-current");
             }
-            HBox left = new HBox(6, name);
+            HBox left = UiZoom.spacing(new HBox(name), 6);
             left.setAlignment(Pos.CENTER_LEFT);
             String badge = trackBadge(br);
             if (!badge.isEmpty()) {
@@ -746,9 +747,9 @@ public final class BranchPopup {
             // branch's name out of line with every other row's.
             Node mark = br.current() ? Icons.check() : null;
             HBox box = new HBox(0, iconColumn(mark), left, spacer, up, more);
-            HBox.setMargin(left, new javafx.geometry.Insets(0, 0, 0, 8));
-            HBox.setMargin(up, new javafx.geometry.Insets(0, 0, 0, 18));
-            HBox.setMargin(more, new javafx.geometry.Insets(0, 0, 0, 6));
+            UiZoom.follow(left, () -> HBox.setMargin(left, UiZoom.insets(0, 0, 0, 8)));
+            UiZoom.follow(up, () -> HBox.setMargin(up, UiZoom.insets(0, 0, 0, 18)));
+            UiZoom.follow(more, () -> HBox.setMargin(more, UiZoom.insets(0, 0, 0, 6)));
             box.setAlignment(Pos.CENTER_LEFT);
             setTooltip(new Tooltip(branchTooltip(br)));
             return box;

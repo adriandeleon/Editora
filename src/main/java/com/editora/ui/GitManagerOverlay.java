@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -15,6 +14,7 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -84,11 +84,15 @@ final class GitManagerOverlay<T> {
                 Label sub = new Label(detail.apply(item));
                 sub.getStyleClass().add("git-manager-detail");
                 setText(null);
-                setGraphic(new VBox(1, name, sub));
+                setGraphic(UiZoom.spacing(new VBox(name, sub), 1));
             }
         });
 
-        FlowPane bar = new FlowPane(8, 6);
+        FlowPane bar = new FlowPane();
+        UiZoom.follow(bar, () -> {
+            bar.setHgap(UiZoom.px(8));
+            bar.setVgap(UiZoom.px(6));
+        });
         bar.setAlignment(Pos.CENTER_LEFT);
         buttons.clear();
         for (Action<T> action : actions) {
@@ -109,11 +113,11 @@ final class GitManagerOverlay<T> {
         }
         syncButtons();
 
-        VBox card = new VBox(10, titleLabel, list, bar);
+        VBox card = UiZoom.spacing(new VBox(titleLabel, list, bar), 10);
         card.getStyleClass().addAll("command-palette", "overlay-form", "git-manager");
-        card.setPadding(new Insets(14));
-        card.setPrefWidth(560);
-        card.setMaxSize(560, Region.USE_PREF_SIZE);
+        UiZoom.padding(card, 14);
+        UiZoom.prefWidth(card, 560);
+        UiZoom.maxSize(card, 560, Region.USE_PREF_SIZE);
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
         host.show(card, true, list::requestFocus, () -> {});
     }

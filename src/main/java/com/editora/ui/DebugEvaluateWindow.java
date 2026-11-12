@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -26,6 +25,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.dap.DapModels;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -139,7 +139,7 @@ final class DebugEvaluateWindow {
         historyButton.setOnShowing(e -> fillHistory());
         historyButton.getItems().add(new MenuItem()); // a MenuButton with no items does not open
 
-        HBox expressionRow = new HBox(2, field.node(), expand, historyButton);
+        HBox expressionRow = UiZoom.spacing(new HBox(field.node(), expand, historyButton), 2);
         expressionRow.setAlignment(Pos.TOP_LEFT);
         HBox.setHgrow(field.node(), Priority.ALWAYS);
         Label keys = new Label(tr("debugeval.keys"));
@@ -202,14 +202,14 @@ final class DebugEvaluateWindow {
         Button close = new Button(tr("debugeval.close"));
         close.setCancelButton(true);
         close.setOnAction(e -> stage.hide());
-        HBox buttons = new HBox(8, context, toWatches, evaluate, close);
+        HBox buttons = UiZoom.spacing(new HBox(context, toWatches, evaluate, close), 8);
         buttons.setAlignment(Pos.CENTER_LEFT);
 
-        VBox root = new VBox(6, expressionHeader, expressionRow, keys, resultHeader, tree, buttons);
-        root.setPadding(new Insets(10));
+        VBox root = UiZoom.spacing(new VBox(expressionHeader, expressionRow, keys, resultHeader, tree, buttons), 6);
+        UiZoom.padding(root, 10);
         root.getStyleClass().addAll("debug-panel", "debug-evaluate-window");
         root.setMinSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-        Scene scene = new Scene(root, WIDTH, HEIGHT);
+        Scene scene = new Scene(root, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
         // Esc closes the window, unless the completion list is open (its own filter, on the scene, closes that).
         scene.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ESCAPE && !e.isConsumed()) {
@@ -218,8 +218,10 @@ final class DebugEvaluateWindow {
             }
         });
         stage.setScene(scene);
-        stage.setMinWidth(420);
-        stage.setMinHeight(300);
+        UiZoom.follow(stage, () -> {
+            stage.setMinWidth(UiZoom.px(420));
+            stage.setMinHeight(UiZoom.px(300));
+        });
         refreshContext();
     }
 
@@ -307,7 +309,7 @@ final class DebugEvaluateWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
-            WindowPlacement.centerOnOwner(stage, owner, WIDTH, HEIGHT);
+            WindowPlacement.centerOnOwner(stage, owner, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
             stage.setX(stage.getX() + offset);
             stage.setY(stage.getY() + offset);
             stage.show();

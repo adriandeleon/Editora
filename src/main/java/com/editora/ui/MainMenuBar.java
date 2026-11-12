@@ -23,6 +23,7 @@ import javafx.scene.text.Text;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -97,11 +98,11 @@ final class MainMenuBar {
             if (r.title() == null) {
                 continue;
             }
-            MEASURE.setFont(Font.font(UI_FONT, UI_FONT_SIZE));
+            MEASURE.setFont(Font.font(UI_FONT, UiZoom.px(UI_FONT_SIZE)));
             MEASURE.setText(r.title().getText());
             max = Math.max(max, MEASURE.getLayoutBounds().getWidth());
         }
-        return Math.ceil(max) + 2;
+        return Math.ceil(max) + UiZoom.px(2);
     }
 
     /** The chrome font, matching styles/ui-font.css and the theme's 14px root size. */
@@ -137,6 +138,7 @@ final class MainMenuBar {
         // wholesale; the in-window bar then renders as nothing, which is why the chrome toggle still works.
         bar.setUseSystemMenuBar(systemMenu);
         refresh();
+        UiZoom.follow(bar, this::alignChordColumns); // the title column is measured at the zoomed font
     }
 
     /** (Re)builds every menu from the table for the current mode. */
@@ -277,8 +279,8 @@ final class MainMenuBar {
         // Spacing 0 with explicit margins: one gap belongs between the icon and its title (small) and a
         // different one before the chord column (wide), which a single spacing value cannot express.
         HBox box = new HBox(icon, title, spacer, chord);
-        HBox.setMargin(title, new javafx.geometry.Insets(0, 0, 0, 8));
-        HBox.setMargin(chord, new javafx.geometry.Insets(0, 0, 0, 18));
+        UiZoom.follow(title, () -> HBox.setMargin(title, UiZoom.insets(0, 0, 0, 8)));
+        UiZoom.follow(chord, () -> HBox.setMargin(chord, UiZoom.insets(0, 0, 0, 18)));
         box.setAlignment(Pos.CENTER_LEFT);
         // The popup sizes itself to its widest item and stretches the rest; without this the row would
         // hug its content and every chord would sit at a different x.
@@ -308,9 +310,9 @@ final class MainMenuBar {
      */
     private static javafx.scene.layout.StackPane iconColumn(@Nullable String commandId) {
         javafx.scene.layout.StackPane holder = new javafx.scene.layout.StackPane();
-        holder.setMinWidth(ICON_COLUMN);
-        holder.setPrefWidth(ICON_COLUMN);
-        holder.setMaxWidth(ICON_COLUMN);
+        UiZoom.minWidth(holder, ICON_COLUMN);
+        UiZoom.prefWidth(holder, ICON_COLUMN);
+        UiZoom.maxWidth(holder, ICON_COLUMN);
         holder.setAlignment(Pos.CENTER);
         holder.getStyleClass().add("menu-item-icon");
         Node glyph = commandId == null ? null : MenuBarIcons.forCommand(commandId);

@@ -11,6 +11,7 @@ import atlantafx.base.theme.NordLight;
 import atlantafx.base.theme.PrimerDark;
 import atlantafx.base.theme.PrimerLight;
 import atlantafx.base.theme.Theme;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 /** Catalog of AtlantaFX themes available in the Settings window. */
@@ -211,8 +212,37 @@ public final class Themes {
      * is told so the window frame and buttons JavaFX draws match it (see {@link WindowColorScheme}).
      */
     public static void applyAppTheme(String name) {
-        javafx.application.Application.setUserAgentStylesheet(stylesheetFor(name));
+        javafx.application.Application.setUserAgentStylesheet(userAgentStylesheetFor(name));
+        UiZoom.themeChanged();
         WindowColorScheme.apply(isDark(name));
+    }
+
+    /** The theme in force, so a change of UI zoom can set its sheet again at the new size. */
+    private static String appTheme = DEFAULT;
+
+    /**
+     * The user-agent sheet of theme {@code name} at the current UI zoom ({@link UiZoom#sheet}), remembered as
+     * the theme in force. {@link #stylesheetFor} is the same sheet at 100%, which print and export use.
+     */
+    public static @Nullable String userAgentStylesheetFor(String name) {
+        appTheme = name;
+        String sheet = stylesheetFor(name);
+        return sheet == null ? null : UiZoom.sheet(sheet);
+    }
+
+    /**
+     * Sets the UI zoom and restyles every open window at once: the theme's sheet, every window's own sheets
+     * and every size the code fixes follow it. FX thread.
+     *
+     * @return whether the zoom changed
+     */
+    public static boolean applyUiZoom(int percent) {
+        if (!UiZoom.apply(percent)) {
+            return false;
+        }
+        javafx.application.Application.setUserAgentStylesheet(userAgentStylesheetFor(appTheme));
+        UiZoom.themeChanged();
+        return true;
     }
 
     /**

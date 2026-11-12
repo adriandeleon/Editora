@@ -14,6 +14,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.config.ConfigManager;
+import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.ui.SettingsWindow.Card;
@@ -122,7 +123,7 @@ final class SettingsSnippetPages {
                 "snippets user prefix trigger expansion tab stops body disable bundled filter");
         Label help = SettingsWindow.note(tr("settings.snippet.help"));
         help.setWrapText(true);
-        help.setMaxWidth(460);
+        UiZoom.maxWidth(help, 460);
         w.cardRow(mainCard, Category.SNIPPETS, help, "snippets help tab stop placeholder variable");
         return p;
     }
@@ -157,7 +158,7 @@ final class SettingsSnippetPages {
         w.cardRow(list, Category.TEMPLATES, templatesEditor(), "templates file new from template scaffold bundled");
         Label help = SettingsWindow.note(tr("settings.template.help"));
         help.setWrapText(true);
-        help.setMaxWidth(460);
+        UiZoom.maxWidth(help, 460);
         w.cardRow(list, Category.TEMPLATES, help, "templates help variable cursor placeholder");
         return p;
     }
@@ -165,7 +166,7 @@ final class SettingsSnippetPages {
     /** Master-detail editor: the templates (bundled + user) on the left, a form for the selected one. */
     private javafx.scene.Node templatesEditor() {
         ListView<com.editora.template.Template> list = new ListView<>(templateItems);
-        list.setPrefSize(250, 420); // "Java Compact Source" + the bundled tag
+        UiZoom.prefSize(list, 250, 420); // "Java Compact Source" + the bundled tag
         VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
         list.setCellFactory(lv -> new ListCell<>() {
             {
@@ -188,7 +189,7 @@ final class SettingsSnippetPages {
                 Label nm = new Label(t.name() == null || t.name().isBlank() ? t.id() : t.name());
                 HBox.setHgrow(nm, Priority.ALWAYS);
                 nm.setMaxWidth(Double.MAX_VALUE);
-                HBox cell = new HBox(6, nm);
+                HBox cell = UiZoom.spacing(new HBox(nm), 6);
                 cell.setAlignment(Pos.CENTER_LEFT);
                 if (!templateUserIds.contains(t.id())) {
                     // Not the user's own file: say whose it is (editing it saves a user copy that overrides it).
@@ -217,17 +218,16 @@ final class SettingsSnippetPages {
         // A template body is a file: its lines are shown as they will be written (scrolling sideways), not
         // re-wrapped into something that no longer looks like the code it creates.
         body.setWrapText(false);
-        body.setPrefWidth(480);
+        UiZoom.prefWidth(body, 480);
         // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
-        body.setPrefHeight(180);
+        UiZoom.prefHeight(body, 180);
         installEmacsKeys(body); // basic Emacs caret movement in the settings scene
         body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, language.getText()));
         // Re-highlight when the template's language changes (even without a body edit).
         language.textProperty().addListener((o, a, b) -> highlightSnippetBody(body, language.getText()));
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
+        UiZoom.gaps(form, 8, 6);
         formRow(form, 0, tr("settings.template.id"), id);
         formRow(form, 1, tr("settings.template.name"), name);
         formRow(form, 2, tr("settings.template.description"), description);
@@ -239,17 +239,17 @@ final class SettingsSnippetPages {
         bodyLabel.setLabelFor(body);
         form.add(bodyLabel, 0, 5, 2, 1);
         form.add(body, 0, 6, 2, 1);
-        body.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
+        UiZoom.minWidth(body, SettingRowPane.FIELD_MIN_WIDTH);
         javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
         javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
 
         Label multiFileNote = SettingsWindow.note(tr("settings.template.multiFileNote"));
         multiFileNote.setWrapText(true);
-        multiFileNote.setMaxWidth(440);
+        UiZoom.maxWidth(multiFileNote, 440);
         multiFileNote.setVisible(false);
         multiFileNote.setManaged(false);
-        VBox right = new VBox(6, form, multiFileNote);
+        VBox right = UiZoom.spacing(new VBox(form, multiFileNote), 6);
         HBox.setHgrow(right, Priority.ALWAYS);
 
         // The form's texts now, and as they were when the selected row was loaded (or last committed).
@@ -479,15 +479,15 @@ final class SettingsSnippetPages {
             templateItems.remove(t);
             loadTemplates.run(); // re-derive: a removed override reverts to its bundled template
         });
-        HBox buttons = new HBox(6, add, remove);
-        VBox left = new VBox(6, list, buttons);
+        HBox buttons = UiZoom.spacing(new HBox(add, remove), 6);
+        VBox left = UiZoom.spacing(new VBox(list, buttons), 6);
         SettingsWindow.keepWidth(add, remove, left);
         VBox.setVgrow(left, Priority.ALWAYS);
 
         VBox.setVgrow(form, Priority.ALWAYS);
 
         loadTemplates.run();
-        HBox box = new HBox(12, left, right);
+        HBox box = UiZoom.spacing(new HBox(left, right), 12);
         box.setAlignment(Pos.TOP_LEFT);
         return box;
     }
@@ -544,7 +544,7 @@ final class SettingsSnippetPages {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof javafx.scene.layout.Region r) {
-            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
+            UiZoom.minWidth(r, SettingRowPane.FIELD_MIN_WIDTH);
         }
         // A tall multi-line body would otherwise centre its label; align it to the top of the field instead.
         if (field instanceof CodeArea) {

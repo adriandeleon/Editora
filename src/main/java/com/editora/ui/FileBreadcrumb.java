@@ -24,6 +24,7 @@ import javafx.util.Callback;
 import atlantafx.base.controls.Breadcrumbs;
 import atlantafx.base.controls.Breadcrumbs.BreadCrumbActionEvent;
 import atlantafx.base.controls.Breadcrumbs.BreadCrumbItem;
+import com.editora.editor.UiZoom;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
 
@@ -126,12 +127,12 @@ public class FileBreadcrumb extends StackPane {
         // Pin the bar to a single text line. AtlantaFX's crumb/divider nodes report a taller
         // preferred height than the 12px crumb text, so fix the height explicitly (fitToHeight
         // vertically centers the crumbs within it).
-        scroll.setMinHeight(BAR_HEIGHT);
-        scroll.setPrefHeight(BAR_HEIGHT);
-        scroll.setMaxHeight(BAR_HEIGHT);
-        setMinHeight(BAR_HEIGHT);
-        setPrefHeight(BAR_HEIGHT);
-        setMaxHeight(BAR_HEIGHT);
+        UiZoom.minHeight(scroll, BAR_HEIGHT);
+        UiZoom.prefHeight(scroll, BAR_HEIGHT);
+        UiZoom.maxHeight(scroll, BAR_HEIGHT);
+        UiZoom.minHeight(this, BAR_HEIGHT);
+        UiZoom.prefHeight(this, BAR_HEIGHT);
+        UiZoom.maxHeight(this, BAR_HEIGHT);
         getChildren().add(scroll);
 
         setVisible(false);

@@ -14,6 +14,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -40,7 +41,7 @@ final class SettingRowState {
     private final BooleanProperty modified = new SimpleBooleanProperty(false);
     private final Label scopeNote = new Label();
     private final Hyperlink reset = new Hyperlink(tr("settings.row.reset"));
-    private final HBox line = new HBox(8, scopeNote, reset);
+    private final HBox line = UiZoom.spacing(new HBox(scopeNote, reset), 8);
     private @Nullable Runnable resetAction;
 
     private SettingRowState(Node row) {

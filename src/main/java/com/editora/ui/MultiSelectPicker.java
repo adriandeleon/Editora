@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
@@ -15,6 +14,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+
+import com.editora.editor.UiZoom;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -47,7 +48,7 @@ public final class MultiSelectPicker {
             row.applyCss();
             widest = Math.max(widest, row.prefWidth(-1));
         }
-        return widest <= 0 ? current : Math.max(current, Math.min(MAX_WIDTH, widest + 64));
+        return widest <= 0 ? current : Math.max(current, Math.min(UiZoom.px(MAX_WIDTH), widest + UiZoom.px(64)));
     }
 
     /**
@@ -62,7 +63,7 @@ public final class MultiSelectPicker {
                     new javafx.scene.text.Text(it.label()).getLayoutBounds().getWidth());
         }
         // checkbox, list padding and scrollbar, card padding
-        return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, widest + 90));
+        return Math.max(UiZoom.px(MIN_WIDTH), Math.min(UiZoom.px(MAX_WIDTH), widest + UiZoom.px(90)));
     }
 
     /** One row: its display label and whether it starts ticked (jdtls pre-selects sensible defaults). */
@@ -99,8 +100,8 @@ public final class MultiSelectPicker {
         list.getSelectionModel().select(0);
         // A fixed row height, and the card no taller than its rows: it filled the window yet showed about two
         // rows, hiding the rename preview's "moves to …" row (Java review B10).
-        list.setFixedCellSize(ROW_HEIGHT);
-        list.setPrefHeight(Math.min(VISIBLE_ROWS, items.size()) * ROW_HEIGHT + 4);
+        UiZoom.follow(list, () -> list.setFixedCellSize(UiZoom.px(ROW_HEIGHT)));
+        UiZoom.prefHeight(list, Math.min(VISIBLE_ROWS, items.size()) * ROW_HEIGHT + 4);
 
         Label heading = new Label(title);
         heading.getStyleClass().add("overlay-title");
@@ -116,13 +117,13 @@ public final class MultiSelectPicker {
         none.setMinWidth(Region.USE_PREF_SIZE);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox header = new HBox(8, heading, spacer, all, none);
+        HBox header = UiZoom.spacing(new HBox(heading, spacer, all, none), 8);
         Label hint = new Label(hintText);
         hint.getStyleClass().add("overlay-hint");
 
-        VBox card = new VBox(8, header, list, hint);
+        VBox card = UiZoom.spacing(new VBox(header, list, hint), 8);
         card.getStyleClass().add("multi-select-picker");
-        card.setPadding(new Insets(12));
+        UiZoom.padding(card, 12);
         card.setPrefWidth(cardWidth(items));
         card.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         // The card owns its keys: without this the global KeyDispatcher would take C-n/C-p as caret motion.

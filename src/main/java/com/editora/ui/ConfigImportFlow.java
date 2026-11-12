@@ -29,6 +29,7 @@ import javafx.stage.Window;
 import com.editora.config.ConfigImport;
 import com.editora.config.ConfigImport.Part;
 import com.editora.config.SharedConfig;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -195,7 +196,7 @@ final class ConfigImportFlow {
         }
         dialog.setTitle(tr("dialog.importConfig.title"));
         dialog.setHeaderText(tr("dialog.importConfig.header", q.zipName()));
-        VBox content = new VBox(8);
+        VBox content = UiZoom.spacing(new VBox(), 8);
         Map<Part, CheckBox> boxes = new LinkedHashMap<>();
         for (ConfigImport.Summary s : q.parts()) {
             CheckBox box =
@@ -206,8 +207,8 @@ final class ConfigImportFlow {
             Label what = new Label(describe(s));
             what.getStyleClass().add("settings-row-desc");
             what.setWrapText(true);
-            what.setMaxWidth(480);
-            VBox.setMargin(what, new javafx.geometry.Insets(0, 0, 0, 24));
+            UiZoom.maxWidth(what, 480);
+            UiZoom.follow(what, () -> VBox.setMargin(what, UiZoom.insets(0, 0, 0, 24)));
             content.getChildren().addAll(box, what);
             boxes.put(s.part(), box);
         }
@@ -217,7 +218,7 @@ final class ConfigImportFlow {
         content.getChildren().add(note(tr("dialog.importConfig.backupNote")));
         javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(content);
         scroll.setFitToWidth(true);
-        scroll.setPrefViewportHeight(420);
+        UiZoom.follow(scroll, () -> scroll.setPrefViewportHeight(UiZoom.px(420)));
         dialog.getDialogPane().setContent(scroll);
         ButtonType importButton = new ButtonType(tr("dialog.importConfig.import"), ButtonBar.ButtonData.OK_DONE);
         ButtonType cancel = Dialogs.cancel();
@@ -264,7 +265,7 @@ final class ConfigImportFlow {
         Label l = new Label(text);
         l.getStyleClass().add("settings-hint");
         l.setWrapText(true);
-        l.setMaxWidth(480);
+        UiZoom.maxWidth(l, 480);
         return l;
     }
 

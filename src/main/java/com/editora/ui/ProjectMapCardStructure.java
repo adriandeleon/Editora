@@ -32,6 +32,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -155,7 +156,7 @@ final class ProjectMapCardStructure implements CardAttachment {
         close.getStyleClass().add("project-map-preview-button");
         Icons.name(close, tr("project.map.preview.hideStructure"));
         close.setOnAction(event -> card.setStructureShown(false));
-        HBox header = new HBox(6, title, close);
+        HBox header = UiZoom.spacing(new HBox(title, close), 6);
         header.getStyleClass().add("project-map-card-structure-header");
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -361,7 +362,15 @@ final class ProjectMapCardStructure implements CardAttachment {
     static double fit(int depth, double labelWidth, double lineWidth) {
         // Indent 10 a level, arrow 18, glyph 16 + gap 5, gap 5, cell padding 6, list padding 4, scroll bar 14,
         // border 2, and room for a bold keyword run the measure did not see.
-        double needed = depth * 10 + 18 + 21 + labelWidth * 1.06 + 5 + lineWidth + 6 + 4 + 14 + 2 + 8;
+        double needed = UiZoom.px(depth * 10 + 18 + 21)
+                + labelWidth * 1.06
+                + UiZoom.px(5)
+                + lineWidth
+                + UiZoom.px(6)
+                + UiZoom.px(4)
+                + UiZoom.px(14)
+                + UiZoom.px(2)
+                + UiZoom.px(8);
         return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.ceil(needed)));
     }
 
@@ -785,7 +794,7 @@ final class ProjectMapCardStructure implements CardAttachment {
         /** How many times the declaration is used, before its line (gap 11). */
         private final Label uses = new Label();
 
-        private final HBox box = new HBox(5, name, uses, line);
+        private final HBox box = UiZoom.spacing(new HBox(name, uses, line), 5);
         private final javafx.scene.shape.Rectangle nameClip = new javafx.scene.shape.Rectangle();
         private @Nullable String kind;
         private boolean hasKind;

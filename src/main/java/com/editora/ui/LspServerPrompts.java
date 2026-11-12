@@ -5,6 +5,7 @@ import java.util.List;
 
 import javafx.application.Platform;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -48,7 +49,7 @@ final class LspServerPrompts implements com.editora.lsp.LspClientUi {
         alert.initModality(javafx.stage.Modality.NONE); // the editor stays usable while it is asked
         alert.setTitle(serverLabel.apply(serverId));
         alert.setHeaderText(null);
-        alert.getDialogPane().setMinWidth(480);
+        UiZoom.minWidth(alert.getDialogPane(), 480);
         alert.setOnHidden(e -> {
             javafx.scene.control.ButtonType chosen = alert.getResult();
             answer.complete(

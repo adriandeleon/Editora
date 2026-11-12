@@ -29,6 +29,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.command.KeyDispatcher;
 import com.editora.editor.MenuChords;
+import com.editora.editor.UiZoom;
 import com.editora.terminal.DesktopNotifier;
 import com.editora.terminal.LinkActions;
 import com.editora.terminal.ProgramRun;
@@ -751,13 +752,13 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 ? tr("terminal.connectionLost")
                 : code == null ? tr("terminal.program.ended") : tr("run.exited", code);
         Label message = new Label(text);
-        HBox banner = new HBox(10, message);
+        HBox banner = UiZoom.spacing(new HBox(message), 10);
         banner.getStyleClass().add("terminal-exit-banner");
         banner.setAlignment(Pos.CENTER_LEFT);
         banner.setMaxHeight(Region.USE_PREF_SIZE);
         banner.setMaxWidth(Region.USE_PREF_SIZE);
         StackPane.setAlignment(banner, Pos.BOTTOM_RIGHT);
-        StackPane.setMargin(banner, new javafx.geometry.Insets(0, 18, 6, 0));
+        UiZoom.follow(banner, () -> StackPane.setMargin(banner, UiZoom.insets(0, 18, 6, 0)));
         ((StackPane) tab.getContent()).getChildren().add(banner);
         onExit.accept(lost || code == null ? -1 : code);
     }
@@ -955,7 +956,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 focusActive();
             }
         });
-        HBox banner = new HBox(10, message, reconnect);
+        HBox banner = UiZoom.spacing(new HBox(message, reconnect), 10);
         banner.getStyleClass().add("terminal-lost-banner");
         banner.setAlignment(Pos.CENTER_LEFT);
         // Above the text, taking rows from it, not over it: what the shell printed last (often the error) is
@@ -1584,7 +1585,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         }
         StackPane content = (StackPane) tab.getContent();
         StackPane.setAlignment(findBar, Pos.TOP_RIGHT);
-        StackPane.setMargin(findBar, new javafx.geometry.Insets(6, 18, 0, 0));
+        UiZoom.follow(findBar, () -> StackPane.setMargin(findBar, UiZoom.insets(6, 18, 0, 0)));
         content.getChildren().add(findBar);
         findBar.bindTo(view);
     }

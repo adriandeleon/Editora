@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.List;
 import java.util.function.Supplier;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
@@ -21,6 +20,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.MenuChords;
+import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
 
 import static com.editora.i18n.Messages.tr;
@@ -59,8 +59,8 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
         this.actions = actions;
         getStyleClass().add("remote-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
 
         empty.getStyleClass().add("remote-empty");
         empty.setWrapText(true);
@@ -99,7 +99,7 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        HBox buttons = new HBox(6, add, connect, spacer(), remove);
+        HBox buttons = UiZoom.spacing(new HBox(add, connect, spacer(), remove), 6);
         buttons.setAlignment(Pos.CENTER_LEFT);
 
         getChildren().addAll(list, buttons);
@@ -181,8 +181,8 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
             name.getStyleClass().add("remote-name");
             Label id = new Label(c.id());
             id.getStyleClass().add("remote-id");
-            VBox text = new VBox(1, name, id);
-            HBox row = new HBox(8, Icons.remote(), text);
+            VBox text = UiZoom.spacing(new VBox(name, id), 1);
+            HBox row = UiZoom.spacing(new HBox(Icons.remote(), text), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             setText(null);
             setGraphic(row);

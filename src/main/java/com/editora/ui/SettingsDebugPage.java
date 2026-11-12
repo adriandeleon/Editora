@@ -12,6 +12,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 import org.jspecify.annotations.Nullable;
@@ -70,7 +71,7 @@ final class SettingsDebugPage {
                 return label;
             }
         });
-        debugHotCodeReplaceCombo.setMinWidth(170);
+        UiZoom.minWidth(debugHotCodeReplaceCombo, 170);
         debugHotCodeReplaceCombo.valueProperty().addListener((obs, was, now) -> {
             if (w.loading || now == null) {
                 return;
@@ -312,7 +313,7 @@ final class SettingsDebugPage {
                 // C6); its Install (below) fetches jdtls and java-debug together, as the LSP page's Java row does.
                 javaDebugLspNote = SettingsWindow.note("");
                 javaDebugLspNote.setWrapText(true);
-                javaDebugLspNote.setMaxWidth(440);
+                UiZoom.maxWidth(javaDebugLspNote, 440);
                 javaDebugLspNote.getStyleClass().add("settings-row"); // own row: a wrapper left a gap (C209)
                 w.cardRow(c, Category.DEBUG, javaDebugLspNote, "debug java lsp language server jdtls off");
                 w.controlRow(
@@ -342,7 +343,7 @@ final class SettingsDebugPage {
                         debugSuspendAllThreadsCheck,
                         tr("settings.debug.suspendAllThreads.hint"),
                         "debug java suspend all threads policy breakpoint stop every thread");
-                debugExceptionTypesField.setPrefWidth(SettingsWindow.PATH_FIELD_WIDTH);
+                UiZoom.prefWidth(debugExceptionTypesField, SettingsWindow.PATH_FIELD_WIDTH);
                 w.controlRow(
                         c,
                         Category.DEBUG,
@@ -373,7 +374,7 @@ final class SettingsDebugPage {
                         tr("settings.debug.cppDebugger.hint"),
                         debugCppDebuggerCombo,
                         "debug c cpp c++ gdb lldb codelldb debugger dap");
-                debugGdbPathField.setPrefWidth(SettingsWindow.PATH_FIELD_WIDTH);
+                UiZoom.prefWidth(debugGdbPathField, SettingsWindow.PATH_FIELD_WIDTH);
                 w.controlRow(
                         c,
                         Category.DEBUG,

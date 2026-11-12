@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 
 import javafx.application.Platform;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
@@ -16,6 +15,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 
@@ -106,7 +106,7 @@ public final class HexViewerPane implements TabContent {
         Label label = new Label(message);
         label.getStyleClass().add(styleClass);
         StackPane center = new StackPane(label);
-        center.setPadding(new Insets(24));
+        UiZoom.padding(center, 24);
         root.setCenter(center);
     }
 
@@ -115,7 +115,7 @@ public final class HexViewerPane implements TabContent {
         sizeLabel.getStyleClass().add("hex-viewer-size");
         Label spacer = new Label();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox bar = new HBox(10, sizeLabel);
+        HBox bar = UiZoom.spacing(new HBox(sizeLabel), 10);
         if (truncated) {
             Label note = new Label(tr("hexviewer.truncated", shown, size));
             note.getStyleClass().add("hex-viewer-truncated");
@@ -126,7 +126,7 @@ public final class HexViewerPane implements TabContent {
         bar.getChildren().addAll(spacer, readOnly);
         bar.getStyleClass().add("hex-viewer-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new Insets(6, 10, 6, 10));
+        UiZoom.padding(bar, 6, 10, 6, 10);
         return bar;
     }
 

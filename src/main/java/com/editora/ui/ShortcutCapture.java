@@ -7,6 +7,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
 import com.editora.command.KeyDispatcher;
+import com.editora.editor.UiZoom;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -59,7 +60,7 @@ final class ShortcutCapture {
         capture.setPromptText(tr("settings.shortcuts.recording"));
         capture.setAccessibleText(tr("settings.shortcuts.recording"));
         capture.getStyleClass().add("shortcut-capture");
-        capture.setPrefWidth(280);
+        UiZoom.prefWidth(capture, 280);
         capture.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             e.consume();
             boolean modified = e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown();

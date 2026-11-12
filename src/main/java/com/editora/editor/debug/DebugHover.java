@@ -10,6 +10,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.util.Duration;
 
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -85,8 +86,8 @@ public final class DebugHover {
                 }
                 leave();
                 word = expression;
-                double sx = e.getScreenX() + 12;
-                double sy = e.getScreenY() + 16;
+                double sx = e.getScreenX() + UiZoom.px(12);
+                double sy = e.getScreenY() + UiZoom.px(16);
                 later(() -> evaluate(a, expression, sx, sy));
             } catch (RuntimeException ignored) {
                 // viewport mid-layout / hit miss — ignore
@@ -106,7 +107,8 @@ public final class DebugHover {
                             e.isControlDown() || e.isMetaDown() || e.isShiftDown(),
                             e.isStillSincePress(),
                             e.getClickCount())
-                    && quickEvaluate(a, e.getX(), e.getY(), e.getScreenX() + 12, e.getScreenY() + 16)) {
+                    && quickEvaluate(
+                            a, e.getX(), e.getY(), e.getScreenX() + UiZoom.px(12), e.getScreenY() + UiZoom.px(16))) {
                 e.consume();
             }
         });
@@ -179,7 +181,7 @@ public final class DebugHover {
         }
         Bounds b = a.getCaretBounds().orElse(null);
         double sx = b == null ? 0 : b.getMinX();
-        double sy = b == null ? 0 : b.getMaxY() + 2;
+        double sy = b == null ? 0 : b.getMaxY() + UiZoom.px(2);
         hide();
         word = expression;
         if (presenter != null) {
@@ -227,7 +229,8 @@ public final class DebugHover {
                 tooltip = new Tooltip();
                 tooltip.getStyleClass().add("debug-value-tooltip");
                 tooltip.setWrapText(true);
-                tooltip.setMaxWidth(480);
+                Tooltip made = tooltip;
+                UiZoom.follow(made, () -> made.setMaxWidth(UiZoom.px(480)));
             }
             tooltip.setText(expression + " = " + value);
             tooltip.show(a, sx, sy);

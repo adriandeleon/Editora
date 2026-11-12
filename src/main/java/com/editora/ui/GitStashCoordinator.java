@@ -13,6 +13,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.VBox;
 
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.UiZoom;
 import com.editora.git.GitService;
 import com.editora.git.StashOptions;
 import com.editora.git.StashOutcome;
@@ -167,7 +168,8 @@ final class GitStashCoordinator {
             untracked.setDisable(on);
             keepIndex.setDisable(on);
         });
-        VBox body = new VBox(8, new Label(tr("stash.prompt.label")), message, untracked, staged, keepIndex);
+        VBox body =
+                UiZoom.spacing(new VBox(new Label(tr("stash.prompt.label")), message, untracked, staged, keepIndex), 8);
         OverlayInput.show(
                 host.overlayHost(),
                 tr("stash.prompt.title"),

@@ -15,7 +15,6 @@ import java.util.function.IntFunction;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
-import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.AccessibleRole;
@@ -50,6 +49,7 @@ import com.editora.diff.DiffText;
 import com.editora.diff.PatchWriter;
 import com.editora.editor.MenuChords;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
@@ -892,40 +892,41 @@ public final class DiffViewerPane implements TabContent {
                 .bind(javafx.beans.binding.Bindings.createDoubleBinding(
                         () -> leftPaneWidth.get() <= 0
                                 ? Double.MAX_VALUE
-                                : Math.max(0, leftPaneWidth.get() - summary.getWidth() - TOOLBAR_H_PADDING),
+                                : Math.max(0, leftPaneWidth.get() - summary.getWidth() - UiZoom.px(TOOLBAR_H_PADDING)),
                         leftPaneWidth,
                         summary.widthProperty()));
-        HBox bar = new HBox(
-                2,
-                summary,
-                gap,
-                changeNav,
-                next,
-                prev,
-                sep(),
-                editResultButton,
-                applyAllButton,
-                undoButton,
-                saveButton,
-                sep(),
-                stageHunkButton,
-                unstageHunkButton,
-                revertHunkButton,
-                applyEofButton,
-                sep(),
-                whitespaceButton,
-                wordButton,
-                rulesButton,
-                contextButton,
-                wrapButton,
-                sep(),
-                toggleButton,
-                swapButton,
-                exportButton,
-                exitDiffUiButton);
+        HBox bar = UiZoom.spacing(
+                new HBox(
+                        summary,
+                        gap,
+                        changeNav,
+                        next,
+                        prev,
+                        sep(),
+                        editResultButton,
+                        applyAllButton,
+                        undoButton,
+                        saveButton,
+                        sep(),
+                        stageHunkButton,
+                        unstageHunkButton,
+                        revertHunkButton,
+                        applyEofButton,
+                        sep(),
+                        whitespaceButton,
+                        wordButton,
+                        rulesButton,
+                        contextButton,
+                        wrapButton,
+                        sep(),
+                        toggleButton,
+                        swapButton,
+                        exportButton,
+                        exitDiffUiButton),
+                2);
         bar.getStyleClass().add("diff-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new Insets(3, TOOLBAR_H_PADDING, 3, TOOLBAR_H_PADDING));
+        UiZoom.padding(bar, 3, TOOLBAR_H_PADDING, 3, TOOLBAR_H_PADDING);
         return bar;
     }
 
@@ -1159,7 +1160,7 @@ public final class DiffViewerPane implements TabContent {
     private static Tooltip descriptiveTooltip(String text) {
         Tooltip tooltip = new Tooltip(text);
         tooltip.setWrapText(true);
-        tooltip.setMaxWidth(360);
+        tooltip.setMaxWidth(UiZoom.px(360));
         tooltip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
         return tooltip;
     }
@@ -1341,12 +1342,12 @@ public final class DiffViewerPane implements TabContent {
         resetResultButton.setAccessibleText(tr("diff.resetResult"));
         resetResultButton.setTooltip(descriptiveTooltip(tr("diff.tooltip.resetResult")));
         resetResultButton.setOnAction(e -> resetResult());
-        HBox header = new HBox(6, label, spacer(), resetResultButton, applyResultButton);
+        HBox header = UiZoom.spacing(new HBox(label, spacer(), resetResultButton, applyResultButton), 6);
         header.setAlignment(Pos.CENTER_LEFT);
         var scroll = new org.fxmisc.flowless.VirtualizedScrollPane<>(resultArea);
-        VBox box = new VBox(4, header, scroll);
+        VBox box = UiZoom.spacing(new VBox(header, scroll), 4);
         box.getStyleClass().add("diff-result-box");
-        box.setPadding(new Insets(6, 8, 8, 8));
+        UiZoom.padding(box, 6, 8, 8, 8);
         VBox.setVgrow(scroll, Priority.ALWAYS);
         resultNode = box;
         return resultArea;
@@ -1542,8 +1543,8 @@ public final class DiffViewerPane implements TabContent {
         javafx.scene.layout.VBox rightBox = new javafx.scene.layout.VBox(rightHeader, rightScroll);
         // Reserve a narrow center track without changing SplitPane behavior. The transparent overlay below
         // paints through this gap and slightly into each side, producing JetBrains-style hunk ribbons.
-        leftBox.setPadding(new Insets(0, 14, 0, 0));
-        rightBox.setPadding(new Insets(0, 0, 0, 14));
+        UiZoom.padding(leftBox, 0, 14, 0, 0);
+        UiZoom.padding(rightBox, 0, 0, 0, 14);
         javafx.scene.layout.VBox.setVgrow(leftScroll, Priority.ALWAYS);
         javafx.scene.layout.VBox.setVgrow(rightScroll, Priority.ALWAYS);
         javafx.scene.control.SplitPane split = new javafx.scene.control.SplitPane(leftBox, rightBox);
@@ -1588,7 +1589,7 @@ public final class DiffViewerPane implements TabContent {
             left.layoutBoundsProperty().addListener((o, oldValue, newValue) -> requestDraw());
             right.layoutBoundsProperty().addListener((o, oldValue, newValue) -> requestDraw());
             sceneProperty().addListener((o, oldValue, newValue) -> requestDraw());
-            requestDraw();
+            UiZoom.follow(this, this::requestDraw);
         }
 
         void setSelectedBand(int selectedBand) {
@@ -1637,7 +1638,7 @@ public final class DiffViewerPane implements TabContent {
                 Color color = bandColor(band.kind(), selected);
                 graphics.setFill(color);
                 graphics.setStroke(color.deriveColor(0, 1, 0.82, Math.min(0.9, color.getOpacity() + 0.22)));
-                graphics.setLineWidth(selected ? 1.5 : 1.0);
+                graphics.setLineWidth(UiZoom.px(selected ? 1.5 : 1.0));
                 drawRibbon(graphics, leftX, rightX, leftBand, rightBand);
             }
             drawOverview(graphics, rightViewport);
@@ -1692,7 +1693,7 @@ public final class DiffViewerPane implements TabContent {
             double bottom = screenToLocal(rightViewport.getMinX(), rightViewport.getMaxY())
                     .getY();
             double trackHeight = Math.max(1, bottom - top);
-            double x = getWidth() - 5;
+            double x = getWidth() - UiZoom.px(5);
             for (int i = 0; i < bands.size(); i++) {
                 DiffConnectorModel.Band band = bands.get(i);
                 double y = top
@@ -1700,12 +1701,12 @@ public final class DiffViewerPane implements TabContent {
                                 * band.startRow()
                                 / Math.max(1, right.getParagraphs().size());
                 double height = Math.max(
-                        3,
+                        UiZoom.px(3),
                         trackHeight
                                 * (band.endRow() - band.startRow())
                                 / Math.max(1, right.getParagraphs().size()));
                 graphics.setFill(bandColor(band.kind(), i == selectedBand).deriveColor(0, 1, 1, 0.88));
-                graphics.fillRoundRect(x, y, i == selectedBand ? 4 : 3, height, 2, 2);
+                graphics.fillRoundRect(x, y, UiZoom.px(i == selectedBand ? 4 : 3), height, UiZoom.px(2), UiZoom.px(2));
             }
         }
 
@@ -2246,8 +2247,8 @@ public final class DiffViewerPane implements TabContent {
             if (showLineNumbers) {
                 int no = i < lineNos.length ? lineNos[i] : -1;
                 num.setText(no < 0 ? "" : String.valueOf(no));
-                num.setMinWidth(numW);
-                num.setPrefWidth(numW);
+                UiZoom.minWidth(num, numW);
+                UiZoom.prefWidth(num, numW);
             }
             num.setAlignment(Pos.CENTER_RIGHT);
             int sourceRow = i < sourceRows.length ? sourceRows[i] : -1;
@@ -2257,7 +2258,7 @@ public final class DiffViewerPane implements TabContent {
                     : area == leftArea ? (source.left() == null ? "" : "−") : (source.right() == null ? "" : "+");
             Label changeSign = new Label(symbol);
             changeSign.getStyleClass().add("diff-change-sign");
-            changeSign.setMinWidth(12);
+            UiZoom.minWidth(changeSign, 12);
             changeSign.setAccessibleText(
                     symbol.isEmpty() ? "" : tr(area == leftArea ? "diff.accessibleRemoved" : "diff.accessibleAdded"));
             HBox gutter;
@@ -2295,9 +2296,9 @@ public final class DiffViewerPane implements TabContent {
     /** A fixed-width gutter cell holding {@code icon} (clickable, with {@code tip}) or empty for alignment. */
     private HBox arrowSlot(@Nullable Node icon, String tip, Runnable onClick) {
         HBox slot = new HBox();
-        slot.setMinWidth(16);
-        slot.setPrefWidth(16);
-        slot.setMaxWidth(16);
+        UiZoom.minWidth(slot, 16);
+        UiZoom.prefWidth(slot, 16);
+        UiZoom.maxWidth(slot, 16);
         slot.setAlignment(Pos.CENTER);
         if (icon != null) {
             slot.getStyleClass().add("diff-apply");
@@ -2414,12 +2415,12 @@ public final class DiffViewerPane implements TabContent {
             int no = i < lineNos.length ? lineNos[i] : -1;
             Label num = new Label(no < 0 ? "" : String.valueOf(no));
             num.getStyleClass().add("diff-lineno");
-            num.setMinWidth(width * 9.0 + 8);
-            num.setPrefWidth(width * 9.0 + 8);
+            UiZoom.minWidth(num, width * 9.0 + 8);
+            UiZoom.prefWidth(num, width * 9.0 + 8);
             num.setAlignment(Pos.CENTER_RIGHT);
             Label sign = new Label(i < signs.length ? signs[i] : " ");
             sign.getStyleClass().add("diff-sign");
-            sign.setMinWidth(14);
+            UiZoom.minWidth(sign, 14);
             sign.setAlignment(Pos.CENTER);
             HBox box = new HBox(num, sign);
             box.setAlignment(Pos.CENTER_LEFT);

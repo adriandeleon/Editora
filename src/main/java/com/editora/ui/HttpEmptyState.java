@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.function.IntConsumer;
 
 import javafx.css.PseudoClass;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -21,6 +20,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -42,11 +42,11 @@ final class HttpEmptyState extends VBox {
 
     private final IntConsumer onRun;
     private final TextFlow title = new TextFlow();
-    private final HBox chordHint = new HBox(6);
+    private final HBox chordHint = UiZoom.spacing(new HBox(), 6);
     private final Label chord = new Label();
     private final Label gutterHint = new Label(tr("httppanel.empty.gutter"));
     private final Label listTitle = new Label(tr("httppanel.empty.requests"));
-    private final VBox rows = new VBox(1);
+    private final VBox rows = UiZoom.spacing(new VBox(), 1);
     private final ScrollPane rowsScroll = new ScrollPane(rows);
     private List<Row> shown = List.of();
     private int caretRow = -1;
@@ -56,8 +56,8 @@ final class HttpEmptyState extends VBox {
     HttpEmptyState(IntConsumer onRun) {
         this.onRun = onRun;
         getStyleClass().add("http-empty");
-        setSpacing(8);
-        setPadding(new Insets(14, 12, 8, 12));
+        UiZoom.spacing(this, 8);
+        UiZoom.padding(this, 14, 12, 8, 12);
         setFillWidth(true);
         title.getStyleClass().add("http-empty-title");
         chord.getStyleClass().addAll("chord-chip", "http-run-chord");
@@ -80,7 +80,7 @@ final class HttpEmptyState extends VBox {
         rowsScroll.getStyleClass().add("http-empty-scroll");
         rowsScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         VBox.setVgrow(rowsScroll, Priority.ALWAYS);
-        VBox.setMargin(listTitle, new Insets(8, 0, 0, 0));
+        UiZoom.follow(listTitle, () -> VBox.setMargin(listTitle, UiZoom.insets(8, 0, 0, 0)));
         getChildren().addAll(title, chordHint, gutterHint, listTitle, rowsScroll);
         setChord(null);
         setRequests(List.of(), -1);
@@ -163,7 +163,7 @@ final class HttpEmptyState extends VBox {
         name.getStyleClass().add("http-empty-name-cell");
         name.setMinWidth(0);
         name.setTextOverrun(OverrunStyle.ELLIPSIS);
-        HBox box = new HBox(10, method, name);
+        HBox box = UiZoom.spacing(new HBox(method, name), 10);
         box.setAlignment(Pos.CENTER_LEFT);
         String url = r.url() == null ? "" : r.url();
         if (!url.isEmpty() && !r.label().endsWith(url)) {

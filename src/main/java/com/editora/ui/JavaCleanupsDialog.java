@@ -11,6 +11,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import com.editora.lsp.JavaCleanups;
 import org.jspecify.annotations.Nullable;
 
@@ -46,11 +47,11 @@ final class JavaCleanupsDialog {
 
     static void show(@Nullable Window owner, List<String> chosen, Consumer<List<String>> onChosen) {
         List<CheckBox> boxes = boxes(chosen);
-        VBox list = new VBox(6);
+        VBox list = UiZoom.spacing(new VBox(), 6);
         list.getChildren().addAll(boxes);
         ScrollPane scroll = new ScrollPane(list);
         scroll.setFitToWidth(true);
-        scroll.setPrefViewportHeight(360);
+        UiZoom.follow(scroll, () -> scroll.setPrefViewportHeight(UiZoom.px(360)));
         Dialog<ButtonType> dialog = Dialogs.styled(new Dialog<>());
         if (owner != null) {
             dialog.initOwner(owner);

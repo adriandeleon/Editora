@@ -16,6 +16,7 @@ import javafx.scene.paint.Color;
 import com.editora.editor.CanvasGuards;
 import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
+import com.editora.editor.UiZoom;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -57,9 +58,9 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
         getStyleClass().add("markdown-lint-stripe");
         setMouseTransparent(true);
         setVisible(false);
-        setMinWidth(WIDTH);
-        setPrefWidth(WIDTH);
-        setMaxWidth(WIDTH);
+        UiZoom.minWidth(this, WIDTH);
+        UiZoom.prefWidth(this, WIDTH);
+        UiZoom.maxWidth(this, WIDTH);
         getChildren().add(canvas);
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         OverlayPalette.track(area, palette -> {
@@ -225,7 +226,7 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
         double markH = markHeight(h, total);
         for (MarkdownLint.Diagnostic d : marks) {
             double y = Math.min(yForLine(d.line() - 1, h, total), h - markH);
-            if (localY >= y - HIT_PAD && localY <= y + markH + HIT_PAD) {
+            if (localY >= y - UiZoom.px(HIT_PAD) && localY <= y + markH + UiZoom.px(HIT_PAD)) {
                 return d;
             }
         }
@@ -252,11 +253,12 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
             tooltip = new Tooltip();
             tooltip.getStyleClass().add("todo-stripe-tooltip");
             tooltip.setWrapText(true);
-            tooltip.setMaxWidth(480);
+            Tooltip made = tooltip;
+            UiZoom.follow(made, () -> made.setMaxWidth(UiZoom.px(480)));
         }
         tooltip.setText(text);
         shownText = text;
-        tooltip.show(this, e.getScreenX() - 12 - tooltip.getWidth(), e.getScreenY() + 14);
+        tooltip.show(this, e.getScreenX() - UiZoom.px(12) - tooltip.getWidth(), e.getScreenY() + UiZoom.px(14));
     }
 
     private void onClick(MouseEvent e) {

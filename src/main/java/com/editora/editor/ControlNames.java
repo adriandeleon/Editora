@@ -28,7 +28,7 @@ public final class ControlNames {
         // A name that is a sentence (the diff bar's, a toggle that explains itself) wraps instead of running
         // the width of the screen; a short one is unaffected.
         tooltip.setWrapText(true);
-        tooltip.setMaxWidth(360);
+        UiZoom.follow(control, "tooltipWidth", () -> tooltip.setMaxWidth(UiZoom.px(360)));
         tooltip.setShowDelay(TOOLTIP_DELAY);
         control.setTooltip(tooltip);
         return control;

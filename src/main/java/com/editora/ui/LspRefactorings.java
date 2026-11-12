@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.lsp.JdtlsGenerate;
 import com.editora.lsp.JdtlsRefactor;
 import com.editora.lsp.LspManager;
@@ -376,7 +377,7 @@ final class LspRefactorings {
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.lsp.moveProblems.title"));
         confirm.setHeaderText(tr("dialog.lsp.moveProblems.header"));
-        confirm.getDialogPane().setMinWidth(520);
+        UiZoom.minWidth(confirm.getDialogPane(), 520);
         // The move may break code: Enter cancels.
         Dialogs.defaultTo(confirm, cancel);
         return confirm.showAndWait().orElse(cancel) == proceed;

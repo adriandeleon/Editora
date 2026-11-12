@@ -22,6 +22,7 @@ import javafx.stage.Window;
 
 import com.editora.completion.Completion;
 import com.editora.completion.MatchHighlighter;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -71,8 +72,8 @@ public final class CompletionPopup {
     public CompletionPopup() {
         list.getStyleClass().add("completion-list");
         list.setFocusTraversable(false);
-        list.setFixedCellSize(ROW_HEIGHT);
-        list.setPrefWidth(MIN_WIDTH);
+        UiZoom.follow(list, () -> list.setFixedCellSize(UiZoom.px(ROW_HEIGHT)));
+        list.setPrefWidth(UiZoom.px(MIN_WIDTH));
         list.setCellFactory(v -> new CompletionCell());
         list.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY) {
@@ -92,7 +93,7 @@ public final class CompletionPopup {
         // falls back to bare default colors. Attach it to the content subtree (the note-tooltip idiom).
         java.net.URL css = CompletionPopup.class.getResource("/com/editora/styles/app.css");
         if (css != null) {
-            box.getStylesheets().add(css.toExternalForm());
+            box.getStylesheets().add(com.editora.editor.UiZoom.sheet(css.toExternalForm()));
         }
         popup.getContent().add(box);
         popup.setAutoHide(true);
@@ -209,7 +210,7 @@ public final class CompletionPopup {
         scrollIntoView(sel, items.size());
         int rows = Math.min(items.size(), VISIBLE_ROWS);
         // Exact fit so no vertical scrollbar shows unless the list actually overflows (> VISIBLE_ROWS).
-        double h = rows * ROW_HEIGHT + 2; // +2 for the list's 1px top/bottom border
+        double h = rows * UiZoom.px(ROW_HEIGHT) + 2; // +2 for the list's 1px top/bottom border
         list.setPrefHeight(h);
         list.setMinHeight(h);
         list.setMaxHeight(h);
@@ -314,8 +315,8 @@ public final class CompletionPopup {
      * the detail Label ellipsizes.
      */
     static double contentWidth(List<Completion> items) {
-        Font labelFont = Font.font(13);
-        Font detailFont = Font.font(11);
+        Font labelFont = Font.font(UiZoom.px(13));
+        Font detailFont = Font.font(UiZoom.px(11));
         Text measure = new Text();
         double widest = 0;
         boolean overflow = items.size() > VISIBLE_ROWS;
@@ -330,17 +331,17 @@ public final class CompletionPopup {
             if (!d.isEmpty()) {
                 measure.setFont(detailFont);
                 measure.setText(d);
-                detailW = Math.min(measure.getLayoutBounds().getWidth(), DETAIL_MAX_WIDTH);
+                detailW = Math.min(measure.getLayoutBounds().getWidth(), UiZoom.px(DETAIL_MAX_WIDTH));
             }
-            double row = ICON_WIDTH
-                    + ROW_GAP
+            double row = UiZoom.px(ICON_WIDTH)
+                    + UiZoom.px(ROW_GAP)
                     + labelW
-                    + (detailW > 0 ? LABEL_DETAIL_GAP + detailW : 0)
-                    + H_PADDING
-                    + (overflow ? SCROLLBAR_ALLOWANCE : 0);
+                    + (detailW > 0 ? UiZoom.px(LABEL_DETAIL_GAP) + detailW : 0)
+                    + UiZoom.px(H_PADDING)
+                    + (overflow ? UiZoom.px(SCROLLBAR_ALLOWANCE) : 0);
             widest = Math.max(widest, row);
         }
-        return Math.max(MIN_WIDTH, Math.min(widest, MAX_WIDTH));
+        return Math.max(UiZoom.px(MIN_WIDTH), Math.min(widest, UiZoom.px(MAX_WIDTH)));
     }
 
     /** Pure: what a screen reader says for a row — its label, then its detail's first line (a type, a module). */
@@ -359,10 +360,10 @@ public final class CompletionPopup {
             getStyleClass().add("completion-cell");
             label.getStyleClass().add("completion-label");
             detail.getStyleClass().add("completion-detail");
-            detail.setMaxWidth(DETAIL_MAX_WIDTH);
+            UiZoom.maxWidth(detail, DETAIL_MAX_WIDTH);
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
-            row = new HBox(6, label, spacer, detail);
+            row = UiZoom.spacing(new HBox(label, spacer, detail), 6);
             row.setAlignment(Pos.CENTER_LEFT);
         }
 

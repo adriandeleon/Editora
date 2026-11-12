@@ -7,6 +7,8 @@ import javafx.scene.control.TextArea;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -43,7 +45,7 @@ final class PluginDialogs {
         list.setWrapText(true);
         list.setPrefColumnCount(COLUMNS);
         list.setPrefRowCount(Math.min(CONSENT_ROWS, rows(capabilities)));
-        list.setMaxHeight(320);
+        UiZoom.maxHeight(list, 320);
         list.getStyleClass().add("plugin-consent-list");
         list.setAccessibleText(header);
         Label introLabel = new Label(intro);
@@ -51,8 +53,8 @@ final class PluginDialogs {
         Label warn = new Label(tr("dialog.plugins.trustWarning"));
         warn.setWrapText(true);
         warn.getStyleClass().add("settings-hint");
-        VBox content = new VBox(8, introLabel, list, warn);
-        content.setPrefWidth(520);
+        VBox content = UiZoom.spacing(new VBox(introLabel, list, warn), 8);
+        UiZoom.prefWidth(content, 520);
         alert.getDialogPane().setContent(content);
         // Cancel is the default: Enter on a dialog that appeared mid-typing must not arm code.
         Dialogs.defaultTo(alert, cancel);
@@ -77,7 +79,7 @@ final class PluginDialogs {
         }
         alert.setTitle(tr("dialog.plugins.title"));
         alert.setHeaderText(header);
-        alert.getDialogPane().setMinWidth(480);
+        UiZoom.minWidth(alert.getDialogPane(), 480);
         if (destructive) {
             Dialogs.destructive(alert, accept);
         }

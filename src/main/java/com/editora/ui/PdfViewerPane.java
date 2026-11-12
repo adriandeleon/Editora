@@ -28,6 +28,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.PreviewImageLoader;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -152,11 +153,12 @@ public final class PdfViewerPane implements TabContent {
         readOnly.getStyleClass().add("pdf-viewer-readonly");
         prevButton.setDisable(true);
         nextButton.setDisable(true);
-        HBox bar = new HBox(
-                6, prevButton, pageLabel, nextButton, sep(), out, in, fit, actual, zoomLabel, spacer, readOnly);
+        HBox bar = UiZoom.spacing(
+                new HBox(prevButton, pageLabel, nextButton, sep(), out, in, fit, actual, zoomLabel, spacer, readOnly),
+                6);
         bar.getStyleClass().add("pdf-viewer-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new Insets(6, 10, 6, 10));
+        UiZoom.padding(bar, 6, 10, 6, 10);
         return bar;
     }
 
@@ -305,7 +307,7 @@ public final class PdfViewerPane implements TabContent {
         Label label = new Label(message);
         label.getStyleClass().add("pdf-viewer-error");
         StackPane center = new StackPane(label);
-        center.setPadding(new Insets(24));
+        UiZoom.padding(center, 24);
         root.setCenter(center);
         root.setTop(null);
     }

@@ -22,6 +22,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.dap.DapModels;
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -53,7 +54,7 @@ final class DebugExceptionCard {
     private final Label title = new Label();
     private final Label type = new Label();
     private final Label message = new Label();
-    private final VBox causes = new VBox(2);
+    private final VBox causes = UiZoom.spacing(new VBox(), 2);
     private final Label trace = new Label();
     private final ScrollPane traceScroll = new ScrollPane(trace);
     private final Button copy = new Button(tr("debug.exceptionCard.copy"));
@@ -93,7 +94,7 @@ final class DebugExceptionCard {
         trace.getStyleClass().add("debug-value-line");
         traceScroll.getStyleClass().add("debug-exception-trace");
         traceScroll.setFitToWidth(true);
-        traceScroll.setMaxHeight(MAX_TRACE_LINES * 17 + 8);
+        UiZoom.maxHeight(traceScroll, MAX_TRACE_LINES * 17 + 8);
         for (Button b : List.of(copy, caughtOff, close)) {
             b.getStyleClass().add("small");
             b.setFocusTraversable(false);
@@ -116,13 +117,13 @@ final class DebugExceptionCard {
         });
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox head = new HBox(6, title, gap, close);
+        HBox head = UiZoom.spacing(new HBox(title, gap, close), 6);
         head.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        HBox buttons = new HBox(6, copy, caughtOff);
-        card = new VBox(4, head, type, message, causes, traceScroll, buttons);
+        HBox buttons = UiZoom.spacing(new HBox(copy, caughtOff), 6);
+        card = UiZoom.spacing(new VBox(head, type, message, causes, traceScroll, buttons), 4);
         card.getStyleClass().addAll("debug-panel", "debug-value-popup", "debug-exception-card");
-        card.setPrefWidth(WIDTH);
-        card.setMaxWidth(WIDTH);
+        UiZoom.prefWidth(card, WIDTH);
+        UiZoom.maxWidth(card, WIDTH);
         popup.setSkin(new Skin<>() {
             @Override
             public PopupControl getSkinnable() {
@@ -282,8 +283,9 @@ final class DebugExceptionCard {
             }
             return false;
         }
-        double x = Math.max(whole.getMinX(), Math.min(line.getMinX() + 24, whole.getMaxX() - WIDTH));
-        double y = line.getMaxY() + 2;
+        double x =
+                Math.max(whole.getMinX(), Math.min(line.getMinX() + UiZoom.px(24), whole.getMaxX() - UiZoom.px(WIDTH)));
+        double y = line.getMaxY() + UiZoom.px(2);
         if (popup.isShowing()) {
             popup.setAnchorX(x);
             popup.setAnchorY(y);

@@ -65,9 +65,9 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
         // the stripe is empty; only when it carries marks does it capture hover/click.
         setMouseTransparent(true);
         setVisible(false);
-        setMinWidth(WIDTH);
-        setPrefWidth(WIDTH);
-        setMaxWidth(WIDTH);
+        UiZoom.minWidth(this, WIDTH);
+        UiZoom.prefWidth(this, WIDTH);
+        UiZoom.maxWidth(this, WIDTH);
         getChildren().add(canvas);
         // Redraw on content edits (paragraph count shifts the line→y mapping). We deliberately do NOT
         // listen to totalHeightEstimateProperty: adding a listener makes RichTextFX compute that estimate
@@ -258,7 +258,7 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
                     continue;
                 }
                 double y = Math.min(yForLine(d.startLine(), h, total), h - markH);
-                if (localY >= y - HIT_PAD && localY <= y + markH + HIT_PAD) {
+                if (localY >= y - UiZoom.px(HIT_PAD) && localY <= y + markH + UiZoom.px(HIT_PAD)) {
                     hits.add(d);
                 }
             }
@@ -299,11 +299,12 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
             tooltip = new Tooltip();
             tooltip.getStyleClass().add("lsp-diagnostic-tooltip");
             tooltip.setWrapText(true);
-            tooltip.setMaxWidth(480);
+            Tooltip made = tooltip;
+            UiZoom.follow(made, () -> made.setMaxWidth(UiZoom.px(480)));
         }
         tooltip.setText(text);
         shownText = text;
-        tooltip.show(this, e.getScreenX() - 12 - tooltip.getWidth(), e.getScreenY() + 14);
+        tooltip.show(this, e.getScreenX() - UiZoom.px(12) - tooltip.getWidth(), e.getScreenY() + UiZoom.px(14));
     }
 
     private void onClick(MouseEvent e) {

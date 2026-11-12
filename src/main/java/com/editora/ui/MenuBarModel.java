@@ -234,9 +234,22 @@ final class MenuBarModel {
                                 "view.toggleLineNumbers",
                                 "view.toggleWhitespace",
                                 SEPARATOR,
+                                submenu("menubar.view.zoom"),
+                                SEPARATOR,
                                 "view.toggleSimpleMode",
                                 "view.toggleZen",
-                                "view.welcome")),
+                                "view.welcome"),
+                        List.of(new MenuSpec(
+                                "menubar.view.zoom",
+                                // The text zoom is the editor's; the three below it scale the whole interface.
+                                List.of(
+                                        "view.textZoomIn",
+                                        "view.textZoomOut",
+                                        "view.textZoomReset",
+                                        SEPARATOR,
+                                        "view.uiZoomIn",
+                                        "view.uiZoomOut",
+                                        "view.uiZoomReset")))),
                 new MenuSpec(
                         "menubar.navigate",
                         List.of(

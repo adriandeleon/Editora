@@ -17,6 +17,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.transform.Scale;
 
+import com.editora.editor.UiZoom;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -31,7 +33,7 @@ abstract class MapFloatingCard extends StackPane {
     protected final BorderPane frame = new BorderPane();
 
     protected final Label title = new Label();
-    private final HBox titleBar = new HBox(7);
+    private final HBox titleBar = UiZoom.spacing(new HBox(), 7);
     private final Button close = new Button("×");
     private final Region resizeGrip = new Region();
     private final Scale mapZoom = new Scale(1, 1, 0, 0);
@@ -86,6 +88,7 @@ abstract class MapFloatingCard extends StackPane {
         resizeGrip.addEventHandler(MouseEvent.MOUSE_PRESSED, this::resizePressed);
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
         getChildren().addAll(frame, resizeGrip);
+        UiZoom.follow(this, this::requestLayout);
         getTransforms().add(mapZoom);
         // A filter, not a handler: the title bar (its drag) and the content (the text area) consume the press, so a
         // handler never heard a click there and a card under another stayed under it.
@@ -176,7 +179,7 @@ abstract class MapFloatingCard extends StackPane {
     @Override
     protected void layoutChildren() {
         frame.resizeRelocate(0, 0, getWidth(), getHeight());
-        double grip = 18;
+        double grip = UiZoom.px(18);
         resizeGrip.resizeRelocate(Math.max(0, getWidth() - grip), Math.max(0, getHeight() - grip), grip, grip);
     }
 

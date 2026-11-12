@@ -399,7 +399,10 @@ public enum ConfigSchema {
                     Map.entry(167, (Migration) ConfigMigrations::identity),
                     // v168→169: + debugStepTiming (on) — the time a step or Continue ran, after the line it stopped
                     // on. Additive.
-                    Map.entry(168, (Migration) ConfigMigrations::identity)),
+                    Map.entry(168, (Migration) ConfigMigrations::identity),
+                    // v169→170: + uiZoom (100) — the UI zoom, in percent: the whole interface, as against the
+                    // editor's text zoom (fontZoom). Additive.
+                    Map.entry(169, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

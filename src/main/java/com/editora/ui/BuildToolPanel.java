@@ -11,7 +11,6 @@ import java.util.function.Consumer;
 
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanWrapper;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
@@ -28,6 +27,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Window;
 
 import com.editora.build.OutputStyle;
+import com.editora.editor.UiZoom;
 import com.editora.git.GitOutputDiffs;
 import com.editora.git.GitOutputHighlights;
 import com.editora.git.GitOutputLinks;
@@ -126,8 +126,8 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     public BuildToolPanel() {
         getStyleClass().add("run-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
 
         status.getStyleClass().add("run-status");
         stopButton.setText(tr("run.stop"));
@@ -163,8 +163,18 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         previousButton.setDisable(true);
         previousButton.selectedProperty().addListener((obs, was, now) -> showPrevious(now));
 
-        HBox header = new HBox(
-                8, busy, runtime, status, spacer(), findButton, previousButton, saveButton, clearButton, stopButton);
+        HBox header = UiZoom.spacing(
+                new HBox(
+                        busy,
+                        runtime,
+                        status,
+                        spacer(),
+                        findButton,
+                        previousButton,
+                        saveButton,
+                        clearButton,
+                        stopButton),
+                8);
         header.setAlignment(Pos.CENTER_LEFT);
 
         for (CodeArea area : List.of(output, previous)) {

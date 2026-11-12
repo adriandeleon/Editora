@@ -8,6 +8,7 @@ import java.util.concurrent.Executor;
 import javafx.application.Platform;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.lsp.LspManager;
 import com.editora.ui.LspCoordinator.WorkspaceFileIdentity;
 import com.editora.ui.LspCoordinator.WorkspaceFileOperations;
@@ -361,7 +362,7 @@ final class LspWorkspaceEdits {
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.lsp.destructiveEdit.title"));
         confirm.setHeaderText(tr("dialog.lsp.destructiveEdit.header"));
-        confirm.getDialogPane().setMinWidth(520);
+        UiZoom.minWidth(confirm.getDialogPane(), 520);
         // The edit deletes or overwrites files: its button is red, and Enter answers Cancel, the default.
         Dialogs.destructive(confirm, apply);
         return confirm.showAndWait().orElse(cancel) == apply;
@@ -1170,7 +1171,7 @@ final class LspWorkspaceEdits {
                 interrupted.committed()
                         ? "dialog.lsp.interruptedEdit.headerCommitted"
                         : "dialog.lsp.interruptedEdit.header"));
-        ask.getDialogPane().setMinWidth(560);
+        UiZoom.minWidth(ask.getDialogPane(), 560);
         javafx.scene.control.ButtonType answer = ask.showAndWait().orElse(later);
         if (answer == act) {
             return interrupted.committed() ? InterruptedEditChoice.REMOVE : InterruptedEditChoice.RESTORE;

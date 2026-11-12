@@ -12,7 +12,6 @@ import java.util.Map;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceBox;
@@ -37,6 +36,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.MenuChords;
+import com.editora.editor.UiZoom;
 import com.editora.github.GitHubItemFilter;
 import com.editora.github.GitHubListQuery;
 import com.editora.github.IssueListParser.Issue;
@@ -227,7 +227,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
 
     private final Label branch = new Label();
     private final Label account = new Label();
-    private final HBox contextRow = new HBox(14, repository, branch, account);
+    private final HBox contextRow = UiZoom.spacing(new HBox(repository, branch, account), 14);
 
     private final ChoiceBox<GitHubListQuery.State> stateFilter = new ChoiceBox<>();
     private final ToggleButton mineToggle = new ToggleButton(tr("github.panel.mine"));
@@ -252,8 +252,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         getStyleClass().add("git-log-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(4);
-        setPadding(new Insets(4));
+        UiZoom.spacing(this, 4);
+        UiZoom.padding(this, 4);
 
         ToggleGroup group = new ToggleGroup();
         prsToggle.setToggleGroup(group);
@@ -325,7 +325,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         stateFilter.setTooltip(new Tooltip(tr("github.panel.stateTip")));
         stateFilter.getStyleClass().add("github-state-filter");
         // A fixed width: sized from its items it shrank below its own label when the segment's items changed.
-        stateFilter.setPrefWidth(112);
+        UiZoom.prefWidth(stateFilter, 112);
         stateFilter.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
         stateFilter.valueProperty().addListener((o, was, now) -> {
             if (!syncingFilter && now != null) {
@@ -336,17 +336,18 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         mineToggle.getStyleClass().add("github-tab");
         mineToggle.setTooltip(new Tooltip(tr("github.panel.mineTip")));
         mineToggle.setOnAction(e -> filterChanged());
-        busy.setPrefSize(14, 14);
-        busy.setMaxSize(14, 14);
+        UiZoom.prefSize(busy, 14, 14);
+        UiZoom.maxSize(busy, 14, 14);
         busy.setVisible(false);
         busy.setManaged(false);
-        HBox.setMargin(stateFilter, new Insets(0, 6, 0, 0));
-        HBox.setMargin(mineToggle, new Insets(0, 6, 0, 0));
-        HBox.setMargin(busy, new Insets(0, 8, 0, 0));
+        UiZoom.follow(stateFilter, () -> HBox.setMargin(stateFilter, UiZoom.insets(0, 6, 0, 0)));
+        UiZoom.follow(mineToggle, () -> HBox.setMargin(mineToggle, UiZoom.insets(0, 6, 0, 0)));
+        UiZoom.follow(busy, () -> HBox.setMargin(busy, UiZoom.insets(0, 8, 0, 0)));
         syncFilterControls(Mode.PRS);
 
-        HBox toolbar = new HBox(
-                2, prsToggle, issuesToggle, runsToggle, spacer, busy, stateFilter, mineToggle, createPr, refresh);
+        HBox toolbar = UiZoom.spacing(
+                new HBox(prsToggle, issuesToggle, runsToggle, spacer, busy, stateFilter, mineToggle, createPr, refresh),
+                2);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
@@ -357,7 +358,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
         HBox.setHgrow(filterField, Priority.ALWAYS);
         Button clearFilter = ClearableField.clearButton(filterField);
-        HBox filterRow = new HBox(4, filterField, clearFilter);
+        HBox filterRow = UiZoom.spacing(new HBox(filterField, clearFilter), 4);
         filterRow.getStyleClass().add("project-filter-bar");
         filterRow.setAlignment(Pos.CENTER_LEFT);
         FilterFieldNav.install(filterField, list, this::activateSelected);
@@ -611,11 +612,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
 
     private static VBox buildLoading() {
         ProgressIndicator spinner = new ProgressIndicator();
-        spinner.setPrefSize(28, 28);
-        spinner.setMaxSize(28, 28);
+        UiZoom.prefSize(spinner, 28, 28);
+        UiZoom.maxSize(spinner, 28, 28);
         Label label = new Label(tr("github.panel.loading"));
         label.getStyleClass().add("tool-window-placeholder");
-        VBox box = new VBox(8, spinner, label);
+        VBox box = UiZoom.spacing(new VBox(spinner, label), 8);
         box.setAlignment(Pos.CENTER);
         return box;
     }
@@ -804,7 +805,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             title.setMaxWidth(Double.MAX_VALUE);
             title.setTextOverrun(OverrunStyle.ELLIPSIS);
             HBox.setHgrow(title, Priority.ALWAYS);
-            HBox row = new HBox(8);
+            HBox row = UiZoom.spacing(new HBox(), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             for (Label l : lead) {
                 l.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);

@@ -22,6 +22,7 @@ import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -132,7 +133,7 @@ final class ToolWindowsSettingsPane {
         // explanation as its description), and show / side / reorder pinned right.
         Label title = new Label(tw.getTitle());
         title.getStyleClass().add("settings-row-title");
-        VBox main = new VBox(2, title);
+        VBox main = UiZoom.spacing(new VBox(title), 2);
         HBox.setHgrow(main, Priority.ALWAYS);
         Label disabledNote = null;
         String key = disabledKey(tw.getId());
@@ -148,10 +149,10 @@ final class ToolWindowsSettingsPane {
         show.setAccessibleText(tw.getTitle()); // this row is hand-built, so name its controls here
         sideCombo.setAccessibleText(tw.getTitle());
         title.setLabelFor(show);
-        HBox controls = new HBox(8, show, sideCombo, new HBox(2, moveUp, moveDown));
+        HBox controls = UiZoom.spacing(new HBox(show, sideCombo, UiZoom.spacing(new HBox(moveUp, moveDown), 2)), 8);
         controls.setAlignment(Pos.CENTER_RIGHT);
         controls.setMinWidth(Region.USE_PREF_SIZE);
-        HBox node = new HBox(16, main, controls);
+        HBox node = UiZoom.spacing(new HBox(main, controls), 16);
         node.setAlignment(Pos.CENTER_LEFT);
         node.getStyleClass().add("settings-row");
         Row row = new Row(tw, node, showCheck, sideCombo, moveUp, moveDown, disabledNote);

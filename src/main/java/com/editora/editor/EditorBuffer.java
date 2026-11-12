@@ -1816,7 +1816,8 @@ public class EditorBuffer implements TabContent {
         if (diagnosticStripe == null) {
             diagnosticStripe = attachLazyStripe(new DiagnosticStripe(area), OverlayLayer.DIAGNOSTIC_STRIPE);
             diagnosticStripe.setOnActivateIn(jumps::revealLine);
-            updateDiagnosticStripe(); // its inset and on/off state, as if it had been there all along
+            // Its inset and on/off state, as if it had been there all along, and again when the UI zoom changes.
+            UiZoom.follow(diagnosticStripe, this::updateDiagnosticStripe);
         }
         return diagnosticStripe;
     }
@@ -1825,7 +1826,7 @@ public class EditorBuffer implements TabContent {
         if (mdLintStripe == null) {
             mdLintStripe = attachLazyStripe(new MarkdownLintStripe(area), OverlayLayer.MARKDOWN_LINT_STRIPE);
             mdLintStripe.setOnActivateIn(jumps::revealLine);
-            updateMarkdownLintStripe(); // its inset and on/off state, as if it had been there all along
+            UiZoom.follow(mdLintStripe, this::updateMarkdownLintStripe); // its inset and on/off state, as above
         }
         return mdLintStripe;
     }
@@ -1834,7 +1835,7 @@ public class EditorBuffer implements TabContent {
         if (todoStripe == null) {
             todoStripe = attachLazyStripe(new TodoStripe(area), OverlayLayer.TODO_STRIPE);
             todoStripe.setOnActivateIn(jumps::revealLine);
-            updateTodoStripe(); // its inset and on/off state, as if it had been there all along
+            UiZoom.follow(todoStripe, this::updateTodoStripe); // its inset and on/off state, as above
         }
         return todoStripe;
     }
@@ -3011,7 +3012,7 @@ public class EditorBuffer implements TabContent {
         boolean on = markdownLintEnabled && !largeFile && !minimapShown; // the minimap carries the same marks
         if (on || mdLintStripe != null) {
             MarkdownLintStripe stripe = mdLintStripe();
-            AnchorPane.setRightAnchor(stripe, base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
+            AnchorPane.setRightAnchor(stripe, base + (lspActive ? UiZoom.px(DiagnosticStripe.WIDTH) : 0d));
             stripe.setActive(on);
         }
         updateTodoStripe();
@@ -3022,8 +3023,8 @@ public class EditorBuffer implements TabContent {
     void updateTodoStripe() {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
-        double offset = (lspActive ? DiagnosticStripe.WIDTH : 0d)
-                + (markdownLintEnabled && !largeFile && !minimapShown ? MarkdownLintStripe.WIDTH : 0d);
+        double offset = UiZoom.px((lspActive ? DiagnosticStripe.WIDTH : 0d)
+                + (markdownLintEnabled && !largeFile && !minimapShown ? MarkdownLintStripe.WIDTH : 0d));
         if (todoStripe != null) { // attached with the first marks (todoStripe()), positioned from then on
             AnchorPane.setRightAnchor(todoStripe, base + offset);
             todoStripe.setActive(todoMarker.todoEnabled && !largeFile);

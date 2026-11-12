@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.control.Button;
@@ -30,6 +29,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
 import com.editora.config.PersonalNote;
+import com.editora.editor.UiZoom;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -59,10 +59,10 @@ final class ProjectMapNotePreview extends StackPane {
     }
 
     private final BorderPane frame = new BorderPane();
-    private final HBox titleBar = new HBox(7);
+    private final HBox titleBar = UiZoom.spacing(new HBox(), 7);
     private final Label title = new Label();
     private final Label kind = new Label();
-    private final VBox notes = new VBox(8);
+    private final VBox notes = UiZoom.spacing(new VBox(), 8);
     private final ScrollPane scroll = new ScrollPane(notes);
     private final Button close = new Button("×");
     private final Region resizeGrip = new Region();
@@ -116,7 +116,7 @@ final class ProjectMapNotePreview extends StackPane {
         titleBar.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
         titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
 
-        notes.setPadding(new Insets(10));
+        UiZoom.padding(notes, 10);
         notes.getStyleClass().add("project-map-note-preview-notes");
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("project-map-note-preview-scroll");
@@ -130,6 +130,7 @@ final class ProjectMapNotePreview extends StackPane {
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
         getChildren().addAll(frame, resizeGrip);
         getTransforms().add(mapZoom);
+        UiZoom.follow(this, this::requestLayout);
         // A filter, not a handler: the title bar (its drag) and the content (the text area) consume the press, so a
         // handler never heard a click there and a card under another stayed under it.
         addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
@@ -391,7 +392,7 @@ final class ProjectMapNotePreview extends StackPane {
     @Override
     protected void layoutChildren() {
         frame.resizeRelocate(0, 0, getWidth(), getHeight());
-        double grip = 18;
+        double grip = UiZoom.px(18);
         resizeGrip.resizeRelocate(Math.max(0, getWidth() - grip), Math.max(0, getHeight() - grip), grip, grip);
     }
 

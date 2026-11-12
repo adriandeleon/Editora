@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -18,6 +17,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 import org.jspecify.annotations.Nullable;
@@ -101,7 +101,7 @@ final class SettingsPluginsPage {
         Label warn = SettingsWindow.note(tr("settings.plugins.note"));
         warn.getStyleClass().add("settings-experimental");
         warn.setWrapText(true);
-        warn.setMaxWidth(440);
+        UiZoom.maxWidth(warn, 440);
         w.cardRow(mainCard, Category.PLUGINS, warn, "plugins extensions untrusted security warning");
         // The switch is read only at start-up, so its own row says so: a note elsewhere on the card is not
         // what a search for this setting shows.
@@ -115,7 +115,7 @@ final class SettingsPluginsPage {
             Label off = SettingsWindow.note(tr("settings.plugins.disabledForSession"));
             off.getStyleClass().add("settings-git-missing");
             off.setWrapText(true);
-            off.setMaxWidth(440);
+            UiZoom.maxWidth(off, 440);
             w.cardRow(mainCard, Category.PLUGINS, off, "plugins disable session safe mode command line");
         }
 
@@ -134,20 +134,21 @@ final class SettingsPluginsPage {
                 new Label(pluginManager == null ? "" : config.getPluginsDir().toString());
         folderPath.getStyleClass().add("settings-hint");
         folderPath.setWrapText(true);
-        folderPath.setMaxWidth(380);
-        HBox folderRow = new HBox(6, folderLabel, folderPath);
+        UiZoom.maxWidth(folderPath, 380);
+        HBox folderRow = UiZoom.spacing(new HBox(folderLabel, folderPath), 6);
         folderRow.setAlignment(Pos.CENTER_LEFT);
-        HBox listHeader = new HBox(8, reload, folderRow);
+        HBox listHeader = UiZoom.spacing(new HBox(reload, folderRow), 8);
         listHeader.setAlignment(Pos.CENTER_LEFT);
-        pluginListBox = new VBox(8);
+        pluginListBox = UiZoom.spacing(new VBox(), 8);
         w.cardRow(
                 installed,
                 Category.PLUGINS,
-                new VBox(
-                        6,
-                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
-                        listHeader,
-                        pluginListBox),
+                UiZoom.spacing(
+                        new VBox(
+                                SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
+                                listHeader,
+                                pluginListBox),
+                        6),
                 "plugins installed list enable disable reload rescan folder directory");
 
         // --- Marketplace: a curated GitHub-hosted registry + install-from-disk.
@@ -164,32 +165,32 @@ final class SettingsPluginsPage {
                 onInstallPluginFromFile.run();
             }
         });
-        HBox marketButtons = new HBox(8, browse, installFile);
+        HBox marketButtons = UiZoom.spacing(new HBox(browse, installFile), 8);
         marketButtons.setAlignment(Pos.CENTER_LEFT);
         // Greyed with the master switch, like the rows: they did nothing visible while plugins were off.
         SettingsDependents.bind(pluginCheck.selectedProperty(), marketButtons);
         pluginStatusLabel = new Label();
         pluginStatusLabel.setWrapText(true);
-        pluginStatusLabel.setMaxWidth(440);
+        UiZoom.maxWidth(pluginStatusLabel, 440);
         pluginStatusLabel.getStyleClass().add("settings-hint");
         pluginStatusLabel.setVisible(false);
         pluginStatusLabel.managedProperty().bind(pluginStatusLabel.visibleProperty());
         w.cardRow(
                 market,
                 Category.PLUGINS,
-                new VBox(4, marketButtons, pluginStatusLabel),
+                UiZoom.spacing(new VBox(marketButtons, pluginStatusLabel), 4),
                 "plugins browse install file zip marketplace registry");
         TextField registryField = new TextField();
         pluginRegistryField = registryField;
         pluginRegistryField.setPromptText(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
         // Wide enough to show a full registry URL (the default is ~75 chars); also grows with the page.
         pluginRegistryField.setPrefColumnCount(64);
-        pluginRegistryField.setPrefWidth(560);
+        UiZoom.prefWidth(pluginRegistryField, 560);
         pluginRegistryField.setMaxWidth(Double.MAX_VALUE);
         pluginRegistryWarn = new Label();
         pluginRegistryWarn.getStyleClass().add("settings-git-missing"); // amber/red "caution" styling
         pluginRegistryWarn.setWrapText(true);
-        pluginRegistryWarn.setMaxWidth(440);
+        UiZoom.maxWidth(pluginRegistryWarn, 440);
         w.commitOnEnterOrBlur(
                 pluginRegistryField,
                 () -> SettingsWindow.shownOrBlank(
@@ -211,8 +212,8 @@ final class SettingsPluginsPage {
         });
         Label regNote = SettingsWindow.note(tr("settings.plugins.registryNote"));
         regNote.setWrapText(true);
-        regNote.setMaxWidth(440);
-        VBox regBox = new VBox(4, pluginRegistryField, pluginRegistryWarn, regNote);
+        UiZoom.maxWidth(regNote, 440);
+        VBox regBox = UiZoom.spacing(new VBox(pluginRegistryField, pluginRegistryWarn, regNote), 4);
         w.controlRow(
                 market,
                 Category.PLUGINS,
@@ -328,15 +329,15 @@ final class SettingsPluginsPage {
                 onUninstallPlugin.accept(d);
             }
         });
-        HBox header = new HBox(8, cb, id, spacer, remove);
+        HBox header = UiZoom.spacing(new HBox(cb, id, spacer, remove), 8);
         header.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(cb, Priority.SOMETIMES);
-        VBox entry = new VBox(2, header);
+        VBox entry = UiZoom.spacing(new VBox(header), 2);
         String pillText = PluginRowState.text(pill, pluginManager.pendingUpdate(d.id()));
         if (pillText != null) {
             Label restartPill = new Label(pillText);
             restartPill.getStyleClass().add("settings-git-status");
-            HBox pillRow = new HBox(8, restartPill);
+            HBox pillRow = UiZoom.spacing(new HBox(restartPill), 8);
             pillRow.setAlignment(Pos.CENTER_LEFT);
             Runnable restart = w.onRestart;
             if (pill != PluginRowState.Pill.CHANGED && restart != null) {
@@ -345,7 +346,7 @@ final class SettingsPluginsPage {
                 restartNow.setOnAction(e -> restart.run());
                 pillRow.getChildren().add(restartNow);
             }
-            pillRow.setPadding(new Insets(0, 0, 0, 20));
+            UiZoom.padding(pillRow, 0, 0, 0, 20);
             entry.getChildren().add(pillRow);
         }
         com.editora.plugin.PluginDescriptor.LoadProblem runtime = pluginManager.runtimeProblem(d.id());
@@ -358,8 +359,8 @@ final class SettingsPluginsPage {
             err.setTooltip(detail == null ? null : new Tooltip(detail));
             err.getStyleClass().add("settings-git-missing");
             err.setWrapText(true);
-            err.setMaxWidth(420);
-            err.setPadding(new Insets(0, 0, 0, 20));
+            UiZoom.maxWidth(err, 420);
+            UiZoom.padding(err, 0, 0, 0, 20);
             entry.getChildren().add(err);
         }
         return entry;

@@ -16,6 +16,7 @@ import javafx.scene.layout.Region;
 import javafx.util.StringConverter;
 
 import com.editora.config.Project;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -119,7 +120,7 @@ public class ProjectCombo extends ComboBox<Project> {
                 }
                 e.consume();
             });
-            HBox box = new HBox(8, name, spacer, delete);
+            HBox box = UiZoom.spacing(new HBox(name, spacer, delete), 8);
             box.setAlignment(Pos.CENTER_LEFT);
             setText(null);
             setGraphic(box);

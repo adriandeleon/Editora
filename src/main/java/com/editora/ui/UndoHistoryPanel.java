@@ -16,6 +16,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.undo.UndoHistory;
 import org.jspecify.annotations.Nullable;
 
@@ -122,7 +123,7 @@ public class UndoHistoryPanel extends VBox implements ToolWindowContent {
             preview.getStyleClass().add("undo-history-preview");
             Region spacer = new Region();
             HBox.setHgrow(preview, Priority.ALWAYS);
-            HBox row = new HBox(8, time, preview, spacer);
+            HBox row = UiZoom.spacing(new HBox(time, preview, spacer), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             setText(null);
             setGraphic(row);

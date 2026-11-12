@@ -10,7 +10,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import javafx.beans.property.ReadOnlyObjectWrapper;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
@@ -32,6 +31,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.git.GitRecentChanges;
 import org.jspecify.annotations.Nullable;
 
@@ -99,16 +99,16 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         refresh.setOnAction(event -> onRefresh.run());
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox bar = new HBox(4, back, filesButton, partsButton, gap, refresh);
+        HBox bar = UiZoom.spacing(new HBox(back, filesButton, partsButton, gap, refresh), 4);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.getStyleClass().add("project-map-metrics-bar");
-        bar.setPadding(new Insets(4, 6, 4, 6));
+        UiZoom.padding(bar, 4, 6, 4, 6);
 
         summary.getStyleClass().add("project-map-metrics-summary");
         summary.setWrapText(true);
         summary.setMnemonicParsing(false);
         summary.setMinHeight(Region.USE_PREF_SIZE);
-        summary.setPadding(new Insets(6, 10, 6, 10));
+        UiZoom.padding(summary, 6, 10, 6, 10);
 
         table.getStyleClass().add("project-map-metrics-table");
         table.setAccessibleText(tr("project.map.metrics.tableAccessible"));
@@ -118,7 +118,7 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         table.setPlaceholder(placeholder);
         TableColumn<ProjectMapMetrics.Row, String> name = new TableColumn<>(tr("project.map.metrics.name"));
         name.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(rowName(subject, cell.getValue())));
-        name.setPrefWidth(240);
+        UiZoom.follow(table, name, () -> name.setPrefWidth(UiZoom.px(240)));
         table.getColumns().add(name);
         table.getColumns()
                 .add(number("project.map.metrics.code", "project.map.metrics.codeTip", ProjectMapMetrics.Row::code));
@@ -171,7 +171,8 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         column.setId(key);
         column.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(value.apply(cell.getValue())));
         column.setSortType(TableColumn.SortType.DESCENDING);
-        column.setPrefWidth(key.endsWith("comments") || key.endsWith("complexity") ? 84 : 66);
+        double width = key.endsWith("comments") || key.endsWith("complexity") ? 84 : 66;
+        UiZoom.follow(header, () -> column.setPrefWidth(UiZoom.px(width)));
         boolean hot = key.endsWith("hotspot");
         column.setCellFactory(view -> new TableCell<>() {
             @Override

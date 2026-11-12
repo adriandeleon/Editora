@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -28,6 +27,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.run.StackTraceLinks;
 import com.editora.test.TestCounts;
 import com.editora.test.TestFilter;
@@ -100,8 +100,8 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     TestRunnerPanel() {
         getStyleClass().add("test-runner");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
 
         status.getStyleClass().add("test-status");
         progress.getStyleClass().add("test-progress");
@@ -117,17 +117,17 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         followToggle.setSelected(true);
         Icons.name(followToggle, tr("testrunner.followRunning"));
 
-        HBox toolbar = new HBox(2, rerunButton, rerunFailedButton, stopButton, followToggle);
+        HBox toolbar = UiZoom.spacing(new HBox(rerunButton, rerunFailedButton, stopButton, followToggle), 2);
         toolbar.setAlignment(Pos.CENTER_LEFT);
-        HBox header =
-                new HBox(10, busy, status, progress, passedChip, failedChip, skippedChip, spacer(), elapsed, toolbar);
+        HBox header = UiZoom.spacing(
+                new HBox(busy, status, progress, passedChip, failedChip, skippedChip, spacer(), elapsed, toolbar), 10);
         header.setAlignment(Pos.CENTER_LEFT);
 
         filterField.setPromptText(tr("testrunner.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
         HBox.setHgrow(filterField, Priority.ALWAYS);
         filterField.textProperty().addListener((obs, old, q) -> rebuild());
-        HBox filterBar = new HBox(4, filterField, ClearableField.clearButton(filterField));
+        HBox filterBar = UiZoom.spacing(new HBox(filterField, ClearableField.clearButton(filterField)), 4);
         filterBar.getStyleClass().add("project-filter-bar");
         filterBar.setAlignment(Pos.CENTER_LEFT);
 
@@ -732,7 +732,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
             }
             setText(null);
             Label name = new Label(node.displayName());
-            HBox row = new HBox(6, statusIcon(node.status()), name);
+            HBox row = UiZoom.spacing(new HBox(statusIcon(node.status()), name), 6);
             row.setAlignment(Pos.CENTER_LEFT);
             if (node.kind() == TestNodeKind.TEST && node.durationMs() > 0) {
                 Label dur = new Label(node.durationMs() + " ms");

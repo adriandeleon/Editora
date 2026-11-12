@@ -26,6 +26,7 @@ import javafx.stage.Window;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -93,7 +94,7 @@ public final class BuildActionsPopup {
         this.titleLabel = new Label(labels.title());
         search.setPromptText(labels.searchPrompt());
         list.setItems(items);
-        list.setPrefHeight(400);
+        UiZoom.prefHeight(list, 400);
         list.setFocusTraversable(false);
         list.setCellFactory(v -> new RowCell());
         list.setOnMouseClicked(e -> {
@@ -107,10 +108,10 @@ public final class BuildActionsPopup {
 
         titleLabel.getStyleClass().add("palette-title");
         hint.getStyleClass().add("palette-hint");
-        content = new VBox(6, titleLabel, search, list, hint);
+        content = UiZoom.spacing(new VBox(titleLabel, search, list, hint), 6);
         content.getStyleClass().add("command-palette");
-        content.setPrefWidth(500);
-        content.setMaxSize(500, Region.USE_PREF_SIZE);
+        UiZoom.prefWidth(content, 500);
+        UiZoom.maxSize(content, 500, Region.USE_PREF_SIZE);
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE);
     }
 
@@ -414,7 +415,7 @@ public final class BuildActionsPopup {
             Label label = new Label(t.label());
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
-            HBox box = new HBox(10, label, spacer);
+            HBox box = UiZoom.spacing(new HBox(label, spacer), 10);
             box.setAlignment(Pos.CENTER_LEFT);
             return box;
         }

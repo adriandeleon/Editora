@@ -403,6 +403,8 @@ final class WindowCommandRegistrar {
 
         void textZoom(int direction);
 
+        void uiZoom(int direction);
+
         SnippetCoordinator snippetCoordinator();
 
         void editProjectSettings();
@@ -1843,6 +1845,11 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("view.textZoomIn", () -> host.textZoom(1)));
         host.registry().register(Command.of("view.textZoomOut", () -> host.textZoom(-1)));
         host.registry().register(Command.of("view.textZoomReset", () -> host.textZoom(0)));
+        // The UI zoom: the whole interface, menus and status bar included. Three commands of its own, since
+        // the keymaps give Ctrl/Cmd with =, - and 0 to the text zoom above.
+        host.registry().register(Command.of("view.uiZoomIn", () -> host.uiZoom(1)));
+        host.registry().register(Command.of("view.uiZoomOut", () -> host.uiZoom(-1)));
+        host.registry().register(Command.of("view.uiZoomReset", () -> host.uiZoom(0)));
         host.registry().register(Command.of("view.foldAll", host.navigation()::foldAll));
         host.registry().register(Command.of("view.unfoldAll", host.navigation()::unfoldAll));
         host.registry().register(Command.of("view.fold", host.navigation()::foldAtCaret));

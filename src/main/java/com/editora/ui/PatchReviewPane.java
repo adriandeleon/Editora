@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.util.List;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -18,6 +17,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -47,16 +47,16 @@ final class PatchReviewPane implements TabContent {
         files.getItems().setAll(entries);
         files.getStyleClass().add("patch-file-list");
         files.setCellFactory(v -> new FileCell());
-        files.setPrefWidth(245);
-        files.setMinWidth(170);
+        UiZoom.prefWidth(files, 245);
+        UiZoom.minWidth(files, 170);
         files.getSelectionModel().selectedIndexProperty().addListener((o, old, next) -> show(next.intValue()));
 
         Button previous = button(Icons.arrowUp(), tr("diff.previousFile"), () -> selectRelative(-1));
         Button next = button(Icons.arrowDown(), tr("diff.nextFile"), () -> selectRelative(1));
         position.getStyleClass().add("diff-summary");
-        HBox nav = new HBox(3, position, previous, next);
+        HBox nav = UiZoom.spacing(new HBox(position, previous, next), 3);
         nav.setAlignment(Pos.CENTER_LEFT);
-        nav.setPadding(new Insets(4, 6, 4, 6));
+        UiZoom.padding(nav, 4, 6, 4, 6);
         nav.getStyleClass().add("diff-toolbar");
         VBox left = new VBox(nav, new Separator(), files);
         VBox.setVgrow(files, Priority.ALWAYS);
@@ -80,9 +80,8 @@ final class PatchReviewPane implements TabContent {
         worktree.setOnAction(e -> toWorkingTree.run());
         Button index = new Button(tr("diff.patch.applyIndex"));
         index.setOnAction(e -> toIndex.run());
-        applyBar = new HBox(8, worktree, index);
+        applyBar = UiZoom.padding(UiZoom.spacing(new HBox(worktree, index), 8), 6, 8, 6, 8);
         applyBar.setAlignment(Pos.CENTER_LEFT);
-        applyBar.setPadding(new Insets(6, 8, 6, 8));
         applyBar.getStyleClass().addAll("diff-toolbar", "patch-apply-bar");
         root.setTop(applyBar);
     }
@@ -188,7 +187,7 @@ final class PatchReviewPane implements TabContent {
             status.getStyleClass().add("patch-file-status");
             status.setVisible(!entry.status().isBlank());
             status.setManaged(!entry.status().isBlank());
-            HBox row = new HBox(8, status, name, stat);
+            HBox row = UiZoom.spacing(new HBox(status, name, stat), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             setGraphic(row);
             setText(null);

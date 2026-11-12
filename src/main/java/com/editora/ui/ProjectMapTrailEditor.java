@@ -19,6 +19,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.config.MapTrails;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -61,7 +62,7 @@ final class ProjectMapTrailEditor extends VBox {
         getStyleClass().addAll("project-map-preview-frame", "project-map-trail-editor");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setManaged(false);
-        setSpacing(6);
+        UiZoom.spacing(this, 6);
         setViewOrder(-0.5); // above the cards, below the zoom bar and the trail bar
 
         heading.getStyleClass().add("project-map-trail-editor-title");
@@ -72,7 +73,7 @@ final class ProjectMapTrailEditor extends VBox {
         close.getStyleClass().addAll("flat", "project-map-preview-close");
         Icons.name(close, tr("project.map.trails.editor.close"));
         close.setOnAction(event -> dispose());
-        HBox header = new HBox(6, heading, renameTrail, close);
+        HBox header = UiZoom.spacing(new HBox(heading, renameTrail, close), 6);
         header.getStyleClass().add("project-map-trail-editor-header");
         header.setAlignment(Pos.CENTER_LEFT);
         header.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
@@ -102,8 +103,11 @@ final class ProjectMapTrailEditor extends VBox {
         note.setOnAction(event -> noteSelected());
         play.setOnAction(event -> playSelected());
         renameTrail.setOnAction(event -> askRenameTrail());
-        javafx.scene.layout.FlowPane buttons =
-                new javafx.scene.layout.FlowPane(4, 4, up, down, remove, rename, note, play);
+        javafx.scene.layout.FlowPane buttons = new javafx.scene.layout.FlowPane(up, down, remove, rename, note, play);
+        UiZoom.follow(buttons, () -> {
+            buttons.setHgap(UiZoom.px(4));
+            buttons.setVgap(UiZoom.px(4));
+        });
         buttons.getStyleClass().add("project-map-trail-editor-buttons");
 
         getChildren().setAll(header, stops, buttons);
@@ -114,9 +118,9 @@ final class ProjectMapTrailEditor extends VBox {
             }
         });
         addEventFilter(MouseEvent.MOUSE_PRESSED, event -> toFront()); // a filter: the fields consume the press
-        resize(WIDTH, HEIGHT);
+        UiZoom.follow(this, () -> resize(UiZoom.px(WIDTH), UiZoom.px(HEIGHT)));
         host.getChildren().add(this);
-        relocate(16, 48);
+        relocate(UiZoom.px(16), UiZoom.px(48));
     }
 
     /** The file name stem of the trail shown. */
@@ -289,8 +293,8 @@ final class ProjectMapTrailEditor extends VBox {
         if (!event.isPrimaryButtonDown()) {
             return;
         }
-        double maxX = Math.max(0, host.getWidth() - 40);
-        double maxY = Math.max(0, host.getHeight() - 30);
+        double maxX = Math.max(0, host.getWidth() - UiZoom.px(40));
+        double maxY = Math.max(0, host.getHeight() - UiZoom.px(30));
         relocate(
                 Math.clamp(dragLayoutX + event.getScreenX() - dragScreenX, 0, maxX),
                 Math.clamp(dragLayoutY + event.getScreenY() - dragScreenY, 0, maxY));
@@ -324,12 +328,12 @@ final class ProjectMapTrailEditor extends VBox {
                     : item.file();
             Label at = new Label(where);
             at.getStyleClass().add("project-map-trail-editor-where");
-            VBox lines = new VBox(1, name, at);
+            VBox lines = UiZoom.spacing(new VBox(name, at), 1);
             if (!item.note().isBlank()) {
                 Label body = new Label(item.note());
                 body.getStyleClass().add("project-map-trail-editor-note");
                 body.setWrapText(true);
-                body.setMaxWidth(WIDTH - 40);
+                UiZoom.maxWidth(body, WIDTH - 40);
                 lines.getChildren().add(body);
             }
             setText(null);

@@ -12,6 +12,7 @@ import javafx.stage.Popup;
 import javafx.stage.Screen;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
 import org.jspecify.annotations.Nullable;
 
@@ -35,7 +36,7 @@ final class CompletionDocPopup {
     private static final double CODE_CHROME = 72;
 
     /** The panel's width for the item now shown ({@link #widthFor}). */
-    private double width = WIDTH;
+    private double width = UiZoom.px(WIDTH);
 
     static final double MAX_HEIGHT = 320;
     private static final double GAP = 4;
@@ -53,7 +54,7 @@ final class CompletionDocPopup {
         card.getStyleClass().add("completion-doc-popup");
         card.setPrefWidth(width);
         card.setMaxWidth(width);
-        card.setMaxHeight(MAX_HEIGHT);
+        UiZoom.maxHeight(card, MAX_HEIGHT);
         // A Popup has its own scene that doesn't inherit the editor's stylesheets — attach both so the
         // markdown-preview + token rules resolve (the note-tooltip / hover-popup idiom).
         addCss("/com/editora/styles/app.css");
@@ -69,7 +70,7 @@ final class CompletionDocPopup {
     private void addCss(String resource) {
         java.net.URL url = CompletionDocPopup.class.getResource(resource);
         if (url != null) {
-            card.getStylesheets().add(url.toExternalForm());
+            card.getStylesheets().add(com.editora.editor.UiZoom.sheet(url.toExternalForm()));
         }
     }
 
@@ -84,7 +85,7 @@ final class CompletionDocPopup {
      */
     static double widthFor(@Nullable String markdown) {
         int longest = com.editora.editor.markdown.CodeFences.longestLine(markdown == null ? "" : markdown);
-        return Math.max(WIDTH, Math.min(MAX_WIDTH, longest * CODE_CHAR_WIDTH + CODE_CHROME));
+        return UiZoom.px(Math.max(WIDTH, Math.min(MAX_WIDTH, longest * CODE_CHAR_WIDTH + CODE_CHROME)));
     }
 
     /**
@@ -96,13 +97,13 @@ final class CompletionDocPopup {
         if (wanted <= right) {
             return wanted;
         }
-        if (right >= WIDTH) {
+        if (right >= UiZoom.px(WIDTH)) {
             return right;
         }
         if (wanted <= left) {
             return wanted;
         }
-        return left >= WIDTH ? left : Math.min(wanted, WIDTH);
+        return left >= UiZoom.px(WIDTH) ? left : Math.min(wanted, UiZoom.px(WIDTH));
     }
 
     /** As {@link #show(Window, Bounds, String, Node, String)} for documentation with no code block. */
@@ -126,11 +127,11 @@ final class CompletionDocPopup {
         Rectangle2D screen = screenFor(listBounds);
         width = fitWidth(
                 widthFor(markdown),
-                screen.getMaxX() - listBounds.getMaxX() - GAP,
-                listBounds.getMinX() - GAP - screen.getMinX());
+                screen.getMaxX() - listBounds.getMaxX() - UiZoom.px(GAP),
+                listBounds.getMinX() - UiZoom.px(GAP) - screen.getMinX());
         card.setPrefWidth(width);
         card.setMaxWidth(width);
-        VBox content = new VBox(6);
+        VBox content = UiZoom.spacing(new VBox(), 6);
         content.getStyleClass().add("completion-doc-content");
         if (hasSig) {
             Label sig = new Label(signature.strip());
@@ -146,12 +147,12 @@ final class CompletionDocPopup {
         scroll.setVvalue(0); // each item's docs from their first line, not where the last item's were scrolled
         fitHeight(content);
         Rectangle2D vis = screenFor(listBounds);
-        double x = listBounds.getMaxX() + GAP;
+        double x = listBounds.getMaxX() + UiZoom.px(GAP);
         if (x + width > vis.getMaxX()) {
-            x = listBounds.getMinX() - GAP - width; // not enough room on the right → flip left
+            x = listBounds.getMinX() - UiZoom.px(GAP) - width; // not enough room on the right → flip left
         }
         x = Math.max(vis.getMinX(), Math.min(x, vis.getMaxX() - width));
-        double y = Math.max(vis.getMinY(), Math.min(listBounds.getMinY(), vis.getMaxY() - MAX_HEIGHT));
+        double y = Math.max(vis.getMinY(), Math.min(listBounds.getMinY(), vis.getMaxY() - UiZoom.px(MAX_HEIGHT)));
         if (popup.isShowing()) {
             popup.setAnchorX(x);
             popup.setAnchorY(y);
@@ -176,7 +177,7 @@ final class CompletionDocPopup {
                 width - cardInsets.getLeft() - cardInsets.getRight() - scrollInsets.getLeft() - scrollInsets.getRight();
         double chrome = cardInsets.getTop() + cardInsets.getBottom() + scrollInsets.getTop() + scrollInsets.getBottom();
         double wanted = Math.ceil(content.prefHeight(inner)); // past the maximum, it scrolls
-        scroll.setPrefViewportHeight(Math.max(1, Math.min(wanted, MAX_HEIGHT - chrome)));
+        scroll.setPrefViewportHeight(Math.max(1, Math.min(wanted, UiZoom.px(MAX_HEIGHT) - chrome)));
     }
 
     void hide() {

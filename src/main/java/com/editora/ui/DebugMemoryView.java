@@ -15,6 +15,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 import com.editora.dap.DapModels;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -53,7 +54,7 @@ final class DebugMemoryView extends VBox {
             b.getStyleClass().add("small");
             b.setFocusTraversable(false);
         }
-        HBox top = new HBox(4, where, back, next);
+        HBox top = UiZoom.spacing(new HBox(where, back, next), 4);
         top.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(where, Priority.ALWAYS);
         rows.getStyleClass().addAll("debug-stack", "debug-memory-rows");
@@ -61,7 +62,7 @@ final class DebugMemoryView extends VBox {
         placeholder.getStyleClass().add("debug-empty-note");
         rows.setPlaceholder(placeholder);
         VBox.setVgrow(rows, Priority.ALWAYS);
-        setSpacing(2);
+        UiZoom.spacing(this, 2);
         getChildren().addAll(top, rows);
         setMessage(tr("debugpanel.memory.idle"));
     }

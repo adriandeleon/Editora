@@ -15,6 +15,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 import com.editora.ui.SettingsWindow.McpActions;
@@ -246,7 +247,9 @@ final class SettingsAiPages {
                 SettingsWindow.settingRow(
                         tr("settings.mcp.status"),
                         tr("settings.mcp.status.desc"),
-                        new VBox(6, mcpStatusLabel, new HBox(8, mcpCopyButton, mcpNewTokenButton))),
+                        UiZoom.spacing(
+                                new VBox(mcpStatusLabel, UiZoom.spacing(new HBox(mcpCopyButton, mcpNewTokenButton), 8)),
+                                6)),
                 "mcp status running port endpoint url copy command token new rotate claude mcp add");
         refreshMcpStatus();
         return p;
@@ -295,7 +298,7 @@ final class SettingsAiPages {
                 "ai enable disable master switch agent actions all");
         Label hint = SettingsWindow.note(tr("settings.ai.masterHint"));
         hint.setWrapText(true);
-        hint.setMaxWidth(440);
+        UiZoom.maxWidth(hint, 440);
         w.cardRow(mainCard, Category.AI_GENERAL, hint, "ai enable disable master switch agent actions all off default");
         return p;
     }
@@ -353,7 +356,7 @@ final class SettingsAiPages {
     private static Label wrappedNote(String key) {
         Label l = SettingsWindow.note(tr(key));
         l.setWrapText(true);
-        l.setMaxWidth(440);
+        UiZoom.maxWidth(l, 440);
         return l;
     }
 
@@ -583,8 +586,9 @@ final class SettingsAiPages {
         Card mainCard = w.card(p, null);
         SettingsDependents.bind(aiMasterCheck.selectedProperty(), mainCard.box());
         // A switch row like every other page's enable toggle; what it turns on stays in the (i) tooltip.
-        HBox aiEnable = new HBox(
-                8, SettingsWindow.infoIcon(tr("settings.ai.actionsTooltip")), SettingsWindow.switchFor(aiCheck));
+        HBox aiEnable = UiZoom.spacing(
+                new HBox(SettingsWindow.infoIcon(tr("settings.ai.actionsTooltip")), SettingsWindow.switchFor(aiCheck)),
+                8);
         aiEnable.setAlignment(Pos.CENTER_RIGHT);
         w.cardRow(
                 mainCard,
@@ -594,11 +598,11 @@ final class SettingsAiPages {
         aiStatusLabel = new Label(tr("settings.ai.statusUnknown"));
         aiStatusLabel.getStyleClass().add("settings-git-status");
         aiStatusLabel.setWrapText(true);
-        aiStatusLabel.setMaxWidth(440);
+        UiZoom.maxWidth(aiStatusLabel, 440);
         Button test = new Button(tr("settings.ai.testConnection"));
         test.setOnAction(e -> refreshAiStatus(true));
         SettingsWindow.keepWidth(test);
-        HBox status = new HBox(8, aiStatusLabel, test);
+        HBox status = UiZoom.spacing(new HBox(aiStatusLabel, test), 8);
         status.setAlignment(Pos.CENTER_LEFT);
         w.cardRow(mainCard, Category.AI, status, "ai connection status test green red working reachable");
         p.parentProperty()
@@ -615,7 +619,7 @@ final class SettingsAiPages {
                 "ai endpoint url local server lm studio ollama port");
         Label providerNote = SettingsWindow.note(tr("settings.ai.providerNote"));
         providerNote.setWrapText(true);
-        providerNote.setMaxWidth(440);
+        UiZoom.maxWidth(providerNote, 440);
         w.cardRow(mainCard, Category.AI, providerNote, "ai provider local lm studio no api key endpoint");
         w.cardRow(
                 mainCard,
@@ -629,7 +633,7 @@ final class SettingsAiPages {
                 "ai api key anthropic token credential");
         aiKeyNote = SettingsWindow.note(apiKeyNote(config.getSettings()));
         aiKeyNote.setWrapText(true);
-        aiKeyNote.setMaxWidth(440);
+        UiZoom.maxWidth(aiKeyNote, 440);
         w.cardRow(
                 mainCard,
                 Category.AI,
@@ -648,15 +652,15 @@ final class SettingsAiPages {
                 "ai inline completion model haiku fast latency");
         Label inlineNote = SettingsWindow.note(tr("settings.ai.inlineHint"));
         inlineNote.setWrapText(true);
-        inlineNote.setMaxWidth(440);
+        UiZoom.maxWidth(inlineNote, 440);
         w.cardRow(mainCard, Category.AI, inlineNote, "ai inline ghost completion tab accept cost");
         Label codexHint = SettingsWindow.note(tr("settings.ai.codexHint"));
         codexHint.setWrapText(true);
-        codexHint.setMaxWidth(440);
+        UiZoom.maxWidth(codexHint, 440);
         w.cardRow(mainCard, Category.AI, codexHint, "ai codex login acp agent subscription setup");
         Label hint = SettingsWindow.note(tr("settings.ai.hint"));
         hint.setWrapText(true);
-        hint.setMaxWidth(440);
+        UiZoom.maxWidth(hint, 440);
         w.cardRow(mainCard, Category.AI, hint, "ai commit message explain rewrite selection anthropic streaming");
         return p;
     }

@@ -24,6 +24,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
+import com.editora.editor.UiZoom;
 import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
 import com.editora.search.SearchQuery;
@@ -125,7 +126,7 @@ final class SearchInFilesPopup {
         backendBadge.setManaged(false);
         Region toggleSpacer = new Region();
         HBox.setHgrow(toggleSpacer, Priority.ALWAYS);
-        HBox toggles = new HBox(12, caseSensitive, regex, wholeWord, toggleSpacer, backendBadge);
+        HBox toggles = UiZoom.spacing(new HBox(caseSensitive, regex, wholeWord, toggleSpacer, backendBadge), 12);
         toggles.setAlignment(Pos.CENTER_LEFT);
         toggles.getStyleClass().add("fif-toggles");
 
@@ -134,7 +135,7 @@ final class SearchInFilesPopup {
         Label rootLabel = new Label(tr("search.rootLabel"));
         rootLabel.getStyleClass().add("fif-root-label");
         HBox.setHgrow(rootField, Priority.ALWAYS);
-        HBox rootRow = new HBox(6, rootLabel, rootField);
+        HBox rootRow = UiZoom.spacing(new HBox(rootLabel, rootField), 6);
         rootRow.setAlignment(Pos.CENTER_LEFT);
 
         include.setPromptText(tr("search.includePrompt"));
@@ -146,11 +147,11 @@ final class SearchInFilesPopup {
         com.editora.command.TextInputKeymap.installShared(exclude);
         HBox.setHgrow(include, Priority.ALWAYS);
         HBox.setHgrow(exclude, Priority.ALWAYS);
-        HBox globRow = new HBox(6, include, exclude);
+        HBox globRow = UiZoom.spacing(new HBox(include, exclude), 6);
         globRow.setAlignment(Pos.CENTER_LEFT);
 
         list.setItems(rows);
-        list.setFixedCellSize(CELL_HEIGHT);
+        UiZoom.follow(list, () -> list.setFixedCellSize(UiZoom.px(CELL_HEIGHT)));
         list.setCellFactory(v -> new ResultCell());
         rows.addListener((javafx.collections.ListChangeListener<Row>) c -> resizeList());
 
@@ -159,19 +160,19 @@ final class SearchInFilesPopup {
         title.getStyleClass().add("palette-title");
         hint.getStyleClass().add("palette-hint");
 
-        VBox card = new VBox(6, title, query, toggles, rootRow, globRow, list, status, hint);
+        VBox card = UiZoom.spacing(new VBox(title, query, toggles, rootRow, globRow, list, status, hint), 6);
         card.getStyleClass().addAll("command-palette", "fif-popup");
-        card.setPrefWidth(CARD_WIDTH);
-        card.setMaxSize(CARD_WIDTH, Region.USE_PREF_SIZE);
+        UiZoom.prefWidth(card, CARD_WIDTH);
+        UiZoom.maxSize(card, CARD_WIDTH, Region.USE_PREF_SIZE);
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        resizeList();
+        UiZoom.follow(list, this::resizeList);
         return card;
     }
 
     /** Sizes the result list to its row count, capped at {@link #MAX_VISIBLE} (then it scrolls). */
     private void resizeList() {
         int n = Math.max(1, Math.min(rows.size(), MAX_VISIBLE));
-        double h = n * CELL_HEIGHT + 2;
+        double h = UiZoom.px(n * CELL_HEIGHT + 2);
         list.setMinHeight(h);
         list.setPrefHeight(h);
         list.setMaxHeight(h);
@@ -360,10 +361,10 @@ final class SearchInFilesPopup {
     private final class ResultCell extends ListCell<Row> {
         private final Label fileName = new Label();
         private final Label count = new Label();
-        private final HBox header = new HBox(6, fileName, count);
+        private final HBox header = UiZoom.spacing(new HBox(fileName, count), 6);
         private final Label lineNo = new Label();
         private final Label preview = new Label();
-        private final HBox matchRow = new HBox(8, lineNo, preview);
+        private final HBox matchRow = UiZoom.spacing(new HBox(lineNo, preview), 8);
 
         ResultCell() {
             header.setAlignment(Pos.CENTER_LEFT);

@@ -6,6 +6,8 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.shape.Circle;
 
+import com.editora.editor.UiZoom;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -22,11 +24,12 @@ final class HttpEnvPill extends Button {
 
     HttpEnvPill(Runnable onOpen) {
         getStyleClass().addAll("http-env-pill", "flat");
+        UiZoom.follow(dot, () -> dot.setRadius(UiZoom.px(3.5)));
         dot.getStyleClass().add("http-env-dot");
         text.getStyleClass().add("http-env-pill-text");
         Label chevron = new Label("▾");
         chevron.getStyleClass().add("http-env-pill-chevron");
-        HBox content = new HBox(6, dot, text, chevron);
+        HBox content = UiZoom.spacing(new HBox(dot, text, chevron), 6);
         content.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         setGraphic(content);
         setMaxSize(USE_PREF_SIZE, USE_PREF_SIZE); // an overlay in a StackPane must not stretch to fill it

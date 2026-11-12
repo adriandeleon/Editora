@@ -221,7 +221,7 @@ final class AgentCoordinator implements AcpClient.Host {
         ops.closeToolWindow(); // free the panel node from the docked slot
         ops.setToolWindowAvailable(false); // hide the stripe while floating
         BorderPane holder = new BorderPane(p);
-        Scene scene = new Scene(holder, 480, 640);
+        Scene scene = new Scene(holder, com.editora.editor.UiZoom.px(480), com.editora.editor.UiZoom.px(640));
         addAppStylesheets(scene);
         Stage stage = new Stage();
         stage.setTitle(tr("toolwindow.agent"));
@@ -260,7 +260,7 @@ final class AgentCoordinator implements AcpClient.Host {
         for (String css : new String[] {"/com/editora/styles/app.css", "/com/editora/styles/syntax.css"}) {
             var url = getClass().getResource(css);
             if (url != null) {
-                scene.getStylesheets().add(url.toExternalForm());
+                scene.getStylesheets().add(com.editora.editor.UiZoom.sheet(url.toExternalForm()));
             }
         }
     }

@@ -33,7 +33,7 @@ final class NoticeBar {
         message.setWrapText(true);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        progress.setPrefSize(16, 16);
+        UiZoom.prefSize(progress, 16, 16);
         progress.setVisible(false);
         progress.setManaged(false);
         action.getStyleClass().add("accent");
@@ -51,7 +51,7 @@ final class NoticeBar {
                 onDismiss.run();
             }
         });
-        node = new HBox(10, message, spacer, progress, action, dismiss);
+        node = UiZoom.spacing(new HBox(message, spacer, progress, action, dismiss), 10);
         node.getStyleClass().addAll(styleClasses);
         node.setAlignment(Pos.CENTER_LEFT);
     }

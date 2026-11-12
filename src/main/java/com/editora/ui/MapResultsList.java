@@ -14,7 +14,6 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import javafx.css.PseudoClass;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.CheckBox;
@@ -31,6 +30,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -121,9 +121,9 @@ final class MapResultsList extends MapSideColumn {
         tests.setTooltip(new javafx.scene.control.Tooltip(tr("project.map.places.testsHelp")));
         count.getStyleClass().add("project-map-card-structure-line");
         count.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
-        HBox filters = new HBox(6, filter, tests, count);
+        HBox filters = UiZoom.spacing(new HBox(filter, tests, count), 6);
         filters.setAlignment(Pos.CENTER_LEFT);
-        filters.setPadding(new Insets(4, 6, 2, 8));
+        UiZoom.padding(filters, 4, 6, 2, 8);
         tree.setShowRoot(false);
         tree.getStyleClass().addAll("project-map-card-structure-tree", "project-map-results-tree");
         tree.setCellFactory(view -> new RowCell());

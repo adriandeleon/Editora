@@ -29,6 +29,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
 
+import com.editora.editor.UiZoom;
 import com.editora.externaltool.ExternalTool;
 import org.jspecify.annotations.Nullable;
 
@@ -62,8 +63,8 @@ final class ExternalToolsEditor {
     ExternalToolsEditor(Hooks hooks) {
         this.hooks = hooks;
         reload();
-        list.setPrefSize(200, 260);
-        list.setMinHeight(140);
+        UiZoom.prefSize(list, 200, 260);
+        UiZoom.minHeight(list, 140);
         list.setPlaceholder(wrapped(tr("settings.externalTool.empty")));
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -90,8 +91,7 @@ final class ExternalToolsEditor {
         CheckBox enabled = new CheckBox(tr("settings.externalTool.enabled"));
 
         GridPane form = new GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
+        UiZoom.gaps(form, 8, 6);
         formRow(form, 0, tr("settings.externalTool.name"), name);
         formRow(form, 1, tr("settings.externalTool.command"), withBrowse(command, false));
         formRow(form, 2, tr("settings.externalTool.arguments"), arguments);
@@ -206,18 +206,18 @@ final class ExternalToolsEditor {
             hooks.unbind().accept(id); // drop its key binding, as deleting a macro does
         });
 
-        VBox left = new VBox(6, list);
+        VBox left = UiZoom.spacing(new VBox(list), 6);
         VBox.setVgrow(list, Priority.ALWAYS);
-        VBox right = new VBox(8, form);
+        VBox right = UiZoom.spacing(new VBox(form), 8);
         HBox.setHgrow(right, Priority.ALWAYS);
         if (!items.isEmpty()) {
             list.getSelectionModel().select(0);
         }
-        HBox top = new HBox(12, left, right);
+        HBox top = UiZoom.spacing(new HBox(left, right), 12);
         top.setAlignment(Pos.TOP_LEFT);
-        HBox buttons = new HBox(6, add, remove);
+        HBox buttons = UiZoom.spacing(new HBox(add, remove), 6);
         buttons.setAlignment(Pos.CENTER_LEFT);
-        node = new VBox(8, top, buttons);
+        node = UiZoom.spacing(new VBox(top, buttons), 8);
     }
 
     Node node() {
@@ -279,7 +279,7 @@ final class ExternalToolsEditor {
             }
         });
         HBox.setHgrow(field, Priority.ALWAYS);
-        HBox box = new HBox(6, field, browse);
+        HBox box = UiZoom.spacing(new HBox(field, browse), 6);
         box.setAlignment(Pos.CENTER_LEFT);
         return box;
     }
@@ -290,7 +290,7 @@ final class ExternalToolsEditor {
         form.add(l, 0, row);
         form.add(field, 1, row);
         if (field instanceof Region r && !(field instanceof SettingSwitch)) {
-            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
+            UiZoom.minWidth(r, SettingRowPane.FIELD_MIN_WIDTH);
             GridPane.setHgrow(r, Priority.ALWAYS);
         }
     }

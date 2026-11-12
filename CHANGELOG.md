@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A zoom for the whole interface.** View → Zoom → Zoom In Interface, Zoom Out Interface and Reset
+  Interface Zoom (also in the command palette, and as Interface zoom under Settings → Appearance) scale the
+  menus, toolbar, tabs, tool windows, dialogs and status bar together, from 80% to 200% in steps of 10. It
+  applies to every open window at once and is kept across launches. The editor's text keeps its own zoom
+  (Ctrl/Cmd with =, - and 0), so the two can be set apart. Printed and exported pages are not affected,
+  and the Print Preview window stays at 100%, the size its pages print at.
+- **View → Zoom** gathers the text zoom's three commands, which had no menu row, with the interface zoom's.
 - **Right-click menus in the References, Hierarchy, Find in Files and Undo History tool windows, the Message
   Log, the Application Log and the External Tools console.** A reference, a hierarchy item or a match has
   Open and Copy; an undo state has Restore This State; a message has Copy; the two logs have Select All and

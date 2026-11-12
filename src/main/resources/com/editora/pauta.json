@@ -341,7 +341,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/window-shell/#win-12",
       "kind": "pending",
-      "reason": "There is no zoom for the whole interface: zooming changes the editor text only.",
+      "reason": "The Print Preview window does not follow the interface zoom: its pages are drawn at the size they print at, and its bar with them.",
       "link": "https://github.com/adriandeleon/Editora/issues/1562"
     },
     {
@@ -486,14 +486,6 @@
       "url": "https://pauta-project.dev/6.0.1/menus/#menu-14",
       "kind": "pending",
       "reason": "Some menu rows have no icon.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1566"
-    },
-    {
-      "rule": "MENU-16",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/menus/#menu-16",
-      "kind": "pending",
-      "reason": "Menu text has a fixed size, since there is no zoom for the whole interface.",
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {

@@ -23,6 +23,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import com.editora.search.FuzzyMatch;
 import org.jspecify.annotations.Nullable;
 
@@ -207,8 +208,8 @@ public class QuickOpen<T> {
         this.cardWidth = width;
         this.minRows = Math.max(1, Math.min(minVisibleRows, MAX_VISIBLE));
         if (content != null) {
-            content.setPrefWidth(width);
-            content.setMaxSize(width, Region.USE_PREF_SIZE);
+            UiZoom.prefWidth(content, width);
+            UiZoom.maxSize(content, width, Region.USE_PREF_SIZE);
             resizeList();
         }
     }
@@ -220,7 +221,7 @@ public class QuickOpen<T> {
      */
     public void setFixedListHeight(double height) {
         this.fixedListHeight = height;
-        list.setFixedCellSize(Region.USE_COMPUTED_SIZE);
+        UiZoom.follow(list, "cellSize", () -> list.setFixedCellSize(Region.USE_COMPUTED_SIZE)); // replaces build's
         resizeList();
     }
 
@@ -229,7 +230,7 @@ public class QuickOpen<T> {
         list.setItems(items);
         // Hug the result count: a fixed cell size lets the list size to its rows, capped at MAX_VISIBLE
         // (then it scrolls), so the popup isn't a fixed-tall box with empty space for a few matches.
-        list.setFixedCellSize(CELL_HEIGHT);
+        UiZoom.follow(list, "cellSize", () -> list.setFixedCellSize(UiZoom.px(CELL_HEIGHT)));
         items.addListener((javafx.collections.ListChangeListener<T>) c -> resizeList());
         list.setCellFactory(v -> new ItemCell());
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
@@ -246,12 +247,12 @@ public class QuickOpen<T> {
         header.setText(title);
         header.getStyleClass().add("palette-title");
         hint.getStyleClass().add("palette-hint");
-        content = new VBox(6, header, input, list, hint);
+        content = UiZoom.spacing(new VBox(header, input, list, hint), 6);
         content.getStyleClass().add("command-palette");
-        content.setPrefWidth(cardWidth);
-        content.setMaxSize(cardWidth, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        UiZoom.prefWidth(content, cardWidth);
+        UiZoom.maxSize(content, cardWidth, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p/arrows for the picker
-        resizeList();
+        UiZoom.follow(list, "listHeight", this::resizeList);
     }
 
     /** Sizes the result list to its (filtered) item count, capped at {@link #MAX_VISIBLE} rows, so the
@@ -259,12 +260,12 @@ public class QuickOpen<T> {
     private void resizeList() {
         if (fixedListHeight > 0) {
             list.setMinHeight(Region.USE_COMPUTED_SIZE);
-            list.setPrefHeight(fixedListHeight);
+            list.setPrefHeight(UiZoom.px(fixedListHeight));
             list.setMaxHeight(Region.USE_COMPUTED_SIZE);
             return;
         }
         int rows = Math.max(minRows, Math.min(Math.max(items.size(), minRows), MAX_VISIBLE));
-        double h = rows * CELL_HEIGHT + 2; // +2 for the list's border/insets
+        double h = UiZoom.px(rows * CELL_HEIGHT + 2); // +2 for the list's border/insets
         list.setMinHeight(h);
         list.setPrefHeight(h);
         list.setMaxHeight(h);
@@ -402,9 +403,9 @@ public class QuickOpen<T> {
         // A TextFlow rather than a Label, so the characters that matched can be emboldened. The icon
         // therefore needs its own slot: a TextFlow has no graphic property to hang it off.
         private final javafx.scene.text.TextFlow title = new javafx.scene.text.TextFlow();
-        private final HBox titleBox = new HBox(6, title);
+        private final HBox titleBox = UiZoom.spacing(new HBox(title), 6);
         private final Label sub = new Label();
-        private final HBox box = new HBox(10, titleBox, spacer(), sub);
+        private final HBox box = UiZoom.spacing(new HBox(titleBox, spacer(), sub), 10);
         private @Nullable String appliedClass;
 
         ItemCell() {

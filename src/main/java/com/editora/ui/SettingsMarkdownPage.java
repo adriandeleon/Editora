@@ -14,6 +14,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 import org.jspecify.annotations.Nullable;
@@ -103,7 +104,7 @@ final class SettingsMarkdownPage {
                 Settings::isMarkdownTrashUnusedPastedImages,
                 Settings::setMarkdownTrashUnusedPastedImages,
                 "markdown pasted dropped image unused orphan trash delete clean up save");
-        HBox tocLevels = new HBox(6, markdownTocMinSpinner, new Label("–"), markdownTocMaxSpinner);
+        HBox tocLevels = UiZoom.spacing(new HBox(markdownTocMinSpinner, new Label("–"), markdownTocMaxSpinner), 6);
         tocLevels.setAlignment(Pos.CENTER_LEFT);
         w.controlRow(
                 editing,
@@ -277,7 +278,7 @@ final class SettingsMarkdownPage {
         TextField assetsField = new TextField();
         markdownAssetsField = assetsField;
         markdownAssetsField.setPromptText(Settings.DEFAULT_MARKDOWN_ASSETS_FOLDER);
-        markdownAssetsField.setPrefWidth(220);
+        UiZoom.prefWidth(assetsField, 220);
         markdownAssetsField.setAccessibleText(tr("settings.markdownAssetsFolder"));
         w.commitOnEnterOrBlur(markdownAssetsField, () -> config.getSettings().getMarkdownAssetsFolder(), now -> {
             config.getSettings().setMarkdownAssetsFolder(now);
@@ -287,8 +288,8 @@ final class SettingsMarkdownPage {
         });
         markdownTocMinSpinner = IntSpinners.editable(1, 6, 1, 1);
         markdownTocMaxSpinner = IntSpinners.editable(1, 6, 6, 1);
-        markdownTocMinSpinner.setPrefWidth(80);
-        markdownTocMaxSpinner.setPrefWidth(80);
+        UiZoom.prefWidth(markdownTocMinSpinner, 80);
+        UiZoom.prefWidth(markdownTocMaxSpinner, 80);
         markdownTocMinSpinner.setAccessibleText(tr("settings.markdownTocLevels.min"));
         markdownTocMaxSpinner.setAccessibleText(tr("settings.markdownTocLevels.max"));
         markdownTocMinSpinner.valueProperty().addListener((obs, was, now) -> {
@@ -330,7 +331,7 @@ final class SettingsMarkdownPage {
                 return label;
             }
         });
-        markdownPreviewThemeCombo.setMinWidth(170);
+        UiZoom.minWidth(markdownPreviewThemeCombo, 170);
         markdownPreviewThemeCombo.valueProperty().addListener((obs, was, now) -> {
             if (w.loading || now == null) {
                 return;
@@ -347,7 +348,7 @@ final class SettingsMarkdownPage {
      * applies live.
      */
     private javafx.scene.Node markdownLintRulesEditor() {
-        markdownLintRulesBox = new VBox(4);
+        markdownLintRulesBox = UiZoom.spacing(new VBox(), 4);
         rebuildMarkdownLintRules();
         // The last card on the page, so the rules list in full: a scroller of its own inside the page's
         // scroller caught the wheel and showed two scrollbars.
@@ -365,10 +366,10 @@ final class SettingsMarkdownPage {
             String code = rule.code();
             Label codeLabel = new Label(code);
             codeLabel.getStyleClass().add("md-lint-code");
-            codeLabel.setMinWidth(58);
+            UiZoom.minWidth(codeLabel, 58);
             Label desc = new Label(tr("mdlint.rule." + code));
             desc.getStyleClass().add("settings-hint");
-            HBox label = new HBox(8, codeLabel, desc);
+            HBox label = UiZoom.spacing(new HBox(codeLabel, desc), 8);
             label.setAlignment(Pos.CENTER_LEFT);
 
             CheckBox cb = new CheckBox();
@@ -404,7 +405,7 @@ final class SettingsMarkdownPage {
             });
             Region gap = new Region();
             HBox.setHgrow(gap, Priority.ALWAYS);
-            HBox row = new HBox(8, cb, gap, severity);
+            HBox row = UiZoom.spacing(new HBox(cb, gap, severity), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             markdownLintRulesBox.getChildren().add(row);
         }

@@ -4,7 +4,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
@@ -22,6 +21,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownLintText;
 import com.editora.markdown.MarkdownLint;
 import org.jspecify.annotations.Nullable;
@@ -114,8 +114,8 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
         this.issues = issues;
         getStyleClass().add("markdown-lint-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
         build();
     }
 
@@ -133,7 +133,7 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
         configNote.getStyleClass().add("markdown-lint-summary");
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox toolbar = new HBox(8, fileName, summary, configNote, gap, bySeverity, refreshBtn);
+        HBox toolbar = UiZoom.spacing(new HBox(fileName, summary, configNote, gap, bySeverity, refreshBtn), 8);
         if (issues != null) {
             // Named after the command it runs: its title without "Markdown Lint:", and its chord.
             fixBtn = CommandTips.name(
@@ -395,9 +395,9 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
             Region tag = new Region();
             tag.getStyleClass().add("markdown-lint-tag");
             tag.getStyleClass().add(d.isError() ? "lint-error" : d.isHint() ? "lint-hint" : "lint-warning");
-            tag.setMinSize(10, 10);
-            tag.setPrefSize(10, 10);
-            tag.setMaxSize(10, 10);
+            UiZoom.minSize(tag, 10, 10);
+            UiZoom.prefSize(tag, 10, 10);
+            UiZoom.maxSize(tag, 10, 10);
             setGraphic(tag);
             setText(rowText(d));
         }

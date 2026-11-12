@@ -38,8 +38,7 @@ public final class MenuIcons {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("toolbar-icon");
-        svg.setScaleX(ICON_SCALE);
-        svg.setScaleY(ICON_SCALE);
+        UiZoom.scale(svg, ICON_SCALE);
         return new Group(svg);
     }
 
@@ -59,8 +58,7 @@ public final class MenuIcons {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("icon-line");
-        svg.setScaleX(LINE_SCALE);
-        svg.setScaleY(LINE_SCALE);
+        UiZoom.scale(svg, LINE_SCALE);
         return new Group(svg);
     }
 

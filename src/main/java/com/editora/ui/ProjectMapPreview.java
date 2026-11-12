@@ -53,6 +53,7 @@ import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.editops.LineEndings;
 import com.editora.editor.MenuChords;
+import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.lsp.LspDiagnosticOverlay;
@@ -407,7 +408,7 @@ final class ProjectMapPreview extends StackPane {
 
     private final Consumer<Path> onOpenFile;
     private final BorderPane frame = new BorderPane();
-    private final HBox titleBar = new HBox(7);
+    private final HBox titleBar = UiZoom.spacing(new HBox(), 7);
     private final Label title = new Label();
     private final Label status = new Label();
     private final Label readOnly = new Label();
@@ -432,7 +433,7 @@ final class ProjectMapPreview extends StackPane {
     /** The title bar, and the find bar under it while it is open (see {@link #showFind}). */
     private final javafx.scene.layout.VBox header = new javafx.scene.layout.VBox();
     /** Find in the card (position 6): the field, "k of N", previous / next, match case and close. */
-    private final HBox findBar = new HBox(4);
+    private final HBox findBar = UiZoom.spacing(new HBox(), 4);
 
     private final javafx.scene.control.TextField findField = new javafx.scene.control.TextField();
     private final Label findCount = new Label();
@@ -443,7 +444,7 @@ final class ProjectMapPreview extends StackPane {
     /** Where the find started: typing searches from here, so each letter refines the same match. */
     private int findOrigin;
     /** The floating bar over a selection in the text, as in a Markdown buffer: here it adds a Personal Note. */
-    private final HBox selectionBar = new HBox(2);
+    private final HBox selectionBar = UiZoom.spacing(new HBox(), 2);
 
     private final Button selectionNote = new Button();
     private final CodeArea editor = AreaUndo.none(new CodeArea());
@@ -1432,7 +1433,7 @@ final class ProjectMapPreview extends StackPane {
     /** {@code here}'s problems, then {@code docs} rendered, in the popup under the mouse's {@code screen} point. */
     private void showMouseHover(
             java.util.List<LspDiagnostic> here, @Nullable String docs, javafx.geometry.Point2D screen) {
-        javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(6);
+        javafx.scene.layout.VBox content = UiZoom.spacing(new javafx.scene.layout.VBox(), 6);
         content.getStyleClass().add("project-map-hover");
         StringBuilder sizing = new StringBuilder();
         for (LspDiagnostic d : here) {
@@ -2677,7 +2678,7 @@ final class ProjectMapPreview extends StackPane {
         selectionBar.getStyleClass().addAll("markdown-format-bar", "project-map-selection-bar");
         selectionBar.setManaged(false); // placed over the selection by updateSelectionBar
         selectionBar.setFocusTraversable(false);
-        selectionBar.setPadding(new javafx.geometry.Insets(3));
+        UiZoom.padding(selectionBar, 3);
         selectionBar.setAlignment(Pos.CENTER_LEFT);
         selectionBar.setVisible(false);
         selectionNote.setText(tr("editmenu.addNote"));
@@ -2736,7 +2737,7 @@ final class ProjectMapPreview extends StackPane {
         javafx.geometry.Bounds text = frame.localToParent(textPane.getBoundsInParent());
         selectionBar.setVisible(true);
         selectionBar.applyCss();
-        double width = Math.min(selectionBar.prefWidth(-1), Math.max(60, text.getWidth()));
+        double width = Math.min(selectionBar.prefWidth(-1), Math.max(UiZoom.px(60), text.getWidth()));
         double height = selectionBar.prefHeight(width);
         var selection = editor.getSelection();
         boolean oneLine = editor.offsetToPosition(selection.getStart(), TwoDimensional.Bias.Forward)
@@ -3639,14 +3640,14 @@ final class ProjectMapPreview extends StackPane {
         }
         optional.forEach(wanted::addAll);
         double width = getWidth();
-        int dropped = width < COMPACT_WIDTH ? 1 : 0; // under the compact width −/+ always go
+        int dropped = width < UiZoom.px(COMPACT_WIDTH) ? 1 : 0; // under the compact width −/+ always go
         while (dropped < optional.size() && titleBarWidth(titleMin, wanted, optional, dropped) > width) {
             dropped++;
         }
         double whole = Math.ceil(title.prefWidth(-1));
         if (dropped == 0
                 && !status.getText().isEmpty()
-                && width - titleBarWidth(Math.max(titleMin, whole), wanted, optional, 0) < STATUS_ROOM) {
+                && width - titleBarWidth(Math.max(titleMin, whole), wanted, optional, 0) < UiZoom.px(STATUS_ROOM)) {
             dropped = 1; // −/+ give way before the status is squeezed out by a whole title
         }
         double left = width - titleBarWidth(titleMin, wanted, optional, dropped);
@@ -3699,12 +3700,12 @@ final class ProjectMapPreview extends StackPane {
     private void installFindBar() {
         findBar.getStyleClass().add("project-map-preview-find");
         findBar.setAlignment(Pos.CENTER_LEFT);
-        findBar.setPadding(new javafx.geometry.Insets(3, 6, 3, 6));
+        UiZoom.padding(findBar, 3, 6, 3, 6);
         findField.setPromptText(tr("project.map.preview.find.prompt"));
         findField.setAccessibleText(tr("project.map.preview.find.prompt"));
         findField.getStyleClass().add("project-map-preview-find-field");
         HBox.setHgrow(findField, Priority.ALWAYS);
-        findField.setMinWidth(60);
+        UiZoom.minWidth(findField, 60);
         findCount.getStyleClass().add("project-map-preview-find-count");
         findCount.setMinWidth(Region.USE_PREF_SIZE);
         findPrevious.setGraphic(Icons.chevronLeft());
@@ -3959,7 +3960,7 @@ final class ProjectMapPreview extends StackPane {
             title.setMinWidth(titleMin);
         }
         frame.resizeRelocate(0, 0, getWidth(), getHeight());
-        double grip = 18;
+        double grip = UiZoom.px(18);
         resizeGrip.resizeRelocate(Math.max(0, getWidth() - grip), Math.max(0, getHeight() - grip), grip, grip);
     }
 
@@ -3983,7 +3984,7 @@ final class ProjectMapPreview extends StackPane {
             measure.setFont(title.getFont());
             javafx.scene.Node icon = title.getGraphic();
             double iconWidth = icon == null ? 0 : icon.prefWidth(-1) + title.getGraphicTextGap();
-            measuredTitleWidth = Math.ceil(measure.getLayoutBounds().getWidth() + iconWidth + 4);
+            measuredTitleWidth = Math.ceil(measure.getLayoutBounds().getWidth() + iconWidth + UiZoom.px(4));
         }
         return Math.min(measuredTitleWidth, cardWidth * 0.5);
     }
@@ -4576,7 +4577,7 @@ final class ProjectMapPreview extends StackPane {
                         : tr("project.map.preview.binaryTitle"));
         heading.getStyleClass().add("project-map-preview-info-heading");
         heading.setWrapText(true);
-        javafx.scene.layout.VBox info = new javafx.scene.layout.VBox(4, heading);
+        javafx.scene.layout.VBox info = UiZoom.spacing(new javafx.scene.layout.VBox(heading), 4);
         if (size >= 0) {
             info.getChildren().add(new Label(tr("project.map.preview.infoSize", StatusBar.formatSize(size))));
         }
@@ -4594,7 +4595,7 @@ final class ProjectMapPreview extends StackPane {
         reveal.setOnAction(event -> onReveal.accept(file));
         info.getChildren().add(reveal);
         info.getStyleClass().add("project-map-preview-info");
-        info.setPadding(new javafx.geometry.Insets(12));
+        UiZoom.padding(info, 12);
         frame.setCenter(info);
         if (!userSized) {
             // Compact: the facts need no more than the card's minimum.
@@ -4772,7 +4773,7 @@ final class ProjectMapPreview extends StackPane {
         glyph.setFont(textFont());
         double lineHeight = Math.max(1, glyph.getLayoutBounds().getHeight());
         int lines = Math.max(1, shown.endLine() - shown.startLine() + 1);
-        return Math.max(MIN_HEIGHT, Math.min(DEFAULT_HEIGHT, lines * lineHeight + TEXT_CHROME_HEIGHT));
+        return Math.max(MIN_HEIGHT, Math.min(DEFAULT_HEIGHT, lines * lineHeight + UiZoom.px(TEXT_CHROME_HEIGHT)));
     }
 
     /** The width that shows the text's longest line, up to {@value #MAX_FIT_COLUMNS} columns. */
@@ -4781,7 +4782,7 @@ final class ProjectMapPreview extends StackPane {
         Text glyph = new Text("M");
         glyph.setFont(textFont());
         double glyphWidth = Math.max(1, glyph.getLayoutBounds().getWidth());
-        return Math.max(DEFAULT_WIDTH, columns * glyphWidth + TEXT_CHROME_WIDTH);
+        return Math.max(DEFAULT_WIDTH, columns * glyphWidth + UiZoom.px(TEXT_CHROME_WIDTH));
     }
 
     /**

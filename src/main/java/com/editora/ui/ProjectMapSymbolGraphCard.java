@@ -8,7 +8,6 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Group;
 import javafx.scene.control.Button;
@@ -29,6 +28,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.CubicCurve;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -107,16 +107,16 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
         summary.setMinHeight(Region.USE_PREF_SIZE);
         summary.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(summary, Priority.ALWAYS);
-        HBox bar = new HBox(6, back, summary);
+        HBox bar = UiZoom.spacing(new HBox(back, summary), 6);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.getStyleClass().add("project-map-graph-bar");
-        bar.setPadding(new Insets(4, 8, 4, 6));
+        UiZoom.padding(bar, 4, 8, 4, 6);
         scroll.setFitToWidth(true);
         scroll.setFitToHeight(true);
         scroll.getStyleClass().add("project-map-graph-scroll");
         detail.getStyleClass().add("project-map-graph-detail");
         detail.setMnemonicParsing(false);
-        detail.setPadding(new Insets(4, 8, 4, 8));
+        UiZoom.padding(detail, 4, 8, 4, 8);
         detail.setMaxWidth(Double.MAX_VALUE);
         VBox body = new VBox(bar, scroll, detail);
         VBox.setVgrow(scroll, Priority.ALWAYS);
@@ -359,6 +359,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             middle.setTooltip(new Tooltip(tr("project.map.graph.subjectTip")));
             curves.setManaged(false);
             curves.setMouseTransparent(true);
+            UiZoom.follow(this, this::requestLayout);
             for (Side side : Side.values()) {
                 Label header = new Label();
                 header.getStyleClass().add("project-map-graph-side");
@@ -402,8 +403,9 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
                     NodeButton button = new NodeButton(groups.get(i), side, level.via());
                     CubicCurve curve = new CubicCurve();
                     curve.getStyleClass().add("project-map-graph-edge");
-                    curve.setStrokeWidth(1
-                            + Math.min(2, Math.log(Math.max(1, groups.get(i).count())) / Math.log(2)));
+                    double stroke =
+                            1 + Math.min(2, Math.log(Math.max(1, groups.get(i).count())) / Math.log(2));
+                    UiZoom.follow(curve, () -> curve.setStrokeWidth(UiZoom.px(stroke)));
                     drawn.add(button);
                     joined.add(curve);
                     curves.getChildren().add(curve);
@@ -444,7 +446,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
         }
 
         private double column(double width) {
-            return Math.max(110, (width - 2 * PAD - 2 * GAP) / 3);
+            return Math.max(UiZoom.px(110), (width - 2 * UiZoom.px(PAD) - 2 * UiZoom.px(GAP)) / 3);
         }
 
         private boolean shows(javafx.scene.Node node) {
@@ -456,9 +458,9 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             if (!shows(at(side).header())) {
                 return 0;
             }
-            double h = at(side).header().prefHeight(width) + ROW;
+            double h = at(side).header().prefHeight(width) + UiZoom.px(ROW);
             for (NodeButton button : at(side).nodes()) {
-                h += button.prefHeight(width) + ROW;
+                h += button.prefHeight(width) + UiZoom.px(ROW);
             }
             if (shows(at(side).extra())) {
                 h += at(side).extra().prefHeight(width);
@@ -473,13 +475,13 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             double used = 0;
             for (NodeButton button : at(side).nodes()) {
                 double w = Math.min(width, button.prefWidth(-1));
-                if (!row.isEmpty() && used + ROW * 2 + w > width) {
+                if (!row.isEmpty() && used + UiZoom.px(ROW) * 2 + w > width) {
                     rows.add(row);
                     row = new ArrayList<>();
                     used = 0;
                 }
                 row.add(button);
-                used += w + ROW * 2;
+                used += w + UiZoom.px(ROW) * 2;
             }
             if (!row.isEmpty()) {
                 rows.add(row);
@@ -491,19 +493,19 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             if (!shows(at(side).header())) {
                 return 0;
             }
-            double h = at(side).header().prefHeight(width) + ROW;
+            double h = at(side).header().prefHeight(width) + UiZoom.px(ROW);
             for (List<NodeButton> row : rows(side, width)) {
-                h += row.get(0).prefHeight(-1) + ROW;
+                h += row.get(0).prefHeight(-1) + UiZoom.px(ROW);
             }
             if (shows(at(side).extra())) {
                 h += at(side).extra().prefHeight(width);
             }
-            return h + GAP / 2;
+            return h + UiZoom.px(GAP) / 2;
         }
 
         @Override
         protected double computePrefWidth(double height) {
-            return 3 * 110 + 2 * GAP + 2 * PAD;
+            return 3 * UiZoom.px(110) + 2 * UiZoom.px(GAP) + 2 * UiZoom.px(PAD);
         }
 
         @Override
@@ -513,7 +515,10 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             double band = Math.max(
                     middle.prefHeight(column),
                     Math.max(columnHeight(Side.CALLERS, column), columnHeight(Side.CALLEES, column)));
-            return 2 * PAD + bandHeight(Side.SUPERTYPES, w - 2 * PAD) + band + bandHeight(Side.SUBTYPES, w - 2 * PAD);
+            return 2 * UiZoom.px(PAD)
+                    + bandHeight(Side.SUPERTYPES, w - 2 * UiZoom.px(PAD))
+                    + band
+                    + bandHeight(Side.SUBTYPES, w - 2 * UiZoom.px(PAD));
         }
 
         @Override
@@ -522,28 +527,35 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
                 return;
             }
             double width = getWidth();
-            double inner = width - 2 * PAD;
+            double inner = width - 2 * UiZoom.px(PAD);
             double column = column(width);
             double top = bandHeight(Side.SUPERTYPES, inner);
             double bottom = bandHeight(Side.SUBTYPES, inner);
-            double bandTop = PAD + top;
+            double bandTop = UiZoom.px(PAD) + top;
             double band = Math.max(
                     middle.prefHeight(column),
                     Math.max(
                             Math.max(columnHeight(Side.CALLERS, column), columnHeight(Side.CALLEES, column)),
-                            getHeight() - 2 * PAD - top - bottom));
+                            getHeight() - 2 * UiZoom.px(PAD) - top - bottom));
             double middleHeight = middle.prefHeight(column);
-            double middleWidth = Math.min(column, Math.max(middle.prefWidth(-1), 90));
-            double middleX = PAD + column + GAP + (column - middleWidth) / 2;
+            double middleWidth = Math.min(column, Math.max(middle.prefWidth(-1), UiZoom.px(90)));
+            double middleX = UiZoom.px(PAD) + column + UiZoom.px(GAP) + (column - middleWidth) / 2;
             double middleY = bandTop + (band - middleHeight) / 2;
             middle.resizeRelocate(middleX, middleY, middleWidth, middleHeight);
             double midY = middleY + middleHeight / 2;
             double midX = middleX + middleWidth / 2;
-            layoutColumn(Side.CALLERS, PAD, column, bandTop, band, true, middleX, midY);
+            layoutColumn(Side.CALLERS, UiZoom.px(PAD), column, bandTop, band, true, middleX, midY);
             layoutColumn(
-                    Side.CALLEES, PAD + 2 * (column + GAP), column, bandTop, band, false, middleX + middleWidth, midY);
-            layoutBand(Side.SUPERTYPES, PAD, inner, true, midX, middleY);
-            layoutBand(Side.SUBTYPES, bandTop + band + GAP / 2, inner, false, midX, middleY + middleHeight);
+                    Side.CALLEES,
+                    UiZoom.px(PAD) + 2 * (column + UiZoom.px(GAP)),
+                    column,
+                    bandTop,
+                    band,
+                    false,
+                    middleX + middleWidth,
+                    midY);
+            layoutBand(Side.SUPERTYPES, UiZoom.px(PAD), inner, true, midX, middleY);
+            layoutBand(Side.SUBTYPES, bandTop + band + UiZoom.px(GAP) / 2, inner, false, midX, middleY + middleHeight);
         }
 
         private void layoutColumn(
@@ -563,7 +575,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             double headerHeight = header.prefHeight(column);
             header.resizeRelocate(x, y, column, headerHeight);
             header.setAlignment(left ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-            y += headerHeight + ROW;
+            y += headerHeight + UiZoom.px(ROW);
             List<NodeButton> buttons = at(side).nodes();
             List<CubicCurve> joined = at(side).lines();
             for (int i = 0; i < buttons.size(); i++) {
@@ -584,7 +596,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
                 curve.setControlY2(midY);
                 curve.setEndX(edge);
                 curve.setEndY(midY);
-                y += h + ROW;
+                y += h + UiZoom.px(ROW);
             }
             Label extra = at(side).extra();
             if (shows(extra)) {
@@ -601,17 +613,17 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             double headerHeight = header.prefHeight(inner);
             double y = y0;
             List<List<NodeButton>> rows = rows(side, inner);
-            header.resizeRelocate(PAD, y, inner, headerHeight);
-            y += headerHeight + ROW;
+            header.resizeRelocate(UiZoom.px(PAD), y, inner, headerHeight);
+            y += headerHeight + UiZoom.px(ROW);
             header.setAlignment(Pos.CENTER);
             List<NodeButton> buttons = at(side).nodes();
             List<CubicCurve> joined = at(side).lines();
             for (List<NodeButton> row : rows) {
                 double total = 0;
                 for (NodeButton button : row) {
-                    total += Math.min(inner, button.prefWidth(-1)) + ROW * 2;
+                    total += Math.min(inner, button.prefWidth(-1)) + UiZoom.px(ROW) * 2;
                 }
-                double x = PAD + Math.max(0, (inner - total) / 2) + ROW;
+                double x = UiZoom.px(PAD) + Math.max(0, (inner - total) / 2) + UiZoom.px(ROW);
                 double h = row.get(0).prefHeight(-1);
                 for (NodeButton button : row) {
                     double w = Math.min(inner, button.prefWidth(-1));
@@ -628,13 +640,13 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
                     curve.setControlY2(above ? edgeY - bend : edgeY + bend);
                     curve.setEndX(midX);
                     curve.setEndY(edgeY);
-                    x += w + ROW * 2;
+                    x += w + UiZoom.px(ROW) * 2;
                 }
-                y += h + ROW;
+                y += h + UiZoom.px(ROW);
             }
             Label extra = at(side).extra();
             if (shows(extra)) {
-                extra.resizeRelocate(PAD, y, inner, extra.prefHeight(inner));
+                extra.resizeRelocate(UiZoom.px(PAD), y, inner, extra.prefHeight(inner));
                 extra.setAlignment(Pos.CENTER);
             }
         }

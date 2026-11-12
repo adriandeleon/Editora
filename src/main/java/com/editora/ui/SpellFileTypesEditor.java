@@ -17,6 +17,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.layout.VBox;
 
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.text.LanguageRegistry;
 
@@ -39,7 +40,7 @@ final class SpellFileTypesEditor extends VBox {
     private boolean syncing;
 
     SpellFileTypesEditor(Supplier<Settings> settings, Runnable apply) {
-        super(6);
+        UiZoom.spacing(this, 6);
         this.settings = settings;
         this.apply = apply;
         this.languages = languageNames(settings.get());
@@ -52,7 +53,7 @@ final class SpellFileTypesEditor extends VBox {
         filter.setAccessibleText(tr("settings.spell.fileTypes.filter"));
         filter.textProperty().addListener((o, was, now) -> showMatching(now)); // narrows the list; stores nothing
         list.setCellFactory(CheckBoxListCell.forListView(ticked::get));
-        list.setPrefSize(300, 220);
+        UiZoom.prefSize(list, 300, 220);
         list.setAccessibleText(tr("settings.spell.fileTypes.title"));
         // A tick box inside a list cell answers the mouse only; Space on the selected row does the same.
         list.setOnKeyPressed(e -> {
@@ -66,7 +67,7 @@ final class SpellFileTypesEditor extends VBox {
             }
         });
         getChildren().addAll(filter, list);
-        setMaxWidth(440);
+        UiZoom.maxWidth(this, 440);
         sync();
         showMatching("");
     }

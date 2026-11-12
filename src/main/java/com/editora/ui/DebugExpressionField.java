@@ -15,6 +15,7 @@ import javafx.scene.layout.Region;
 
 import com.editora.command.KeyDispatcher;
 import com.editora.dap.DapModels;
+import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
@@ -140,7 +141,7 @@ final class DebugExpressionField {
                 area.deselect();
             }
         });
-        fitHeight();
+        UiZoom.follow(frame, this::fitHeight);
     }
 
     /** The node to lay out. */
@@ -292,7 +293,8 @@ final class DebugExpressionField {
 
     /** As tall as its text (it wraps), between one line (four for a code fragment) and a bound; then it scrolls. */
     private void fitHeight() {
-        double pad = multiLine.get() ? 26 : 9; // the content's padding and the frame, and a fragment's line to type on
+        // the content's padding and the frame, and a fragment's line to type on
+        double pad = UiZoom.px(multiLine.get() ? 26 : 9);
         double min = (multiLine.get() ? 4 : 1) * lineHeight + pad;
         double max = (multiLine.get() ? 14 : 4) * lineHeight + pad;
         Double estimate = area.totalHeightEstimateProperty().getValue();

@@ -23,6 +23,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.ImagePattern;
 
+import com.editora.editor.UiZoom;
 import com.editora.http.HttpResponseFormat;
 import org.jspecify.annotations.Nullable;
 
@@ -59,12 +60,12 @@ final class HttpImageView extends VBox {
             }
             layoutPicture();
         });
-        HBox toggles = new HBox(2, fit, actual);
+        HBox toggles = UiZoom.spacing(new HBox(fit, actual), 2);
         toggles.getStyleClass().add("http-image-toggles");
         toggles.setMinWidth(Region.USE_PREF_SIZE);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox bar = new HBox(8, caption, spacer, toggles);
+        HBox bar = UiZoom.spacing(new HBox(caption, spacer, toggles), 8);
         bar.getStyleClass().add("http-image-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
 
@@ -76,13 +77,14 @@ final class HttpImageView extends VBox {
         StackPane stage = new StackPane(frame);
         stage.getStyleClass().add("http-image-stage");
         stage.setAlignment(Pos.TOP_CENTER);
-        stage.setPadding(new Insets(PAD));
+        UiZoom.padding(stage, PAD);
         scroll = new ScrollPane(stage);
         scroll.getStyleClass().add("http-image-scroll");
         scroll.setFitToWidth(true);
         scroll.setFitToHeight(true);
         // Fit follows the space the panel gives: a wider panel shows more of a large picture, up to its own size.
         scroll.viewportBoundsProperty().addListener((o, a, b) -> layoutPicture());
+        UiZoom.follow(scroll, this::layoutPicture);
         VBox.setVgrow(scroll, Priority.ALWAYS);
         getChildren().addAll(bar, scroll);
     }
@@ -145,7 +147,10 @@ final class HttpImageView extends VBox {
             return;
         }
         Insets frameInsets = frame.getInsets(); // its border: counted, or Fit would always overflow by two pixels
-        double room = scroll.getViewportBounds().getWidth() - 2 * PAD - frameInsets.getLeft() - frameInsets.getRight();
+        double room = scroll.getViewportBounds().getWidth()
+                - 2 * UiZoom.px(PAD)
+                - frameInsets.getLeft()
+                - frameInsets.getRight();
         // Before the first layout the viewport is empty: show the natural size rather than nothing.
         picture.setFitWidth(room > 1 ? Math.min(image.getWidth(), Math.floor(room)) : 0);
     }

@@ -34,6 +34,7 @@ import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.fold.NarrowLines;
 import com.editora.lsp.SymbolNode;
 import com.editora.search.FuzzyMatch;
@@ -260,7 +261,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         refreshNarrowTooltips();
         syncNarrowToggle();
         HBox.setHgrow(filterField, Priority.ALWAYS);
-        HBox filterBar = new HBox(6, filterField, clearFilter);
+        HBox filterBar = UiZoom.spacing(new HBox(filterField, clearFilter), 6);
         filterBar.getStyleClass().add("project-filter-bar");
         filterBar.setAlignment(Pos.CENTER_LEFT);
 
@@ -296,7 +297,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         javafx.scene.layout.Region toolbarSpacer = new javafx.scene.layout.Region();
         HBox.setHgrow(toolbarSpacer, Priority.ALWAYS);
-        HBox toolbar = new HBox(4, sortCombo, kindFilter, toolbarSpacer, narrowFold);
+        HBox toolbar = UiZoom.spacing(new HBox(sortCombo, kindFilter, toolbarSpacer, narrowFold), 4);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.getStyleClass().add("structure-toolbar");
 
@@ -329,7 +330,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
         });
 
-        setSpacing(4);
+        UiZoom.spacing(this, 4);
         getChildren().addAll(toolbar, filterBar, tree);
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
     }
@@ -1610,7 +1611,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                     Tooltip tip = new Tooltip(item.doc());
                     tip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
                     tip.setWrapText(true);
-                    tip.setMaxWidth(480);
+                    tip.setMaxWidth(UiZoom.px(480));
                     setTooltip(tip);
                 } else {
                     setTooltip(null);
@@ -1641,7 +1642,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             HBox box = new HBox();
             box.setAlignment(Pos.CENTER_LEFT);
             Node icon = StructureIcons.forKind(item.kind());
-            HBox.setMargin(icon, new javafx.geometry.Insets(0, 4, 0, 0));
+            UiZoom.follow(icon, () -> HBox.setMargin(icon, UiZoom.insets(0, 4, 0, 0)));
             box.getChildren().add(icon);
             for (SyntaxRun run : item.nameRuns()) {
                 box.getChildren().add(styledText(run, "structure-name"));

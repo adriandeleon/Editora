@@ -21,6 +21,7 @@ import com.editora.config.PathKeys;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.notes.NoteDraft;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -627,7 +628,7 @@ final class NotesCoordinator {
         Label prompt = new Label(tr("dialog.note.content"));
         Label hint = new Label(tr("dialog.note.markdownHint"));
         hint.getStyleClass().add("note-dialog-hint");
-        VBox body = new VBox(6, prompt, editor, hint);
+        VBox body = UiZoom.spacing(new VBox(prompt, editor, hint), 6);
         // Editing an existing note: the Delete button confirms first (it's destructive).
         OverlayInput.Extra extra =
                 onDelete == null ? null : new OverlayInput.Extra(tr("notes.delete"), () -> confirmDelete(onDelete));

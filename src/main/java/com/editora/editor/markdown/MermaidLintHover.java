@@ -5,6 +5,7 @@ import java.util.function.Supplier;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
 import org.jspecify.annotations.Nullable;
@@ -74,12 +75,13 @@ public final class MermaidLintHover {
                 t = new Tooltip();
                 t.getStyleClass().add("mermaid-lint-tooltip");
                 t.setWrapText(true);
-                t.setMaxWidth(420);
+                Tooltip made = t;
+                UiZoom.follow(made, () -> made.setMaxWidth(UiZoom.px(420)));
                 tooltip = t;
             }
             t.setText(text);
             shown = text;
-            t.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
+            t.show(area, e.getScreenX() + UiZoom.px(12), e.getScreenY() + UiZoom.px(16));
         } catch (RuntimeException ignored) {
             // viewport mid-layout / hit miss — ignore
         }

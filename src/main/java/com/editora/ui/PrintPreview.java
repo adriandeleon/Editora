@@ -346,6 +346,9 @@ final class PrintPreview {
         Scene scene = new Scene(root);
         addStylesheet(scene, "/com/editora/styles/app.css");
         addStylesheet(scene, "/com/editora/styles/syntax.css");
+        // The pages shown here were paginated at 100% and go to the printer as they are drawn, so this window
+        // stays at 100% whatever the UI zoom: a zoomed sheet would restyle the pages it holds.
+        com.editora.editor.UiZoom.pin(scene);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         stage.setScene(scene);
         stage.setTitle(tr("print.preview.title"));

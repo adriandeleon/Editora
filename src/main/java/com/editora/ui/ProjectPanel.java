@@ -49,6 +49,7 @@ import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
 import com.editora.config.PersonalNote;
+import com.editora.editor.UiZoom;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.editor.notes.PersonalNoteTooltip;
 import org.jspecify.annotations.Nullable;
@@ -640,7 +641,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.mapWindow.setOnUserClosed(() -> onMapWindowChanged.accept(false));
         getStyleClass().add("project-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(4);
+        UiZoom.spacing(this, 4);
 
         buildFilter();
 
@@ -698,9 +699,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         disconnectedLabel.getStyleClass().add("tool-window-placeholder");
         disconnectedLabel.setWrapText(true);
         disconnectedLabel.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
-        VBox disconnectedBox = new VBox(10, disconnectedLabel, reconnectButton);
+        VBox disconnectedBox = UiZoom.spacing(new VBox(disconnectedLabel, reconnectButton), 10);
         disconnectedBox.setAlignment(Pos.CENTER);
-        disconnectedBox.setPadding(new javafx.geometry.Insets(16));
+        UiZoom.padding(disconnectedBox, 16);
         disconnectedPane = new StackPane(disconnectedBox);
         VBox.setVgrow(disconnectedPane, Priority.ALWAYS);
 
@@ -4467,7 +4468,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // folder and file rows share one icon width and every label starts at the same x.
             Node glyph = FileIcons.forProjectItem(fileName == null ? label : fileName.toString(), isDir);
             Node base = FileIcons.withStatusLetter(glyph, fileStatus == null ? null : fileStatus.letter());
-            HBox graphic = new HBox(3, base);
+            HBox graphic = UiZoom.spacing(new HBox(base), 3);
             graphic.setAlignment(Pos.CENTER_LEFT);
             Label name = new Label(label);
             name.getStyleClass().add("project-file-name");
@@ -4489,7 +4490,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         if (text != null && !text.isBlank()) {
                             Tooltip notes = PersonalNoteTooltip.create(text);
                             notes.setWrapText(true);
-                            notes.setMaxWidth(420);
+                            notes.setMaxWidth(UiZoom.px(420));
                             setTooltip(notes);
                         }
                     }
@@ -4508,9 +4509,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         icon.setScaleX(0.68);
         icon.setScaleY(0.68);
         StackPane box = new StackPane(icon);
-        box.setMinSize(12, 12);
-        box.setPrefSize(12, 12);
-        box.setMaxSize(12, 12);
+        UiZoom.minSize(box, 12, 12);
+        UiZoom.prefSize(box, 12, 12);
+        UiZoom.maxSize(box, 12, 12);
         box.setMouseTransparent(true);
         return box;
     }

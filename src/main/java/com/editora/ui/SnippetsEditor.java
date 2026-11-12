@@ -27,6 +27,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.snippet.SnippetManager;
 import com.editora.snippet.SnippetManager.Entry;
 import com.editora.snippet.SnippetManager.Problem;
@@ -165,7 +166,7 @@ final class SnippetsEditor {
         filter.textProperty().addListener((o, was, now) -> shown.setPredicate(e -> matches(e, now)));
 
         ListView<Entry> list = new ListView<>(shown);
-        list.setPrefSize(240, 400);
+        UiZoom.prefSize(list, 240, 400);
         VBox.setVgrow(list, Priority.ALWAYS);
         list.setCellFactory(lv -> new EntryCell());
 
@@ -176,13 +177,12 @@ final class SnippetsEditor {
         CodeArea body = AreaUndo.bounded(new CodeArea());
         body.getStyleClass().addAll("editor-area", "snippet-body");
         body.setWrapText(false); // a body is code: a wrapped line reads as two
-        body.setPrefHeight(180);
+        UiZoom.prefHeight(body, 180);
         hooks.editorKeys().accept(body);
         body.plainTextChanges().subscribe(c -> hooks.highlight().accept(body, language));
 
         GridPane form = new GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
+        UiZoom.gaps(form, 8, 6);
         formRow(form, 0, tr("settings.snippet.name"), name);
         formRow(form, 1, tr("settings.snippet.prefix"), prefix);
         formRow(form, 2, tr("settings.snippet.description"), description);
@@ -443,20 +443,20 @@ final class SnippetsEditor {
         languageLabel.setLabelFor(languageBox);
         languageBox.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(languageBox, Priority.ALWAYS);
-        HBox languageRow = new HBox(10, languageLabel, languageBox);
+        HBox languageRow = UiZoom.spacing(new HBox(languageLabel, languageBox), 10);
         languageRow.setAlignment(Pos.CENTER_LEFT);
-        VBox left = new VBox(6, languageRow, filter, list, buttons);
+        VBox left = UiZoom.spacing(new VBox(languageRow, filter, list, buttons), 6);
         for (Region r : List.of(languageLabel, add, remove, toggle)) {
             r.setMinWidth(Region.USE_PREF_SIZE);
         }
         VBox.setVgrow(left, Priority.ALWAYS);
 
-        VBox right = new VBox(8, problem, form, clash);
+        VBox right = UiZoom.spacing(new VBox(problem, form, clash), 8);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
 
         load.accept(null);
-        HBox box = new HBox(12, left, right);
+        HBox box = UiZoom.spacing(new HBox(left, right), 12);
         box.setAlignment(Pos.TOP_LEFT);
         return box;
     }
@@ -526,7 +526,7 @@ final class SnippetsEditor {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof Region r) {
-            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
+            UiZoom.minWidth(r, SettingRowPane.FIELD_MIN_WIDTH);
         }
         if (field instanceof CodeArea) { // a tall body would otherwise centre its label
             GridPane.setValignment(l, javafx.geometry.VPos.TOP);
@@ -553,12 +553,12 @@ final class SnippetsEditor {
             Label nm = new Label(s.name() == null || s.name().isBlank() ? tr("settings.snippet.unnamed") : s.name());
             HBox.setHgrow(nm, Priority.ALWAYS);
             nm.setMaxWidth(Double.MAX_VALUE);
-            HBox cell = new HBox(6, nm);
+            HBox cell = UiZoom.spacing(new HBox(nm), 6);
             cell.setAlignment(Pos.CENTER_LEFT);
             if (!s.prefixes().isEmpty() && !s.prefixText().equalsIgnoreCase(s.name())) {
                 Label trigger = new Label(s.prefixText());
                 trigger.getStyleClass().add("snippet-trigger");
-                trigger.setMaxWidth(110); // the name gives way first, then the trigger ellipsizes
+                UiZoom.maxWidth(trigger, 110); // the name gives way first, then the trigger ellipsizes
                 cell.getChildren().add(trigger);
             }
             String tag = s.disabled()

@@ -25,6 +25,7 @@ import com.editora.config.ProjectManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.config.WorkspaceState;
+import com.editora.editor.UiZoom;
 import com.editora.i18n.Messages;
 import org.jspecify.annotations.Nullable;
 
@@ -1362,6 +1363,7 @@ public class WindowManager {
         if (issues == null) {
             return Messages.tr("status.settings.reloadFailed");
         }
+        Themes.applyUiZoom(shared.getSettings().getUiZoom());
         Themes.applyAppTheme(shared.getSettings().getTheme());
         reloadSharedKeymap(); // rebuilds the keymap the file may name, and re-applies everything everywhere
         for (Holder h : new ArrayList<>(windows)) {
@@ -1658,17 +1660,17 @@ public class WindowManager {
 
             StackPane sceneRoot = new StackPane(root);
             controller.installZenOverlay(sceneRoot);
-            Scene scene = new Scene(sceneRoot, 1000, 700);
+            Scene scene = new Scene(sceneRoot, UiZoom.px(1000), UiZoom.px(700));
             Settings settings = shared.getSettings();
             scene.setFill(Themes.backgroundFor(settings.getTheme()));
             scene.getStylesheets()
                     .addAll(
-                            WindowManager.class
+                            com.editora.editor.UiZoom.sheet(WindowManager.class
                                     .getResource("/com/editora/styles/app.css")
-                                    .toExternalForm(),
-                            WindowManager.class
+                                    .toExternalForm()),
+                            com.editora.editor.UiZoom.sheet(WindowManager.class
                                     .getResource("/com/editora/styles/syntax.css")
-                                    .toExternalForm());
+                                    .toExternalForm()));
 
             KeyDispatcher keyDispatcher = new KeyDispatcher(registry, keymap, controller::setStatus);
             keyDispatcher.install(scene);
