@@ -416,7 +416,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
     /** Opens the find bar over the buffer on screen, seeded with its one-line selection. */
     void openFind() {
-        findBar.open(shownArea().getSelectedText());
+        findBar.openOrNext(shownArea().getSelectedText()); // asked for again while open: the next match
     }
 
     ConsoleFindBar findBar() {

@@ -22,7 +22,7 @@ class WorkspaceStateV35Test {
         config.load();
         assertTrue(config.getWorkspaceState().isProjectMapShowDependencies());
         assertFalse(config.getWorkspaceState().isProjectMapIgnoreDebugger(), "absent: the Map follows");
-        assertEquals(35, ConfigSchema.WORKSPACE.currentVersion());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, ConfigSchema.WORKSPACE.currentVersion());
 
         config.getWorkspaceState().setProjectMapIgnoreDebugger(true);
         config.save();

@@ -114,8 +114,10 @@ public class WorkspaceState {
      *
      * <p>v34 → v35 added {@code projectMapIgnoreDebugger} (the Map's ⋯ "Follow the Debugger" turned off). Additive;
      * absent means the Map follows the debugger, its default.
+     *
+     * <p>v35 → v36 added {@code debugBrowserUrls} (the pages Debug in Browser opened, most recent first). Additive.
      */
-    public static final int SCHEMA_VERSION = 35;
+    public static final int SCHEMA_VERSION = 36;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -279,6 +281,9 @@ public class WorkspaceState {
     private boolean debugBreakpointsMuted;
     /** The {@code host:port} addresses Debug ▸ Attach reached in this project, most recent first. Additive in v30. */
     private List<String> debugAttachTargets = new ArrayList<>();
+
+    /** The pages Debug in Browser opened in this project, most recent first. */
+    private List<String> debugBrowserUrls = new ArrayList<>();
 
     // --- Zen (distraction-free) mode (per window). zenMode is a per-window effective overlay folded into
     //     the chrome/view-settings application (MainController.zenActive) — it hides chrome WITHOUT mutating
@@ -796,6 +801,14 @@ public class WorkspaceState {
 
     public List<String> getDebugAttachTargets() {
         return debugAttachTargets == null ? new ArrayList<>() : debugAttachTargets;
+    }
+
+    public List<String> getDebugBrowserUrls() {
+        return debugBrowserUrls == null ? new ArrayList<>() : debugBrowserUrls;
+    }
+
+    public void setDebugBrowserUrls(@Nullable List<String> debugBrowserUrls) {
+        this.debugBrowserUrls = debugBrowserUrls == null ? new ArrayList<>() : new ArrayList<>(debugBrowserUrls);
     }
 
     public void setDebugAttachTargets(@Nullable List<String> debugAttachTargets) {

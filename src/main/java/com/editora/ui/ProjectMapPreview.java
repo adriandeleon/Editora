@@ -3752,6 +3752,8 @@ final class ProjectMapPreview extends StackPane {
                 event.consume();
             }
         });
+        // The keymap's caret and editing chords (C-a, C-e, C-k, C-y; Ctrl+V/X/C/Z) act on the field.
+        com.editora.command.TextInputKeymap.installShared(findField);
         findBar.getChildren().setAll(findField, findCount, findPrevious, findNext, findCase, findClose);
     }
 

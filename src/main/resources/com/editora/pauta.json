@@ -729,27 +729,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {
-      "rule": "FIND-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-01",
-      "kind": "pending",
-      "reason": "The Debug Log window and the Run, External Tools and Debug consoles have no find bar.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
-      "rule": "FIND-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-02",
-      "kind": "pending",
-      "reason": "The views that have no find bar yet cannot search as you type or count the matches.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
       "rule": "FIND-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-04",
       "kind": "pending",
-      "reason": "The find bar in consoles has no command of its own, and running Find again in the terminal does not step to the next match.",
+      "reason": "The find bars of consoles and of the Debug Log open from the Find key in the view, not from a command of their own in the Command Palette.",
       "link": "https://github.com/adriandeleon/Editora/issues/1576"
     },
     {
@@ -757,31 +741,7 @@
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-05",
       "kind": "pending",
-      "reason": "The console find bar searches from the selection and, like a Project Map card's, highlights only the current match.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
-      "rule": "FIND-06",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-06",
-      "kind": "pending",
-      "reason": "The views that have no find bar yet also lack Enter and Shift+Enter to step through the matches.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
-      "rule": "FIND-07",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-07",
-      "kind": "pending",
-      "reason": "The views that have no find bar yet also lack the Escape key that closes it and returns the keyboard.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
-      "rule": "FIND-09",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-09",
-      "kind": "pending",
-      "reason": "The find fields of consoles, the terminal and Project Map cards do not follow the keymap's text-editing keys.",
+      "reason": "The find bars of consoles and of Project Map cards highlight only the current match.",
       "link": "https://github.com/adriandeleon/Editora/issues/1576"
     },
     {
