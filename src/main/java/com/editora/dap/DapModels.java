@@ -181,6 +181,9 @@ public final class DapModels {
      * and its value hides one level down. {@link LazyValues} resolves such a row before anyone shows it.
      *
      * <p>{@code note} says why a row shows less than its value ({@code null}: nothing to say).
+     *
+     * <p>{@code evaluateName} is the expression the adapter says gives this value in the stopped frame
+     * ({@code this.items.get(0)}, {@code d['key']}, {@code m["k"]}); {@code null} when it gave none.
      */
     public record VariableInfo(
             String name,
@@ -190,7 +193,20 @@ public final class DapModels {
             int namedVariables,
             int indexedVariables,
             boolean lazy,
-            @Nullable ValueNote note) {
+            @Nullable ValueNote note,
+            @Nullable String evaluateName) {
+
+        public VariableInfo(
+                String name,
+                String value,
+                String type,
+                int variablesReference,
+                int namedVariables,
+                int indexedVariables,
+                boolean lazy,
+                @Nullable ValueNote note) {
+            this(name, value, type, variablesReference, namedVariables, indexedVariables, lazy, note, null);
+        }
 
         public VariableInfo(
                 String name,

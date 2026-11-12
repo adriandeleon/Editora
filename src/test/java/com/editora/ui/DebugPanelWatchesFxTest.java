@@ -372,6 +372,7 @@ class DebugPanelWatchesFxTest {
                             tr("debugpanel.copyValue"),
                             tr("debugpanel.copyName"),
                             tr("debugpanel.history.valueHistory"),
+                            tr("debugpanel.copyExpression"),
                             tr("debugpanel.addToWatches", "count"),
                             null, // separator
                             tr("debugpanel.addWatch"),

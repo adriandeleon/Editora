@@ -47,6 +47,11 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
     /** The 0-based line the frame is stopped on (its function is the only one annotated); -1 = unknown. */
     private int frameLine = -1;
 
+    /** How long the last step or Continue ran (Visual Studio's PerfTip), painted last on {@link #elapsedLine}. */
+    private @Nullable String elapsed;
+
+    private int elapsedLine = -1;
+
     private boolean redrawPending;
 
     /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
@@ -90,6 +95,7 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
         second.setRenderingActive(rendering);
         second.setValues(values, frameLine);
         second.setPinned(pinned);
+        second.setElapsed(elapsedLine, elapsed);
         follower = second;
         return second;
     }
@@ -118,7 +124,21 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
 
     /** Whether there is anything to paint; the canvas is 1x1 (no viewport texture) whenever there is not. */
     private boolean drawable() {
-        return (values != null || pinned != null) && rendering;
+        return active() && rendering;
+    }
+
+    private boolean active() {
+        return values != null || pinned != null || elapsed != null;
+    }
+
+    /** Paints {@code text} (how long the program ran to this stop) last on 0-based {@code line}; null clears it. */
+    public void setElapsed(int line, @Nullable String text) {
+        if (follower != null) {
+            follower.setElapsed(line, text);
+        }
+        this.elapsed = line < 0 || text == null || text.isBlank() ? null : text;
+        this.elapsedLine = this.elapsed == null ? -1 : line;
+        activate();
     }
 
     /** Sets the pinned values to paint, by line (null or empty clears them). */
@@ -131,7 +151,7 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
     }
 
     private void activate() {
-        boolean active = values != null || pinned != null;
+        boolean active = active();
         setVisible(active);
         if (active) {
             requestLayout();
@@ -198,6 +218,8 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
         Map<String, String> vals = values;
         Map<String, String> known = vals == null ? Map.of() : vals;
         Map<Integer, String> pins = pinned;
+        String took = elapsed;
+        int tookLine = elapsedLine;
         if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
@@ -218,8 +240,9 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
                     : InlineValueScope.headerOf(this::codeLine, frameLine);
             for (int p = first; p <= last; p++) {
                 String pin = pins == null ? null : pins.get(p);
+                String tookHere = p == tookLine ? took : null;
                 boolean valuesHere = vals != null && !(frameLine >= 0 && p > frameLine); // below the stop: not yet run
-                if ((!valuesHere && pin == null) || area.isFolded(p)) {
+                if ((!valuesHere && pin == null && tookHere == null) || area.isFolded(p)) {
                     continue;
                 }
                 String line = area.getParagraph(p).getText();
@@ -237,7 +260,7 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
                 if (lineFilter != null && !lineFilter.test(p)) {
                     names = List.of();
                 }
-                if (names.isEmpty() && pin == null) {
+                if (names.isEmpty() && pin == null && tookHere == null) {
                     continue;
                 }
                 double y;
@@ -274,6 +297,13 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
                 if (pin != null) {
                     g.setFill(colors.info()); // a pinned value: asked for, not inferred
                     g.fillText(PIN_MARK + pin, x, y);
+                    x += textWidth(PIN_MARK + pin) + 16;
+                }
+                if (tookHere != null) {
+                    g.setFill(colors.inlineValue());
+                    g.setGlobalAlpha(0.7); // fainter than the values: about the run, not the code
+                    g.fillText(tookHere, x, y);
+                    g.setGlobalAlpha(1);
                 }
             }
         } catch (RuntimeException ignored) {

@@ -180,6 +180,14 @@ public final class FoldManager {
     private IntPredicate isExecutionLine = i -> false;
     /** A right-click on a line's breakpoint glyph. */
     private java.util.function.BiConsumer<Integer, javafx.scene.input.ContextMenuEvent> onBreakpointMenu = (i, e) -> {};
+    /** While the debugger is paused: whether hovering a line's number offers Run to Here (IntelliJ's gutter arrow). */
+    private IntPredicate runToHereAt = i -> false;
+    /** A click on a line's Run to Here arrow: the line, and whether Shift was down (ignore breakpoints on the way). */
+    private java.util.function.BiConsumer<Integer, Boolean> onRunToHere = (i, force) -> {};
+    /** The Run to Here arrow's hover text for a line. */
+    private IntFunction<String> runToHereTooltip = i -> "";
+    /** The one tooltip the hovered line number's Run to Here arrow shows (only one line is hovered at a time). */
+    private @Nullable Tooltip runToHereTip;
 
     /** Whether Git change tracking is active for this buffer (reserve the change-bar slot). */
     private BooleanSupplier changeBarsEnabled = () -> false;
@@ -810,6 +818,19 @@ public final class FoldManager {
             java.util.function.BiConsumer<Integer, javafx.scene.input.ContextMenuEvent> onMenu) {
         this.isExecutionLine = isExecutionLine == null ? i -> false : isExecutionLine;
         this.onBreakpointMenu = onMenu == null ? (i, e) -> {} : onMenu;
+    }
+
+    /**
+     * Wires IntelliJ's gutter Run to Cursor: while the debugger is paused ({@code offeredAt} a line), hovering a line's
+     * number shows an arrow in its place; a click runs to that line ({@code onRun}, Shift: ignoring breakpoints).
+     */
+    public void setRunToHereHooks(
+            IntPredicate offeredAt,
+            java.util.function.BiConsumer<Integer, Boolean> onRun,
+            IntFunction<String> tooltipFor) {
+        this.runToHereAt = offeredAt == null ? i -> false : offeredAt;
+        this.onRunToHere = onRun == null ? (i, force) -> {} : onRun;
+        this.runToHereTooltip = tooltipFor == null ? i -> "" : tooltipFor;
     }
 
     /**
@@ -1693,6 +1714,85 @@ public final class FoldManager {
         control.addEventHandler(javafx.scene.input.MouseEvent.ANY, OWN_POINTER);
     }
 
+    /** The style class of a line number showing the Run to Here arrow. */
+    static final String RUN_TO_HERE_CLASS = "run-to-here";
+
+    /**
+     * IntelliJ's Run to Cursor in the gutter: while paused, a hovered line number turns into an arrow (its width kept,
+     * so the text does not move) and a click on it runs to the line. Only an armed number keeps the press from the
+     * text; any other click on a number goes on to the editor as before.
+     */
+    private void runToHere(Label lineNo, int idx) {
+        lineNo.setUserData(idx);
+        lineNo.addEventHandler(javafx.scene.input.MouseEvent.ANY, runToHereMouse);
+    }
+
+    /**
+     * The one handler every line number's Run to Here goes through (rows are rebuilt as cells recycle, so none is made
+     * per row); the row's line is the number's user data.
+     */
+    private final javafx.event.EventHandler<javafx.scene.input.MouseEvent> runToHereMouse = e -> {
+        if (!(e.getSource() instanceof Label lineNo) || !(lineNo.getUserData() instanceof Integer idx)) {
+            return;
+        }
+        var type = e.getEventType();
+        boolean armed = lineNo.getStyleClass().contains(RUN_TO_HERE_CLASS);
+        if (type == javafx.scene.input.MouseEvent.MOUSE_ENTERED) {
+            if (runToHereAt.test(idx)) {
+                armRunToHere(lineNo, idx);
+            }
+        } else if (type == javafx.scene.input.MouseEvent.MOUSE_EXITED) {
+            disarmRunToHere(lineNo);
+        } else if (armed && type == javafx.scene.input.MouseEvent.MOUSE_PRESSED) {
+            e.consume(); // the press is the arrow's: the caret stays where it is
+        } else if (armed
+                && type == javafx.scene.input.MouseEvent.MOUSE_CLICKED
+                && e.getButton() == MouseButton.PRIMARY) {
+            disarmRunToHere(lineNo);
+            onRunToHere.accept(idx, e.isShiftDown());
+            e.consume();
+        }
+    };
+
+    private void armRunToHere(Label lineNo, int idx) {
+        if (lineNo.getStyleClass().contains(RUN_TO_HERE_CLASS)) {
+            return;
+        }
+        lineNo.getStyleClass().add(RUN_TO_HERE_CLASS);
+        lineNo.setContentDisplay(javafx.scene.control.ContentDisplay.CENTER); // over the number: its width stays
+        lineNo.setGraphic(runToHereGlyph());
+        lineNo.setCursor(Cursor.HAND);
+        Tooltip tip = runToHereTip;
+        if (tip == null) {
+            tip = new Tooltip();
+            tip.setShowDelay(javafx.util.Duration.millis(300));
+            runToHereTip = tip;
+        }
+        tip.setText(runToHereTooltip.apply(idx));
+        Tooltip.install(lineNo, tip);
+    }
+
+    private void disarmRunToHere(Label lineNo) {
+        if (!lineNo.getStyleClass().remove(RUN_TO_HERE_CLASS)) {
+            return;
+        }
+        lineNo.setGraphic(null);
+        lineNo.setCursor(null);
+        if (runToHereTip != null) {
+            Tooltip.uninstall(lineNo, runToHereTip);
+        }
+    }
+
+    /** The Run to Here arrow drawn over a hovered line number: the execution arrow's shape, in the accent colour. */
+    static Node runToHereGlyph() {
+        SVGPath svg = new SVGPath();
+        svg.setContent(EXEC_ARROW_PATH);
+        svg.getStyleClass().add("run-to-here-arrow");
+        svg.setScaleX(0.55);
+        svg.setScaleY(0.55);
+        return new Group(svg);
+    }
+
     /**
      * One gutter row. A folded paragraph's cell is laid out at zero height, but the line-number Label doesn't
      * clip to it, so the hidden lines' numbers would overflow and stack into a smear on the fold-header row:
@@ -1861,6 +1961,9 @@ public final class FoldManager {
                     number == 0
                             ? lineNumberText.blank(width)
                             : lineNumberText.padded(number < 0 ? idx + 1 : number, width));
+            if (breakpointsEnabled.getAsBoolean()) {
+                runToHere(lineNo, idx);
+            }
             box.getChildren().add(lineNo);
         }
 
