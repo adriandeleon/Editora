@@ -4,7 +4,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -14,6 +13,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
@@ -52,8 +52,8 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
     public ExternalToolPanel() {
         getStyleClass().add("run-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
 
         status.getStyleClass().add("run-status");
         status.setText(settledStatus);
@@ -61,7 +61,7 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
         clear.setMinWidth(Region.USE_PREF_SIZE);
         clear.setOnAction(e -> clearConsole());
 
-        HBox header = new HBox(8, busy, status, spacer(), clear);
+        HBox header = UiZoom.spacing(new HBox(busy, status, spacer(), clear), 8);
         header.setAlignment(Pos.CENTER_LEFT);
 
         output.setEditable(false);

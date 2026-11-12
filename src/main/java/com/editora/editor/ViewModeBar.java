@@ -33,7 +33,7 @@ final class ViewModeBar {
         enableEditing.getStyleClass().add("accent"); // AtlantaFX accent button — themed, not a hard yellow
         enableEditing.setOnAction(e -> onEnableEditing.run());
         note.getStyleClass().add("view-mode-note");
-        node = new HBox(10, title, desc, spacer, note, enableEditing);
+        node = UiZoom.spacing(new HBox(title, desc, spacer, note, enableEditing), 10);
         node.getStyleClass().add("view-mode-bar");
         node.setAlignment(Pos.CENTER_LEFT);
     }

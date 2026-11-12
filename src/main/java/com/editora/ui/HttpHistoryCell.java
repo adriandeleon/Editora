@@ -8,6 +8,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 
+import com.editora.editor.UiZoom;
 import com.editora.http.HttpResult;
 import com.editora.http.HttpTests;
 
@@ -20,7 +21,7 @@ final class HttpHistoryCell extends ListCell<HttpHistoryEntry> {
     /** ✓ all tests passed, ✗ one failed or a handler stopped; hidden when the response ran no tests. */
     private final Label testMark = new Label();
 
-    private final HBox graphic = new HBox(2, code, testMark);
+    private final HBox graphic = UiZoom.spacing(new HBox(code, testMark), 2);
     private final ZoneId zone;
 
     HttpHistoryCell(ZoneId zone) {
@@ -68,6 +69,6 @@ final class HttpHistoryCell extends ListCell<HttpHistoryEntry> {
         Font f = font == null ? Font.getDefault() : font;
         Text t = new Text("000");
         t.setFont(Font.font(f.getFamily(), javafx.scene.text.FontWeight.BOLD, f.getSize()));
-        return Math.ceil(t.getLayoutBounds().getWidth()) + 10;
+        return Math.ceil(t.getLayoutBounds().getWidth()) + UiZoom.px(10);
     }
 }

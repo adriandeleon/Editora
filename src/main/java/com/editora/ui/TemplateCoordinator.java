@@ -31,6 +31,7 @@ import com.editora.config.PathKeys;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editorconfig.EditorConfig;
 import com.editora.editorconfig.EditorConfigProperties;
@@ -355,7 +356,7 @@ final class TemplateCoordinator {
             return;
         }
         boolean multi = t.isMultiFile();
-        VBox body = new VBox(8);
+        VBox body = UiZoom.spacing(new VBox(), 8);
         // The target folder, prefilled from the folder context (the right-clicked project folder). A
         // single-file template may leave it blank and get an unsaved buffer; a multi-file template has
         // nowhere else to go, so its field is required and there is no default to fall back on.
@@ -418,7 +419,7 @@ final class TemplateCoordinator {
                 field.setText(dir.toString());
             }
         });
-        HBox row = new HBox(6, field, browse);
+        HBox row = UiZoom.spacing(new HBox(field, browse), 6);
         HBox.setHgrow(field, Priority.ALWAYS);
         return row;
     }
@@ -532,7 +533,7 @@ final class TemplateCoordinator {
     /** Location + project name + the template's variables; creates {@code <location>/<name>/} and opens it. */
     void beginProject(Template t) {
         List<TemplateEngine.TemplateVar> vars = TemplateEngine.promptedVariables(t, new TemplateEngine.Context(true));
-        VBox body = new VBox(8);
+        VBox body = UiZoom.spacing(new VBox(), 8);
         Path defaultParent = defaultProjectParent();
         TextField locationField = new TextField(defaultParent.toString());
         TextField nameField = new TextField();

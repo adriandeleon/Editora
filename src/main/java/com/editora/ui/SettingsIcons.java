@@ -4,6 +4,8 @@ import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.layout.StackPane;
 
+import com.editora.editor.UiZoom;
+
 /**
  * One glyph per Settings sidebar category, drawn left of its name. Every glyph is a UI Kit line glyph
  * ({@link Icons#line}, stroked through {@code icon-line}) except GitHub, which keeps its filled brand mark.
@@ -249,9 +251,9 @@ final class SettingsIcons {
         icon.setScaleX(SIDEBAR_SCALE);
         icon.setScaleY(SIDEBAR_SCALE);
         StackPane box = new StackPane(new Group(icon));
-        box.setMinSize(BOX, BOX);
-        box.setPrefSize(BOX, BOX);
-        box.setMaxSize(BOX, BOX);
+        UiZoom.minSize(box, BOX, BOX);
+        UiZoom.prefSize(box, BOX, BOX);
+        UiZoom.maxSize(box, BOX, BOX);
         box.getStyleClass().add("settings-sidebar-icon");
         return box;
     }

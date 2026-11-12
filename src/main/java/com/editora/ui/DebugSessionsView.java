@@ -13,6 +13,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 
+import com.editora.editor.UiZoom;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -38,7 +40,7 @@ final class DebugSessionsView extends BorderPane {
     }
 
     private final Actions actions;
-    private final HBox strip = new HBox(4);
+    private final HBox strip = UiZoom.spacing(new HBox(), 4);
     private final List<Tab> tabs = new ArrayList<>();
 
     DebugSessionsView(Actions actions) {

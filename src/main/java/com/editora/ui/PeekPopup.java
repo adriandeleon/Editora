@@ -15,6 +15,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import org.fxmisc.richtext.model.StyleSpan;
@@ -84,10 +85,10 @@ final class PeekPopup {
         Label hint = new Label(tr("lsp.peek.hint"));
         hint.getStyleClass().add("palette-hint");
         rows.getStyleClass().add("peek-body");
-        card = new VBox(6, title, rows, hint);
+        card = UiZoom.spacing(new VBox(title, rows, hint), 6);
         card.getStyleClass().addAll("command-palette", "peek-popup");
-        card.setPrefWidth(760);
-        card.setMaxSize(760, Region.USE_PREF_SIZE);
+        UiZoom.prefWidth(card, 760);
+        UiZoom.maxSize(card, 760, Region.USE_PREF_SIZE);
         // Without this the global dispatcher treats Enter/Escape as editor chords and the popup never
         // sees them; every other in-scene overlay claims its keys the same way.
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);

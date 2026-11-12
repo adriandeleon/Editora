@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
@@ -17,6 +16,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.lsp.LspManager;
 import org.jspecify.annotations.Nullable;
 
@@ -66,8 +66,8 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
         this.loader = loader;
         getStyleClass().add("hierarchy-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
 
         summary.getStyleClass().add("search-summary");
         ToggleGroup group = new ToggleGroup();
@@ -82,7 +82,7 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
                 rebuild();
             }
         });
-        HBox toolbar = new HBox(6, primaryToggle, secondaryToggle, summary);
+        HBox toolbar = UiZoom.spacing(new HBox(primaryToggle, secondaryToggle, summary), 6);
         toolbar.getStyleClass().add("hierarchy-toolbar");
 
         tree.setShowRoot(false);

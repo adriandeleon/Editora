@@ -35,6 +35,7 @@ import javafx.util.StringConverter;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.config.Project;
+import com.editora.editor.UiZoom;
 import com.editora.vfs.ConnectFailure;
 import com.editora.vfs.LoginPrompt;
 import com.editora.vfs.RemoteConnection;
@@ -310,7 +311,7 @@ final class RemoteCoordinator {
         alert.initOwner(this.host.window());
         alert.setTitle(tr("dialog.hostKey.title"));
         alert.setHeaderText(tr("dialog.hostKey.header", host));
-        alert.getDialogPane().setMinWidth(560);
+        UiZoom.minWidth(alert.getDialogPane(), 560);
         askingDialog = alert;
         try {
             return alert.showAndWait().orElse(cancel) == connect;
@@ -375,8 +376,7 @@ final class RemoteCoordinator {
         ButtonType cancel = Dialogs.cancel();
         dialog.getDialogPane().getButtonTypes().setAll(cancel, logIn);
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         int row = 0;
         if (challenge.attempt() > 1) {
             grid.add(new Label(tr("dialog.login.retry")), 0, row++, 2, 1);
@@ -384,7 +384,7 @@ final class RemoteCoordinator {
         if (!challenge.instruction().isBlank()) {
             Label instruction = new Label(challenge.instruction().strip());
             instruction.setWrapText(true);
-            instruction.setMaxWidth(420);
+            UiZoom.maxWidth(instruction, 420);
             grid.add(instruction, 0, row++, 2, 1);
         }
         List<TextField> fields = new ArrayList<>();
@@ -480,7 +480,7 @@ final class RemoteCoordinator {
         area.setPrefRowCount(Math.min(16, wrappedLines(body, 64) + 1)); // the advice wraps: count what it wraps to
         area.getStyleClass().add("git-error-text"); // the error-detail style the Git dialog uses
         alert.getDialogPane().setContent(area);
-        alert.getDialogPane().setMinWidth(600);
+        UiZoom.minWidth(alert.getDialogPane(), 600);
         alert.setResizable(true);
         alert.showAndWait();
     }
@@ -588,7 +588,7 @@ final class RemoteCoordinator {
         }
         Label configHint = new Label();
         configHint.setWrapText(true);
-        configHint.setMaxWidth(460);
+        UiZoom.maxWidth(configHint, 460);
         configHint.getStyleClass().add("overlay-note"); // the overlay form's muted note
         boolean[] filling = {false};
         boolean[] userTyped = {prefill != null};
@@ -642,8 +642,7 @@ final class RemoteCoordinator {
         configHint.visibleProperty().bind(configHint.managedProperty());
 
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         grid.add(new Label(tr("remote.host")), 0, 0);
         grid.add(hostField, 1, 0);
         grid.add(new Label(tr("remote.port")), 2, 0);

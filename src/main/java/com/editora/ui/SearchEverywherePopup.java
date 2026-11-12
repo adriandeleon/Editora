@@ -22,6 +22,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.TextFlow;
 import javafx.util.Duration;
 
+import com.editora.editor.UiZoom;
 import com.editora.search.SearchEverywhere;
 import com.editora.search.SearchEverywhere.Group;
 import com.editora.search.SearchEverywhere.Item;
@@ -139,7 +140,7 @@ final class SearchEverywherePopup {
         com.editora.command.TextInputKeymap.installShared(input);
 
         list.setItems(rows);
-        list.setFixedCellSize(CELL_HEIGHT);
+        UiZoom.follow(list, () -> list.setFixedCellSize(UiZoom.px(CELL_HEIGHT)));
         list.setCellFactory(v -> new RowCell());
         rows.addListener((javafx.collections.ListChangeListener<Row>) c -> resizeList());
 
@@ -150,10 +151,10 @@ final class SearchEverywherePopup {
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> updateDescription(now));
         hint.getStyleClass().add("palette-hint");
 
-        VBox box = new VBox(6, input, list, status, desc, hint);
+        VBox box = UiZoom.spacing(new VBox(input, list, status, desc, hint), 6);
         box.getStyleClass().addAll("command-palette", "search-everywhere");
-        box.setPrefWidth(CARD_WIDTH);
-        box.setMaxSize(CARD_WIDTH, Region.USE_PREF_SIZE);
+        UiZoom.prefWidth(box, CARD_WIDTH);
+        UiZoom.maxSize(box, CARD_WIDTH, Region.USE_PREF_SIZE);
         box.getProperties().put("editora.ownsKeys", Boolean.TRUE);
         resizeList();
         return box;
@@ -162,9 +163,9 @@ final class SearchEverywherePopup {
     private void resizeList() {
         int n = Math.max(1, Math.min(rows.size(), MAX_VISIBLE));
         double h = n * CELL_HEIGHT + 2;
-        list.setMinHeight(h);
-        list.setPrefHeight(h);
-        list.setMaxHeight(h);
+        UiZoom.minHeight(list, h);
+        UiZoom.prefHeight(list, h);
+        UiZoom.maxHeight(list, h);
     }
 
     void show(String seed) {
@@ -389,7 +390,7 @@ final class SearchEverywherePopup {
     private final class RowCell extends ListCell<Row> {
         private final TextFlow label = new TextFlow();
         private final Label detail = new Label();
-        private final HBox box = new HBox(10, label, spacer(), detail);
+        private final HBox box = UiZoom.spacing(new HBox(label, spacer(), detail), 10);
 
         RowCell() {
             box.setAlignment(Pos.CENTER_LEFT);
@@ -441,7 +442,7 @@ final class SearchEverywherePopup {
                 if (why != null && !why.isBlank()) {
                     javafx.scene.control.Tooltip tip = new javafx.scene.control.Tooltip(why);
                     tip.setWrapText(true);
-                    tip.setMaxWidth(380);
+                    tip.setMaxWidth(UiZoom.px(380));
                     tip.getStyleClass().add("palette-disabled-tooltip");
                     setTooltip(tip);
                 }

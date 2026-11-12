@@ -2,7 +2,6 @@ package com.editora.editor;
 
 import java.util.List;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -108,7 +107,7 @@ final class BufferLayout {
             Node corner = previewCorner();
             if (corner != null) {
                 StackPane.setAlignment(corner, Pos.TOP_RIGHT);
-                StackPane.setMargin(corner, new Insets(6, 10, 0, 0));
+                UiZoom.follow(corner, () -> StackPane.setMargin(corner, UiZoom.insets(6, 10, 0, 0)));
                 host.getChildren().add(corner);
             }
             content = host;
@@ -248,7 +247,10 @@ final class BufferLayout {
         }
         if (cornerControls.getParent() != b.root) {
             b.root.getChildren().add(cornerControls);
-            AnchorPane.setTopAnchor(cornerControls, 6d);
+            UiZoom.follow(cornerControls, () -> {
+                AnchorPane.setTopAnchor(cornerControls, UiZoom.px(6));
+                positionCornerControls();
+            });
         }
         AnchorPane.setRightAnchor(cornerControls, codePaneControlInset());
     }
@@ -261,7 +263,8 @@ final class BufferLayout {
     private static final double SCROLLBAR_GUTTER = 14;
 
     private double codePaneControlInset() {
-        return SCROLLBAR_GUTTER + ((b.minimapVisible && !b.largeFile && !b.heavyFile) ? Minimap.WIDTH + 6 : 10);
+        return UiZoom.px(SCROLLBAR_GUTTER)
+                + ((b.minimapVisible && !b.largeFile && !b.heavyFile) ? Minimap.WIDTH + UiZoom.px(6) : UiZoom.px(10));
     }
 
     /** Keeps every floating editor control clear of the minimap when it toggles (no full view rebuild). */
@@ -286,7 +289,7 @@ final class BufferLayout {
     }
 
     private static HBox cornerControlRow() {
-        HBox row = new HBox(6);
+        HBox row = UiZoom.spacing(new HBox(), 6);
         row.setAlignment(Pos.CENTER_RIGHT);
         row.setFillHeight(false); // each control keeps its own height
         row.setPickOnBounds(false); // clicks between controls fall through to the editor

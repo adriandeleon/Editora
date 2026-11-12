@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -27,6 +26,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -71,7 +71,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final TreeView<Item> tree = new TreeView<>();
     private final Label placeholder = new Label();
     private final StackPane body = new StackPane();
-    private final HBox toolbar = new HBox(2);
+    private final HBox toolbar = UiZoom.spacing(new HBox(), 2);
     private final TextField filterField = new TextField();
     private final Button runButton;
     /** A build of this tool is running (Stop live, Run greyed). */
@@ -93,10 +93,10 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final Label rootLabel = new Label();
     private final Label trustPill = new Label();
     private final Hyperlink revokeLink = new Hyperlink(tr("buildtree.revokeTrust"));
-    private final HBox header = new HBox(6, rootLabel, trustPill, revokeLink);
+    private final HBox header = UiZoom.spacing(new HBox(rootLabel, trustPill, revokeLink), 6);
     private final Label noticeLabel = new Label();
     private final Hyperlink noticeLink = new Hyperlink();
-    private final VBox notice = new VBox(2, noticeLabel, noticeLink);
+    private final VBox notice = UiZoom.spacing(new VBox(noticeLabel, noticeLink), 2);
     private List<Path> projects = List.of();
     private @Nullable Path currentRoot;
     private @Nullable Path projectRoot;
@@ -120,8 +120,8 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     public BuildActionsTree() {
         getStyleClass().add("build-tasks-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(4);
-        setPadding(new Insets(4));
+        UiZoom.spacing(this, 4);
+        UiZoom.padding(this, 4);
 
         runButton = iconButton(Icons.run(), tr("buildtree.run"), this::runSelected);
         refreshButton = iconButton(Icons.refresh(), tr("buildtree.refresh"), () -> onRefresh.run());
@@ -148,7 +148,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
-        HBox filterBar = new HBox(6, filterField, clearFilter);
+        HBox filterBar = UiZoom.spacing(new HBox(filterField, clearFilter), 6);
         filterBar.getStyleClass().add("project-filter-bar");
         filterBar.setAlignment(Pos.CENTER_LEFT);
 

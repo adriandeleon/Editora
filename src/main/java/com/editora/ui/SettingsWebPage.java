@@ -13,6 +13,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 
@@ -59,7 +60,7 @@ final class SettingsWebPage {
             refreshHttpNodeStatus();
         });
         httpScriptTimeoutSpinner = IntSpinners.editable(1, 600, 10, 1);
-        httpScriptTimeoutSpinner.setPrefWidth(90);
+        UiZoom.prefWidth(httpScriptTimeoutSpinner, 90);
         httpScriptTimeoutSpinner.setAccessibleText(tr("settings.httpClient.scriptTimeout"));
         httpScriptTimeoutSpinner.valueProperty().addListener((obs, was, now) -> {
             if (w.loading || now == null) {

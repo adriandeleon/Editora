@@ -15,7 +15,6 @@ import java.util.Set;
 
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Group;
 import javafx.scene.Node;
@@ -43,6 +42,7 @@ import com.editora.doctor.DoctorStatus;
 import com.editora.doctor.DoctorSummary;
 import com.editora.doctor.DoctorText;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -145,7 +145,7 @@ final class DoctorPane extends Region implements TabContent {
 
     private final Label machine = new Label();
     private final Label remoteNote = new Label();
-    private final HBox summary = new HBox(10);
+    private final HBox summary = UiZoom.spacing(new HBox(), 10);
     private final Button refresh = new Button(tr("doctor.action.refresh"));
     private final Node refreshIcon = Icons.refresh();
     private final Button copyReport = new Button(tr("doctor.action.copyReport"));
@@ -213,11 +213,15 @@ final class DoctorPane extends Region implements TabContent {
     private void applyColumnWidth(double s) {
         double max = CONTENT_MAX_WIDTH * s;
         double margin = MARGIN * s;
-        content.setMinWidth(CONTENT_MIN_WIDTH);
-        content.setPrefWidth(max);
-        content.setMaxWidth(max);
-        centerHost.setPadding(new Insets(margin));
-        centerHost.setMinWidth(CONTENT_MIN_WIDTH + 2 * margin);
+        UiZoom.follow(
+                content,
+                () -> { // the pane's own text zoom (s) times the UI zoom
+                    content.setMinWidth(UiZoom.px(CONTENT_MIN_WIDTH));
+                    content.setPrefWidth(UiZoom.px(max));
+                    content.setMaxWidth(UiZoom.px(max));
+                    centerHost.setPadding(UiZoom.insets(margin));
+                    centerHost.setMinWidth(UiZoom.px(CONTENT_MIN_WIDTH + 2 * margin));
+                });
     }
 
     // --- content ---
@@ -453,7 +457,7 @@ final class DoctorPane extends Region implements TabContent {
     /** An all-OK section: folded to "Version Control · 2 OK  Show", or opened with a "Hide". */
     private Node foldHeader(String sec, boolean folded, int okCount) {
         Label label = sectionLabel(sec);
-        HBox box = new HBox(10, label);
+        HBox box = UiZoom.spacing(new HBox(label), 10);
         box.setAlignment(Pos.BASELINE_LEFT);
         box.getStyleClass().add("doctor-section-line");
         if (folded) {
@@ -471,7 +475,7 @@ final class DoctorPane extends Region implements TabContent {
 
     /** The not-installed rows of a section, folded to one line (or the "Hide" after them once opened). */
     private Node optionalFold(String sec, int count, boolean folded) {
-        HBox box = new HBox(10);
+        HBox box = UiZoom.spacing(new HBox(), 10);
         box.setAlignment(Pos.CENTER_LEFT);
         box.getStyleClass().add("doctor-optional-fold");
         if (folded) {
@@ -641,11 +645,11 @@ final class DoctorPane extends Region implements TabContent {
                 actions.checkNewer();
             }
         });
-        HBox statusLine = new HBox(12, summary, spacer, copyReport, checkNewer, refresh);
+        HBox statusLine = UiZoom.spacing(new HBox(summary, spacer, copyReport, checkNewer, refresh), 12);
         statusLine.setAlignment(Pos.CENTER_LEFT);
         statusLine.getStyleClass().add("doctor-status-line");
 
-        VBox box = new VBox(4, title, caption, machine, remoteNote, statusLine);
+        VBox box = UiZoom.spacing(new VBox(title, caption, machine, remoteNote, statusLine), 4);
         box.getStyleClass().add("doctor-header");
         return box;
     }
@@ -721,7 +725,7 @@ final class DoctorPane extends Region implements TabContent {
             return;
         }
         double y = centerHost.sceneToLocal(target.localToScene(0, 0)).getY();
-        scroll.setVvalue(Math.max(0, Math.min(1, (y - 8) / (contentHeight - viewport))));
+        scroll.setVvalue(Math.max(0, Math.min(1, (y - UiZoom.px(8)) / (contentHeight - viewport))));
     }
 
     // --- report ---
@@ -807,7 +811,7 @@ final class DoctorPane extends Region implements TabContent {
 
     /** One row's nodes: a stable box whose children are rebuilt when its check changes. */
     private final class RowView {
-        final VBox node = new VBox(2);
+        final VBox node = UiZoom.spacing(new VBox(), 2);
 
         RowView() {
             node.getStyleClass().add("doctor-row");
@@ -841,13 +845,13 @@ final class DoctorPane extends Region implements TabContent {
             detail.setMaxWidth(Double.MAX_VALUE);
             HBox.setHgrow(detail, Priority.ALWAYS);
 
-            HBox actionBox = new HBox(6);
+            HBox actionBox = UiZoom.spacing(new HBox(), 6);
             actionBox.setAlignment(Pos.CENTER_RIGHT);
             actionBox.getStyleClass().add("doctor-actions");
             actionBox.setMinWidth(Region.USE_PREF_SIZE);
             addActions(c, actionBox);
 
-            HBox line = new HBox(12, pill, nameBox, detail, actionBox);
+            HBox line = UiZoom.spacing(new HBox(pill, nameBox, detail, actionBox), 12);
             line.setAlignment(Pos.CENTER_LEFT);
             line.getStyleClass().add("doctor-row-line");
 
@@ -863,7 +867,7 @@ final class DoctorPane extends Region implements TabContent {
                 HBox.setHgrow(tip, Priority.ALWAYS);
                 // Under the name: indented by the pill's width and the row's gap, whatever the text size.
                 Region indent = new Region();
-                indent.minWidthProperty().bind(pill.widthProperty().add(line.getSpacing()));
+                indent.minWidthProperty().bind(pill.widthProperty().add(line.spacingProperty()));
                 children.add(new HBox(indent, tip));
             }
             node.getChildren().setAll(children);

@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.List;
 import java.util.Locale;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -16,6 +15,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.github.ChecksParser;
 import com.editora.github.ChecksParser.CheckRun;
 import com.editora.github.ChecksPoll;
@@ -52,7 +52,7 @@ final class ChecksListCard extends VBox {
     private final Actions actions;
     private final Label title = new Label();
     private final Label summary = new Label();
-    private final VBox rows = new VBox(2);
+    private final VBox rows = UiZoom.spacing(new VBox(), 2);
     private final ScrollPane scroll = new ScrollPane(rows);
     private final Button refresh = new Button(tr("github.checks.refresh"));
 
@@ -60,10 +60,10 @@ final class ChecksListCard extends VBox {
         this.actions = actions;
         getStyleClass().addAll("command-palette", "overlay-form", "github-checks-card");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(8);
-        setPadding(new Insets(12));
-        setMinWidth(420);
-        setMaxSize(560, Region.USE_PREF_SIZE);
+        UiZoom.spacing(this, 8);
+        UiZoom.padding(this, 12);
+        UiZoom.minWidth(this, 420);
+        UiZoom.maxSize(this, 560, Region.USE_PREF_SIZE);
 
         title.getStyleClass().add("palette-title");
         title.setTextOverrun(OverrunStyle.ELLIPSIS);
@@ -79,7 +79,7 @@ final class ChecksListCard extends VBox {
         close.setOnAction(e -> actions.close());
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox footer = new HBox(8, summary, spacer, refresh, close);
+        HBox footer = UiZoom.spacing(new HBox(summary, spacer, refresh, close), 8);
         footer.setAlignment(Pos.CENTER_LEFT);
 
         getChildren().setAll(title, scroll, footer);
@@ -91,7 +91,7 @@ final class ChecksListCard extends VBox {
         if (checks == null || checks.pr() == null) {
             title.setText(tr("github.checks.none"));
             summary.setText("");
-            scroll.setPrefViewportHeight(0);
+            UiZoom.follow(scroll, "viewport", () -> scroll.setPrefViewportHeight(0));
             return;
         }
         title.setText(
@@ -101,7 +101,8 @@ final class ChecksListCard extends VBox {
         for (CheckRun run : ordered(checks.runs())) {
             rows.getChildren().add(row(run));
         }
-        scroll.setPrefViewportHeight(Math.min(checks.runs().size(), VISIBLE_ROWS) * ROW_HEIGHT);
+        double height = Math.min(checks.runs().size(), VISIBLE_ROWS) * ROW_HEIGHT;
+        UiZoom.follow(scroll, "viewport", () -> scroll.setPrefViewportHeight(UiZoom.px(height)));
     }
 
     /** Failed first, then pending, then the rest — each group in {@code gh}'s order. Pure. */
@@ -135,7 +136,7 @@ final class ChecksListCard extends VBox {
         String[] g = glyph(run.bucket());
         Label state = new Label(g[0]);
         state.getStyleClass().add(g[1]);
-        state.setMinWidth(16);
+        UiZoom.minWidth(state, 16);
         Label name = new Label(run.name());
         name.setMinWidth(0);
         name.setTextOverrun(OverrunStyle.ELLIPSIS);
@@ -144,9 +145,9 @@ final class ChecksListCard extends VBox {
         workflow.setMinWidth(0);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox box = new HBox(8, state, name, workflow, spacer);
+        HBox box = UiZoom.spacing(new HBox(state, name, workflow, spacer), 8);
         box.setAlignment(Pos.CENTER_LEFT);
-        box.setMinHeight(ROW_HEIGHT - 2);
+        UiZoom.minHeight(box, ROW_HEIGHT - 2);
         box.getStyleClass().addAll("git-tree", "github-check-row");
         long runId = ChecksPoll.runId(run.link());
         if ("fail".equalsIgnoreCase(run.bucket()) && runId > 0) {

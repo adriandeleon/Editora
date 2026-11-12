@@ -20,6 +20,7 @@ import javafx.scene.layout.Priority;
 
 import com.editora.config.ProjectSettings;
 import com.editora.config.ProjectSettingsFile;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -117,9 +118,10 @@ final class ProjectScopeSettings {
         note.setWrapText(true);
         HBox.setHgrow(note, Priority.ALWAYS);
         trustButton.setOnAction(e -> trust.run());
-        bar = new HBox(8, label, new HBox(6, userButton, projectButton), note, trustButton);
+        bar = UiZoom.spacing(
+                new HBox(label, UiZoom.spacing(new HBox(userButton, projectButton), 6), note, trustButton), 8);
         bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new javafx.geometry.Insets(8, 16, 4, 16));
+        UiZoom.padding(bar, 8, 16, 4, 16);
         // The note wraps; the label and the buttons keep their width (a long note squeezed them to "...").
         for (javafx.scene.layout.Region r : List.of(label, userButton, projectButton, trustButton)) {
             r.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
@@ -169,7 +171,7 @@ final class ProjectScopeSettings {
                 return label;
             }
         });
-        combo.setMinWidth(170);
+        UiZoom.minWidth(combo, 170);
         combo.valueProperty().addListener((obs, was, now) -> {
             if (!loading.getAsBoolean() && now != null) {
                 write(key, now.isEmpty() ? null : Boolean.valueOf(now));

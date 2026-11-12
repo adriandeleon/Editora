@@ -45,6 +45,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import com.editora.editor.MenuChords;
+import com.editora.editor.UiZoom;
 import com.editora.git.GitFileStatus;
 import com.editora.git.GitFormat;
 import com.editora.git.GitGraph;
@@ -193,7 +194,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     /** "Search: …" with its clear button, in the toolbar while a history search is the listing. */
     private final Label searchLabel = new Label();
 
-    private final HBox searchChip = new HBox(2);
+    private final HBox searchChip = UiZoom.spacing(new HBox(), 2);
     private final TextField filterField = new TextField();
     /** Unfiltered commits; {@link #commits} shows a {@link FilteredList} view over this so filtering keeps object
      * identity (a selected commit survives re-filtering while it still matches). */
@@ -205,7 +206,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private final Label truncatedLabel = new Label();
 
     private final Button loadMoreButton = new Button(tr("gitlog.loadMore"));
-    private final HBox footer = new HBox(8, truncatedLabel, loadMoreButton);
+    private final HBox footer = UiZoom.spacing(new HBox(truncatedLabel, loadMoreButton), 8);
     /** The repository is a shallow clone: where the loaded history ends is where the clone was cut. */
     private boolean shallow;
 
@@ -224,16 +225,16 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private @Nullable ContextMenu openMenu;
 
     private final Label detailsHash = new Label();
-    private final HBox detailsParents = new HBox(6);
+    private final HBox detailsParents = UiZoom.spacing(new HBox(), 6);
     private final Label detailsAuthor = new Label();
-    private final HBox detailsRefs = new HBox(4);
+    private final HBox detailsRefs = UiZoom.spacing(new HBox(), 4);
     /**
      * The commit message. A read-only text area rather than a label, so it can be selected and copied — with
      * the mouse or, focused, from the keyboard; it is as tall as its text ({@link #fitMessageHeight}).
      */
     private final TextArea detailsMessage = new TextArea();
 
-    private final VBox details = new VBox(2);
+    private final VBox details = UiZoom.spacing(new VBox(), 2);
     private final ScrollPane detailsScroll = new ScrollPane(details);
     /** The commit {@link #details} describes. */
     private @Nullable String detailsOf;
@@ -247,8 +248,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         getStyleClass().add("git-log-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(4);
-        setPadding(new Insets(4));
+        UiZoom.spacing(this, 4);
+        UiZoom.padding(this, 4);
 
         filterLabel.getStyleClass().add("git-branch-label");
         filterLabel.setMinWidth(0);
@@ -262,7 +263,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         showAllButton.setOnAction(e -> actions.showAll());
         showAllButton.setVisible(false);
         showAllButton.setManaged(false);
-        HBox header = new HBox(2, filterLabel, showAllButton);
+        HBox header = UiZoom.spacing(new HBox(filterLabel, showAllButton), 2);
         header.setAlignment(Pos.CENTER_LEFT);
         header.setMinWidth(0);
         HBox.setHgrow(header, Priority.ALWAYS);
@@ -293,7 +294,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             button.setFocusTraversable(true);
         }
         allBranchesButton.setFocusTraversable(false);
-        HBox toolbar = new HBox(2, header, searchChip, allBranchesButton, refresh);
+        HBox toolbar = UiZoom.spacing(new HBox(header, searchChip, allBranchesButton, refresh), 2);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
@@ -319,7 +320,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(filterField, Priority.ALWAYS);
         Button clearFilter = ClearableField.clearButton(filterField);
         Button search = iconButton(Icons.find(), tr("gitlog.searchTip"), this::searchHistory);
-        HBox filterRow = new HBox(4, filterField, clearFilter, search);
+        HBox filterRow = UiZoom.spacing(new HBox(filterField, clearFilter, search), 4);
         filterRow.getStyleClass().add("project-filter-bar");
         filterRow.setAlignment(Pos.CENTER_LEFT);
 
@@ -384,8 +385,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         });
         // A small preferred height, grown to the space there is: a VBox short of room shrinks all of its
         // children alike, and a list asking for its default 400 px squeezed the details pane to nothing.
-        files.setMinHeight(40);
-        files.setPrefHeight(60);
+        UiZoom.minHeight(files, 40);
+        UiZoom.prefHeight(files, 60);
         VBox.setVgrow(files, Priority.ALWAYS);
 
         // The selected commit, above its files: full hash (copyable), parents (links to their rows), author
@@ -399,7 +400,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             }
         });
         detailsParents.setAlignment(Pos.CENTER_LEFT);
-        HBox hashRow = new HBox(4, detailsHash, copyHash, detailsParents);
+        HBox hashRow = UiZoom.spacing(new HBox(detailsHash, copyHash, detailsParents), 4);
         hashRow.setAlignment(Pos.CENTER_LEFT);
         detailsAuthor.getStyleClass().add("git-log-meta");
         detailsAuthor.setWrapText(true);
@@ -809,7 +810,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             return;
         }
         Insets insets = detailsMessage.getInsets();
-        double height = Math.ceil(text.getBoundsInLocal().getHeight()) + insets.getTop() + insets.getBottom() + 4;
+        double height =
+                Math.ceil(text.getBoundsInLocal().getHeight()) + insets.getTop() + insets.getBottom() + UiZoom.px(4);
         detailsMessage.setMinHeight(height);
         detailsMessage.setPrefHeight(height);
         detailsMessage.setMaxHeight(height);
@@ -956,15 +958,15 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
      * docked narrow — the subject must keep room, and a chip squeezed to "…" says nothing.
      */
     static int chipBudget(double rowWidth) {
-        if (rowWidth >= 640) {
+        if (rowWidth >= UiZoom.px(640)) {
             return MAX_REF_CHIPS;
         }
-        return rowWidth >= 440 ? 2 : 1;
+        return rowWidth >= UiZoom.px(440) ? 2 : 1;
     }
 
     /** Whether a row {@code rowWidth} px wide has room for the author column beside the subject and date. */
     static boolean showsAuthor(double rowWidth) {
-        return rowWidth >= 520;
+        return rowWidth >= UiZoom.px(520);
     }
 
     /** "3 days ago" for a commit time; the short ISO date when git gave no usable timestamp. */
@@ -1053,6 +1055,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             setMinHeight(0);
             setMaxHeight(Double.MAX_VALUE);
             setMouseTransparent(true);
+            UiZoom.follow(this, this::requestLayout);
+            UiZoom.follow(canvas, this::draw);
         }
 
         void show(GitGraph.Row row, boolean merge) {
@@ -1069,7 +1073,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
         @Override
         protected double computePrefWidth(double height) {
-            return graphColumns * GRAPH_LANE_WIDTH;
+            return graphColumns * UiZoom.px(GRAPH_LANE_WIDTH);
         }
 
         @Override
@@ -1092,7 +1096,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         }
 
         private double x(int lane) {
-            return lane * GRAPH_LANE_WIDTH + GRAPH_LANE_WIDTH / 2;
+            return lane * UiZoom.px(GRAPH_LANE_WIDTH) + UiZoom.px(GRAPH_LANE_WIDTH) / 2;
         }
 
         private void draw() {
@@ -1105,7 +1109,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             }
             double mid = h / 2;
             double nodeX = x(row.column());
-            g.setLineWidth(1.5);
+            g.setLineWidth(UiZoom.px(1.5));
             for (int lane : row.through()) {
                 g.setStroke(LANE_COLORS[lane % LANE_COLORS.length]);
                 g.strokeLine(x(lane), 0, x(lane), h);
@@ -1122,14 +1126,15 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             if (merge) {
                 // A merge is a diamond, apart from the two lanes leaving it.
                 g.beginPath();
-                g.moveTo(nodeX, mid - 4.5);
-                g.lineTo(nodeX + 4.5, mid);
-                g.lineTo(nodeX, mid + 4.5);
-                g.lineTo(nodeX - 4.5, mid);
+                double half = UiZoom.px(4.5);
+                g.moveTo(nodeX, mid - half);
+                g.lineTo(nodeX + half, mid);
+                g.lineTo(nodeX, mid + half);
+                g.lineTo(nodeX - half, mid);
                 g.closePath();
                 g.fill();
             } else {
-                g.fillOval(nodeX - 3.2, mid - 3.2, 6.4, 6.4);
+                g.fillOval(nodeX - UiZoom.px(3.2), mid - UiZoom.px(3.2), UiZoom.px(6.4), UiZoom.px(6.4));
             }
         }
 
@@ -1160,11 +1165,11 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private final class CommitCell extends ListCell<Entry> {
         private final GraphStrip graphStrip = new GraphStrip(this);
         private final Label hash = new Label();
-        private final HBox refs = new HBox(4);
+        private final HBox refs = UiZoom.spacing(new HBox(), 4);
         private final Label subject = new Label();
         private final Label author = new Label();
         private final Label date = new Label();
-        private final HBox row = new HBox(8, graphStrip, hash, refs, subject, author, date);
+        private final HBox row = UiZoom.spacing(new HBox(graphStrip, hash, refs, subject, author, date), 8);
         private final Tooltip tooltip = new Tooltip();
 
         CommitCell() {
@@ -1179,14 +1184,14 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             refs.setFillHeight(false); // chips keep their own height: a pill, not a full-row block
             refs.setMinWidth(0);
             subject.getStyleClass().add("git-log-subject");
-            subject.setMinWidth(60);
+            UiZoom.minWidth(subject, 60);
             subject.setPrefWidth(0);
             subject.setMaxWidth(Double.MAX_VALUE);
             subject.setTextOverrun(OverrunStyle.ELLIPSIS);
             HBox.setHgrow(subject, Priority.ALWAYS);
             author.getStyleClass().add("git-log-meta");
             author.setMinWidth(0);
-            author.setMaxWidth(160);
+            UiZoom.maxWidth(author, 160);
             author.setTextOverrun(OverrunStyle.ELLIPSIS);
             date.getStyleClass().add("git-log-meta");
             date.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
@@ -1198,6 +1203,13 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                     fitToWidth(getItem());
                 }
             });
+            UiZoom.follow(
+                    this,
+                    () -> { // the width thresholds move with the zoom
+                        if (!isEmpty() && getItem() != null) {
+                            fitToWidth(getItem());
+                        }
+                    });
             // The menu is built when it is asked for (a right-click, or the Menu key through RowContextMenu),
             // not for every row scrolled past, and for the selection as it is then.
             setOnContextMenuRequested(e -> {
@@ -1215,7 +1227,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
         /** Shows as many ref chips, and the author, as the row's current width has room for. */
         private void fitToWidth(Entry c) {
-            double width = (getWidth() > 0 ? getWidth() : commits.getWidth()) - graphColumns * GRAPH_LANE_WIDTH;
+            double width =
+                    (getWidth() > 0 ? getWidth() : commits.getWidth()) - graphColumns * UiZoom.px(GRAPH_LANE_WIDTH);
             refs.getChildren().clear();
             int shown = Math.min(c.refs().size(), chipBudget(width));
             for (int i = 0; i < shown; i++) {
@@ -1266,7 +1279,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             Label chip = new Label(text);
             chip.getStyleClass().addAll("git-ref", kindClass);
             chip.setMinWidth(0);
-            chip.setMaxWidth(180);
+            UiZoom.maxWidth(chip, 180);
             chip.setTextOverrun(OverrunStyle.ELLIPSIS);
             return chip;
         }

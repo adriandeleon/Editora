@@ -27,6 +27,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.git.GitService.CommitFile;
 import com.editora.git.StashParser.StashEntry;
 import com.editora.search.FuzzyMatch;
@@ -74,7 +75,7 @@ final class GitStashPopup {
     private final Label filesTitle = new Label();
     private final ListView<CommitFile> files = new ListView<>();
     private final Label hint = new Label();
-    private final HBox buttons = new HBox(6);
+    private final HBox buttons = UiZoom.spacing(new HBox(), 6);
     private final ContextMenu menu = new ContextMenu();
     private final VBox content;
 
@@ -97,13 +98,13 @@ final class GitStashPopup {
         com.editora.command.TextInputKeymap.installShared(search);
 
         list.setItems(items);
-        list.setPrefHeight(190);
+        UiZoom.prefHeight(list, 190);
         list.setFocusTraversable(false);
         list.setCellFactory(v -> new StashCell());
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> showFiles(now));
 
         filesTitle.getStyleClass().add("palette-hint");
-        files.setPrefHeight(150);
+        UiZoom.prefHeight(files, 150);
         files.setFocusTraversable(false);
         files.setMouseTransparent(true); // a read-out of the selected stash, not a second list to operate
         files.setCellFactory(v -> new FileCell());
@@ -132,10 +133,10 @@ final class GitStashPopup {
         buttons.setAlignment(Pos.CENTER_LEFT);
         hint.getStyleClass().add("palette-hint");
 
-        content = new VBox(6, title, search, list, filesTitle, files, buttons, hint);
+        content = UiZoom.spacing(new VBox(title, search, list, filesTitle, files, buttons, hint), 6);
         content.getStyleClass().addAll("command-palette", "stash-popup");
-        content.setPrefWidth(640);
-        content.setMaxSize(640, Region.USE_PREF_SIZE);
+        UiZoom.prefWidth(content, 640);
+        UiZoom.maxSize(content, 640, Region.USE_PREF_SIZE);
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p for the list
     }
 
@@ -279,7 +280,7 @@ final class GitStashPopup {
         if (selected() != null && list.getScene() != null) {
             javafx.geometry.Bounds row = RowContextMenu.selectedRowOnScreen(list);
             if (row == null) {
-                menu.show(list, Side.BOTTOM, 24, 0);
+                menu.show(list, Side.BOTTOM, UiZoom.px(24), 0);
             } else {
                 menu.show(list, row.getMinX() + RowContextMenu.anchorX(row.getWidth()), row.getMaxY());
             }
@@ -326,7 +327,7 @@ final class GitStashPopup {
             Label when = new Label(age);
             when.getStyleClass().add("branch-upstream");
             when.setMinWidth(Region.USE_PREF_SIZE);
-            HBox row = new HBox(10, ref, subject, branch, when);
+            HBox row = UiZoom.spacing(new HBox(ref, subject, branch, when), 10);
             row.setAlignment(Pos.CENTER_LEFT);
             setText(null);
             setGraphic(row);
@@ -349,7 +350,7 @@ final class GitStashPopup {
             status.setMinWidth(Region.USE_PREF_SIZE);
             boolean renamed = file.origPath() != null && !file.origPath().isBlank();
             Label path = new Label(renamed ? file.origPath() + " → " + file.path() : file.path());
-            HBox row = new HBox(8, status, path);
+            HBox row = UiZoom.spacing(new HBox(status, path), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             setText(null);
             setGraphic(row);

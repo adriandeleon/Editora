@@ -36,6 +36,7 @@ import javafx.scene.paint.Color;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.WorkspaceState;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -208,7 +209,7 @@ public class ToolWindowManager {
         }
         stripeInsetBound = true;
         header.heightProperty().addListener((o, a, h) -> applyStripeTopInset(h.doubleValue()));
-        applyStripeTopInset(header.getHeight());
+        UiZoom.follow(leftStripe, () -> applyStripeTopInset(header.getHeight()));
     }
 
     /**
@@ -224,9 +225,9 @@ public class ToolWindowManager {
         // and the button pads above it (`.tool-stripe-button` in app.css) to separate the icons on the rail.
         // Without this subtraction, giving the buttons breathing room silently walks the first icon down
         // past the text it is supposed to sit beside.
-        long top = Math.max(0, Math.round(tabHeaderHeight) - STRIPE_BUTTON_TOP_INSET);
+        long top = Math.max(0, Math.round(tabHeaderHeight) - Math.round(UiZoom.px(STRIPE_BUTTON_TOP_INSET)));
         verticalStripeTopInset = top;
-        String style = "-fx-padding: " + top + "px 0 8px 0;";
+        String style = "-fx-padding: " + top + "px 0 " + Math.round(UiZoom.px(8)) + "px 0;";
         leftStripe.setStyle(style);
         rightStripe.setStyle(style);
         for (ToolWindow.Side side : ToolWindow.Side.values()) {
@@ -364,12 +365,14 @@ public class ToolWindowManager {
         StackPane icon = new StackPane(tw.createIcon());
         ProgressIndicator badge = RunPanel.busySpinner();
         badge.getStyleClass().add("tool-stripe-busy");
-        badge.setMinSize(12, 12);
-        badge.setPrefSize(12, 12);
-        badge.setMaxSize(12, 12);
+        UiZoom.minSize(badge, 12, 12);
+        UiZoom.prefSize(badge, 12, 12);
+        UiZoom.maxSize(badge, 12, 12);
         badge.setMouseTransparent(true);
-        badge.setTranslateX(5);
-        badge.setTranslateY(5);
+        UiZoom.follow(badge, () -> {
+            badge.setTranslateX(UiZoom.px(5));
+            badge.setTranslateY(UiZoom.px(5));
+        });
         StackPane.setAlignment(badge, Pos.BOTTOM_RIGHT);
         icon.getChildren().add(badge);
         // Managed, so the stack lays it out; only its visibility follows busy (hidden, it stops animating).
@@ -1138,8 +1141,8 @@ public class ToolWindowManager {
             return;
         }
         // No usable memory (or the screen it was on is gone): a default size, centred on the editor window.
-        stage.setWidth(b == null ? ToolWindowFloat.DEFAULT_WIDTH : b.width());
-        stage.setHeight(b == null ? ToolWindowFloat.DEFAULT_HEIGHT : b.height());
+        stage.setWidth(b == null ? UiZoom.px(ToolWindowFloat.DEFAULT_WIDTH) : b.width());
+        stage.setHeight(b == null ? UiZoom.px(ToolWindowFloat.DEFAULT_HEIGHT) : b.height());
         stage.setX(owner.getX() + (owner.getWidth() - stage.getWidth()) / 2);
         stage.setY(owner.getY() + (owner.getHeight() - stage.getHeight()) / 2);
     }

@@ -30,6 +30,7 @@ import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
 import com.editora.dap.LogpointTokens;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.debug.BreakpointManager;
 import com.editora.lsp.LspManager;
 import com.editora.run.BuildBeforeLaunch;
@@ -7373,8 +7374,7 @@ final class DebugCoordinator {
         javafx.scene.control.ComboBox<String> group = groups.groupField(bp.group());
 
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         // The line the breakpoint is on: the card covers the editor, often that very line (review 2 C106).
         Label lineText = new Label(
                 BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
@@ -7390,7 +7390,7 @@ final class DebugCoordinator {
         grid.add(waitFor, 1, 4);
         grid.add(new Label(tr("dialog.debug.groupLabel")), 0, 5);
         grid.add(group, 1, 5);
-        grid.add(new javafx.scene.layout.HBox(16, enabled, temporary, recording), 1, 6);
+        grid.add(UiZoom.spacing(new javafx.scene.layout.HBox(enabled, temporary, recording), 16), 1, 6);
         grid.add(note(tr("dialog.debug.logMessageHint")), 1, 7);
         GridPane.setHgrow(condition, Priority.ALWAYS);
         GridPane.setHgrow(logMessage, Priority.ALWAYS);
@@ -7557,8 +7557,7 @@ final class DebugCoordinator {
                 BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
         lineText.getStyleClass().add("debug-breakpoint-line");
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         grid.add(lineText, 0, 0, 2, 1);
         grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 1);
         grid.add(message, 1, 1);
@@ -7600,7 +7599,7 @@ final class DebugCoordinator {
         Label l = new Label(text);
         l.getStyleClass().add("settings-note");
         l.setWrapText(true);
-        l.setPrefWidth(420);
+        UiZoom.prefWidth(l, 420);
         return l;
     }
 
@@ -7917,7 +7916,7 @@ final class DebugCoordinator {
             evaluateWindows.add(window);
         }
         window.setPlainValueColours(plainValueColours());
-        window.show(owner, initial, s().panel == null ? "" : panel().expressionLanguageFile(), open * 28.0);
+        window.show(owner, initial, s().panel == null ? "" : panel().expressionLanguageFile(), open * UiZoom.px(28.0));
         return window;
     }
 
@@ -8785,14 +8784,19 @@ final class DebugCoordinator {
 
     /** A small breakpoint dot for Toggle Breakpoint in the editor menu (the gutter's red, from CSS). */
     private static Node breakpointGlyph() {
-        javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
+        javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle();
+        UiZoom.follow(dot, () -> dot.setRadius(UiZoom.px(4)));
         dot.getStyleClass().add("debug-menu-breakpoint");
         return dot;
     }
 
     /** Add Logpoint's mark in the same menu: the gutter's logpoint diamond, blue, at the dot's size. */
     private static Node logpointGlyph() {
-        javafx.scene.shape.Polygon diamond = new javafx.scene.shape.Polygon(4, 0, 8, 4, 4, 8, 0, 4);
+        javafx.scene.shape.Polygon diamond = new javafx.scene.shape.Polygon();
+        UiZoom.follow(diamond, () -> {
+            double u = UiZoom.px(4);
+            diamond.getPoints().setAll(u, 0.0, 2 * u, u, u, 2 * u, 0.0, u);
+        });
         diamond.getStyleClass().add("debug-menu-logpoint");
         return diamond;
     }
@@ -8832,7 +8836,7 @@ final class DebugCoordinator {
         OverlayInput.show(
                 host.overlayHost(),
                 title,
-                new javafx.scene.layout.VBox(6, promptLabel, field),
+                UiZoom.spacing(new javafx.scene.layout.VBox(promptLabel, field), 6),
                 field,
                 tr("dialog.ok"),
                 null,

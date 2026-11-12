@@ -10,6 +10,7 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 
 import com.editora.build.OutputStyle;
+import com.editora.editor.UiZoom;
 import com.editora.git.GitOutputDiffs;
 import com.editora.process.CommandLog;
 import com.editora.process.CommandLogFormat;
@@ -209,8 +210,8 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
             }
             Tab tab = new Tab(toolName, console);
             ProgressIndicator titleSpinner = RunPanel.busySpinner();
-            titleSpinner.setPrefSize(11, 11);
-            titleSpinner.setMaxSize(11, 11);
+            UiZoom.prefSize(titleSpinner, 11, 11);
+            UiZoom.maxSize(titleSpinner, 11, 11);
             RunPanel.showSpinner(titleSpinner, true);
             // Attached only while running, so an idle tab's title keeps no gap where the spinner was.
             console.runningProperty().addListener((obs, was, now) -> tab.setGraphic(now ? titleSpinner : null));

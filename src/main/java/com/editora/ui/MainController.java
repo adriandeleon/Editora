@@ -54,6 +54,7 @@ import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.MenuChords;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import org.jspecify.annotations.Nullable;
@@ -2958,7 +2959,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.mcp.enableTitle"));
         confirm.setHeaderText(tr("dialog.mcp.enableHeader"));
-        confirm.getDialogPane().setMinWidth(480);
+        UiZoom.minWidth(confirm.getDialogPane(), 480);
         return confirm.showAndWait().orElse(cancel) == enable;
     }
 
@@ -5363,7 +5364,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         field.setPrefColumnCount(32);
         // Honor the user's configured keybindings (Emacs caret movement + basic editing) in the field.
         com.editora.command.TextInputKeymap.install(field, keymap);
-        VBox body = new VBox(6, promptLabel, field);
+        VBox body = UiZoom.spacing(new VBox(promptLabel, field), 6);
         OverlayInput.show(
                 host, title, body, field, tr("dialog.ok"), null, () -> onAccept.accept(field.getText()), null, false);
     }

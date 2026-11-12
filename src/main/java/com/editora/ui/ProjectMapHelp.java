@@ -9,6 +9,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -28,7 +30,7 @@ final class ProjectMapHelp {
         Label intro = new Label(tr("project.map.help.intro"));
         intro.getStyleClass().addAll("project-map-help-text", "project-map-help-intro");
         intro.setWrapText(true);
-        intro.setMaxWidth(560);
+        UiZoom.maxWidth(intro, 560);
 
         GridPane pointer = grid();
         int row = addHeading(pointer, 0, "project.map.help.mouse");
@@ -59,7 +61,7 @@ final class ProjectMapHelp {
         Label cardsIntro = new Label(tr("project.map.help.cardsIntro"));
         cardsIntro.getStyleClass().addAll("project-map-help-text", "project-map-help-cards-intro");
         cardsIntro.setWrapText(true);
-        cardsIntro.setMaxWidth(320);
+        UiZoom.maxWidth(cardsIntro, 320);
         pointer.add(cardsIntro, 0, row++, 2, 1);
         for (String id :
                 List.of("cardTitle", "cardGrip", "cardStructure", "cardNotes", "addNote", "sticky", "cardPin")) {
@@ -126,16 +128,15 @@ final class ProjectMapHelp {
         row = addRow(keys, row, tr("project.map.filter.hideUnmatched"), "project.map.help.hideUnmatched");
         addRow(keys, row, tr("project.map.filter.clear"), "project.map.help.clear");
 
-        HBox columns = new HBox(24, pointer, keys);
-        VBox help = new VBox(8, intro, columns);
+        HBox columns = UiZoom.spacing(new HBox(pointer, keys), 24);
+        VBox help = UiZoom.spacing(new VBox(intro, columns), 8);
         help.getStyleClass().add("project-map-help");
         return help;
     }
 
     private static GridPane grid() {
         GridPane grid = new GridPane();
-        grid.setHgap(12);
-        grid.setVgap(3);
+        UiZoom.gaps(grid, 12, 3);
         return grid;
     }
 
@@ -153,7 +154,7 @@ final class ProjectMapHelp {
         Label description = new Label(tr(descriptionKey));
         description.getStyleClass().add("project-map-help-text");
         description.setWrapText(true);
-        description.setMaxWidth(250);
+        UiZoom.maxWidth(description, 250);
         grid.add(keys, 0, row);
         grid.add(description, 1, row);
         return row + 1;

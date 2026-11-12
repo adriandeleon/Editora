@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -21,6 +20,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 
 import com.editora.config.MapTrails;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -73,7 +73,7 @@ final class ProjectMapTrails {
         }
     };
 
-    private final HBox bar = new HBox(4);
+    private final HBox bar = UiZoom.spacing(new HBox(), 4);
     private final Button previous = new Button("‹");
     private final Button next = new Button("›");
     private final Label position = new Label();
@@ -130,7 +130,7 @@ final class ProjectMapTrails {
             }
         });
         title.setMinWidth(0);
-        title.setMaxWidth(420);
+        UiZoom.maxWidth(title, 420);
         HBox.setHgrow(title, Priority.ALWAYS);
         bar.getChildren().setAll(previous, position, next, title, editButton, closeButton);
         bar.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
@@ -141,7 +141,7 @@ final class ProjectMapTrails {
             }
         });
         StackPane.setAlignment(bar, Pos.TOP_CENTER);
-        StackPane.setMargin(bar, new Insets(8, 120, 0, 120));
+        UiZoom.follow(bar, () -> StackPane.setMargin(bar, UiZoom.insets(8, 120, 0, 120)));
         view.viewsCanvasHost().addEventFilter(KeyEvent.KEY_PRESSED, this::viewsKeyPressed);
     }
 

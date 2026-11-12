@@ -36,6 +36,7 @@ final class HttpHeaderRow extends Region {
         this.history = history;
         getStyleClass().add("http-header");
         getChildren().addAll(run, status, meta, history);
+        com.editora.editor.UiZoom.follow(this, this::requestLayout); // the gaps and History's widths are zoomed
     }
 
     /** While a request runs the status is a long "Running …" label that may be cut in the middle. */
@@ -58,12 +59,20 @@ final class HttpHeaderRow extends Region {
     private HttpPanelLayout.HeaderFit fit(double room) {
         double statusPref = status.prefWidth(-1);
         double metaPref = meta.getText() == null || meta.getText().isEmpty() ? 0 : meta.prefWidth(-1);
-        return HttpPanelLayout.header(
-                room,
-                run.prefWidth(-1),
-                statusPref,
-                statusShrinks ? Math.min(statusPref, RUNNING_STATUS_MIN) : statusPref,
-                metaPref);
+        // The layout's constants are written at 100%: fit in those units, then back to the zoomed ones.
+        double zoom = com.editora.editor.UiZoom.factor();
+        HttpPanelLayout.HeaderFit at100 = HttpPanelLayout.header(
+                room / zoom,
+                run.prefWidth(-1) / zoom,
+                statusPref / zoom,
+                (statusShrinks ? Math.min(statusPref, zoom * RUNNING_STATUS_MIN) : statusPref) / zoom,
+                metaPref / zoom);
+        return new HttpPanelLayout.HeaderFit(at100.status() * zoom, at100.meta(), at100.history() * zoom, at100.rows());
+    }
+
+    /** The gap between the row's parts, at the UI zoom. */
+    private static double gap() {
+        return com.editora.editor.UiZoom.px(HttpPanelLayout.GAP);
     }
 
     private double rowHeight() {
@@ -73,8 +82,11 @@ final class HttpHeaderRow extends Region {
     @Override
     protected double computePrefWidth(double height) {
         Insets in = getInsets();
-        double w = run.prefWidth(-1) + status.prefWidth(-1) + meta.prefWidth(-1) + HttpPanelLayout.HISTORY_WIDTH;
-        return in.getLeft() + w + 3 * HttpPanelLayout.GAP + in.getRight();
+        double w = run.prefWidth(-1)
+                + status.prefWidth(-1)
+                + meta.prefWidth(-1)
+                + com.editora.editor.UiZoom.px(HttpPanelLayout.HISTORY_WIDTH);
+        return in.getLeft() + w + 3 * gap() + in.getRight();
     }
 
     @Override
@@ -88,7 +100,7 @@ final class HttpHeaderRow extends Region {
         Insets in = getInsets();
         double w = width > 0 ? width : getWidth() > 0 ? getWidth() : prefWidth(-1);
         int rows = fit(w - in.getLeft() - in.getRight()).rows();
-        return in.getTop() + rows * rowHeight() + (rows - 1) * HttpPanelLayout.GAP / 2 + in.getBottom();
+        return in.getTop() + rows * rowHeight() + (rows - 1) * gap() / 2 + in.getBottom();
     }
 
     @Override
@@ -105,7 +117,7 @@ final class HttpHeaderRow extends Region {
         fit = fit(room);
         double rowH = rowHeight();
         double y = in.getTop();
-        double gap = HttpPanelLayout.GAP;
+        double gap = gap();
         double runW = run.prefWidth(-1);
         place(run, left, y, runW, rowH);
         double x = left + runW + gap;

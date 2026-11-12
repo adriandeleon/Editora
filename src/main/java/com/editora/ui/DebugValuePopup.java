@@ -22,6 +22,7 @@ import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
 import com.editora.dap.DapModels;
+import com.editora.editor.UiZoom;
 import com.editora.editor.debug.DebugValuePresenter;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -93,7 +94,7 @@ final class DebugValuePopup implements DebugValuePresenter {
 
     private final TextArea text = new TextArea();
     private final javafx.scene.control.Button copyText = new javafx.scene.control.Button();
-    private final VBox textBox = new VBox(4, textHeader, text, copyText);
+    private final VBox textBox = UiZoom.spacing(new VBox(textHeader, text, copyText), 4);
 
     /** The editor the popup was opened for, and the key filter it carries while the popup is keyboard-driven. */
     private @Nullable CodeArea owner;
@@ -110,11 +111,11 @@ final class DebugValuePopup implements DebugValuePresenter {
         root.getStyleClass().addAll("debug-panel", "debug-value-popup");
         line.getStyleClass().add("debug-value-line");
         line.setWrapText(true);
-        line.setMaxWidth(MAX_WIDTH);
+        UiZoom.maxWidth(line, MAX_WIDTH);
         tree.getStyleClass().add("debug-vars");
         tree.setShowRoot(true);
         tree.setFocusTraversable(false);
-        tree.setFixedCellSize(ROW);
+        UiZoom.follow(tree, () -> tree.setFixedCellSize(UiZoom.px(ROW)));
         tree.setCellFactory(v -> new TreeCell<>() {
             @Override
             protected void updateItem(DebugPanel.VarRow row, boolean empty) {
@@ -168,7 +169,7 @@ final class DebugValuePopup implements DebugValuePresenter {
         // As tall as its rows, up to the bound: a three-element list was a mostly empty box.
         tree.expandedItemCountProperty().addListener((o, was, now) -> fitHeight());
         root.getChildren().add(line);
-        root.setMaxSize(MAX_WIDTH, MAX_HEIGHT);
+        UiZoom.maxSize(root, MAX_WIDTH, MAX_HEIGHT);
         root.addEventHandler(MouseEvent.MOUSE_ENTERED, e -> closing.stop());
         root.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
             if (!menu.isShowing()) {
@@ -302,17 +303,17 @@ final class DebugValuePopup implements DebugValuePresenter {
             // Characters as the user counts them: an emoji is one, not two UTF-16 units (review 3, B note).
             textHeader.setText(tr("debugpanel.stringChars", expr, value.codePointCount(0, value.length())));
             text.setText(value);
-            text.setPrefHeight(textHeight(value));
-            text.setPrefWidth(MAX_WIDTH - 16);
+            UiZoom.prefHeight(text, textHeight(value));
+            UiZoom.prefWidth(text, MAX_WIDTH - 16);
             root.getChildren().setAll(textBox);
-            root.setPrefSize(
-                    javafx.scene.layout.Region.USE_COMPUTED_SIZE, javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+            UiZoom.prefSize(
+                    root, javafx.scene.layout.Region.USE_COMPUTED_SIZE, javafx.scene.layout.Region.USE_COMPUTED_SIZE);
         } else if (r.variablesReference() <= 0) {
             line.setText(r.failed() ? tr("debugpanel.evalFailedLine", expr, r.result()) : expr + " = " + r.result());
             line.pseudoClassStateChanged(FAILED, r.failed());
             root.getChildren().setAll(line);
-            root.setPrefSize(
-                    javafx.scene.layout.Region.USE_COMPUTED_SIZE, javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+            UiZoom.prefSize(
+                    root, javafx.scene.layout.Region.USE_COMPUTED_SIZE, javafx.scene.layout.Region.USE_COMPUTED_SIZE);
         } else {
             DebugPanel.VarRow top = new DebugPanel.VarRow(
                     expr,
@@ -396,7 +397,7 @@ final class DebugValuePopup implements DebugValuePresenter {
      */
     static int lineAbove(CodeArea area, double x, double y) {
         try {
-            javafx.geometry.Point2D local = area.screenToLocal(x, y - 6);
+            javafx.geometry.Point2D local = area.screenToLocal(x, y - UiZoom.px(6));
             if (local == null) {
                 return -1;
             }
@@ -510,8 +511,8 @@ final class DebugValuePopup implements DebugValuePresenter {
 
     private void fitHeight() {
         double h = Math.min(MAX_HEIGHT, tree.getExpandedItemCount() * ROW + 4);
-        tree.setPrefHeight(h);
-        root.setPrefSize(MAX_WIDTH, h + 8);
+        UiZoom.prefHeight(tree, h);
+        UiZoom.prefSize(root, MAX_WIDTH, h + 8);
     }
 
     /** For tests. */

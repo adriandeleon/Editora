@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -28,6 +27,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.diff.InlineDiff;
+import com.editora.editor.UiZoom;
 import com.editora.git.GitChanges;
 import com.editora.git.GitService;
 import org.jspecify.annotations.Nullable;
@@ -89,7 +89,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         summary.setWrapText(true);
         summary.setMnemonicParsing(false);
         summary.setMinHeight(Region.USE_PREF_SIZE);
-        summary.setPadding(new Insets(6, 10, 6, 10));
+        UiZoom.padding(summary, 6, 10, 6, 10);
 
         files.getStyleClass().add("project-map-changes-files");
         files.setAccessibleText(tr("project.map.changes.filesAccessible"));
@@ -148,10 +148,10 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         refresh.setOnAction(event -> onRefresh.run());
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox bar = new HBox(4, previous, next, gap, openInEditor, compare, refresh);
+        HBox bar = UiZoom.spacing(new HBox(previous, next, gap, openInEditor, compare, refresh), 4);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.getStyleClass().add("project-map-changes-bar");
-        bar.setPadding(new Insets(4, 6, 4, 6));
+        UiZoom.padding(bar, 4, 6, 4, 6);
         VBox lower = new VBox(bar, diff);
         VBox.setVgrow(diff, Priority.ALWAYS);
 
@@ -165,7 +165,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         against.setTooltip(new Tooltip(tr("project.map.changes.againstTip")));
         against.setAccessibleText(tr("project.map.changes.againstTip"));
         HBox head = new HBox(against);
-        head.setPadding(new Insets(4, 6, 0, 6));
+        UiZoom.padding(head, 4, 6, 0, 6);
         head.setAlignment(Pos.CENTER_LEFT);
         setRefs(GitService.ReviewRefs.NONE);
         VBox body = new VBox(head, summary, split);
@@ -664,7 +664,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         private final Label letter = new Label();
         private final Label name = new Label();
         private final Label counts = new Label();
-        private final HBox box = new HBox(8, letter, name, counts);
+        private final HBox box = UiZoom.spacing(new HBox(letter, name, counts), 8);
 
         FileCell() {
             letter.getStyleClass().add("project-map-changes-letter");
@@ -725,12 +725,12 @@ final class ProjectMapChangesCard extends MapFloatingCard {
             for (Label number : List.of(oldNumber, newNumber)) {
                 number.getStyleClass().add("project-map-changes-number");
                 number.setMinWidth(Region.USE_PREF_SIZE);
-                number.setPrefWidth(40);
+                UiZoom.prefWidth(number, 40);
                 number.setAlignment(Pos.CENTER_RIGHT);
             }
             code.getStyleClass().add("project-map-changes-line");
             code.setMinWidth(0);
-            code.setPadding(new Insets(0, 0, 0, 8));
+            UiZoom.padding(code, 0, 0, 0, 8);
             code.setAlignment(Pos.CENTER_LEFT);
             box.setAlignment(Pos.CENTER_LEFT);
             setOnMouseClicked(event -> {

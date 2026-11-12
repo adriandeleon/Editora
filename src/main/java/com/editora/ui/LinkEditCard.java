@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.util.function.BiConsumer;
 
-import javafx.geometry.Insets;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
@@ -12,6 +11,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -20,7 +21,7 @@ import static com.editora.i18n.Messages.tr;
  */
 final class LinkEditCard {
 
-    private final VBox card = new VBox(8);
+    private final VBox card = UiZoom.spacing(new VBox(), 8);
     private final TextField text = new TextField();
     private final TextField url = new TextField();
 
@@ -30,7 +31,7 @@ final class LinkEditCard {
      */
     LinkEditCard(String linkText, String destination, Runnable close, BiConsumer<String, String> onAccept) {
         card.getStyleClass().add("table-size-picker"); // the same small-card look as the table-size picker
-        card.setPadding(new Insets(12));
+        UiZoom.padding(card, 12);
         card.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         card.getProperties().put("editora.ownsKeys", true);
         Label heading = new Label(tr("link.edit.title"));
@@ -45,8 +46,7 @@ final class LinkEditCard {
         Label urlLabel = new Label(tr("link.edit.url"));
         urlLabel.setLabelFor(url);
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(6);
+        UiZoom.gaps(grid, 8, 6);
         grid.addRow(0, textLabel, text);
         grid.addRow(1, urlLabel, url);
         GridPane.setHgrow(text, Priority.ALWAYS);

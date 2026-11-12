@@ -14,6 +14,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.config.WorkspaceState;
+import com.editora.editor.UiZoom;
 import com.editora.maven.GeneratedProject;
 import org.jspecify.annotations.Nullable;
 
@@ -162,7 +163,7 @@ final class NewMavenProjectSession {
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.mavenProject.trustTitle"));
         confirm.setHeaderText(tr("dialog.mavenProject.trustHeader", archetype.artifactId()));
-        confirm.getDialogPane().setMinWidth(560);
+        UiZoom.minWidth(confirm.getDialogPane(), 560);
         ButtonType answer = confirm.showAndWait().orElse(cancel);
         return answer == proceed
                 ? MavenProjectCoordinator.Consent.ONCE

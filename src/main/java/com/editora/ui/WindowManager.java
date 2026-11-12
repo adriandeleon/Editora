@@ -25,6 +25,7 @@ import com.editora.config.ProjectManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.config.WorkspaceState;
+import com.editora.editor.UiZoom;
 import com.editora.i18n.Messages;
 import org.jspecify.annotations.Nullable;
 
@@ -1659,7 +1660,7 @@ public class WindowManager {
 
             StackPane sceneRoot = new StackPane(root);
             controller.installZenOverlay(sceneRoot);
-            Scene scene = new Scene(sceneRoot, 1000, 700);
+            Scene scene = new Scene(sceneRoot, UiZoom.px(1000), UiZoom.px(700));
             Settings settings = shared.getSettings();
             scene.setFill(Themes.backgroundFor(settings.getTheme()));
             scene.getStylesheets()

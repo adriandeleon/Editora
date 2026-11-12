@@ -48,7 +48,7 @@ final class ProblemCounter extends HBox {
     private final Label warnings = new Label();
     private final Label notes = new Label();
     private final Node ok = glyph(CHECK_PATH, "problem-counter-ok");
-    private final HBox counts = new HBox(6);
+    private final HBox counts = UiZoom.spacing(new HBox(), 6);
     private final Button previous = arrow(UP_PATH, "problem-counter-previous");
     private final Button next = arrow(DOWN_PATH, "problem-counter-next");
     private final Node pendingGlyph = glyph(PENDING_PATH, "problem-counter-pending");
@@ -64,7 +64,8 @@ final class ProblemCounter extends HBox {
     private @Nullable Region pane;
 
     ProblemCounter(Runnable open, Runnable onPrevious, Runnable onNext) {
-        super(2);
+        super();
+        UiZoom.spacing(this, 2);
         getStyleClass().add("problem-counter");
         setAlignment(Pos.CENTER);
         setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
@@ -130,7 +131,7 @@ final class ProblemCounter extends HBox {
     }
 
     private void fit(double width) {
-        roomy = width <= 0 || width >= MIN_PANE_WIDTH;
+        roomy = width <= 0 || width >= UiZoom.px(MIN_PANE_WIDTH);
         setVisible(roomy);
     }
 

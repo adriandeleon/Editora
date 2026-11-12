@@ -12,6 +12,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 import org.jspecify.annotations.Nullable;
@@ -78,7 +79,7 @@ final class SettingsGitPages {
                 return null; // not editable
             }
         });
-        gitPullModeCombo.setMinWidth(170); // no fixed width: the translated items differ a lot in length
+        UiZoom.minWidth(gitPullModeCombo, 170); // no fixed width: the translated items differ a lot in length
         gitPullModeCombo.valueProperty().addListener((obs, was, now) -> {
             if (w.loading || now == null) {
                 return;
@@ -101,7 +102,7 @@ final class SettingsGitPages {
                 com.editora.config.Settings.MAX_GIT_AUTO_FETCH_MINUTES,
                 config.getSettings().getGitAutoFetchMinutes(),
                 1);
-        gitAutoFetchSpinner.setPrefWidth(90);
+        UiZoom.prefWidth(gitAutoFetchSpinner, 90);
         gitAutoFetchSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
         gitAutoFetchSpinner.valueProperty().addListener((obs, was, now) -> {
             if (w.loading || now == null) {
@@ -149,7 +150,7 @@ final class SettingsGitPages {
         gitStatusLabel = new Label(tr("settings.git.checking"));
         gitStatusLabel.getStyleClass().add("settings-git-status");
         gitStatusLabel.setWrapText(true);
-        gitStatusLabel.setMaxWidth(340);
+        UiZoom.maxWidth(gitStatusLabel, 340);
         w.cardRow(
                 c,
                 Category.GIT,
@@ -157,14 +158,14 @@ final class SettingsGitPages {
                         tr("settings.enableGit"), tr("settings.git.hint"), SettingsWindow.switchFor(gitCheck)),
                 "git version control vcs enable");
         Button gitBrowse = w.browseButton(tr("settings.git.command"), gitPathField);
-        gitPathField.setPrefWidth(SettingsWindow.PATH_FIELD_WIDTH);
+        UiZoom.prefWidth(gitPathField, SettingsWindow.PATH_FIELD_WIDTH);
         w.cardRow(
                 c,
                 Category.GIT,
                 SettingsWindow.settingRow(
                         tr("settings.git.command"),
                         tr("settings.git.command.desc"),
-                        new HBox(6, gitPathField, gitBrowse)),
+                        UiZoom.spacing(new HBox(gitPathField, gitBrowse), 6)),
                 "git command path executable browse");
         w.cardRow(
                 c,
@@ -182,7 +183,11 @@ final class SettingsGitPages {
                 SettingsWindow.settingRow(
                         tr("settings.git.blameInline"),
                         tr("settings.git.blameInline.desc"),
-                        new HBox(8, w.keymapsPage.chordChip("git.toggleBlame"), SettingsWindow.switchFor(blameCheck))),
+                        UiZoom.spacing(
+                                new HBox(
+                                        w.keymapsPage.chordChip("git.toggleBlame"),
+                                        SettingsWindow.switchFor(blameCheck)),
+                                8)),
                 "git blame annotate inline author history line");
         w.cardRow(
                 c2,
@@ -198,7 +203,12 @@ final class SettingsGitPages {
                 SettingsWindow.settingRow(
                         tr("settings.git.autoFetch"),
                         tr("settings.git.autoFetch.desc"),
-                        new HBox(8, gitAutoFetchSpinner, autoFetchUnit, SettingsWindow.switchFor(gitAutoFetchCheck))),
+                        UiZoom.spacing(
+                                new HBox(
+                                        gitAutoFetchSpinner,
+                                        autoFetchUnit,
+                                        SettingsWindow.switchFor(gitAutoFetchCheck)),
+                                8)),
                 "git fetch automatically auto background interval minutes remote prune");
 
         return p;
@@ -210,16 +220,16 @@ final class SettingsGitPages {
         githubStatusLabel = new Label(tr("settings.github.checking"));
         githubStatusLabel.getStyleClass().add("settings-git-status");
         githubStatusLabel.setWrapText(true);
-        githubStatusLabel.setMaxWidth(340);
+        UiZoom.maxWidth(githubStatusLabel, 340);
         w.checkRow(c, Category.GITHUB, githubCheck, tr("settings.github.hint"), "github gh pull request pr enable");
         Button ghBrowse = w.browseButton(tr("settings.github.ghPath"), ghPathField);
-        ghPathField.setPrefWidth(SettingsWindow.PATH_FIELD_WIDTH);
+        UiZoom.prefWidth(ghPathField, SettingsWindow.PATH_FIELD_WIDTH);
         w.controlRow(
                 c,
                 Category.GITHUB,
                 tr("settings.github.ghPath"),
                 null,
-                new HBox(6, ghPathField, ghBrowse),
+                UiZoom.spacing(new HBox(ghPathField, ghBrowse), 6),
                 "github gh path executable command");
         w.controlRow(
                 c,

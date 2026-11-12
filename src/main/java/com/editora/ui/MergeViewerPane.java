@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -30,6 +29,7 @@ import com.editora.diff.ConflictParser.Segment;
 import com.editora.diff.DiffText;
 import com.editora.diff.LossyEdit;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -106,16 +106,16 @@ public final class MergeViewerPane implements TabContent {
         Button save = new Button(tr("merge.save"));
         save.getStyleClass().addAll("merge-save", "success");
         save.setOnAction(e -> saveResult());
-        HBox bar = new HBox(8, status, spacer(), save);
+        HBox bar = UiZoom.spacing(new HBox(status, spacer(), save), 8);
         bar.getStyleClass().add("merge-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new Insets(4, 8, 4, 8));
+        UiZoom.padding(bar, 4, 8, 4, 8);
         return bar;
     }
 
     private SplitPane buildBody() {
-        VBox list = new VBox(8);
-        list.setPadding(new Insets(8));
+        VBox list = UiZoom.spacing(new VBox(), 8);
+        UiZoom.padding(list, 8);
         int conflictIndex = 0;
         for (Segment seg : file.segments()) {
             if (seg instanceof PlainSegment p) {
@@ -148,9 +148,9 @@ public final class MergeViewerPane implements TabContent {
                 draftDirty = true;
             }
         });
-        VBox result = new VBox(4, resultLabel, resultArea);
+        VBox result = UiZoom.spacing(new VBox(resultLabel, resultArea), 4);
         result.getStyleClass().add("merge-result-box");
-        result.setPadding(new Insets(6, 8, 8, 8));
+        UiZoom.padding(result, 6, 8, 8, 8);
         VBox.setVgrow(resultArea, Priority.ALWAYS);
 
         SplitPane split = new SplitPane(scroll, result);
@@ -177,9 +177,9 @@ public final class MergeViewerPane implements TabContent {
             VBox base =
                     sideBox(tr("merge.base", c.baseLabel().isEmpty() ? "base" : c.baseLabel()), c.base(), "merge-base");
             HBox.setHgrow(base, Priority.ALWAYS);
-            sides = new HBox(8, ours, base, theirs);
+            sides = UiZoom.spacing(new HBox(ours, base, theirs), 8);
         } else {
-            sides = new HBox(8, ours, theirs);
+            sides = UiZoom.spacing(new HBox(ours, theirs), 8);
         }
 
         Label chosen = new Label();
@@ -190,7 +190,7 @@ public final class MergeViewerPane implements TabContent {
         acceptOurs.setOnAction(e -> choose(index, Choice.OURS, chosen, tr("merge.kept.ours")));
         acceptTheirs.setOnAction(e -> choose(index, Choice.THEIRS, chosen, tr("merge.kept.theirs")));
         acceptBoth.setOnAction(e -> choose(index, Choice.BOTH, chosen, tr("merge.kept.both")));
-        HBox actions = new HBox(6, acceptOurs, acceptTheirs, acceptBoth);
+        HBox actions = UiZoom.spacing(new HBox(acceptOurs, acceptTheirs, acceptBoth), 6);
         if (c.hasBase()) {
             Button acceptBase = new Button(tr("merge.acceptBase"));
             acceptBase.setOnAction(e -> choose(index, Choice.BASE, chosen, tr("merge.kept.base")));
@@ -199,9 +199,9 @@ public final class MergeViewerPane implements TabContent {
         actions.getChildren().addAll(spacer(), chosen);
         actions.setAlignment(Pos.CENTER_LEFT);
 
-        VBox card = new VBox(4, header, sides, actions);
+        VBox card = UiZoom.spacing(new VBox(header, sides, actions), 4);
         card.getStyleClass().add("merge-conflict-card");
-        card.setPadding(new Insets(6));
+        UiZoom.padding(card, 6);
         return card;
     }
 
@@ -214,7 +214,7 @@ public final class MergeViewerPane implements TabContent {
         area.getStyleClass().addAll("merge-side", styleClass);
         area.setStyle(fontStyle);
         area.setPrefRowCount(Math.min(Math.max(lines.size(), 1), 12));
-        VBox box = new VBox(2, l, area);
+        VBox box = UiZoom.spacing(new VBox(l, area), 2);
         return box;
     }
 

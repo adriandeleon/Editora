@@ -9,6 +9,7 @@ import javafx.scene.layout.Region;
 
 import com.editora.config.WorkspaceState;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -89,7 +90,7 @@ final class RestorePlaceholder implements TabContent {
         if (!entry.isPinned()) {
             return type;
         }
-        HBox icons = new HBox(6, Icons.pin(), type);
+        HBox icons = UiZoom.spacing(new HBox(Icons.pin(), type), 6);
         icons.getStyleClass().add("tab-placeholder-icons");
         return icons;
     }

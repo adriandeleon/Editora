@@ -33,6 +33,7 @@ import com.editora.crypto.GpgKey;
 import com.editora.crypto.GpgStatus;
 import com.editora.crypto.PacketInfo;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.crypto.EncryptionState;
 import com.editora.process.ProcessRunner;
 import org.jspecify.annotations.Nullable;
@@ -1386,7 +1387,7 @@ final class EncryptionCoordinator {
         area.setWrapText(true);
         area.setPrefRowCount(Math.min(16, Math.max(4, plain.split("\n", -1).length)));
         area.getStyleClass().add("encryption-armor");
-        javafx.scene.layout.VBox card = new javafx.scene.layout.VBox(10, title);
+        javafx.scene.layout.VBox card = UiZoom.spacing(new javafx.scene.layout.VBox(title), 10);
         GpgStatus.Signature signature = status.signature();
         if (signature != null) {
             card.getChildren().add(new javafx.scene.control.Label(signatureText(signature)));
@@ -1414,11 +1415,11 @@ final class EncryptionCoordinator {
         close.setOnAction(e -> overlay.hide());
         javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
         javafx.scene.layout.HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-        javafx.scene.layout.HBox footer = new javafx.scene.layout.HBox(8, replace, spacer, copy, close);
+        javafx.scene.layout.HBox footer = UiZoom.spacing(new javafx.scene.layout.HBox(replace, spacer, copy, close), 8);
         card.getChildren().addAll(area, footer);
         card.getStyleClass().addAll("command-palette", "overlay-form", "encryption-peek");
-        card.setPadding(new javafx.geometry.Insets(14));
-        card.setPrefWidth(560);
+        UiZoom.padding(card, 14);
+        UiZoom.prefWidth(card, 560);
         card.setMaxSize(javafx.scene.layout.Region.USE_PREF_SIZE, javafx.scene.layout.Region.USE_PREF_SIZE);
         overlay.show(card, true, close::requestFocus, () -> area.clear());
     }

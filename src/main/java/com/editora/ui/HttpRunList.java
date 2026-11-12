@@ -30,6 +30,7 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -95,7 +96,7 @@ final class HttpRunList extends VBox {
         this.onRunAgain = onRunAgain;
         this.onCopyAsCurl = onCopyAsCurl;
         getStyleClass().add("http-run-list");
-        setSpacing(4);
+        UiZoom.spacing(this, 4);
 
         title.getStyleClass().add("http-run-title");
         title.setMinWidth(Region.USE_PREF_SIZE);
@@ -111,10 +112,10 @@ final class HttpRunList extends VBox {
         chevron = Icons.button(Icons.findPrevious(), tr("httppanel.runList.collapse"), this::toggleCollapsed);
         chevron.getStyleClass().addAll("flat", "http-action", "http-run-chevron");
         chevron.setMinWidth(Region.USE_PREF_SIZE);
-        HBox controls = new HBox(6, onlyFailures, chevron);
+        HBox controls = UiZoom.spacing(new HBox(onlyFailures, chevron), 6);
         controls.setAlignment(Pos.CENTER_RIGHT);
         controls.setMinWidth(Region.USE_PREF_SIZE);
-        HBox heading = new HBox(8, title, pill);
+        HBox heading = UiZoom.spacing(new HBox(title, pill), 8);
         heading.setAlignment(Pos.CENTER_LEFT);
         heading.setMinWidth(Region.USE_PREF_SIZE);
         Region spacer = new Region();
@@ -131,9 +132,10 @@ final class HttpRunList extends VBox {
         // As tall as its rows (at least one, for the "No failures" line); the panel caps the whole section.
         list.prefHeightProperty()
                 .bind(Bindings.createDoubleBinding(
-                        () -> Math.max(1, list.getItems().size()) * cellSize() + 4,
+                        () -> Math.max(1, list.getItems().size()) * cellSize() + UiZoom.px(4),
                         list.getItems(),
-                        list.fixedCellSizeProperty()));
+                        list.fixedCellSizeProperty(),
+                        UiZoom.factorProperty()));
         list.getSelectionModel().selectedItemProperty().addListener((o, a, row) -> {
             if (!syncing && row != null) {
                 selected = row.entry();
@@ -160,7 +162,7 @@ final class HttpRunList extends VBox {
 
     private double cellSize() {
         double fixed = list.getFixedCellSize();
-        return fixed > 0 ? fixed : 26;
+        return fixed > 0 ? fixed : UiZoom.px(26);
     }
 
     private ContextMenu buildMenu() {
@@ -360,7 +362,7 @@ final class HttpRunList extends VBox {
             tests.setAlignment(Pos.CENTER_RIGHT);
             tests.minWidthProperty().bind(testsWidth);
             tests.prefWidthProperty().bind(testsWidth);
-            box = new HBox(8, status, name, path, time, tests);
+            box = UiZoom.spacing(new HBox(status, name, path, time, tests), 8);
             box.setAlignment(Pos.CENTER_LEFT);
             box.setMinWidth(0);
             box.setPrefWidth(0); // the list's width, not the texts', decides: a long path is cut, not scrolled to
@@ -398,9 +400,9 @@ final class HttpRunList extends VBox {
             if (row.testsStyle() == HttpRunRows.Tests.FAILED) {
                 tests.getStyleClass().add("http-test-failed");
             }
-            fit(status, statusWidth, true, 20);
-            fit(time, timeWidth, false, 4);
-            fit(tests, testsWidth, true, 4);
+            fit(status, statusWidth, true, UiZoom.px(20));
+            fit(time, timeWidth, false, UiZoom.px(4));
+            fit(tests, testsWidth, true, UiZoom.px(4));
             setGraphic(box);
             String spoken = row.spoken();
             setAccessibleText(spoken);

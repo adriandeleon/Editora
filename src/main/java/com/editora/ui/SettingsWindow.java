@@ -13,7 +13,6 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import javafx.beans.binding.Bindings;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -43,6 +42,7 @@ import javafx.util.StringConverter;
 import com.editora.build.BuildTool;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.terminal.TerminalThemes;
@@ -755,8 +755,7 @@ public class SettingsWindow {
         sidebar = new ListView<>();
         sidebar.getStyleClass().add("settings-sidebar");
         sidebar.getItems().setAll(sidebarItems());
-        sidebar.setPrefWidth(216);
-        sidebar.setMinWidth(216);
+        UiZoom.minWidth(UiZoom.prefWidth(sidebar, 216), 216);
         sidebar.setCellFactory(v -> new CategoryCell());
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
             if (b instanceof Category) { // group headers aren't pages
@@ -816,7 +815,7 @@ public class SettingsWindow {
         modifiedOnly.setAccessibleHelp(tr("settings.search.modifiedOnly.tip"));
         modifiedOnly.setOnAction(e -> filter(searchField.getText()));
         modifiedOnly.getStyleClass().add(atlantafx.base.theme.Styles.SMALL); // under the search: it filters it
-        VBox nav = new VBox(8, searchField, modifiedOnly, sidebar);
+        VBox nav = UiZoom.spacing(new VBox(searchField, modifiedOnly, sidebar), 8);
         nav.getStyleClass().add("settings-nav");
         VBox.setVgrow(sidebar, Priority.ALWAYS);
 
@@ -848,7 +847,7 @@ public class SettingsWindow {
         live.visibleProperty().bind(restartBox.visibleProperty().not());
         live.managedProperty().bind(live.visibleProperty());
         SettingsSearch.setShown(restartBox, false);
-        HBox buttons = new HBox(8, footReset, spacer, restartBox, live, close);
+        HBox buttons = UiZoom.spacing(new HBox(footReset, spacer, restartBox, live, close), 8);
         buttons.setAlignment(Pos.CENTER_LEFT);
         buttons.getStyleClass().add("settings-footer");
 
@@ -881,8 +880,9 @@ public class SettingsWindow {
         // take the focus away: text typed last (an abbreviation's expansion, a site's host) was dropped.
         stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_HIDING, e -> root.requestFocus());
         // Floor the window size: the rows wrap, but the list-beside-form pages need MIN_WIDTH.
-        stage.setMinWidth(Math.min(MIN_WIDTH, size.getWidth())); // never wider than a small screen allows
-        stage.setMinHeight(Math.min(MIN_HEIGHT, size.getHeight()));
+        // Never wider than a small screen allows.
+        UiZoom.follow(stage, () -> stage.setMinWidth(Math.min(UiZoom.px(MIN_WIDTH), size.getWidth())));
+        UiZoom.follow(stage, () -> stage.setMinHeight(Math.min(UiZoom.px(MIN_HEIGHT), size.getHeight())));
 
         sidebar.getSelectionModel().select(Category.APPEARANCE);
     }
@@ -897,7 +897,8 @@ public class SettingsWindow {
      * would open taller than a laptop display and hide its own Close button.
      */
     private static javafx.geometry.Dimension2D preferredSize(Window owner) {
-        return WindowPlacement.clampSize(WIDTH, HEIGHT, WindowPlacement.screenOf(owner), MAX_SCREEN_FRACTION);
+        return WindowPlacement.clampSize(
+                UiZoom.px(WIDTH), UiZoom.px(HEIGHT), WindowPlacement.screenOf(owner), MAX_SCREEN_FRACTION);
     }
 
     // --- control construction (logic unchanged from the flat window) -----------------------------
@@ -906,7 +907,7 @@ public class SettingsWindow {
         languageCombo = new ComboBox<>();
         languageCombo.getItems().add(""); // "" = automatic (system language)
         languageCombo.getItems().addAll(com.editora.i18n.Messages.available().keySet());
-        languageCombo.setPrefWidth(220);
+        UiZoom.prefWidth(languageCombo, 220);
         languageCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(String code) {
@@ -944,14 +945,14 @@ public class SettingsWindow {
                                         .equals(com.editora.i18n.Messages.current()),
                         languageCombo.valueProperty()));
         restartNote.managedProperty().bind(restartNote.visibleProperty());
-        languageControl = new VBox(4, languageCombo, restartNote);
+        languageControl = UiZoom.spacing(new VBox(languageCombo, restartNote), 4);
         languageControl.setAlignment(Pos.CENTER_RIGHT);
 
         keymapsPage.buildControls();
 
         fontFamily = new ComboBox<>();
         fontFamily.getItems().setAll(fontFamilyChoices());
-        fontFamily.setPrefWidth(220);
+        UiZoom.prefWidth(fontFamily, 220);
         fontFamily.setCellFactory(v ->
                 labelledCell(name -> Fonts.BUNDLED.contains(name) ? tr("settings.fontFamily.bundled", name) : name));
         fontFamily.valueProperty().addListener((obs, old, now) -> {
@@ -963,7 +964,7 @@ public class SettingsWindow {
         });
 
         fontSize = IntSpinners.editable(Settings.MIN_FONT_SIZE, Settings.MAX_FONT_SIZE, 14, 1);
-        fontSize.setPrefWidth(90);
+        UiZoom.prefWidth(fontSize, 90);
         fontSize.valueProperty().addListener((obs, old, now) -> {
             if (loading || now == null) {
                 return;
@@ -974,7 +975,7 @@ public class SettingsWindow {
 
         uiZoom = IntSpinners.editable(
                 Settings.MIN_UI_ZOOM, Settings.MAX_UI_ZOOM, Settings.DEFAULT_UI_ZOOM, com.editora.editor.UiZoom.STEP);
-        uiZoom.setPrefWidth(90);
+        UiZoom.prefWidth(uiZoom, 90);
         uiZoom.valueProperty().addListener((obs, old, now) -> {
             if (loading || now == null) {
                 return;
@@ -986,7 +987,7 @@ public class SettingsWindow {
 
         themeCombo = new ComboBox<>();
         themeCombo.getItems().setAll(appThemeChoices());
-        themeCombo.setPrefWidth(220);
+        UiZoom.prefWidth(themeCombo, 220);
         ThemeGroups.install(themeCombo, name -> name);
         themeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null || ThemeGroups.isHeading(now)) {
@@ -1005,7 +1006,7 @@ public class SettingsWindow {
         // Once another was picked there used to be no way back short of resetting every setting.
         editorThemeCombo = new ComboBox<>();
         editorThemeCombo.getItems().setAll(editorThemeChoices());
-        editorThemeCombo.setPrefWidth(220);
+        UiZoom.prefWidth(editorThemeCombo, 220);
         ThemeGroups.install(editorThemeCombo, SettingsWindow::editorThemeLabel);
         editorThemeCombo.setButtonCell(editorThemeCell());
         editorThemeCombo.valueProperty().addListener((obs, was, now) -> {
@@ -1033,7 +1034,7 @@ public class SettingsWindow {
         });
 
         tabSizeSpinner = IntSpinners.editable(Settings.MIN_TAB_SIZE, Settings.MAX_TAB_SIZE, 4, 1);
-        tabSizeSpinner.setPrefWidth(90);
+        UiZoom.prefWidth(tabSizeSpinner, 90);
         tabSizeSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null || scopeUi.write("editor.tabSize", now)) {
                 return;
@@ -1044,7 +1045,7 @@ public class SettingsWindow {
 
         fillColumnSpinner = IntSpinners.editable(
                 Settings.MIN_FILL_COLUMN, Settings.MAX_FILL_COLUMN, com.editora.editops.Filler.DEFAULT_FILL_COLUMN, 1);
-        fillColumnSpinner.setPrefWidth(90);
+        UiZoom.prefWidth(fillColumnSpinner, 90);
         fillColumnSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1055,7 +1056,7 @@ public class SettingsWindow {
 
         // Line count above which the minimap + LSP auto-disable (highlighting + editing stay); 0 = never.
         largeFileThresholdSpinner = IntSpinners.editable(0, Settings.MAX_LARGE_FILE_THRESHOLD, 10_000, 1000);
-        largeFileThresholdSpinner.setPrefWidth(120);
+        UiZoom.prefWidth(largeFileThresholdSpinner, 120);
         largeFileThresholdSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1111,7 +1112,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        inlayHintModeCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
+        UiZoom.minWidth(inlayHintModeCombo, 170); // no fixed width: it cut off the longer (translated) items
         inlayHintModeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1149,7 +1150,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        indentStyleCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
+        UiZoom.minWidth(indentStyleCombo, 170); // no fixed width: it cut off the longer (translated) items
         indentStyleCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null || scopeUi.write("editor.indentStyle", now)) {
                 return;
@@ -1171,7 +1172,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        pdfPageSizeCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
+        UiZoom.minWidth(pdfPageSizeCombo, 170); // no fixed width: it cut off the longer (translated) items
         pdfPageSizeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1195,7 +1196,7 @@ public class SettingsWindow {
                 return null; // not editable
             }
         });
-        pdfCodeFontSizeCombo.setMinWidth(170);
+        UiZoom.minWidth(pdfCodeFontSizeCombo, 170);
         pdfCodeFontSizeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1324,7 +1325,7 @@ public class SettingsWindow {
             Label status = new Label(tr("settings.buildTools.notFound", bt.displayName()));
             status.getStyleClass().add("settings-git-status");
             status.setWrapText(true);
-            status.setMaxWidth(440);
+            UiZoom.maxWidth(status, 440);
             buildToolStatusLabels.put(bt, status);
         }
 
@@ -1438,7 +1439,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        autoSaveCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
+        UiZoom.minWidth(autoSaveCombo, 170); // no fixed width: it cut off the longer (translated) items
         autoSaveCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1450,7 +1451,7 @@ public class SettingsWindow {
 
         autoSaveDelaySpinner =
                 IntSpinners.editable(Settings.MIN_AUTO_SAVE_DELAY_SECONDS, Settings.MAX_AUTO_SAVE_DELAY_SECONDS, 1, 1);
-        autoSaveDelaySpinner.setPrefWidth(90);
+        UiZoom.prefWidth(autoSaveDelaySpinner, 90);
         autoSaveDelaySpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1464,7 +1465,7 @@ public class SettingsWindow {
     private Spinner<Integer> historySpinner(
             int min, int max, int def, java.util.function.BiConsumer<Settings, Integer> setter) {
         Spinner<Integer> s = IntSpinners.editable(min, max, def, 1);
-        s.setPrefWidth(100);
+        UiZoom.prefWidth(s, 100);
         s.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1574,7 +1575,7 @@ public class SettingsWindow {
                     && !page.getChildren().isEmpty()
                     && page.getChildren().get(0) instanceof javafx.scene.text.Text title) {
                 page.getChildren().remove(0);
-                HBox heading = new HBox(8, title);
+                HBox heading = UiZoom.spacing(new HBox(title), 8);
                 if (c.beta) {
                     Label pill = new Label(tr("settings.beta"));
                     pill.getStyleClass().addAll("settings-beta-pill", "settings-title-pill");
@@ -1622,7 +1623,7 @@ public class SettingsWindow {
             config.getSettings().setFontZoom(1.0);
             apply();
         });
-        zoomNote = new HBox(8, note(""), resetZoom);
+        zoomNote = UiZoom.spacing(new HBox(note(""), resetZoom), 8);
         zoomNote.setAlignment(Pos.CENTER_LEFT);
         zoomNote.getStyleClass().add("settings-row");
         mainCard.body().getChildren().add(zoomNote); // not a search row: it shows only while zoomed
@@ -1668,7 +1669,7 @@ public class SettingsWindow {
                 Category.APPEARANCE,
                 tr("settings.userThemes"),
                 tr("settings.userThemes.desc"),
-                new HBox(12, openThemes, reloadThemes),
+                UiZoom.spacing(new HBox(openThemes, reloadThemes), 12),
                 "user themes custom stylesheet css folder reload own theme");
         Card previewSection = card(p, tr("settings.livePreview"));
         cardRow(previewSection, Category.APPEARANCE, preview, "preview sample code");
@@ -1691,7 +1692,7 @@ public class SettingsWindow {
             return answer.test(title, body);
         }
         Alert confirm = Confirm.dialog(stage, new Confirm.Question(title, null, body, action));
-        confirm.getDialogPane().setMinWidth(460);
+        UiZoom.minWidth(confirm.getDialogPane(), 460);
         return Confirm.confirmed(confirm, confirm.showAndWait());
     }
 
@@ -1890,7 +1891,7 @@ public class SettingsWindow {
         Card saving = card(p, tr("settings.section.saving"));
         Label delayLabel = note(tr("settings.autoSave.delay"));
         delayLabel.setLabelFor(autoSaveDelaySpinner);
-        HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
+        HBox autoSaveBox = UiZoom.spacing(new HBox(autoSaveCombo, autoSaveDelaySpinner, delayLabel), 8);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
         controlRow(
                 saving,
@@ -1921,8 +1922,8 @@ public class SettingsWindow {
                 finalNewlineCombo,
                 "final newline end of file save project editorconfig");
         Card performance = card(p, tr("settings.section.performance"));
-        HBox largeFileBox = new HBox(8, largeFileThresholdSpinner, note(tr("settings.largeFileThreshold.unit")));
-        largeFileBox.setAlignment(Pos.CENTER_LEFT);
+        HBox largeFileBox = new HBox(largeFileThresholdSpinner, note(tr("settings.largeFileThreshold.unit")));
+        UiZoom.spacing(largeFileBox, 8).setAlignment(Pos.CENTER_LEFT);
         controlRow(
                 performance,
                 Category.EDITOR,
@@ -2044,7 +2045,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        combo.setMinWidth(170);
+        UiZoom.minWidth(combo, 170);
         combo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -2104,7 +2105,7 @@ public class SettingsWindow {
         choices.add(TerminalThemes.FOLLOW_EDITOR);
         choices.addAll(ThemeGroups.grouped(TerminalThemes.NAMES, TerminalThemes::isDark, Set.of()));
         combo.getItems().setAll(choices);
-        combo.setPrefWidth(220);
+        UiZoom.prefWidth(combo, 220);
         java.util.function.Function<String, String> label =
                 name -> name.isEmpty() ? tr("settings.terminal.theme.editor") : name;
         ThemeGroups.install(combo, label);
@@ -2150,7 +2151,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        combo.setMinWidth(170);
+        UiZoom.minWidth(combo, 170);
         settingControls.put(key, combo);
         combo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -2187,7 +2188,7 @@ public class SettingsWindow {
             java.util.function.BiConsumer<Settings, Integer> set,
             String keywords) {
         Spinner<Integer> spinner = IntSpinners.editable(0, max, 0, step);
-        spinner.setPrefWidth(100);
+        UiZoom.prefWidth(spinner, 100);
         spinner.setAccessibleText(tr("settings." + key));
         settingControls.put(key, spinner);
         spinner.valueProperty().addListener((obs, was, now) -> {
@@ -2236,7 +2237,7 @@ public class SettingsWindow {
             String keywords) {
         TextField field = new TextField();
         field.setPromptText(prompt);
-        field.setPrefWidth(220);
+        UiZoom.prefWidth(field, 220);
         settingControls.put(key, field);
         commitOnEnterOrBlur(field, () -> get.apply(config.getSettings()), now -> {
             String why = problem == null ? null : problem.apply(now);
@@ -2275,7 +2276,7 @@ public class SettingsWindow {
     /** Widens text row {@code key}'s field: a list the usual 220 px shows only the start of (XML review 3, C28). */
     void widenField(String key, double width) {
         if (settingControls.get(key) instanceof TextField field) {
-            field.setPrefWidth(width);
+            UiZoom.prefWidth(field, width);
         }
     }
 
@@ -2304,7 +2305,7 @@ public class SettingsWindow {
         Tooltip tooltip = tip == null ? null : new Tooltip(tip);
         if (tooltip != null) {
             tooltip.setWrapText(true);
-            tooltip.setMaxWidth(480);
+            tooltip.setMaxWidth(UiZoom.px(480));
         }
         field.setTooltip(tooltip);
         field.setAccessibleHelp(why);
@@ -2554,7 +2555,7 @@ public class SettingsWindow {
                 Category.COMPLETION,
                 tr("settings.javaCleanups"),
                 tr("settings.javaCleanups.note"),
-                new HBox(10, javaCleanupsCount, chooseCleanups),
+                UiZoom.spacing(new HBox(javaCleanupsCount, chooseCleanups), 10),
                 "clean up cleanups override final redundant modifiers lambda java jdtls");
         textRow(
                 lsp,
@@ -2869,15 +2870,15 @@ public class SettingsWindow {
         encryptionGpgStatus = new Label(tr("settings.search.checking"));
         encryptionGpgStatus.getStyleClass().add("settings-git-status");
         encryptionGpgStatus.setWrapText(true);
-        encryptionGpgStatus.setMaxWidth(340);
+        UiZoom.maxWidth(encryptionGpgStatus, 340);
         Button browse = browseButton(tr("settings.encryption.gpgPath"), encryptionGpgPathField);
-        encryptionGpgPathField.setPrefWidth(PATH_FIELD_WIDTH);
+        UiZoom.prefWidth(encryptionGpgPathField, PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.ENCRYPTION,
                 tr("settings.encryption.gpgPath"),
                 tr("settings.encryption.gpgPath.desc"),
-                new HBox(6, encryptionGpgPathField, browse),
+                UiZoom.spacing(new HBox(encryptionGpgPathField, browse), 6),
                 "encryption gnupg gpg pgp openpgp path executable command");
         controlRow(
                 c,
@@ -2941,16 +2942,16 @@ public class SettingsWindow {
         ripgrepStatusLabel = new Label(tr("settings.search.checking"));
         ripgrepStatusLabel.getStyleClass().add("settings-git-status");
         ripgrepStatusLabel.setWrapText(true);
-        ripgrepStatusLabel.setMaxWidth(340);
+        UiZoom.maxWidth(ripgrepStatusLabel, 340);
         checkRow(c, Category.SEARCH, ripgrepCheck, tr("settings.search.hint"), "search ripgrep rg find in files fast");
         Button rgBrowse = browseButton(tr("settings.search.ripgrepPath"), ripgrepCommandField);
-        ripgrepCommandField.setPrefWidth(PATH_FIELD_WIDTH);
+        UiZoom.prefWidth(ripgrepCommandField, PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.SEARCH,
                 tr("settings.search.ripgrepPath"),
                 null,
-                new HBox(6, ripgrepCommandField, rgBrowse),
+                UiZoom.spacing(new HBox(ripgrepCommandField, rgBrowse), 6),
                 "search ripgrep rg path executable command");
         controlRow(
                 c,
@@ -3015,9 +3016,9 @@ public class SettingsWindow {
         if (field == null) {
             return; // the callers' maps hold a field for every row they build
         }
-        field.setPrefWidth(PATH_FIELD_WIDTH);
+        UiZoom.prefWidth(field, PATH_FIELD_WIDTH);
         fullValueTip(field, title); // a 111-character server command was cut off, unnamed (XML/pom review 4, C36)
-        HBox path = new HBox(6, field, browseButton(title, field));
+        HBox path = UiZoom.spacing(new HBox(field, browseButton(title, field)), 6);
         controlRow(c, cat, title, description, master == null ? path : dependent(master, path), keywords + " path");
         controlRow(c, cat, tr("settings.git.detected"), null, status.node(), keywords + " found not found install");
     }
@@ -3055,14 +3056,15 @@ public class SettingsWindow {
                 // One Node.js for Run, npm scripts, Debug, the language servers and HTTP scripts (review E102):
                 // beside npm, never greyed out by another feature's switch.
                 Card nodeCard = card(p, "Node.js");
-                debugPage.nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
+                UiZoom.prefWidth(debugPage.nodePathField, PATH_FIELD_WIDTH);
                 String node = tr("settings.debug.nodePath");
                 controlRow(
                         nodeCard,
                         Category.BUILD_TOOLS,
                         node,
                         tr("settings.debug.nodePath.hint"),
-                        new HBox(6, debugPage.nodePathField, browseButton(node, debugPage.nodePathField)),
+                        UiZoom.spacing(
+                                new HBox(debugPage.nodePathField, browseButton(node, debugPage.nodePathField)), 6),
                         "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
             }
             Card c = card(p, bt.displayName());
@@ -3096,7 +3098,7 @@ public class SettingsWindow {
                 pomLsp.setWrapText(true);
                 pomLsp.setOnAction(e -> sidebar.getSelectionModel().select(Category.LSP));
                 cardRow(c, Category.BUILD_TOOLS, pomLsp, kw + " pom.xml editing completion lemminx lsp install");
-                mavenArchetypeCatalogField.setPrefWidth(PATH_FIELD_WIDTH + 120); // the default URL in full
+                UiZoom.prefWidth(mavenArchetypeCatalogField, PATH_FIELD_WIDTH + 120); // the default URL in full
                 cardRow(
                         c,
                         Category.BUILD_TOOLS,
@@ -3127,7 +3129,7 @@ public class SettingsWindow {
                 "remote sftp ssh connection host user key password saved site server");
         Label note = note(tr("settings.remote.note"));
         note.setWrapText(true);
-        note.setMaxWidth(460);
+        UiZoom.maxWidth(note, 460);
         cardRow(mainCard, Category.REMOTE, note, "remote secret password passphrase not stored security");
         Card execCard = card(p, null);
         cardRow(
@@ -3140,7 +3142,7 @@ public class SettingsWindow {
                 "remote run command execute ssh host server build git");
         containerEngineField = new TextField();
         containerEngineField.setPromptText("docker");
-        containerEngineField.setPrefWidth(PATH_FIELD_WIDTH);
+        UiZoom.prefWidth(containerEngineField, PATH_FIELD_WIDTH);
         commitOnEnterOrBlur(containerEngineField, () -> config.getSettings().getContainerEngine(), now -> {
             config.getSettings().setContainerEngine(now);
             apply();
@@ -3170,7 +3172,7 @@ public class SettingsWindow {
                 "external tools command cli macro stdin output console run formatter filter");
         Label macros = note(tr("settings.externalTool.macrosHelp"));
         macros.setWrapText(true);
-        macros.setMaxWidth(460);
+        UiZoom.maxWidth(macros, 460);
         cardRow(mainCard, Category.EXTERNAL_TOOLS, macros, "external tools macros filepath selection linenumber");
         return p;
     }
@@ -3313,7 +3315,7 @@ public class SettingsWindow {
     /** A simple "label: control" row (no Browse button), used for the AI provider combo + endpoint URL. */
     HBox labeledRow(String label, javafx.scene.control.Control control) {
         HBox.setHgrow(control, Priority.ALWAYS);
-        HBox box = new HBox(6, new Label(label), control);
+        HBox box = UiZoom.spacing(new HBox(new Label(label), control), 6);
         box.setAlignment(Pos.CENTER_LEFT);
         return box;
     }
@@ -3581,9 +3583,9 @@ public class SettingsWindow {
         Card trust = card(p, tr("settings.section.trustedFolders"));
         Label trustNote = note(tr("settings.trustedFolders.note"));
         trustNote.setWrapText(true);
-        trustNote.setMaxWidth(440);
+        UiZoom.maxWidth(trustNote, 440);
         cardRow(trust, Category.ADVANCED, trustNote, "workspace trust build wrapper mvnw gradlew security");
-        trustedFoldersList.setPrefHeight(120);
+        UiZoom.prefHeight(trustedFoldersList, 120);
         trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
         Button revoke = new Button(tr("settings.trustedFolders.revoke"));
         Button revokeAll = new Button(tr("settings.trustedFolders.revokeAll"));
@@ -3610,7 +3612,7 @@ public class SettingsWindow {
         cardRow(
                 trust,
                 Category.ADVANCED,
-                new HBox(8, revoke, revokeAll),
+                UiZoom.spacing(new HBox(revoke, revokeAll), 8),
                 "workspace trust revoke remove trusted folder");
     }
 
@@ -3627,7 +3629,7 @@ public class SettingsWindow {
         Label pathLabel = new Label(tr("settings.path"));
         Label sessionLabel = new Label(tr("settings.sessionLog"));
         keepWidth(pathLabel, sessionLabel); // a long path gives way, not its label
-        HBox fileRow = new HBox(6, pathLabel, link);
+        HBox fileRow = UiZoom.spacing(new HBox(pathLabel, link), 6);
         fileRow.setAlignment(Pos.CENTER_LEFT);
         cardRow(fileSection, Category.ADVANCED, fileRow, "settings file path toml config location");
         cardRow(fileSection, Category.ADVANCED, fileNotes.node(), "hand edit json reload apply restart unknown key");
@@ -3640,7 +3642,7 @@ public class SettingsWindow {
                 onOpenFile.accept(sessionLog);
             }
         });
-        HBox sessionRow = new HBox(6, sessionLabel, sessionLink);
+        HBox sessionRow = UiZoom.spacing(new HBox(sessionLabel, sessionLink), 6);
         sessionRow.setAlignment(Pos.CENTER_LEFT);
         cardRow(
                 fileSection,
@@ -3656,7 +3658,7 @@ public class SettingsWindow {
         cardRow(
                 resetSection,
                 Category.ADVANCED,
-                new HBox(8, reset, restore),
+                UiZoom.spacing(new HBox(reset, restore), 8),
                 "reset defaults restore factory clear backup undo");
 
         Card ioSection = card(p, tr("settings.section.io"));
@@ -3668,7 +3670,7 @@ public class SettingsWindow {
         });
         Label exportHint = note(tr("settings.exportConfig.hint"));
         exportHint.setWrapText(true);
-        VBox exportBox = new VBox(4, exportConfig, exportHint);
+        VBox exportBox = UiZoom.spacing(new VBox(exportConfig, exportHint), 4);
         cardRow(ioSection, Category.ADVANCED, exportBox, "export backup settings config zip archive");
         Button importConfig = new Button(tr("settings.importConfig"));
         importConfig.setOnAction(e -> {
@@ -3681,7 +3683,7 @@ public class SettingsWindow {
         cardRow(
                 ioSection,
                 Category.ADVANCED,
-                new VBox(4, importConfig, importHint),
+                UiZoom.spacing(new VBox(importConfig, importHint), 4),
                 "import restore backup settings config zip archive move computer");
 
         Card debugSection = card(p, tr("settings.section.debug"));
@@ -3693,7 +3695,7 @@ public class SettingsWindow {
         });
         Label debugHint = note(tr("settings.debugLog.hint"));
         debugHint.setWrapText(true);
-        VBox debugBox = new VBox(4, debugLog, debugHint);
+        VBox debugBox = UiZoom.spacing(new VBox(debugLog, debugHint), 4);
         cardRow(
                 debugSection,
                 Category.ADVANCED,
@@ -3715,7 +3717,7 @@ public class SettingsWindow {
         Card sec = card(p, tr("settings.toolbar.section"));
         Label desc = note(tr("settings.toolbar.note"));
         desc.setWrapText(true);
-        desc.setMaxWidth(560);
+        UiZoom.maxWidth(desc, 560);
         cardRow(sec, Category.TOOLBAR, desc, "toolbar customize icons order add remove reorder drag");
         toolbarSettings = new ToolbarSettingsPane(() -> toolbarActions);
         refreshToolbarLists = toolbarSettings::refresh;
@@ -3735,10 +3737,9 @@ public class SettingsWindow {
         javafx.scene.text.Text heading = new javafx.scene.text.Text(title);
         heading.setBoundsType(javafx.scene.text.TextBoundsType.VISUAL);
         heading.getStyleClass().add("settings-page-title");
-        VBox box = new VBox(10, heading);
+        VBox box = UiZoom.spacing(new VBox(heading), 10);
         box.getStyleClass().add("settings-page");
-        box.setPadding(new Insets(4, 4, 4, 16));
-        return box;
+        return UiZoom.padding(box, 4, 4, 4, 16);
     }
 
     /** A page with the kit's one-line subtitle under its heading, saying what the page is for. */
@@ -3748,7 +3749,7 @@ public class SettingsWindow {
             Label sub = new Label(subtitle);
             sub.getStyleClass().add("settings-page-subtitle");
             sub.setWrapText(true);
-            sub.setMaxWidth(520);
+            UiZoom.maxWidth(sub, 520);
             box.getChildren().add(sub);
         }
         return box;
@@ -3850,7 +3851,7 @@ public class SettingsWindow {
         Label t = new Label(title);
         t.getStyleClass().add("settings-row-title");
         t.setWrapText(true); // a long (translated) title beside a switch wraps; it used to end in "…"
-        VBox main = new VBox(2, t);
+        VBox main = UiZoom.spacing(new VBox(t), 2);
         if (description != null && !description.isBlank()) {
             Label d = new Label(description);
             d.getStyleClass().add("settings-row-desc");
@@ -3898,10 +3899,9 @@ public class SettingsWindow {
         // Floor the width to 130 so short labels line up into a tidy column, but let a longer label grow to
         // its full text (maxWidth = pref) instead of ellipsizing — e.g. "Max size / project (MB)" or any
         // longer translation. (Previously a fixed prefWidth(130) clamped + truncated the longer ones.)
-        l.setMinWidth(130);
-        l.setMaxWidth(Region.USE_PREF_SIZE);
+        UiZoom.minWidth(l, 130).setMaxWidth(Region.USE_PREF_SIZE);
         l.setLabelFor(control);
-        HBox h = new HBox(10, l, control);
+        HBox h = UiZoom.spacing(new HBox(l, control), 10);
         h.setAlignment(Pos.CENTER_LEFT);
         return h;
     }
@@ -3917,8 +3917,7 @@ public class SettingsWindow {
         Label l = new Label(text);
         l.getStyleClass().add("settings-note-box");
         l.setWrapText(true);
-        l.setMaxWidth(520);
-        return l;
+        return UiZoom.maxWidth(l, 520);
     }
 
     /** A small "i" info glyph carrying a hover {@link Tooltip} — for a compact detail that would otherwise
@@ -3928,7 +3927,7 @@ public class SettingsWindow {
         icon.getStyleClass().add("settings-info-icon");
         Tooltip tip = new Tooltip(tooltipText);
         tip.setWrapText(true);
-        tip.setMaxWidth(320);
+        UiZoom.follow(icon, () -> tip.setMaxWidth(UiZoom.px(320)));
         Tooltip.install(icon, tip);
         return icon;
     }
@@ -4037,11 +4036,12 @@ public class SettingsWindow {
                 Label name = new Label(c.display);
                 name.getStyleClass().add("settings-sidebar-name");
                 name.setMinWidth(0); // ellipsize rather than push the badges off the rail
-                HBox row = new HBox(8, c.icon.get(), name);
+                HBox row = UiZoom.spacing(new HBox(c.icon.get(), name), 8);
                 row.setAlignment(Pos.CENTER_LEFT);
                 Node badges = SettingsFrameBits.sidebarBadges(c.beta, modifiedPerPage.getOrDefault(c, 0));
                 if (badges != null) {
-                    HBox.setMargin(badges, new Insets(0, 0, 0, -2)); // 6 px from the name, as before
+                    // 6 px from the name, as before
+                    UiZoom.follow(badges, () -> HBox.setMargin(badges, UiZoom.insets(0, 0, 0, -2)));
                     row.getChildren().add(badges);
                 }
                 setGraphic(row);
@@ -4937,7 +4937,7 @@ public class SettingsWindow {
     private final javafx.scene.control.ToggleButton modifiedOnly =
             new javafx.scene.control.ToggleButton(tr("settings.search.modifiedOnly"));
     private final Label restartNote = new Label();
-    private final HBox restartBox = new HBox(8);
+    private final HBox restartBox = UiZoom.spacing(new HBox(), 8);
 
     @Nullable
     Runnable onRestart;

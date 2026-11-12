@@ -16,6 +16,7 @@ import javafx.scene.text.Text;
 import javafx.stage.Window;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -67,7 +68,7 @@ public class Switcher {
     private void build() {
         // Hug the open-file count (capped at MAX_VISIBLE, then scroll) so a few tabs don't leave a tall
         // empty box; width is set per-show from the longest path. Resizes as tabs are listed/closed.
-        filesList.setFixedCellSize(CELL_HEIGHT);
+        UiZoom.follow(filesList, () -> filesList.setFixedCellSize(UiZoom.px(CELL_HEIGHT)));
         filesList.getItems().addListener((javafx.collections.ListChangeListener<Tab>) c -> resizeList());
 
         // Render the name in a Label graphic: the tab's own text is empty (its title lives in a graphic
@@ -101,7 +102,7 @@ public class Switcher {
 
         Label header = new Label(tr("switcher.header"));
         header.getStyleClass().add("switcher-header");
-        VBox column = new VBox(4, header, filesList);
+        VBox column = UiZoom.spacing(new VBox(header, filesList), 4);
         column.getStyleClass().add("switcher-column");
 
         pathLabel.getStyleClass().add("switcher-path");
@@ -129,9 +130,9 @@ public class Switcher {
     private void resizeList() {
         int rows = Math.max(1, Math.min(filesList.getItems().size(), MAX_VISIBLE));
         double h = rows * CELL_HEIGHT + 2;
-        filesList.setMinHeight(h);
-        filesList.setPrefHeight(h);
-        filesList.setMaxHeight(h);
+        UiZoom.minHeight(filesList, h);
+        UiZoom.prefHeight(filesList, h);
+        UiZoom.maxHeight(filesList, h);
     }
 
     /** Injects the shared overlay host used to show the switcher card. */
@@ -187,10 +188,10 @@ public class Switcher {
             String path = buffer.getPath() != null ? buffer.getPath().toString() : buffer.getTitle();
             max = Math.max(max, textWidth(path));
         }
-        double width = max + 56; // popup/column/list padding + scrollbar
-        width = Math.max(360, width);
+        double width = max + UiZoom.px(56); // popup/column/list padding + scrollbar
+        width = Math.max(UiZoom.px(360), width);
         if (owner.getWidth() > 0) {
-            width = Math.min(width, owner.getWidth() - 80); // never wider than the window
+            width = Math.min(width, owner.getWidth() - UiZoom.px(80)); // never wider than the window
         }
         return width;
     }

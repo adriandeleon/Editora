@@ -1,7 +1,6 @@
 package com.editora.ui;
 
 import javafx.beans.value.ObservableValue;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -15,6 +14,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -190,8 +190,8 @@ public final class OverlayInput {
         error.setVisible(false);
         error.setManaged(false);
         javafx.scene.control.ProgressIndicator progress = new javafx.scene.control.ProgressIndicator();
-        progress.setPrefSize(16, 16);
-        progress.setMaxSize(16, 16);
+        UiZoom.prefSize(progress, 16, 16);
+        UiZoom.maxSize(progress, 16, 16);
         progress.setVisible(false);
         progress.setManaged(false);
         Runnable syncOk =
@@ -259,7 +259,7 @@ public final class OverlayInput {
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox footer = new HBox(8);
+        HBox footer = UiZoom.spacing(new HBox(), 8);
         footer.setAlignment(Pos.CENTER_RIGHT);
         if (extra != null) {
             Button extraButton = new Button(extra.label());
@@ -279,14 +279,14 @@ public final class OverlayInput {
             syncOk.run();
         }
 
-        VBox card = new VBox(10, titleLabel, body, footer);
+        VBox card = UiZoom.spacing(new VBox(titleLabel, body, footer), 10);
         if (onSubmit != null) {
             footer.getChildren().add(footer.getChildren().indexOf(cancel), progress);
             card.getChildren().add(2, error);
         }
         card.getStyleClass().addAll("command-palette", "overlay-form");
-        card.setPadding(new Insets(14));
-        card.setMinWidth(380);
+        UiZoom.padding(card, 14);
+        UiZoom.minWidth(card, 380);
         card.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE); // hug content; don't fill the overlay
         // Keep the form's own keys (typing, caret nav) from being hijacked by the global KeyDispatcher.
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);

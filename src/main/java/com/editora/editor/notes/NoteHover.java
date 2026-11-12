@@ -22,6 +22,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 
 import com.editora.config.PersonalNote;
+import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -110,7 +111,7 @@ public final class NoteHover {
                 if (tip.isShowing()) {
                     tip.hide();
                 }
-                tip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
+                tip.show(a, e.getScreenX() + UiZoom.px(12), e.getScreenY() + UiZoom.px(16));
             }
         });
         a.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hide());
@@ -204,7 +205,7 @@ public final class NoteHover {
             Scene measureScene = new Scene(region);
             region.applyCss();
             region.layout();
-            double width = Math.min(480, Math.ceil(region.prefWidth(-1)));
+            double width = Math.min(UiZoom.px(480), Math.ceil(region.prefWidth(-1)));
             region.setPrefWidth(width);
             region.setMaxWidth(width);
             double height = Math.ceil(region.prefHeight(width)) + 1;

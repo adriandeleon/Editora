@@ -24,6 +24,7 @@ import com.editora.editops.BraceMatcher;
 import com.editora.editops.PythonDefun;
 import com.editora.editops.SelectOccurrences;
 import com.editora.editops.SexpNav;
+import com.editora.editor.UiZoom;
 import com.editora.editor.lsp.OccurrenceHighlightOverlay;
 import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CodeArea;
@@ -73,7 +74,7 @@ final class MapCardMoves {
     private final CodeArea editor;
     private final VBox header;
     private final Card card;
-    private final HBox lineBar = new HBox(4);
+    private final HBox lineBar = UiZoom.spacing(new HBox(), 4);
     private final TextField lineField = new TextField();
     private final Label lineRange = new Label();
     private final Button lineClose = new Button("×");
@@ -151,12 +152,12 @@ final class MapCardMoves {
     private void installLineBar() {
         lineBar.getStyleClass().addAll("project-map-preview-find", "project-map-preview-line");
         lineBar.setAlignment(Pos.CENTER_LEFT);
-        lineBar.setPadding(new javafx.geometry.Insets(3, 6, 3, 6));
+        UiZoom.padding(lineBar, 3, 6, 3, 6);
         lineField.setPromptText(tr("project.map.preview.goToLine.prompt"));
         lineField.setAccessibleText(tr("project.map.preview.goToLine.prompt"));
         lineField.getStyleClass().addAll("project-map-preview-find-field", "project-map-preview-line-field");
         HBox.setHgrow(lineField, Priority.ALWAYS);
-        lineField.setMinWidth(60);
+        UiZoom.minWidth(lineField, 60);
         lineRange.getStyleClass().add("project-map-preview-find-count");
         lineRange.setMinWidth(Region.USE_PREF_SIZE);
         lineClose.getStyleClass().add("project-map-preview-button");

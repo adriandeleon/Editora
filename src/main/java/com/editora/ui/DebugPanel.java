@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -31,6 +30,7 @@ import javafx.util.StringConverter;
 
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
+import com.editora.editor.UiZoom;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -556,38 +556,45 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         appender.onTrimmed(this::refreshStatus);
         getStyleClass().add("debug-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(4);
-        setPadding(new Insets(4));
+        UiZoom.spacing(this, 4);
+        UiZoom.padding(this, 4);
 
         status.getStyleClass().add("debug-status");
         restartHolder
                 .getChildren()
                 .add(btn(restart, DebugPanelText.Control.RESTART, actions::restart, Icons.refresh()));
         // IntelliJ-style grouped, icon-only toolbar; the session state + file sit at the right edge.
-        HBox toolbar = new HBox(
-                2,
-                btn(start, DebugPanelText.Control.START, actions::start, Icons.run()),
-                btn(pause, DebugPanelText.Control.PAUSE, actions::pause, Icons.debugPause()),
-                btn(stop, DebugPanelText.Control.STOP, actions::stop, Icons.debugStop()),
-                restartHolder,
-                groupSeparator(),
-                btn(stepOver, DebugPanelText.Control.STEP_OVER, actions::stepOver, Icons.debugStepOver()),
-                btn(stepInto, DebugPanelText.Control.STEP_INTO, actions::stepInto, Icons.debugStepInto()),
-                btn(stepOut, DebugPanelText.Control.STEP_OUT, actions::stepOut, Icons.debugStepOut()),
-                btn(runToCursor, DebugPanelText.Control.RUN_TO_CURSOR, actions::runToCursor, Icons.debugRunToCursor()),
-                groupSeparator(),
-                exceptionsButton(),
-                groupSeparator(),
-                historyButton(historyBack, "debug.historyBack", this::historyBack, Icons.chevronLeft()),
-                historyButton(historyForward, "debug.historyForward", this::historyForward, Icons.chevronRight()),
-                historyLabel,
-                spacer(),
-                busy,
-                runtime,
-                status);
+        HBox toolbar = UiZoom.spacing(
+                new HBox(
+                        btn(start, DebugPanelText.Control.START, actions::start, Icons.run()),
+                        btn(pause, DebugPanelText.Control.PAUSE, actions::pause, Icons.debugPause()),
+                        btn(stop, DebugPanelText.Control.STOP, actions::stop, Icons.debugStop()),
+                        restartHolder,
+                        groupSeparator(),
+                        btn(stepOver, DebugPanelText.Control.STEP_OVER, actions::stepOver, Icons.debugStepOver()),
+                        btn(stepInto, DebugPanelText.Control.STEP_INTO, actions::stepInto, Icons.debugStepInto()),
+                        btn(stepOut, DebugPanelText.Control.STEP_OUT, actions::stepOut, Icons.debugStepOut()),
+                        btn(
+                                runToCursor,
+                                DebugPanelText.Control.RUN_TO_CURSOR,
+                                actions::runToCursor,
+                                Icons.debugRunToCursor()),
+                        groupSeparator(),
+                        exceptionsButton(),
+                        groupSeparator(),
+                        historyButton(historyBack, "debug.historyBack", this::historyBack, Icons.chevronLeft()),
+                        historyButton(
+                                historyForward, "debug.historyForward", this::historyForward, Icons.chevronRight()),
+                        historyLabel,
+                        spacer(),
+                        busy,
+                        runtime,
+                        status),
+                2);
         start.getStyleClass().add("debug-start"); // green play accent
-        HBox.setMargin(busy, new Insets(0, 4, 0, 0)); // the toolbar packs its buttons 2px apart
-        HBox.setMargin(runtime, new Insets(0, 6, 0, 0));
+        UiZoom.follow(
+                busy, () -> HBox.setMargin(busy, UiZoom.insets(0, 4, 0, 0))); // the toolbar packs its buttons 2px apart
+        UiZoom.follow(runtime, () -> HBox.setMargin(runtime, UiZoom.insets(0, 6, 0, 0)));
         toolbar.setAlignment(Pos.CENTER_LEFT);
         // gdb-style single-key shortcuts, live only while focus is somewhere in this panel (the eval field
         // is exempt so the REPL types normally). Bare letters aren't bound in any keymap, so the scene
@@ -874,11 +881,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threadsToggle.setMinWidth(Region.USE_PREF_SIZE);
         // The Threads view hides the dropdown but keeps its room: taken out of the row, the row lost the
         // dropdown's height and the toggle jumped up when clicked.
-        HBox stackHeader = new HBox(6, stackLabel, threads, threadsToggle);
+        HBox stackHeader = UiZoom.spacing(new HBox(stackLabel, threads, threadsToggle), 6);
         stackHeader.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(threads, Priority.ALWAYS);
         javafx.scene.layout.StackPane stackArea = new javafx.scene.layout.StackPane(stack, threadList);
-        VBox stackBox = new VBox(2, stackHeader, stackArea);
+        VBox stackBox = UiZoom.spacing(new VBox(stackHeader, stackArea), 2);
         VBox.setVgrow(stackArea, Priority.ALWAYS);
         Label varsHeader = sectionLabel("debugpanel.variables");
         varsFilter.setPromptText(tr("debugpanel.filterPrompt"));
@@ -898,13 +905,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 e.consume();
             }
         });
-        HBox varsHeaderRow = new HBox(6, varsHeader, spacer(), varsFilter);
+        HBox varsHeaderRow = UiZoom.spacing(new HBox(varsHeader, spacer(), varsFilter), 6);
         varsHeaderRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        VBox varsBox = new VBox(2, varsHeaderRow, evaluateBar(), variables);
+        VBox varsBox = UiZoom.spacing(new VBox(varsHeaderRow, evaluateBar(), variables), 2);
         VBox.setVgrow(variables, Priority.ALWAYS);
 
         VirtualizedScrollPane<CodeArea> consoleScroll = new VirtualizedScrollPane<>(console);
-        VBox consoleContent = new VBox(2, consoleScroll, evalInput);
+        VBox consoleContent = UiZoom.spacing(new VBox(consoleScroll, evalInput), 2);
         VBox.setVgrow(consoleScroll, Priority.ALWAYS);
         // Console | Disassembly | Memory share the third area, as tabs (VS Code and IntelliJ show them as views).
         javafx.scene.control.ToggleGroup lowLevel = new javafx.scene.control.ToggleGroup();
@@ -926,10 +933,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         javafx.scene.layout.StackPane consoleArea =
                 new javafx.scene.layout.StackPane(consoleContent, disassembly, memory);
         consoleContentNode = consoleContent;
-        HBox consoleHeader = new HBox(4, consoleTab, disassemblyTab, memoryTab);
+        HBox consoleHeader = UiZoom.spacing(new HBox(consoleTab, disassemblyTab, memoryTab), 4);
         consoleHeader.setAlignment(Pos.CENTER_LEFT);
         // The keymap's find chord, pressed in the console, opens a find bar over it (Escape closes it).
-        VBox consoleBox = new VBox(2, consoleHeader, ConsoleFindBar.install(console), consoleArea);
+        VBox consoleBox = UiZoom.spacing(new VBox(consoleHeader, ConsoleFindBar.install(console), consoleArea), 2);
         VBox.setVgrow(consoleArea, Priority.ALWAYS);
         javafx.scene.control.ContextMenu consoleMenu = new javafx.scene.control.ContextMenu();
         javafx.scene.control.MenuItem clear = new javafx.scene.control.MenuItem(tr("debugpanel.clearConsole"));
@@ -953,7 +960,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         arrange(true);
         widthProperty().addListener((o, a, w) -> {
             if (w.doubleValue() > 0) { // 0 = not laid out / hidden: says nothing about where it is docked
-                arrange(w.doubleValue() >= SIDE_BY_SIDE_MIN_WIDTH);
+                arrange(w.doubleValue() >= UiZoom.px(SIDE_BY_SIDE_MIN_WIDTH));
             }
         });
 
@@ -2590,7 +2597,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     evalField.getText().isBlank() && resultExpression != null ? resultExpression : evalField.getText();
             addWatchExpression(text);
         });
-        HBox bar = new HBox(2, evalField.node(), evalExpand, evalToWatches);
+        HBox bar = UiZoom.spacing(new HBox(evalField.node(), evalExpand, evalToWatches), 2);
         bar.getStyleClass().add("debug-evaluate-bar");
         bar.setAlignment(Pos.TOP_LEFT);
         HBox.setHgrow(evalField.node(), Priority.ALWAYS);
@@ -3325,7 +3332,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final Button historyBack = new Button();
     private final Button historyForward = new Button();
     private final Label historyLabel = new Label();
-    private final HBox historyBanner = new HBox(8);
+    private final HBox historyBanner = UiZoom.spacing(new HBox(), 8);
     private final Label historyBannerText = new Label();
 
     /** The stops recorded (tests, the coordinator's list and settings). */

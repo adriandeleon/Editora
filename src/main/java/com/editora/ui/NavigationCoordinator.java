@@ -17,6 +17,7 @@ import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -893,7 +894,7 @@ final class NavigationCoordinator {
         Label note = new Label(tr("dialog.goToLine.header"));
         note.getStyleClass().add("overlay-note");
         note.setWrapText(true);
-        VBox body = new VBox(6, promptLabel, field, note);
+        VBox body = UiZoom.spacing(new VBox(promptLabel, field, note), 6);
         OverlayInput.show(
                 host.overlayHost(),
                 tr("dialog.goToLine.title"),

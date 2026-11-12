@@ -20,6 +20,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.MacroCapture;
 import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.macro.Macro;
 import com.editora.macro.MacroKey;
 import com.editora.macro.MacroPlayer;
@@ -426,7 +427,7 @@ final class MacroCoordinator implements MacroCapture {
         TextField field = new TextField();
         field.setPrefColumnCount(32);
         com.editora.command.TextInputKeymap.installShared(field);
-        VBox body = new VBox(6, new Label(tr("palette.macro.namePrompt")), field);
+        VBox body = UiZoom.spacing(new VBox(new Label(tr("palette.macro.namePrompt")), field), 6);
         // The name that was refused as "already exists": submitting it again is the answer "yes, replace".
         String[] confirmed = {null};
         OverlayInput.showSubmitting(
@@ -501,7 +502,7 @@ final class MacroCoordinator implements MacroCapture {
     private void confirmDelete(Macro m) {
         Label question = new Label(tr("settings.macro.deleteConfirm", displayName(m)));
         question.setWrapText(true);
-        question.setMaxWidth(420);
+        UiZoom.maxWidth(question, 420);
         // Deferred: this runs from the picker's accept handler, around which the picker takes its own card down.
         Platform.runLater(() -> OverlayInput.show(
                 host.overlayHost(),

@@ -18,6 +18,7 @@ import javafx.stage.Window;
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -205,7 +206,7 @@ public final class StatusBar extends HBox {
         unreadErrors.setVisible(false);
         unreadErrors.setManaged(false);
         backgroundTasks.getStyleClass().add("status-segment");
-        backgroundProgress.setPrefWidth(60);
+        UiZoom.prefWidth(backgroundProgress, 60);
         setBackgroundTasks(null, 0);
 
         // Narrowing hides part of the file, so the indicator is not optional — without it a narrowed
@@ -275,14 +276,14 @@ public final class StatusBar extends HBox {
         remote.setManaged(false);
 
         lspProgress.getStyleClass().add("status-lsp-progress");
-        lspProgress.setPrefWidth(90);
-        lspProgress.setMaxHeight(10);
+        UiZoom.prefWidth(lspProgress, 90);
+        UiZoom.maxHeight(lspProgress, 10);
         lspProgress.setVisible(false); // shown only while a language server is loading
         lspProgress.setManaged(false);
         lspProgress.setTooltip(new Tooltip(tr("statusbar.tip.lspLoading")));
         debugProgress.getStyleClass().add("status-lsp-progress");
-        debugProgress.setPrefWidth(90);
-        debugProgress.setMaxHeight(10);
+        UiZoom.prefWidth(debugProgress, 90);
+        UiZoom.maxHeight(debugProgress, 10);
         debugProgress.setVisible(false);
         debugProgress.setManaged(false);
         debugProgress.setTooltip(new Tooltip(tr("statusbar.tip.debugLoading")));

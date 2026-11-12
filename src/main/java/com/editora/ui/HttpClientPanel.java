@@ -21,7 +21,6 @@ import javafx.application.Platform;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.beans.property.ReadOnlyStringWrapper;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -60,6 +59,7 @@ import javafx.util.StringConverter;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.UiZoom;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
@@ -119,7 +119,7 @@ public final class HttpClientPanel extends VBox {
     /** The Run (or, while running, Cancel) chord from the live keymap; hidden when the command is unbound. */
     private final Label runChord = new Label();
     /** Holds Run and its chord, so a tooltip can say why Run is disabled (a disabled control shows none of its own). */
-    private final HBox runHost = new HBox(6, runButton, runChord);
+    private final HBox runHost = UiZoom.spacing(new HBox(runButton, runChord), 6);
     /** Why Run is unavailable for this file (a remote file), or null. */
     private @Nullable String runBlockedWhy;
 
@@ -158,7 +158,7 @@ public final class HttpClientPanel extends VBox {
     /** The Tests tab: its title, one row per test (✓/✗, name, why it failed), then the handlers' log and error. */
     private final Label testsTitle = new Label();
 
-    private final VBox testRows = new VBox(2);
+    private final VBox testRows = UiZoom.spacing(new VBox(), 2);
     private final TextArea testsLog = new TextArea();
     private final ScrollPane testsScroll;
     /** The Headers tab: the status line, then one row per header. */
@@ -268,8 +268,8 @@ public final class HttpClientPanel extends VBox {
             int fontSize) {
         getStyleClass().add("http-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
         elapsed.setCycleCount(Timeline.INDEFINITE);
 
         runButton.getStyleClass().add("http-run");
@@ -301,7 +301,7 @@ public final class HttpClientPanel extends VBox {
 
         historyCombo.getStyleClass().add("http-history");
         historyCombo.setMinWidth(0); // the header row sizes it: it narrows first in a tight Split
-        historyCombo.setMaxWidth(HttpPanelLayout.HISTORY_MAX_WIDTH);
+        UiZoom.maxWidth(historyCombo, HttpPanelLayout.HISTORY_MAX_WIDTH);
         Icons.name(historyCombo, tr("httppanel.historyName"));
         historyCombo.setCellFactory(list -> new HttpHistoryCell(zone));
         historyCombo.setButtonCell(new HttpHistoryCell(zone));
@@ -404,7 +404,7 @@ public final class HttpClientPanel extends VBox {
         bodyNote.setWrapText(true);
         bodyNote.setMaxWidth(Double.MAX_VALUE);
         showBodyNote(null);
-        bodyBox = new VBox(2, bodyNote, bodyHost);
+        bodyBox = UiZoom.spacing(new VBox(bodyNote, bodyHost), 2);
         VBox.setVgrow(bodyHost, Priority.ALWAYS);
         // The Body tab's states: before any response, while running or after Cancel, and when nothing came back.
         emptyState = new HttpEmptyState(line -> onRunLine.accept(line));
@@ -425,7 +425,7 @@ public final class HttpClientPanel extends VBox {
         previousRow.setTooltip(new Tooltip(tr("httppanel.previous.tip")));
         previousRow.setOnAction(e -> showPrevious());
         previousPane.getStyleClass().add("http-previous-pane");
-        previousPane.setPadding(new Insets(6, 2, 2, 2));
+        UiZoom.padding(previousPane, 6, 2, 2, 2);
         StackPane.setAlignment(errorCard, Pos.TOP_LEFT);
         StackPane bodyStack = new StackPane(bodyBox, emptyState, errorCard, previousPane);
         bodyStack.getStyleClass().add("http-body-stack");
@@ -435,7 +435,7 @@ public final class HttpClientPanel extends VBox {
         headersStatus.getStyleClass().add("http-headers-status");
         headersStatus.setMaxWidth(Double.MAX_VALUE);
         buildHeadersTable();
-        headersBox = new VBox(4, headersStatus, headersTable);
+        headersBox = UiZoom.spacing(new VBox(headersStatus, headersTable), 4);
         VBox.setVgrow(headersTable, Priority.ALWAYS);
 
         // --- Tests ---
@@ -444,8 +444,8 @@ public final class HttpClientPanel extends VBox {
         testsLog.setEditable(false);
         testsLog.setWrapText(true);
         testsLog.getStyleClass().add("http-tests-log");
-        VBox testsBox = new VBox(4, testsTitle, testRows, testsLog);
-        testsBox.setPadding(new Insets(4, 2, 4, 2));
+        VBox testsBox = UiZoom.spacing(new VBox(testsTitle, testRows, testsLog), 4);
+        UiZoom.padding(testsBox, 4, 2, 4, 2);
         testsScroll = new ScrollPane(testsBox);
         testsScroll.setFitToWidth(true);
         testsScroll.getStyleClass().add("http-tests-pane");
@@ -479,10 +479,10 @@ public final class HttpClientPanel extends VBox {
 
         installKeys();
         VBox.setVgrow(content, Priority.ALWAYS);
-        VBox headerBox = new VBox(3, header, progress);
+        VBox headerBox = UiZoom.spacing(new VBox(header, progress), 3);
         getChildren().addAll(headerBox, runSummary, runList, tabs, content); // the run notice; the Run All list
         // A narrow Split gives the editor its share: the panel can shrink below its rows' preferred width.
-        setMinWidth(MIN_WIDTH);
+        UiZoom.minWidth(this, MIN_WIDTH);
         setRunning(false);
         // The chords follow the keymap: re-read when the window comes back (after a keymap change in Settings).
         sceneProperty()
@@ -540,7 +540,7 @@ public final class HttpClientPanel extends VBox {
                 .bind(headersTable
                         .widthProperty()
                         .subtract(name.widthProperty())
-                        .subtract(18));
+                        .subtract(UiZoom.factorProperty().multiply(18)));
         for (TableColumn<String[], String> col : List.of(name, value)) {
             col.setSortable(false);
             col.setReorderable(false);
@@ -581,13 +581,13 @@ public final class HttpClientPanel extends VBox {
     /** Sizes the name column to the longest name, within a third of the table (a long name wraps). */
     private void fitHeaderNames(List<String[]> headers) {
         probe.setFont(headersStatus.getFont());
-        double widest = 60;
+        double widest = UiZoom.px(60);
         for (String[] h : headers) {
             probe.setText(h[0]);
             widest = Math.max(widest, probe.getLayoutBounds().getWidth());
         }
-        double cap = Math.max(120, headersTable.getWidth() / 3);
-        headerNameColumn.setPrefWidth(Math.min(cap, Math.ceil(widest) + 24));
+        double cap = Math.max(UiZoom.px(120), headersTable.getWidth() / 3);
+        headerNameColumn.setPrefWidth(Math.min(cap, Math.ceil(widest) + UiZoom.px(24)));
     }
 
     /** A header cell whose text wraps at the column's width. */
@@ -596,7 +596,9 @@ public final class HttpClientPanel extends VBox {
 
         WrappingCell(TableColumn<String[], String> column) {
             text.getStyleClass().add("http-header-text");
-            text.wrappingWidthProperty().bind(column.widthProperty().subtract(14));
+            text.wrappingWidthProperty()
+                    .bind(column.widthProperty()
+                            .subtract(UiZoom.factorProperty().multiply(14)));
         }
 
         @Override

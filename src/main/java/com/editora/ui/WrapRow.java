@@ -30,6 +30,7 @@ final class WrapRow extends Pane {
     WrapRow(double hgap, double vgap, Node... children) {
         this.hgap = hgap;
         this.vgap = vgap;
+        com.editora.editor.UiZoom.follow(this, this::requestLayout); // the gaps follow the UI zoom
         getChildren().addAll(children);
     }
 
@@ -101,7 +102,7 @@ final class WrapRow extends Pane {
     /** Number of lines the row occupies at its current width (for tests and callers that care). */
     int lineCount() {
         List<Node> items = items();
-        return lineEnds(bases(items), contentWidth(getWidth()), hgap).length;
+        return lineEnds(bases(items), contentWidth(getWidth()), hgap()).length;
     }
 
     @Override
@@ -127,7 +128,7 @@ final class WrapRow extends Pane {
             total += Math.max(child.prefWidth(-1), basis(child));
         }
         Insets in = getInsets();
-        return in.getLeft() + in.getRight() + total + hgap * Math.max(0, items.size() - 1);
+        return in.getLeft() + in.getRight() + total + hgap() * Math.max(0, items.size() - 1);
     }
 
     @Override
@@ -140,7 +141,7 @@ final class WrapRow extends Pane {
         List<Node> items = items();
         Insets in = getInsets();
         double available = width < 0 ? Double.MAX_VALUE : contentWidth(width);
-        int[] ends = lineEnds(bases(items), available, hgap);
+        int[] ends = lineEnds(bases(items), available, hgap());
         double height = 0;
         int start = 0;
         for (int end : ends) {
@@ -151,7 +152,7 @@ final class WrapRow extends Pane {
             height += line;
             start = end;
         }
-        return in.getTop() + in.getBottom() + height + vgap * Math.max(0, ends.length - 1);
+        return in.getTop() + in.getBottom() + height + vgap() * Math.max(0, ends.length - 1);
     }
 
     @Override
@@ -160,11 +161,11 @@ final class WrapRow extends Pane {
         Insets in = getInsets();
         double available = contentWidth(getWidth());
         double[] basis = bases(items);
-        int[] ends = lineEnds(basis, available, hgap);
+        int[] ends = lineEnds(basis, available, hgap());
         double y = in.getTop();
         int start = 0;
         for (int end : ends) {
-            double used = hgap * (end - start - 1);
+            double used = hgap() * (end - start - 1);
             int growing = 0;
             double lineHeight = 0;
             for (int i = start; i < end; i++) {
@@ -178,10 +179,20 @@ final class WrapRow extends Pane {
                 Node child = items.get(i);
                 double w = Math.min(available, basis[i] + (grows(child) ? share : 0));
                 layoutInArea(child, x, y, w, lineHeight, 0, HPos.LEFT, VPos.CENTER);
-                x += w + hgap;
+                x += w + hgap();
             }
-            y += lineHeight + vgap;
+            y += lineHeight + vgap();
             start = end;
         }
+    }
+
+    /** The gap between items on a line, at the UI zoom. */
+    private double hgap() {
+        return com.editora.editor.UiZoom.px(hgap);
+    }
+
+    /** The gap between lines, at the UI zoom. */
+    private double vgap() {
+        return com.editora.editor.UiZoom.px(vgap);
     }
 }

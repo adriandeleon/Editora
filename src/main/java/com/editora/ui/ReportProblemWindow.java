@@ -10,7 +10,6 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -27,6 +26,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.AppInfo;
+import com.editora.editor.UiZoom;
 import com.editora.plugin.PluginDescriptor;
 import com.editora.plugin.PluginManager;
 import com.editora.report.ProblemReport;
@@ -109,7 +109,7 @@ public final class ReportProblemWindow {
         if (s.isShowing()) {
             s.toFront();
         } else {
-            WindowPlacement.centerOnOwner(s, owner, 820, 620);
+            WindowPlacement.centerOnOwner(s, owner, UiZoom.px(820), UiZoom.px(620));
             s.show();
         }
     }
@@ -152,13 +152,13 @@ public final class ReportProblemWindow {
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox buttons = new HBox(8, openIssue, copy, save, spacer, close);
+        HBox buttons = UiZoom.spacing(new HBox(openIssue, copy, save, spacer, close), 8);
         buttons.setAlignment(Pos.CENTER_LEFT);
 
-        VBox root = new VBox(8, intro, summary, area, status, buttons);
-        root.setPadding(new Insets(10));
+        VBox root = UiZoom.spacing(new VBox(intro, summary, area, status, buttons), 8);
+        UiZoom.padding(root, 10);
 
-        Scene scene = new Scene(root, 820, 620);
+        Scene scene = new Scene(root, UiZoom.px(820), UiZoom.px(620));
         scene.getStylesheets()
                 .addAll(
                         com.editora.editor.UiZoom.sheet(ReportProblemWindow.class

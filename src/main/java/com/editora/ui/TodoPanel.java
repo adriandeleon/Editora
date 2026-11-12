@@ -4,7 +4,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
@@ -23,6 +22,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.util.StringConverter;
 
+import com.editora.editor.UiZoom;
 import com.editora.todo.TodoColors;
 import com.editora.todo.TodoGrouping;
 import com.editora.todo.TodoMatch;
@@ -96,8 +96,8 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         getStyleClass().add("todo-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
         build();
     }
 
@@ -107,7 +107,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         scopeLabel.getStyleClass().add("search-scope-path");
         scopeLabel.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(scopeLabel, Priority.ALWAYS);
-        HBox scopeRow = new HBox(6, scopePrefix, scopeLabel);
+        HBox scopeRow = UiZoom.spacing(new HBox(scopePrefix, scopeLabel), 6);
         scopeRow.setAlignment(Pos.CENTER_LEFT);
         scopeRow.getStyleClass().add("search-scope-row");
 
@@ -138,7 +138,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         CommandTips.name(refreshBtn, "todo.refresh");
         summary.getStyleClass().add("todo-summary");
         HBox.setHgrow(summary, Priority.ALWAYS);
-        HBox toolbar = new HBox(6, groupLabel, groupBy, summary, refreshBtn);
+        HBox toolbar = UiZoom.spacing(new HBox(groupLabel, groupBy, summary, refreshBtn), 6);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         // Filter row: narrows the visible TODO rows as you type (keyword / tag / description / file),
@@ -148,7 +148,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         filterField.textProperty().addListener((o, w, n) -> rebuild());
         HBox.setHgrow(filterField, Priority.ALWAYS);
         Button clearFilter = ClearableField.clearButton(filterField);
-        HBox filterRow = new HBox(6, filterField, clearFilter);
+        HBox filterRow = UiZoom.spacing(new HBox(filterField, clearFilter), 6);
         filterRow.getStyleClass().add("project-filter-bar");
         filterRow.setAlignment(Pos.CENTER_LEFT);
 

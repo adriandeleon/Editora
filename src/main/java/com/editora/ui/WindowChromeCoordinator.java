@@ -20,6 +20,7 @@ import com.editora.config.Project;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -330,7 +331,8 @@ final class WindowChromeCoordinator {
         toolbarRestoreButton.setFocusTraversable(false);
         toolbarRestoreButton.setOnAction(e -> toggleToolbar());
         StackPane.setAlignment(toolbarRestoreButton, Pos.TOP_RIGHT);
-        StackPane.setMargin(toolbarRestoreButton, new javafx.geometry.Insets(8, 12, 0, 0));
+        Button restore = toolbarRestoreButton;
+        UiZoom.follow(restore, () -> StackPane.setMargin(restore, UiZoom.insets(8, 12, 0, 0)));
         sceneRoot.getChildren().add(toolbarRestoreButton);
 
         // In-scene overlay host (replaces focus-stealing Popups): the command palette and pickers show
@@ -416,7 +418,8 @@ final class WindowChromeCoordinator {
                 && active != null
                 && (active.hasPreview() || active.hasHtmlPreviewControl() || active.hasLogControl());
         double top = belowFileControls ? 44 : 8; // clear the file's own corner controls when present
-        StackPane.setMargin(zenExitButton, new javafx.geometry.Insets(top, 12, 0, 0));
+        Button exit = zenExitButton;
+        UiZoom.follow(exit, () -> StackPane.setMargin(exit, UiZoom.insets(top, 12, 0, 0)));
     }
 
     /**

@@ -24,6 +24,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.toolbar.ToolbarCatalog;
 
 import static com.editora.i18n.Messages.tr;
@@ -55,8 +56,8 @@ final class ToolbarSettingsPane {
         available.setCellFactory(v -> cell());
         current.setCellFactory(v -> cell());
         // Tall enough for the default toolbar layout (~20 items) to be read without scrolling.
-        available.setPrefSize(260, 460);
-        current.setPrefSize(260, 460);
+        UiZoom.prefSize(available, 260, 460);
+        UiZoom.prefSize(current, 260, 460);
         available.setAccessibleText(tr("settings.toolbar.available"));
         current.setAccessibleText(tr("settings.toolbar.current"));
         wire();
@@ -71,8 +72,8 @@ final class ToolbarSettingsPane {
         curLabel.getStyleClass().add("settings-section");
         availLabel.setLabelFor(available);
         curLabel.setLabelFor(current);
-        VBox availBox = new VBox(4, availLabel, available);
-        VBox curBox = new VBox(4, curLabel, current);
+        VBox availBox = UiZoom.spacing(new VBox(availLabel, available), 4);
+        VBox curBox = UiZoom.spacing(new VBox(curLabel, current), 4);
         VBox.setVgrow(available, Priority.ALWAYS);
         VBox.setVgrow(current, Priority.ALWAYS);
 
@@ -84,13 +85,13 @@ final class ToolbarSettingsPane {
         remove.setMaxWidth(Double.MAX_VALUE);
         Region midGap = new Region();
         VBox.setVgrow(midGap, Priority.ALWAYS);
-        VBox mid = new VBox(6, add, remove, midGap, up, down);
+        VBox mid = UiZoom.spacing(new VBox(add, remove, midGap, up, down), 6);
         mid.setAlignment(Pos.CENTER);
         mid.setMinWidth(Region.USE_PREF_SIZE); // as wide as its (translated) buttons, never "Hinzufüg…"
         availLabel.setMinWidth(Region.USE_PREF_SIZE);
         curLabel.setMinWidth(Region.USE_PREF_SIZE);
 
-        HBox lists = new HBox(10, availBox, mid, curBox);
+        HBox lists = UiZoom.spacing(new HBox(availBox, mid, curBox), 10);
         HBox.setHgrow(availBox, Priority.ALWAYS);
         HBox.setHgrow(curBox, Priority.ALWAYS);
         return lists;
@@ -100,7 +101,7 @@ final class ToolbarSettingsPane {
     Node bottomButtons() {
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
-        return new HBox(6, separator, gap, restore);
+        return UiZoom.spacing(new HBox(separator, gap, restore), 6);
     }
 
     /** Re-reads the effective layout (the bar may have been rearranged by dragging on it). */

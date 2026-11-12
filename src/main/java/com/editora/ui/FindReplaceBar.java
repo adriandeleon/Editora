@@ -22,6 +22,7 @@ import javafx.util.Duration;
 
 import com.editora.editops.PreserveCase;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.notes.NoteAnchors;
 import com.editora.text.SearchMatcher;
 import com.editora.text.SearchMatches;
@@ -224,7 +225,7 @@ public class FindReplaceBar extends HBox {
         fixed(findClear);
         fixed(replaceClear);
         for (TextField field : List.of(findField, replaceField)) {
-            field.setMinWidth(FIELD_MIN_WIDTH);
+            UiZoom.minWidth(field, FIELD_MIN_WIDTH);
             field.setMaxWidth(Double.MAX_VALUE);
             HBox.setHgrow(field, javafx.scene.layout.Priority.ALWAYS);
         }
@@ -236,7 +237,7 @@ public class FindReplaceBar extends HBox {
                 OptionToggle.viewOf(wholeWord, tr("find.wholeWord")),
                 OptionToggle.viewOf(preserveCase, tr("find.preserveCase")),
                 OptionToggle.viewOf(inSelection, tr("find.inSelection")));
-        options.setSpacing(2);
+        UiZoom.spacing(options, 2);
         options.getStyleClass().add("find-options");
         WrapRow row = new WrapRow(10, 4, WrapRow.setGrow(findGroup), WrapRow.setGrow(replaceGroup), options);
         HBox.setHgrow(row, javafx.scene.layout.Priority.ALWAYS);
@@ -249,7 +250,7 @@ public class FindReplaceBar extends HBox {
     private static final double FIELD_MIN_WIDTH = 140;
 
     private static HBox group(Node... nodes) {
-        HBox box = new HBox(6, nodes);
+        HBox box = UiZoom.spacing(new HBox(nodes), 6);
         box.setAlignment(Pos.CENTER_LEFT);
         return box;
     }

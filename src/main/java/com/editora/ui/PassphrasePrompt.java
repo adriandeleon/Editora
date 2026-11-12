@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.util.Arrays;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -15,6 +14,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -77,7 +77,7 @@ final class PassphrasePrompt {
         error.setVisible(false);
         error.setManaged(false);
         ProgressIndicator progress = new ProgressIndicator();
-        progress.setPrefSize(16, 16);
+        UiZoom.prefSize(progress, 16, 16);
         progress.setVisible(false);
         progress.setManaged(false);
         Button cancel = new Button(tr("dialog.cancel"));
@@ -87,9 +87,9 @@ final class PassphrasePrompt {
         ok.disableProperty().bind(field.textProperty().isEmpty());
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox footer = new HBox(8, spacer, progress, cancel, ok);
+        HBox footer = UiZoom.spacing(new HBox(spacer, progress, cancel, ok), 8);
         footer.setAlignment(Pos.CENTER_RIGHT);
-        VBox card = new VBox(10, heading, text);
+        VBox card = UiZoom.spacing(new VBox(heading, text), 10);
         if (note != null && !note.isBlank()) {
             Label noteLabel = new Label(note);
             noteLabel.getStyleClass().add("overlay-note");
@@ -98,8 +98,8 @@ final class PassphrasePrompt {
         }
         card.getChildren().addAll(field, error, footer);
         card.getStyleClass().addAll("command-palette", "overlay-form", "encryption-passphrase");
-        card.setPadding(new Insets(14));
-        card.setPrefWidth(420);
+        UiZoom.padding(card, 14);
+        UiZoom.prefWidth(card, 420);
         card.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
 

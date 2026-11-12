@@ -16,7 +16,6 @@ import java.util.function.Predicate;
 
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
@@ -48,6 +47,7 @@ import javafx.util.Duration;
 import javafx.util.StringConverter;
 
 import com.editora.editor.MenuChords;
+import com.editora.editor.UiZoom;
 import com.editora.git.GitFileStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -194,7 +194,7 @@ final class ProjectMapView extends VBox {
     private final javafx.scene.control.Menu openCardsMenu = new javafx.scene.control.Menu(tr("project.map.openCards"));
 
     private final MenuItem exportPdfButton = new MenuItem(tr("project.map.exportPdf"));
-    private final HBox breadcrumbs = new HBox(2);
+    private final HBox breadcrumbs = UiZoom.spacing(new HBox(), 2);
     private final Label breadcrumbEllipsis = new Label("…");
     /** The paths the breadcrumb buttons stand for, and the buttons, root first. */
     private final List<Path> crumbTrail = new ArrayList<>();
@@ -371,7 +371,7 @@ final class ProjectMapView extends VBox {
         structure.setOnFileChanged(this::structureChanged);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(4);
+        UiZoom.spacing(this, 4);
 
         cards = new MapCards(cardsHost(), structure, canvasHost);
         usages = new MapUsageCounts(cards.links::source, file -> usagesFiles().contains(file), this::usagesChanged);
@@ -403,11 +403,11 @@ final class ProjectMapView extends VBox {
         surface.setStatusSuppliers(this.isOpen, this.isModified);
         loadingLabel.getStyleClass().addAll("project-map-zoom-control", "project-map-loading");
         // The zoom-control class makes it transparent; over map rows it needs the overlay fill to be read.
-        loadingLabel.setStyle("-fx-background-color: -color-bg-overlay; -fx-background-radius: 5;");
+        UiZoom.style(loadingLabel, "-fx-background-color: -color-bg-overlay; -fx-background-radius: 5;");
         loadingLabel.setMouseTransparent(true);
         loadingLabel.setVisible(false);
         StackPane.setAlignment(loadingLabel, Pos.TOP_RIGHT);
-        StackPane.setMargin(loadingLabel, new Insets(8));
+        UiZoom.follow(loadingLabel, () -> StackPane.setMargin(loadingLabel, UiZoom.insets(8)));
         canvasHost.getChildren().add(loadingLabel);
         loadingDelay.setOnFinished(event -> loadingLabel.setVisible(loadInFlight));
         keepZoomOnOpen.selectedProperty().addListener((obs, old, value) -> navigationChanged());
@@ -568,7 +568,8 @@ final class ProjectMapView extends VBox {
             onFollowDebuggerChanged.accept(selected);
         });
 
-        HBox row = new HBox(3, backButton, forwardButton, breadcrumbs, revealActiveButton, help, options);
+        HBox row =
+                UiZoom.spacing(new HBox(backButton, forwardButton, breadcrumbs, revealActiveButton, help, options), 3);
         row.getStyleClass().add("project-map-navigation");
         row.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(breadcrumbs, Priority.ALWAYS);
@@ -1248,8 +1249,6 @@ final class ProjectMapView extends VBox {
         // Only filters live here, and the row wraps rather than truncating: every control keeps its full
         // label at any tool-window width. The session options and Print/PDF are in the options menu.
         FlowPane filters = new FlowPane(
-                4,
-                4,
                 openFilter,
                 modifiedFilter,
                 gitFilter,
@@ -1260,6 +1259,10 @@ final class ProjectMapView extends VBox {
                 hideUnmatched,
                 narrowedBadge,
                 clear);
+        UiZoom.follow(filters, () -> {
+            filters.setHgap(UiZoom.px(4));
+            filters.setVgap(UiZoom.px(4));
+        });
         filters.getStyleClass().add("project-map-filters");
         filters.setAlignment(Pos.CENTER_LEFT);
         filters.setAccessibleText(tr("project.map.filters"));
@@ -1285,7 +1288,7 @@ final class ProjectMapView extends VBox {
         Button reset = zoomButton(Icons.resetView(), "project.map.zoom.resetHelp", surface::resetViewport);
         surface.setOnZoomChanged(() -> zoom.setText(surface.zoomPercent()));
 
-        HBox zoomBar = new HBox(1, zoomOut, zoom, zoomIn, fit, center, reset);
+        HBox zoomBar = UiZoom.spacing(new HBox(zoomOut, zoom, zoomIn, fit, center, reset), 1);
         zoomBar.getStyleClass().add("project-map-zoom");
         zoomBar.setAlignment(Pos.CENTER);
         zoomBar.setMinSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
@@ -1345,15 +1348,16 @@ final class ProjectMapView extends VBox {
         hostClip.heightProperty().bind(host.heightProperty());
         host.setClip(hostClip);
         StackPane.setAlignment(zoomBar, Pos.BOTTOM_LEFT);
-        StackPane.setMargin(zoomBar, new Insets(ZOOM_BAR_MARGIN));
+        UiZoom.follow(zoomBar, () -> StackPane.setMargin(zoomBar, UiZoom.insets(ZOOM_BAR_MARGIN)));
         // Centred across the canvas but near its top: the selection usually sits in the middle.
         StackPane.setAlignment(noMatchesLabel, Pos.TOP_CENTER);
-        StackPane.setMargin(noMatchesLabel, new Insets(24, 16, 16, 16));
+        UiZoom.follow(noMatchesLabel, () -> StackPane.setMargin(noMatchesLabel, UiZoom.insets(24, 16, 16, 16)));
         // The bar floats over the canvas: the surface keeps selected rows, fitted content and its
         // overview out from under it.
         zoomBar.boundsInParentProperty()
                 .addListener((obs, old, bounds) -> surface.setReservedZoomBar(
-                        bounds.getMaxX() + ZOOM_BAR_MARGIN, bounds.getHeight() + ZOOM_BAR_MARGIN * 2));
+                        bounds.getMaxX() + UiZoom.px(ZOOM_BAR_MARGIN),
+                        bounds.getHeight() + UiZoom.px(ZOOM_BAR_MARGIN) * 2));
         host.widthProperty().addListener((obs, old, value) -> cards.hostResized(value.doubleValue(), host.getHeight()));
         host.heightProperty().addListener((obs, old, value) -> cards.hostResized(host.getWidth(), value.doubleValue()));
         // Cards survive a switch to the Tree; whatever changed meanwhile is picked up when the Map returns.
@@ -1433,7 +1437,7 @@ final class ProjectMapView extends VBox {
         }
         javafx.geometry.Bounds bounds = anchor.localToScreen(anchor.getBoundsInLocal());
         if (bounds != null) {
-            helpPopup.show(anchor, bounds.getMinX(), bounds.getMaxY() + 4);
+            helpPopup.show(anchor, bounds.getMinX(), bounds.getMaxY() + UiZoom.px(4));
         }
     }
 
@@ -4977,7 +4981,7 @@ final class ProjectMapView extends VBox {
                 leading += widths[i] + spacing;
             }
         }
-        boolean lastGives = available - leading >= 48;
+        boolean lastGives = available - leading >= UiZoom.px(48);
         for (int i = 0; i < widths.length - 1; i += 2) {
             ((Region) children.get(i)).setMinWidth(lastGives ? Region.USE_PREF_SIZE : Region.USE_COMPUTED_SIZE);
         }

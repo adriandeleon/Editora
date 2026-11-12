@@ -16,6 +16,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.editor.CanvasGuards;
 import com.editora.editor.SecondaryPane;
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -52,9 +53,9 @@ public final class TodoStripe extends Region implements SecondaryPane.Followed {
         getStyleClass().add("todo-stripe");
         setMouseTransparent(true);
         setVisible(false);
-        setMinWidth(WIDTH);
-        setPrefWidth(WIDTH);
-        setMaxWidth(WIDTH);
+        UiZoom.minWidth(this, WIDTH);
+        UiZoom.prefWidth(this, WIDTH);
+        UiZoom.maxWidth(this, WIDTH);
         getChildren().add(canvas);
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         addEventHandler(MouseEvent.MOUSE_MOVED, this::onHover);
@@ -229,7 +230,7 @@ public final class TodoStripe extends Region implements SecondaryPane.Followed {
         double markH = markHeight(h, total);
         for (TodoMark mk : marks) {
             double y = Math.min(yForLine(mk.line(), h, total), h - markH);
-            if (localY >= y - HIT_PAD && localY <= y + markH + HIT_PAD) {
+            if (localY >= y - UiZoom.px(HIT_PAD) && localY <= y + markH + UiZoom.px(HIT_PAD)) {
                 return mk;
             }
         }
@@ -259,11 +260,12 @@ public final class TodoStripe extends Region implements SecondaryPane.Followed {
             tooltip = new Tooltip();
             tooltip.getStyleClass().add("todo-stripe-tooltip");
             tooltip.setWrapText(true);
-            tooltip.setMaxWidth(480);
+            Tooltip made = tooltip;
+            UiZoom.follow(made, () -> made.setMaxWidth(UiZoom.px(480)));
         }
         tooltip.setText(text);
         shownText = text;
-        tooltip.show(this, e.getScreenX() - 12 - tooltip.getWidth(), e.getScreenY() + 14);
+        tooltip.show(this, e.getScreenX() - UiZoom.px(12) - tooltip.getWidth(), e.getScreenY() + UiZoom.px(14));
     }
 
     private void onClick(MouseEvent e) {

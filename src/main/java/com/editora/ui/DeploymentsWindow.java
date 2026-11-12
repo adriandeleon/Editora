@@ -8,7 +8,6 @@ import java.util.function.Supplier;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -37,6 +36,7 @@ import com.editora.config.Deployment;
 import com.editora.config.RunConfiguration;
 import com.editora.deploy.DeployExcludes;
 import com.editora.deploy.DeployRoot;
+import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
 import org.jspecify.annotations.Nullable;
 
@@ -90,7 +90,7 @@ public final class DeploymentsWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
-            WindowPlacement.centerOnOwner(stage, owner, WIDTH, HEIGHT);
+            WindowPlacement.centerOnOwner(stage, owner, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
             stage.show();
         }
     }
@@ -105,8 +105,8 @@ public final class DeploymentsWindow {
         stage.initOwner(owner);
         stage.initModality(Modality.NONE);
 
-        list.setPrefWidth(200);
-        list.setMinWidth(160);
+        UiZoom.prefWidth(list, 200);
+        UiZoom.minWidth(list, 160);
         list.setId("deployments-list");
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -169,17 +169,16 @@ public final class DeploymentsWindow {
         CheckBox uploadOnSave = new CheckBox(tr("deploy.field.uploadOnSave"));
         uploadOnSave.setId("deploy-upload-on-save");
 
-        HBox hostRow = new HBox(6, hostField, new Label(tr("remote.port")), port, fromSite);
+        HBox hostRow = UiZoom.spacing(new HBox(hostField, new Label(tr("remote.port")), port, fromSite), 6);
         hostRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(hostField, Priority.ALWAYS);
-        HBox keyRow = new HBox(6, keyPath, keyBrowse);
+        HBox keyRow = UiZoom.spacing(new HBox(keyPath, keyBrowse), 6);
         keyRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(keyPath, Priority.ALWAYS);
-        VBox rootBox = new VBox(4, remoteRoot, rootProblem);
+        VBox rootBox = UiZoom.spacing(new VBox(remoteRoot, rootProblem), 4);
 
         GridPane form = new GridPane();
-        form.setHgap(8);
-        form.setVgap(8);
+        UiZoom.gaps(form, 8, 8);
         row(form, 0, "deploy.field.name", name);
         row(form, 1, "remote.host", hostRow);
         row(form, 2, "remote.user", user);
@@ -187,7 +186,7 @@ public final class DeploymentsWindow {
         row(form, 4, "remote.key", keyRow);
         row(form, 5, "deploy.field.root", rootBox);
         row(form, 6, "deploy.field.excludes", excludes);
-        VBox options = new VBox(6, gitignore, deleteRemoved, uploadOnSave);
+        VBox options = UiZoom.spacing(new VBox(gitignore, deleteRemoved, uploadOnSave), 6);
         row(form, 7, "deploy.field.options", options);
         Label note = new Label(tr("deploy.window.note"));
         note.setWrapText(true);
@@ -374,28 +373,30 @@ public final class DeploymentsWindow {
             stage.close();
         });
 
-        VBox left = new VBox(8, list);
+        VBox left = UiZoom.spacing(new VBox(list), 8);
         VBox.setVgrow(list, Priority.ALWAYS);
-        VBox right = new VBox(8, form);
+        VBox right = UiZoom.spacing(new VBox(form), 8);
         HBox.setHgrow(right, Priority.ALWAYS);
-        HBox editor = new HBox(12, left, right);
+        HBox editor = UiZoom.spacing(new HBox(left, right), 12);
         VBox.setVgrow(editor, Priority.ALWAYS);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox buttons = new HBox(8, add, remove, spacer, deploy, close);
+        HBox buttons = UiZoom.spacing(new HBox(add, remove, spacer, deploy, close), 8);
         buttons.setAlignment(Pos.CENTER_LEFT);
-        VBox root = new VBox(12, editor, buttons);
-        root.setPadding(new Insets(16));
-        root.setPrefSize(WIDTH, HEIGHT);
+        VBox root = UiZoom.spacing(new VBox(editor, buttons), 12);
+        UiZoom.padding(root, 16);
+        UiZoom.prefSize(root, WIDTH, HEIGHT);
 
-        Scene scene = new Scene(root, WIDTH, HEIGHT);
+        Scene scene = new Scene(root, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
         scene.getStylesheets()
                 .add(com.editora.editor.UiZoom.sheet(DeploymentsWindow.class
                         .getResource("/com/editora/styles/app.css")
                         .toExternalForm()));
         stage.setScene(scene);
-        stage.setMinWidth(640);
-        stage.setMinHeight(520);
+        UiZoom.follow(stage, () -> {
+            stage.setMinWidth(UiZoom.px(640));
+            stage.setMinHeight(UiZoom.px(520));
+        });
     }
 
     private static TextField field(String id, String promptKey) {

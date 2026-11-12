@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Hyperlink;
@@ -18,6 +17,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.diff.PatchParser.FilePatch;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.github.PrReviewSummary;
 import com.editora.github.PrReviewSummary.FileRow;
@@ -89,15 +89,15 @@ public final class PrReviewPane extends Region implements TabContent {
 
         getStyleClass().add("pr-review-pane");
         content.getStyleClass().add("pr-review-content");
-        content.setSpacing(10);
+        UiZoom.spacing(content, 10);
         content.setAlignment(Pos.TOP_LEFT);
         content.setFillWidth(true);
-        content.setPrefWidth(CONTENT_WIDTH);
-        content.setMaxWidth(CONTENT_WIDTH);
+        UiZoom.prefWidth(content, CONTENT_WIDTH);
+        UiZoom.maxWidth(content, CONTENT_WIDTH);
 
         centerHost.setAlignment(Pos.TOP_CENTER);
-        centerHost.setPadding(new Insets(MARGIN));
-        centerHost.setMinWidth(CONTENT_WIDTH + 2 * MARGIN);
+        UiZoom.padding(centerHost, MARGIN);
+        UiZoom.minWidth(centerHost, CONTENT_WIDTH + 2 * MARGIN);
 
         scroll.getStyleClass().add("welcome-scroll");
         scroll.setFitToWidth(true);
@@ -158,7 +158,7 @@ public final class PrReviewPane extends Region implements TabContent {
         if (body.isEmpty()) {
             return null;
         }
-        VBox box = new VBox(4);
+        VBox box = UiZoom.spacing(new VBox(), 4);
         box.getStyleClass().add("pr-review-description");
         StackPane rendered = new StackPane();
         rendered.setAlignment(Pos.TOP_LEFT);
@@ -210,7 +210,7 @@ public final class PrReviewPane extends Region implements TabContent {
     }
 
     private Node header(List<FileRow> rows) {
-        VBox box = new VBox(4);
+        VBox box = UiZoom.spacing(new VBox(), 4);
         box.getStyleClass().add("pr-review-header");
 
         Label num = new Label("#" + prNumber);
@@ -220,12 +220,12 @@ public final class PrReviewPane extends Region implements TabContent {
         Label title = new Label(titleText);
         title.getStyleClass().add("pr-review-title");
         title.setWrapText(true);
-        HBox titleLine = new HBox(8, num, title);
+        HBox titleLine = UiZoom.spacing(new HBox(num, title), 8);
         titleLine.setAlignment(Pos.BASELINE_LEFT);
         box.getChildren().add(titleLine);
 
         if (detail != null) {
-            HBox meta = new HBox(10);
+            HBox meta = UiZoom.spacing(new HBox(), 10);
             meta.setAlignment(Pos.BASELINE_LEFT);
             if (!detail.authorLogin().isBlank()) {
                 meta.getChildren().add(metaLabel(detail.authorLogin(), "pr-review-meta"));
@@ -252,13 +252,13 @@ public final class PrReviewPane extends Region implements TabContent {
         int dels = detail != null ? detail.deletions() : PrReviewSummary.totalDeletions(rows);
         Label filesLabel = new Label(tr("github.review.filesChanged", files.size()));
         filesLabel.getStyleClass().add("pr-review-stats");
-        HBox line = new HBox(10, filesLabel, adds(adds), dels(dels));
+        HBox line = UiZoom.spacing(new HBox(filesLabel, adds(adds), dels(dels)), 10);
         line.setAlignment(Pos.BASELINE_LEFT);
         return line;
     }
 
     private Node actions() {
-        HBox row = new HBox(14);
+        HBox row = UiZoom.spacing(new HBox(), 14);
         row.getStyleClass().add("pr-review-actions");
         row.setAlignment(Pos.CENTER_LEFT);
         PrDetail shown = detail; // every update rebuilds this row
@@ -291,9 +291,9 @@ public final class PrReviewPane extends Region implements TabContent {
         status.getStyleClass().add("pr-review-file-status");
 
         StackPane iconHolder = new StackPane(FileIcons.forFileName(r.path()));
-        iconHolder.setMinWidth(24);
-        iconHolder.setPrefWidth(24);
-        iconHolder.setMaxWidth(24);
+        UiZoom.minWidth(iconHolder, 24);
+        UiZoom.prefWidth(iconHolder, 24);
+        UiZoom.maxWidth(iconHolder, 24);
         iconHolder.setAlignment(Pos.CENTER_LEFT);
 
         Hyperlink link = new Hyperlink(r.displayPath());
@@ -303,7 +303,8 @@ public final class PrReviewPane extends Region implements TabContent {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        HBox row = new HBox(6, status, iconHolder, link, spacer, adds(r.additions()), dels(r.deletions()));
+        HBox row =
+                UiZoom.spacing(new HBox(status, iconHolder, link, spacer, adds(r.additions()), dels(r.deletions())), 6);
         // The status class colors the letter + icon (the .pr-review-file-row.git-status-* CSS).
         row.getStyleClass().addAll("pr-review-file-row", r.status().cssClass());
         row.setAlignment(Pos.CENTER_LEFT);

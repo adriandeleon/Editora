@@ -5,7 +5,6 @@ import java.util.Map;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -26,6 +25,7 @@ import javafx.stage.FileChooser;
 import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
+import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.SftpUri;
 import org.jspecify.annotations.Nullable;
@@ -94,7 +94,7 @@ final class RemoteSitesPane {
     private Node build() {
         items.setAll(config.getConnections());
 
-        list.setPrefSize(240, 380);
+        UiZoom.prefSize(list, 240, 380);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(RemoteConnection c, boolean empty) {
@@ -127,7 +127,7 @@ final class RemoteSitesPane {
             }
         });
         keyPath.setPromptText(tr("remote.keyPrompt"));
-        keyPath.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
+        UiZoom.minWidth(keyPath, SettingRowPane.FIELD_MIN_WIDTH);
         Button keyBrowse = new Button(tr("dialog.clone.browse"));
         keyBrowse.setOnAction(e -> {
             FileChooser fc = new FileChooser();
@@ -152,8 +152,7 @@ final class RemoteSitesPane {
         user.textProperty().addListener((o, a, b) -> mark(user, RemoteSiteCheck.user(b)));
 
         GridPane form = new GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
+        UiZoom.gaps(form, 8, 6);
         formRow(form, 0, tr("settings.remote.label"), label);
         formRow(form, 1, tr("remote.host"), host);
         formRow(form, 2, tr("remote.port"), port);
@@ -169,13 +168,13 @@ final class RemoteSitesPane {
         Map<String, TextField> toolFields = new java.util.LinkedHashMap<>();
         // Each label above its field: beside them, the longer tool names widened the page past the smallest
         // Settings window, which then scrolled sideways.
-        VBox toolsGrid = new VBox(2);
+        VBox toolsGrid = UiZoom.spacing(new VBox(), 2);
         for (HostTools.Tool tool : HostTools.NAMED) {
             TextField field = new TextField();
             field.setPromptText(tr("settings.remote.tool.prompt"));
             toolFields.put(tool.id(), field);
             Label name = new Label(tr(tool.labelKey()));
-            VBox.setMargin(name, new Insets(4, 0, 0, 0));
+            UiZoom.follow(name, () -> VBox.setMargin(name, UiZoom.insets(4, 0, 0, 0)));
             toolsGrid.getChildren().addAll(name, field);
         }
         TextArea servers = new TextArea();
@@ -184,19 +183,20 @@ final class RemoteSitesPane {
         servers.setPrefColumnCount(20);
         servers.setWrapText(false);
         Label serversName = new Label(tr("settings.remote.tool.servers"));
-        VBox.setMargin(serversName, new Insets(4, 0, 0, 0));
+        UiZoom.follow(serversName, () -> VBox.setMargin(serversName, UiZoom.insets(4, 0, 0, 0)));
         toolsGrid.getChildren().addAll(serversName, servers);
         Label hostTitle = new Label(tr("settings.remote.host.title"));
         hostTitle.getStyleClass().add("settings-card-title");
         Label hostNote = hint(tr("settings.remote.host.note"));
-        VBox hostRows = new VBox(6, hostAllowed, toolsGrid, hostNote);
+        VBox hostRows = UiZoom.spacing(new VBox(hostAllowed, toolsGrid, hostNote), 6);
         SettingsDependents.bind(remoteExecution, hostRows);
-        VBox hostBox = new VBox(
-                6,
-                new Separator(),
-                hostTitle,
-                SettingsDependents.note(remoteExecution, tr("settings.remote.execution")),
-                hostRows);
+        VBox hostBox = UiZoom.spacing(
+                new VBox(
+                        new Separator(),
+                        hostTitle,
+                        SettingsDependents.note(remoteExecution, tr("settings.remote.execution")),
+                        hostRows),
+                6);
         hostBox.disableProperty().bind(form.disabledProperty());
         hostAllowed.setOnAction(e -> {
             RemoteConnection cur = list.getSelectionModel().getSelectedItem();
@@ -298,8 +298,8 @@ final class RemoteSitesPane {
         remove.disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> delete());
-        HBox buttons = new HBox(6, add, remove);
-        VBox left = new VBox(6, list, buttons);
+        HBox buttons = UiZoom.spacing(new HBox(add, remove), 6);
+        VBox left = UiZoom.spacing(new VBox(list, buttons), 6);
         keepWidth(add, remove, left, keyBrowse);
 
         // No Save button: every field saves when it is left or Enter is pressed, like the rest of Settings.
@@ -317,14 +317,14 @@ final class RemoteSitesPane {
         connectButton.setVisible(connect != null);
         HBox connectRow = new HBox(connectButton);
         connectRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, form, connectRow, hostBox);
+        VBox right = UiZoom.spacing(new VBox(form, connectRow, hostBox), 8);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
 
         if (!items.isEmpty()) {
             list.getSelectionModel().select(0);
         }
-        HBox box = new HBox(12, left, right);
+        HBox box = UiZoom.spacing(new HBox(left, right), 12);
         box.setAlignment(Pos.TOP_LEFT);
         return box;
     }
@@ -444,7 +444,7 @@ final class RemoteSitesPane {
         forget.setWrapText(true);
         if (askAboutHost) {
             Label text = new Label(tr("settings.remote.deleteConfirm", site.displayLabel()));
-            alert.getDialogPane().setContent(new VBox(10, text, forget));
+            alert.getDialogPane().setContent(UiZoom.spacing(new VBox(text, forget), 10));
         }
         // Cancel is the default: Enter does not delete.
         Dialogs.destructive(alert, delete);
@@ -483,7 +483,7 @@ final class RemoteSitesPane {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof Region r) {
-            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
+            UiZoom.minWidth(r, SettingRowPane.FIELD_MIN_WIDTH);
         }
     }
 
@@ -491,7 +491,7 @@ final class RemoteSitesPane {
         Label l = new Label(text);
         l.getStyleClass().add("settings-hint");
         l.setWrapText(true);
-        l.setMaxWidth(460);
+        UiZoom.maxWidth(l, 460);
         return l;
     }
 

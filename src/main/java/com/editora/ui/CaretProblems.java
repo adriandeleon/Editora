@@ -8,6 +8,7 @@ import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.text.LspDiagnostic;
 import org.jspecify.annotations.Nullable;
 
@@ -91,7 +92,7 @@ final class CaretProblems {
         if (problems.isEmpty()) {
             return null;
         }
-        VBox box = new VBox(6);
+        VBox box = UiZoom.spacing(new VBox(), 6);
         box.getStyleClass().add("lsp-hover-problems");
         for (LspDiagnostic d : problems) {
             Label label = new Label(text(d));

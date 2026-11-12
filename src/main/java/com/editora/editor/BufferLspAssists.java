@@ -159,7 +159,7 @@ final class BufferLspAssists {
                     lspTooltip = new javafx.scene.control.Tooltip();
                     lspTooltip.getStyleClass().add("lsp-diagnostic-tooltip");
                     lspTooltip.setWrapText(true);
-                    lspTooltip.setMaxWidth(480);
+                    lspTooltip.setMaxWidth(UiZoom.px(480));
                 }
                 lspTooltip.setText(text);
                 lspTooltipText = text;

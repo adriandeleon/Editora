@@ -9,6 +9,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 
+import com.editora.editor.UiZoom;
 import com.editora.text.LanguageRegistry;
 import org.jspecify.annotations.Nullable;
 
@@ -455,7 +456,7 @@ public final class FileIcons {
         lock.getStyleClass().add("file-lock-badge");
         StackPane box = new StackPane(glyph, lock);
         StackPane.setAlignment(lock, Pos.BOTTOM_RIGHT);
-        StackPane.setMargin(lock, new javafx.geometry.Insets(0, -7, -7, 0));
+        UiZoom.follow(lock, () -> StackPane.setMargin(lock, UiZoom.insets(0, -7, -7, 0)));
         box.setMouseTransparent(true);
         return box;
     }
@@ -475,9 +476,9 @@ public final class FileIcons {
      */
     public static Node boxed(Node icon) {
         StackPane box = new StackPane(icon);
-        box.setMinSize(ICON_BOX, ICON_BOX);
-        box.setPrefSize(ICON_BOX, ICON_BOX);
-        box.setMaxSize(ICON_BOX, ICON_BOX);
+        UiZoom.minSize(box, ICON_BOX, ICON_BOX);
+        UiZoom.prefSize(box, ICON_BOX, ICON_BOX);
+        UiZoom.maxSize(box, ICON_BOX, ICON_BOX);
         box.setAlignment(Pos.CENTER);
         box.setMouseTransparent(true); // purely decorative — let clicks reach the row
         return box;
@@ -502,7 +503,7 @@ public final class FileIcons {
         }
         Label label = new Label(letter);
         label.getStyleClass().add("git-status-letter");
-        HBox box = new HBox(STATUS_LETTER_GAP, icon, label);
+        HBox box = UiZoom.spacing(new HBox(icon, label), STATUS_LETTER_GAP);
         box.setAlignment(Pos.CENTER_LEFT);
         box.setMouseTransparent(true); // decorative, like the boxed glyph — let clicks reach the row
         return box;

@@ -28,6 +28,7 @@ import javafx.stage.Window;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -108,7 +109,7 @@ public class FileFinder {
     private void build() {
         input.setPromptText(tr("filefinder.prompt"));
         list.setItems(items);
-        list.setPrefHeight(LIST_HEIGHT);
+        UiZoom.prefHeight(list, LIST_HEIGHT);
         list.setCellFactory(v -> new EntryCell());
 
         input.textProperty().addListener((obs, old, now) -> refresh(now));
@@ -119,10 +120,10 @@ public class FileFinder {
         Label header = new Label(title);
         header.getStyleClass().add("palette-title");
         hint.getStyleClass().add("palette-hint");
-        content = new VBox(6, header, input, list, hint);
+        content = UiZoom.spacing(new VBox(header, input, list, hint), 6);
         content.getStyleClass().add("command-palette");
-        content.setPrefWidth(620);
-        content.setMaxSize(620, Region.USE_PREF_SIZE);
+        UiZoom.prefWidth(content, 620);
+        UiZoom.maxSize(content, 620, Region.USE_PREF_SIZE);
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE);
     }
 
@@ -398,7 +399,7 @@ public class FileFinder {
 
     private final class EntryCell extends ListCell<Path> {
         private final Label label = new Label();
-        private final HBox box = new HBox(8, label);
+        private final HBox box = UiZoom.spacing(new HBox(label), 8);
 
         EntryCell() {
             box.setAlignment(Pos.CENTER_LEFT);

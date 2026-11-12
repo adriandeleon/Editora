@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 169;
+    public static final int SCHEMA_VERSION = 170;
 
     private int schemaVersion = SCHEMA_VERSION;
 

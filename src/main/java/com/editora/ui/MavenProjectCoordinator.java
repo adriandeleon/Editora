@@ -42,6 +42,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.doctor.DoctorProbes;
+import com.editora.editor.UiZoom;
 import com.editora.lsp.JavaRuntimes;
 import com.editora.maven.ArchetypeCatalog;
 import com.editora.maven.ArchetypeCatalogCache;
@@ -332,7 +333,7 @@ final class MavenProjectCoordinator {
         host.setStatus(why);
         Label body = new Label(why + "\n" + tr("dialog.mavenVersions.parentIs", parentPom));
         body.setWrapText(true);
-        body.setMaxWidth(560);
+        UiZoom.maxWidth(body, 560);
         OverlayInput.show(
                 host.overlayHost(),
                 tr("dialog.mavenVersions.title"),
@@ -413,7 +414,7 @@ final class MavenProjectCoordinator {
             return;
         }
         host.setStatus(tr("status.mavenVersions.found", rows.size()));
-        VBox list = new VBox(4);
+        VBox list = UiZoom.spacing(new VBox(), 4);
         List<CheckBox> boxes = new ArrayList<>();
         List<PomUpgrades.Row> byBox = new ArrayList<>();
         BooleanProperty anySelected = new SimpleBooleanProperty(true);
@@ -438,7 +439,7 @@ final class MavenProjectCoordinator {
                 if (row.major()) {
                     Label major = new Label(tr("dialog.mavenVersions.major"));
                     major.getStyleClass().addAll("settings-hint", "maven-version-major");
-                    list.getChildren().add(new HBox(8, box, major));
+                    list.getChildren().add(UiZoom.spacing(new HBox(box, major), 8));
                 } else {
                     list.getChildren().add(box);
                 }
@@ -446,8 +447,8 @@ final class MavenProjectCoordinator {
         }
         ScrollPane scroll = new ScrollPane(list);
         scroll.setFitToWidth(true);
-        scroll.setPrefViewportHeight(260);
-        VBox body = new VBox(8, new Label(tr("dialog.mavenVersions.summary", rows.size())), scroll);
+        UiZoom.follow(scroll, () -> scroll.setPrefViewportHeight(UiZoom.px(260)));
+        VBox body = UiZoom.spacing(new VBox(new Label(tr("dialog.mavenVersions.summary", rows.size())), scroll), 8);
         if (unreachable) {
             Label partial = new Label(tr("status.mavenVersions.unreachable"));
             partial.getStyleClass().add("settings-hint");
@@ -989,8 +990,7 @@ final class MavenProjectCoordinator {
         });
 
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         int row = 0;
         grid.add(new Label(tr("dialog.mavenProject.archetype")), 0, row);
         Label chosen = new Label(archetype.gav());
@@ -1073,7 +1073,7 @@ final class MavenProjectCoordinator {
         TextField urlField = field(keymap, 30);
         ComboBox<String> releaseCombo = new ComboBox<>();
         releaseCombo.setEditable(true); // a release level need not be one of the installed JDKs
-        releaseCombo.setPrefWidth(120);
+        UiZoom.prefWidth(releaseCombo, 120);
         TextInputKeymap.install(releaseCombo.getEditor(), keymap);
         // Empty means "keep whatever the archetype wrote": these values are the archetype's to choose, and
         // prefilling quickstart's would impose them on archetypes that use neither. The prompt is the
@@ -1086,18 +1086,16 @@ final class MavenProjectCoordinator {
         updateHint.setWrapText(true);
 
         GridPane advancedGrid = new GridPane();
-        advancedGrid.setHgap(8);
-        advancedGrid.setVgap(8);
+        UiZoom.gaps(advancedGrid, 8, 8);
         advancedGrid.add(new Label(tr("dialog.mavenProject.url")), 0, 0);
         advancedGrid.add(urlField, 1, 0);
         advancedGrid.add(new Label(tr("dialog.mavenProject.javaRelease")), 0, 1);
         advancedGrid.add(releaseCombo, 1, 1);
         GridPane.setHgrow(urlField, Priority.ALWAYS);
-        VBox advancedBox = new VBox(8, advancedGrid, updateVersions, updateHint);
+        VBox advancedBox = UiZoom.spacing(new VBox(advancedGrid, updateVersions, updateHint), 8);
         if (!propertyFields.isEmpty()) {
             GridPane propertyGrid = new GridPane();
-            propertyGrid.setHgap(8);
-            propertyGrid.setVgap(8);
+            UiZoom.gaps(propertyGrid, 8, 8);
             propertyGrid.getStyleClass().add("maven-archetype-properties");
             int r = 0;
             for (Map.Entry<String, TextField> e : propertyFields.entrySet()) {
@@ -1147,7 +1145,7 @@ final class MavenProjectCoordinator {
         }
         revalidate.run();
 
-        VBox body = new VBox(10, grid, advanced);
+        VBox body = UiZoom.spacing(new VBox(grid, advanced), 10);
 
         OverlayInput.show(
                 host.overlayHost(),

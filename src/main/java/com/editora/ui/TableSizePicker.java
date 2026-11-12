@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.util.function.BiConsumer;
 
-import javafx.geometry.Insets;
 import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -11,6 +10,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -28,7 +28,7 @@ final class TableSizePicker {
 
     static final int START_COLS = 3;
 
-    private final VBox card = new VBox(8);
+    private final VBox card = UiZoom.spacing(new VBox(), 8);
     private final Label heading = new Label();
     private final Rectangle[][] cells;
     private final int maxRows;
@@ -47,7 +47,7 @@ final class TableSizePicker {
         this.cols = Math.min(START_COLS, maxCols);
         cells = new Rectangle[maxRows][maxCols];
         card.getStyleClass().add("table-size-picker");
-        card.setPadding(new Insets(12));
+        UiZoom.padding(card, 12);
         // Hug the grid + padding — without a max-size cap the StackPane overlay stretches the card to fill
         // the whole editor area (like QuickOpen's card, which caps to its preferred size).
         card.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
@@ -55,11 +55,14 @@ final class TableSizePicker {
         card.setAccessibleText(tr("table.picker.prompt"));
         heading.getStyleClass().add("table-size-label");
         GridPane grid = new GridPane();
-        grid.setHgap(3);
-        grid.setVgap(3);
+        UiZoom.gaps(grid, 3, 3);
         for (int r = 0; r < maxRows; r++) {
             for (int c = 0; c < maxCols; c++) {
-                Rectangle cell = new Rectangle(16, 16);
+                Rectangle cell = new Rectangle();
+                UiZoom.follow(cell, () -> {
+                    cell.setWidth(UiZoom.px(16));
+                    cell.setHeight(UiZoom.px(16));
+                });
                 final int rr = r + 1;
                 final int cc = c + 1;
                 cell.setOnMouseEntered(e -> select(rr, cc));

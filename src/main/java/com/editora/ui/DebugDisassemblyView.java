@@ -15,6 +15,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.dap.DapModels;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -137,7 +138,7 @@ final class DebugDisassemblyView extends VBox {
         private final Label symbol = new Label();
         private final Label where = new Label();
         private final Region gap = new Region();
-        private final HBox row = new HBox(10, address, text, gap, symbol, where);
+        private final HBox row = UiZoom.spacing(new HBox(address, text, gap, symbol, where), 10);
 
         InstructionCell() {
             address.getStyleClass().add("debug-disassembly-address");

@@ -14,6 +14,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 import org.jspecify.annotations.Nullable;
@@ -228,9 +229,9 @@ final class SettingsLspPage {
         TextField field = w.debugPage.debugCommandFields.get("python");
         if (field != null) { // build() makes one per adapter
             String title = tr("settings.debug.pythonCommand");
-            field.setPrefWidth(SettingsWindow.PATH_FIELD_WIDTH);
+            UiZoom.prefWidth(field, SettingsWindow.PATH_FIELD_WIDTH);
             SettingsWindow.fullValueTip(field, title);
-            HBox path = new HBox(6, field, w.browseButton(title, field));
+            HBox path = UiZoom.spacing(new HBox(field, w.browseButton(title, field)), 6);
             w.controlRow(
                     c, Category.LSP, title, tr("settings.lsp.pythonInterpreter.desc"), path, words + "path python3");
         }

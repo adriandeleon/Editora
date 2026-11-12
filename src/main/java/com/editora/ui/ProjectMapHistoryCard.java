@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -25,6 +24,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.git.BlameParser;
 import com.editora.git.GitFormat;
 import com.editora.git.LineHistory;
@@ -126,10 +126,10 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         });
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox bar = new HBox(4, changesButton, blameButton, gap, openCommit);
+        HBox bar = UiZoom.spacing(new HBox(changesButton, blameButton, gap, openCommit), 4);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.getStyleClass().add("project-map-history-bar");
-        bar.setPadding(new Insets(4, 6, 4, 6));
+        UiZoom.padding(bar, 4, 6, 4, 6);
 
         diff.getStyleClass().addAll("project-map-history-diff", "project-map-history-code");
         diff.setAccessibleText(tr("project.map.history.diffAccessible"));
@@ -157,7 +157,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         split.getStyleClass().add("project-map-history-split");
         VBox body = new VBox(summary, split);
         VBox.setVgrow(split, Priority.ALWAYS);
-        summary.setPadding(new Insets(6, 10, 6, 10));
+        UiZoom.padding(summary, 6, 10, 6, 10);
         frame.setCenter(body);
     }
 
@@ -478,7 +478,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
     private final class CommitCell extends ListCell<LineHistory.Commit> {
         private final Label subject = new Label();
         private final Label detail = new Label();
-        private final VBox box = new VBox(1, subject, detail);
+        private final VBox box = UiZoom.spacing(new VBox(subject, detail), 1);
 
         CommitCell() {
             subject.getStyleClass().add("project-map-history-subject");
@@ -536,15 +536,15 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
     private final class BlameCell extends ListCell<BlameRow> {
         private final Label by = new Label();
         private final Label code = new Label();
-        private final HBox box = new HBox(8, by, code);
+        private final HBox box = UiZoom.spacing(new HBox(by, code), 8);
 
         BlameCell() {
             by.getStyleClass().add("project-map-history-by");
             code.getStyleClass().add("project-map-history-line");
             // One width for every row's annotation, so the code starts in one column.
             by.setMinWidth(Region.USE_PREF_SIZE);
-            by.setPrefWidth(170);
-            by.setMaxWidth(170);
+            UiZoom.prefWidth(by, 170);
+            UiZoom.maxWidth(by, 170);
             code.setMinWidth(0);
             box.setAlignment(Pos.CENTER_LEFT);
             setOnMouseClicked(event -> {

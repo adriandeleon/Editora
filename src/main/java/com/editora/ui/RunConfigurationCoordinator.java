@@ -13,6 +13,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -235,9 +236,9 @@ final class RunConfigurationCoordinator {
         // popup, and an unbounded ComboBox sized to its widest configuration name would evict several
         // buttons — or itself. A fixed, modest width keeps the whole run group on the bar at normal window
         // sizes; long names still show in full in the dropdown.
-        host.runConfigCombo().setPrefWidth(RUN_CONFIG_COMBO_WIDTH);
-        host.runConfigCombo().setMinWidth(RUN_CONFIG_COMBO_WIDTH);
-        host.runConfigCombo().setMaxWidth(RUN_CONFIG_COMBO_WIDTH);
+        UiZoom.prefWidth(host.runConfigCombo(), RUN_CONFIG_COMBO_WIDTH);
+        UiZoom.minWidth(host.runConfigCombo(), RUN_CONFIG_COMBO_WIDTH);
+        UiZoom.maxWidth(host.runConfigCombo(), RUN_CONFIG_COMBO_WIDTH);
         host.runConfigCombo().setConverter(new javafx.util.StringConverter<>() {
             @Override
             public String toString(com.editora.config.RunConfiguration cfg) {

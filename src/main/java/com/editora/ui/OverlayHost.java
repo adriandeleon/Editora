@@ -12,6 +12,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -203,14 +204,15 @@ public final class OverlayHost {
         javafx.geometry.Point2D above = overlayRoot.sceneToLocal(sceneX, aboveY);
         double height = content.prefHeight(-1);
         double left = clampLeft(below.getX(), contentWidth(content), overlayRoot.getWidth());
-        double gap = 2;
+        double gap = UiZoom.px(2);
         if (goesBelow(below.getY(), above.getY(), height, overlayRoot.getHeight())) {
             StackPane.setAlignment(content, Pos.TOP_LEFT);
-            StackPane.setMargin(content, new Insets(Math.max(4, below.getY() + gap), 0, 0, left));
+            StackPane.setMargin(content, new Insets(Math.max(UiZoom.px(4), below.getY() + gap), 0, 0, left));
         } else {
             StackPane.setAlignment(content, Pos.BOTTOM_LEFT);
             StackPane.setMargin(
-                    content, new Insets(0, 0, Math.max(4, overlayRoot.getHeight() - above.getY() + gap), left));
+                    content,
+                    new Insets(0, 0, Math.max(UiZoom.px(4), overlayRoot.getHeight() - above.getY() + gap), left));
         }
     }
 
@@ -219,7 +221,7 @@ public final class OverlayHost {
      * when it fits there, and also when it fits on neither side (its top stays on screen that way). Pure.
      */
     static boolean goesBelow(double belowY, double aboveY, double height, double overlayHeight) {
-        double edge = 6;
+        double edge = UiZoom.px(6);
         return belowY + height <= overlayHeight - edge || aboveY - height < edge;
     }
 
@@ -242,7 +244,7 @@ public final class OverlayHost {
         content.setTranslateY(0);
         if (position == null) {
             StackPane.setAlignment(content, centered ? Pos.CENTER : Pos.TOP_CENTER);
-            StackPane.setMargin(content, centered ? Insets.EMPTY : new Insets(90, 0, 0, 0));
+            StackPane.setMargin(content, centered ? Insets.EMPTY : UiZoom.insets(90, 0, 0, 0));
         }
         overlayRoot.getChildren().add(content);
         overlayRoot.setVisible(true);
@@ -273,11 +275,11 @@ public final class OverlayHost {
             return;
         }
         javafx.geometry.Bounds a = anchor.localToScene(anchor.getBoundsInLocal());
-        double gap = 4;
+        double gap = UiZoom.px(4);
         double left = clampLeft(a.getMinX(), contentWidth(content), overlayRoot.getWidth());
         // BOTTOM_LEFT: a bottom margin of M places the card's bottom edge M above the overlay's bottom.
         // We want the card's bottom at the anchor's top minus a small gap, so M = overlayH - anchorTop + gap.
-        double bottomMargin = Math.max(4, overlayRoot.getHeight() - a.getMinY() + gap);
+        double bottomMargin = Math.max(UiZoom.px(4), overlayRoot.getHeight() - a.getMinY() + gap);
         StackPane.setAlignment(content, Pos.BOTTOM_LEFT);
         StackPane.setMargin(content, new Insets(0, 0, bottomMargin, left));
     }
@@ -290,9 +292,9 @@ public final class OverlayHost {
             return;
         }
         javafx.geometry.Bounds a = anchor.localToScene(anchor.getBoundsInLocal());
-        double gap = 4;
+        double gap = UiZoom.px(4);
         double left = clampLeft(a.getMinX(), contentWidth(content), overlayRoot.getWidth());
-        double topMargin = Math.max(4, a.getMaxY() + gap);
+        double topMargin = Math.max(UiZoom.px(4), a.getMaxY() + gap);
         StackPane.setAlignment(content, Pos.TOP_LEFT);
         StackPane.setMargin(content, new Insets(topMargin, 0, 0, left));
     }
@@ -307,7 +309,7 @@ public final class OverlayHost {
 
     /** Keep anchored cards inside the overlay when their anchor is near either horizontal edge. */
     static double clampLeft(double requestedLeft, double cardWidth, double overlayWidth) {
-        double inset = 4;
+        double inset = UiZoom.px(4);
         double rightmostLeft = overlayWidth - cardWidth - inset;
         return Math.max(inset, Math.min(requestedLeft, rightmostLeft));
     }

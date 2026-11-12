@@ -16,6 +16,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.UiZoom;
 import com.editora.editor.spell.SpellDictionaries;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
@@ -56,7 +57,7 @@ final class SettingsSpellPage {
         });
         spellLanguageCombo = new ComboBox<>();
         spellLanguageCombo.getItems().setAll(SpellDictionaries.available());
-        spellLanguageCombo.setPrefWidth(220);
+        UiZoom.prefWidth(spellLanguageCombo, 220);
         spellLanguageCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(String id) {
@@ -124,7 +125,7 @@ final class SettingsSpellPage {
         w.cardRow(
                 types,
                 Category.SPELL_CHECK,
-                new VBox(6, typesNote, spellFileTypes),
+                UiZoom.spacing(new VBox(typesNote, spellFileTypes), 6),
                 "spell file types languages per language json yaml toml xml csv markdown html typst code comments");
         // The dictionaries get a card of their own: both switches, both file links, then the word list.
         Card dict = w.card(p, tr("settings.dict.title"));
@@ -142,7 +143,7 @@ final class SettingsSpellPage {
                 onOpenPersonalDictionary.run();
             }
         });
-        HBox dictLinks = new HBox(16, techLink, personalLink);
+        HBox dictLinks = UiZoom.spacing(new HBox(techLink, personalLink), 16);
         dictLinks.setAlignment(Pos.CENTER_LEFT);
         w.checkRow(
                 dict,
@@ -170,7 +171,7 @@ final class SettingsSpellPage {
     private javafx.scene.Node dictionaryEditor() {
         ListView<String> words = new ListView<>();
         dictionaryList = words;
-        dictionaryList.setPrefSize(300, 380);
+        UiZoom.prefSize(dictionaryList, 300, 380);
         dictionaryList.setPlaceholder(new Label(tr("settings.dict.empty")));
         refreshDictionaryList();
 
@@ -219,10 +220,10 @@ final class SettingsSpellPage {
             }
         });
 
-        HBox addRow = new HBox(6, input, add);
+        HBox addRow = UiZoom.spacing(new HBox(input, add), 6);
         addRow.setAlignment(Pos.CENTER_LEFT);
-        VBox box = new VBox(6, dictionaryList, addRow, new HBox(6, remove));
-        box.setMaxWidth(440);
+        VBox box = UiZoom.spacing(new VBox(dictionaryList, addRow, UiZoom.spacing(new HBox(remove), 6)), 6);
+        UiZoom.maxWidth(box, 440);
         return box;
     }
 

@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import javafx.collections.ObservableList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -24,6 +23,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
 import com.editora.search.SearchQuery;
@@ -87,8 +87,8 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         getStyleClass().add("search-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
         build();
     }
 
@@ -130,21 +130,22 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         Button queryClear = ClearableField.clearButton(queryCombo.getEditor());
         // The query gets the panel's full width: sharing one row with the options and the Search button
         // left it ~8 characters at the default dock width (and just the dropdown arrow in German).
-        queryCombo.setMinWidth(120);
+        UiZoom.minWidth(queryCombo, 120);
         queryCombo.setAccessibleText(tr("search.queryPrompt"));
-        HBox queryRow = new HBox(6, queryCombo, queryClear);
+        HBox queryRow = UiZoom.spacing(new HBox(queryCombo, queryClear), 6);
         queryRow.setAlignment(Pos.CENTER_LEFT);
         Region optionsSpacer = new Region();
         HBox.setHgrow(optionsSpacer, Priority.ALWAYS);
         searchBtn.setMinWidth(Region.USE_PREF_SIZE);
         replaceBtn.setMinWidth(Region.USE_PREF_SIZE);
-        HBox optionsRow = new HBox(
-                2,
-                OptionToggle.viewOf(caseBox, tr("search.caseTip")),
-                OptionToggle.viewOf(regexBox, tr("search.regexTip")),
-                OptionToggle.viewOf(wordBox, tr("find.wholeWord")),
-                optionsSpacer,
-                searchBtn);
+        HBox optionsRow = UiZoom.spacing(
+                new HBox(
+                        OptionToggle.viewOf(caseBox, tr("search.caseTip")),
+                        OptionToggle.viewOf(regexBox, tr("search.regexTip")),
+                        OptionToggle.viewOf(wordBox, tr("find.wholeWord")),
+                        optionsSpacer,
+                        searchBtn),
+                2);
         optionsRow.setAlignment(Pos.CENTER_LEFT);
         Button replaceClear = ClearableField.clearButton(replaceField);
         // Field + button side by side while they fit; a narrow panel drops the button to its own line
@@ -175,7 +176,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         backendBadge.setManaged(false);
         Region summarySpacer = new Region();
         HBox.setHgrow(summarySpacer, Priority.ALWAYS);
-        HBox summaryRow = new HBox(6, summary, summarySpacer, backendBadge);
+        HBox summaryRow = UiZoom.spacing(new HBox(summary, summarySpacer, backendBadge), 6);
         summaryRow.setAlignment(Pos.CENTER_LEFT);
 
         // The folder being searched (project root, or the current file's folder) — shown explicitly so the
@@ -185,7 +186,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         scopeLabel.getStyleClass().add("search-scope-path");
         scopeLabel.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(scopeLabel, Priority.ALWAYS);
-        HBox scopeRow = new HBox(6, scopePrefix, scopeLabel);
+        HBox scopeRow = UiZoom.spacing(new HBox(scopePrefix, scopeLabel), 6);
         scopeRow.setAlignment(Pos.CENTER_LEFT);
         scopeRow.getStyleClass().add("search-scope-row");
 
@@ -226,10 +227,10 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
     /** A text field that fills its group, with its clear button beside it. */
     private static HBox fieldGroup(TextField field, Button clear) {
-        field.setMinWidth(FIELD_MIN_WIDTH);
+        UiZoom.minWidth(field, FIELD_MIN_WIDTH);
         field.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(field, Priority.ALWAYS);
-        HBox group = new HBox(6, field, clear);
+        HBox group = UiZoom.spacing(new HBox(field, clear), 6);
         group.setAlignment(Pos.CENTER_LEFT);
         return group;
     }

@@ -58,6 +58,7 @@ import javafx.scene.text.TextAlignment;
 import javafx.stage.WindowEvent;
 import javafx.util.Duration;
 
+import com.editora.editor.UiZoom;
 import com.editora.git.GitFileStatus;
 import com.editora.ui.ProjectMapView.FlowDirection;
 import org.jspecify.annotations.Nullable;
@@ -477,11 +478,13 @@ final class MapSurface extends Region {
         textMeasurer.setFont(Font.font(FALLBACK_FONT_FAMILY, FontWeight.SEMI_BOLD, 12));
         iconRasterizer.setManaged(false);
         iconRasterizer.setMouseTransparent(true);
-        iconRasterizer.setMinSize(ICON_SIZE, ICON_SIZE);
-        iconRasterizer.setPrefSize(ICON_SIZE, ICON_SIZE);
-        iconRasterizer.setMaxSize(ICON_SIZE, ICON_SIZE);
-        iconRasterizer.resize(ICON_SIZE, ICON_SIZE);
-        iconRasterizer.relocate(-ICON_SIZE * 2, -ICON_SIZE * 2);
+        UiZoom.minSize(iconRasterizer, ICON_SIZE, ICON_SIZE);
+        UiZoom.prefSize(iconRasterizer, ICON_SIZE, ICON_SIZE);
+        UiZoom.maxSize(iconRasterizer, ICON_SIZE, ICON_SIZE);
+        UiZoom.follow(iconRasterizer, () -> {
+            iconRasterizer.resize(UiZoom.px(ICON_SIZE), UiZoom.px(ICON_SIZE));
+            iconRasterizer.relocate(-UiZoom.px(ICON_SIZE) * 2, -UiZoom.px(ICON_SIZE) * 2);
+        });
         fontProbe.getStyleClass().add("project-map-probe-font");
         fontProbe.setManaged(false);
         fontProbe.setMouseTransparent(true);
@@ -511,7 +514,7 @@ final class MapSurface extends Region {
                         violetProbe,
                         structureProbe,
                         activityHeatProbe);
-        setMinSize(80, 100);
+        UiZoom.minSize(this, 80, 100);
         overviewForwardsInput();
         setFocusTraversable(true);
         // PARENT, not TREE_VIEW: the canvas has no item nodes, and a tree role made screen readers look for
@@ -524,7 +527,7 @@ final class MapSurface extends Region {
         nodeTooltip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
         nodeTooltip.setHideDelay(Duration.millis(100));
         nodeTooltip.setWrapText(true);
-        nodeTooltip.setMaxWidth(520);
+        UiZoom.follow(nodeTooltip, () -> nodeTooltip.setMaxWidth(UiZoom.px(520)));
         Tooltip.install(this, nodeTooltip);
 
         widthProperty().addListener((obs, old, value) -> repaint());
@@ -4442,19 +4445,19 @@ final class MapSurface extends Region {
         if (statusClass != null && !statusClass.isBlank()) {
             cell.getStyleClass().add(statusClass);
         }
-        cell.setMinSize(ICON_SIZE, ICON_SIZE);
-        cell.setPrefSize(ICON_SIZE, ICON_SIZE);
-        cell.setMaxSize(ICON_SIZE, ICON_SIZE);
+        double side = UiZoom.px(ICON_SIZE); // the glyph is at the UI zoom; the map draws its image at ICON_SIZE
+        cell.setMinSize(side, side);
+        cell.setPrefSize(side, side);
+        cell.setMaxSize(side, side);
         iconRasterizer.getChildren().setAll(cell);
         iconRasterizer.applyCss();
         iconRasterizer.layout();
 
         SnapshotParameters parameters = new SnapshotParameters();
         parameters.setFill(Color.TRANSPARENT);
-        parameters.setViewport(new Rectangle2D(0, 0, ICON_SIZE, ICON_SIZE));
+        parameters.setViewport(new Rectangle2D(0, 0, side, side));
         parameters.setTransform(javafx.scene.transform.Transform.scale(ICON_RASTER_SCALE, ICON_RASTER_SCALE));
-        WritableImage image =
-                new WritableImage((int) (ICON_SIZE * ICON_RASTER_SCALE), (int) (ICON_SIZE * ICON_RASTER_SCALE));
+        WritableImage image = new WritableImage((int) (side * ICON_RASTER_SCALE), (int) (side * ICON_RASTER_SCALE));
         cell.snapshot(parameters, image);
         iconRasterizer.getChildren().clear();
         return image;

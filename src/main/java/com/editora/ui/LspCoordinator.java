@@ -14,6 +14,7 @@ import javafx.scene.input.KeyEvent;
 
 import com.editora.config.PathDisplay;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.lsp.InlayHintFilter;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspServerRegistry;
@@ -2217,7 +2218,7 @@ final class LspCoordinator {
         confirm.setTitle(tr("dialog.trust.title"));
         Path name = root.getFileName();
         confirm.setHeaderText(TrustPromptText.header(name == null ? root.toString() : name.toString(), requests));
-        confirm.getDialogPane().setMinWidth(520);
+        UiZoom.minWidth(confirm.getDialogPane(), 520);
         return confirm.showAndWait().orElse(cancel) == trust;
     }
 

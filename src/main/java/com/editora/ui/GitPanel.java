@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -32,6 +31,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.MenuChords;
+import com.editora.editor.UiZoom;
 import com.editora.git.CommitMessages;
 import com.editora.git.GitConflicts;
 import com.editora.git.GitFileStatus;
@@ -194,7 +194,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final Label amendInfo = new Label();
 
     private final Label amendWarning = new Label();
-    private final VBox amendBox = new VBox(2, amendInfo, amendWarning);
+    private final VBox amendBox = UiZoom.spacing(new VBox(amendInfo, amendWarning), 2);
     /** The subject-length guide: advice next to the message box, never a reason to refuse a commit. */
     private final Label guideLabel = new Label();
 
@@ -251,7 +251,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
      * to "Merge in progress — …"), and under it the buttons that move the operation on.
      */
     private final VBox operationBanner =
-            new VBox(4, operationLabel, new WrapRow(6, 4, continueButton, skipButton, abortButton));
+            UiZoom.spacing(new VBox(operationLabel, new WrapRow(6, 4, continueButton, skipButton, abortButton)), 4);
     /** Holds the Commit button so a tooltip can explain it while it is disabled (a disabled node shows none). */
     private final StackPane commitRow = new StackPane(commitButton);
 
@@ -270,15 +270,15 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         getStyleClass().add("git-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(4);
-        setPadding(new Insets(4));
+        UiZoom.spacing(this, 4);
+        UiZoom.padding(this, 4);
 
         // Header: current branch (ellipsized, takes remaining width) + compact icon buttons on the right.
         branchLabel.getStyleClass().add("git-branch-label");
         branchLabel.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(branchLabel, Priority.ALWAYS);
         // The branch name keeps a readable minimum; its full text is in the tooltip.
-        branchLabel.setMinWidth(BRANCH_MIN_WIDTH);
+        UiZoom.minWidth(branchLabel, BRANCH_MIN_WIDTH);
         branchLabel.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
         Tooltip branchTip = new Tooltip();
         branchTip.textProperty().bind(branchLabel.textProperty());
@@ -302,7 +302,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         reviewButton.setDisable(true);
         pushButton = commandButton(Icons.gitPush(), "git.push", actions::push);
         Button refresh = commandButton(Icons.refresh(), "git.refresh", actions::refresh);
-        HBox headerButtons = new HBox(2, reviewButton, stageAll, pushButton, refresh);
+        HBox headerButtons = UiZoom.spacing(new HBox(reviewButton, stageAll, pushButton, refresh), 2);
         headerButtons.setAlignment(Pos.CENTER_LEFT);
         // The branch name gives way first (down to BRANCH_MIN_WIDTH, its full text in the tooltip); when
         // even that does not make room — a long translation of "publish", a very narrow dock — the buttons
@@ -331,7 +331,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
-        filterBar = new HBox(6, filterField, clearFilter);
+        filterBar = UiZoom.spacing(new HBox(filterField, clearFilter), 6);
         filterBar.getStyleClass().add("project-filter-bar");
         filterBar.setAlignment(Pos.CENTER_LEFT);
 
@@ -417,7 +417,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         commitMenu.getItems().setAll(commitAndPushItem);
         commitMenu.getStyleClass().add("git-commit-more");
         Icons.name(commitMenu, tr("gitpanel.commitMoreTip"));
-        commitRow.getChildren().setAll(new HBox(2, commitButton, commitMenu));
+        commitRow.getChildren().setAll(UiZoom.spacing(new HBox(commitButton, commitMenu), 2));
         updateGuide();
 
         operationBanner.getStyleClass().add("git-operation-banner");
@@ -437,7 +437,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         placeholder.setWrapText(true);
         cloneButton.getStyleClass().add("flat");
         cloneButton.setOnAction(e -> onClone.run());
-        VBox emptyBox = new VBox(8, placeholder, cloneButton);
+        VBox emptyBox = UiZoom.spacing(new VBox(placeholder, cloneButton), 8);
         emptyBox.setAlignment(Pos.CENTER);
         placeholderPane = new StackPane(emptyBox);
         VBox.setVgrow(placeholderPane, Priority.ALWAYS);
@@ -863,7 +863,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             Label note = new Label(filteredOut ? tr("gitpanel.noMatches") : tr("gitpanel.clean"));
             note.getStyleClass().add("tool-window-placeholder");
             note.setWrapText(true);
-            VBox noteBox = new VBox(8, note);
+            VBox noteBox = UiZoom.spacing(new VBox(note), 8);
             noteBox.setAlignment(Pos.CENTER);
             String toPush = filteredOut ? null : toPushNote(lastStatus);
             if (toPush != null) {
@@ -1475,7 +1475,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         private final Label addedLabel = new Label();
         private final Label deletedLabel = new Label();
         private final StackPane glyph = new StackPane();
-        private final HBox fileRow = new HBox(6, glyph, pathLabel, addedLabel, deletedLabel);
+        private final HBox fileRow = UiZoom.spacing(new HBox(glyph, pathLabel, addedLabel, deletedLabel), 6);
 
         GitCell() {
             // Rows are as wide as the tree, never wider: a long path is elided (see updateItem) instead of

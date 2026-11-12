@@ -25,6 +25,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.config.Abbreviation;
 import com.editora.config.ConfigManager;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -108,12 +109,12 @@ final class AbbreviationsEditor {
 
     Node node() {
         reload();
-        list.setPrefSize(200, 380);
-        list.setMinWidth(200); // the form beside it grows; the list keeps its width
+        UiZoom.prefSize(list, 200, 380);
+        UiZoom.minWidth(list, 200); // the form beside it grows; the list keeps its width
         Label none = new Label(tr("settings.abbrev.empty"));
         none.getStyleClass().add("settings-hint");
         none.setWrapText(true);
-        none.setMaxWidth(170);
+        UiZoom.maxWidth(none, 170);
         list.setPlaceholder(none);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -139,8 +140,7 @@ final class AbbreviationsEditor {
             }
         });
         GridPane form = new GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
+        UiZoom.gaps(form, 8, 6);
         formRow(form, 0, tr("settings.abbrev.abbreviation"), abbrev);
         formRow(form, 1, tr("settings.abbrev.expansion"), expansion);
         form.setDisable(true);
@@ -226,20 +226,20 @@ final class AbbreviationsEditor {
             }
         });
 
-        VBox left = new VBox(6, list);
+        VBox left = UiZoom.spacing(new VBox(list), 6);
         VBox.setVgrow(list, Priority.ALWAYS);
-        VBox right = new VBox(8, form);
+        VBox right = UiZoom.spacing(new VBox(form), 8);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
         if (!items.isEmpty()) {
             list.getSelectionModel().select(0);
         }
-        HBox top = new HBox(12, left, right);
+        HBox top = UiZoom.spacing(new HBox(left, right), 12);
         top.setAlignment(Pos.TOP_LEFT);
         VBox.setVgrow(top, Priority.ALWAYS);
-        HBox buttons = new HBox(6, add, remove);
+        HBox buttons = UiZoom.spacing(new HBox(add, remove), 6);
         buttons.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(8, top, buttons);
+        return UiZoom.spacing(new VBox(top, buttons), 8);
     }
 
     private static void formRow(GridPane form, int row, String text, Region field) {
@@ -248,7 +248,7 @@ final class AbbreviationsEditor {
         l.setLabelFor(field);
         form.add(l, 0, row);
         form.add(field, 1, row);
-        field.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
+        UiZoom.minWidth(field, SettingRowPane.FIELD_MIN_WIDTH);
         field.setMaxWidth(Double.MAX_VALUE); // the fields take the card's width, not a fixed 190 px
         GridPane.setHgrow(field, Priority.ALWAYS);
         if (field instanceof TextArea) {

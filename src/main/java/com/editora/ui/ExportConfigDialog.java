@@ -10,6 +10,8 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -53,7 +55,7 @@ final class ExportConfigDialog {
         }
         dialog.setTitle(tr("dialog.exportConfig.title"));
         dialog.setHeaderText(tr("dialog.exportConfig.ask"));
-        VBox content = new VBox(8);
+        VBox content = UiZoom.spacing(new VBox(), 8);
         CheckBox http = option(
                 content,
                 askHttpHistory,
@@ -88,7 +90,7 @@ final class ExportConfigDialog {
         if (shown) {
             Label note = new Label(tr(noteKey));
             note.setWrapText(true);
-            note.setMaxWidth(460);
+            UiZoom.maxWidth(note, 460);
             content.getChildren().addAll(box, note);
         }
         return box;

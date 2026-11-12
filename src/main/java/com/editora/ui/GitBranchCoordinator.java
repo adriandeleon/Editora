@@ -18,6 +18,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.UiZoom;
 import com.editora.git.GitFormat;
 import com.editora.git.GitOutcome;
 import com.editora.git.GitRefNames;
@@ -497,7 +498,7 @@ final class GitBranchCoordinator {
         com.editora.command.TextInputKeymap.installShared(name);
         CheckBox switchTo = new CheckBox(tr("dialog.newBranchFrom.switch"));
         switchTo.setSelected(true);
-        VBox body = new VBox(6, new Label(tr("dialog.newBranchFrom.content", start)), name, switchTo);
+        VBox body = UiZoom.spacing(new VBox(new Label(tr("dialog.newBranchFrom.content", start)), name, switchTo), 6);
         OverlayInput.show(
                 ui().overlayHost(),
                 tr("dialog.newBranchFrom.title"),
@@ -973,7 +974,8 @@ final class GitBranchCoordinator {
         url.setPrefColumnCount(40);
         com.editora.command.TextInputKeymap.installShared(name);
         com.editora.command.TextInputKeymap.installShared(url);
-        VBox body = new VBox(6, new Label(tr("remotes.form.name")), name, new Label(tr("remotes.form.url")), url);
+        VBox body = UiZoom.spacing(
+                new VBox(new Label(tr("remotes.form.name")), name, new Label(tr("remotes.form.url")), url), 6);
         OverlayInput.show(
                 ui().overlayHost(),
                 tr("remotes.add"),
@@ -1186,8 +1188,14 @@ final class GitBranchCoordinator {
         create.setSelected(true);
         com.editora.command.TextInputKeymap.installShared(path);
         com.editora.command.TextInputKeymap.installShared(branch);
-        VBox body = new VBox(
-                6, new Label(tr("worktrees.form.path")), path, new Label(tr("worktrees.form.branch")), branch, create);
+        VBox body = UiZoom.spacing(
+                new VBox(
+                        new Label(tr("worktrees.form.path")),
+                        path,
+                        new Label(tr("worktrees.form.branch")),
+                        branch,
+                        create),
+                6);
         OverlayInput.show(
                 ui().overlayHost(),
                 tr("worktrees.add"),

@@ -78,6 +78,7 @@ final class UiZoomCss {
         int depth = inline ? 1 : 0;
         int i = 0;
         boolean atDeclarationStart = inline;
+        boolean fixedShape = false; // the rule being read draws its -fx-shape at the path's own size
         while (i < n) {
             char c = css.charAt(i);
             if (c == '/' && i + 1 < n && css.charAt(i + 1) == '*') {
@@ -91,6 +92,8 @@ final class UiZoomCss {
                 i = end;
             } else if (c == '{') {
                 depth++;
+                fixedShape =
+                        FIXED_SHAPE.matcher(css).region(i, endOfBlock(css, i)).find();
                 atDeclarationStart = true;
                 out.append(c);
                 i++;
@@ -122,7 +125,11 @@ final class UiZoomCss {
                 int valueEnd = endOfValue(css, colon + 1);
                 out.append(css, i, colon + 1);
                 String value = css.substring(colon + 1, valueEnd);
-                out.append(isLength(property) ? scaleValue(property, value, factor) : value);
+                if (fixedShape && property.equalsIgnoreCase("-fx-shape")) {
+                    out.append(scalePathValue(value, factor));
+                } else {
+                    out.append(isLength(property) ? scaleValue(property, value, factor) : value);
+                }
                 i = valueEnd;
             } else {
                 if (!Character.isWhitespace(c)) {
@@ -133,6 +140,89 @@ final class UiZoomCss {
             }
         }
         return out.toString();
+    }
+
+    /** A rule that draws its shape unscaled, at the size the path's own numbers give it. */
+    private static final java.util.regex.Pattern FIXED_SHAPE =
+            java.util.regex.Pattern.compile("-fx-scale-shape\\s*:\\s*false");
+
+    private static final java.util.regex.Pattern PATH_NUMBER =
+            java.util.regex.Pattern.compile("[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?");
+
+    /** The index of the {@code }} that closes the block opening at {@code open}, or the end of the text. */
+    private static int endOfBlock(String css, int open) {
+        int i = open + 1;
+        while (i < css.length()) {
+            char c = css.charAt(i);
+            if (c == '"' || c == '\'') {
+                i = endOfString(css, i);
+            } else if (c == '}') {
+                return i;
+            } else {
+                i++;
+            }
+        }
+        return css.length();
+    }
+
+    /** A {@code -fx-shape} value (a quoted SVG path, with whatever surrounds it) with the path scaled. */
+    private static String scalePathValue(String value, double factor) {
+        int open = value.indexOf('"');
+        int close = value.lastIndexOf('"');
+        if (open < 0 || close <= open) {
+            return value;
+        }
+        return value.substring(0, open + 1)
+                + scalePath(value.substring(open + 1, close), factor)
+                + value.substring(close);
+    }
+
+    /**
+     * An SVG path with every coordinate and radius multiplied by {@code factor}: the combo arrow, the check
+     * mark and the tab's close mark are drawn at the size their path says, so the path is where they zoom. An
+     * arc's rotation and its two flags are not lengths. Pure.
+     */
+    static String scalePath(String path, double factor) {
+        StringBuilder out = new StringBuilder(path.length() + 16);
+        java.util.regex.Matcher number = PATH_NUMBER.matcher(path);
+        char command = ' ';
+        int parameter = 0;
+        int i = 0;
+        while (i < path.length()) {
+            char c = path.charAt(i);
+            if (Character.isLetter(c)) {
+                command = c;
+                parameter = 0;
+                out.append(c);
+                i++;
+                continue;
+            }
+            boolean arc = command == 'A' || command == 'a';
+            int slot = arc ? parameter % 7 : -1;
+            if ((slot == 3 || slot == 4) && (c == '0' || c == '1')) {
+                out.append(c); // an arc flag, which may be written with nothing after it
+                parameter++;
+                i++;
+            } else if (number.region(i, path.length()).lookingAt()) {
+                String text = number.group();
+                out.append(slot == 2 ? text : pathNumber(Double.parseDouble(text) * factor));
+                parameter++;
+                i = number.end();
+            } else {
+                out.append(c);
+                i++;
+            }
+        }
+        return out.toString();
+    }
+
+    /** A path coordinate to the thousandth, without a trailing ".0". */
+    private static String pathNumber(double v) {
+        double rounded = Math.round(v * 1000) / 1000.0;
+        if (rounded == Math.rint(rounded)) {
+            return Long.toString((long) rounded);
+        }
+        return String.format(Locale.ROOT, "%s", rounded);
     }
 
     private static boolean isNameChar(char c) {

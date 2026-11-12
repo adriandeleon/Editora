@@ -14,6 +14,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspServerRegistry;
@@ -137,7 +138,7 @@ final class LspPopups {
                 content = label;
             }
         if (problemsNode != null && content != problemsNode) {
-            content = new VBox(10, problemsNode, new javafx.scene.control.Separator(), content);
+            content = UiZoom.spacing(new VBox(problemsNode, new javafx.scene.control.Separator(), content), 10);
         }
         Popup[] shown = new Popup[1];
         shown[0] = HoverCard.show(area, content, markdown, () -> {
@@ -354,8 +355,8 @@ final class LspPopups {
         param.setStyle("-fx-font-weight: bold; -fx-underline: true");
         javafx.scene.text.Text post = new javafx.scene.text.Text(label.substring(active.paramEnd()));
         javafx.scene.text.TextFlow flow = new javafx.scene.text.TextFlow(pre, param, post);
-        flow.setMaxWidth(560);
-        VBox box = new VBox(4, flow);
+        UiZoom.maxWidth(flow, 560);
+        VBox box = UiZoom.spacing(new VBox(flow), 4);
         if (active.total() > 1) {
             Label count = new Label((active.index() + 1) + "/" + active.total());
             count.getStyleClass().add("lsp-signature-count");
@@ -368,7 +369,7 @@ final class LspPopups {
             CommandTips.name(next, "lsp.nextSignature");
             previous.setOnAction(e -> ops.executeCommand("lsp.previousSignature"));
             next.setOnAction(e -> ops.executeCommand("lsp.nextSignature"));
-            box.getChildren().add(0, new javafx.scene.layout.HBox(6, previous, count, next));
+            box.getChildren().add(0, UiZoom.spacing(new javafx.scene.layout.HBox(previous, count, next), 6));
         }
         if (!active.documentation().isBlank()) {
             try {
@@ -382,7 +383,7 @@ final class LspPopups {
             }
         }
         box.getStyleClass().add("lsp-hover-popup"); // same card styling as hover
-        box.setMaxWidth(560);
+        UiZoom.maxWidth(box, 560);
         box.getStylesheets()
                 .addAll(
                         com.editora.editor.UiZoom.sheet(getClass()

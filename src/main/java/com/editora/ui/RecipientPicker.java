@@ -12,7 +12,6 @@ import java.util.function.Consumer;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.transformation.FilteredList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -35,6 +34,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.crypto.Gpg;
 import com.editora.crypto.GpgKey;
+import com.editora.editor.UiZoom;
 import com.editora.editor.crypto.EncryptionState;
 import org.jspecify.annotations.Nullable;
 
@@ -171,11 +171,15 @@ final class RecipientPicker {
         modeBox.getStyleClass().add("encryption-mode");
         Region headSpacer = new Region();
         HBox.setHgrow(headSpacer, Priority.ALWAYS);
-        HBox head = new HBox(10, title, headSpacer, modeBox);
+        HBox head = UiZoom.spacing(new HBox(title, headSpacer, modeBox), 10);
         head.setAlignment(Pos.CENTER_LEFT);
 
         // ---- public keys pane -------------------------------------------------------------------------------
-        FlowPane chips = new FlowPane(6, 6);
+        FlowPane chips = new FlowPane();
+        UiZoom.follow(chips, () -> {
+            chips.setHgap(UiZoom.px(6));
+            chips.setVgap(UiZoom.px(6));
+        });
         chips.getStyleClass().add("encryption-chips");
         TextField search = new TextField();
         search.setPromptText(tr("encryption.picker.search"));
@@ -189,7 +193,7 @@ final class RecipientPicker {
                 new FilteredList<>(FXCollections.observableArrayList(ordered(req.keys(), req.recent())), k -> true);
         ListView<GpgKey> list = new ListView<>(rows);
         list.getStyleClass().add("encryption-key-list");
-        list.setPrefHeight(Math.min(300, 52.0 * Math.max(3, rows.size()) + 4));
+        UiZoom.prefHeight(list, Math.min(300, 52.0 * Math.max(3, rows.size()) + 4));
         list.setFocusTraversable(false); // the search field keeps focus; arrows drive the list from there
         Label warning = new Label();
         warning.getStyleClass().add("encryption-warning");
@@ -216,12 +220,12 @@ final class RecipientPicker {
                 name.getStyleClass().add("encryption-key-name");
                 Label email = new Label(key.email());
                 email.getStyleClass().add("encryption-key-email");
-                HBox top = new HBox(6, name, email);
+                HBox top = UiZoom.spacing(new HBox(name, email), 6);
                 Label fpr = new Label(key.shortFingerprint());
                 fpr.getStyleClass().add("encryption-key-fpr");
-                VBox who = new VBox(1, top, fpr);
+                VBox who = UiZoom.spacing(new VBox(top, fpr), 1);
                 HBox.setHgrow(who, Priority.ALWAYS);
-                HBox tags = new HBox(4);
+                HBox tags = UiZoom.spacing(new HBox(), 4);
                 tags.setAlignment(Pos.CENTER_RIGHT);
                 String unusable = unusableText(key);
                 if (key.secret()) {
@@ -238,7 +242,7 @@ final class RecipientPicker {
                                             : EncryptionViews.pill(
                                                     tr("encryption.pill.notVerified"), "encryption-pill-amber"));
                 }
-                HBox row = new HBox(10, box, who, tags);
+                HBox row = UiZoom.spacing(new HBox(box, who, tags), 10);
                 row.setAlignment(Pos.CENTER_LEFT);
                 if (unusable != null) {
                     row.getStyleClass().add("encryption-key-unusable");
@@ -252,7 +256,7 @@ final class RecipientPicker {
             }
         });
 
-        VBox empty = new VBox(8);
+        VBox empty = UiZoom.spacing(new VBox(), 8);
         empty.getStyleClass().add("encryption-empty");
         Label emptyText = new Label(tr("encryption.picker.noKeys"));
         emptyText.setWrapText(true);
@@ -263,10 +267,10 @@ final class RecipientPicker {
             host.hide();
             onImport.run();
         });
-        empty.getChildren().addAll(emptyText, new HBox(8, usePass, importKey));
+        empty.getChildren().addAll(emptyText, UiZoom.spacing(new HBox(usePass, importKey), 8));
         boolean noKeys = req.keys().stream().noneMatch(GpgKey::canEncrypt);
 
-        VBox keysPane = new VBox(8);
+        VBox keysPane = UiZoom.spacing(new VBox(), 8);
         if (noKeys) {
             keysPane.getChildren().add(empty);
         } else {
@@ -283,7 +287,7 @@ final class RecipientPicker {
         passNote.setWrapText(true);
         Label passMatch = new Label();
         passMatch.getStyleClass().add("encryption-warning");
-        VBox passPane = new VBox(8, passNote, pass1, pass2, passMatch);
+        VBox passPane = UiZoom.spacing(new VBox(passNote, pass1, pass2, passMatch), 8);
 
         // ---- options + footer -------------------------------------------------------------------------------
         ComboBox<Boolean> format = new ComboBox<>(FXCollections.observableArrayList(false, true));
@@ -300,11 +304,11 @@ final class RecipientPicker {
             }
         });
         Label formatLabel = new Label(tr("encryption.info.format"));
-        HBox formatRow = new HBox(6, formatLabel, format);
+        HBox formatRow = UiZoom.spacing(new HBox(formatLabel, format), 6);
         formatRow.setAlignment(Pos.CENTER_LEFT);
         CheckBox remember =
                 new CheckBox(req.folderName() == null ? "" : tr("encryption.picker.rememberFolder", req.folderName()));
-        HBox options = new HBox(16);
+        HBox options = UiZoom.spacing(new HBox(), 16);
         options.setAlignment(Pos.CENTER_LEFT);
         if (req.formatShown()) {
             options.getChildren().add(formatRow);
@@ -327,14 +331,14 @@ final class RecipientPicker {
         ok.getStyleClass().add("accent");
         Region footSpacer = new Region();
         HBox.setHgrow(footSpacer, Priority.ALWAYS);
-        HBox footer = new HBox(8, importLink, footSpacer, cancel, ok);
+        HBox footer = UiZoom.spacing(new HBox(importLink, footSpacer, cancel, ok), 8);
         footer.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox content = new VBox(8);
-        VBox card = new VBox(10, head, content, options, keysHint, footer);
+        VBox content = UiZoom.spacing(new VBox(), 8);
+        VBox card = UiZoom.spacing(new VBox(head, content, options, keysHint, footer), 10);
         card.getStyleClass().addAll("command-palette", "overlay-form", "encryption-picker");
-        card.setPadding(new Insets(14));
-        card.setPrefWidth(600);
+        UiZoom.padding(card, 14);
+        UiZoom.prefWidth(card, 600);
         card.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
 
@@ -358,7 +362,7 @@ final class RecipientPicker {
                     ticked.remove(k.fingerprint());
                     refresh[0].run();
                 });
-                HBox chip = new HBox(2, chipName, x);
+                HBox chip = UiZoom.spacing(new HBox(chipName, x), 2);
                 chip.setAlignment(Pos.CENTER_LEFT);
                 chip.getStyleClass().add("encryption-chip");
                 chips.getChildren().add(chip);

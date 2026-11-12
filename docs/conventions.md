@@ -117,6 +117,33 @@ A control that works with the mouse but cannot be reached, seen or named from th
 - A row that can run out of width **wraps** (`WrapRow`, `SettingRowPane`) rather than ellipsizing a label
   or a button to "…"; check German at 1024 px.
 
+## Sizes follow the UI zoom
+
+The UI zoom (`Settings.uiZoom`, 80–200%) scales the whole interface, and it can only scale a size it is told
+about. [`UiZoom`](../src/main/java/com/editora/editor/UiZoom.java) has both halves.
+
+- **Stylesheets are written at 100%, in pixels or bare numbers.** At any other zoom every length in a sheet
+  is multiplied (`UiZoomCss`: paddings, radii, font sizes, minimum and maximum sizes, a shadow's radius and
+  offsets; a 1 px border stays 1 px; `em` and `%` are relative already). A scene or a node takes a sheet
+  through `UiZoom.sheet(url)`, never by its bare URL, and the theme's user-agent sheet through
+  `Themes.userAgentStylesheetFor`. A zoom change re-points the sheets of every open window, and a window is
+  re-pointed as it shows, so a sheet added by its bare URL is caught late rather than never.
+- **A size the Java code fixes goes through `UiZoom`**, never a plain `setPrefWidth(280)` or
+  `new Insets(8)`: `UiZoom.padding(node, 8)`, `UiZoom.spacing(new HBox(a, b), 6)`, `UiZoom.prefWidth(node,
+  280)` and the other shortcuts, or `UiZoom.follow(node, () -> …)` with `UiZoom.px(n)` inside for anything
+  else (a margin, a fixed cell size, an image's fit size, an inline style through `UiZoom.style`). They set
+  the size now and again whenever the zoom changes. A follower is keyed by its place in the code, per node:
+  in a loop over one node, pass a key (`UiZoom.follow(grid, column, () -> …)`).
+- **Not scaled:** what is not a length (`0`, `-1`, `Double.MAX_VALUE`, `USE_PREF_SIZE`, percentages, column
+  counts), what is measured from another node or the screen, what comes from saved state (window geometry,
+  split positions, a Project Map card's place and size), and content with a zoom of its own: the editor's
+  text and everything drawn in the editor font, a terminal's grid, the Markdown preview's own zoom.
+- **Paper stays at 100%.** A scene that lays a page out for print or export, and the Print Preview window
+  that shows those pages, is pinned with `UiZoom.pin(scene)`: it keeps the 100% sheets whatever the zoom, or
+  a page paginated at one size would be drawn at another.
+- The text zoom (`Settings.fontZoom`, the editor's font) is a different setting with its own three commands;
+  the keymaps bind Ctrl/Cmd with `=`, `-` and `0` to it, and the UI zoom's commands ship unbound.
+
 ## Config and schema
 
 Preferences live in `settings.json` (`Settings`, a Jackson POJO); session state in

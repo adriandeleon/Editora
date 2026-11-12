@@ -19,6 +19,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
+import com.editora.editor.UiZoom;
 import com.editora.lsp.LspManager.WorkspaceSymbolMatch;
 import com.editora.search.FuzzyMatch;
 
@@ -77,7 +78,7 @@ final class WorkspaceSymbolPopup {
         com.editora.command.TextInputKeymap.installShared(query);
 
         list.setItems(rows);
-        list.setFixedCellSize(CELL_HEIGHT);
+        UiZoom.follow(list, () -> list.setFixedCellSize(UiZoom.px(CELL_HEIGHT)));
         list.setCellFactory(v -> new SymbolCell());
         rows.addListener((javafx.collections.ListChangeListener<WorkspaceSymbolMatch>) c -> resizeList());
 
@@ -86,10 +87,10 @@ final class WorkspaceSymbolPopup {
         title.getStyleClass().add("palette-title");
         hint.getStyleClass().add("palette-hint");
 
-        VBox card = new VBox(6, title, query, list, status, hint);
+        VBox card = UiZoom.spacing(new VBox(title, query, list, status, hint), 6);
         card.getStyleClass().addAll("command-palette", "fif-popup");
-        card.setPrefWidth(CARD_WIDTH);
-        card.setMaxSize(CARD_WIDTH, Region.USE_PREF_SIZE);
+        UiZoom.prefWidth(card, CARD_WIDTH);
+        UiZoom.maxSize(card, CARD_WIDTH, Region.USE_PREF_SIZE);
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
         resizeList();
         return card;
@@ -98,9 +99,9 @@ final class WorkspaceSymbolPopup {
     private void resizeList() {
         int n = Math.max(1, Math.min(rows.size(), MAX_VISIBLE));
         double h = n * CELL_HEIGHT + 2;
-        list.setMinHeight(h);
-        list.setPrefHeight(h);
-        list.setMaxHeight(h);
+        UiZoom.minHeight(list, h);
+        UiZoom.prefHeight(list, h);
+        UiZoom.maxHeight(list, h);
     }
 
     /** Shows the popup, seeding the query with {@code seed} (e.g. the selected text) when non-blank. */
@@ -202,7 +203,7 @@ final class WorkspaceSymbolPopup {
         private final Label detail = new Label();
         private final Label location = new Label();
         private final Region spacer = new Region();
-        private final HBox row = new HBox(8, name, detail, spacer, location);
+        private final HBox row = UiZoom.spacing(new HBox(name, detail, spacer, location), 8);
 
         SymbolCell() {
             row.setAlignment(Pos.CENTER_LEFT);

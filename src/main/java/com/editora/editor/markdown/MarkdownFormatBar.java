@@ -1,7 +1,6 @@
 package com.editora.editor.markdown;
 
 import javafx.collections.FXCollections;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -12,6 +11,7 @@ import javafx.util.StringConverter;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.MenuIcons;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -31,7 +31,7 @@ public final class MarkdownFormatBar {
 
     private static final double GAP = 4;
 
-    private final FlowPane node = new FlowPane(2, 2);
+    private final FlowPane node = new FlowPane();
     /** Button property: the catalog key of its tooltip (the command it stands for is derived from it). */
     private static final String HINT = "editora.formatBar.hint";
 
@@ -45,10 +45,14 @@ public final class MarkdownFormatBar {
 
     public MarkdownFormatBar(EditorBuffer buffer) {
         this.buffer = buffer;
+        UiZoom.follow(node, () -> {
+            node.setHgap(UiZoom.px(2));
+            node.setVgap(UiZoom.px(2));
+        });
         node.getStyleClass().add("markdown-format-bar");
         node.setManaged(false); // free-positioned by EditorBuffer via resizeRelocate
         node.setFocusTraversable(false);
-        node.setPadding(new Insets(3));
+        UiZoom.padding(node, 3);
         node.setAlignment(Pos.CENTER_LEFT);
         node.setRowValignment(javafx.geometry.VPos.CENTER);
         heading = headingBox(buffer);
@@ -143,8 +147,8 @@ public final class MarkdownFormatBar {
      * covers the selected text only when there is nowhere else to be. Pure.
      */
     public static double placeY(double top, double bottom, double barH, double paneH, boolean below) {
-        double above = top - barH - GAP;
-        double under = bottom + GAP;
+        double above = top - barH - UiZoom.px(GAP);
+        double under = bottom + UiZoom.px(GAP);
         boolean aboveFits = above >= 0;
         boolean underFits = under + barH <= paneH;
         if (below) {
@@ -171,7 +175,7 @@ public final class MarkdownFormatBar {
         node.setVisible(true);
         node.applyCss();
         // In a pane narrower than the bar the controls wrap onto a second row instead of being cut off.
-        double room = Math.max(60, pane.getWidth());
+        double room = Math.max(UiZoom.px(60), pane.getWidth());
         node.setPrefWrapLength(
                 room - node.getInsets().getLeft() - node.getInsets().getRight());
         double w = Math.min(node.prefWidth(-1), room);

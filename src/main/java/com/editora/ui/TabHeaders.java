@@ -20,6 +20,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -54,7 +55,7 @@ final class TabHeaders {
     void contentHeader(Tab tab, TabContent content) {
         Label title = new Label(content.title());
         title.getStyleClass().add("tab-title");
-        HBox header = new HBox(6);
+        HBox header = UiZoom.spacing(new HBox(), 6);
         header.getStyleClass().add("tab-header");
         header.setAlignment(Pos.CENTER_LEFT);
         Node icon = content.icon();
@@ -85,7 +86,7 @@ final class TabHeaders {
         }
         Path p = buffer.getPath();
         boolean remote = com.editora.vfs.Vfs.isRemote(p);
-        HBox header = new HBox(6);
+        HBox header = UiZoom.spacing(new HBox(), 6);
         header.getStyleClass().add("tab-header");
         if (dirty) header.getStyleClass().add("dirty");
         if (isPinned) header.getStyleClass().add("pinned");

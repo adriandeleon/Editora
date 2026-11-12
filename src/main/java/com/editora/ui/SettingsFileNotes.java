@@ -6,6 +6,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 
 import com.editora.config.SettingsFileCheck;
+import com.editora.editor.UiZoom;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -26,7 +27,7 @@ final class SettingsFileNotes {
         issues.getStyleClass().addAll("settings-row-desc", "settings-file-issues");
         issues.setWrapText(true);
         SettingsSearch.setShown(issues, false);
-        node = new VBox(4, apply, issues);
+        node = UiZoom.spacing(new VBox(apply, issues), 4);
     }
 
     VBox node() {

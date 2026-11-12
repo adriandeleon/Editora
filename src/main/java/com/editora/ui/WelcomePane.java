@@ -9,7 +9,6 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -37,6 +36,7 @@ import com.editora.command.KeymapManager;
 import com.editora.config.Project;
 import com.editora.config.RecentFiles;
 import com.editora.editor.TabContent;
+import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
@@ -183,7 +183,7 @@ public final class WelcomePane extends Region implements TabContent {
 
         centerHost.getStyleClass().add("welcome-scroll-content");
         centerHost.setAlignment(Pos.TOP_CENTER);
-        centerHost.setPadding(new Insets(MARGIN));
+        UiZoom.padding(centerHost, MARGIN);
 
         scroll.getStyleClass().add("welcome-scroll");
         scroll.setFitToWidth(true); // fill the viewport so the content stays centered; clamps to minWidth
@@ -191,7 +191,7 @@ public final class WelcomePane extends Region implements TabContent {
         getChildren().add(scroll);
         // 1–9 open the numbered recent entries; typed characters only, so chords and Enter are untouched.
         addEventHandler(KeyEvent.KEY_TYPED, this::onKeyTyped);
-        refresh();
+        UiZoom.follow(this, this::refresh); // the page is rebuilt at the new zoom, as for the text zoom
     }
 
     /** Wires the Recent Projects section: picking one opens (or focuses) that project's window. */
@@ -249,8 +249,10 @@ public final class WelcomePane extends Region implements TabContent {
             return null;
         }
         javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(new javafx.scene.image.Image(in));
-        view.setFitWidth(14);
-        view.setFitHeight(14);
+        UiZoom.follow(view, () -> {
+            view.setFitWidth(UiZoom.px(14));
+            view.setFitHeight(UiZoom.px(14));
+        });
         view.setPreserveRatio(true);
         view.setSmooth(true);
         return view;
@@ -318,10 +320,10 @@ public final class WelcomePane extends Region implements TabContent {
 
     private void rebuild() {
         numbered.clear();
-        content.setMaxWidth(COLUMN_WIDTH * zoom);
-        content.setMinWidth(MIN_COLUMN_WIDTH * zoom);
+        content.setMaxWidth(UiZoom.px(COLUMN_WIDTH * zoom));
+        content.setMinWidth(UiZoom.px(MIN_COLUMN_WIDTH * zoom));
         // Below this width the content can't fit, so fit-to-width stops shrinking and a horizontal bar shows.
-        centerHost.setMinWidth(MIN_COLUMN_WIDTH * zoom + 2 * MARGIN);
+        centerHost.setMinWidth(UiZoom.px(MIN_COLUMN_WIDTH * zoom + 2 * MARGIN));
 
         List<Path> files = shownRecentFiles();
         List<Project> recentProjects = shownProjects(files);
@@ -484,7 +486,7 @@ public final class WelcomePane extends Region implements TabContent {
      */
     private HBox recentRowBox(Hyperlink link, Node... rest) {
         link.setMinWidth(Region.USE_PREF_SIZE);
-        HBox row = new HBox(8 * zoom);
+        HBox row = new HBox(UiZoom.px(8 * zoom));
         row.getStyleClass().add("welcome-recent-row");
         row.setAlignment(Pos.BASELINE_LEFT);
         if (numbered.size() < NUMBERED_ENTRIES) {
@@ -564,7 +566,7 @@ public final class WelcomePane extends Region implements TabContent {
             link.getStyleClass().add("welcome-link");
             link.setMinWidth(Region.USE_PREF_SIZE);
             link.setOnAction(e -> onConnectRemote.accept(c));
-            HBox row = new HBox(8 * zoom, link);
+            HBox row = new HBox(UiZoom.px(8 * zoom), link);
             row.getStyleClass().add("welcome-recent-row");
             String detail = WelcomeText.siteDetail(c);
             if (!detail.isEmpty()) {
@@ -604,12 +606,12 @@ public final class WelcomePane extends Region implements TabContent {
     private Node customizeRow(String label, String value, String commandId) {
         Label name = new Label(label);
         name.getStyleClass().add("welcome-customize-label");
-        name.setMinWidth(96 * zoom);
+        name.setMinWidth(UiZoom.px(96 * zoom));
         Hyperlink link = new Hyperlink(value);
         link.getStyleClass().add("welcome-link");
         link.setAccessibleText(label + ": " + value);
         link.setOnAction(e -> registry.run(commandId));
-        HBox row = new HBox(8 * zoom, name, link);
+        HBox row = new HBox(UiZoom.px(8 * zoom), name, link);
         row.setAlignment(Pos.BASELINE_LEFT);
         return row;
     }
@@ -617,7 +619,7 @@ public final class WelcomePane extends Region implements TabContent {
     // --- Help + footer ---
 
     private Node helpLinks() {
-        FlowPane row = new FlowPane(20 * zoom, 4);
+        FlowPane row = new FlowPane(UiZoom.px(20 * zoom), UiZoom.px(4));
         row.getStyleClass().add("welcome-help");
         row.getChildren()
                 .addAll(
@@ -641,13 +643,13 @@ public final class WelcomePane extends Region implements TabContent {
         Hyperlink home = new Hyperlink(AppInfo.HOMEPAGE.replaceFirst("^https?://", ""));
         home.getStyleClass().addAll("welcome-link", "welcome-footer-link");
         home.setOnAction(e -> openUrl.accept(AppInfo.HOMEPAGE));
-        HBox line1 = new HBox(8, version, dotLabel(), home);
+        HBox line1 = new HBox(UiZoom.px(8), version, dotLabel(), home);
         line1.setAlignment(Pos.BASELINE_LEFT);
 
         Label legal = new Label(AppInfo.LICENSE); // license only here; the author/copyright lives in About
         legal.getStyleClass().add("welcome-footer");
 
-        VBox box = new VBox(4, line1);
+        VBox box = new VBox(UiZoom.px(4), line1);
         // Build commit on its own line below the version/URL line — dev builds only (hidden otherwise).
         box.getChildren().add(commitLabel);
         box.getChildren().add(legal);
@@ -671,13 +673,13 @@ public final class WelcomePane extends Region implements TabContent {
 
     /** App logo (if available) beside the title + tagline. */
     private Node header() {
-        VBox titles = new VBox(2, title(AppInfo.NAME), caption(tr("welcome.tagline")));
+        VBox titles = new VBox(UiZoom.px(2), title(AppInfo.NAME), caption(tr("welcome.tagline")));
         titles.setAlignment(Pos.CENTER_LEFT);
         Node logo = logo();
         if (logo == null) {
             return titles;
         }
-        HBox box = new HBox(16 * zoom, logo, titles);
+        HBox box = new HBox(UiZoom.px(16 * zoom), logo, titles);
         box.getStyleClass().add("welcome-header");
         box.setAlignment(Pos.CENTER_LEFT);
         return box;
@@ -689,8 +691,8 @@ public final class WelcomePane extends Region implements TabContent {
             return null;
         }
         javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(new javafx.scene.image.Image(in));
-        view.setFitWidth(64 * zoom);
-        view.setFitHeight(64 * zoom);
+        view.setFitWidth(UiZoom.px(64 * zoom));
+        view.setFitHeight(UiZoom.px(64 * zoom));
         view.setPreserveRatio(true);
         view.setSmooth(true);
         return view;
@@ -723,9 +725,9 @@ public final class WelcomePane extends Region implements TabContent {
     private Node action(Node icon, String text, String commandId, @Nullable String fallbackChordId) {
         // Put the icon in a fixed-width column so every label starts at the same x, regardless of icon width.
         StackPane holder = new StackPane(scaled(icon));
-        holder.setMinWidth(26 * zoom);
-        holder.setPrefWidth(26 * zoom);
-        holder.setMaxWidth(26 * zoom);
+        holder.setMinWidth(UiZoom.px(26 * zoom));
+        holder.setPrefWidth(UiZoom.px(26 * zoom));
+        holder.setMaxWidth(UiZoom.px(26 * zoom));
         holder.setAlignment(Pos.CENTER_LEFT);
         Hyperlink link = new Hyperlink(text);
         link.setGraphic(holder);
@@ -734,7 +736,7 @@ public final class WelcomePane extends Region implements TabContent {
         link.setOnAction(e -> registry.run(commandId));
 
         Region spacer = new Region();
-        spacer.setMinWidth(KEY_GAP * zoom);
+        spacer.setMinWidth(UiZoom.px(KEY_GAP * zoom));
         HBox.setHgrow(spacer, Priority.ALWAYS);
         HBox row = new HBox(link, spacer);
         row.setAlignment(Pos.CENTER_LEFT);

@@ -22,6 +22,7 @@ import javafx.scene.shape.Rectangle;
 
 import com.editora.config.PathDisplay;
 import com.editora.dap.DapModels;
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -127,11 +128,15 @@ final class MapCallStack extends MapSideColumn {
             name.getStyleClass().add("project-map-call-stack-name");
             place.getStyleClass().addAll("project-map-card-structure-line", "project-map-call-stack-place");
             name.setMinWidth(0);
+            UiZoom.follow(mark, () -> {
+                mark.setWidth(UiZoom.px(3));
+                mark.setHeight(UiZoom.px(14));
+            });
             mark.getStyleClass().add("project-map-call-stack-mark");
-            VBox text = new VBox(1, name, place);
+            VBox text = UiZoom.spacing(new VBox(name, place), 1);
             text.setMinWidth(0);
             HBox.setHgrow(text, Priority.ALWAYS);
-            row = new HBox(6, mark, text);
+            row = UiZoom.spacing(new HBox(mark, text), 6);
             row.setAlignment(Pos.CENTER_LEFT);
             row.setMinWidth(Region.USE_PREF_SIZE);
             addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {

@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -22,6 +21,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import com.editora.recovery.RecoveryStore;
 import org.jspecify.annotations.Nullable;
 
@@ -81,7 +81,7 @@ final class RecoveryOfferWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else if (!list.getItems().isEmpty()) {
-            WindowPlacement.centerOnOwner(stage, owner, 720, 460);
+            WindowPlacement.centerOnOwner(stage, owner, UiZoom.px(720), UiZoom.px(460));
             stage.show();
             restoreAll.requestFocus();
         }
@@ -180,9 +180,9 @@ final class RecoveryOfferWindow {
         Region spacer = WrapRow.setGrow(new Region()); // pushes the two closing actions to the right
         WrapRow buttons = new WrapRow(8, 8, restoreSelected, discardSelected, discardAll, spacer, later, restoreAll);
 
-        VBox root = new VBox(10, heading, note, list, unreadableLabel, buttons);
-        root.setPadding(new Insets(14));
-        Scene scene = new Scene(root, 720, 460);
+        VBox root = UiZoom.spacing(new VBox(heading, note, list, unreadableLabel, buttons), 10);
+        UiZoom.padding(root, 14);
+        Scene scene = new Scene(root, UiZoom.px(720), UiZoom.px(460));
         scene.getStylesheets()
                 .add(com.editora.editor.UiZoom.sheet(RecoveryOfferWindow.class
                         .getResource("/com/editora/styles/app.css")
@@ -227,7 +227,7 @@ final class RecoveryOfferWindow {
         private final Label title = new Label();
         private final Label detail = new Label();
         private final Label warning = new Label();
-        private final VBox box = new VBox(2, title, detail, warning);
+        private final VBox box = UiZoom.spacing(new VBox(title, detail, warning), 2);
 
         EntryCell() {
             title.getStyleClass().add("text-bold");

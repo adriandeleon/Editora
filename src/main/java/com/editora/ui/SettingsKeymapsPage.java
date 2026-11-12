@@ -19,6 +19,7 @@ import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
+import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
 import com.editora.ui.SettingsWindow.Shortcut;
@@ -46,7 +47,7 @@ final class SettingsKeymapsPage {
     void buildControls() {
         keymapCombo = new ComboBox<>();
         keymapCombo.getItems().addAll(com.editora.command.KeymapManager.AVAILABLE.keySet());
-        keymapCombo.setPrefWidth(220);
+        UiZoom.prefWidth(keymapCombo, 220);
         keymapCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(String id) {
@@ -110,7 +111,7 @@ final class SettingsKeymapsPage {
         shortcutFilter = new TextField();
         shortcutFilter.setPromptText(tr("settings.shortcuts.filter"));
         shortcutFilter.textProperty().addListener((o, was, now) -> refreshShortcuts());
-        shortcutListBox = new VBox(2);
+        shortcutListBox = UiZoom.spacing(new VBox(), 2);
         shortcutListBox.getStyleClass().add("shortcut-list");
         ScrollPane scroll = new ScrollPane(shortcutListBox);
         shortcutScroll = scroll;
@@ -118,7 +119,10 @@ final class SettingsKeymapsPage {
         // The list takes the height the window has (a fixed 320 px showed ~13 of ~900 rows above empty space).
         scroll.prefHeightProperty()
                 .bind(javafx.beans.binding.Bindings.max(
-                        320, w.stage.heightProperty().subtract(415)));
+                        UiZoom.factorProperty().multiply(320),
+                        w.stage
+                                .heightProperty()
+                                .subtract(UiZoom.factorProperty().multiply(415))));
         scroll.getStyleClass().add("shortcut-scroll");
         Label note = SettingsWindow.note(tr("settings.shortcuts.note"));
         note.setWrapText(true);
@@ -129,7 +133,7 @@ final class SettingsKeymapsPage {
                 refreshShortcuts();
             }
         });
-        VBox box = new VBox(6, note, shortcutFilter, scroll, resetAll);
+        VBox box = UiZoom.spacing(new VBox(note, shortcutFilter, scroll, resetAll), 6);
         w.cardRow(
                 sec,
                 Category.KEYMAPS,
@@ -156,7 +160,7 @@ final class SettingsKeymapsPage {
         confirm.initOwner(w.stage);
         confirm.setTitle(tr("dialog.shortcut.resetAll.title"));
         confirm.setHeaderText(null);
-        confirm.getDialogPane().setMinWidth(460);
+        UiZoom.minWidth(confirm.getDialogPane(), 460);
         Dialogs.destructive(confirm, reset);
         return confirm.showAndWait().orElse(Dialogs.cancelOf(confirm)) == reset;
     }
@@ -231,7 +235,7 @@ final class SettingsKeymapsPage {
 
     /** A single command row — either the static chord + Record/Reset buttons, or a live capture field. */
     private HBox shortcutRow(Shortcut s, ShortcutActions actions, VBox list) {
-        HBox row = new HBox(8);
+        HBox row = UiZoom.spacing(new HBox(), 8);
         row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         row.getStyleClass().add("shortcut-row");
         Label title = new Label(s.title());
@@ -262,7 +266,7 @@ final class SettingsKeymapsPage {
             String chordText = s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord();
             Label chord = new Label(chordText);
             chord.getStyleClass().add(s.chord() == null ? "shortcut-unbound" : "shortcut-chord");
-            chord.setMinWidth(150);
+            UiZoom.minWidth(chord, 150);
             row.getChildren().addAll(title, chord);
             // Record/Reset are shown only for the selected row, keeping the list uncluttered. A click
             // selects a row; from the keyboard the arrow keys walk the rows and Enter/Space selects.
@@ -431,7 +435,7 @@ final class SettingsKeymapsPage {
             confirm.initOwner(w.stage);
             confirm.setTitle(tr("dialog.shortcut.conflict.title"));
             confirm.setHeaderText(null);
-            confirm.getDialogPane().setMinWidth(460);
+            UiZoom.minWidth(confirm.getDialogPane(), 460);
             Dialogs.destructive(confirm, bind);
             if (confirm.showAndWait().orElse(Dialogs.cancelOf(confirm)) != bind) {
                 return false;
@@ -500,7 +504,7 @@ final class SettingsKeymapsPage {
                 "macros keyboard record replay steps rename delete keybinding command text key");
         macroNote = SettingsWindow.note(macroNoteText());
         macroNote.setWrapText(true);
-        macroNote.setMaxWidth(460);
+        UiZoom.maxWidth(macroNote, 460);
         w.cardRow(mainCard, Category.MACROS, macroNote, "macros record start stop replay keybinding save cancel");
         return p;
     }

@@ -81,6 +81,21 @@ class UiZoomCssTest {
                 scaled("-fx-effect: innershadow(gaussian, -color-accent-muted, 4, 0.1, 0, 0);", 1.5));
     }
 
+    /** A combo arrow, a check mark, a tab's close mark: drawn at the path's own size, so the path zooms. */
+    @Test
+    void aShapeDrawnAtItsOwnSizeHasItsPathScaled() {
+        assertEquals("M10.5 15l7.5 7.5 7.5-7.5z", UiZoomCss.scalePath("M7 10l5 5 5-5z", 1.5));
+        assertEquals("M 0,0 H2 L 8,6 14,0 H16 V2 Z", UiZoomCss.scalePath("M 0,0 H1 L 4,3 7,0 H8 V1 Z", 2));
+        assertEquals(
+                "M4 0a4 4 45 0 1 8 8", UiZoomCss.scalePath("M2 0a2 2 45 0 1 4 4", 2), "an arc's angle and flags stay");
+        assertEquals("M4 0a4 4 0 01-8 0", UiZoomCss.scalePath("M2 0a2 2 0 01-4 0", 2), "flags written together");
+        assertEquals(
+                "-fx-shape: \"M10.5 15l7.5 7.5 7.5-7.5z\"; -fx-scale-shape: false;",
+                scaled("-fx-shape: \"M7 10l5 5 5-5z\"; -fx-scale-shape: false;", 1.5));
+        // A shape stretched to its region is sized by the region, which the lengths already scale.
+        assertEquals("-fx-shape: \"M7 10l5 5 5-5z\";", scaled("-fx-shape: \"M7 10l5 5 5-5z\";", 1.5));
+    }
+
     @Test
     void theFontShorthandScalesItsPixelSizeOnly() {
         assertEquals("-fx-font: 700 21px \"Inter\";", scaled("-fx-font: 700 14px \"Inter\";", 1.5));

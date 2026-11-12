@@ -23,6 +23,7 @@ import javafx.stage.DirectoryChooser;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import com.editora.git.GitChangeBars;
 import com.editora.git.GitConflicts;
 import com.editora.git.GitOperation;
@@ -2127,8 +2128,7 @@ final class GitCoordinator {
         });
 
         GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
+        UiZoom.gaps(grid, 8, 8);
         grid.add(new Label(tr("dialog.clone.url")), 0, 0);
         grid.add(urlField, 1, 0, 2, 1);
         grid.add(new Label(tr("dialog.clone.directory")), 0, 1);

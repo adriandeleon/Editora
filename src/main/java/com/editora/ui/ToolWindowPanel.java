@@ -12,6 +12,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 
+import com.editora.editor.UiZoom;
+
 import static com.editora.i18n.Messages.tr;
 
 /** Wraps a {@link ToolWindow}'s content with an IntelliJ-style header (title + float + maximize + close). */
@@ -62,7 +64,7 @@ final class ToolWindowPanel extends BorderPane {
         maximize.setFocusTraversable(false);
         floatButton.setFocusTraversable(false);
 
-        HBox header = new HBox(8, title, spacer, floatButton, maximize, close);
+        HBox header = UiZoom.spacing(new HBox(title, spacer, floatButton, maximize, close), 8);
         header.setAlignment(Pos.CENTER_LEFT);
         header.getStyleClass().add("tool-window-header");
         headerMenu = installHeaderMenu(header, onClose, onToggleMaximize, onToggleFloat);

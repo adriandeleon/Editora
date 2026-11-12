@@ -18,6 +18,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -91,7 +92,7 @@ abstract class MapSideColumn implements CardAttachment {
         Icons.name(close, closeText);
         close.setFocusTraversable(false);
         close.setOnAction(event -> onClose.run());
-        header = new HBox(6, title, close);
+        header = UiZoom.spacing(new HBox(title, close), 6);
         header.getStyleClass().add("project-map-card-structure-header");
         header.setAlignment(Pos.CENTER_LEFT);
 

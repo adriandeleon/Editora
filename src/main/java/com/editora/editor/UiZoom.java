@@ -388,7 +388,7 @@ public final class UiZoom {
         apply.run();
         @SuppressWarnings("unchecked")
         Map<Object, Runnable> followers =
-                (Map<Object, Runnable>) properties.computeIfAbsent(FOLLOWERS_KEY, k -> new LinkedHashMap<>());
+                (Map<Object, Runnable>) properties.computeIfAbsent(FOLLOWERS_KEY, k -> new LinkedHashMap<>(4));
         synchronized (followers) {
             followers.put(key, apply);
         }

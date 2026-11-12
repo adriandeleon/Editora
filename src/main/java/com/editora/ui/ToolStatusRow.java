@@ -11,6 +11,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -25,7 +26,7 @@ final class ToolStatusRow {
 
     private String tool;
     private final Label pill = new Label();
-    private final HBox node = new HBox(8, pill);
+    private final HBox node = UiZoom.spacing(new HBox(pill), 8);
     private @Nullable Button install;
     private @Nullable Hyperlink missingOnly;
     private final javafx.scene.control.Tooltip tooltip = new javafx.scene.control.Tooltip();
@@ -34,7 +35,7 @@ final class ToolStatusRow {
         this.tool = tool;
         pill.getStyleClass().add("settings-git-status");
         // One line: a long path is cut in the middle (the tool name and the file name stay), whole in the tooltip.
-        pill.setMaxWidth(380);
+        UiZoom.maxWidth(pill, 380);
         pill.setTextOverrun(javafx.scene.control.OverrunStyle.CENTER_ELLIPSIS);
         pill.setTooltip(tooltip);
         node.setAlignment(Pos.CENTER_RIGHT);

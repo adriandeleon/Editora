@@ -5,7 +5,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javafx.application.Platform;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -707,7 +706,7 @@ final class BufferPreview {
         // (normally hidden) centered loading overlay.
         previewHost.getChildren().setAll(previewPane(), zoomControl(), previewLoadingOverlay());
         StackPane.setAlignment(zoomControl(), Pos.TOP_LEFT);
-        StackPane.setMargin(zoomControl(), new Insets(6, 0, 0, 6));
+        UiZoom.follow(zoomControl(), () -> StackPane.setMargin(zoomControl(), UiZoom.insets(6, 0, 0, 6)));
         StackPane.setAlignment(previewLoadingOverlay(), Pos.CENTER);
         if (b.isMarkdown() && !b.previewLive()) {
             // Too large to follow every edit: say so, and offer the render the pulse no longer does.
@@ -750,7 +749,9 @@ final class BufferPreview {
      * rightmost buttons and swallowed their clicks.
      */
     private static void belowModeToggle(@Nullable Node content) {
-        StackPane.setMargin(content, new Insets(MODE_TOGGLE_BAND, 0, 0, 0));
+        if (content != null) {
+            UiZoom.follow(content, () -> StackPane.setMargin(content, UiZoom.insets(MODE_TOGGLE_BAND, 0, 0, 0)));
+        }
     }
 
     /** Sets the freshly parsed structured node (tree / OpenAPI docs / error) into the self-scrolling holder. */
@@ -901,10 +902,10 @@ final class BufferPreview {
     private Node previewLoadingOverlay() {
         if (previewLoadingOverlay == null) {
             ProgressIndicator spinner = new ProgressIndicator();
-            spinner.setMaxSize(32, 32);
+            UiZoom.maxSize(spinner, 32, 32);
             previewLoadingLabel = new Label();
             previewLoadingLabel.getStyleClass().add("markdown-preview-loading-label");
-            VBox box = new VBox(10, spinner, previewLoadingLabel);
+            VBox box = UiZoom.spacing(new VBox(spinner, previewLoadingLabel), 10);
             box.setAlignment(Pos.CENTER);
             box.getStyleClass().add("markdown-preview-loading");
             box.setVisible(false);

@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.io.IOException;
 import java.nio.file.Path;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -18,6 +17,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
+import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -57,7 +57,7 @@ public final class DebugLogWindow {
         if (s.isShowing()) {
             s.toFront();
         } else {
-            WindowPlacement.centerOnOwner(s, owner, 900, 600);
+            WindowPlacement.centerOnOwner(s, owner, UiZoom.px(900), UiZoom.px(600));
             s.show();
         }
     }
@@ -106,7 +106,7 @@ public final class DebugLogWindow {
 
         javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
         HBox.setHgrow(spacer, Priority.ALWAYS); // pushes Close to the right
-        HBox buttons = new HBox(8, find, refresh, copy, clear, export);
+        HBox buttons = UiZoom.spacing(new HBox(find, refresh, copy, clear, export), 8);
         Runnable onReport = this.onReport;
         if (onReport != null) {
             Button report = new Button(tr("debuglog.report"));
@@ -119,11 +119,11 @@ public final class DebugLogWindow {
         fileLabel.getStyleClass().add("debug-log-file");
         fileLabel.setWrapText(true);
 
-        VBox root = new VBox(8, findBar, area, fileLabel, buttons);
-        root.setPadding(new Insets(10));
+        VBox root = UiZoom.spacing(new VBox(findBar, area, fileLabel, buttons), 8);
+        UiZoom.padding(root, 10);
         VBox.setVgrow(area, Priority.ALWAYS);
 
-        Scene scene = new Scene(root, 900, 600);
+        Scene scene = new Scene(root, UiZoom.px(900), UiZoom.px(600));
         scene.getStylesheets()
                 .addAll(
                         com.editora.editor.UiZoom.sheet(DebugLogWindow.class

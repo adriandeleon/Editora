@@ -9,6 +9,7 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.layout.Region;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -75,15 +76,15 @@ final class WindowToolbar {
                 .addListener((obs, was, now) -> mc.findButton.pseudoClassStateChanged(MainController.OPEN, now));
         // Project switcher (placed after the customizable icon cluster by appendFixedTail); shown when enabled.
         toolbarProjectCombo = new ProjectCombo(mc::switchToProject);
-        toolbarProjectCombo.setPrefWidth(184); // 15% longer than the previous 160
+        UiZoom.prefWidth(toolbarProjectCombo, 184); // 15% longer than the previous 160
         // No "Project:" label: it is the only labelled control on a bar of unlabelled icons, and the combo
         // already reads "No Project" or the project's name. Its explanation moves onto the combo itself —
         // where it was also the one hardcoded English string on the toolbar.
         toolbarProjectCombo.setTooltip(new Tooltip(tr("toolbar.project.tip")));
         toolbarProjectCombo.setOnDeleteProject(mc::deleteProject); // per-item delete in the dropdown
         projectToolbarGap = new Region();
-        projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between the icon cluster and the combo
-        projectToolbarGap.setPrefWidth(78);
+        UiZoom.minWidth(projectToolbarGap, 78); // ≈ 3 toolbar-icon widths between the icon cluster and the combo
+        UiZoom.prefWidth(projectToolbarGap, 78);
         // The ToolBar is the one that gives when the window narrows: it takes whatever width the pinned tail
         // leaves and moves the icons it cannot fit into its own overflow chevron. Without a zero minimum an
         // HBox would squeeze the tail instead, which is the behaviour this split exists to prevent.
@@ -101,8 +102,13 @@ final class WindowToolbar {
         refreshEditState(); // start disabled (no buffer yet)
         refreshPasteState();
         // Pin the toolbar height so it doesn't jump when the (taller) project combo is hidden — by
-        // Simple UI mode or by disabling Projects. Measured after the first layout pass (skin + CSS applied).
-        Platform.runLater(this::stabilizeToolbarHeight);
+        // Simple UI mode or by disabling Projects. Measured after the first layout pass (skin + CSS applied),
+        // and again after a UI zoom change, which gives the combo another height.
+        if (mc.toolbarRow != null) {
+            com.editora.editor.UiZoom.follow(mc.toolbarRow, () -> Platform.runLater(this::stabilizeToolbarHeight));
+        } else {
+            Platform.runLater(this::stabilizeToolbarHeight);
+        }
     }
 
     /**
@@ -116,6 +122,7 @@ final class WindowToolbar {
         if (mc.toolbarRow == null || mc.toolbarTail == null || toolbarProjectCombo == null) {
             return;
         }
+        toolbarProjectCombo.applyCss(); // a UI zoom change restyles it: measure the size it is about to have
         double comboH = toolbarProjectCombo.prefHeight(-1); // independent of the combo's current visibility
         if (comboH <= 0) {
             return;
@@ -218,8 +225,8 @@ final class WindowToolbar {
     /** A fixed-width blank gap used to separate the trailing toolbar group without a separator line. */
     private static Region toolbarGap(double width) {
         Region gap = new Region();
-        gap.setMinWidth(width);
-        gap.setPrefWidth(width);
+        UiZoom.minWidth(gap, width);
+        UiZoom.prefWidth(gap, width);
         return gap;
     }
 

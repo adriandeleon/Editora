@@ -7,7 +7,6 @@ import java.util.function.Consumer;
 
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanWrapper;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.control.Button;
@@ -21,6 +20,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.build.OutputStyle;
+import com.editora.editor.UiZoom;
 import com.editora.run.AnsiText;
 import com.editora.run.ConsoleUrls;
 import com.editora.run.StackTraceLinks;
@@ -87,8 +87,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     public RunPanel(Runnable onStop) {
         getStyleClass().add("run-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
 
         status.getStyleClass().add("run-status");
         stopButton.setText(tr("run.stop"));
@@ -110,7 +110,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         endInputButton.setDisable(true);
         endInputButton.setOnAction(e -> endInput());
 
-        HBox header = new HBox(8, busy, runtime, status, spacer(), clearButton, endInputButton, stopButton);
+        HBox header =
+                UiZoom.spacing(new HBox(busy, runtime, status, spacer(), clearButton, endInputButton, stopButton), 8);
         header.setAlignment(Pos.CENTER_LEFT);
 
         output.setEditable(false);
@@ -258,8 +259,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     static ProgressIndicator busySpinner() {
         ProgressIndicator busy = new ProgressIndicator();
         busy.getStyleClass().add("run-busy");
-        busy.setPrefSize(14, 14);
-        busy.setMaxSize(14, 14);
+        UiZoom.prefSize(busy, 14, 14);
+        UiZoom.maxSize(busy, 14, 14);
         busy.setFocusTraversable(false);
         showSpinner(busy, false);
         return busy;

@@ -9,7 +9,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
-import javafx.geometry.Insets;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
@@ -27,6 +26,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.config.PathDisplay;
+import com.editora.editor.UiZoom;
 import com.editora.text.LanguageRegistry;
 import com.editora.text.LspDiagnostic;
 import org.jspecify.annotations.Nullable;
@@ -79,8 +79,8 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         getStyleClass().add("problems-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        setSpacing(6);
-        setPadding(new Insets(6));
+        UiZoom.spacing(this, 6);
+        UiZoom.padding(this, 6);
         build();
     }
 
@@ -108,7 +108,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         });
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox header = new HBox(8, summary, spacer, scope);
+        HBox header = UiZoom.spacing(new HBox(summary, spacer, scope), 8);
         header.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         getChildren().addAll(header, tree);
         rebuild(); // the empty state, built once so a panel shown before any diagnostics is not blank
