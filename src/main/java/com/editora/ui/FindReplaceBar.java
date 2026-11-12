@@ -132,6 +132,9 @@ public class FindReplaceBar extends HBox {
         Button replace = new Button(tr("find.replace"));
         Button replaceAll = new Button(tr("find.all"));
         Button close = iconButton(Icons.closeTab(), tr("find.close"));
+        // Next and Prev are Find: Next Match and Find: Previous Match: named after them, with their chords.
+        CommandTips.name(next, "find.next");
+        CommandTips.name(prev, "find.previous");
         // Trailing clear ("✕") buttons inside each text field (shown only while the field has text).
         Button findClear = ClearableField.clearButton(findField);
         Button replaceClear = ClearableField.clearButton(replaceField);
@@ -261,8 +264,7 @@ public class FindReplaceBar extends HBox {
     private static Button iconButton(Node graphic, String accessibleName) {
         Button button = new Button();
         button.setGraphic(graphic);
-        button.setTooltip(new Tooltip(accessibleName));
-        button.setAccessibleText(accessibleName);
+        Icons.name(button, accessibleName);
         button.getStyleClass().addAll("button-icon", "flat", "find-bar-icon");
         return button;
     }

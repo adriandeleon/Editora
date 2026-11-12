@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Settings…, Zen Mode, TODO and Bookmarks have menu rows** (Tools, View and Window), so no toolbar button is
+  the only way to its action.
+- **Five commands for buttons that had none**: Run: Run Selected Configuration and Debug: Debug Selected
+  Configuration (the toolbar's buttons beside the configuration box, now also under Run → Debugger), Message Log:
+  Clear, Output: Save Output… and Output: Show Previous Run.
 - **Find in every console and in the Application Log.** The Run, External Tools and Debug consoles, the test
   output of Test Results and the Application Log window now have a find bar, as the build console did. Press
   your keymap's Find key in the view (the Application Log also has a Find button): it searches as you type and
@@ -440,6 +445,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Toolbar buttons are named after the commands they run**, with the shortcut from the active keymap, and a
+  screen reader now says the same words the tooltip shows. The main toolbar's tooltips change with it: Open is
+  "Find File…", Find is "Incremental Search", Close Tab is "Close", Simple UI mode is "Toggle Simple UI Mode",
+  and Stop shows the shortcut of Run: Stop Program. More than 150 icon-only buttons across the panels, the
+  Project Map, the diff viewer and Settings got one name for both; several had a tooltip and no name for a
+  screen reader, and a few had neither.
+- **Tab no longer stops on toolbar buttons.** The main toolbar, the tool window stripes, a tool window's header
+  buttons and the panel toolbar buttons that a command also runs are skipped, so Tab moves through the
+  content. Each is still reached by its command, the palette and the menus.
+- **Button and gutter tooltips appear after the same 400 ms.** The gutter's markers used 300 ms, the diff viewer
+  and the Map 350 ms, and toolbar buttons JavaFX's one second. Tooltips on labels and list rows still take a
+  second.
+- **A tool window stripe button's tooltip follows its window's title** (the Project window's "Current Folder").
 - **Right-click menus and drop-downs show each command's keyboard shortcut beside its row**, as the menu bar
   does, read from the active keymap and from your own key bindings each time a menu opens. More than 120
   rows that showed none now show one where their command is bound: in the Commit window, the Git log, the GitHub panel, the diff

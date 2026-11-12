@@ -79,6 +79,11 @@ public final class MenuChords {
         return item;
     }
 
+    /** The chord the active keymap shows for {@code commandId}, or null when it is unbound. */
+    public static @Nullable String chordOf(String commandId) {
+        return chords.get().get(commandId);
+    }
+
     /** The command an item was {@linkplain #tag tagged} with, or null. */
     public static @Nullable String commandOf(MenuItem item) {
         return item.getProperties().get(KEY) instanceof String id ? id : null;

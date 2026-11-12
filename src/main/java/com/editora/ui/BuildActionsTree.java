@@ -79,6 +79,8 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             new javafx.beans.property.SimpleBooleanProperty(false);
 
     private final Button stopButton;
+    private final Button refreshButton;
+    private final Button customButton;
     private @Nullable Button secondaryButton;
 
     /** The active toggle ids — the coordinator's set for the detected root (shared with the popup, so a
@@ -122,9 +124,9 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         setPadding(new Insets(4));
 
         runButton = iconButton(Icons.run(), tr("buildtree.run"), this::runSelected);
-        Button refreshButton = iconButton(Icons.refresh(), tr("buildtree.refresh"), () -> onRefresh.run());
+        refreshButton = iconButton(Icons.refresh(), tr("buildtree.refresh"), () -> onRefresh.run());
         stopButton = iconButton(Icons.stopSquare(), tr("buildtree.stop"), () -> onStop.run());
-        Button customButton = iconButton(Icons.edit(), tr("buildtree.runCustom"), () -> onRunCustom.run());
+        customButton = iconButton(Icons.edit(), tr("buildtree.runCustom"), () -> onRunCustom.run());
         toolbar.getChildren().addAll(runButton, refreshButton, stopButton, customButton);
         toolbar.getStyleClass().add("build-tasks-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -139,7 +141,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         Button clearFilter = new Button("✕");
         clearFilter.getStyleClass().add("project-filter-clear");
         clearFilter.setFocusTraversable(false);
-        clearFilter.setTooltip(new Tooltip(tr("project.filterClear")));
+        Icons.name(clearFilter, tr("project.filterClear"));
         clearFilter.setOnAction(e -> {
             filterField.clear();
             filterField.requestFocus();
@@ -303,6 +305,17 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         }
         Path name = r.getFileName();
         return name == null ? r.toString() : name.toString();
+    }
+
+    /**
+     * Names the Refresh, Stop and Run Custom buttons after the build tool's own commands ({@code <toolId>.refresh},
+     * {@code <toolId>.stop}, {@code <toolId>.runCustom}), title and live chord. Every build tool shares this
+     * tree, so its owner says whose commands the buttons run; until it does they keep their generic names.
+     */
+    void nameAfterCommands(String toolId) {
+        CommandTips.name(refreshButton, toolId + ".refresh");
+        CommandTips.name(stopButton, toolId + ".stop");
+        CommandTips.name(customButton, toolId + ".runCustom");
     }
 
     /** Adds a tool-specific toolbar action (Gradle's "Load all tasks…"), appended to the toolbar. */

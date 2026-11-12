@@ -125,7 +125,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         Button clearFilter = new Button("✕");
         clearFilter.getStyleClass().add("project-filter-clear");
         clearFilter.setFocusTraversable(false);
-        clearFilter.setTooltip(new Tooltip(tr("project.filterClear")));
+        Icons.name(clearFilter, tr("project.filterClear"));
         clearFilter.setOnAction(e -> {
             filterField.clear();
             filterField.requestFocus();
@@ -138,7 +138,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         showAll.setGraphic(Icons.project());
         showAll.getStyleClass().addAll("flat", "scope-toggle");
         showAll.setFocusTraversable(false);
-        showAll.setTooltip(new Tooltip(tr("bookmarks.showAllTip")));
+        Icons.name(showAll, tr("bookmarks.showAllTip"));
         showAll.setSelected(true);
         showAll.selectedProperty().addListener((o, w, n) -> refresh());
 

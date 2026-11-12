@@ -36,39 +36,35 @@ final class WindowToolbar {
     /** Sets up the buttons, their tooltips and the fixed tail's project group, before the cluster is built. */
     @Initializer
     void install() {
-        setupButton(mc.newButton, Icons.newFile(), tr("tooltip.new"), "file.new");
-        setupButton(mc.newFromTemplateButton, Icons.template(), tr("tooltip.newFromTemplate"), "template.new");
-        setupButton(mc.openButton, Icons.open(), tr("tooltip.open"), "file.find");
-        setupButton(mc.openFolderButton, Icons.openFolder(), tr("tooltip.openFolder"), "project.open");
-        setupButton(mc.saveButton, Icons.save(), tr("tooltip.save"), "file.save");
-        setupButton(mc.saveAsButton, Icons.saveAs(), tr("tooltip.saveAs"), "file.saveAs");
+        setupButton(mc.newButton, Icons.newFile(), "file.new");
+        setupButton(mc.newFromTemplateButton, Icons.template(), "template.new");
+        setupButton(mc.openButton, Icons.open(), "file.find");
+        setupButton(mc.openFolderButton, Icons.openFolder(), "project.open");
+        setupButton(mc.saveButton, Icons.save(), "file.save");
+        setupButton(mc.saveAsButton, Icons.saveAs(), "file.saveAs");
         mc.saveButton.getStyleClass().add("success");
         mc.saveAsButton.getStyleClass().add("success");
-        setupButton(mc.undoButton, Icons.undo(), tr("tooltip.undo"), "edit.undo");
-        setupButton(mc.redoButton, Icons.redo(), tr("tooltip.redo"), "edit.redo");
-        setupButton(mc.cutButton, Icons.cut(), tr("tooltip.cut"), "edit.cut");
-        setupButton(mc.copyButton, Icons.copy(), tr("tooltip.copy"), "edit.copy");
-        setupButton(mc.pasteButton, Icons.paste(), tr("tooltip.paste"), "edit.paste");
-        setupButton(mc.findButton, Icons.find(), tr("tooltip.find"), "find.show");
-        setupButton(mc.findInFilesButton, Icons.findInFiles(), tr("tooltip.findInFiles"), "search.inFiles");
-        setupButton(mc.splitVerticalButton, Icons.splitVertical(), tr("tooltip.splitVertical"), "view.splitVertical");
-        setupButton(
-                mc.splitHorizontalButton,
-                Icons.splitHorizontal(),
-                tr("tooltip.splitHorizontal"),
-                "view.splitHorizontal");
-        setupButton(mc.runConfigRunButton, Icons.run(), tr("tooltip.runConfigRun"), null);
-        setupButton(mc.runConfigDebugButton, Icons.debug(), tr("tooltip.runConfigDebug"), null);
-        setupButton(mc.runConfigStopButton, Icons.stopSquare(), tr("tooltip.runConfigStop"), null);
+        setupButton(mc.undoButton, Icons.undo(), "edit.undo");
+        setupButton(mc.redoButton, Icons.redo(), "edit.redo");
+        setupButton(mc.cutButton, Icons.cut(), "edit.cut");
+        setupButton(mc.copyButton, Icons.copy(), "edit.copy");
+        setupButton(mc.pasteButton, Icons.paste(), "edit.paste");
+        setupButton(mc.findButton, Icons.find(), "find.show");
+        setupButton(mc.findInFilesButton, Icons.findInFiles(), "search.inFiles");
+        setupButton(mc.splitVerticalButton, Icons.splitVertical(), "view.splitVertical");
+        setupButton(mc.splitHorizontalButton, Icons.splitHorizontal(), "view.splitHorizontal");
+        setupButton(mc.runConfigRunButton, Icons.run(), "run.selectedConfig");
+        setupButton(mc.runConfigDebugButton, Icons.debug(), "debug.selectedConfig");
+        setupButton(mc.runConfigStopButton, Icons.stopSquare(), "run.stop");
         // The kit's one splash of state colour in the toolbar: green play / accent bug / red stop.
         mc.runConfigRunButton.getStyleClass().add("run-config-play");
         mc.runConfigDebugButton.getStyleClass().add("run-config-bug");
         mc.runConfigStopButton.getStyleClass().add("run-config-stop");
         mc.runConfigurations.setupRunConfigCombo();
-        setupButton(mc.paletteButton, Icons.palette(), tr("tooltip.palette"), "palette.show");
-        setupButton(mc.closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"), "buffer.close");
-        setupButton(mc.simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"), "view.toggleSimpleMode");
-        setupButton(mc.settingsButton, Icons.settings(), tr("tooltip.settings"), "view.settings");
+        setupButton(mc.paletteButton, Icons.palette(), "palette.show");
+        setupButton(mc.closeTabButton, Icons.closeTab(), "buffer.close");
+        setupButton(mc.simpleModeButton, Icons.simpleMode(), "view.toggleSimpleMode");
+        setupButton(mc.settingsButton, Icons.settings(), "view.settings");
 
         // Reflect open/closed state of the palette and find bar in their toolbar buttons.
         mc.palette
@@ -241,32 +237,21 @@ final class WindowToolbar {
         mc.splitHorizontalButton.pseudoClassStateChanged(MainController.OPEN, split == EditorBuffer.Split.STACKED);
     }
 
-    /** A toolbar button whose tooltip shows the live chord for {@code commandId} (refreshed on keymap switch). */
-    private record ToolbarTip(
-            Button button, String base, @Nullable String commandId) {}
-
-    private final java.util.List<ToolbarTip> toolbarTips = new java.util.ArrayList<>();
-
-    void setupButton(Button button, Node icon, String tooltip, @Nullable String commandId) {
+    /**
+     * Sets up a main toolbar button for command {@code commandId}: its glyph, its name (the command's title and
+     * live chord, as tooltip and accessible text alike) and its place outside the Tab order, where the command,
+     * the palette and the menus reach the action instead.
+     */
+    void setupButton(Button button, Node icon, String commandId) {
         button.setGraphic(icon);
         button.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
-        // Drop any chord baked into the i18n label (e.g. "Save (C-x C-s)"); the live chord is appended below
-        // so the hint tracks the active keymap instead of being frozen to the Emacs binding.
-        String base = tooltip.replaceAll("\\s*\\([^()]*\\)\\s*$", "");
-        toolbarTips.add(new ToolbarTip(button, base, commandId));
-        applyToolbarTip(button, base, commandId);
+        button.setFocusTraversable(false);
+        CommandTips.name(button, commandId);
     }
 
-    private void applyToolbarTip(Button button, String base, @Nullable String commandId) {
-        String chord = commandId == null ? null : mc.invertBindings().get(commandId);
-        button.setTooltip(new Tooltip(chord == null || chord.isEmpty() ? base : base + " (" + chord + ")"));
-    }
-
-    /** Re-applies every toolbar tooltip's chord from the current keymap (after a live keymap switch). */
+    /** Names every toolbar button again from the current keymap (after a live keymap switch). */
     void refreshToolbarTooltips() {
-        for (ToolbarTip t : toolbarTips) {
-            applyToolbarTip(t.button(), t.base(), t.commandId());
-        }
+        CommandTips.refresh();
     }
 
     /**

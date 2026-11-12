@@ -1569,8 +1569,7 @@ public class SettingsWindow {
                 }
                 Hyperlink help = new Hyperlink("?");
                 help.getStyleClass().add("settings-help-link");
-                help.setTooltip(new Tooltip(tr("settings.help", c.display)));
-                help.setAccessibleText(tr("settings.help", c.display));
+                Icons.name(help, tr("settings.help", c.display));
                 help.setOnAction(e -> {
                     if (openUrl != null) {
                         openUrl.accept(SettingsFrameBits.helpUrl(c.name()));

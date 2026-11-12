@@ -224,7 +224,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     /** Shown only while {@link #setAiAvailable} says AI Actions is enabled + reachable; sits in its own
      *  thin toolbar row directly above the commit message box (not the repo-wide header). */
     private final Button aiCommitButton =
-            iconButton(Icons.aiGenerate(), tr("gitpanel.aiCommitTip"), () -> onGenerateCommitMessage.run());
+            commandButton(Icons.aiGenerate(), "ai.generateCommitMessage", () -> onGenerateCommitMessage.run());
 
     /** Amend and Sign-off, the length guide, and the message helpers (recent messages, AI); it wraps. */
     private final WrapRow messageToolbar;
@@ -298,11 +298,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         reviewButton.getItems().setAll(reviewWorkingItem, reviewStagedItem);
         reviewButton.getStyleClass().addAll("flat", "git-toolbar-button");
         reviewButton.setFocusTraversable(false);
-        reviewButton.setAccessibleText(tr("gitpanel.reviewTip"));
-        reviewButton.setTooltip(new Tooltip(tr("gitpanel.reviewTip")));
+        Icons.name(reviewButton, tr("gitpanel.reviewTip"));
         reviewButton.setDisable(true);
-        pushButton = iconButton(Icons.gitPush(), tr("gitpanel.pushTip"), actions::push);
-        Button refresh = iconButton(Icons.refresh(), tr("gitpanel.refreshTip"), actions::refresh);
+        pushButton = commandButton(Icons.gitPush(), "git.push", actions::push);
+        Button refresh = commandButton(Icons.refresh(), "git.refresh", actions::refresh);
         HBox headerButtons = new HBox(2, reviewButton, stageAll, pushButton, refresh);
         headerButtons.setAlignment(Pos.CENTER_LEFT);
         // The branch name gives way first (down to BRANCH_MIN_WIDTH, its full text in the tooltip); when
@@ -325,7 +324,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         Button clearFilter = new Button("✕");
         clearFilter.getStyleClass().add("project-filter-clear");
         clearFilter.setFocusTraversable(false);
-        clearFilter.setTooltip(new Tooltip(tr("project.filterClear")));
+        Icons.name(clearFilter, tr("project.filterClear"));
         clearFilter.setOnAction(e -> {
             filterField.clear();
             filterField.requestFocus();
@@ -377,8 +376,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         historyButton.setGraphic(Icons.history());
         historyButton.getStyleClass().addAll("flat", "git-toolbar-button");
         historyButton.setFocusTraversable(false);
-        historyButton.setAccessibleText(tr("gitpanel.historyTip"));
-        historyButton.setTooltip(new Tooltip(tr("gitpanel.historyTip")));
+        Icons.name(historyButton, tr("gitpanel.historyTip"));
         // Filled when it opens: the list changes with every commit and with the active repository. A
         // placeholder item keeps the button clickable while there is nothing to list.
         historyButton.getItems().setAll(new MenuItem(tr("gitpanel.historyEmpty")));
@@ -418,8 +416,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         MenuChords.tag(commitAndPushItem, "git.commitAndPush");
         commitMenu.getItems().setAll(commitAndPushItem);
         commitMenu.getStyleClass().add("git-commit-more");
-        commitMenu.setAccessibleText(tr("gitpanel.commitMoreTip"));
-        commitMenu.setTooltip(new Tooltip(tr("gitpanel.commitMoreTip")));
+        Icons.name(commitMenu, tr("gitpanel.commitMoreTip"));
         commitRow.getChildren().setAll(new HBox(2, commitButton, commitMenu));
         updateGuide();
 
@@ -454,6 +451,11 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     /** A compact, legible icon button for the panel toolbar (graphic + tooltip, no truncated text). */
     private static Button iconButton(javafx.scene.Node icon, String tip, Runnable action) {
         return Icons.toolbarButton(icon, tip, action, "flat", "git-toolbar-button"); // tooltip + accessible name
+    }
+
+    /** A toolbar button that runs {@code commandId}: named after the command, with its live chord. */
+    private static Button commandButton(javafx.scene.Node icon, String commandId, Runnable action) {
+        return CommandTips.name(iconButton(icon, CommandTips.title(commandId), action), commandId);
     }
 
     /**

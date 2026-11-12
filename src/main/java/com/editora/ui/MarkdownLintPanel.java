@@ -135,7 +135,10 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(gap, Priority.ALWAYS);
         HBox toolbar = new HBox(8, fileName, summary, configNote, gap, bySeverity, refreshBtn);
         if (issues != null) {
-            fixBtn = Icons.toolbarButton(Icons.check(), tr("command.markdownLint.fix"), issues::fixAll);
+            // Named after the command it runs: its title without "Markdown Lint:", and its chord.
+            fixBtn = CommandTips.name(
+                    Icons.toolbarButton(Icons.check(), tr("command.markdownLint.fix"), issues::fixAll),
+                    "markdownLint.fix");
             fixBtn.setDisable(true);
             toolbar.getChildren().add(fixBtn);
         }

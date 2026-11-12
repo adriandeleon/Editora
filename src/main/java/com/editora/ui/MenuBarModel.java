@@ -235,6 +235,7 @@ final class MenuBarModel {
                                 "view.toggleWhitespace",
                                 SEPARATOR,
                                 "view.toggleSimpleMode",
+                                "view.toggleZen",
                                 "view.welcome")),
                 new MenuSpec(
                         "menubar.navigate",
@@ -351,7 +352,11 @@ final class MenuBarModel {
                                         "menubar.run.debugger",
                                         // No "Debug: Continue": Start / Continue above does it, and its prefixed
                                         // title read unevenly among the bare rows (review 3, choice 5).
+                                        // The toolbar's Run and Debug buttons beside the configuration box come
+                                        // first: Run itself is at the 20 rows a laptop screen allows.
                                         List.of(
+                                                "run.selectedConfig",
+                                                "debug.selectedConfig",
                                                 "debug.startConfiguration",
                                                 "debug.startCompound",
                                                 "debug.editCompounds",
@@ -569,7 +574,10 @@ final class MenuBarModel {
                                 submenu("menubar.tools.encryption"),
                                 SEPARATOR,
                                 "install.languageServer",
-                                "view.doctor"),
+                                "view.doctor",
+                                SEPARATOR,
+                                // Here, not in File: the File menu is at the height the screen allows.
+                                "view.settings"),
                         List.of(
                                 // The rest of the macro commands: reachable without knowing the palette has them.
                                 new MenuSpec(
@@ -617,6 +625,8 @@ final class MenuBarModel {
                                 "tool.structure",
                                 "tool.search",
                                 "tool.problems",
+                                "tool.todo",
+                                "tool.bookmarks",
                                 SEPARATOR,
                                 "tool.terminal",
                                 "terminal.new",

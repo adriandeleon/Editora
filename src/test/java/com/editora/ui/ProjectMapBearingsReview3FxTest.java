@@ -353,7 +353,10 @@ class ProjectMapBearingsReview3FxTest {
                 AtomicInteger reveals = new AtomicInteger();
                 h.view().setOnRevealActiveFile(reveals::incrementAndGet);
                 Button crosshair = FxTestSupport.field(h.view(), "revealActiveButton");
-                assertEquals(tr("project.map.revealActiveFile"), crosshair.getAccessibleText());
+                // Named after its command: the title, then the chord when the keymap binds one.
+                assertTrue(crosshair.getAccessibleText().startsWith(CommandTips.title("projectMap.revealActiveFile")));
+                assertEquals(
+                        crosshair.getAccessibleText(), crosshair.getTooltip().getText());
                 crosshair.fire();
                 FxTestSupport.<MenuItem>field(h.view(), "revealActiveItem").fire();
                 assertEquals(2, reveals.get());

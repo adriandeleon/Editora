@@ -5,7 +5,6 @@ import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -73,8 +72,7 @@ abstract class MapFloatingCard extends StackPane {
         HBox.setHgrow(title, Priority.ALWAYS);
         close.getStyleClass().add("project-map-preview-button");
         close.setMinWidth(Region.USE_PREF_SIZE);
-        close.setTooltip(new Tooltip(tr("project.map.preview.close")));
-        close.setAccessibleText(tr("project.map.preview.close"));
+        Icons.name(close, tr("project.map.preview.close"));
         close.setOnAction(event -> onClose.run());
         titleBar.getStyleClass().add("project-map-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);

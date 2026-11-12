@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -23,7 +22,7 @@ final class ClearableField {
         Button clear = new Button("✕");
         clear.getStyleClass().add("project-filter-clear");
         clear.setFocusTraversable(false);
-        clear.setTooltip(new Tooltip(tr("project.filterClear")));
+        Icons.name(clear, tr("project.filterClear"));
         clear.setOnAction(e -> {
             field.clear();
             field.requestFocus();

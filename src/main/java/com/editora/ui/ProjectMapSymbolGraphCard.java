@@ -99,8 +99,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
         super("project-map-graph-card", Icons.symbolGraph(), MIN_WIDTH, MIN_HEIGHT);
         back.getStyleClass().add("flat");
         back.setMnemonicParsing(false);
-        back.setTooltip(new Tooltip(tr("project.map.graph.backTip")));
-        back.setAccessibleText(tr("project.map.graph.backTip"));
+        Icons.name(back, tr("project.map.graph.backTip"));
         back.setOnAction(event -> goBack());
         summary.getStyleClass().add("project-map-graph-summary");
         summary.setWrapText(true);

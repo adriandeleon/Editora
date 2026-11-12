@@ -15,7 +15,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -125,10 +124,9 @@ final class ToolWindowsSettingsPane {
         Button moveDown = new Button("▼");
         moveUp.getStyleClass().addAll("flat", "reorder-button");
         moveDown.getStyleClass().addAll("flat", "reorder-button");
-        moveUp.setTooltip(new Tooltip(tr("settings.moveEarlier")));
-        moveDown.setTooltip(new Tooltip(tr("settings.moveLater")));
-        moveUp.setAccessibleText(tr("settings.moveEarlier") + " — " + tw.getTitle());
-        moveDown.setAccessibleText(tr("settings.moveLater") + " — " + tw.getTitle());
+        // One name for the tooltip and the screen reader: the move and the window it moves.
+        Icons.name(moveUp, tr("settings.moveEarlier") + " — " + tw.getTitle());
+        Icons.name(moveDown, tr("settings.moveLater") + " — " + tw.getTitle());
 
         // A card row like every other page: the window's name on the left (with the gated ones'
         // explanation as its description), and show / side / reorder pinned right.

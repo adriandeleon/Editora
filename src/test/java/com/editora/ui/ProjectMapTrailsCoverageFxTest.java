@@ -486,7 +486,8 @@ class ProjectMapTrailsCoverageFxTest {
                 HBox header = (HBox) note.getChildren().getFirst();
                 Button close = (Button) header.getChildren().getLast();
                 assertEquals("×", close.getText());
-                assertEquals(tr("project.map.trails.note.close"), close.getAccessibleText());
+                assertEquals(tr("project.map.trails.note.closeHelp"), close.getAccessibleText());
+                assertEquals(close.getAccessibleText(), close.getTooltip().getText(), "one name for both");
                 close.fire();
                 assertNull(note.getParent(), "the sheet is gone");
                 assertNull(h.cards().viewsAttachment(card), "and off its card");

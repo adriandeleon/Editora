@@ -78,13 +78,15 @@ class DiffViewerUnifiedAndNavigationFxTest {
                 FxTestSupport.callOnFx(() -> ((javafx.scene.layout.BorderPane) pane.node()).getCenter()),
                 "the unified area replaces the two panes");
         ToggleableLabels toggle = toggleLabels(pane);
-        assertEquals(tr("diff.viewSideBySide"), toggle.accessible(), "the button now offers the way back");
+        assertTrue(
+                toggle.accessible().contains(tr("diff.tooltip.viewSideBySide")),
+                "the button now offers the way back: " + toggle.accessible());
 
         // And back: the two panes return, and the toolbar cluster is aligned to the left pane again.
         FxTestSupport.runOnFx(pane::toggleViewMode);
         CodeArea left = FxTestSupport.field(pane, "leftArea");
         assertNotNull(left);
-        assertEquals(tr("diff.viewUnified"), toggleLabels(pane).accessible());
+        assertTrue(toggleLabels(pane).accessible().contains(tr("diff.tooltip.viewUnified")));
         javafx.beans.property.DoubleProperty leftPaneWidth = FxTestSupport.field(pane, "leftPaneWidth");
         assertTrue(FxTestSupport.callOnFx(leftPaneWidth::isBound));
     }

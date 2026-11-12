@@ -29,7 +29,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
-import javafx.scene.control.Control;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
@@ -351,10 +350,15 @@ public final class HttpClientPanel extends VBox {
                 onSaveResponse.run();
             }
         });
-        actionTip(wrapToggle, tr("httppanel.wrap"), null, null);
-        actionTip(copyCurlButton, tr("httppanel.copyAsCurl"), "http.copyAsCurl", tr("httppanel.copyAsCurl.tip"));
-        actionTip(openTabButton, tr("httppanel.openInTab"), "http.openResponseInTab", null);
-        actionTip(saveButton, tr("httppanel.save"), null, null);
+        // One name each, for the tooltip and a screen reader alike (Save response has its own from Icons.button).
+        // The two that are commands keep the panel's words, as their "⋯" items do, and add the keymap's chord.
+        Icons.name(wrapToggle, tr("httppanel.wrap"));
+        CommandTips.name(
+                copyCurlButton,
+                "http.copyAsCurl",
+                () -> CommandTips.title("http.copyAsCurl"),
+                () -> tr("httppanel.copyAsCurl.tip")); // which shells the command is valid in
+        CommandTips.name(openTabButton, "http.openResponseInTab");
         for (Region r : List.of(copyCurlButton, openTabButton, saveButton)) {
             r.getStyleClass().addAll("flat", "http-action");
         }
@@ -492,26 +496,6 @@ public final class HttpClientPanel extends VBox {
         updateActions();
         showBodyView(BodyView.EMPTY);
         idle();
-    }
-
-    /**
-     * Names an icon action ({@code name} is its accessible text) and gives it a tooltip that adds the keymap's chord
-     * for {@code commandId} when it is bound, read when the tooltip shows (so a keymap change is reflected), and
-     * {@code extra} on a line of its own.
-     */
-    private static void actionTip(Control control, String name, @Nullable String commandId, @Nullable String extra) {
-        control.setAccessibleText(name);
-        Tooltip tip = new Tooltip(name);
-        tip.setOnShowing(e -> tip.setText(withChord(name, commandId) + (extra == null ? "" : "\n" + extra)));
-        tip.setWrapText(extra != null);
-        tip.setMaxWidth(420);
-        control.setTooltip(tip);
-    }
-
-    /** {@code name}, then the live keymap's chord for {@code commandId} in brackets when it is bound. */
-    private static String withChord(String name, @Nullable String commandId) {
-        String chord = chordFor(commandId);
-        return chord == null ? name : tr("httppanel.actionChord", name, chord);
     }
 
     /** The live keymap's chord for {@code commandId}, or null when unbound (or no keymap is set yet). */

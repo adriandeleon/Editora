@@ -16,7 +16,6 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.ToolBar;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.DragEvent;
 import javafx.scene.input.Dragboard;
@@ -157,10 +156,11 @@ final class ToolbarCoordinator {
         Button b = new Button();
         b.setGraphic(ToolbarIcons.node(item.iconKey()));
         b.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
+        b.setFocusTraversable(false); // a toolbar button: the command, the palette and the menus reach it
         String commandId = item.commandId(); // null only for Recent, a base widget that never gets here
-        String base = tr("command." + commandId);
-        String chord = commandId == null ? null : keymap.displayChord(commandId);
-        b.setTooltip(new Tooltip(chord == null || chord.isEmpty() ? base : base + " (" + chord + ")"));
+        if (commandId != null) {
+            CommandTips.name(b, commandId); // the command's title and live chord, as tooltip and accessible text
+        }
         b.setOnAction(e -> {
             if (commandId != null) {
                 registry.run(commandId);

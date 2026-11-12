@@ -8,7 +8,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -98,7 +97,7 @@ final class DebugSessionsView extends BorderPane {
             } else {
                 Button close = new Button("×");
                 close.getStyleClass().addAll("flat", "small", "debug-session-close");
-                close.setTooltip(new Tooltip(tr("debug.sessions.close", tab.title())));
+                Icons.name(close, tr("debug.sessions.close", tab.title()));
                 close.setFocusTraversable(false);
                 close.setOnAction(e -> actions.close(tab.session()));
                 strip.getChildren().add(close);
