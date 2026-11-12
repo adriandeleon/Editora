@@ -95,21 +95,12 @@ final class TypstCoordinator {
     }
 
     private boolean confirmReplaceDialog(java.util.List<Path> existing) {
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("dialog.typstExport.replaceBody", replaceList(existing)),
-                javafx.scene.control.ButtonType.OK,
-                javafx.scene.control.ButtonType.CANCEL));
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.typstExport.title"));
-        confirm.setHeaderText(null);
         // Replacing files nobody named is the destructive answer: Enter must not give it.
-        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.OK))
-                .setDefaultButton(false);
-        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL))
-                .setDefaultButton(true);
-        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
-                == javafx.scene.control.ButtonType.OK;
+        return Confirm.ask(
+                host.window(),
+                tr("dialog.typstExport.title"),
+                tr("dialog.typstExport.replaceBody", replaceList(existing)),
+                tr("confirm.action.replace"));
     }
 
     /** The file names for the replace question, one per line, capped so the dialog stays readable. Pure. */
@@ -135,7 +126,7 @@ final class TypstCoordinator {
             pending.close();
             String msg = r.message();
             host.setStatus(tr("status.typst.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
+            Alert err = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
             err.initOwner(host.window());
             err.setTitle(tr("dialog.typstExport.title"));
             err.setHeaderText(tr("status.typst.exportFailed", ""));

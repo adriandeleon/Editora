@@ -480,7 +480,7 @@ class SettingsFrameFxTest {
                     pane -> {
                         seen[0] = pane.getContentText();
                         javafx.scene.control.Button cancel =
-                                (javafx.scene.control.Button) pane.lookupButton(javafx.scene.control.ButtonType.CANCEL);
+                                FxDialogs.button(pane, javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
                         seen[1] = String.valueOf(cancel.isDefaultButton());
                     },
                     findButton("settings.reset.button"));

@@ -193,7 +193,14 @@ final class RemoteCoordinator {
 
                 @Override
                 public void remove(RemoteConnection c) {
-                    ops.removeConnection(c.id());
+                    // The same question Settings asks before the same removal.
+                    if (Confirm.ask(
+                            host.window(),
+                            tr("settings.remote.remove"),
+                            tr("settings.remote.deleteConfirm", c.displayLabel()),
+                            tr("settings.remote.delete"))) {
+                        ops.removeConnection(c.id());
+                    }
                 }
 
                 @Override
@@ -294,18 +301,19 @@ final class RemoteCoordinator {
     /** The question itself (FX thread) — the same one {@code ssh} asks at the terminal. */
     private boolean askHostKey(String host, int port, String keyType, String fingerprint) {
         ButtonType connect = new ButtonType(tr("dialog.hostKey.connect"), ButtonBar.ButtonData.OK_DONE);
-        Alert alert = new Alert(
+        ButtonType cancel = Dialogs.cancel();
+        Alert alert = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 tr("dialog.hostKey.content", host + ":" + port, keyType, fingerprint),
-                ButtonType.CANCEL,
-                connect);
+                cancel,
+                connect));
         alert.initOwner(this.host.window());
         alert.setTitle(tr("dialog.hostKey.title"));
         alert.setHeaderText(tr("dialog.hostKey.header", host));
         alert.getDialogPane().setMinWidth(560);
         askingDialog = alert;
         try {
-            return alert.showAndWait().orElse(ButtonType.CANCEL) == connect;
+            return alert.showAndWait().orElse(cancel) == connect;
         } finally {
             askingDialog = null;
         }
@@ -351,7 +359,7 @@ final class RemoteCoordinator {
      * unless the server says the answer may be shown. Cancel cancels.
      */
     private char @Nullable [][] showLoginDialog(LoginPrompt.Challenge challenge) {
-        Dialog<ButtonType> dialog = new Dialog<>();
+        Dialog<ButtonType> dialog = Dialogs.styled(new Dialog<ButtonType>());
         dialog.initOwner(host.window());
         dialog.setTitle(tr("dialog.login.title"));
         dialog.setHeaderText(
@@ -364,7 +372,8 @@ final class RemoteCoordinator {
                                 : challenge.name();
                 });
         ButtonType logIn = new ButtonType(tr("dialog.login.button"), ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().setAll(ButtonType.CANCEL, logIn);
+        ButtonType cancel = Dialogs.cancel();
+        dialog.getDialogPane().getButtonTypes().setAll(cancel, logIn);
         GridPane grid = new GridPane();
         grid.setHgap(8);
         grid.setVgap(8);
@@ -397,7 +406,7 @@ final class RemoteCoordinator {
         }
         askingDialog = dialog;
         try {
-            if (dialog.showAndWait().orElse(ButtonType.CANCEL) != logIn) {
+            if (dialog.showAndWait().orElse(cancel) != logIn) {
                 return null;
             }
         } finally {
@@ -460,7 +469,7 @@ final class RemoteCoordinator {
             connectFailureShown.accept(header, body);
             return;
         }
-        Alert alert = new Alert(Alert.AlertType.ERROR);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.remote.title"));
         alert.setHeaderText(header);
@@ -973,16 +982,16 @@ final class RemoteCoordinator {
     /** Asks before closing connections that unsaved remote tabs still need for their next save. */
     private boolean confirmDisconnect(List<String> unsaved) {
         ButtonType disconnect = new ButtonType(tr("dialog.remoteDisconnect.confirm"), ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        Alert alert = new Alert(
+        ButtonType cancel = Dialogs.cancel();
+        Alert alert = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 tr("dialog.remoteDisconnect.content", String.join("\n", unsaved), tr("command.file.saveAs")),
                 disconnect,
-                cancel);
+                cancel));
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.remoteDisconnect.title"));
         alert.setHeaderText(tr("dialog.remoteDisconnect.header"));
-        return Dialogs.styled(alert).showAndWait().orElse(cancel) == disconnect;
+        return alert.showAndWait().orElse(cancel) == disconnect;
     }
 
     /**
@@ -1104,12 +1113,12 @@ final class RemoteCoordinator {
         ButtonType allow = new ButtonType(tr("dialog.remoteExec.allow"), ButtonBar.ButtonData.OK_DONE);
         ButtonType notNow = new ButtonType(tr("dialog.remoteExec.notNow"), ButtonBar.ButtonData.CANCEL_CLOSE);
         String user = conn.user() == null || conn.user().isBlank() ? "?" : conn.user();
-        Alert alert = new Alert(
-                Alert.AlertType.CONFIRMATION, tr("dialog.remoteExec.content", conn.host(), user), allow, notNow);
+        Alert alert = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("dialog.remoteExec.content", conn.host(), user), allow, notNow));
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.remoteExec.title"));
         alert.setHeaderText(tr("dialog.remoteExec.header", conn.host()));
-        return Dialogs.styled(alert).showAndWait().orElse(notNow) == allow;
+        return alert.showAndWait().orElse(notNow) == allow;
     }
 
     /** What {@link #recheckExecution} last saw: the setting, this window's host's agreement and its tools. */

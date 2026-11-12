@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Labeled;
 import javafx.scene.input.Clipboard;
@@ -90,7 +90,8 @@ class HttpSecretGateWindowFxTest {
             while (FxTestSupport.callOnFx(() -> http.isRunningForTest(b))) {
                 DialogPane prompt = FxTestSupport.callOnFx(HttpSecretGateWindowFxTest::showingDialog);
                 if (prompt != null) {
-                    FxTestSupport.runOnFx(() -> ((Button) prompt.lookupButton(ButtonType.CANCEL)).fire());
+                    FxTestSupport.runOnFx(() -> FxDialogs.button(prompt, ButtonBar.ButtonData.CANCEL_CLOSE)
+                            .fire());
                     throw new AssertionError("a trust prompt came up for a request that is never sent");
                 }
                 assertTrue(System.nanoTime() < deadline, "the run never ended");
@@ -139,12 +140,8 @@ class HttpSecretGateWindowFxTest {
                 prompt = FxTestSupport.callOnFx(HttpSecretGateWindowFxTest::showingDialog);
             }
             DialogPane pane = prompt;
-            Button cancel = FxTestSupport.callOnFx(() -> (Button) pane.lookupButton(ButtonType.CANCEL));
-            Button trust = FxTestSupport.callOnFx(() -> pane.getButtonTypes().stream()
-                    .filter(t -> t != ButtonType.CANCEL)
-                    .map(t -> (Button) pane.lookupButton(t))
-                    .findFirst()
-                    .orElseThrow());
+            Button cancel = FxTestSupport.callOnFx(() -> FxDialogs.button(pane, ButtonBar.ButtonData.CANCEL_CLOSE));
+            Button trust = FxTestSupport.callOnFx(() -> FxDialogs.button(pane, ButtonBar.ButtonData.OK_DONE));
             FxTestSupport.drainFx();
             boolean cancelDefault = FxTestSupport.callOnFx(cancel::isDefaultButton);
             boolean trustDefault = FxTestSupport.callOnFx(trust::isDefaultButton);
@@ -171,7 +168,7 @@ class HttpSecretGateWindowFxTest {
         FxTestSupport.runOnFx(() -> prompt.alert().show());
         try {
             DialogPane pane = prompt.alert().getDialogPane();
-            Button cancel = FxTestSupport.callOnFx(() -> (Button) pane.lookupButton(ButtonType.CANCEL));
+            Button cancel = FxTestSupport.callOnFx(() -> FxDialogs.button(pane, ButtonBar.ButtonData.CANCEL_CLOSE));
             Button trust = FxTestSupport.callOnFx(() -> (Button) pane.lookupButton(prompt.trust()));
             FxTestSupport.drainFx();
             assertTrue(FxTestSupport.callOnFx(cancel::isDefaultButton));

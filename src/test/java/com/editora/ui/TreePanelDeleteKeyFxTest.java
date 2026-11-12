@@ -93,10 +93,26 @@ class TreePanelDeleteKeyFxTest {
             expandAll(tree.getRoot());
             tree.getSelectionModel().select(firstLeaf(tree.getRoot()));
 
-            delete(filter);
-            assertTrue(deleted.isEmpty(), "Delete in the filter field edits text, it removes no bookmark");
-            delete(tree);
-            assertEquals(List.of("Alpha.java:7"), deleted, "Delete in the tree removes the selected bookmark");
+            // The panel asks before it removes a bookmark; the question is answered here, not shown.
+            List<Confirm.Question> asked = new ArrayList<>();
+            boolean[] answer = {false};
+            Confirm.answerWith(question -> {
+                asked.add(question);
+                return answer[0];
+            });
+            try {
+                delete(filter);
+                assertTrue(deleted.isEmpty(), "Delete in the filter field edits text, it removes no bookmark");
+                assertTrue(asked.isEmpty(), "and asks nothing");
+                delete(tree);
+                assertEquals(1, asked.size(), "Delete in the tree asks first");
+                assertTrue(deleted.isEmpty(), "Cancel keeps the bookmark");
+                answer[0] = true;
+                delete(tree);
+                assertEquals(List.of("Alpha.java:7"), deleted, "confirming removes the selected bookmark");
+            } finally {
+                Confirm.answerWith(null);
+            }
         });
     }
 

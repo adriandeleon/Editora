@@ -14,7 +14,6 @@ import javafx.collections.transformation.FilteredList;
 import javafx.event.EventHandler;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
@@ -412,17 +411,11 @@ final class MacroSettingsPane extends HBox {
         if (sel == null) {
             return;
         }
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
+        if (!Confirm.ask(
+                getScene() == null ? null : getScene().getWindow(),
+                tr("settings.macro.deleteConfirmTitle"),
                 tr("settings.macro.deleteConfirm", MacroCoordinator.displayName(sel)),
-                ButtonType.OK,
-                ButtonType.CANCEL));
-        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
-        confirm.setTitle(tr("settings.macro.deleteConfirmTitle"));
-        confirm.setHeaderText(null);
-        ((Button) confirm.getDialogPane().lookupButton(ButtonType.OK)).setDefaultButton(false);
-        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                tr("confirm.action.delete"))) {
             return;
         }
         if (host.shortcuts() != null) {

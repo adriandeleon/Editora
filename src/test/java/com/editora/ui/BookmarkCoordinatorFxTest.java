@@ -150,6 +150,11 @@ class BookmarkCoordinatorFxTest {
     }
 
     @AfterEach
+    void showQuestionsAgain() {
+        Confirm.answerWith(null);
+    }
+
+    @AfterEach
     void disposeBuffers() throws Exception {
         FxTestSupport.runOnFx(() -> {
             coordinator.flushPendingPersist();
@@ -325,8 +330,44 @@ class BookmarkCoordinatorFxTest {
             coordinator.toggleAtCaret();
         });
         assertEquals(List.of(1), liveLines(active));
+        List<Confirm.Question> asked = new ArrayList<>();
+        Confirm.answerWith(question -> {
+            asked.add(question);
+            return false;
+        });
         fx(coordinator::toggleAtCaret);
         assertEquals(List.of(), liveLines(active), "the keyboard toggle removes without asking");
+        assertEquals(List.of(), asked, "a plain bookmark: the same key puts it back");
+    }
+
+    @Test
+    void togglingOffABookmarkThatHasANoteAsksFirst() throws Exception {
+        active = buffer("a.txt", "one\ntwo");
+        promptAnswer = "why this line matters";
+        fx(() -> {
+            active.getArea().moveTo(1, 0);
+            coordinator.editNoteAtCaret();
+        });
+        assertEquals(List.of(1), liveLines(active));
+
+        List<Confirm.Question> asked = new ArrayList<>();
+        Confirm.answerWith(question -> {
+            asked.add(question);
+            return false;
+        });
+        fx(coordinator::toggleAtCaret);
+        assertEquals(
+                List.of(new Confirm.Question(
+                        tr("dialog.removeBookmark.title"),
+                        null,
+                        tr("dialog.removeBookmark.body", 2),
+                        tr("confirm.action.remove"))),
+                asked);
+        assertEquals(List.of(1), liveLines(active), "Cancel keeps the bookmark and its note");
+
+        Confirm.answerWith(question -> true);
+        fx(coordinator::toggleAtCaret);
+        assertEquals(List.of(), liveLines(active));
     }
 
     @Test
@@ -387,8 +428,33 @@ class BookmarkCoordinatorFxTest {
         });
         assertEquals(List.of("navigate 3", "navigate 1", "navigate 1"), events, "forward from the last wraps");
 
+        // Clearing a file's bookmarks asks first: nothing brings their notes and mnemonics back.
+        List<Confirm.Question> asked = new ArrayList<>();
+        Confirm.answerWith(question -> {
+            asked.add(question);
+            return false;
+        });
+        fx(coordinator::clearInFile);
+        assertEquals(
+                List.of(new Confirm.Question(
+                        tr("bookmarks.deleteFileTitle"),
+                        null,
+                        tr("bookmarks.deleteFileBody", "a.txt"),
+                        tr("confirm.action.delete"))),
+                asked);
+        assertEquals(List.of(1, 3), liveLines(active), "Cancel keeps them");
+
+        Confirm.answerWith(question -> true);
         fx(coordinator::clearInFile);
         assertEquals(List.of(), liveLines(active));
+
+        asked.clear();
+        Confirm.answerWith(question -> {
+            asked.add(question);
+            return true;
+        });
+        fx(coordinator::clearInFile);
+        assertEquals(List.of(), asked, "a file with no bookmark is left alone without a question");
     }
 
     // --- mnemonics --------------------------------------------------------------------------------------

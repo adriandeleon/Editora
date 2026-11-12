@@ -17,7 +17,6 @@ import java.util.function.Function;
 
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
@@ -92,14 +91,16 @@ final class ConfigImportFlow {
             return;
         }
         BackgroundTasks.Handle task = tasks.start(tr("dialog.importConfig.title"));
-        CompletableFuture.supplyAsync(() -> {
-                    try {
-                        ConfigImport.Scan scan = ConfigImport.scan(zip, shared);
-                        return Map.entry(scan, scan.summaries(shared.getConfigDir()));
-                    } catch (ConfigImport.Refused | IOException e) {
-                        throw new java.util.concurrent.CompletionException(e);
-                    }
-                })
+        CompletableFuture.supplyAsync(
+                        () -> {
+                            try {
+                                ConfigImport.Scan scan = ConfigImport.scan(zip, shared);
+                                return Map.entry(scan, scan.summaries(shared.getConfigDir()));
+                            } catch (ConfigImport.Refused | IOException e) {
+                                throw new java.util.concurrent.CompletionException(e);
+                            }
+                        },
+                        com.editora.process.BlockingTasks.named("config-import-scan"))
                 .whenComplete((scanned, failure) -> Platform.runLater(() -> {
                     task.done();
                     if (failure != null) {
@@ -119,13 +120,15 @@ final class ConfigImportFlow {
 
     private void apply(ConfigImport.Scan scan, Set<Part> parts) {
         BackgroundTasks.Handle task = tasks.start(tr("dialog.importConfig.title"));
-        CompletableFuture.supplyAsync(() -> {
-                    try {
-                        return ConfigImport.apply(scan, parts, shared);
-                    } catch (ConfigImport.Refused | IOException e) {
-                        throw new java.util.concurrent.CompletionException(e);
-                    }
-                })
+        CompletableFuture.supplyAsync(
+                        () -> {
+                            try {
+                                return ConfigImport.apply(scan, parts, shared);
+                            } catch (ConfigImport.Refused | IOException e) {
+                                throw new java.util.concurrent.CompletionException(e);
+                            }
+                        },
+                        com.editora.process.BlockingTasks.named("config-import-apply"))
                 .whenComplete((backup, failure) -> Platform.runLater(() -> {
                     task.done();
                     if (failure != null) {
@@ -217,9 +220,9 @@ final class ConfigImportFlow {
         scroll.setPrefViewportHeight(420);
         dialog.getDialogPane().setContent(scroll);
         ButtonType importButton = new ButtonType(tr("dialog.importConfig.import"), ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().setAll(importButton, ButtonType.CANCEL);
-        ((Button) dialog.getDialogPane().lookupButton(importButton)).setDefaultButton(false);
-        ((Button) dialog.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        ButtonType cancel = Dialogs.cancel();
+        dialog.getDialogPane().getButtonTypes().setAll(importButton, cancel);
+        Dialogs.defaultTo(dialog, cancel);
         dialog.setResultConverter(button -> {
             if (button != importButton) {
                 return null;

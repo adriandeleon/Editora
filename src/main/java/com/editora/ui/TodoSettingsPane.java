@@ -8,10 +8,7 @@ import java.util.function.Supplier;
 import javafx.geometry.Pos;
 import javafx.geometry.VPos;
 import javafx.scene.Node;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Label;
@@ -192,15 +189,11 @@ final class TodoSettingsPane {
 
     /** Asks before a pattern is deleted; Cancel is the default button, so Enter keeps it. */
     private static boolean confirmDelete(Node owner, String label) {
-        ButtonType delete = new ButtonType(tr("settings.todo.delete"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION, tr("settings.todo.deleteConfirm", label), delete, ButtonType.CANCEL));
-        confirm.initOwner(owner.getScene() == null ? null : owner.getScene().getWindow());
-        confirm.setTitle(tr("settings.todo.deleteTitle"));
-        confirm.setHeaderText(null);
-        ((Button) confirm.getDialogPane().lookupButton(delete)).setDefaultButton(false);
-        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == delete;
+        return Confirm.ask(
+                owner.getScene() == null ? null : owner.getScene().getWindow(),
+                tr("settings.todo.deleteTitle"),
+                tr("settings.todo.deleteConfirm", label),
+                tr("settings.todo.delete"));
     }
 
     /** The five per-part color pickers; each writes its {@code Settings} field and applies live. */

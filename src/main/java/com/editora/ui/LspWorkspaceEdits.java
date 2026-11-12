@@ -355,20 +355,16 @@ final class LspWorkspaceEdits {
         }
         javafx.scene.control.ButtonType apply = new javafx.scene.control.ButtonType(
                 tr("dialog.lsp.destructiveEdit.apply"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.WARNING,
-                lines.toString(),
-                javafx.scene.control.ButtonType.CANCEL,
-                apply);
+        javafx.scene.control.ButtonType cancel = Dialogs.cancel();
+        javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.WARNING, lines.toString(), cancel, apply));
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.lsp.destructiveEdit.title"));
         confirm.setHeaderText(tr("dialog.lsp.destructiveEdit.header"));
         confirm.getDialogPane().setMinWidth(520);
-        // Enter must not confirm a deletion: Cancel is the default button.
-        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(apply)).setDefaultButton(false);
-        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL))
-                .setDefaultButton(true);
-        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == apply;
+        // The edit deletes or overwrites files: its button is red, and Enter answers Cancel, the default.
+        Dialogs.destructive(confirm, apply);
+        return confirm.showAndWait().orElse(cancel) == apply;
     }
 
     /**
@@ -1166,8 +1162,8 @@ final class LspWorkspaceEdits {
                 tr("dialog.lsp.interruptedEdit.keep"), javafx.scene.control.ButtonBar.ButtonData.OTHER);
         javafx.scene.control.ButtonType later = new javafx.scene.control.ButtonType(
                 tr("dialog.lsp.interruptedEdit.later"), javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
-        javafx.scene.control.Alert ask = new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.WARNING, lines.toString(), later, keep, act);
+        javafx.scene.control.Alert ask = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.WARNING, lines.toString(), later, keep, act));
         ask.initOwner(host.window());
         ask.setTitle(tr("dialog.lsp.interruptedEdit.title"));
         ask.setHeaderText(tr(

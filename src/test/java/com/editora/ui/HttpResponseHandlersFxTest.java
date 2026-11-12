@@ -15,7 +15,7 @@ import java.util.function.Consumer;
 
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.DialogPane;
 
 import com.editora.config.HttpResponseHistory;
@@ -512,7 +512,7 @@ class HttpResponseHandlersFxTest {
         try {
             FxTestSupport.drainFx();
             DialogPane pane = prompt.alert().getDialogPane();
-            Button cancel = FxTestSupport.callOnFx(() -> (Button) pane.lookupButton(ButtonType.CANCEL));
+            Button cancel = FxTestSupport.callOnFx(() -> FxDialogs.button(pane, ButtonBar.ButtonData.CANCEL_CLOSE));
             Button trust = FxTestSupport.callOnFx(() -> (Button) pane.lookupButton(prompt.trust()));
             assertTrue(FxTestSupport.callOnFx(cancel::isDefaultButton));
             assertFalse(FxTestSupport.callOnFx(trust::isDefaultButton));

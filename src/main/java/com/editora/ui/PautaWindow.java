@@ -48,7 +48,7 @@ final class PautaWindow {
 
     private final Consumer<String> openUrl;
     private final List<Entry> exceptions;
-    private final Dialog<Void> dialog = new Dialog<>();
+    private final Dialog<Void> dialog = Dialogs.styled(new Dialog<>());
     private final VBox list = new VBox(2);
     private final Button copy = new Button(tr("pauta.copy"));
 
@@ -113,7 +113,6 @@ final class PautaWindow {
         if (dialog.getDialogPane().lookupButton(close) instanceof Button closeButton) {
             closeButton.setDefaultButton(true);
         }
-        Dialogs.styled(dialog);
     }
 
     /** One group header per kind present, then its rows (PWIN-05's order); one line when there are none. */

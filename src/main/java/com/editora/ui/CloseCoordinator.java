@@ -9,7 +9,6 @@ import java.util.Set;
 import java.util.function.Function;
 
 import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Tab;
 import javafx.stage.Stage;
@@ -66,13 +65,13 @@ final class CloseCoordinator {
     }
 
     private boolean confirmPinned(EditorBuffer buffer) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(stage);
         alert.setTitle(tr("dialog.pinnedTab.title"));
         alert.setHeaderText(tr("dialog.pinnedTab.header", buffer.getTitle()));
         alert.setContentText(null);
         ButtonType close = new ButtonType(tr("dialog.close"));
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(close, cancel);
         Optional<ButtonType> result = alert.showAndWait();
         return result.isPresent() && result.get() == close;
@@ -114,16 +113,19 @@ final class CloseCoordinator {
     }
 
     private Alert unsavedAlert(String title, String saveKey) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(stage);
         alert.setTitle(tr("dialog.unsaved.title"));
         alert.setHeaderText(tr("dialog.unsaved.header", title));
         alert.setContentText(null);
         ButtonType save = new ButtonType(tr(saveKey));
         ButtonType discard = new ButtonType(tr("dialog.discard"));
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(save, discard, cancel);
         MainController.styleUnsavedChangesButtons(alert, save, discard);
+        // Saving is an option, so Save is the one default button: Enter keeps the work, and the red Discard
+        // runs only from its own button.
+        Dialogs.defaultTo(alert, save);
         return alert;
     }
 
@@ -133,16 +135,17 @@ final class CloseCoordinator {
 
     /** "Quit?", saying which terminals ({@code busy}, "title (program)") quitting ends. */
     boolean confirmQuit(java.util.List<String> busy) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(stage);
         alert.setTitle(tr("dialog.quit.title"));
         alert.setHeaderText(tr("dialog.quit.header"));
         alert.setContentText(
                 busy.isEmpty() ? null : tr("terminal.closeWindow.running", "• " + String.join("\n• ", busy)));
         ButtonType quit = new ButtonType(tr("dialog.quit.button"));
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(quit, cancel);
         MainController.styleQuitButtonAsDanger(alert, quit);
+        Dialogs.destructive(alert, quit); // red, never the default: Cancel is the default button
         Optional<ButtonType> result = alert.showAndWait();
         return result.isPresent() && result.get() == quit;
     }

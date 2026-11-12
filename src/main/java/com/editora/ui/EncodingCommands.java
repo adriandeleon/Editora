@@ -10,8 +10,6 @@ import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
@@ -239,12 +237,12 @@ final class EncodingCommands {
     }
 
     private boolean confirmDiscard(EditorBuffer buffer, String charset) {
-        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
-        alert.initOwner(host.stage());
-        alert.setTitle(tr("command." + REOPEN));
-        alert.setHeaderText(
-                tr("dialog.reopenEncoding.header", buffer.getTitle(), EditorConfigCharset.displayName(charset)));
-        alert.setContentText(tr("dialog.reopenEncoding.content"));
-        return alert.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
+        return Confirm.ask(
+                host.stage(),
+                new Confirm.Question(
+                        tr("command." + REOPEN),
+                        tr("dialog.reopenEncoding.header", buffer.getTitle(), EditorConfigCharset.displayName(charset)),
+                        tr("dialog.reopenEncoding.content"),
+                        tr("confirm.action.reopen")));
     }
 }

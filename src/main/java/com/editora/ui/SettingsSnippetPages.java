@@ -87,8 +87,10 @@ final class SettingsSnippetPages {
 
     private boolean confirmTemplateRemovalDialog(com.editora.template.Template t) {
         String name = t.name() == null || t.name().isBlank() ? t.id() : t.name();
-        return w.confirmLoss.test(
-                tr("settings.template.remove"), tr("settings.template.removeConfirm", name, t.id() + ".json"));
+        return w.askBeforeLoss(
+                tr("settings.template.remove"),
+                tr("settings.template.removeConfirm", name, t.id() + ".json"),
+                tr("confirm.action.remove"));
     }
 
     VBox snippetsPage() {
@@ -108,8 +110,10 @@ final class SettingsSnippetPages {
                         this::confirmSnippetSave,
                         SettingsSnippetPages::highlightSnippetBody,
                         SettingsSnippetPages::installEmacsKeys,
-                        name -> w.confirmLoss.test(
-                                tr("settings.lists.deleteTitle"), tr("settings.lists.deleteConfirm", name))));
+                        name -> w.askBeforeLoss(
+                                tr("settings.lists.deleteTitle"),
+                                tr("settings.lists.deleteConfirm", name),
+                                tr("confirm.action.delete"))));
         reloadSnippets = snippetsEditor::reload;
         w.cardRow(
                 mainCard,
@@ -124,10 +128,12 @@ final class SettingsSnippetPages {
     }
 
     private boolean confirmSnippetSave(String message) {
-        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL));
+        ButtonType save = Dialogs.action(tr("confirm.action.save"));
+        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, message, save, Dialogs.cancel()));
         a.initOwner(w.stage);
         a.setHeaderText(null);
-        return a.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
+        Dialogs.destructive(a, save);
+        return a.showAndWait().orElse(Dialogs.cancelOf(a)) == save;
     }
 
     /** Another window (or a save in the editor) changed a user snippet file: the open Snippets page re-reads it. */

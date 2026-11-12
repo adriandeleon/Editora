@@ -28,9 +28,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces its run. A run started by hand or on a probe branch is never
+# cancelled: it can be started on master, where a second run must not stop the first.
 concurrency:
   group: terminal-image-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   image:

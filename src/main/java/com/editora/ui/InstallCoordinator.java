@@ -732,11 +732,11 @@ final class InstallCoordinator {
     }
 
     private boolean confirmDialog(String message) {
-        Alert a = new Alert(
+        Alert a = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 message,
                 javafx.scene.control.ButtonType.OK,
-                javafx.scene.control.ButtonType.CANCEL);
+                javafx.scene.control.ButtonType.CANCEL));
         a.initOwner(host.window());
         a.setTitle(tr("dialog.install.title"));
         a.setHeaderText(null);
@@ -746,7 +746,7 @@ final class InstallCoordinator {
     }
 
     private void alertDialog(Alert.AlertType type, String message) {
-        Alert a = new Alert(type);
+        Alert a = Dialogs.styled(new Alert(type));
         a.initOwner(host.window());
         a.setTitle(tr("dialog.install.title"));
         a.setHeaderText(null);

@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.DialogPane;
 import javafx.stage.Window;
 
@@ -130,7 +130,8 @@ class ShellRunWindowFxTest {
             FxTestSupport.runOnFx(() -> registry.run("file.run"));
             await("the line-ending warning", () -> showingDialog() != null);
             DialogPane pane = FxTestSupport.callOnFx(ShellRunWindowFxTest::showingDialog);
-            FxTestSupport.runOnFx(() -> ((Button) pane.lookupButton(ButtonType.CANCEL)).fire());
+            FxTestSupport.runOnFx(() ->
+                    FxDialogs.button(pane, ButtonBar.ButtonData.CANCEL_CLOSE).fire());
             FxTestSupport.drainFx();
             assertFalse(FxTestSupport.callOnFx(c.runCoordinator::consoleInUse));
             assertTrue(Files.readString(script).contains("\r\n"), "the file is untouched");

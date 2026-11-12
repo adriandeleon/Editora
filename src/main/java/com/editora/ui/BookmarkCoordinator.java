@@ -7,9 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonType;
-
 import com.editora.config.Bookmark;
 import com.editora.config.BookmarkMnemonics;
 import com.editora.config.BookmarkStore;
@@ -421,15 +418,11 @@ final class BookmarkCoordinator {
      */
     void onBookmarkToggleRequest(EditorBuffer buffer, int line) {
         if (buffer.getBookmarkManager().isBookmarked(line)) {
-            Alert confirm = new Alert(
-                    Alert.AlertType.CONFIRMATION,
+            if (Confirm.ask(
+                    host.window(),
+                    tr("dialog.removeBookmark.title"),
                     tr("dialog.removeBookmark.body", line + 1),
-                    ButtonType.OK,
-                    ButtonType.CANCEL);
-            confirm.initOwner(host.window());
-            confirm.setTitle(tr("dialog.removeBookmark.title"));
-            confirm.setHeaderText(null);
-            if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+                    tr("confirm.action.remove"))) {
                 buffer.removeBookmark(line);
             }
         } else {
@@ -437,11 +430,26 @@ final class BookmarkCoordinator {
         }
     }
 
-    /** Toggles a bookmark on the active editor's caret line. */
+    /**
+     * Toggles a bookmark on the active editor's caret line. Taking a plain bookmark off asks nothing: the
+     * same key puts it back. One that carries a note asks first, since the note would be gone for good.
+     */
     void toggleAtCaret() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.getPath() != null) {
-            b.toggleBookmark(b.getFocusedArea().getCurrentParagraph());
+            int line = b.getFocusedArea().getCurrentParagraph();
+            boolean hasNote = b.getBookmarkManager().snapshot().stream()
+                    .anyMatch(bm ->
+                            bm.line() == line && bm.note() != null && !bm.note().isBlank());
+            if (hasNote
+                    && !Confirm.ask(
+                            host.window(),
+                            tr("dialog.removeBookmark.title"),
+                            tr("dialog.removeBookmark.body", line + 1),
+                            tr("confirm.action.remove"))) {
+                return;
+            }
+            b.toggleBookmark(line);
         } else if (b != null) {
             host.setStatus(tr("status.saveBeforeBookmark"));
         }
@@ -489,9 +497,20 @@ final class BookmarkCoordinator {
         }
     }
 
+    /**
+     * Removes every bookmark of the active file, after asking: the bookmarks carry notes and mnemonics the
+     * user wrote, and nothing brings them back. A file with no bookmark is left alone without a question.
+     */
     void clearInFile() {
         EditorBuffer b = host.activeBuffer();
-        if (b != null) {
+        if (b == null || b.getBookmarkManager().snapshot().isEmpty()) {
+            return;
+        }
+        if (Confirm.ask(
+                host.window(),
+                tr("bookmarks.deleteFileTitle"),
+                tr("bookmarks.deleteFileBody", b.getTitle()),
+                tr("confirm.action.delete"))) {
             b.clearBookmarks();
         }
     }

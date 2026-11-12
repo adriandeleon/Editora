@@ -117,11 +117,17 @@ class StyleContrastTest {
             assertTrue(contrast(color(p, "-color-light"), color(p, "-color-neutral-emphasis")) >= 4.5, base);
         }
         String app = read("app.css");
-        for (String selector : List.of(".markwhen-cal-chip", ".openapi-method")) {
+        for (String selector :
+                List.of(".markwhen-cal-chip", ".openapi-method", ".project-map-deps-cell.project-map-deps-weight-4")) {
             String body = String.join(";", rules(app, selector));
             assertTrue(body.contains("-fx-text-fill: -color-fg-emphasis"), selector + ": " + body);
             assertFalse(body.contains("white"), selector);
         }
+        // In About, only an available update is amber: its links stay accent.
+        assertTrue(String.join(";", rules(app, ".about-update")).contains("-fx-text-fill: -state-amber"));
+        // The Project Map's heaviest dependency cells once named this token, which no theme defines, so their
+        // ink fell back to whatever the cell inherited.
+        assertFalse(app.contains("-color-fg-on-emphasis"), "-color-fg-on-emphasis is not a token of any theme");
     }
 
     @Test

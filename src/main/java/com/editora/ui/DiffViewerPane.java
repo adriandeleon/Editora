@@ -2315,18 +2315,10 @@ public final class DiffViewerPane implements TabContent {
      *  this replaces the whole local file at once, it asks for confirmation first. */
     private void applyAll() {
         String otherText = editableSide == EditableSide.RIGHT ? leftText : rightText;
-        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                tr("diff.applyAll.confirm"),
-                javafx.scene.control.ButtonType.OK,
-                javafx.scene.control.ButtonType.CANCEL);
-        confirm.setTitle(tr("diff.applyAll.confirmTitle"));
-        confirm.setHeaderText(null);
-        if (root.getScene() != null && root.getScene().getWindow() != null) {
-            confirm.initOwner(root.getScene().getWindow());
-        }
-        if (confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
-                == javafx.scene.control.ButtonType.OK) {
+        javafx.stage.Window owner =
+                root.getScene() == null ? null : root.getScene().getWindow();
+        if (Confirm.ask(
+                owner, tr("diff.applyAll.confirmTitle"), tr("diff.applyAll.confirm"), tr("confirm.action.replace"))) {
             deliverApply(otherText);
         }
     }

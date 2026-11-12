@@ -116,7 +116,7 @@ final class DiagramCoordinator {
                 } else {
                     String msg = r.message();
                     host.setStatus(tr("status.diagram.exportFailed", msg));
-                    Alert err = new Alert(Alert.AlertType.ERROR);
+                    Alert err = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
                     err.initOwner(host.window());
                     err.setTitle(tr("dialog.diagramExport.title"));
                     err.setHeaderText(tr("status.diagram.exportFailed", ""));

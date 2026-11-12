@@ -116,19 +116,22 @@ final class JsFormatCoordinator {
         if (config != null) {
             trust.roots.putAll(config.getTrustStore().roots);
         }
-        CompletableFuture.supplyAsync(() -> {
-                    JsTools.FormatPlan plan =
-                            JsTools.formatPlan(setting, file, JsTools.Lookup.local(project), trust::isTrusted);
-                    // Biome formats whole files only: a selection goes to the server's range formatting
-                    if (plan.tool() == null || (range != null && plan.formatter() == JsTools.Formatter.BIOME)) {
-                        return new Ran(plan, null);
-                    }
-                    NodeRuntimes.NodeRuntime node = NodeRuntimes.resolveLocal(file, project, "", nodeSetting);
-                    JsToolRun.Invocation inv = JsToolRun.format(
-                            plan, file, node.command(), node.binDir().orElse(null), range);
-                    JsToolRun.Output out = JsToolRun.run(inv, snapshot, null);
-                    return new Ran(plan, JsToolRun.formatOutcome(plan.tool().kind(), out, snapshot));
-                })
+        CompletableFuture.supplyAsync(
+                        () -> {
+                            JsTools.FormatPlan plan =
+                                    JsTools.formatPlan(setting, file, JsTools.Lookup.local(project), trust::isTrusted);
+                            // Biome formats whole files only: a selection goes to the server's range formatting
+                            if (plan.tool() == null || (range != null && plan.formatter() == JsTools.Formatter.BIOME)) {
+                                return new Ran(plan, null);
+                            }
+                            NodeRuntimes.NodeRuntime node = NodeRuntimes.resolveLocal(file, project, "", nodeSetting);
+                            JsToolRun.Invocation inv = JsToolRun.format(
+                                    plan, file, node.command(), node.binDir().orElse(null), range);
+                            JsToolRun.Output out = JsToolRun.run(inv, snapshot, null);
+                            return new Ran(
+                                    plan, JsToolRun.formatOutcome(plan.tool().kind(), out, snapshot));
+                        },
+                        com.editora.process.BlockingTasks.named("js-format"))
                 .exceptionally(t -> new Ran(
                         new JsTools.FormatPlan(JsTools.Formatter.SERVER, null, null, null),
                         new JsToolRun.FormatOutcome(null, String.valueOf(t.getMessage()))))

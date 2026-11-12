@@ -1,7 +1,6 @@
 package com.editora.ui;
 
 import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
@@ -31,8 +30,9 @@ final class PluginDialogs {
      * inside it, the trust warning below, and {@code acceptLabel} / Cancel. Returns whether the user accepted.
      */
     static boolean consent(Window owner, String header, String intro, String capabilities, String acceptLabel) {
-        ButtonType accept = new ButtonType(acceptLabel, ButtonBar.ButtonData.OK_DONE);
-        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, "", accept, ButtonType.CANCEL));
+        ButtonType accept = Dialogs.action(acceptLabel);
+        ButtonType cancel = Dialogs.cancel();
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, "", accept, cancel));
         if (owner != null) {
             alert.initOwner(owner);
         }
@@ -55,22 +55,33 @@ final class PluginDialogs {
         content.setPrefWidth(520);
         alert.getDialogPane().setContent(content);
         // Cancel is the default: Enter on a dialog that appeared mid-typing must not arm code.
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(accept)).setDefaultButton(false);
-        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
-        return alert.showAndWait().orElse(ButtonType.CANCEL) == accept;
+        Dialogs.defaultTo(alert, cancel);
+        return alert.showAndWait().orElse(cancel) == accept;
     }
 
-    /** A yes/no question with its own accept label ("Install", "Remove"); Cancel is the default button. */
+    /** A question that destroys nothing, with its own accept label ("Download"). */
     static boolean confirm(Window owner, String header, String body, String acceptLabel) {
-        ButtonType accept = new ButtonType(acceptLabel, ButtonBar.ButtonData.OK_DONE);
-        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, accept, ButtonType.CANCEL));
+        return confirm(owner, header, body, acceptLabel, false);
+    }
+
+    /**
+     * A question with its own accept label ("Download", "Remove"). One asked before something is removed is
+     * {@code destructive}: its accept button is red and Cancel is the default button.
+     */
+    static boolean confirm(Window owner, String header, String body, String acceptLabel, boolean destructive) {
+        ButtonType accept = Dialogs.action(acceptLabel);
+        ButtonType cancel = Dialogs.cancel();
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, accept, cancel));
         if (owner != null) {
             alert.initOwner(owner);
         }
         alert.setTitle(tr("dialog.plugins.title"));
         alert.setHeaderText(header);
         alert.getDialogPane().setMinWidth(480);
-        return alert.showAndWait().orElse(ButtonType.CANCEL) == accept;
+        if (destructive) {
+            Dialogs.destructive(alert, accept);
+        }
+        return alert.showAndWait().orElse(cancel) == accept;
     }
 
     /** An error: {@code summary} as the header, {@code detail} in a box sized for its wrapped lines. */

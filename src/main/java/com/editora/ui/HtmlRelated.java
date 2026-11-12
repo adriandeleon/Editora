@@ -74,7 +74,9 @@ final class HtmlRelated {
      * it.
      */
     static void pagesLinking(Path asset, List<Path> pages, @Nullable Path root, Consumer<List<Path>> done) {
-        CompletableFuture.supplyAsync(() -> linking(asset, pages, root))
+        CompletableFuture.supplyAsync(
+                        () -> linking(asset, pages, root),
+                        com.editora.process.BlockingTasks.named("html-related-pages"))
                 .exceptionally(t -> List.of())
                 .thenAccept(found -> Platform.runLater(() -> done.accept(found)));
     }

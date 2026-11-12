@@ -463,17 +463,18 @@ final class DeploymentCoordinator {
             return onFx(() -> {
                 ButtonType overwrite = new ButtonType(tr("dialog.deploy.overwrite"), ButtonBar.ButtonData.OK_DONE);
                 ButtonType keep = new ButtonType(tr("dialog.deploy.keepHost"), ButtonBar.ButtonData.OTHER);
-                ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-                Alert alert = new Alert(
+                ButtonType cancel = Dialogs.cancel();
+                Alert alert = Dialogs.styled(new Alert(
                         Alert.AlertType.WARNING,
                         tr("dialog.deploy.conflicts.content", list(files)),
                         overwrite,
                         keep,
-                        cancel);
+                        cancel));
                 alert.initOwner(host.window());
                 alert.setTitle(tr("dialog.deploy.conflicts.title"));
                 alert.setHeaderText(tr("dialog.deploy.conflicts.header", files.size()));
-                ButtonType answer = Dialogs.styled(alert).showAndWait().orElse(cancel);
+                Dialogs.destructive(alert, overwrite);
+                ButtonType answer = alert.showAndWait().orElse(cancel);
                 return answer == overwrite
                         ? Conflicts.OVERWRITE
                         : answer == keep ? Conflicts.KEEP_HOST : Conflicts.CANCEL;
@@ -482,19 +483,13 @@ final class DeploymentCoordinator {
 
         @Override
         public boolean overwriteExisting(List<String> files) {
-            return onFx(() -> {
-                ButtonType deploy = new ButtonType(tr("dialog.deploy.replace"), ButtonBar.ButtonData.OK_DONE);
-                ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-                Alert alert = new Alert(
-                        Alert.AlertType.CONFIRMATION,
-                        tr("dialog.deploy.existing.content", list(files)),
-                        deploy,
-                        cancel);
-                alert.initOwner(host.window());
-                alert.setTitle(tr("dialog.deploy.existing.title"));
-                alert.setHeaderText(tr("dialog.deploy.existing.header", files.size()));
-                return Dialogs.styled(alert).showAndWait().orElse(cancel) == deploy;
-            });
+            return onFx(() -> Confirm.ask(
+                    host.window(),
+                    new Confirm.Question(
+                            tr("dialog.deploy.existing.title"),
+                            tr("dialog.deploy.existing.header", files.size()),
+                            tr("dialog.deploy.existing.content", list(files)),
+                            tr("dialog.deploy.replace"))));
         }
     }
 

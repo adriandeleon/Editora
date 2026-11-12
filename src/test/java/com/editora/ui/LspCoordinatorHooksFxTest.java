@@ -755,7 +755,8 @@ class LspCoordinatorHooksFxTest {
                             }
                         }
                         defaults.complete(out);
-                        ((Button) pane.lookupButton(javafx.scene.control.ButtonType.CANCEL)).fire();
+                        FxDialogs.button(pane, javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)
+                                .fire();
                         return;
                     }
                 }

@@ -26,6 +26,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.text.Text;
 
 import com.editora.config.Bookmark;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -117,6 +118,11 @@ class BookmarksPanelKeysFxTest {
         byProject.put("p1", current);
         panel = FxTestSupport.callOnFx(() -> new BookmarksPanel(
                 () -> new BookmarksPanel.Scope(byProject, "p1", k -> k.isEmpty() ? "General" : "Proj"), actions));
+    }
+
+    @AfterEach
+    void showQuestionsAgain() {
+        Confirm.answerWith(null);
     }
 
     // --- plumbing ---------------------------------------------------------------------------------------
@@ -501,8 +507,27 @@ class BookmarksPanelKeysFxTest {
 
     @Test
     void deleteRemovesTheSelectedBookmarkButOnlyFromTheTree() throws Exception {
+        List<Confirm.Question> asked = new ArrayList<>();
+        boolean[] answer = {false};
+        Confirm.answerWith(question -> {
+            asked.add(question);
+            return answer[0];
+        });
         assertFalse(press(KeyCode.DELETE), "nothing selected: the key is not the panel's");
+        assertEquals(List.of(), asked);
         select("note=two");
+        assertTrue(press(KeyCode.DELETE));
+        assertEquals(
+                List.of(new Confirm.Question(
+                        tr("dialog.removeBookmark.title"),
+                        null,
+                        tr("dialog.removeBookmark.body", 3),
+                        tr("confirm.action.remove"))),
+                asked,
+                "removing a bookmark asks first, as the editor's own menu does");
+        assertEquals(List.of(), calls, "Cancel keeps it");
+
+        answer[0] = true;
         assertTrue(press(KeyCode.DELETE));
         assertEquals(List.of("delete p1 A.java:2"), calls);
 
@@ -513,6 +538,7 @@ class BookmarksPanelKeysFxTest {
         select("ProjectRow[key=p1,");
         assertTrue(press(KeyCode.DELETE));
         assertEquals(1, calls.size(), "a project group is not deletable");
+        assertEquals(2, asked.size(), "and neither key press asked anything");
     }
 
     @Test
@@ -548,6 +574,11 @@ class BookmarksPanelKeysFxTest {
         assertEquals(List.of(), calls, "without a prompt there is nothing to edit with");
 
         List<String> shown = new ArrayList<>();
+        List<String> asked = new ArrayList<>();
+        Confirm.answerWith(question -> {
+            asked.add(question.message());
+            return true;
+        });
         FxTestSupport.runOnFx(() -> {
             panel.setPrompt((title, label, initial, onAccept) -> {
                 shown.add(title + "|" + label + "|" + initial);
@@ -557,6 +588,7 @@ class BookmarksPanelKeysFxTest {
             menuItem(menu, tr("bookmarks.editNoteItem")).fire();
             menuItem(menu, tr("bookmarks.deleteItem")).fire();
         });
+        assertEquals(List.of(tr("dialog.removeBookmark.body", 3)), asked, "Delete asks before it removes");
         assertEquals(
                 List.of(tr("dialog.bookmarkNote.title") + "|" + tr("dialog.bookmarkNote.content") + "|two"), shown);
         assertEquals(List.of("note p1 A.java:2 [rewritten]", "delete p1 A.java:2"), calls);

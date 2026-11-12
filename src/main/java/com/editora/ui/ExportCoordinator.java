@@ -1210,15 +1210,13 @@ final class ExportCoordinator {
 
     /** Asks whether an export may replace {@code file}; the wording is Save As's. */
     private boolean confirmReplace(java.io.File file) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.initOwner(dialogOwner());
-        alert.setTitle(tr("dialog.saveAs.overwrite.title"));
-        alert.setHeaderText(tr("dialog.saveAs.overwrite.header", file.getName()));
-        alert.setContentText(tr("dialog.saveAs.overwrite.content"));
-        return Dialogs.styled(alert)
-                .showAndWait()
-                .filter(javafx.scene.control.ButtonType.OK::equals)
-                .isPresent();
+        return Confirm.ask(
+                dialogOwner(),
+                new Confirm.Question(
+                        tr("dialog.saveAs.overwrite.title"),
+                        tr("dialog.saveAs.overwrite.header", file.getName()),
+                        tr("dialog.saveAs.overwrite.content"),
+                        tr("confirm.action.overwrite")));
     }
 
     /** Exports the active Markwhen buffer's parsed timeline to a JSON file (preview menu + palette). */
@@ -1277,12 +1275,12 @@ final class ExportCoordinator {
 
     /** The error dialog of a failed export or print: what failed as the header, why as the content. */
     Alert failureAlert(String title, String header, String detail) {
-        Alert err = new Alert(Alert.AlertType.ERROR);
+        Alert err = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
         err.initOwner(host.window());
         err.setTitle(title);
         err.setHeaderText(header);
         err.setContentText(detail);
-        return Dialogs.styled(err);
+        return err;
     }
 
     /** Exports the active Markdown preview to a MS Word {@code .docx} (Apache POI). */
@@ -1573,7 +1571,7 @@ final class ExportCoordinator {
 
     /** The "No printer is available" dialog: Export to PDF… (its first button) or Cancel. */
     Alert noPrinterAlert() {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.INFORMATION));
         alert.initOwner(dialogOwner());
         alert.setTitle(tr("dialog.print.title"));
         alert.setHeaderText(tr("dialog.print.noPrinter.header"));
@@ -1583,8 +1581,8 @@ final class ExportCoordinator {
                         new javafx.scene.control.ButtonType(
                                 tr("dialog.print.noPrinter.exportPdf"),
                                 javafx.scene.control.ButtonBar.ButtonData.OK_DONE),
-                        javafx.scene.control.ButtonType.CANCEL);
-        return Dialogs.styled(alert);
+                        Dialogs.cancel());
+        return alert;
     }
 
     /**

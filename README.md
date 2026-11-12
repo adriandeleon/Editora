@@ -171,7 +171,7 @@ editora --diff-ui LEFT RIGHT
   --simple              Start in Simple UI mode (minimal chrome; session only)
   --disable-plugins     Start with every plugin switched off (session only)
   --report              Write a redacted problem report to the current folder and open a GitHub issue for it
-  --version, -V         Print the version and exit
+  --version, -v, -V     Print the version and exit
   --help, -h            Print help and exit
 ```
 
@@ -186,7 +186,8 @@ instance unless `--new-instance` is given. When something goes wrong, **Help →
 Preferences live in `~/.editora/settings.json`; session state, recent files, bookmarks, breakpoints,
 personal notes, saved SFTP connections and macros are JSON files beside it. Choose another folder
 with `--config-dir <path>` or `EDITORA_CONFIG_DIR`, or pass `--dev` to run a development instance on
-`~/.editora-dev/` alongside your everyday editor. The configuration page in the
+`~/.editora-dev/` alongside your everyday editor (`--config-dir` wins over `--dev`, and `--dev` over the
+variable). The configuration page in the
 [user docs](https://editora-project.dev/docs/) lists every file and setting.
 
 ## Plugins

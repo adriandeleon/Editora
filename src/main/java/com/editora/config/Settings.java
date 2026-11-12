@@ -2910,8 +2910,10 @@ public class Settings {
         return autoSaveDelayMillis;
     }
 
+    /** Clamped to the range Settings offers, so a hand-edited file cannot set a delay of 0 or of days. */
     public void setAutoSaveDelayMillis(int autoSaveDelayMillis) {
-        this.autoSaveDelayMillis = autoSaveDelayMillis;
+        this.autoSaveDelayMillis =
+                Math.clamp(autoSaveDelayMillis, MIN_AUTO_SAVE_DELAY_SECONDS * 1000, MAX_AUTO_SAVE_DELAY_SECONDS * 1000);
     }
 
     public boolean isProjectSupport() {
@@ -3097,24 +3099,27 @@ public class Settings {
         return historyMaxPerFile;
     }
 
+    /** Clamped to the range Settings offers: at least one snapshot is kept for a file. */
     public void setHistoryMaxPerFile(int historyMaxPerFile) {
-        this.historyMaxPerFile = historyMaxPerFile;
+        this.historyMaxPerFile = Math.clamp(historyMaxPerFile, 1, MAX_HISTORY_PER_FILE);
     }
 
     public int getHistoryMaxAgeDays() {
         return historyMaxAgeDays;
     }
 
+    /** Clamped to the range Settings offers; 0 keeps snapshots whatever their age. */
     public void setHistoryMaxAgeDays(int historyMaxAgeDays) {
-        this.historyMaxAgeDays = historyMaxAgeDays;
+        this.historyMaxAgeDays = Math.clamp(historyMaxAgeDays, 0, MAX_HISTORY_AGE_DAYS);
     }
 
     public int getHistoryMaxTotalMb() {
         return historyMaxTotalMb;
     }
 
+    /** Clamped to the range Settings offers. */
     public void setHistoryMaxTotalMb(int historyMaxTotalMb) {
-        this.historyMaxTotalMb = historyMaxTotalMb;
+        this.historyMaxTotalMb = Math.clamp(historyMaxTotalMb, 1, MAX_HISTORY_TOTAL_MB);
     }
 
     public boolean isPluginSupport() {

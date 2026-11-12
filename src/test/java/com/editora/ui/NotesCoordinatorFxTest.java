@@ -212,7 +212,22 @@ class NotesCoordinatorFxTest {
         });
     }
 
+    @AfterEach
+    void showQuestionsAgain() {
+        Confirm.answerWith(null);
+    }
+
     // --- plumbing ---------------------------------------------------------------------------------------
+
+    /** Answers every {@link Confirm} question from here on with {@code answer}; returns what gets asked. */
+    private static List<String> answering(boolean answer) {
+        List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Confirm.answerWith(question -> {
+            asked.add(question.message() + " [" + question.action() + "]");
+            return answer;
+        });
+        return asked;
+    }
 
     private void fx(Runnable r) throws Exception {
         FxTestSupport.runOnFx(r);
@@ -579,10 +594,19 @@ class NotesCoordinatorFxTest {
         });
         assertEquals(List.of("navigate 3", "navigate 1"), events);
 
+        List<String> asked = answering(false);
         fx(() -> {
             active.getArea().moveTo(3, 0);
             coordinator.deleteNoteAtCaret();
         });
+        assertEquals(
+                List.of(tr("dialog.note.deleteConfirm.content") + " [" + tr("confirm.action.delete") + "]"),
+                asked,
+                "deleting the note at the caret asks first");
+        assertEquals(List.of("first", "second"), liveBodies(active), "Cancel keeps the note");
+
+        answering(true);
+        fx(coordinator::deleteNoteAtCaret);
         assertEquals(List.of("first"), liveBodies(active));
     }
 
@@ -624,6 +648,14 @@ class NotesCoordinatorFxTest {
                 ButtonBar.ButtonData.OK_DONE);
         assertEquals(List.of("second, rewritten"), bodies("a.txt"));
 
+        // The panel's own Delete asks the same question; Cancel keeps the note.
+        List<String> declined = answering(false);
+        fx(() -> panelActions().delete("proj", key("a.txt"), second));
+        assertEquals(
+                List.of(tr("dialog.note.deleteConfirm.content") + " [" + tr("confirm.action.delete") + "]"), declined);
+        assertEquals(List.of("second, rewritten"), bodies("a.txt"), "Cancel keeps the note");
+
+        answering(true);
         fx(() -> panelActions().delete("proj", key("a.txt"), second));
         assertFalse(store().containsKey(key("a.txt")), "a file with no notes left is dropped from the store");
 
@@ -653,8 +685,19 @@ class NotesCoordinatorFxTest {
                 live.stream().map(PersonalNote::body).toList());
         assertEquals(NoteStatus.RESOLVED, live.get(1).status());
 
+        answering(true);
         fx(() -> panelActions().delete("proj", key("a.txt"), first));
         assertEquals(List.of("second"), liveBodies(b));
+
+        List<String> declined = answering(false);
+        fx(() -> panelActions().deleteAll("proj", key("a.txt")));
+        assertEquals(
+                List.of(tr("dialog.note.deleteAllConfirm.content", "a.txt") + " [" + tr("confirm.action.delete") + "]"),
+                declined,
+                "deleting every note of a file asks first and names the file");
+        assertEquals(List.of("second"), liveBodies(b), "Cancel keeps them");
+
+        answering(true);
         fx(() -> panelActions().deleteAll("proj", key("a.txt")));
         assertEquals(List.of(), liveBodies(b));
         assertFalse(events.contains("save"), "the buffer persists its own changes");
@@ -667,6 +710,7 @@ class NotesCoordinatorFxTest {
         EditorBuffer b = buffer("a.txt", "one\ntwo");
         liveNote(b, 0, "this project's");
 
+        answering(true);
         fx(() -> panelActions().delete(null, key("a.txt"), general)); // a null key means General
         assertEquals(
                 List.of("also general"),
@@ -926,6 +970,7 @@ class NotesCoordinatorFxTest {
     @Test
     void clearingTheChangeListenerIsSafe() throws Exception {
         put("proj", "a.txt", stored("a.txt", 0, "x"));
+        answering(true);
         fx(() -> {
             coordinator.setOnChanged(null);
             panelActions().deleteAll("proj", key("a.txt"));

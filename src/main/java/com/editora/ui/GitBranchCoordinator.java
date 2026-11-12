@@ -694,7 +694,8 @@ final class GitBranchCoordinator {
     private void offerAfterRejection(Path root, String branch, String upstream) {
         ButtonType pull = new ButtonType(tr("dialog.pushRejected.pull"), ButtonBar.ButtonData.YES);
         ButtonType force = new ButtonType(tr("dialog.pushRejected.force"), ButtonBar.ButtonData.OTHER);
-        Alert alert = new Alert(
+        ButtonType cancel = Dialogs.cancel();
+        Alert alert = Dialogs.styled(new Alert(
                 Alert.AlertType.WARNING,
                 tr(
                         "dialog.pushRejected.content",
@@ -702,12 +703,15 @@ final class GitBranchCoordinator {
                         upstream.isBlank() ? tr("dialog.pushRejected.remote") : upstream),
                 pull,
                 force,
-                ButtonType.CANCEL);
+                cancel));
         alert.initOwner(ui().window());
         alert.setTitle(tr("dialog.pushRejected.title"));
         alert.setHeaderText(null);
-        alert.getDialogPane().lookupButton(force).getStyleClass().add("danger");
-        ButtonType answer = alert.showAndWait().orElse(ButtonType.CANCEL);
+        // The force push is red and never the default; the safe answer beside it (pull, then push) stays the
+        // default button, as Save does in the unsaved-changes question.
+        Dialogs.destructive(alert, force);
+        Dialogs.defaultTo(alert, pull);
+        ButtonType answer = alert.showAndWait().orElse(cancel);
         answerRejectedPush(
                 root,
                 branch,

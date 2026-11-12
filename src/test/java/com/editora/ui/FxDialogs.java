@@ -65,6 +65,19 @@ final class FxDialogs {
         return seen.get();
     }
 
+    /**
+     * The pane's button of kind {@code role} ({@code CANCEL_CLOSE} for its Cancel, {@code OK_DONE} for its
+     * action), or null when it has none. A dialog's buttons are looked up by what they do: the app words its
+     * own Cancel and names its actions, so they are not JavaFX's stock {@code ButtonType}s.
+     */
+    static Button button(DialogPane pane, ButtonBar.ButtonData role) {
+        return pane.getButtonTypes().stream()
+                .filter(type -> type.getButtonData() == role)
+                .findFirst()
+                .map(type -> (Button) pane.lookupButton(type))
+                .orElse(null);
+    }
+
     /** {@link #during} for a dialog recognised by its content text. */
     static DialogPane duringContent(Runnable action, String content, ButtonBar.ButtonData answer) throws Exception {
         return during(action, pane -> content.equals(pane.getContentText()), answer);

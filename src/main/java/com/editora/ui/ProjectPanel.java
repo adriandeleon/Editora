@@ -2830,33 +2830,38 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Asks a yes/no question about a tree operation (permanently deleting what the trash refused, moving a
-     * folder or several items). {@code true} = go ahead. Replaceable so tests answer without a modal dialog.
+     * Asks before moving a folder or several items. {@code true} = go ahead. Replaceable so tests answer
+     * without a modal dialog.
      */
-    private java.util.function.Predicate<String> confirmQuestion = this::confirmQuestionDialog;
+    private java.util.function.Predicate<String> confirmQuestion = this::confirmMoveDialog;
 
-    /** Test seam for {@link #confirmQuestion}. */
+    /**
+     * Asks before permanently deleting what the trash refused. {@code true} = delete. Replaceable so tests
+     * answer without a modal dialog.
+     */
+    private java.util.function.Predicate<String> confirmPermanentDelete = this::confirmPermanentDeleteDialog;
+
+    /** Test seam for {@link #confirmQuestion} and {@link #confirmPermanentDelete}: one answer for both. */
     void setConfirmQuestionForTest(java.util.function.Predicate<String> confirm) {
         this.confirmQuestion = Objects.requireNonNull(confirm, "confirm");
+        this.confirmPermanentDelete = confirm;
     }
 
-    private boolean confirmQuestionDialog(String message) {
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL);
+    /** The move question: it destroys nothing (a move can be undone), so Move is not red; Cancel is the default. */
+    private boolean confirmMoveDialog(String message) {
+        ButtonType move = Dialogs.action(tr("confirm.action.move"));
+        ButtonType cancel = Dialogs.cancel();
+        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, message, move, cancel));
         confirm.initOwner(dialogOwner());
         confirm.setTitle(tr("project.fileOperationTitle"));
         confirm.setHeaderText(null);
-        cancelByDefault(confirm);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        Dialogs.defaultTo(confirm, cancel);
+        return confirm.showAndWait().orElse(cancel) == move;
     }
 
-    /** Makes Cancel the button Enter presses: for a question whose "yes" cannot be taken back. */
-    private static void cancelByDefault(Alert confirm) {
-        if (confirm.getDialogPane().lookupButton(ButtonType.OK) instanceof javafx.scene.control.Button ok) {
-            ok.setDefaultButton(false);
-        }
-        if (confirm.getDialogPane().lookupButton(ButtonType.CANCEL) instanceof javafx.scene.control.Button cancel) {
-            cancel.setDefaultButton(true);
-        }
+    /** The question before deleting for good what the trash could not take. */
+    private boolean confirmPermanentDeleteDialog(String message) {
+        return Confirm.ask(dialogOwner(), tr("project.fileOperationTitle"), message, tr("confirm.action.delete"));
     }
 
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
@@ -3562,20 +3567,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /**
      * The delete confirmation. It says which of two different things is about to happen: the files go to the
-     * operating system's trash (restorable — OK is the default), or they are deleted for good, where the
-     * trash cannot take them (not restorable — Cancel is the default, so Enter alone deletes nothing).
+     * operating system's trash (restorable), or they are deleted for good, where the trash cannot take them
+     * (not restorable). Either way the button says Delete in red and Cancel is the default, so Enter alone
+     * deletes nothing.
      */
     private boolean confirmDelete(List<Path> files) {
         int trashed = trashCount(files, deleteOperations);
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION, deleteQuestion(files, trashed), ButtonType.OK, ButtonType.CANCEL);
-        confirm.initOwner(dialogOwner());
-        confirm.setTitle(tr("project.deleteFileTitle"));
-        confirm.setHeaderText(null);
-        if (trashed < files.size()) {
-            cancelByDefault(confirm);
-        }
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return Confirm.ask(
+                dialogOwner(),
+                tr("project.deleteFileTitle"),
+                deleteQuestion(files, trashed),
+                tr("confirm.action.delete"));
     }
 
     /** How many of {@code files} a delete would move to the trash rather than delete for good. */
@@ -3981,7 +3983,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             String question = refusedByTrash.size() == 1
                     ? tr("project.trashFailedBody", refusedByTrash.get(0).getFileName(), trashRefusal)
                     : tr("project.trashFailedMultiBody", refusedByTrash.size(), trashRefusal);
-            boolean permanently = confirmQuestion.test(question);
+            boolean permanently = confirmPermanentDelete.test(question);
             for (Path file : refusedByTrash) {
                 if (!permanently) {
                     failed.add(file); // kept, by the user's choice
@@ -4060,7 +4062,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Shows a modal error dialog when a filesystem operation (rename/delete) fails. */
     private void showError(String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.ERROR, message, ButtonType.OK));
         alert.initOwner(dialogOwner());
         alert.setTitle(tr("project.fileErrorTitle"));
         alert.setHeaderText(null);

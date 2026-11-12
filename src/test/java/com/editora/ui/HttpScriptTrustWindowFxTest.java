@@ -9,7 +9,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.DialogPane;
 import javafx.stage.Window;
 
@@ -98,11 +98,7 @@ class HttpScriptTrustWindowFxTest {
             DialogPane prompt = awaitDialog();
             String header = FxTestSupport.callOnFx(prompt::getHeaderText);
             assertTrue(header.contains("Run scripts from the folder"), header);
-            Button trust = FxTestSupport.callOnFx(() -> prompt.getButtonTypes().stream()
-                    .filter(t -> t != ButtonType.CANCEL)
-                    .map(t -> (Button) prompt.lookupButton(t))
-                    .findFirst()
-                    .orElseThrow());
+            Button trust = FxTestSupport.callOnFx(() -> FxDialogs.button(prompt, ButtonBar.ButtonData.OK_DONE));
             FxTestSupport.runOnFx(trust::fire);
             awaitIdle(http, b);
             assertEquals(List.of("/login null", "/me t-99"), hits, "the handler's token reached the next request");

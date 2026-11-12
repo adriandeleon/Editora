@@ -6,7 +6,6 @@ import java.util.List;
 
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.MenuItem;
@@ -401,16 +400,13 @@ final class TerminalCoordinator {
 
     /** One question listing every busy terminal; {@code action} names the button that ends them. */
     static boolean confirmEndingTerminals(javafx.stage.Window owner, List<String> busy, String action) {
-        ButtonType end = new ButtonType(action, ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = Dialogs.styled(
-                new Alert(Alert.AlertType.CONFIRMATION, "• " + String.join("\n• ", busy), end, ButtonType.CANCEL));
-        confirm.initOwner(owner);
-        confirm.setTitle(tr("terminal.close.title"));
-        confirm.setHeaderText(tr("terminal.closeWindow.header"));
-        ((Button) confirm.getDialogPane().lookupButton(end)).setDefaultButton(false);
-        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
-        MainController.styleQuitButtonAsDanger(confirm, end);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == end;
+        return Confirm.ask(
+                owner,
+                new Confirm.Question(
+                        tr("terminal.close.title"),
+                        tr("terminal.closeWindow.header"),
+                        "• " + String.join("\n• ", busy),
+                        action));
     }
 
     /** Ends every shell (window closing). */
@@ -674,8 +670,9 @@ final class TerminalCoordinator {
     private boolean confirmMultilinePaste(String text) {
         long lines = text.strip().lines().count();
         ButtonType paste = new ButtonType(tr("terminal.paste.confirm"), ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancel = Dialogs.cancel();
         Alert confirm = Dialogs.styled(
-                new Alert(Alert.AlertType.CONFIRMATION, tr("terminal.paste.lines", lines), paste, ButtonType.CANCEL));
+                new Alert(Alert.AlertType.CONFIRMATION, tr("terminal.paste.lines", lines), paste, cancel));
         confirm.initOwner(host.window());
         confirm.setTitle(tr("terminal.paste.title"));
         confirm.setHeaderText(null);
@@ -684,9 +681,8 @@ final class TerminalCoordinator {
         confirm.getDialogPane()
                 .setContent(new javafx.scene.layout.VBox(
                         10, new javafx.scene.control.Label(tr("terminal.paste.lines", lines)), dontAsk));
-        ((Button) confirm.getDialogPane().lookupButton(paste)).setDefaultButton(false);
-        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
-        boolean ok = confirm.showAndWait().orElse(ButtonType.CANCEL) == paste;
+        Dialogs.defaultTo(confirm, cancel); // it destroys nothing, so Paste is not red; Enter still keeps the text out
+        boolean ok = confirm.showAndWait().orElse(cancel) == paste;
         if (ok && dontAsk.isSelected()) {
             host.settings().setTerminalConfirmMultilinePaste(false);
             host.requestSave();
@@ -698,18 +694,13 @@ final class TerminalCoordinator {
 
     /** Asks before ending a shell that is running something; Cancel is the default, so Enter keeps it. */
     private boolean confirmClose(String title, List<String> programs) {
-        ButtonType close = new ButtonType(tr("terminal.close.confirm"), ButtonBar.ButtonData.OK_DONE);
         String running = programs.size() <= RunningProgram.MAX_NAMED
                 ? String.join(", ", programs)
                 : String.join(", ", programs.subList(0, RunningProgram.MAX_NAMED)) + ", …";
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION, tr("terminal.close.running", title, running), close, ButtonType.CANCEL));
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("terminal.close.title"));
-        confirm.setHeaderText(null);
-        ((Button) confirm.getDialogPane().lookupButton(close)).setDefaultButton(false);
-        MainController.styleQuitButtonAsDanger(confirm, close);
-        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == close;
+        return Confirm.ask(
+                host.window(),
+                tr("terminal.close.title"),
+                tr("terminal.close.running", title, running),
+                tr("terminal.close.confirm"));
     }
 }
