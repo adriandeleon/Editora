@@ -116,6 +116,15 @@ public class KeymapManager {
         return KeymapManager.class.getResource("/com/editora/keymaps/" + resolveName(name) + ".mac.json") != null;
     }
 
+    /**
+     * The stock bindings to read a keymap's stored overrides against: its own when {@code name} is a bundled
+     * keymap, none when it is not (one a newer Editora ships, say). {@link #defaults} would answer the default
+     * keymap's for such a name, and overrides must not be read against another keymap's chords.
+     */
+    public static Map<String, String> stockOf(String name, boolean mac) {
+        return AVAILABLE.containsKey(name) ? defaults(name, mac) : Map.of();
+    }
+
     /** Bundled keymap name + platform → its stock bindings (read once; they never change while running). */
     private static final Map<String, Map<String, String>> STOCK = new java.util.concurrent.ConcurrentHashMap<>();
 

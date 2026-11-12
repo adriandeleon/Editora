@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import com.editora.config.migration.ConfigLoadProblem;
 import com.editora.config.migration.ConfigMigrations;
@@ -43,7 +44,7 @@ class ConfigLoadProblemsTest {
                 "\"fontSize\": 20",
                 "\"showMinimap\": \"yes\"", // a hand edit: not a boolean
                 "\"theme\": \"light\"",
-                "\"keybindings\": {\"C-x C-s\": \"file.save\"}",
+                "\"keyBindings\": {\"emacs\": {\"file.save\": [\"C-x s\"]}}",
                 "\"aiApiKey\": \"sk-kept\"");
         Files.writeString(file, original);
 
@@ -53,7 +54,10 @@ class ConfigLoadProblemsTest {
         assertEquals(20, settings.getFontSize(), "a value before the bad one");
         assertTrue(settings.isShowMinimap(), "the bad value keeps its default");
         assertEquals("light", settings.getTheme(), "a value after the bad one");
-        assertEquals("file.save", settings.getKeybindings().get("C-x C-s"), "key bindings survive");
+        assertEquals(
+                Map.of("emacs", Map.of("file.save", List.of("C-x s"))),
+                settings.getKeyBindings(),
+                "key bindings survive");
         assertEquals("sk-kept", settings.getAiApiKey(), "API keys survive");
 
         List<ConfigLoadProblem> problems = config.shared().takeLoadProblems();
@@ -69,7 +73,9 @@ class ConfigLoadProblemsTest {
         assertTrue(config.save());
         JsonNode saved = JSON.readTree(file.toFile());
         assertEquals("light", saved.get("theme").asText());
-        assertEquals("file.save", saved.get("keybindings").get("C-x C-s").asText());
+        assertEquals(
+                "C-x s",
+                saved.get("keyBindings").get("emacs").get("file.save").get(0).asText());
         assertEquals("sk-kept", saved.get("aiApiKey").asText());
     }
 
@@ -77,15 +83,15 @@ class ConfigLoadProblemsTest {
     void severalMistypedValuesAreAllReportedByName(@TempDir Path dir) throws IOException {
         Files.writeString(
                 dir.resolve("settings.json"),
-                settingsJson("\"tabSize\": \"wide\"", "\"keymap\": \"cua\"", "\"keybindings\": \"none\""));
+                settingsJson("\"tabSize\": \"wide\"", "\"keymap\": \"cua\"", "\"keyBindings\": \"none\""));
         ConfigManager config = new ConfigManager(dir);
         Settings settings = config.load();
 
         assertEquals(4, settings.getTabSize());
         assertEquals("cua", settings.getKeymap());
-        assertTrue(settings.getKeybindings().isEmpty());
+        assertTrue(settings.getKeyBindings().isEmpty());
         assertEquals(
-                List.of("tabSize", "keybindings"),
+                List.of("tabSize", "keyBindings"),
                 config.shared().takeLoadProblems().get(0).skipped());
     }
 

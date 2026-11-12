@@ -168,7 +168,7 @@ class StoreIntegrityTest {
     void settingsAnOlderBuildSetAsideComeBackWhenTheFileInTheirPlaceIsStillDefaults(@TempDir Path dir)
             throws Exception {
         String mine = "{\"schemaVersion\":" + Settings.SCHEMA_VERSION
-                + ",\"fontSize\":19,\"aiApiKey\":\"sk-ant-USER\",\"keybindings\":{\"file.save\":\"Ctrl+Alt+S\"}}";
+                + ",\"fontSize\":19,\"aiApiKey\":\"sk-ant-USER\",\"keyBindings\":{\"emacs\":{\"file.save\":[\"C-x s\"]}}}";
         // The older build wrote its defaults, and its own update check stamped the bookkeeping keys.
         downgradeOnce(
                 dir,
@@ -183,7 +183,8 @@ class StoreIntegrityTest {
         try {
             assertEquals(19, settings.getFontSize());
             assertEquals("sk-ant-USER", settings.getAiApiKey());
-            assertEquals("Ctrl+Alt+S", settings.getKeybindings().get("file.save"));
+            assertEquals(
+                    List.of("C-x s"), settings.getKeyBindings().get("emacs").get("file.save"));
             ConfigLoadProblem told = problemFor(config.shared().takeLoadProblems(), dir.resolve("settings.json"));
             assertNotNull(told, "the user is told their settings came back");
             assertEquals(Kind.NEWER_COPY_RESTORED, told.kind());

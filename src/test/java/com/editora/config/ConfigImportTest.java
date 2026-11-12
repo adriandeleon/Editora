@@ -168,8 +168,8 @@ class ConfigImportTest {
                         "sk-ant-FAKE-HERE",
                         "keymap",
                         "emacs",
-                        "keybindings",
-                        Map.of("file.save", "C-x C-s"))));
+                        "keyBindings",
+                        Map.of("emacs", Map.of("file.save", List.of("C-x s"))))));
         Files.createDirectories(cfg.resolve("snippets"));
         Files.writeString(cfg.resolve("snippets/go.json"), "{\"mine\":1}");
         Files.writeString(cfg.resolve("macros.json"), "{\"mine\":true}");
@@ -186,8 +186,8 @@ class ConfigImportTest {
                         "", // an export leaves the keys blank
                         "keymap",
                         "default",
-                        "keybindings",
-                        Map.of("file.save", "C-s")))));
+                        "keyBindings",
+                        Map.of("cua", Map.of("file.save", List.of("C-M-s")))))));
         entries.put("snippets/java.json", text("{\"theirs\":1}"));
         entries.put("macros.json", text("{\"theirs\":true}"));
         entries.put("plugins.json", text("{}"));
@@ -200,7 +200,9 @@ class ConfigImportTest {
         assertEquals(20, settings.get("fontSize").asInt(), "preferences came in");
         assertEquals("sk-ant-FAKE-HERE", settings.get("aiApiKey").asText(), "a blank key never replaces one");
         assertEquals("emacs", settings.get("keymap").asText(), "key bindings were left unticked");
-        assertEquals("C-x C-s", settings.get("keybindings").get("file.save").asText());
+        assertEquals(
+                "{\"emacs\":{\"file.save\":[\"C-x s\"]}}",
+                settings.get("keyBindings").toString());
         assertEquals("{\"theirs\":1}", Files.readString(cfg.resolve("snippets/java.json")));
         assertFalse(Files.exists(cfg.resolve("snippets/go.json")), "the part is replaced as a whole");
         assertEquals("{\"mine\":true}", Files.readString(cfg.resolve("macros.json")), "unticked: untouched");

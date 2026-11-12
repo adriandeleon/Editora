@@ -156,9 +156,9 @@ public final class KeybindingsFile {
         return UserKeyBindings.fromSplit(
                 overrides(sections.path(V1_WINDOWS_LINUX)),
                 overrides(sections.path(V1_MAC)),
-                KeymapManager.defaults(keymap, false),
-                KeymapManager.defaults(keymap, true),
-                KeymapManager.hasMacVariant(keymap));
+                KeymapManager.stockOf(keymap, false),
+                KeymapManager.stockOf(keymap, true),
+                KeymapManager.AVAILABLE.containsKey(keymap) && KeymapManager.hasMacVariant(keymap));
     }
 
     private static Map<String, String> overrides(JsonNode chords) {

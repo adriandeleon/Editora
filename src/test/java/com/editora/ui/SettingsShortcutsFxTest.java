@@ -129,8 +129,9 @@ class SettingsShortcutsFxTest {
                 .orElse(null);
     }
 
+    /** This system's overrides for the active keymap, as the stored bindings give them. */
     static Map<String, String> overrides(FxWindowFixture fx) {
-        return fx.shared.getSettings().keybindingsFor(KeymapManager.isMac());
+        return UserKeys.overrides(fx.shared.getSettings());
     }
 
     static HBox row(SettingsWindow w, String commandId) {

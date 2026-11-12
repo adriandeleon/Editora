@@ -56,13 +56,20 @@ class TwoWritersTest {
         sharedA.shutdown();
     }
 
+    /** One Emacs binding, as {@link Settings#getKeyBindings()} holds it. */
+    private static Map<String, Map<String, List<String>>> bindings(String command, String chord) {
+        Map<String, Map<String, List<String>>> out = new LinkedHashMap<>();
+        out.put("emacs", new LinkedHashMap<>(Map.of(command, List.of(chord))));
+        return out;
+    }
+
     private String read(String name) throws Exception {
         return Files.readString(dir.resolve(name));
     }
 
     @Test
     void anIncidentalSaveInOneProcessDoesNotRevertTheOthersSettings() throws Exception {
-        a.getSettings().setKeybindings(new LinkedHashMap<>(Map.of("file.save", "Ctrl+Alt+S")));
+        a.getSettings().setKeyBindings(bindings("file.save", "C-x s"));
         a.getSettings().setAiApiKey("sk-user-key-A");
         a.getSettings().setFontSize(19);
         assertTrue(a.save());
@@ -74,18 +81,18 @@ class TwoWritersTest {
 
         String settings = read("settings.json");
         assertTrue(settings.contains("sk-user-key-A"), settings);
-        assertTrue(settings.contains("Ctrl+Alt+S"), settings);
+        assertTrue(settings.contains("C-x s"), settings);
         assertTrue(settings.contains("\"fontSize\" : 19"), settings);
     }
 
     @Test
     void settingsChangedInBothProcessesAreMergedPerKey() throws Exception {
         a.getSettings().setAiApiKey("sk-user-key-A");
-        a.getSettings().setKeybindings(new LinkedHashMap<>(Map.of("file.save", "Ctrl+Alt+S")));
+        a.getSettings().setKeyBindings(bindings("file.save", "C-x s"));
         assertTrue(a.save());
 
         b.getSettings().setFontSize(21);
-        b.getSettings().setKeybindings(new LinkedHashMap<>(Map.of("edit.copy", "Ctrl+Alt+C")));
+        b.getSettings().setKeyBindings(bindings("edit.copy", "C-c c"));
         assertTrue(b.save());
 
         // …and the first process saves again, with nothing new of its own.
@@ -97,8 +104,8 @@ class TwoWritersTest {
             assertEquals("sk-user-key-A", fresh.getSettings().getAiApiKey());
             assertEquals(21, fresh.getSettings().getFontSize());
             assertEquals(
-                    Map.of("file.save", "Ctrl+Alt+S", "edit.copy", "Ctrl+Alt+C"),
-                    fresh.getSettings().getKeybindings());
+                    Map.of("emacs", Map.of("file.save", List.of("C-x s"), "edit.copy", List.of("C-c c"))),
+                    fresh.getSettings().getKeyBindings());
         } finally {
             fresh.shared().shutdown();
         }

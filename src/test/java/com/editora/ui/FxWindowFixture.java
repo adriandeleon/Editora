@@ -96,7 +96,7 @@ final class FxWindowFixture implements AutoCloseable {
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
-            keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
+            keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
             MainController controller = wm.buildWindowForTest(zen, expert, simple, targets, noSession);
             onBuilt.accept(controller);
@@ -160,7 +160,7 @@ final class FxWindowFixture implements AutoCloseable {
             beforeWindows.accept(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
-            keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
+            keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
             MainController controller = wm.buildWindowForTest();
             return new FxWindowFixture(dir, shared, wm, controller);
@@ -195,7 +195,7 @@ final class FxWindowFixture implements AutoCloseable {
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
-            keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
+            keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
             MainController controller = wm.buildDiffWindowForTest(new WindowManager.DiffUiRequest(left, right));
             onBuilt.accept(controller);

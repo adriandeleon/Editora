@@ -1,14 +1,6 @@
 {
   "exceptions": [
     {
-      "rule": "OS-04",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-04",
-      "kind": "pending",
-      "reason": "A few things differ between systems beyond the documented list: deleting on Windows does not use the Recycle Bin, a key rebound on macOS is kept apart from the other systems, and WSL targets appear on Windows only.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1553"
-    },
-    {
       "rule": "PAUTA-13",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/conformance/#pauta-13",

@@ -88,12 +88,14 @@ class SettingsResetTest {
         // own "Reset all".
         Settings s = new Settings();
         s.setFontZoom(1.4);
-        s.setKeybindings(Map.of("C-x C-s", "file.save"));
+        s.setKeyBindings(Map.of("emacs", Map.of("file.save", List.of("C-x s"))));
+        s.setKeyBindingsMacOnly(Map.of("vscode", Map.of("nav.goToLine", List.of("C-l"))));
 
         Settings.resetToDefaults(s);
 
         assertEquals(1.4, s.getFontZoom());
-        assertEquals(Map.of("C-x C-s", "file.save"), s.getKeybindings());
+        assertEquals(Map.of("emacs", Map.of("file.save", List.of("C-x s"))), s.getKeyBindings());
+        assertEquals(Map.of("vscode", Map.of("nav.goToLine", List.of("C-l"))), s.getKeyBindingsMacOnly());
     }
 
     @Test

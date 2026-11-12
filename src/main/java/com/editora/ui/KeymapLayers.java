@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.command.KeymapManager;
+import com.editora.command.UserKeyBindings;
 import com.editora.command.UserKeyBindings.Store;
 import com.editora.config.Settings;
 
@@ -18,6 +19,9 @@ import com.editora.config.Settings;
  * bindings (not the unbinds) on top gives the user the last word without taking freed chords away from plugins.
  */
 final class KeymapLayers {
+
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(KeymapLayers.class.getName());
 
     private KeymapLayers() {}
 
@@ -38,7 +42,12 @@ final class KeymapLayers {
                 }
             });
         }
-        rebuild(keymap, settings.getKeymap(), pluginKeymaps, UserKeys.overrides(settings, base));
+        UserKeyBindings.Derived derived = UserKeys.derived(settings, base);
+        derived.skipped()
+                .forEach(skipped -> LOG.info("Key binding not used on this system: " + skipped.commandId() + " on "
+                        + skipped.chord() + " (no key for it here, or the system keeps it); the command keeps"
+                        + " its default"));
+        rebuild(keymap, settings.getKeymap(), pluginKeymaps, derived.overrides());
     }
 
     /** Reloads {@code keymap} as {@code name} and layers the plugin keymaps and the user's overrides on it. */
@@ -71,39 +80,80 @@ final class KeymapLayers {
         }
         Store left = UserKeys.store(settings, from);
         Store entered = UserKeys.store(settings, to);
-        carry(left.shared(), entered.shared(), to, false);
-        carry(left.macOnly(), entered.macOnly(), to, true);
+        carry(left, entered, from, to);
         UserKeys.put(settings, from, left);
         UserKeys.put(settings, to, entered);
     }
 
     /**
-     * Moves the bindings of commands no keymap binds from {@code left} into {@code entered}, the bindings of
-     * keymap {@code to}: unless the command is bound there already, or one of its chords is in use there (by
-     * the keymap or by another of the user's bindings); such a binding stays with the keymap it was made in.
-     * {@code mac} says which notation the chords are in.
+     * Moves the bindings of commands no keymap binds from {@code left} (keymap {@code from}) into
+     * {@code entered} (keymap {@code to}): unless the command is bound there already, or one of its chords is
+     * in use there on either kind of system (by the keymap or by another of the user's bindings); such a
+     * binding stays with the keymap it was made in.
+     *
+     * <p>The keys the user presses stay the same on each system. That matters between a keymap with a macOS
+     * variant and one without: {@code C-M-f12} is Ctrl on a Mac in Emacs and would read as Cmd in CUA, so the
+     * Mac's own form goes along as a Mac-only chord where the new keymap would read the shared one otherwise.
      */
-    private static void carry(
-            Map<String, List<String>> left, Map<String, List<String>> entered, String to, boolean mac) {
-        Map<String, String> live = new LinkedHashMap<>(KeymapManager.defaults(to, mac));
-        entered.forEach((command, chords) -> chords.forEach(chord -> live.put(chord, command)));
-        for (var it = left.entrySet().iterator(); it.hasNext(); ) {
-            Map.Entry<String, List<String>> e = it.next();
-            String command = e.getKey();
+    private static void carry(Store left, Store entered, String from, String to) {
+        boolean variantFrom = KeymapManager.hasMacVariant(from);
+        boolean variantTo = KeymapManager.hasMacVariant(to);
+        // What is in use in the keymap entered, as Windows and Linux type it and as a Mac does.
+        Map<String, String> live = new LinkedHashMap<>(KeymapManager.defaults(to, false));
+        Map<String, String> liveMac = new LinkedHashMap<>(KeymapManager.defaults(to, true));
+        entered.shared()
+                .forEach((command, chords) -> chords.forEach(chord -> {
+                    live.put(chord, command);
+                    liveMac.put(UserKeyBindings.toMac(chord, variantTo), command);
+                }));
+        entered.macOnly().forEach((command, chords) -> chords.forEach(chord -> liveMac.put(chord, command)));
+
+        java.util.Set<String> commands =
+                new java.util.LinkedHashSet<>(left.shared().keySet());
+        commands.addAll(left.macOnly().keySet());
+        for (String command : commands) {
             if (KeymapManager.boundByAnyKeymap(command, false)
                     || KeymapManager.boundByAnyKeymap(command, true)
-                    || entered.containsKey(command)) {
+                    || entered.shared().containsKey(command)
+                    || entered.macOnly().containsKey(command)) {
                 continue;
             }
-            boolean free = e.getValue().stream()
-                    .allMatch(chord -> com.editora.command.KeybindingEdits.conflicts(live, chord, command)
-                            .isEmpty());
-            if (free) {
-                entered.put(command, e.getValue());
-                e.getValue().forEach(chord -> live.put(chord, command));
-                it.remove();
+            List<String> shared = left.shared().get(command);
+            // The chords a Mac presses for it today: its own, else the shared ones as the keymap left reads them.
+            List<String> onMac = left.macOnly().get(command);
+            if (onMac == null && shared != null) {
+                onMac = shared.stream()
+                        .map(chord -> UserKeyBindings.toMac(chord, variantFrom))
+                        .toList();
             }
+            boolean free = (shared == null || shared.stream().allMatch(chord -> unused(live, chord, command)))
+                    && (onMac == null || onMac.stream().allMatch(chord -> unused(liveMac, chord, command)));
+            if (!free) {
+                continue;
+            }
+            if (shared != null) {
+                entered.shared().put(command, shared);
+                shared.forEach(chord -> live.put(chord, command));
+            }
+            if (onMac != null) {
+                List<String> asRead = shared == null
+                        ? null
+                        : shared.stream()
+                                .map(chord -> UserKeyBindings.toMac(chord, variantTo))
+                                .toList();
+                if (!onMac.equals(asRead)) {
+                    entered.macOnly().put(command, onMac);
+                }
+                onMac.forEach(chord -> liveMac.put(chord, command));
+            }
+            left.shared().remove(command);
+            left.macOnly().remove(command);
         }
+    }
+
+    private static boolean unused(Map<String, String> live, String chord, String command) {
+        return com.editora.command.KeybindingEdits.conflicts(live, chord, command)
+                .isEmpty();
     }
 
     /**

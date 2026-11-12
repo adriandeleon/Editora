@@ -822,9 +822,9 @@ public final class ConfigMigrations {
             UserKeyBindings.Store store = UserKeyBindings.fromSplit(
                     windowsLinux.getOrDefault(keymap, Map.of()),
                     mac.getOrDefault(keymap, Map.of()),
-                    KeymapManager.defaults(keymap, false),
-                    KeymapManager.defaults(keymap, true),
-                    KeymapManager.hasMacVariant(keymap));
+                    KeymapManager.stockOf(keymap, false),
+                    KeymapManager.stockOf(keymap, true),
+                    KeymapManager.AVAILABLE.containsKey(keymap) && KeymapManager.hasMacVariant(keymap));
             if (!store.shared().isEmpty() && !shared.has(keymap)) {
                 shared.set(keymap, MAPPER.valueToTree(store.shared()));
             }
@@ -838,15 +838,18 @@ public final class ConfigMigrations {
         return o;
     }
 
-    /** The overrides parked for the bundled keymaps other than {@code active}, each under its keymap. */
+    /**
+     * The overrides parked for the keymaps other than {@code active}, each under its keymap. One under a name
+     * that is not a bundled keymap (a newer Editora's, synced here) keeps its bindings too; only its bare
+     * unbinds go, as there are no defaults to say which command each one unbound.
+     */
     private static void parked(@Nullable JsonNode byKeymap, String active, Map<String, Map<String, String>> into) {
         if (byKeymap == null || !byKeymap.isObject()) {
             return;
         }
         byKeymap.fields().forEachRemaining(e -> {
-            // The active keymap's overrides are the live maps, never the parked ones; a name that is not a
-            // bundled keymap has no defaults to read its overrides against.
-            if (!e.getKey().equals(active) && KeymapManager.AVAILABLE.containsKey(e.getKey())) {
+            // The active keymap's overrides are the live maps, never the parked ones.
+            if (!e.getKey().equals(active) && !e.getKey().isBlank()) {
                 into.put(e.getKey(), chordMap(e.getValue()));
             }
         });
