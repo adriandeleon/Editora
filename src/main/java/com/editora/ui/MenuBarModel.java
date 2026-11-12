@@ -9,7 +9,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Editora is command-driven, and the command palette has always been the complete index of what it can
  * do — but only for someone who already knows what to search for. A menu bar is the browsable map: it is how
- * a newcomer discovers that "Refactor" or "VCS" exist as categories at all, and it is the loudest single
+ * a newcomer discovers that "Refactor" or "Git" exist as categories at all, and it is the loudest single
  * signal that separates an IDE from an editor with tool windows.
  *
  * <p>It is a table rather than construction code because everything a menu item needs already exists on the
@@ -47,7 +47,7 @@ final class MenuBarModel {
      * those, below a separator — its submenus. A submenu is a {@code MenuSpec} too (it has none of its own).
      * A submenu named by a {@link #submenu} entry is shown at that entry instead.
      *
-     * <p>Submenus exist for menus that outgrew a flat list: VCS had some sixty entries. The daily actions
+     * <p>Submenus exist for menus that outgrew a flat list: Git had some sixty entries. The daily actions
      * stay in {@link #entries}; everything else is one level down, grouped by what it acts on. File keeps its
      * export formats in one: the menu is as tall as a small screen allows (MenuPopupBoundsFxTest).
      */
@@ -116,7 +116,7 @@ final class MenuBarModel {
      * rather than losing the menu bar altogether: the menu is the browsable map of what the editor can do,
      * and a beginner-facing mode is exactly where that map matters most. What Simple mode strips is the
      * <em>content</em> — its whole point is a minimal surface, and it also switches off LSP, debugging, Git,
-     * HTTP, plugins, external tools and the test runner, so the Code/Run/VCS/Tools menus would otherwise
+     * HTTP, plugins, external tools and the test runner, so the Code/Run/Git/Tools menus would otherwise
      * stand there fully grayed out, which is worse than not offering them.
      */
     static List<MenuSpec> menus(boolean simple) {
@@ -321,8 +321,10 @@ final class MenuBarModel {
                         "menubar.run",
                         // Every debugger action has a place here (review C10): Pause, Restart, Run to Cursor,
                         // Evaluate and the breakpoint list were reachable only from the palette. The session-level
-                        // ones stay at the top; stepping, evaluate, watches and breakpoints are in a Debugger
-                        // submenu — flat, the menu was taller than a 1080p screen (review 2 C103).
+                        // ones stay at the top; the rest is in four submenus by what it is for — flat, the menu
+                        // was taller than a 1080p screen (review 2 C103), and as one Debugger submenu it grew to
+                        // fifty rows and scrolled. Run itself is at the 20 rows a laptop screen allows, which is
+                        // why Toggle Breakpoint, Attach to Process and Reattach are one level down.
                         List.of(
                                 "file.run",
                                 "file.runWithArgs",
@@ -334,12 +336,12 @@ final class MenuBarModel {
                                 "debug.start",
                                 "debug.mainClass",
                                 "debug.attach",
-                                "debug.attachToProcess",
-                                "debug.reattach",
                                 "debug.stop",
                                 "debug.stopAll",
                                 "debug.restart",
-                                "debug.toggleBreakpoint",
+                                submenu("menubar.run.launch"),
+                                submenu("menubar.run.stepping"),
+                                submenu("menubar.run.breakpoints"),
                                 submenu("menubar.run.debugger"),
                                 SEPARATOR,
                                 "test.run",
@@ -361,43 +363,46 @@ final class MenuBarModel {
                                                 SEPARATOR,
                                                 "tool.maven",
                                                 "tool.buildOutput")),
+                                // The other ways to start a session: the toolbar's Run and Debug buttons beside
+                                // the configuration box, a configuration or a compound by name, a process, a
+                                // browser.
                                 new MenuSpec(
-                                        "menubar.run.debugger",
-                                        // No "Debug: Continue": Start / Continue above does it, and its prefixed
-                                        // title read unevenly among the bare rows (review 3, choice 5).
-                                        // The toolbar's Run and Debug buttons beside the configuration box come
-                                        // first: Run itself is at the 20 rows a laptop screen allows.
+                                        "menubar.run.launch",
                                         List.of(
                                                 "run.selectedConfig",
                                                 "debug.selectedConfig",
                                                 "debug.startConfiguration",
                                                 "debug.startCompound",
                                                 "debug.editCompounds",
+                                                SEPARATOR,
+                                                "debug.attachToProcess",
+                                                "debug.reattach",
+                                                SEPARATOR,
                                                 "debug.browser",
-                                                "debug.attachBrowser",
+                                                "debug.attachBrowser")),
+                                // No "Debug: Continue": Start / Continue above does it, and its prefixed
+                                // title read unevenly among the bare rows (review 3, choice 5).
+                                new MenuSpec(
+                                        "menubar.run.stepping",
+                                        List.of(
                                                 "debug.pause",
                                                 "debug.stepOver",
                                                 "debug.stepInto",
                                                 "debug.smartStepInto",
                                                 "debug.stepOut",
+                                                SEPARATOR,
                                                 "debug.stepOverInstruction",
                                                 "debug.stepIntoInstruction",
+                                                SEPARATOR,
                                                 "debug.runToCursor",
                                                 "debug.forceRunToCursor",
-                                                "debug.restartFrame",
-                                                SEPARATOR,
-                                                "debug.applyCodeChanges",
-                                                "debug.evaluate",
-                                                "debug.showValue",
-                                                "debug.showException",
-                                                "debug.addWatch",
-                                                "debug.toggleHex",
-                                                "debug.pinValue",
-                                                "debug.unpinLine",
-                                                "debug.historyBack",
-                                                "debug.historyForward",
-                                                "debug.showHistory",
-                                                SEPARATOR,
+                                                "debug.restartFrame")),
+                                // One breakpoint's kinds and settings, then the list and its groups, then the
+                                // exception breakpoints.
+                                new MenuSpec(
+                                        "menubar.run.breakpoints",
+                                        List.of(
+                                                "debug.toggleBreakpoint",
                                                 "debug.toggleBreakpointEnabled",
                                                 "debug.toggleTemporaryBreakpoint",
                                                 "debug.toggleRecordingBreakpoint",
@@ -407,22 +412,42 @@ final class MenuBarModel {
                                                 "debug.toggleFieldWatchpoint",
                                                 "debug.addLogpoint",
                                                 "debug.editBreakpoint",
+                                                SEPARATOR,
                                                 "debug.breakpoints",
                                                 "debug.moveBreakpointToGroup",
                                                 "debug.toggleBreakpointGroup",
                                                 "debug.exportBreakpoints",
                                                 "debug.importBreakpoints",
-                                                "debug.threads",
-                                                "debug.loadedSources",
-                                                "debug.modules",
-                                                "debug.showDisassembly",
-                                                "debug.showMemory",
-                                                "debug.editCustomAdapters",
                                                 "debug.muteBreakpoints",
                                                 SEPARATOR,
                                                 "debug.exceptions.caught",
                                                 "debug.exceptions.uncaught",
                                                 "debug.toggleExceptionBreakpoints")),
+                                // What is left is the stopped program itself: its values, the stops before
+                                // this one, and the views onto its threads, code and memory.
+                                new MenuSpec(
+                                        "menubar.run.debugger",
+                                        List.of(
+                                                "debug.applyCodeChanges",
+                                                "debug.evaluate",
+                                                "debug.showValue",
+                                                "debug.showException",
+                                                "debug.addWatch",
+                                                "debug.toggleHex",
+                                                "debug.pinValue",
+                                                "debug.unpinLine",
+                                                SEPARATOR,
+                                                "debug.historyBack",
+                                                "debug.historyForward",
+                                                "debug.showHistory",
+                                                SEPARATOR,
+                                                "debug.threads",
+                                                "debug.loadedSources",
+                                                "debug.modules",
+                                                "debug.showDisassembly",
+                                                "debug.showMemory",
+                                                SEPARATOR,
+                                                "debug.editCustomAdapters")),
                                 // A local project run on another machine (Run on in a configuration).
                                 new MenuSpec(
                                         "menubar.run.deploy",
@@ -433,7 +458,7 @@ final class MenuBarModel {
                                                 SEPARATOR,
                                                 "deploy.edit")))),
                 new MenuSpec(
-                        "menubar.vcs",
+                        "menubar.git",
                         // What is used every day stays at the top level; the rest is grouped below.
                         List.of(
                                 "git.commit",
@@ -454,7 +479,7 @@ final class MenuBarModel {
                                 "git.clone"),
                         List.of(
                                 new MenuSpec(
-                                        "menubar.vcs.changes",
+                                        "menubar.git.changes",
                                         List.of(
                                                 "git.stageAll",
                                                 "git.unstageAll",
@@ -476,7 +501,7 @@ final class MenuBarModel {
                                                 SEPARATOR,
                                                 "git.addToGitignore")),
                                 new MenuSpec(
-                                        "menubar.vcs.branches",
+                                        "menubar.git.branches",
                                         // The branch dropdown's per-row actions, for whoever looks in the menu.
                                         List.of(
                                                 "git.newBranch",
@@ -490,7 +515,7 @@ final class MenuBarModel {
                                                 "git.renameBranch",
                                                 "git.deleteBranch")),
                                 new MenuSpec(
-                                        "menubar.vcs.remotes",
+                                        "menubar.git.remotes",
                                         List.of(
                                                 "git.pullRebase",
                                                 "git.pullMerge",
@@ -504,10 +529,10 @@ final class MenuBarModel {
                                                 "git.remotes",
                                                 "git.worktrees")),
                                 new MenuSpec(
-                                        "menubar.vcs.tags",
+                                        "menubar.git.tags",
                                         List.of("git.tag.create", "git.tag.push", "git.tag.delete")),
                                 new MenuSpec(
-                                        "menubar.vcs.stash",
+                                        "menubar.git.stash",
                                         List.of(
                                                 "git.stashes",
                                                 "git.stash",
@@ -516,9 +541,9 @@ final class MenuBarModel {
                                                 // dropdown.
                                                 "git.unstash",
                                                 "git.stashDrop")),
-                                new MenuSpec("menubar.vcs.patches", List.of("git.applyPatch", "git.createPatch")),
+                                new MenuSpec("menubar.git.patches", List.of("git.applyPatch", "git.createPatch")),
                                 new MenuSpec(
-                                        "menubar.vcs.history",
+                                        "menubar.git.history",
                                         List.of(
                                                 "git.log.search",
                                                 "git.log.toggleAllBranches",
@@ -530,10 +555,10 @@ final class MenuBarModel {
                                 // Editora's own record of every save, beside Git's: the one that still has
                                 // an answer for a file that was never committed.
                                 new MenuSpec(
-                                        "menubar.vcs.localHistory",
+                                        "menubar.git.localHistory",
                                         List.of("tool.fileHistory", "history.putLabel", "history.recentChanges")),
                                 new MenuSpec(
-                                        "menubar.vcs.compare",
+                                        "menubar.git.compare",
                                         List.of(
                                                 "diff.vsHead",
                                                 // The Project tree's "Compare with Branch / Tag / Revision",
@@ -547,7 +572,7 @@ final class MenuBarModel {
                                                 "diff.compareBlank",
                                                 "diff.compareDirectories")),
                                 new MenuSpec(
-                                        "menubar.vcs.github",
+                                        "menubar.git.github",
                                         List.of(
                                                 "tool.github",
                                                 "github.showPrs",
@@ -583,7 +608,7 @@ final class MenuBarModel {
                                 "plugins.browse",
                                 SEPARATOR,
                                 // In Tools, not File: the File menu is at the height the screen allows
-                                // (MenuPopupBoundsFxTest). Simple mode's File menu keeps Encrypt File.
+                                // (MenuPopupBoundsFxTest).
                                 submenu("menubar.tools.encryption"),
                                 SEPARATOR,
                                 "install.languageServer",
@@ -664,6 +689,9 @@ final class MenuBarModel {
      * servers, no VCS, no tool windows and no gutter. Every entry is either a plain editing action or a way
      * back out — {@code view.toggleSimpleMode} is deliberately present, so the mode is never a one-way door
      * reachable only from the toolbar.
+     *
+     * <p>"Plain" is the test: Toggle Comment (a programmer's action, in the full Edit menu) and Encrypt File
+     * (in the full Tools ▸ Encryption) are left out, and stay reachable from the palette.
      */
     private static List<MenuSpec> simpleMenus() {
         return List.of(
@@ -675,7 +703,6 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "file.save",
                                 "file.saveAs",
-                                EncryptionCoordinator.ENCRYPT_FILE,
                                 SEPARATOR,
                                 "buffer.close",
                                 SEPARATOR,
@@ -693,8 +720,7 @@ final class MenuBarModel {
                                 "edit.copy",
                                 "edit.paste",
                                 SEPARATOR,
-                                "edit.selectAll",
-                                "edit.toggleComment")),
+                                "edit.selectAll")),
                 new MenuSpec("menubar.find", List.of("find.show", "find.next", "find.previous", "find.replace")),
                 new MenuSpec(
                         "menubar.view",

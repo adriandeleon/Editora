@@ -36,7 +36,7 @@ final class GitOpsHost implements GitCoordinator.WindowOps {
         mc.toolWindows.setAvailable(
                 mc.commitToolWindow, available && mc.git.windowsAllowed(mc.editorArea.selectedTab()));
         // Git's answer to "are we in a repo" has just landed, and it arrives asynchronously well after
-        // the window (and its menu) were built — this is the signal that ungreys the VCS menu.
+        // the window (and its menu) were built — this is the signal that ungreys the Git menu.
         mc.refreshMenuEnablement();
     }
 

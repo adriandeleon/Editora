@@ -40,7 +40,7 @@ class HistoryNamingTest {
             Properties p = load(suffix);
             String name = p.getProperty("settings.section.localHistory");
             assertEquals(name, p.getProperty("toolwindow.fileHistory"), suffix + ": the tool window's title");
-            assertEquals(name, p.getProperty("menubar.vcs.localHistory"), suffix + ": the menu-bar submenu");
+            assertEquals(name, p.getProperty("menubar.git.localHistory"), suffix + ": the menu-bar submenu");
             assertTrue(
                     p.getProperty("command.tool.fileHistory").endsWith(name),
                     suffix + ": the tool-window command names the window");

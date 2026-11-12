@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>The regression this pins: enablement was computed only in {@code refresh()}, which runs on a settings or
  * keymap apply. Git detection is asynchronous and off-thread, so at window-build time {@code inRepo} is
- * always false — and the entire VCS menu (Commit, Push, Pull, Fetch, branches, stash, Git Log, file history)
+ * always false — and the entire Git menu (Commit, Push, Pull, Fetch, branches, stash, Git Log, file history)
  * came up greyed out and <em>stayed</em> that way for the life of the window, while the status bar an inch
  * below it displayed the branch. The same freeze applied to every other context field: the buffer-shaped
  * items and the debug step commands.
