@@ -108,6 +108,14 @@ public class KeymapManager {
         }
     }
 
+    /**
+     * Whether bundled keymap {@code name} has a macOS variant ({@code <name>.mac.json}), which puts {@code Cmd}
+     * where the keymap has {@code Ctrl}. The Emacs keymap has none: its chords are the same on every system.
+     */
+    public static boolean hasMacVariant(String name) {
+        return KeymapManager.class.getResource("/com/editora/keymaps/" + resolveName(name) + ".mac.json") != null;
+    }
+
     /** Bundled keymap name + platform → its stock bindings (read once; they never change while running). */
     private static final Map<String, Map<String, String>> STOCK = new java.util.concurrent.ConcurrentHashMap<>();
 
