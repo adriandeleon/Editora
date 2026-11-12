@@ -171,19 +171,33 @@ public final class MessageLogPopup {
         root.setMaxSize(WIDTH, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         root.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep nav/copy keys for the popup
         root.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            // Close on Esc, C-g (the app's keyboard-quit), or M-g. (The OverlayHost also handles Esc/C-g,
-            // but keep this so M-g closes it too.)
-            if (e.getCode() == KeyCode.ESCAPE || (e.getCode() == KeyCode.G && (e.isControlDown() || e.isAltDown()))) {
+            // Close on Esc or on the chord the active keymap binds to cancel (C-g in Emacs). Not on a fixed
+            // Ctrl+G: in the CUA keymap that chord is Go to Line.
+            if (PickerKeys.isCancel(e)) {
                 hide();
                 e.consume();
                 return;
             }
-            // Copy the selected message(s) with the platform copy shortcut (⌘C / Ctrl+C).
-            if (e.getCode() == KeyCode.C && e.isShortcutDown()) {
+            // Copy the selected message(s) on the platform's copy shortcut (⌘C / Ctrl+C) in every keymap, and
+            // on the chord the active keymap binds to copy as well (M-w in Emacs).
+            if (copies(
+                    e.getCode() == KeyCode.C && e.isShortcutDown(),
+                    keymapCommand(e, com.editora.command.TextInputKeymap.sharedKeymap()))) {
                 copySelection();
                 e.consume();
             }
         });
+    }
+
+    /** The command the active keymap binds to this key press, or null (no keymap, a bare modifier, unbound). */
+    static @Nullable String keymapCommand(KeyEvent e, com.editora.command.@Nullable KeymapManager keymap) {
+        String chord = com.editora.command.KeyDispatcher.chord(e);
+        return keymap == null || chord == null ? null : keymap.commandFor(chord);
+    }
+
+    /** Whether a key press copies: the platform's copy shortcut, or the keymap's own copy chord. Pure. */
+    static boolean copies(boolean platformCopy, @Nullable String keymapCommand) {
+        return platformCopy || "edit.copy".equals(keymapCommand);
     }
 
     /** Shows an "Open Doctor" button in the footer that runs {@code action} (null hides it). */

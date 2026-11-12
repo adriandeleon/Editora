@@ -512,8 +512,9 @@ public class ConfigManager {
 
     /**
      * The config directory a launch will use, at the full documented precedence: the {@code --config-dir}
-     * CLI argument &gt; {@code EDITORA_CONFIG_DIR} &gt; {@code ~/.editora} (or {@code ~/.editora-dev} under
-     * {@code --dev}).
+     * CLI argument &gt; {@code --dev} ({@code ~/.editora-dev}) &gt; {@code EDITORA_CONFIG_DIR} &gt;
+     * {@code ~/.editora}. A flag wins over the variable: what is typed on the command line is the more
+     * specific instruction.
      *
      * <p>Exists so the two places that need it share one rule: the bootstrap {@code ConfigManager} in
      * {@code App.start}, and the single-instance claim in {@code App.main} — which runs before any
@@ -530,14 +531,20 @@ public class ConfigManager {
     }
 
     /**
-     * Pure resolver (unit-testable): {@code editoraHome} (trimmed) when set and non-blank, else
-     * {@code userHome/.editora} — or {@code userHome/.editora-dev} when {@code dev} (so the {@code --dev}
-     * instance never shares config with production). The env var still wins, so it can override either.
+     * Pure resolver (unit-testable): {@code userHome/.editora-dev} when {@code dev} (so the {@code --dev}
+     * instance never shares config with production), else {@code editoraHome} (the variable, trimmed) when set
+     * and non-blank, else {@code userHome/.editora}. {@code --dev} is typed on the command line, so it wins
+     * over the variable; to run a development instance on another folder, name it with {@code --config-dir}.
+     * The same folder on every OS: nothing here branches on the system.
      */
-    static Path resolveConfigDir(String editoraHome, String userHome, boolean dev) {
+    static Path resolveConfigDir(@Nullable String editoraHome, @Nullable String userHome, boolean dev) {
+        String home = userHome == null || userHome.isBlank() ? "." : userHome;
+        if (dev) {
+            return Path.of(home, APP_DIR_NAME_DEV);
+        }
         if (editoraHome != null && !editoraHome.isBlank()) {
             return Path.of(editoraHome.trim());
         }
-        return Path.of(userHome == null || userHome.isBlank() ? "." : userHome, dev ? APP_DIR_NAME_DEV : APP_DIR_NAME);
+        return Path.of(home, APP_DIR_NAME);
     }
 }

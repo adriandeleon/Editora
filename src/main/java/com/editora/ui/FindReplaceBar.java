@@ -160,6 +160,15 @@ public class FindReplaceBar extends HBox {
         findField.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ESCAPE) {
                 hideBar();
+            } else if (e.getCode() == KeyCode.ENTER
+                    && e.isShiftDown()
+                    && !e.isAltDown()
+                    && !e.isControlDown()
+                    && !e.isMetaDown()) {
+                // Shift+Enter steps back, as Enter steps forward: the field's own action fires on a plain
+                // Enter only, so the previous match had no key in the field.
+                findPrevious();
+                e.consume();
             } else if (e.getCode() == KeyCode.ENTER && e.isAltDown() && onSelectAllMatches != null) {
                 // Alt+Enter: turn every match into a caret (VS Code selectAllMatches).
                 onSelectAllMatches.run();

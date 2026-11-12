@@ -69,4 +69,21 @@ class DesktopNotifierTest {
         assertFalse(script.contains("rm -rf"));
         assertTrue(script.contains("$env:" + DesktopNotifier.TITLE_VARIABLE));
     }
+
+    /** A notifier run that did not succeed is logged, with the program and why, never with the text itself. */
+    @Test
+    void aFailedRunIsDescribedForTheLog() {
+        var ok = new com.editora.process.ProcessRunner.Result(0, "", "");
+        assertNull(DesktopNotifier.failure("notify-send", ok));
+
+        var refused = new com.editora.process.ProcessRunner.Result(1, "", "Cannot autolaunch D-Bus\nmore");
+        assertEquals(
+                "Desktop notification not shown: notify-send exited with 1: Cannot autolaunch D-Bus",
+                DesktopNotifier.failure("notify-send", refused));
+
+        var silent = new com.editora.process.ProcessRunner.Result(3, "", "");
+        assertEquals(
+                "Desktop notification not shown: osascript exited with 3",
+                DesktopNotifier.failure("osascript", silent));
+    }
 }

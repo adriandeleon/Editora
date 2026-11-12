@@ -103,6 +103,35 @@ class FindReplaceBarFxTest {
         });
     }
 
+    /** Enter steps forward from the field; Shift+Enter steps back, with no button and no command needed. */
+    @Test
+    void shiftEnterInTheFindFieldStepsToThePreviousMatch() throws Exception {
+        Harness h = harness("ab ab ab");
+        FxTestSupport.runOnFx(() -> {
+            h.bar.show(false); // caret at 0: the bar anchors on the first match
+            h.query("ab", ""); // selects the first one
+            TextField field = FxTestSupport.field(h.bar, "findField");
+            h.bar.findNext();
+            h.bar.findNext();
+            int forward = h.area().getSelection().getStart();
+            assertEquals(6, forward, "the third match is the selected one");
+            javafx.event.Event.fireEvent(
+                    field,
+                    new javafx.scene.input.KeyEvent(
+                            javafx.scene.input.KeyEvent.KEY_PRESSED,
+                            "",
+                            "",
+                            javafx.scene.input.KeyCode.ENTER,
+                            true,
+                            false,
+                            false,
+                            false));
+            int back = h.area().getSelection().getStart();
+            assertEquals(3, back, "Shift+Enter steps back to the second match");
+            assertEquals("ab", h.area().getSelectedText());
+        });
+    }
+
     // --- capture groups (the reported defect) ---
 
     @Test

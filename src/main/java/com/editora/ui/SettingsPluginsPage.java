@@ -103,7 +103,14 @@ final class SettingsPluginsPage {
         warn.setWrapText(true);
         warn.setMaxWidth(440);
         w.cardRow(mainCard, Category.PLUGINS, warn, "plugins extensions untrusted security warning");
-        w.checkRow(mainCard, Category.PLUGINS, pluginCheck, null, "plugins extensions enable support");
+        // The switch is read only at start-up, so its own row says so: a note elsewhere on the card is not
+        // what a search for this setting shows.
+        w.checkRow(
+                mainCard,
+                Category.PLUGINS,
+                pluginCheck,
+                tr("settings.plugins.restart"),
+                "plugins extensions enable support restart apply");
         if (com.editora.plugin.PluginManager.disabledForSession()) {
             Label off = SettingsWindow.note(tr("settings.plugins.disabledForSession"));
             off.getStyleClass().add("settings-git-missing");
@@ -111,10 +118,6 @@ final class SettingsPluginsPage {
             off.setMaxWidth(440);
             w.cardRow(mainCard, Category.PLUGINS, off, "plugins disable session safe mode command line");
         }
-        Label restart = SettingsWindow.note(tr("settings.plugins.restart"));
-        restart.setWrapText(true);
-        restart.setMaxWidth(440);
-        w.cardRow(mainCard, Category.PLUGINS, restart, "plugins restart apply");
 
         // Installed Plugins first: they are what people come to this page for.
         Card installed = w.card(p, tr("settings.plugins.installed"));

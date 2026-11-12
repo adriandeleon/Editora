@@ -392,8 +392,10 @@ final class RemoteSitesPane {
             return;
         }
         String path = site.keyPath();
+        // A thread of its own, not the common pool: the check reads the disk, which may be a slow mount.
         java.util.concurrent.CompletableFuture.supplyAsync(
-                        () -> !path.isBlank() && java.nio.file.Files.isReadable(java.nio.file.Path.of(path)))
+                        () -> !path.isBlank() && java.nio.file.Files.isReadable(java.nio.file.Path.of(path)),
+                        com.editora.process.BlockingTasks.named("remote-site-key-check"))
                 .exceptionally(e -> false)
                 .thenAccept(readable -> javafx.application.Platform.runLater(() -> {
                     if (!readable && path.equals(keyPath.getText())) {

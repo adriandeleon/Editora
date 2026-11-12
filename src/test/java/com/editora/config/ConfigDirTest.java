@@ -34,8 +34,12 @@ class ConfigDirTest {
         assertEquals(Path.of("/Users/jane", ".editora"), ConfigManager.resolveConfigDir(null, "/Users/jane", false));
     }
 
+    /** A flag is the more specific instruction: --dev wins over the variable (and --config-dir over both). */
     @Test
-    void envVarStillWinsOverDevMode() {
-        assertEquals(Path.of("/opt/cfg"), ConfigManager.resolveConfigDir("/opt/cfg", "/Users/jane", true));
+    void devModeWinsOverTheEnvVar() {
+        assertEquals(
+                Path.of("/Users/jane", ".editora-dev"),
+                ConfigManager.resolveConfigDir("/opt/cfg", "/Users/jane", true));
+        assertEquals(Path.of("/opt/cfg"), ConfigManager.resolveConfigDir("/opt/cfg", "/Users/jane", false));
     }
 }

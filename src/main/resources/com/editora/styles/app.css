@@ -2087,7 +2087,7 @@
 .project-map-deps-cell.project-map-deps-weight-3,
 .project-map-deps-cell.project-map-deps-weight-4 {
     -fx-background-color: -color-accent-emphasis;
-    -fx-text-fill: -color-fg-on-emphasis;
+    -fx-text-fill: -color-fg-emphasis;
 }
 .project-map-deps-cell.project-map-deps-cycle {
     -fx-background-color: -color-danger-subtle;
@@ -4138,7 +4138,8 @@
 .about-version { -fx-font-size: 14px; -fx-text-fill: -color-fg-muted; }
 .about-tagline { -fx-font-size: 13px; -fx-text-fill: -color-fg-muted; }
 .about-copyright { -fx-text-fill: -color-fg-muted; }
-.about-update { -fx-text-fill: -state-accent; -fx-font-weight: bold; }
+/* An available update stands out: amber, which no other link or label in About uses (the links stay accent). */
+.about-update { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
 .about-uptodate { -fx-text-fill: -state-green; }
 .about-update-failed { -fx-text-fill: -state-red; }
 .about-checked { -fx-text-fill: -color-fg-muted; }
@@ -5145,6 +5146,10 @@
 /* Compact icon-only toolbar (IntelliJ-style: full titles in tooltips) and evaluate field. */
 .debug-panel .debug-toolbar-button { -fx-padding: 3 6 3 6; }
 .debug-panel .debug-toolbar-separator { -fx-padding: 0 3 0 3; }
+/* Groups are told apart by spacing, as on the main toolbar: the separator stays (its padding is the gap) and
+   its line is not drawn. The Markdown format bar's separator, an HBox like this one, follows the same rule. */
+.debug-panel .debug-toolbar-separator:vertical > .line,
+.markdown-format-bar .separator:vertical > .line { -fx-border-color: transparent; }
 .debug-panel .debug-eval {
     -fx-font-size: 12px;
     -fx-padding: 3 6 3 6;

@@ -1505,16 +1505,13 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("bookmarks.clearFile", host.bookmarkCoordinator()::clearInFile));
         host.registry().register(Command.of("bookmarks.setMnemonic", host.bookmarkCoordinator()::setMnemonicAtCaret));
         // One command per digit, so each is a single chord rather than a chord plus a prompt — which is
-        // the entire point of a mnemonic. Explicit titles from one parameterized string, the way the macro
-        // and external-tool commands avoid ten near-identical keys. The key deliberately sits OUTSIDE the
-        // command.* namespace: it is a template, not the title of a command called
-        // "bookmarks.gotoMnemonic", and every real command.* key is required to carry a .desc.
+        // the entire point of a mnemonic. Each has its own command.<id> and command.<id>.desc key, like every
+        // built-in command, so the palette shows a description and the title follows the UI language.
         for (char digit : com.editora.config.BookmarkMnemonics.DIGITS.toCharArray()) {
             String key = String.valueOf(digit);
             host.registry()
                     .register(Command.of(
                             "bookmarks.gotoMnemonic" + key,
-                            tr("bookmarks.mnemonic.gotoTitle", key),
                             () -> host.bookmarkCoordinator().gotoMnemonic(key)));
         }
         host.registry()

@@ -50,6 +50,15 @@ public final class DebugLog {
     private static boolean captureSuspendedForTest; // guarded by LOCK; see suspendCaptureForTest
     private static @Nullable PrintWriter file; // optional mirror to <configDir>/editora-session.log
 
+    /** The least time between two echo messages about uncaught exceptions: one that repeats must not flood. */
+    static final long UNCAUGHT_ECHO_INTERVAL_MS = 10_000;
+
+    /** Where an uncaught exception is announced besides this log: the focused window's echo area. */
+    private static volatile java.util.function.@Nullable Consumer<String> uncaughtEcho;
+
+    private static final java.util.concurrent.atomic.AtomicLong LAST_UNCAUGHT_ECHO =
+            new java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE);
+
     private DebugLog() {}
 
     /** Attaches a root-logger handler + a default uncaught-exception handler. Idempotent. */
@@ -91,7 +100,52 @@ public final class DebugLog {
             if (Boolean.getBoolean("editora.debug.stderr")) {
                 System.err.println(record);
             }
+            announceUncaught(error, System.currentTimeMillis(), javafx.application.Platform::runLater);
         });
+    }
+
+    /**
+     * Sets where an uncaught exception is announced besides this log (the window manager passes the focused
+     * window's echo area), or null for nowhere. The log alone is easy to miss: the action the user took did
+     * nothing, and nothing said why.
+     */
+    static void setUncaughtEcho(java.util.function.@Nullable Consumer<String> echo) {
+        uncaughtEcho = echo;
+    }
+
+    /**
+     * Posts one echo message for an uncaught exception: an error that names the kind of failure and points
+     * at this log. Never a dialog, and never a stack trace in the status bar. At most one every
+     * {@link #UNCAUGHT_ECHO_INTERVAL_MS}: an exception thrown on every pulse or keystroke must not turn the
+     * echo area into a strobe, and each one is in the log anyway.
+     *
+     * @return whether a message was handed to {@code onFx}
+     */
+    static boolean announceUncaught(Throwable error, long nowMillis, java.util.function.Consumer<Runnable> onFx) {
+        try {
+            java.util.function.Consumer<String> echo = uncaughtEcho;
+            if (echo == null) {
+                return false;
+            }
+            long last = LAST_UNCAUGHT_ECHO.get();
+            if (last != Long.MIN_VALUE && nowMillis - last < UNCAUGHT_ECHO_INTERVAL_MS) {
+                return false;
+            }
+            if (!LAST_UNCAUGHT_ECHO.compareAndSet(last, nowMillis)) {
+                return false; // another thread's exception is being announced right now
+            }
+            String message = com.editora.i18n.Messages.tr(
+                    "status.uncaughtError", error.getClass().getSimpleName());
+            onFx.accept(() -> echo.accept(message));
+            return true;
+        } catch (Throwable ignored) {
+            return false; // a diagnostic must never become the failure it is describing
+        }
+    }
+
+    /** Forgets when the last uncaught exception was announced, so a test starts from a clean slate. */
+    static void resetUncaughtEchoForTest() {
+        LAST_UNCAUGHT_ECHO.set(Long.MIN_VALUE);
     }
 
     /**

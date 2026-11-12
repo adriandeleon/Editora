@@ -585,7 +585,9 @@ class DiagnosticPanelsKeysFxTest {
 
             Event.fireEvent(list, key(KeyCode.A, false, false, false)); // not a popup key: stays open
             assertTrue(popup.isShown());
-            Event.fireEvent(list, key(KeyCode.G, false, true, false)); // M-g closes it
+            Event.fireEvent(list, key(KeyCode.G, false, true, false)); // M-g is no cancel chord: stays open
+            assertTrue(popup.isShown());
+            Event.fireEvent(list, key(KeyCode.ESCAPE, false, false, false));
             assertFalse(popup.isShown());
 
             popup.toggle(stage, null, log);
@@ -607,11 +609,43 @@ class DiagnosticPanelsKeysFxTest {
             Event.fireEvent(list, key(KeyCode.ESCAPE, false, false, false));
             assertFalse(popup.isShown());
 
-            popup.show(stage, null, null); // a window with no log yet
-            assertTrue(popup.isShown());
-            assertTrue(list.getItems().isEmpty());
-            Event.fireEvent(list, key(KeyCode.G, true, false, false));
-            assertFalse(popup.isShown());
+            // The keyboard-quit chord is the one the active keymap binds to cancel, not a fixed Ctrl+G: Emacs
+            // binds C-g to it, and CUA binds C-g to Go to Line.
+            com.editora.command.KeymapManager before = com.editora.command.TextInputKeymap.sharedKeymap();
+            try {
+                com.editora.command.KeymapManager emacs = new com.editora.command.KeymapManager();
+                emacs.loadNamed("emacs");
+                com.editora.command.TextInputKeymap.setShared(emacs);
+                popup.show(stage, null, null); // a window with no log yet
+                assertTrue(popup.isShown());
+                assertTrue(list.getItems().isEmpty());
+                Event.fireEvent(list, key(KeyCode.G, true, false, false));
+                assertFalse(popup.isShown(), "C-g is Emacs's cancel");
+
+                com.editora.command.KeymapManager cua = new com.editora.command.KeymapManager();
+                cua.loadNamed("cua");
+                com.editora.command.TextInputKeymap.setShared(cua);
+                popup.show(stage, null, null);
+                Event.fireEvent(list, key(KeyCode.G, true, false, false));
+                assertTrue(popup.isShown(), "Ctrl+G is CUA's Go to Line, not a cancel");
+                Event.fireEvent(list, key(KeyCode.ESCAPE, false, false, false));
+                assertFalse(popup.isShown());
+
+                // Copy: the platform's shortcut in every keymap, and the keymap's own copy chord too.
+                assertTrue(MessageLogPopup.copies(true, null));
+                assertTrue(MessageLogPopup.copies(false, "edit.copy"));
+                assertFalse(MessageLogPopup.copies(false, "nav.goToLine"));
+                assertFalse(MessageLogPopup.copies(false, null));
+                assertEquals(
+                        "edit.copy",
+                        MessageLogPopup.keymapCommand(key(KeyCode.W, false, true, false), emacs),
+                        "M-w is Emacs's copy");
+                assertNull(MessageLogPopup.keymapCommand(key(KeyCode.W, false, true, false), null));
+            } finally {
+                if (before != null) {
+                    com.editora.command.TextInputKeymap.setShared(before);
+                }
+            }
 
             popup.show(stage, null, log);
             popup.toggle(stage, null, log);

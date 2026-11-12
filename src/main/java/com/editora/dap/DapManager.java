@@ -1695,7 +1695,8 @@ public final class DapManager {
         }
         if (directory != null) {
             java.util.concurrent.CompletableFuture.runAsync(
-                    () -> JavaCompilation.removeCompilation(directory, removal));
+                    () -> JavaCompilation.removeCompilation(directory, removal),
+                    com.editora.process.BlockingTasks.named("dap-remove-compilation"));
         }
     }
 
@@ -5335,7 +5336,11 @@ public final class DapManager {
             return;
         }
         exitWrapper = null;
-        CompletableFuture.supplyAsync(() -> own.wrapper().awaitExitCode(java.time.Duration.ofSeconds(3)))
+        // On a thread of its own, not the common pool: the wait polls a file for up to three seconds. Not the
+        // connect thread either, which the next session's start-up would then queue behind.
+        CompletableFuture.supplyAsync(
+                        () -> own.wrapper().awaitExitCode(java.time.Duration.ofSeconds(3)),
+                        com.editora.process.BlockingTasks.named("dap-java-exit-code"))
                 .whenComplete((code, e) -> fx(() -> {
                     own.wrapper().delete();
                     if (managerClosed || sessionEpoch - epoch > 1) {
