@@ -387,7 +387,7 @@ public class App extends Application {
                 System.out.println(helpText());
                 System.exit(0);
             }
-            if ("--version".equals(a) || "-V".equals(a)) {
+            if ("--version".equals(a) || "-V".equals(a) || "-v".equals(a)) {
                 System.out.println(AppInfo.versionLine());
                 System.exit(0);
             }
@@ -660,7 +660,7 @@ public class App extends Application {
                                         of a plugin that hangs or breaks Editora at startup
                   --report              Write a problem report (system details and the last two session
                                         logs, redacted) to the current folder and open a GitHub issue for it
-                  --version, -V         Print the version and exit
+                  --version, -v, -V     Print the version and exit
                   --help, -h            Print this help and exit
 
                 Arguments:
@@ -919,6 +919,7 @@ public class App extends Application {
             "--single-window",
             "--version",
             "-V",
+            "-v",
             "--help",
             "-h");
 

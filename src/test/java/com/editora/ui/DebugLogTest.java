@@ -133,4 +133,38 @@ class DebugLogTest {
         assertTrue(records.stream().anyMatch(r -> r.contains("resumed-marker")), records.toString());
         assertTrue(records.stream().noneMatch(r -> r.contains("suspended-marker")), records.toString());
     }
+
+    /**
+     * An uncaught exception is announced in the echo area as well as logged: one error message that names the
+     * kind of failure, on the FX thread, and not again within the interval, so a repeating one cannot flood.
+     */
+    @Test
+    void anUncaughtExceptionIsAnnouncedOnceAndNotAgainWithinTheInterval() {
+        List<String> echoed = new java.util.ArrayList<>();
+        List<Runnable> queued = new java.util.ArrayList<>();
+        try {
+            DebugLog.resetUncaughtEchoForTest();
+            DebugLog.setUncaughtEcho(null);
+            assertFalse(DebugLog.announceUncaught(new IllegalStateException("x"), 1_000, queued::add), "no echo set");
+
+            DebugLog.setUncaughtEcho(echoed::add);
+            assertTrue(DebugLog.announceUncaught(new IllegalStateException("x"), 1_000, queued::add));
+            assertTrue(echoed.isEmpty(), "the message waits for the FX thread");
+            queued.forEach(Runnable::run);
+            assertEquals(
+                    List.of(com.editora.i18n.Messages.tr("status.uncaughtError", "IllegalStateException")), echoed);
+            assertFalse(echoed.get(0).contains("\n"), "one line: never a stack trace in the status bar");
+
+            long soon = 1_000 + DebugLog.UNCAUGHT_ECHO_INTERVAL_MS - 1;
+            assertFalse(DebugLog.announceUncaught(new NullPointerException(), soon, queued::add));
+            long later = 1_000 + DebugLog.UNCAUGHT_ECHO_INTERVAL_MS;
+            assertTrue(DebugLog.announceUncaught(new NullPointerException(), later, queued::add));
+            assertEquals(2, queued.size());
+            // The message is an error by its key, so the echo area and the Message Log show it as one.
+            assertEquals(MessageLog.Severity.ERROR, StatusSeverity.ofKey("status.uncaughtError"));
+        } finally {
+            DebugLog.setUncaughtEcho(null);
+            DebugLog.resetUncaughtEchoForTest();
+        }
+    }
 }

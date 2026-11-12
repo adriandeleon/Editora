@@ -57,14 +57,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1555"
     },
     {
-      "rule": "PLAT-04",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/platform/#plat-04",
-      "kind": "pending",
-      "reason": "One internal package is still opened to the JSON library although nothing reads it that way any more.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
       "rule": "PLAT-14",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/platform/#plat-14",
@@ -193,14 +185,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {
-      "rule": "PERF-05",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-05",
-      "kind": "pending",
-      "reason": "When a debugged Java program ends, Editora waits for its exit code on a shared background pool that other work also needs.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
       "rule": "PERF-06",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-06",
@@ -265,27 +249,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1560"
     },
     {
-      "rule": "KBD-03",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-03",
-      "kind": "pending",
-      "reason": "The ten Go to Bookmark commands take their titles from a shared template, so they have no description in the Command Palette.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1560"
-    },
-    {
       "rule": "KBD-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-04",
       "kind": "pending",
       "reason": "A disabled menu row does not say why it is unavailable.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1560"
-    },
-    {
-      "rule": "KBD-13",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-13",
-      "kind": "pending",
-      "reason": "The title of the Universal Argument command includes its key.",
       "link": "https://github.com/adriandeleon/Editora/issues/1560"
     },
     {
@@ -433,14 +401,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1563"
     },
     {
-      "rule": "ICON-11",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-11",
-      "kind": "pending",
-      "reason": "The heaviest cells of the Project Map's dependency matrix use a text color the themes do not define.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
       "rule": "ICON-14",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-14",
@@ -494,14 +454,6 @@
       "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-02",
       "kind": "pending",
       "reason": "Toolbar and tool-stripe buttons take the keyboard focus when you press Tab.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1564"
-    },
-    {
-      "rule": "TBAR-04",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-04",
-      "kind": "pending",
-      "reason": "The separators in the Debug panel's toolbar are drawn as lines rather than spacing.",
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
     },
     {
@@ -633,35 +585,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {
-      "rule": "TRAY-09",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/tray-and-background/#tray-09",
-      "kind": "pending",
-      "reason": "When a desktop notification cannot be shown, nothing records why.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1567"
-    },
-    {
-      "rule": "SET-04",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/settings/#set-04",
-      "kind": "pending",
-      "reason": "The Enable plugins setting names the restart it needs in a note below it rather than in its own row.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1568"
-    },
-    {
       "rule": "SET-06",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/settings/#set-06",
       "kind": "pending",
       "reason": "A few settings, terminal notifications among them, have no command in the Command Palette.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1568"
-    },
-    {
-      "rule": "SET-07",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/settings/#set-07",
-      "kind": "pending",
-      "reason": "When both are given, the EDITORA_CONFIG_DIR variable wins over the --dev flag.",
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {
@@ -681,14 +609,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {
-      "rule": "SET-11",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/settings/#set-11",
-      "kind": "pending",
-      "reason": "A few numbers in the settings file, such as the Local History limits, are not checked against their valid range when the file is read.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1568"
-    },
-    {
       "rule": "SET-13",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/settings/#set-13",
@@ -705,14 +625,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {
-      "rule": "DIAG-04",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/diagnostics/#diag-04",
-      "kind": "pending",
-      "reason": "An unexpected error is written to the Debug Log without a message in the status bar.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1569"
-    },
-    {
       "rule": "DIAG-06",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/diagnostics/#diag-06",
@@ -726,14 +638,6 @@
       "url": "https://pauta-project.dev/6.0.1/command-line/#cli-12",
       "kind": "pending",
       "reason": "An option Editora does not know is ignored on the command line instead of being refused.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1570"
-    },
-    {
-      "rule": "CLI-13",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-13",
-      "kind": "pending",
-      "reason": "The short flag -v does not print the version; -V and --version do.",
       "link": "https://github.com/adriandeleon/Editora/issues/1570"
     },
     {
@@ -758,14 +662,6 @@
       "url": "https://pauta-project.dev/6.0.1/i18n/#intl-07",
       "kind": "pending",
       "reason": "A few labels are not translated, such as the line label in the Bookmarks panel.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1571"
-    },
-    {
-      "rule": "INTL-09",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-09",
-      "kind": "pending",
-      "reason": "One French message about Maven versions loses an apostrophe.",
       "link": "https://github.com/adriandeleon/Editora/issues/1571"
     },
     {
@@ -830,14 +726,6 @@
       "url": "https://pauta-project.dev/6.0.1/templates/about/#about-01",
       "kind": "pending",
       "reason": "On macOS, About Editora is in the Help menu rather than the application menu.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1574"
-    },
-    {
-      "rule": "ABOUT-10",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/about/#about-10",
-      "kind": "pending",
-      "reason": "An available update is shown in the accent color in About rather than amber.",
       "link": "https://github.com/adriandeleon/Editora/issues/1574"
     },
     {
@@ -949,7 +837,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-06",
       "kind": "pending",
-      "reason": "Shift+Enter does not step to the previous match in the editor's find bar.",
+      "reason": "The views that have no find bar yet also lack Enter and Shift+Enter to step through the matches.",
       "link": "https://github.com/adriandeleon/Editora/issues/1576"
     },
     {
@@ -967,30 +855,6 @@
       "kind": "pending",
       "reason": "The find fields of consoles, the terminal and Project Map cards do not follow the keymap's text-editing keys.",
       "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
-      "rule": "FIND-16",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-16",
-      "kind": "pending",
-      "reason": "The match-case button of a Project Map card's find bar cannot be reached with Tab or a command.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
-      "rule": "MLOG-03",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/message-log/#mlog-03",
-      "kind": "pending",
-      "reason": "The Message Log closes on Ctrl+G and Alt+G whatever the keymap binds.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1577"
-    },
-    {
-      "rule": "MLOG-04",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/message-log/#mlog-04",
-      "kind": "pending",
-      "reason": "The Message Log copies on Ctrl+C or Cmd+C only, not on the keymap's own copy key.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1577"
     },
     {
       "rule": "MLOG-05",
@@ -1062,14 +926,6 @@
       "url": "https://pauta-project.dev/6.0.1/release/#rel-25",
       "kind": "pending",
       "reason": "A few automated build steps download Maven's dependencies again instead of reusing a cache.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
-    },
-    {
-      "rule": "REL-31",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-31",
-      "kind": "pending",
-      "reason": "One automated check can cancel its own earlier run on the main branch.",
       "link": "https://github.com/adriandeleon/Editora/issues/1578"
     },
     {

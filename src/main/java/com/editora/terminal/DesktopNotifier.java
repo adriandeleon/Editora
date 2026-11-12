@@ -148,18 +148,54 @@ public final class DesktopNotifier {
         return out.append('\'').toString();
     }
 
-    /** Posts a notification, later and off the FX thread. A failure is dropped: it was a courtesy. */
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(DesktopNotifier.class.getName());
+
+    /**
+     * Posts a notification, later and off the FX thread. A failure never reaches the caller (the notification
+     * was a courtesy, and the tab is still marked), but it is written to the log, so "why did nothing appear"
+     * has an answer in the Debug Log: no program to run, one that could not start, the timeout, a bad exit.
+     */
     public static void post(String title, String body) {
         WORKER.execute(() -> {
             Command command =
                     command(System.getProperty("os.name"), title.isBlank() ? APP : title, body, PrimarySelection::find);
-            if (command == null) return;
+            if (command == null) {
+                LOG.warning("Desktop notification not shown: no notify-send or gdbus on the PATH");
+                return;
+            }
             try {
                 // The user's locale: the text is theirs to read, in whatever script it was written.
-                ProcessRunner.runInUserLocale(null, Duration.ofSeconds(5), command.argv(), command.environment());
+                ProcessRunner.Result result = ProcessRunner.runInUserLocale(
+                        null, Duration.ofSeconds(5), command.argv(), command.environment());
+                String failure = failure(command.argv().get(0), result);
+                if (failure != null) {
+                    LOG.warning(failure);
+                }
             } catch (RuntimeException e) {
-                // No daemon, no tool, a sandbox that refuses the bus: the tab is still marked.
+                // No daemon, no tool, a sandbox that refuses the bus.
+                LOG.log(
+                        java.util.logging.Level.WARNING,
+                        "Desktop notification not shown: " + command.argv().get(0),
+                        e);
             }
         });
+    }
+
+    /**
+     * What to log for a notifier run that did not succeed, or null when it did. The notification's own text
+     * is left out: it came from a program in the terminal and does not belong in a log.
+     */
+    static @Nullable String failure(String program, ProcessRunner.Result result) {
+        if (result.ok()) {
+            return null;
+        }
+        String prefix = "Desktop notification not shown: " + program;
+        if (result.timedOut()) {
+            return prefix + " did not finish in 5 s and was stopped";
+        }
+        String err = result.err() == null ? "" : result.err().strip();
+        return prefix + " exited with " + result.exit()
+                + (err.isEmpty() ? "" : ": " + err.lines().findFirst().orElse(""));
     }
 }

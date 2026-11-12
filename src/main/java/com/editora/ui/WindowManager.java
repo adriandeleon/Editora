@@ -151,6 +151,9 @@ public class WindowManager {
         // Surface durable config-write failures (full disk, read-only ~/.editora) instead of silently
         // swallowing them — a setting/session change would otherwise vanish next launch with no sign (#418).
         shared.setOnWriteError((file, err) -> javafx.application.Platform.runLater(() -> notifyConfigWriteError(file)));
+        // An uncaught exception goes to the Debug Log; say so in the window the user is in, or the action
+        // they took just silently does nothing.
+        DebugLog.setUncaughtEcho(this::announceUncaughtError);
         // A second Editora process on this config dir (a launch that was not forwarded to the running editor)
         // works from its own in-memory copy of settings, notes, bookmarks, breakpoints, projects and recents.
         // Say so once, after the first window exists, instead of letting one editor silently undo the other.
@@ -355,6 +358,14 @@ public class WindowManager {
      * these with the load problems.
      */
     private final java.util.Set<Path> unshownWriteErrors = new java.util.LinkedHashSet<>();
+
+    /** Shows an uncaught exception's echo message in the focused window's status bar, as an error. */
+    private void announceUncaughtError(String message) {
+        Holder h = focusedHolder();
+        if (h != null && h.controller() != null) {
+            h.controller().setError(message);
+        }
+    }
 
     /** Shows a config-write failure in the focused window's status bar (best-effort; logged regardless). */
     private void notifyConfigWriteError(Path file) {

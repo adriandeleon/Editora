@@ -419,6 +419,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`--dev` now wins over `EDITORA_CONFIG_DIR`.** The configuration folder is chosen in this order: `--config-dir`,
+  then `--dev` (`~/.editora-dev`), then the `EDITORA_CONFIG_DIR` variable, then `~/.editora`. Before, the variable
+  won over `--dev`, so a development launch from a shell that had the variable set used the everyday folder. To
+  run a development instance on another folder, name it with `--config-dir`.
+- **The Message Log follows the keymap for closing and copying.** It closes on Esc and on the chord your keymap
+  binds to cancel (C-g in Emacs), no longer on a fixed Ctrl+G, which is Go to Line in the CUA keymap, or on Alt+G.
+  It copies on Ctrl+C (Cmd+C on macOS) in every keymap, and now on the keymap's own copy chord too (M-w in Emacs).
+- **`-v` prints the version**, as `-V` and `--version` do.
+- **The ten Go to Mnemonic bookmark commands have descriptions** in the Command Palette, and their titles follow
+  the interface language when it changes.
+- **Universal Argument no longer carries a key in its title.** The palette shows the chord your keymap binds to it,
+  like every other command.
+- **In About, an available update is shown in amber**, so it stands apart from the links beside it.
+- **The Debug toolbar and the Markdown format bar separate their groups by spacing**, without a drawn line, as the
+  main toolbar does.
+- **The Enable plugins setting says on its own row that it needs a restart.** The note used to sit in a separate
+  row below it, where a search for the setting did not show it.
+
 - **Settings names its two scopes plainly.** In a project window the top of Settings now reads "Edit settings for
   **All projects** | **This project: name**" instead of "Settings for User | Project: name", with a little space
   between the two buttons and a tooltip on All projects saying it is used in every window unless a project sets its
@@ -490,6 +508,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     that had remote images on keeps loading them.
 
 ### Fixed
+
+- **An unexpected error now shows a message in the status bar.** An uncaught exception was written to the
+  Application Log and nothing else, so the action you took simply did nothing. The status bar now says an
+  unexpected error occurred and where the details are, at most once every ten seconds.
+- **Shift+Enter in the editor's find field steps to the previous match.** Enter stepped forward, and the previous
+  match had no key in the field.
+- **The numbers in the heaviest cells of the Project Map's dependency matrix are readable in every theme.** Their
+  color named a token no theme defines.
+- **A French message about Maven versions showed "nont" for "n'ont".**
+- **Local History limits and the auto-save delay in a hand-edited `settings.json` are kept within their ranges.** A
+  limit of 0 snapshots for a file, or an auto-save delay of 0, was taken as written.
+- **A desktop notification that cannot be shown is recorded in the Application Log**, with the program that failed
+  and why. The failure was dropped without a trace.
+- **A match-case button of a Project Map card's find bar can be reached with Tab.**
+- **Waiting for a debugged Java program's exit code, and seven other disk reads, no longer run on the JVM's
+  shared worker pool**, where a slow disk could hold up unrelated background work.
 
 - **A breakpoint could be missed at the very start of a JavaScript program.** Debugging told js-debug to run the
   program before js-debug had placed the breakpoints, so one near the start (a breakpoint inside an arrow function

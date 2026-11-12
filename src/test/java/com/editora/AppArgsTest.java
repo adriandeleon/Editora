@@ -217,6 +217,7 @@ class AppArgsTest {
         assertTrue(App.isEditoraOption("--config-dir=/cfg"));
         assertTrue(App.isEditoraOption("--single-window=MyProj"));
         assertTrue(App.isEditoraOption("-V"));
+        assertTrue(App.isEditoraOption("-v"), "both -v and -V print the version");
         assertFalse(App.isEditoraOption("--add-exports"));
         assertFalse(App.isEditoraOption("-p"));
         assertFalse(App.isEditoraOption(null));
