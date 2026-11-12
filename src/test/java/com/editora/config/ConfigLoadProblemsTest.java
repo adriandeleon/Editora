@@ -104,6 +104,32 @@ class ConfigLoadProblemsTest {
         assertTrue(config.shared().takeLoadProblems().isEmpty(), "a clamped value is not a read failure");
     }
 
+    /** The Local History limits and the auto-save delay had ranges only in their Settings spinners. */
+    @Test
+    void historyLimitsAndTheAutoSaveDelayAreClampedOnLoad(@TempDir Path dir) throws IOException {
+        Files.writeString(
+                dir.resolve("settings.json"),
+                settingsJson(
+                        "\"historyMaxPerFile\": 0",
+                        "\"historyMaxAgeDays\": -5",
+                        "\"historyMaxTotalMb\": 99999999",
+                        "\"autoSaveDelayMillis\": 0"));
+        Settings settings = new ConfigManager(dir).load();
+
+        assertEquals(1, settings.getHistoryMaxPerFile(), "at least one snapshot is kept");
+        assertEquals(0, settings.getHistoryMaxAgeDays(), "0 keeps snapshots whatever their age");
+        assertEquals(Settings.MAX_HISTORY_TOTAL_MB, settings.getHistoryMaxTotalMb());
+        assertEquals(Settings.MIN_AUTO_SAVE_DELAY_SECONDS * 1000, settings.getAutoSaveDelayMillis());
+
+        Settings s = new Settings();
+        s.setHistoryMaxPerFile(Settings.MAX_HISTORY_PER_FILE + 1);
+        assertEquals(Settings.MAX_HISTORY_PER_FILE, s.getHistoryMaxPerFile());
+        s.setHistoryMaxAgeDays(Settings.MAX_HISTORY_AGE_DAYS + 1);
+        assertEquals(Settings.MAX_HISTORY_AGE_DAYS, s.getHistoryMaxAgeDays());
+        s.setAutoSaveDelayMillis(Integer.MAX_VALUE);
+        assertEquals(Settings.MAX_AUTO_SAVE_DELAY_SECONDS * 1000, s.getAutoSaveDelayMillis());
+    }
+
     @Test
     void numericSettersClampToTheRangesTheUiOffers() {
         Settings s = new Settings();

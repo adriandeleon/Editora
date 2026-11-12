@@ -436,6 +436,13 @@ the runner it added none. Give a `Process` subclass its own `onExit()`: from a c
 (`SshExecProcess`), otherwise through `ExitWatch`
 ([`ExitWatch.java`](../src/main/java/com/editora/process/ExitWatch.java)), which waits on a thread of its own.
 
+The same pool is where `CompletableFuture.supplyAsync` and `runAsync` run when they are given no executor. A
+task that blocks there (a file read, a wait on a process, a walk of a folder) holds one of those few workers
+in the same way. Pass an executor: the caller's own when it has one, otherwise
+`BlockingTasks.named("what-it-does")`
+([`BlockingTasks.java`](../src/main/java/com/editora/process/BlockingTasks.java)), which gives each task a named
+virtual thread. An executor-less call is fine only for work that never blocks, such as merging two lists.
+
 The program that never ended was a second trap. On macOS a process cannot finish exiting while its pseudo-terminal
 holds output nobody has read: the last close of the terminal waits for it to drain, with no time limit, and SIGKILL
 does not end that wait. Measured on macos-15 in #1425: a pty program SIGKILLed with unread output was still there 3 s

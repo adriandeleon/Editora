@@ -3679,7 +3679,9 @@ final class ProjectMapPreview extends StackPane {
         for (javafx.scene.control.Control control : java.util.List.of(findPrevious, findNext, findCase, findClose)) {
             control.getStyleClass().add("project-map-preview-button");
             control.setMinWidth(Region.USE_PREF_SIZE);
-            control.setFocusTraversable(false);
+            // Previous, Next and Close leave the Tab order: Shift+Enter, Enter and Escape in the field do the
+            // same. Match case stays in it, since no key and no command toggles it.
+            control.setFocusTraversable(control == findCase);
         }
         findPrevious.setOnAction(event -> findStep(-1));
         findNext.setOnAction(event -> findStep(1));

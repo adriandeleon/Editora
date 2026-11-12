@@ -291,7 +291,8 @@ final class LspRename {
         }
         if (Files.isDirectory(from)) {
             // A folder is walked for .java files off the UI thread: the drop no longer waits on it (sixth BV5)
-            CompletableFuture.supplyAsync(() -> holdsJava(from))
+            CompletableFuture.supplyAsync(
+                            () -> holdsJava(from), com.editora.process.BlockingTasks.named("lsp-rename-folder-scan"))
                     .whenComplete((java, e) -> Platform.runLater(() -> {
                         if (Boolean.TRUE.equals(java)) {
                             askWillRename(s, from, to, proceed, fallback);

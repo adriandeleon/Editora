@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -329,6 +330,80 @@ class MessagesTest {
                 problems.isEmpty(),
                 "values with {n} are MessageFormat patterns — double the apostrophe (l' → l''):\n"
                         + String.join("\n", problems));
+    }
+
+    /**
+     * Inside a {@code {n,choice,…}} limb the text is a pattern of its own, parsed a second time when the limb
+     * holds a placeholder: there a literal apostrophe is written four times, and twice in a limb without one.
+     * Two in a limb with a placeholder format to no apostrophe at all ("n''ont" showed as "nont").
+     */
+    @Test
+    void anApostropheInAChoiceLimbIsWrittenFourTimesBesideAPlaceholderAndTwiceWithout() {
+        Set<String> problems = new TreeSet<>();
+        for (String lang : ALL_CATALOGS) {
+            Properties props = catalog(lang);
+            for (String key : props.stringPropertyNames()) {
+                String value = props.getProperty(key);
+                for (String limb : choiceLimbs(value)) {
+                    int want = limb.indexOf('{') >= 0 ? 4 : 2;
+                    java.util.regex.Matcher run =
+                            java.util.regex.Pattern.compile("'+").matcher(limb);
+                    while (run.find()) {
+                        if (run.group().length() != want) {
+                            problems.add(name(lang) + " / " + key + ": "
+                                    + run.group().length() + " apostrophes, want " + want + " in \"" + limb + "\"");
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), String.join("\n", problems));
+        assertEquals(List.of("1 a", "{0} bc"), choiceLimbs("x {0,choice,1#1 a|1<{0} bc} y"));
+    }
+
+    /** The text of each limb of every {@code {n,choice,…}} in {@code value}, after its {@code 1#} or {@code 1<}. */
+    private static List<String> choiceLimbs(String value) {
+        List<String> limbs = new java.util.ArrayList<>();
+        java.util.regex.Matcher open =
+                java.util.regex.Pattern.compile("\\{\\d+,choice,").matcher(value);
+        int from = 0;
+        while (open.find(from)) {
+            int depth = 1;
+            int i = open.end();
+            StringBuilder limb = new StringBuilder();
+            for (; i < value.length() && depth > 0; i++) {
+                char c = value.charAt(i);
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        break;
+                    }
+                }
+                if (c == '|' && depth == 1) {
+                    limbs.add(limb.toString());
+                    limb.setLength(0);
+                } else {
+                    limb.append(c);
+                }
+            }
+            limbs.add(limb.toString());
+            from = i;
+        }
+        return limbs.stream().map(l -> l.replaceFirst("^[^#<]*[#<]", "")).toList();
+    }
+
+    /** Each of the ten Go to Mnemonic commands has its own title and description, like every built-in command. */
+    @Test
+    void everyGoToMnemonicCommandHasATitleAndADescription() {
+        Properties base = catalog("");
+        for (char digit : com.editora.config.BookmarkMnemonics.DIGITS.toCharArray()) {
+            String key = "command.bookmarks.gotoMnemonic" + digit;
+            assertTrue(base.getProperty(key, "").endsWith(" " + digit), key);
+            assertTrue(base.getProperty(key + ".desc", "").contains(String.valueOf(digit)), key + ".desc");
+        }
+        assertNull(base.getProperty("bookmarks.mnemonic.gotoTitle"), "the shared title template is gone");
     }
 
     /** The code half of the rule above: what decides is the value, not whether the caller passed arguments. */
