@@ -236,8 +236,7 @@ final class ProblemCounter extends HBox {
         SVGPath svg = new SVGPath();
         svg.setContent(path);
         svg.getStyleClass().add(styleClass);
-        svg.setScaleX(0.55);
-        svg.setScaleY(0.55);
+        UiZoom.scale(svg, 0.55);
         return new Group(svg);
     }
 

@@ -488,6 +488,17 @@ public final class UiZoom {
     }
 
     /**
+     * A glyph's scale: {@code base} at 100%, times the zoom. A wrapper that scales a glyph further (a badge
+     * at 0.45 of its icon) multiplies what is already zoomed and needs nothing.
+     */
+    public static <N extends Node> N scale(N node, double base) {
+        return follow(node, "scale", () -> {
+            node.setScaleX(base * factor);
+            node.setScaleY(base * factor);
+        });
+    }
+
+    /**
      * An inline style whose lengths follow the zoom: {@code style} is written at 100%
      * ({@code "-fx-padding: 4 8; -fx-font-size: 11px;"}). Not for the font of content that has its own zoom.
      */

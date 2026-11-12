@@ -83,8 +83,7 @@ final class Icons {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("icon-line");
-        svg.setScaleX(LINE_SCALE);
-        svg.setScaleY(LINE_SCALE);
+        com.editora.editor.UiZoom.scale(svg, LINE_SCALE);
         return new Group(svg);
     }
 
@@ -100,8 +99,7 @@ final class Icons {
         if (extraClasses != null) {
             svg.getStyleClass().addAll(extraClasses);
         }
-        svg.setScaleX(ICON_SCALE);
-        svg.setScaleY(ICON_SCALE);
+        com.editora.editor.UiZoom.scale(svg, ICON_SCALE);
         return new Group(svg);
     }
 

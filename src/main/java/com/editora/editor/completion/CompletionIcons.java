@@ -107,8 +107,7 @@ final class CompletionIcons {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("toolbar-icon");
-        svg.setScaleX(ICON_SCALE);
-        svg.setScaleY(ICON_SCALE);
+        com.editora.editor.UiZoom.scale(svg, ICON_SCALE);
         return new Group(svg);
     }
 
