@@ -443,6 +443,22 @@ earlier in the keymap being switched to. `Settings.setKeymap` is the bare proper
   their text in `-color-danger-fg` (`app.css`). A right-click menu adds it to the item; the menu bar's
   destructive commands are the set in `MenuBarModel`, applied where `MainMenuBar` builds a row. Rows that
   close, hide or stop something, clear output or edit text are not marked.
+- **Chords on menu rows**: a right-click or drop-down row that does what a command does is tagged with that
+  command's id, [`MenuChords.tag(item, "command.id")`](../../src/main/java/com/editora/editor/MenuChords.java),
+  and then shows the command's chord in the menu's right-hand column. The chord is read from the live
+  keymap each time a menu opens, never typed into a string, and an unbound command leaves the cell empty.
+  Tag a row only when pressing the chord does the same thing to the same target:
+  - a row for the selected row of a panel, tagged with the command that acts on that panel's selection;
+  - a row in the menu of a text view, tagged with the command that view answers when it has the keyboard;
+  - a tab's row, tagged with the command that does the same to the active tab (and likewise a tool
+    window's header row and the focused tool window).
+
+  A row that acts on a file in a tree while the command acts on the active editor's file is not tagged,
+  and neither is a row that passes an argument the command would ask for. Where the same builder serves
+  two places and only one is the command's, tag conditionally (the Commit window's Stage row, a Project
+  Map card's Copy). A key a control handles itself with no command behind it (the terminal's copy and
+  paste keys) is a fixed key, set as a plain accelerator. `MenuChordTagsSourceTest` fails on a tag whose
+  literal id is no command.
 
 ## Adding a command
 

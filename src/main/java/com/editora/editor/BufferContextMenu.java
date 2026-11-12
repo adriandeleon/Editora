@@ -110,15 +110,16 @@ final class BufferContextMenu {
                 items.add(new SeparatorMenuItem());
             } else if (!simpleMenu && b.httpFeatureEnabled && b.isHttpFile() && b.runGutter.runnable) {
                 // A .http file runs requests, never "Run File" (which launched `java requests.http`).
-                MenuItem runRequest = new MenuItem(tr("editmenu.runHttpRequest"));
+                MenuItem runRequest = MenuChords.tag(new MenuItem(tr("editmenu.runHttpRequest")), "http.runRequest");
                 runRequest.setGraphic(FoldManager.runGlyph());
                 runRequest.setOnAction(ev -> b.httpGutter.hooks().run().accept(at.line()));
-                MenuItem runAll = new MenuItem(tr("editmenu.runHttpFile"));
+                MenuItem runAll = MenuChords.tag(new MenuItem(tr("editmenu.runHttpFile")), "http.runFile");
                 runAll.setOnAction(ev -> b.httpGutter.hooks().runAll().run());
                 items.addAll(java.util.List.of(runRequest, runAll));
                 if (b.runGutter.httpDebugHandler != null
                         && com.editora.http.HttpScriptLines.requestHasScripts(b.getContent(), at.line())) {
-                    MenuItem debugRequest = new MenuItem(tr("editmenu.debugHttpRequest"));
+                    MenuItem debugRequest =
+                            MenuChords.tag(new MenuItem(tr("editmenu.debugHttpRequest")), "http.debugRequest");
                     debugRequest.setGraphic(MenuIcons.debug());
                     debugRequest.setOnAction(ev -> {
                         java.util.function.IntConsumer handler = b.runGutter.httpDebugHandler;

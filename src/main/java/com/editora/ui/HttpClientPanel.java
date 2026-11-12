@@ -223,8 +223,10 @@ public final class HttpClientPanel extends VBox {
     /** The icon actions' places in the "⋯" menu, shown when a narrow strip folds the icons away. */
     private final CheckMenuItem wrapItem = new CheckMenuItem(tr("httppanel.wrap"));
 
-    private final MenuItem copyCurlItem = new MenuItem(tr("httppanel.copyAsCurl"), Icons.copy());
-    private final MenuItem openTabItem = new MenuItem(tr("httppanel.openInTab"), Icons.openInTab());
+    private final MenuItem copyCurlItem = com.editora.editor.MenuChords.tag(
+            new MenuItem(tr("httppanel.copyAsCurl"), Icons.copy()), "http.copyAsCurl");
+    private final MenuItem openTabItem = com.editora.editor.MenuChords.tag(
+            new MenuItem(tr("httppanel.openInTab"), Icons.openInTab()), "http.openResponseInTab");
     private final MenuItem saveItem = new MenuItem(tr("httppanel.save"), Icons.saveAs());
     private final SeparatorMenuItem foldedSeparator = new SeparatorMenuItem();
     private final List<HttpHistoryEntry> history = new ArrayList<>();
@@ -564,6 +566,8 @@ public final class HttpClientPanel extends VBox {
         copyValue.setOnAction(e -> copyHeaders(false));
         MenuItem copyLine = new MenuItem(tr("httppanel.copyHeader"));
         copyLine.setOnAction(e -> copyHeaders(true));
+        // The table's key filter below gives the keymap's copy chord to exactly this row.
+        com.editora.editor.MenuChords.tag(copyLine, "edit.copy");
         MenuItem copyAll = new MenuItem(tr("httppanel.copyAllHeaders"));
         copyAll.setOnAction(e -> putOnClipboard(headersText()));
         ContextMenu menu = new ContextMenu(copyValue, copyLine, copyAll);

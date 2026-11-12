@@ -11,6 +11,7 @@ import javafx.scene.input.ClipboardContent;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.MenuChords;
 import com.editora.editor.markdown.MarkdownPreviewPane;
 import com.editora.markdown.MarkdownTable;
 import org.jspecify.annotations.Nullable;
@@ -905,7 +906,7 @@ final class PreviewCoordinator {
         Tab source = tabOf(b);
         Tab tab = host.addContentTab(pane);
         sidePreviews.add(pane); // once it has a tab: a preview without one is taken for closed
-        MenuItem lock = new MenuItem();
+        MenuItem lock = MenuChords.tag(new MenuItem(), "view.toggleMarkdownPreviewLock");
         lock.setOnAction(e -> pane.setLocked(!pane.isLocked()));
         MenuItem close = new MenuItem(tr("menu.close"));
         close.setGraphic(Icons.closeTab());

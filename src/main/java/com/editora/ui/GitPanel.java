@@ -31,6 +31,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.MenuChords;
 import com.editora.git.CommitMessages;
 import com.editora.git.GitConflicts;
 import com.editora.git.GitFileStatus;
@@ -288,8 +289,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         Button stageAll = iconButton(Icons.stageAll(), tr("gitpanel.stageAllTip"), actions::stageAll);
         reviewWorkingItem = new MenuItem(tr("gitpanel.reviewWorking"));
         reviewWorkingItem.setOnAction(e -> actions.review(false));
+        MenuChords.tag(reviewWorkingItem, "diff.reviewUnstaged");
         reviewStagedItem = new MenuItem(tr("gitpanel.reviewStaged"));
         reviewStagedItem.setOnAction(e -> actions.review(true));
+        MenuChords.tag(reviewStagedItem, "diff.reviewStaged");
         reviewButton = new MenuButton();
         reviewButton.setGraphic(Icons.diff());
         reviewButton.getItems().setAll(reviewWorkingItem, reviewStagedItem);
@@ -412,6 +415,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(commitButton, Priority.ALWAYS);
         commitAndPushItem.setGraphic(Icons.gitPush());
         commitAndPushItem.setOnAction(e -> doCommit(true));
+        MenuChords.tag(commitAndPushItem, "git.commitAndPush");
         commitMenu.getItems().setAll(commitAndPushItem);
         commitMenu.getStyleClass().add("git-commit-more");
         commitMenu.setAccessibleText(tr("gitpanel.commitMoreTip"));
@@ -1243,6 +1247,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             MenuItem unstage = new MenuItem(tr("gitpanel.menu.unstageAll"));
             unstage.setGraphic(Icons.remove());
             unstage.setOnAction(a -> actions.unstageAll());
+            MenuChords.tag(unstage, "git.unstageAll");
             menu.getItems().add(unstage);
             return menu;
         }
@@ -1339,6 +1344,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             MenuItem resolved = new MenuItem(tr("gitpanel.menu.markResolved"));
             resolved.setGraphic(Icons.stageAll());
             resolved.setOnAction(a -> actions.stage(conflicted));
+            if (paths(targets, false).isEmpty()) { // nothing else to stage: the command stages exactly these
+                MenuChords.tag(resolved, "git.stageSelected");
+            }
             menu.getItems().addAll(ours, theirs, resolved);
         }
         List<String> toStage = paths(targets, false);
@@ -1347,6 +1355,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                     toStage.size() == 1 ? tr("gitpanel.menu.stage") : tr("gitpanel.menu.stageMany", toStage.size()));
             stage.setGraphic(Icons.stageAll());
             stage.setOnAction(a -> actions.stage(toStage));
+            if (conflicted.isEmpty()) { // with conflicted rows selected too, the command also marks those resolved
+                MenuChords.tag(stage, "git.stageSelected");
+            }
             menu.getItems().add(stage);
         }
         List<String> toUnstage = paths(targets, true);
@@ -1357,6 +1368,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                             : tr("gitpanel.menu.unstageMany", toUnstage.size()));
             unstage.setGraphic(Icons.remove());
             unstage.setOnAction(a -> actions.unstage(toUnstage));
+            MenuChords.tag(unstage, "git.unstageSelected");
             menu.getItems().add(unstage);
         }
         addDiscardItem(menu, targets);

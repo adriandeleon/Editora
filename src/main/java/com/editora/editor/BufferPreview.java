@@ -853,7 +853,7 @@ final class BufferPreview {
                     com.editora.editor.MenuChords.tag(new MenuItem(tr("command.preview.print")), "preview.print");
             print.setGraphic(MenuIcons.print());
             print.setOnAction(ev -> b.previewMenu.print());
-            pomViewItem = new MenuItem();
+            pomViewItem = com.editora.editor.MenuChords.tag(new MenuItem(), "pom.toggleView");
             pomViewItem.setGraphic(MenuIcons.code());
             pomViewItem.setOnAction(ev -> pomViewToggleHandler.run());
             treePreviewContextMenu = new javafx.scene.control.ContextMenu(pomViewItem, pdf, print);

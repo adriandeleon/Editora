@@ -7782,6 +7782,7 @@ final class DebugCoordinator {
         restart.setDisable(!canRestartFrame(
                 dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
         restart.setOnAction(e -> restartFrame(frame));
+        com.editora.editor.MenuChords.tag(restart, "debug.restartFrame"); // the selected frame is the shown one
         return List.of(restart);
     }
 
@@ -8275,6 +8276,7 @@ final class DebugCoordinator {
         mute.setGraphic(Icons.hidden());
         mute.setSelected(breakpointsMuted);
         mute.setOnAction(e -> toggleMuteBreakpoints());
+        com.editora.editor.MenuChords.tag(mute, "debug.muteBreakpoints");
         items.add(mute);
         return menu;
     }

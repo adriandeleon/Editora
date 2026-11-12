@@ -44,6 +44,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.MenuChords;
 import com.editora.git.GitFileStatus;
 import com.editora.git.GitFormat;
 import com.editora.git.GitGraph;
@@ -1266,19 +1267,28 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         private ContextMenu buildMenu(Entry c) {
             String h = c.hash();
             List<String> selected = selectedHashes();
-            MenuItem copy = item(tr("gitlog.menu.copyHash"), Icons.copy(), () -> actions.copyHash(h));
-            MenuItem review = item(tr("gitlog.menu.review"), Icons.diff(), () -> actions.reviewCommit(h));
+            MenuItem copy =
+                    item(tr("gitlog.menu.copyHash"), Icons.copy(), () -> actions.copyHash(h), "git.log.copyHash");
+            MenuItem review =
+                    item(tr("gitlog.menu.review"), Icons.diff(), () -> actions.reviewCommit(h), "git.log.reviewCommit");
             MenuItem compare = item(
                     tr("gitlog.menu.compare"),
                     Icons.diff(),
-                    () -> actions.compareCommits(selected.get(1), selected.get(0)));
+                    () -> actions.compareCommits(selected.get(1), selected.get(0)),
+                    "git.log.compareSelected");
             compare.setDisable(selected.size() != 2);
-            MenuItem checkout = item(tr("gitlog.menu.checkout"), Icons.git(), () -> actions.checkout(h));
-            MenuItem newBranch = item(tr("gitlog.menu.newBranch"), Icons.git(), () -> actions.newBranch(h));
-            MenuItem newTag = item(tr("gitlog.menu.newTag"), Icons.bookmark(), () -> actions.newTag(h));
-            MenuItem revert = item(tr("gitlog.menu.revert"), Icons.refresh(), () -> actions.revert(h));
-            MenuItem cherry = item(tr("gitlog.menu.cherryPick"), Icons.stageAll(), () -> actions.cherryPick(h));
-            MenuItem patch = item(tr("gitlog.menu.createPatch"), Icons.diff(), () -> actions.createPatch(h));
+            MenuItem checkout =
+                    item(tr("gitlog.menu.checkout"), Icons.git(), () -> actions.checkout(h), "git.log.checkout");
+            MenuItem newBranch =
+                    item(tr("gitlog.menu.newBranch"), Icons.git(), () -> actions.newBranch(h), "git.log.newBranch");
+            MenuItem newTag =
+                    item(tr("gitlog.menu.newTag"), Icons.bookmark(), () -> actions.newTag(h), "git.tag.create");
+            MenuItem revert =
+                    item(tr("gitlog.menu.revert"), Icons.refresh(), () -> actions.revert(h), "git.log.revert");
+            MenuItem cherry = item(
+                    tr("gitlog.menu.cherryPick"), Icons.stageAll(), () -> actions.cherryPick(h), "git.log.cherryPick");
+            MenuItem patch = item(
+                    tr("gitlog.menu.createPatch"), Icons.diff(), () -> actions.createPatch(h), "git.log.createPatch");
             Menu reset = new Menu(tr("gitlog.menu.reset"));
             reset.setGraphic(Icons.refresh());
             reset.getItems()
@@ -1332,6 +1342,11 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         }
         m.setOnAction(e -> run.run());
         return m;
+    }
+
+    /** A row that does what command {@code commandId} does: it shows that command's chord ({@link MenuChords}). */
+    private static MenuItem item(String label, javafx.scene.@Nullable Node icon, Runnable run, String commandId) {
+        return MenuChords.tag(item(label, icon, run), commandId);
     }
 
     private final class FileCell extends ListCell<CommitFile> {

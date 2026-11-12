@@ -52,6 +52,7 @@ import com.editora.config.PathDisplay;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.editops.LineEndings;
+import com.editora.editor.MenuChords;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.lsp.LspDiagnosticOverlay;
@@ -825,6 +826,9 @@ final class ProjectMapPreview extends StackPane {
         editor.getStyleClass().addAll("editor-area", "project-map-preview-editor");
         editor.setEditable(false);
         editor.setWrapText(false);
+        // The keymap's own Copy and Select All (M-w in Emacs, or a chord the user chose) act on the card's text.
+        ConsoleNav.onCommand(editor, "edit.copy", editor::copy);
+        ConsoleNav.onCommand(editor, "edit.selectAll", editor::selectAll);
         installGutter();
         editor.setAccessibleHelp(tr("project.map.preview.accessibleHelp"));
         installEditorContextMenu();
@@ -2801,14 +2805,18 @@ final class ProjectMapPreview extends StackPane {
         MenuItem copy = new MenuItem(tr(selection ? "editmenu.copy" : "project.map.preview.copyAll"), Icons.copy());
         copy.setDisable(empty);
         copy.setOnAction(ignored -> copySelectionOrAll());
-        MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"), Icons.selectAll());
+        if (selection) {
+            MenuChords.tag(copy, "edit.copy"); // the key copies the selection; it never copies the whole text
+        }
+        MenuItem selectAll =
+                MenuChords.tag(new MenuItem(tr("editmenu.selectAll"), Icons.selectAll()), "edit.selectAll");
         selectAll.setDisable(empty);
         selectAll.setOnAction(ignored -> {
             editor.selectAll();
             editor.requestFocus();
         });
 
-        MenuItem find = new MenuItem(tr("project.map.preview.find"), Icons.find());
+        MenuItem find = MenuChords.tag(new MenuItem(tr("project.map.preview.find"), Icons.find()), "find.show");
         find.setDisable(empty);
         find.setOnAction(ignored -> showFind());
         MenuItem goToLine = new MenuItem(tr("project.map.preview.goToLine.menu"));
@@ -2839,13 +2847,14 @@ final class ProjectMapPreview extends StackPane {
         if (!empty && selected != null && actions != null) {
             int fileLine = clickedLine + (shown == null ? 0 : shown.startLine());
             items.add(new SeparatorMenuItem());
-            MenuItem bookmark = new MenuItem(tr("editmenu.addBookmark"), Icons.bookmark());
+            MenuItem bookmark =
+                    MenuChords.tag(new MenuItem(tr("editmenu.addBookmark"), Icons.bookmark()), "bookmarks.toggle");
             bookmark.setOnAction(ignored -> actions.addBookmark(selected, fileLine));
             // A declaration that is gone keeps its last lines on the card, but they are no longer the file's.
             bookmark.setDisable(symbolMissing);
             items.add(bookmark);
 
-            MenuItem note = new MenuItem(tr("editmenu.addNote"), Icons.notes());
+            MenuItem note = MenuChords.tag(new MenuItem(tr("editmenu.addNote"), Icons.notes()), "notes.add");
             note.setDisable(!actions.personalNotesEnabled() || symbolMissing);
             NoteDraft draft = noteDraftAt(clickedLine);
             note.setOnAction(ignored -> requestNote(actions, selected, draft));
@@ -2858,6 +2867,10 @@ final class ProjectMapPreview extends StackPane {
             MenuItem column = new MenuItem(
                     tr(out ? "project.map.preview.hideStructure" : "project.map.preview.showStructure"),
                     Icons.structure());
+            if (!out) {
+                // The Structure command typed in the card shows the column and goes to it; it never hides it.
+                MenuChords.tag(column, "tool.structure");
+            }
             column.setOnAction(ignored -> {
                 if (out) {
                     setStructureShown(false);
@@ -3190,6 +3203,10 @@ final class ProjectMapPreview extends StackPane {
             MenuItem item = new MenuItem(followLabel(commandId));
             item.setDisable(!text);
             item.setOnAction(ignored -> actions.follow(file, line, column, commandId));
+            if (linkActions == null) {
+                // Typed in the card the command does this only when the Map does not answer it as cards itself.
+                MenuChords.tag(item, commandId);
+            }
             inEditor.add(item);
         }
         if (linkActions != null) {
@@ -3203,7 +3220,8 @@ final class ProjectMapPreview extends StackPane {
         items.add(new SeparatorMenuItem());
         MenuItem related = new MenuItem(tr("project.map.follow.related"));
         related.setOnAction(ignored -> actions.related(file));
-        MenuItem history = new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog());
+        MenuItem history =
+                MenuChords.tag(new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog()), "git.fileHistory");
         history.setOnAction(ignored -> actions.fileHistory(file));
         // Annotate: the editor's blame, on the card's file — a declaration card's opens at its declaration (position
         // 9).
@@ -3278,6 +3296,12 @@ final class ProjectMapPreview extends StackPane {
                     && kind != MapCardLinks.Kind.CALLERS
                     && kind != MapCardLinks.Kind.CALLEES;
             item.setOnAction(ignored -> actions.show(this, kind, line, column, atPlace));
+            // The command typed in the card asks from its caret: this row's question, unless the row asks about a
+            // declaration card's declaration instead.
+            String command = linkCommand(kind);
+            if (command != null && (atPlace || range == null)) {
+                MenuChords.tag(item, command);
+            }
             items.add(item);
         }
         for (MapCardLinks.Kind kind : MapCardLinks.HIERARCHY_MENU_KINDS) {
@@ -3286,6 +3310,10 @@ final class ProjectMapPreview extends StackPane {
             // A call hierarchy of a declaration card is its declaration's, as its callers are; a type's from the place.
             boolean atPlace = kind != MapCardLinks.Kind.CALLERS;
             item.setOnAction(ignored -> actions.hierarchy(this, kind, line, column, atPlace));
+            String command = hierarchyCommand(kind);
+            if (command != null && (atPlace || range == null)) {
+                MenuChords.tag(item, command);
+            }
             items.add(item);
         }
         // Its callers, callees, supertypes and subtypes around it, walked as in a code browser (round 2).
@@ -3293,7 +3321,7 @@ final class ProjectMapPreview extends StackPane {
         graph.setDisable(!text);
         graph.setOnAction(ignored -> actions.symbolGraph(this, line, column));
         items.add(graph);
-        MenuItem hover = new MenuItem(tr("project.map.links.hover.show"));
+        MenuItem hover = MenuChords.tag(new MenuItem(tr("project.map.links.hover.show")), "lsp.hover");
         hover.setDisable(!text);
         int[] at = followAt.clone();
         hover.setOnAction(ignored -> {
@@ -3302,6 +3330,30 @@ final class ProjectMapPreview extends StackPane {
         });
         items.add(hover);
         return items;
+    }
+
+    /**
+     * The command that, typed in a card or on a declaration row, asks for {@code kind} alone as cards — what a menu
+     * row of that kind shows the key of (Go to Definition before Peek Definition); null when no command does.
+     */
+    static @Nullable String linkCommand(MapCardLinks.Kind kind) {
+        for (java.util.Map.Entry<String, java.util.List<MapCardLinks.Kind>> command :
+                MapCardLinks.NAVIGATION_COMMANDS.entrySet()) {
+            if (command.getValue().equals(java.util.List.of(kind))) {
+                return command.getKey();
+            }
+        }
+        return null;
+    }
+
+    /** The command that, typed in a card or on a declaration row, shows {@code kind}'s hierarchy; null when none. */
+    static @Nullable String hierarchyCommand(MapCardLinks.Kind kind) {
+        for (java.util.Map.Entry<String, MapCardLinks.Kind> command : MapCardLinks.HIERARCHY_COMMANDS.entrySet()) {
+            if (command.getValue() == kind) {
+                return command.getKey();
+            }
+        }
+        return null;
     }
 
     private int clickLineAt(double x, double y) {

@@ -36,6 +36,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.MenuChords;
 import com.editora.github.GitHubItemFilter;
 import com.editora.github.GitHubListQuery;
 import com.editora.github.IssueListParser.Issue;
@@ -854,19 +855,25 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                 items.add(item(
                         tr("github.panel.menu.rerunFailed"),
                         Icons.refresh(),
-                        () -> actions.rerunRun(run.databaseId(), true)));
+                        () -> actions.rerunRun(run.databaseId(), true),
+                        "github.rerunFailedJobs"));
             }
             if (!state.active()) {
                 items.add(item(
                         tr("github.panel.menu.rerun"),
                         Icons.refresh(),
-                        () -> actions.rerunRun(run.databaseId(), false)));
+                        () -> actions.rerunRun(run.databaseId(), false),
+                        "github.rerunRun"));
             } else {
                 items.add(item(
-                        tr("github.panel.menu.cancel"), Icons.stopSquare(), () -> actions.cancelRun(run.databaseId())));
+                        tr("github.panel.menu.cancel"),
+                        Icons.stopSquare(),
+                        () -> actions.cancelRun(run.databaseId()),
+                        "github.cancelRun"));
             }
             items.add(item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(run.url())));
-            items.add(item(tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(run.url())));
+            items.add(item(
+                    tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(run.url()), "github.copyUrl"));
             setContextMenu(new ContextMenu(items.toArray(new MenuItem[0])));
         }
 
@@ -886,7 +893,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                     item(tr("github.panel.menu.checkout"), Icons.git(), () -> actions.checkoutPr(pr.number()));
             MenuItem review = item(tr("github.panel.menu.review"), Icons.diff(), () -> actions.reviewPr(pr.number()));
             MenuItem open = item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(pr.url()));
-            MenuItem copy = item(tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(pr.url()));
+            MenuItem copy = item(
+                    tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(pr.url()), "github.copyUrl");
             setContextMenu(new ContextMenu(checkout, review, open, copy));
         }
 
@@ -899,7 +907,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             setRow(new Label(issue.title() + labels + closed), number);
             setTooltip(new Tooltip(issue.authorLogin() + " · " + stateWord(state) + "\n" + when(issue.updatedAt())));
             MenuItem open = item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(issue.url()));
-            MenuItem copy = item(tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(issue.url()));
+            MenuItem copy = item(
+                    tr("github.panel.menu.copyUrl"),
+                    Icons.copy(),
+                    () -> actions.copyUrl(issue.url()),
+                    "github.copyUrl");
             setContextMenu(new ContextMenu(open, copy));
         }
     }
@@ -919,5 +931,10 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         }
         m.setOnAction(e -> run.run());
         return m;
+    }
+
+    /** A row that does what command {@code commandId} does: it shows that command's chord ({@link MenuChords}). */
+    private static MenuItem item(String label, javafx.scene.Node icon, Runnable run, String commandId) {
+        return MenuChords.tag(item(label, icon, run), commandId);
     }
 }

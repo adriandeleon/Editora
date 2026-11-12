@@ -28,6 +28,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 
 import com.editora.command.KeyDispatcher;
+import com.editora.editor.MenuChords;
 import com.editora.terminal.DesktopNotifier;
 import com.editora.terminal.LinkActions;
 import com.editora.terminal.ProgramRun;
@@ -1420,6 +1421,14 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         moveRight.setOnAction(e -> moveTabBy(tab, 1));
         MenuItem toEditor = new MenuItem(tr("terminal.tab.moveToEditor"), Icons.openInTab());
         toEditor.setOnAction(e -> moveToEditor(tab));
+        // Each row a command also does shows that command's chord: the shortcut for "this, on the selected tab"
+        // (as the editor's tab menu does).
+        MenuChords.tag(rename, "terminal.rename");
+        MenuChords.tag(newTab, "terminal.new");
+        MenuChords.tag(close, "terminal.close");
+        MenuChords.tag(moveLeft, "terminal.moveTabLeft");
+        MenuChords.tag(moveRight, "terminal.moveTabRight");
+        MenuChords.tag(toEditor, "terminal.moveToEditor");
         javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu(
                 rename,
                 newTab,

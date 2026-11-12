@@ -20,6 +20,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.MenuChords;
 import com.editora.vfs.RemoteConnection;
 
 import static com.editora.i18n.Messages.tr;
@@ -136,6 +137,7 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
         MenuItem add = new MenuItem(tr("remotePanel.new"));
         add.setGraphic(Icons.newFile());
         add.setOnAction(e -> actions.newConnection());
+        MenuChords.tag(add, "remote.connect"); // the same fresh connection form (RemoteCoordinator.connect())
         MenuItem remove = new MenuItem(tr("remotePanel.remove"));
         remove.setGraphic(Icons.trash());
         remove.getStyleClass().add("danger"); // a destructive row reads red

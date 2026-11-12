@@ -29,6 +29,7 @@ import javafx.util.Callback;
 
 import com.editora.csv.CsvColumns;
 import com.editora.csv.CsvColumns.ColumnType;
+import com.editora.editor.MenuChords;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -185,13 +186,13 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
             sortColumn = -1;
             applyView();
         });
-        MenuItem exportPdf = new MenuItem(tr("csvgrid.exportPdf"));
+        MenuItem exportPdf = MenuChords.tag(new MenuItem(tr("csvgrid.exportPdf")), "csv.exportPdf");
         exportPdf.setOnAction(e -> runExport(ExportActions::exportPdf));
-        MenuItem print = new MenuItem(tr("csvgrid.print"));
+        MenuItem print = MenuChords.tag(new MenuItem(tr("csvgrid.print")), "csv.print");
         print.setOnAction(e -> runExport(ExportActions::printPreview));
-        MenuItem exportExcel = new MenuItem(tr("csvgrid.exportExcel"));
+        MenuItem exportExcel = MenuChords.tag(new MenuItem(tr("csvgrid.exportExcel")), "csv.exportExcel");
         exportExcel.setOnAction(e -> runExport(ExportActions::exportExcel));
-        MenuItem exportOds = new MenuItem(tr("csvgrid.exportOds"));
+        MenuItem exportOds = MenuChords.tag(new MenuItem(tr("csvgrid.exportOds")), "csv.exportOds");
         exportOds.setOnAction(e -> runExport(ExportActions::exportOds));
         ContextMenu menu = new ContextMenu(
                 reveal,

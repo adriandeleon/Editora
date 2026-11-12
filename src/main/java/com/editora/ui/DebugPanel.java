@@ -69,6 +69,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // The coordinator owns the state and writes it back through setExceptionToggles.
         caughtToggle.setOnAction(e -> actions.toggleExceptions(true));
         uncaughtToggle.setOnAction(e -> actions.toggleExceptions(false));
+        com.editora.editor.MenuChords.tag(caughtToggle, "debug.exceptions.caught");
+        com.editora.editor.MenuChords.tag(uncaughtToggle, "debug.exceptions.uncaught");
         exceptionsButton.getItems().setAll(caughtToggle, uncaughtToggle);
         exceptionsButton.setGraphic(Icons.warning());
         exceptionsButton.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-exceptions");
@@ -911,6 +913,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         clear.setOnAction(e -> clearConsole());
         javafx.scene.control.MenuItem endInput = new javafx.scene.control.MenuItem(tr("debugpanel.endInput"));
         endInput.setOnAction(e -> actions.endInput());
+        com.editora.editor.MenuChords.tag(endInput, "debug.endProgramInput");
         consoleMenu.setOnShowing(e -> endInput.setDisable(!inputMode()));
         consoleMenu.getItems().addAll(clear, endInput);
         console.setContextMenu(consoleMenu);
@@ -2113,6 +2116,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             javafx.scene.control.MenuItem set = new javafx.scene.control.MenuItem(tr("debugpanel.setValue"));
             set.setGraphic(Icons.edit());
             set.setOnAction(e -> setValuePrompt());
+            com.editora.editor.MenuChords.tag(set, "debug.setValue");
             menu.getItems().add(set);
         }
         if (row != null
@@ -2183,6 +2187,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         javafx.scene.control.MenuItem add = new javafx.scene.control.MenuItem(tr("debugpanel.addWatch"));
         add.setGraphic(Icons.newFile());
         add.setOnAction(e -> addWatchPrompt());
+        com.editora.editor.MenuChords.tag(add, "debug.addWatch");
         menu.getItems().add(add);
         boolean onWatches = row != null
                 && (row.kind() == Kind.WATCH
@@ -2207,6 +2212,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         javafx.scene.control.CheckMenuItem hex = new javafx.scene.control.CheckMenuItem(tr("debugpanel.hexValues"));
         hex.setSelected(actions.hexValues());
         hex.setOnAction(e -> toggleHexValues());
+        com.editora.editor.MenuChords.tag(hex, "debug.toggleHex");
         menu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), hex);
     }
 

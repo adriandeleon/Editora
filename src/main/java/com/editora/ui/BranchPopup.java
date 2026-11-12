@@ -59,10 +59,20 @@ public final class BranchPopup {
 
     /**
      * One entry of a branch row's secondary menu (rename, merge, delete…). {@code danger} marks an action
-     * that destroys something; {@link #SEPARATOR} draws a line between groups.
+     * that destroys something; {@link #SEPARATOR} draws a line between groups. {@code commandId}: the command
+     * that does the same to this branch (one exists for the current branch's upstream rows), whose chord the
+     * row shows; null when no command does.
      */
-    public record RowAction(String label, boolean danger, Runnable run) {
+    public record RowAction(
+            String label,
+            boolean danger,
+            Runnable run,
+            @Nullable String commandId) {
         public static final RowAction SEPARATOR = new RowAction("", false, () -> {});
+
+        public RowAction(String label, boolean danger, Runnable run) {
+            this(label, danger, run, null);
+        }
     }
 
     private sealed interface Row permits Header, ActionRow, BranchRow {}
@@ -567,6 +577,9 @@ public final class BranchPopup {
                 item.getStyleClass().add("danger");
             }
             item.setOnAction(e -> runRowAction(action));
+            if (action.commandId() != null) {
+                com.editora.editor.MenuChords.tag(item, action.commandId());
+            }
             menu.getItems().add(item);
         }
         rowMenu = menu;
