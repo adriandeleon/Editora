@@ -58,8 +58,7 @@ public final class ProblemReport {
         if (fx != null && !fx.isBlank()) {
             lines.add("JavaFX: " + fx);
         }
-        lines.add("OS: " + System.getProperty("os.name", "?") + " " + System.getProperty("os.version", "?") + " ("
-                + System.getProperty("os.arch", "?") + ")");
+        lines.add("OS: " + com.editora.Os.description());
         lines.add("Locale: " + Locale.getDefault().toLanguageTag());
         lines.add("Install: " + installKind(System.getProperty("jpackage.app-path"), AppInfo.isSnapshot()));
         lines.add("Plugins: " + (plugins.isEmpty() ? "none" : String.join(", ", plugins)));

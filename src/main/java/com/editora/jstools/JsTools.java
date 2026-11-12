@@ -127,8 +127,7 @@ public final class JsTools {
         /** This machine's file system. Blocking: off the FX thread. */
         public static Lookup local(@Nullable Path projectRoot) {
             String home = System.getProperty("user.home");
-            boolean windows =
-                    System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+            boolean windows = com.editora.Os.isWindows();
             return new Lookup(
                     projectRoot,
                     home == null ? null : Path.of(home),

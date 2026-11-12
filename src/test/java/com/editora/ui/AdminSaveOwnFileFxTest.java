@@ -35,7 +35,7 @@ class AdminSaveOwnFileFxTest {
     @Test
     void savingYourOwnReadOnlyFileAsksToOverwriteInsteadOfAskingForRoot(@TempDir Path dir) throws Exception {
         Assumptions.assumeTrue(
-                com.editora.process.ElevatedSave.supportedOnOs(System.getProperty("os.name")),
+                com.editora.process.ElevatedSave.supportedOnOs(com.editora.Os.current()),
                 "elevated save is not offered on this platform");
         Assumptions.assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
         Path file = Files.writeString(dir.resolve("mine.txt"), "mine\n");

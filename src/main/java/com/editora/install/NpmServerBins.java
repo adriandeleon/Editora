@@ -80,8 +80,6 @@ public final class NpmServerBins {
     }
 
     private static boolean windows() {
-        return System.getProperty("os.name", "")
-                .toLowerCase(java.util.Locale.ROOT)
-                .contains("win");
+        return com.editora.Os.isWindows();
     }
 }

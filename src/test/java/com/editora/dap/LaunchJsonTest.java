@@ -78,9 +78,9 @@ class LaunchJsonTest {
         assertEquals("${workspaceFolder}/build/app-linux", linux.get("program"));
         assertTrue(!linux.containsKey("linux") && !linux.containsKey("windows"));
         assertEquals(body.get("program"), LaunchJson.forPlatform(body, "osx").get("program"), "no osx part");
-        assertEquals("linux", LaunchJson.osKey("Linux"));
-        assertEquals("osx", LaunchJson.osKey("Mac OS X"));
-        assertEquals("windows", LaunchJson.osKey("Windows 11"));
+        assertEquals("linux", LaunchJson.osKey(com.editora.Os.parse("Linux")));
+        assertEquals("osx", LaunchJson.osKey(com.editora.Os.parse("Mac OS X")));
+        assertEquals("windows", LaunchJson.osKey(com.editora.Os.parse("Windows 11")));
     }
 
     @Test

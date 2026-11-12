@@ -1571,15 +1571,14 @@ public final class InstallCatalog {
             boolean binaryPrefix,
             String commandSuffix) {}
 
-    /** The host {@link Platform} for an OS/arch (e.g. from {@code os.name}/{@code os.arch}). Pure. */
-    public static Platform platformKey(String osName, String osArch) {
-        String os = osName == null ? "" : osName.toLowerCase(java.util.Locale.ROOT);
+    /** The host {@link Platform} for an OS and a processor architecture ({@code os.arch}). Pure. */
+    public static Platform platformKey(com.editora.Os.Kind os, String osArch) {
         String arch = osArch == null ? "" : osArch.toLowerCase(java.util.Locale.ROOT);
         boolean arm = arch.contains("aarch64") || arch.contains("arm64") || arch.equals("arm");
-        if (os.contains("win")) {
+        if (os == com.editora.Os.Kind.WINDOWS) {
             return Platform.WIN_X64; // Windows-on-ARM runs the x64 build under emulation
         }
-        if (os.contains("mac") || os.contains("darwin") || os.contains("osx")) {
+        if (os == com.editora.Os.Kind.MAC) {
             return arm ? Platform.MAC_ARM : Platform.MAC_X64;
         }
         return arm ? Platform.LINUX_ARM : Platform.LINUX_X64;
@@ -1587,7 +1586,7 @@ public final class InstallCatalog {
 
     /** This machine's {@link Platform}. */
     public static Platform currentPlatform() {
-        return platformKey(System.getProperty("os.name"), System.getProperty("os.arch"));
+        return platformKey(com.editora.Os.current(), com.editora.Os.arch());
     }
 
     /** A single {@code npm install -g <pkgs>} step (the step id = the primary package). Pure. */

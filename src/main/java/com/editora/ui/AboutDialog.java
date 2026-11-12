@@ -285,11 +285,11 @@ final class AboutDialog {
                 .append(System.getProperty("javafx.runtime.version", "?"))
                 .append('\n');
         sb.append("OS: ")
-                .append(System.getProperty("os.name", "?"))
+                .append(com.editora.Os.name())
                 .append(' ')
-                .append(System.getProperty("os.version", "?"))
+                .append(com.editora.Os.version())
                 .append(" (")
-                .append(System.getProperty("os.arch", "?"))
+                .append(com.editora.Os.arch())
                 .append(")\n");
         Path configDir = settingsFile == null ? null : settingsFile.getParent();
         if (configDir != null) {

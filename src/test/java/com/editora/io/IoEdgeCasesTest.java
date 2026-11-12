@@ -168,11 +168,14 @@ class IoEdgeCasesTest {
     @Test
     void thereIsNoTrashWhenItIsSwitchedOffOrThePlatformHasNoneOrHomeIsUnknown() {
         Map<String, String> env = Map.of();
-        assertSame(Trash.NONE, Trash.forPlatform("Linux", dir.toString(), env, " OFF "));
-        assertSame(Trash.NONE, Trash.forPlatform("Linux", null, env, null));
-        assertSame(Trash.NONE, Trash.forPlatform("Linux", "  ", env, null));
-        assertSame(Trash.NONE, Trash.forPlatform("Windows 11", dir.toString(), env, null));
-        assertSame(Trash.NONE, Trash.forPlatform("Linux", "bad\0home", env, null), "an unusable home directory");
+        assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Linux"), dir.toString(), env, " OFF "));
+        assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Linux"), null, env, null));
+        assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Linux"), "  ", env, null));
+        assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Windows 11"), dir.toString(), env, null));
+        assertSame(
+                Trash.NONE,
+                Trash.forPlatform(com.editora.Os.parse("Linux"), "bad\0home", env, null),
+                "an unusable home directory");
     }
 
     @Test
@@ -180,7 +183,7 @@ class IoEdgeCasesTest {
         Path home = Files.createDirectory(dir.resolve("home"));
         Path file = Files.writeString(home.resolve("old.txt"), "kept");
 
-        Trash.Bin bin = Trash.forPlatform("Mac OS X", home.toString(), null, null);
+        Trash.Bin bin = Trash.forPlatform(com.editora.Os.parse("Mac OS X"), home.toString(), null, null);
         assertTrue(bin.accepts(file));
         bin.trash(file);
 
@@ -194,12 +197,14 @@ class IoEdgeCasesTest {
         Path data = Files.createDirectory(dir.resolve("xdg-data"));
 
         Path first = Files.writeString(home.resolve("first.txt"), "one");
-        Trash.forPlatform("Linux", home.toString(), Map.of("XDG_DATA_HOME", data.toString()), null)
+        Trash.forPlatform(
+                        com.editora.Os.parse("Linux"), home.toString(), Map.of("XDG_DATA_HOME", data.toString()), null)
                 .trash(first);
         assertEquals("one", Files.readString(data.resolve("Trash/files/first.txt")));
 
         Path second = Files.writeString(home.resolve("second.txt"), "two");
-        Trash.forPlatform("Linux", home.toString(), Map.of("XDG_DATA_HOME", "relative/data"), null)
+        Trash.forPlatform(
+                        com.editora.Os.parse("Linux"), home.toString(), Map.of("XDG_DATA_HOME", "relative/data"), null)
                 .trash(second);
         assertEquals(
                 "two",
@@ -207,7 +212,8 @@ class IoEdgeCasesTest {
                 "the specification ignores a relative XDG_DATA_HOME");
 
         Path third = Files.writeString(home.resolve("third.txt"), "three");
-        Trash.forPlatform(null, home.toString(), null, null).trash(third);
+        Trash.forPlatform(com.editora.Os.parse(null), home.toString(), null, null)
+                .trash(third);
         assertEquals("three", Files.readString(home.resolve(".local/share/Trash/files/third.txt")));
     }
 

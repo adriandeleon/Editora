@@ -287,11 +287,10 @@ final class EncryptionViews {
 
     /** The install line for this OS, in the reader's language. */
     static String installHint() {
-        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
-        if (os.contains("mac")) {
+        if (com.editora.Os.isMac()) {
             return tr("encryption.install.mac");
         }
-        if (os.contains("win")) {
+        if (com.editora.Os.isWindows()) {
             return tr("encryption.install.windows");
         }
         return tr("encryption.install.linux");

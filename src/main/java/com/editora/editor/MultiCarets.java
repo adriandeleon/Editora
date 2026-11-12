@@ -50,8 +50,7 @@ final class MultiCarets {
 
     private static final String SELECTION_PREFIX = "multi-selection-";
 
-    private static final boolean MAC =
-            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
+    private static final boolean MAC = com.editora.Os.isMac();
 
     private final CodeArea area;
     private final MultiCaretController<?, ?, ?> controller;

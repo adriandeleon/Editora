@@ -399,7 +399,7 @@ public final class LocalProcesses {
     }
 
     private static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
+        return com.editora.Os.isWindows();
     }
 
     /**

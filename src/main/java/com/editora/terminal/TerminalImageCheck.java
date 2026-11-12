@@ -5,7 +5,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -107,8 +106,7 @@ public final class TerminalImageCheck {
     }
 
     public static Result run() {
-        boolean windows =
-                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
+        boolean windows = com.editora.Os.isWindows();
         List<String> command = command(windows);
         Map<String, String> env =
                 ProcessRunner.applyUserEnv(new HashMap<>(System.getenv()), Map.of("TERM", "xterm-256color"));
