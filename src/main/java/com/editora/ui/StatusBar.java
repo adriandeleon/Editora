@@ -562,6 +562,11 @@ public final class StatusBar extends HBox {
         }
     }
 
+    /** Copies the messages selected in the open Message Log; false when it is closed or nothing is selected. */
+    public boolean copySelectedMessages() {
+        return messageLogPopup.copySelection();
+    }
+
     /**
      * Shows the active {@code .http} file's environment ({@code text}: "Env: dev"; {@code none}: muted, as for "No
      * environment"), or hides the segment ({@code text} null).

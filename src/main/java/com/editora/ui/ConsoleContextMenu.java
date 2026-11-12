@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 
@@ -41,6 +43,42 @@ final class ConsoleContextMenu {
             menu.show(area, e.getScreenX(), e.getScreenY());
             e.consume();
         });
+    }
+
+    /**
+     * The same menu over a read-only text control (the Application Log's), with a <b>Find</b> row that runs
+     * {@code find}: the window's find bar. It replaces the stock menu JavaFX gives a text area, whose Cut, Paste
+     * and Delete mean nothing in a read-only log.
+     */
+    static ContextMenu install(TextInputControl area, Runnable find) {
+        MenuItem selectAll =
+                com.editora.editor.MenuChords.tag(new MenuItem(tr("editmenu.selectAll")), "edit.selectAll");
+        selectAll.setGraphic(Icons.selectAll());
+        selectAll.setOnAction(e -> {
+            area.selectAll();
+            area.requestFocus();
+        });
+
+        MenuItem copy = com.editora.editor.MenuChords.tag(new MenuItem(tr("editmenu.copy")), "edit.copy");
+        copy.setGraphic(Icons.copy());
+        copy.setOnAction(e -> {
+            String selected = area.getSelectedText();
+            RowMenus.copy(selected == null || selected.isEmpty() ? area.getText() : selected);
+        });
+
+        MenuItem findRow = com.editora.editor.MenuChords.tag(new MenuItem(tr("find.prompt")), "find.show");
+        findRow.setGraphic(Icons.find());
+        findRow.setOnAction(e -> find.run());
+
+        ContextMenu menu = new ContextMenu(selectAll, copy, new SeparatorMenuItem(), findRow);
+        menu.setOnShowing(e -> {
+            boolean empty = area.getLength() == 0;
+            selectAll.setDisable(empty);
+            copy.setDisable(empty);
+            findRow.setDisable(empty);
+        });
+        area.setContextMenu(menu);
+        return menu;
     }
 
     private static void copySelectionOrAll(CodeArea area) {

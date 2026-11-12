@@ -81,6 +81,8 @@ public final class DebugLogWindow {
         // A find bar over the log, part of this window: the Find button and the keymap's find chord open it,
         // the chord pressed again steps to the next match, and Escape gives the keyboard back to the log.
         ConsoleFindBar findBar = ConsoleFindBar.overText(() -> area);
+        // Right-click: Select All, Copy and Find, in place of the stock menu's Cut, Paste and Delete.
+        ConsoleContextMenu.install(area, () -> findBar.openOrNext(area.getSelectedText()));
         Button find = new Button(tr("find.prompt"));
         find.setOnAction(e -> findBar.openOrNext(area.getSelectedText()));
 
