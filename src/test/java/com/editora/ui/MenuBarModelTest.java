@@ -280,6 +280,47 @@ class MenuBarModelTest {
         }
     }
 
+    /**
+     * The destructive rows are named in one short list beside the table. Every id in it is still on the menu
+     * bar (a command that left the menu would otherwise sit there unnoticed), and the list holds what deletes,
+     * discards, reverts or resets, not what closes, stops or edits text.
+     */
+    @Test
+    void theDestructiveCommandsAreOnTheMenuBarAndOnlyTheyAreMarked() {
+        List<String> onTheBar = MenuBarModel.allCommandIds();
+        for (String id : MenuBarModel.destructiveCommandIds()) {
+            assertTrue(onTheBar.contains(id), id + " is listed as destructive but is not on the menu bar");
+            assertTrue(MenuBarModel.isDestructive(id));
+        }
+        for (String id : List.of(
+                "file.revert",
+                "file.clearRecent",
+                "git.discardAll",
+                "git.revertHunk",
+                "git.deleteBranch",
+                "git.pushForce",
+                "git.tag.delete",
+                "git.stashDrop",
+                "macro.deleteSaved")) {
+            assertTrue(MenuBarModel.isDestructive(id), id);
+        }
+        for (String id : List.of(
+                "buffer.close",
+                "buffer.closeAll",
+                "app.quit",
+                "debug.stop",
+                "run.stop",
+                "edit.deleteLine",
+                "edit.cut",
+                "git.unstageAll",
+                "git.stashPop",
+                "git.commit",
+                "view.unsplit")) {
+            assertTrue(onTheBar.contains(id), id + " is on the menu bar");
+            assertFalse(MenuBarModel.isDestructive(id), id + " is not destructive");
+        }
+    }
+
     /** Review 3, choice 5: Start / Continue covers Continue; "Debug: Continue" read unevenly among bare rows. */
     @Test
     void theDebuggerSubmenuHasNoSeparateContinue() {

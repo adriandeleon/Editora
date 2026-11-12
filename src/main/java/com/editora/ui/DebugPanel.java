@@ -684,7 +684,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
             stackMenu.getItems().setAll(items);
             if (!items.isEmpty()) {
-                stackMenu.show(stack, e.getScreenX(), e.getScreenY());
+                // The Menu key / Shift+F10 open it under the selected frame, not in the middle of the list.
+                javafx.geometry.Point2D at = RowContextMenu.menuPoint(stack, e);
+                stackMenu.show(stack, at.getX(), at.getY());
             }
             e.consume();
         });
@@ -778,13 +780,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         variables.setContextMenu(varsMenu);
         // From the Menu key or Shift+F10 it opens at the selected row, as in the other trees — not in the middle of
         // the tree (review 3, C207). A filter, so the control's own handler does not show it there first.
-        variables.addEventFilter(javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, e -> {
-            javafx.geometry.Bounds row = e.isKeyboardTrigger() ? RowContextMenu.selectedRowOnScreen(variables) : null;
-            if (row != null) {
-                e.consume();
-                varsMenu.show(variables, row.getMinX() + RowContextMenu.anchorX(row.getWidth()), row.getMaxY());
-            }
-        });
+        RowContextMenu.anchor(variables, varsMenu);
 
         console.setEditable(false);
         // Wrapped: the console is a third of the strip, and a build error or the Attach hint was cut at its edge
@@ -1626,6 +1622,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
         menu.setOnShowing(e -> rebuildThreadMenu(menu));
         threadList.setContextMenu(menu);
+        RowContextMenu.anchor(threadList, menu); // the Menu key / Shift+F10: at the selected thread's row
         threadsRefresh.setOnFinished(e -> refreshThreads());
     }
 
@@ -2096,6 +2093,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             edit.setOnAction(e -> editWatchPrompt(row.name()));
             javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(tr("debugpanel.removeWatch"));
             remove.setGraphic(Icons.remove());
+            remove.getStyleClass().add("danger"); // a destructive row reads red
             remove.setOnAction(e -> removeWatch(row.name()));
             menu.getItems().addAll(edit, remove);
             // IntelliJ's Pause Watch: kept in the list, not evaluated at each stop (an expensive or side-effecting
@@ -2194,6 +2192,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             javafx.scene.control.MenuItem removeAll =
                     new javafx.scene.control.MenuItem(tr("debugpanel.removeAllWatches"));
             removeAll.setGraphic(Icons.remove());
+            removeAll.getStyleClass().add("danger");
             removeAll.setOnAction(e -> removeAllWatches());
             menu.getItems().add(removeAll);
         }

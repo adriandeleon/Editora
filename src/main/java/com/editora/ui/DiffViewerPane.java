@@ -1743,6 +1743,9 @@ public final class DiffViewerPane implements TabContent {
             return;
         }
         MenuItem item = new MenuItem(label);
+        if (action == GitHunkAction.REVERT) {
+            item.getStyleClass().add("danger"); // discards the change: a destructive row reads red
+        }
         item.setOnAction(e -> performGitAction(action, sourceRow, lineOnly));
         menu.getItems().add(item);
     }

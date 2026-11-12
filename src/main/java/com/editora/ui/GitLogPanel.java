@@ -1286,6 +1286,10 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                             item(tr("gitlog.menu.resetSoft"), null, () -> actions.reset(h, "soft")),
                             item(tr("gitlog.menu.resetMixed"), null, () -> actions.reset(h, "mixed")),
                             item(tr("gitlog.menu.resetHard"), null, () -> actions.reset(h, "hard")));
+            // A reset takes commits off the branch in every mode (and Hard discards the changes too): the
+            // submenu and its three rows read red, as destructive rows do.
+            reset.getStyleClass().add("danger");
+            reset.getItems().forEach(mode -> mode.getStyleClass().add("danger"));
             ContextMenu menu = new ContextMenu();
             // In a file history the row is first of all a version of that file.
             CommitFile file = view.fileHistory() ? followed.get(h) : null;
@@ -1307,11 +1311,13 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             for (String tag : c.tags()) {
                 Menu tagMenu = new Menu(tr("gitlog.menu.tag", tag));
                 tagMenu.setGraphic(Icons.bookmark());
+                MenuItem deleteTag = item(tr("gitlog.menu.deleteTag"), null, () -> actions.deleteTag(tag));
+                deleteTag.getStyleClass().add("danger"); // a destructive row reads red
                 tagMenu.getItems()
                         .setAll(
                                 item(tr("gitlog.menu.checkoutTag"), null, () -> actions.checkoutTag(tag)),
                                 item(tr("gitlog.menu.pushTag"), null, () -> actions.pushTag(tag)),
-                                item(tr("gitlog.menu.deleteTag"), null, () -> actions.deleteTag(tag)));
+                                deleteTag);
                 menu.getItems().add(tagMenu);
             }
             menu.getItems().addAll(new SeparatorMenuItem(), revert, cherry, reset);

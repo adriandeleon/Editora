@@ -222,7 +222,9 @@ final class ProjectMapCardStructure implements CardAttachment {
             ProjectMapStructure.Node node = selectedNode();
             ContextMenu menu = node == null ? null : menuFor.apply(node);
             if (menu != null) {
-                menu.show(tree, event.getScreenX(), event.getScreenY());
+                // From the keyboard it opens under the selected row, scrolled into view first.
+                javafx.geometry.Point2D at = RowContextMenu.menuPoint(tree, event);
+                menu.show(tree, at.getX(), at.getY());
             }
             event.consume();
         });

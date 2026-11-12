@@ -178,7 +178,9 @@ final class DebugEvaluateWindow {
                 e.consume();
             }
         });
-        tree.setContextMenu(rowMenu());
+        ContextMenu rowMenu = rowMenu();
+        tree.setContextMenu(rowMenu);
+        RowContextMenu.anchor(tree, rowMenu); // the Menu key / Shift+F10: at the selected row
         VBox.setVgrow(tree, Priority.ALWAYS);
 
         context.getStyleClass().add("debug-eval-context");

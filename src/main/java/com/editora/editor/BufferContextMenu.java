@@ -233,6 +233,9 @@ final class BufferContextMenu {
                         new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark")),
                         "bookmarks.toggle");
                 bookmark.setGraphic(MenuIcons.bookmark());
+                if (marked) {
+                    bookmark.getStyleClass().add("danger"); // removing one: a destructive row reads red
+                }
                 bookmark.setOnAction(ev -> b.bookmarkToggleRequest.accept(b, clickedLine));
                 items.add(bookmark);
             }

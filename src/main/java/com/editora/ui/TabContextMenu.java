@@ -77,6 +77,7 @@ final class TabContextMenu {
                 tr("project.menu.git.revert"),
                 Icons.undo(),
                 () -> c.git.ifEnabled(() -> c.git.gitRevertPath(buffer.getPath())));
+        revert.getStyleClass().add("danger"); // discards the file's changes: a destructive row reads red
         MenuItem ignore = LazyContextMenu.item(
                 tr("project.menu.git.addToGitignore"),
                 Icons.git(),

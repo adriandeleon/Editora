@@ -346,13 +346,15 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             }
         });
         // Keyboard menu key / Shift+F10: the event targets the focused *TreeView* (cells aren't focusable),
-        // so a cell handler never sees it — open the menu for the focused row instead. Mouse requests are
-        // consumed by the cell, so they never reach here.
+        // so a cell handler never sees it — open the menu for the focused row instead, under that row (scrolled
+        // into view first) rather than at the request's own point, which is somewhere in the middle of the tree.
+        // Mouse requests are consumed by the cell, so they never reach here.
         tree.setOnContextMenuRequested(e -> {
             TreeItem<Row> focused =
                     tree.getFocusModel() == null ? null : tree.getFocusModel().getFocusedItem();
             if (focused != null && focused.getValue() != null) {
-                showMenu(tree, focused, e.getScreenX(), e.getScreenY());
+                javafx.geometry.Point2D at = RowContextMenu.menuPoint(tree, tree.getRow(focused), e);
+                showMenu(tree, focused, at.getX(), at.getY());
                 e.consume();
             }
         });
@@ -1250,6 +1252,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         boolean untracked = group == Group.UNTRACKED;
         MenuItem discard = new MenuItem(tr(untracked ? "gitpanel.menu.deleteGroup" : "gitpanel.menu.discardGroup"));
         discard.setGraphic(Icons.trash());
+        discard.getStyleClass().add("danger"); // a destructive row reads red
         discard.setOnAction(a -> actions.discard(untracked ? List.of() : all, untracked ? all : List.of()));
         menu.getItems().addAll(stage, discard);
         return menu;
@@ -1328,6 +1331,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             ours.setOnAction(a -> actions.acceptSide(conflicted, true));
             MenuItem theirs = new MenuItem(tr(GitCoordinator.acceptSideKey(operation.kind(), false)));
             theirs.setOnAction(a -> actions.acceptSide(conflicted, false));
+            // Either one discards the other side of the conflict for good: destructive rows read red.
+            ours.getStyleClass().add("danger");
+            theirs.getStyleClass().add("danger");
             // Staging is how git is told a conflict is resolved; the controller asks first when the file
             // still has conflict markers in it.
             MenuItem resolved = new MenuItem(tr("gitpanel.menu.markResolved"));
@@ -1383,6 +1389,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         List<String> untrackedPaths = List.copyOf(untracked);
         MenuItem discard = new MenuItem(label);
         discard.setGraphic(Icons.trash());
+        discard.getStyleClass().add("danger"); // a destructive row reads red
         discard.setOnAction(a -> actions.discard(trackedPaths, untrackedPaths));
         menu.getItems().add(discard);
     }

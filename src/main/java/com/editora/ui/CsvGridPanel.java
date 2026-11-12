@@ -193,7 +193,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         exportExcel.setOnAction(e -> runExport(ExportActions::exportExcel));
         MenuItem exportOds = new MenuItem(tr("csvgrid.exportOds"));
         exportOds.setOnAction(e -> runExport(ExportActions::exportOds));
-        table.setContextMenu(new ContextMenu(
+        ContextMenu menu = new ContextMenu(
                 reveal,
                 new SeparatorMenuItem(),
                 sortAsc,
@@ -203,7 +203,9 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
                 exportPdf,
                 print,
                 exportExcel,
-                exportOds));
+                exportOds);
+        table.setContextMenu(menu);
+        RowContextMenu.anchor(table, menu); // the Menu key / Shift+F10: at the focused cell's row
     }
 
     private static Region spacer() {

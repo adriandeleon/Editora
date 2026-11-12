@@ -74,6 +74,36 @@ final class MenuBarModel {
     private MenuBarModel() {}
 
     /**
+     * The menu bar's destructive commands: the ones that delete, discard, revert or reset something the user
+     * made, or overwrite a remote's history. Their rows are drawn in the danger colour (style class
+     * {@code danger}, see {@link MainMenuBar}), as a destructive row is in every right-click menu. Kept here,
+     * beside the table, so a command added to a menu is checked against one short list: closing, hiding,
+     * stopping and plain text edits (Delete Line) are not destructive in this sense.
+     */
+    private static final java.util.Set<String> DESTRUCTIVE = java.util.Set.of(
+            "file.revert", // discards the unsaved changes
+            "file.clearRecent",
+            "git.abortOperation", // discards the merge / rebase in progress
+            "git.discardAll",
+            "git.undoLastCommit", // git reset --soft HEAD~1
+            "git.revertHunk",
+            "git.deleteBranch",
+            "git.pushForce",
+            "git.tag.delete",
+            "git.stashDrop",
+            "macro.deleteSaved");
+
+    /** Whether {@code commandId}'s menu row is a destructive one, drawn in the danger colour. */
+    static boolean isDestructive(String commandId) {
+        return DESTRUCTIVE.contains(commandId);
+    }
+
+    /** The destructive command ids, for the test that checks each is still on the menu bar. */
+    static java.util.Set<String> destructiveCommandIds() {
+        return DESTRUCTIVE;
+    }
+
+    /**
      * The menu bar, left to right. Menu names follow the convention shared by IntelliJ, Eclipse, NetBeans and
      * Visual Studio, so someone arriving from any of them finds things where they expect.
      */

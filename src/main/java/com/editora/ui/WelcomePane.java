@@ -471,6 +471,7 @@ public final class WelcomePane extends Region implements TabContent {
         if (removable != null && remover != null) {
             MenuItem remove = new MenuItem(tr("tooltip.removeRecent"));
             remove.setGraphic(Icons.trash());
+            remove.getStyleClass().add("danger"); // a destructive row reads red
             remove.setOnAction(e -> remover.accept(removable));
             menu.getItems().add(remove);
         }

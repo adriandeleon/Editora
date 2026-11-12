@@ -1992,6 +1992,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // unchanged, so anyone who wants the icon back can add it in Settings → Toolbar.)
         recentButton.getItems().add(new SeparatorMenuItem());
         MenuItem clear = new MenuItem(tr("tooltip.clearRecent"), Icons.trash());
+        clear.getStyleClass().add("danger"); // a destructive row reads red
         clear.setOnAction(e -> onClearRecent());
         recentButton.getItems().add(clear);
     }

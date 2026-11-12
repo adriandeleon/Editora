@@ -573,6 +573,7 @@ public final class HttpClientPanel extends VBox {
             copyLine.setDisable(!any);
         });
         headersTable.setContextMenu(menu);
+        RowContextMenu.anchor(headersTable, menu); // the Menu key / Shift+F10: at the selected header's row
         // Copy by keyboard: the platform's copy chord, or the keymap's (Emacs M-w), copies the selected rows.
         headersTable.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             KeymapManager keymap = TextInputKeymap.sharedKeymap();

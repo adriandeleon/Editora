@@ -538,6 +538,7 @@ public final class BranchPopup {
         if (index < 0 || !(items.get(index) instanceof BranchRow row)) {
             return;
         }
+        RowContextMenu.rowOnScreen(list, index); // scrolled into view first, so its cell is there to anchor to
         Node anchor = list;
         for (Node node : list.lookupAll(".list-cell")) {
             if (node instanceof ListCell<?> cell && !cell.isEmpty() && cell.getIndex() == index) {

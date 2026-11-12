@@ -430,10 +430,19 @@ earlier in the keymap being switched to. `Settings.setKeymap` is the bare proper
   card while it is up (a focus listener, so cards that use Tab themselves are unaffected).
   **`OverlayInput`** runs the primary action on Enter unless a button has the focus, in which case
   Enter activates that button (`onEnter`, pure).
-- **Row context menus**: a keyboard menu request (Menu key / Shift+F10) targets the focused
-  `TreeView`/`ListView`, never a cell. A tree or list whose menus live on its cells calls
+- **Row context menus**: a keyboard menu request (Menu key / Shift+F10, the same chord on macOS) targets
+  the focused `TreeView`/`ListView`/`TableView`, never a cell. A tree, list or table whose menus live on
+  its cells (a table's on its rows) calls
   [`RowContextMenu.install(control)`](../../src/main/java/com/editora/ui/RowContextMenu.java), which
-  re-fires the request at the selected row's cell with coordinates on that row.
+  re-fires the request at the selected row's cell with coordinates on that row. A control with one menu of
+  its own (`control.setContextMenu(menu)`, items acting on the selected row) calls
+  `RowContextMenu.anchor(control, menu)`: JavaFX would open it in the middle of the control. A handler that
+  builds its menu per request shows it at `RowContextMenu.menuPoint(control, event)`. In each case the
+  selected row is scrolled into view first and the menu opens under it.
+- **Destructive menu rows** (delete, discard, revert, reset) carry the `danger` style class, which draws
+  their text in `-color-danger-fg` (`app.css`). A right-click menu adds it to the item; the menu bar's
+  destructive commands are the set in `MenuBarModel`, applied where `MainMenuBar` builds a row. Rows that
+  close, hide or stop something, clear output or edit text are not marked.
 
 ## Adding a command
 

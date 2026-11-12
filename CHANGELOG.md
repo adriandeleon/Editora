@@ -419,6 +419,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Menu key and Shift+F10 open the selected row's menu in every list, tree and table**, at that row, after
+  scrolling it into view. In the Problems panel the keys did nothing; in the Commit window, the Debug call
+  stack and threads, Test Results, the HTTP headers table, the CSV grid and several others the menu opened in
+  the middle of the panel instead of at the row. Shift+F10 is the same on macOS.
+- **Menu rows that delete, discard, revert or reset something are drawn in red**, in right-click menus,
+  drop-downs and the menu bar: Delete in the Project panel, the Git discards and resets, Drop Stash, Delete Tag,
+  Purge in Local History, deleting bookmarks and notes, removing breakpoints and watches, and the like.
+
 - **Questions before something is lost are asked the same way everywhere.** The button that confirms carries the
   action's own name (Delete, Discard, Replace, Overwrite, Reset) in red, never OK, and Cancel is the default
   button: it has the focus when the question opens, so Enter keeps what you have and the red action runs only

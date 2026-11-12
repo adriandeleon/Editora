@@ -8120,6 +8120,7 @@ final class DebugCoordinator {
         });
         javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(tr("debug.gutter.remove"));
         remove.setGraphic(Icons.remove());
+        remove.getStyleClass().add("danger"); // a destructive row reads red
         remove.setOnAction(ev -> {
             if (mgr.isBreakpoint(line)) {
                 b.toggleBreakpoint(line);
@@ -8154,6 +8155,7 @@ final class DebugCoordinator {
         javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(
                 tr(mark.field() ? "debug.gutter.removeFieldWatchpoint" : "debug.gutter.removeMethodBreakpoint"));
         remove.setGraphic(Icons.remove());
+        remove.getStyleClass().add("danger"); // a destructive row reads red
         remove.setOnAction(ev -> mark.members().forEach(memberBreakpoints::remove));
         javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
         return List.of(flip, remove, new javafx.scene.control.SeparatorMenuItem(), list);

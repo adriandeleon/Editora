@@ -80,7 +80,9 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
                 e.consume();
             }
         });
-        list.setContextMenu(buildMenu());
+        ContextMenu menu = buildMenu();
+        list.setContextMenu(menu);
+        RowContextMenu.anchor(list, menu); // the Menu key / Shift+F10: at the selected connection's row
 
         Button add = new Button(tr("remotePanel.new"));
         add.setGraphic(Icons.newFile());
@@ -136,6 +138,7 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
         add.setOnAction(e -> actions.newConnection());
         MenuItem remove = new MenuItem(tr("remotePanel.remove"));
         remove.setGraphic(Icons.trash());
+        remove.getStyleClass().add("danger"); // a destructive row reads red
         remove.setOnAction(e -> removeSelected());
         return new ContextMenu(connect, add, new SeparatorMenuItem(), remove);
     }

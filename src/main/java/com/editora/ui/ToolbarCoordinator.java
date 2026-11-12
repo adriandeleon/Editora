@@ -254,6 +254,7 @@ final class ToolbarCoordinator {
         configure.setOnAction(e -> ops.openSettingsToolbarPage());
         MenuItem restore = new MenuItem(tr("toolbar.menu.restoreDefault"));
         restore.setGraphic(Icons.refresh());
+        restore.getStyleClass().add("danger"); // resets the user's toolbar: a destructive row reads red
         restore.setOnAction(e -> restoreDefault());
         contextMenu.getItems().setAll(toggle, new SeparatorMenuItem(), configure, restore);
         contextMenu.show(ops.toolBar(), screenX, screenY);
