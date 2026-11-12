@@ -440,7 +440,7 @@ class WindowMcpBridgeFxTest {
     @Test
     void aFileThatNeedsElevationIsNotSavedAndNoPrivilegedWriteIsStarted() throws Exception {
         Assumptions.assumeTrue(
-                com.editora.process.ElevatedSave.supportedOnOs(System.getProperty("os.name")),
+                com.editora.process.ElevatedSave.supportedOnOs(com.editora.Os.current()),
                 "elevated save is not offered on this platform");
         Assumptions.assumeTrue(
                 work.getFileSystem().supportedFileAttributeViews().contains("posix"));

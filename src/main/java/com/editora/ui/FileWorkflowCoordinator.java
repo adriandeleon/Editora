@@ -1870,7 +1870,7 @@ final class FileWorkflowCoordinator {
     /** Admin-save is enabled in Settings and the OS supports it (Linux/polkit or macOS/osascript). */
     boolean adminSaveEnabled() {
         return host.config().getSettings().isAdminSave()
-                && com.editora.process.ElevatedSave.supportedOnOs(System.getProperty("os.name"));
+                && com.editora.process.ElevatedSave.supportedOnOs(com.editora.Os.current());
     }
 
     /** Admin-save is enabled and the elevation tool (pkexec/osascript) is actually available. */
@@ -1915,7 +1915,7 @@ final class FileWorkflowCoordinator {
             pushAdminEditAvailable();
             return;
         }
-        if (com.editora.process.ElevatedSave.isMac(System.getProperty("os.name"))) {
+        if (com.editora.Os.isMac()) {
             adminToolAvailable = true; // osascript is always present on macOS
             pushAdminEditAvailable();
             return;
@@ -2255,9 +2255,9 @@ final class FileWorkflowCoordinator {
             }
             Files.write(tmp, bytes);
             List<String> argv = com.editora.process.ElevatedSave.elevatedArgv(
-                    System.getProperty("os.name"), com.editora.process.ElevatedSave.PKEXEC, tmp, target);
+                    com.editora.Os.current(), com.editora.process.ElevatedSave.PKEXEC, tmp, target);
             if (argv == null) { // elevationAvailable() is false on such a system, so no save gets here
-                throw new IllegalStateException("no elevated save on " + System.getProperty("os.name"));
+                throw new IllegalStateException("no elevated save on " + com.editora.Os.name());
             }
             var result = elevationProcess.run(java.time.Duration.ofMinutes(2), argv);
             return new AdminResult(result.exit(), result.err(), lastModifiedMillis(target), fileSize(target));
@@ -2289,7 +2289,7 @@ final class FileWorkflowCoordinator {
             } else if (result.exit() == -2 || !request.ticket().isCurrent()) {
                 return;
             } else if (com.editora.process.ElevatedSave.isCancellation(
-                    System.getProperty("os.name"), result.exit(), result.error())) {
+                    com.editora.Os.current(), result.exit(), result.error())) {
                 host.setStatus(tr("status.admin.cancelled"));
             } else {
                 host.setStatus(adminFailureStatus(target, result));

@@ -96,9 +96,7 @@ public final class MaidLocator {
             }
             return new Inputs(
                     homePath,
-                    System.getProperty("os.name", "")
-                            .toLowerCase(java.util.Locale.ROOT)
-                            .contains("win"),
+                    com.editora.Os.isWindows(),
                     System::getenv,
                     nodeSetting,
                     MaidLocator::onAugmentedPath,

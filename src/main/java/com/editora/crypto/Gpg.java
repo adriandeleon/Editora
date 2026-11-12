@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import com.editora.process.ProcessRunner;
@@ -60,8 +59,7 @@ public final class Gpg {
         if (configured != null && !configured.isBlank()) {
             return configured.strip();
         }
-        boolean windows =
-                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        boolean windows = com.editora.Os.isWindows();
         String onPath = ProcessRunner.resolveExecutable(List.of("gpg")).get(0);
         if (!"gpg".equals(onPath)) {
             return onPath;

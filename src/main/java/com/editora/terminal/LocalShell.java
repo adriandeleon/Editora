@@ -28,11 +28,11 @@ public final class LocalShell {
     private static final String TERM = "xterm-256color";
 
     public static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
+        return com.editora.Os.isWindows();
     }
 
     private static boolean isMac() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("mac");
+        return com.editora.Os.isMac();
     }
 
     /**

@@ -2105,7 +2105,7 @@ public final class DapManager {
             return found; // a path is that file, or nothing
         }
         // `go install` puts Delve in the Go bin folder, which may not have been there when Editora read its PATH.
-        boolean windows = java.io.File.pathSeparatorChar == ';';
+        boolean windows = com.editora.Os.isWindows();
         Path home = Path.of(System.getProperty("user.home", ""));
         List<Path> toolDirs = DebugLanguages.GO.equals(language)
                 ? goBinDirs(System.getenv(), home)

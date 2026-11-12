@@ -144,6 +144,27 @@ about. [`UiZoom`](../src/main/java/com/editora/editor/UiZoom.java) has both halv
 - The text zoom (`Settings.fontZoom`, the editor's font) is a different setting with its own three commands;
   the keymaps bind Ctrl/Cmd with `=`, `-` and `0` to it, and the UI zoom's commands ship unbound.
 
+## Which operating system
+
+[`com.editora.Os`](../src/main/java/com/editora/Os.java) is the one class that reads `os.name`. Every other
+class asks it: `Os.isWindows()`, `Os.isMac()`, `Os.isLinux()`, or `Os.current()` for the `Os.Kind` to pass on.
+
+- **Never read `os.name` anywhere else**, and never infer the OS another way: a path separator compared with
+  `'\\'` or `';'`, an environment variable only one system sets. `OsTest` scans the sources for both.
+  (`File.pathSeparator` used to split a `PATH` is its proper use, not a test for the OS.)
+- **A pure function that depends on the OS takes an `Os.Kind`**, not a name to parse
+  (`Trash.forPlatform(Os.Kind, …)`, `ElevatedSave.supportedOnOs(Os.Kind)`), so its test passes the kind and
+  runs on any machine. The caller passes `Os.current()`.
+- **Ask when the answer is needed.** A `static final boolean MAC = Os.isMac()` holds the OS the class loaded
+  under, which a test that changes the override afterwards will not see. Keep one only for a hot path, and
+  never to decide what is registered, shown or offered.
+- **Tests run as any OS** with `Os.override(Os.Kind.MAC)` (reset with `null` in `@AfterEach`), or a whole run
+  with `-Deditora.os=mac`. `SameOnEveryOsFxTest` builds a window as each of the three and checks that the
+  commands, the menu bar and the Settings rows are the same: a command, a menu row or a setting is never
+  added inside an OS check. Where the OS cannot serve one, it stays, disabled, and says why.
+- For display (About, Doctor, a problem report) use `Os.description()`, or `Os.name()`, `Os.version()` and
+  `Os.arch()`.
+
 ## Config and schema
 
 Preferences live in `settings.json` (`Settings`, a Jackson POJO); session state in

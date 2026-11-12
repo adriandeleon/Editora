@@ -116,7 +116,7 @@ public final class Globs {
      * one-character class, anything else the character itself.
      */
     static String javaGlob(String glob) {
-        return javaGlob(glob, java.io.File.separatorChar != '\\');
+        return javaGlob(glob, !com.editora.Os.isWindows());
     }
 
     static String javaGlob(String glob, boolean backslashEscapes) {

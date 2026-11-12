@@ -482,6 +482,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One place decides which operating system Editora runs on.** Sixty-odd separate checks, spelled a
+  dozen ways, now ask one class. Nothing changes on Windows, macOS or Linux; a system that is none of the
+  three (a BSD) is now treated as Linux throughout, where some checks used to treat it as nothing at all.
+  Starting Editora with `-Deditora.os=windows`, `mac` or `linux` runs it as that system, for testing.
 - **Toolbar buttons are named after the commands they run**, with the shortcut from the active keymap, and a
   screen reader now says the same words the tooltip shows. The main toolbar's tooltips change with it: Open is
   "Find File…", Find is "Incremental Search", Close Tab is "Close", Simple UI mode is "Toggle Simple UI Mode",

@@ -2,7 +2,6 @@ package com.editora.terminal;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.Optional;
 
 import com.sun.jna.Library;
@@ -27,10 +26,8 @@ public final class ProcessCwd {
 
     private ProcessCwd() {}
 
-    private static final boolean LINUX =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux");
-    private static final boolean MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("mac");
+    private static final boolean LINUX = com.editora.Os.isLinux();
+    private static final boolean MAC = com.editora.Os.isMac();
 
     /** True where {@link #of(long)} can ever return a value, so callers can skip polling entirely. */
     public static boolean isSupported() {

@@ -60,9 +60,7 @@ final class NpmRunSupport {
                 managerArgv,
                 node,
                 com.editora.process.ProcessRunner.augmentedPath(),
-                System.getProperty("os.name", "")
-                        .toLowerCase(java.util.Locale.ROOT)
-                        .startsWith("windows"),
+                com.editora.Os.isWindows(),
                 noColor != null && !noColor.isEmpty(),
                 Files::isRegularFile);
     }

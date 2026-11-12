@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import java.util.Locale;
-
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HeaderBar;
@@ -35,26 +33,19 @@ final class ExtendedWindow {
      * is the wrong idea. The menu belongs to the system menu bar at the top of the screen, so drawing it
      * inside the window would be a worse window, not a taller-value one.
      *
-     * <p>An unrecognised {@code os.name} is refused rather than assumed to work: this decides how the
-     * window is decorated, and the failure mode of guessing wrong is a window that will not open.
-     *
-     * <p>Pure, and takes the OS name, so the gate is testable off the platform it gates.
+     * <p>Pure, and takes the OS, so the gate is testable off the platform it gates.
      */
-    static boolean supportedOn(String osName) {
-        String os = osName == null ? "" : osName.toLowerCase(Locale.ROOT);
-        if (os.contains("mac") || os.contains("darwin")) {
-            return false;
-        }
+    static boolean supportedOn(com.editora.Os.Kind os) {
         // Windows, plus Linux and the BSDs, where the desktop draws client-side decorations anyway.
-        return os.contains("win") || os.contains("linux") || os.contains("bsd") || os.contains("unix");
+        return os != com.editora.Os.Kind.MAC;
     }
 
     /**
      * Whether a window built now should be extended: the user asked for it and the OS allows it.
      * {@code StageStyle.EXTENDED} is a stable API in JavaFX 27, so no preview-feature gate is required.
      */
-    static boolean enabled(boolean setting, String osName) {
-        return setting && supportedOn(osName);
+    static boolean enabled(boolean setting, com.editora.Os.Kind os) {
+        return setting && supportedOn(os);
     }
 
     /**

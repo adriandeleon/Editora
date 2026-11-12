@@ -3491,7 +3491,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.compoundEmpty", group.name()));
             return;
         }
-        String os = com.editora.dap.LaunchJson.osKey(System.getProperty("os.name", ""));
+        String os = com.editora.dap.LaunchJson.osKey(com.editora.Os.current());
         List<java.util.Map<String, Object>> bodies = members.stream()
                 .map(c -> com.editora.dap.LaunchJson.forPlatform(c.body(), os))
                 .toList();
@@ -3638,7 +3638,7 @@ final class DebugCoordinator {
             com.editora.dap.LaunchJson.Configuration c,
             @Nullable EditorBuffer b) {
         java.util.Map<String, Object> body = com.editora.dap.LaunchJson.forPlatform(
-                c.body(), com.editora.dap.LaunchJson.osKey(System.getProperty("os.name", "")));
+                c.body(), com.editora.dap.LaunchJson.osKey(com.editora.Os.current()));
         askInputs(
                 parsed.inputs(),
                 com.editora.dap.LaunchJson.inputsUsed(body),
@@ -3751,14 +3751,13 @@ final class DebugCoordinator {
             }
             Object resolved = com.editora.dap.LaunchJson.substitute(
                     com.editora.dap.LaunchJson.forPlatform(
-                            task, com.editora.dap.LaunchJson.osKey(System.getProperty("os.name", ""))),
+                            task, com.editora.dap.LaunchJson.osKey(com.editora.Os.current())),
                     launchContext(workspace, b, answers),
                     tasks.inputs(),
                     new java.util.HashMap<>(answers));
             @SuppressWarnings("unchecked")
             java.util.Map<String, Object> t = (java.util.Map<String, Object>) resolved;
-            List<String> argv =
-                    t == null ? null : com.editora.dap.LaunchJson.taskArgv(t, java.io.File.pathSeparatorChar == ';');
+            List<String> argv = t == null ? null : com.editora.dap.LaunchJson.taskArgv(t, com.editora.Os.isWindows());
             if (argv == null) {
                 host.setStatus(tr("status.debug.taskUnsupported", label));
             }

@@ -378,9 +378,7 @@ public final class ProcessRegistry {
     }
 
     private static boolean isWindows() {
-        return System.getProperty("os.name", "")
-                .toLowerCase(java.util.Locale.ROOT)
-                .contains("win");
+        return com.editora.Os.isWindows();
     }
 
     /** {@link #killTree} for a child on another machine: the target signals the group, there are no handles. */

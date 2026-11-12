@@ -39,8 +39,7 @@ final class PrimarySelection {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
-    private static final boolean LINUX =
-            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("linux");
+    private static final boolean LINUX = com.editora.Os.isLinux();
 
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "editora-primary-selection");

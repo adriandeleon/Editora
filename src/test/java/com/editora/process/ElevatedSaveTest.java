@@ -14,34 +14,25 @@ class ElevatedSaveTest {
 
     @Test
     void supportedOnLinuxAndMac() {
-        assertTrue(ElevatedSave.supportedOnOs("Linux"));
-        assertTrue(ElevatedSave.supportedOnOs("GNU/Linux 6.1"));
-        assertTrue(ElevatedSave.supportedOnOs("Mac OS X"));
-        assertFalse(ElevatedSave.supportedOnOs("Windows 11"));
-        assertFalse(ElevatedSave.supportedOnOs(null));
-    }
-
-    @Test
-    void osDetection() {
-        assertTrue(ElevatedSave.isLinux("Linux"));
-        assertFalse(ElevatedSave.isLinux("Mac OS X"));
-        assertTrue(ElevatedSave.isMac("Mac OS X"));
-        assertTrue(ElevatedSave.isMac("Darwin"));
-        assertFalse(ElevatedSave.isMac("Windows 11"));
-        assertFalse(ElevatedSave.isMac(null));
+        assertTrue(ElevatedSave.supportedOnOs(com.editora.Os.Kind.LINUX));
+        assertTrue(ElevatedSave.supportedOnOs(com.editora.Os.Kind.MAC));
+        assertFalse(ElevatedSave.supportedOnOs(com.editora.Os.Kind.WINDOWS));
     }
 
     @Test
     void elevatedArgvPicksTheToolPerOs() {
         assertEquals(
                 "pkexec",
-                ElevatedSave.elevatedArgv("Linux", ElevatedSave.PKEXEC, Path.of("/a"), Path.of("/b"))
+                ElevatedSave.elevatedArgv(
+                                com.editora.Os.parse("Linux"), ElevatedSave.PKEXEC, Path.of("/a"), Path.of("/b"))
                         .get(0));
         assertEquals(
                 "osascript",
-                ElevatedSave.elevatedArgv("Mac OS X", ElevatedSave.PKEXEC, Path.of("/a"), Path.of("/b"))
+                ElevatedSave.elevatedArgv(
+                                com.editora.Os.parse("Mac OS X"), ElevatedSave.PKEXEC, Path.of("/a"), Path.of("/b"))
                         .get(0));
-        assertNull(ElevatedSave.elevatedArgv("Windows 11", ElevatedSave.PKEXEC, Path.of("/a"), Path.of("/b")));
+        assertNull(ElevatedSave.elevatedArgv(
+                com.editora.Os.parse("Windows 11"), ElevatedSave.PKEXEC, Path.of("/a"), Path.of("/b")));
     }
 
     @Test
@@ -63,11 +54,12 @@ class ElevatedSaveTest {
     @Test
     void cancellationDetection() {
         // Linux: pkexec dismiss/not-authorized is exit 126.
-        assertTrue(ElevatedSave.isCancellation("Linux", 126, ""));
-        assertFalse(ElevatedSave.isCancellation("Linux", 1, "some error"));
+        assertTrue(ElevatedSave.isCancellation(com.editora.Os.parse("Linux"), 126, ""));
+        assertFalse(ElevatedSave.isCancellation(com.editora.Os.parse("Linux"), 1, "some error"));
         // macOS: osascript reports -128 / "User canceled" in stderr on cancel.
-        assertTrue(ElevatedSave.isCancellation("Mac OS X", 1, "execution error: User canceled. (-128)"));
-        assertFalse(ElevatedSave.isCancellation("Mac OS X", 1, "some other failure"));
+        assertTrue(ElevatedSave.isCancellation(
+                com.editora.Os.parse("Mac OS X"), 1, "execution error: User canceled. (-128)"));
+        assertFalse(ElevatedSave.isCancellation(com.editora.Os.parse("Mac OS X"), 1, "some other failure"));
     }
 
     @Test

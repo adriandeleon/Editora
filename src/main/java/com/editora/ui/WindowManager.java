@@ -1622,7 +1622,7 @@ public class WindowManager {
             primaryStage = null; // only the first window reuses the JavaFX primary stage
             // Before anything else touches the stage: initStyle throws once a stage has been shown, and
             // this is read per window at construction, which is why the setting applies on restart.
-            if (ExtendedWindow.enabled(shared.getSettings().isExtendedWindow(), System.getProperty("os.name"))) {
+            if (ExtendedWindow.enabled(shared.getSettings().isExtendedWindow(), com.editora.Os.current())) {
                 try {
                     stage.initStyle(StageStyle.EXTENDED);
                 } catch (RuntimeException e) {

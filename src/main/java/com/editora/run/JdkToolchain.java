@@ -127,8 +127,6 @@ public final class JdkToolchain {
     }
 
     private static boolean isWindows() {
-        return System.getProperty("os.name", "")
-                .toLowerCase(java.util.Locale.ROOT)
-                .contains("win");
+        return com.editora.Os.isWindows();
     }
 }

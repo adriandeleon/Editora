@@ -1,7 +1,6 @@
 package com.editora.vfs;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.SocketAddress;
@@ -151,7 +150,7 @@ final class SshConfigFile implements HostConfigEntryResolver {
             base = home;
             rest = name.length() <= 2 ? "" : name.substring(2);
         }
-        String[] split = splitLeaf(rest, File.separatorChar == '\\');
+        String[] split = splitLeaf(rest, com.editora.Os.isWindows());
         String leaf = split[1];
         try {
             if (base == null) {

@@ -9,22 +9,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1553"
     },
     {
-      "rule": "OS-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-02",
-      "kind": "pending",
-      "reason": "Which operating system Editora is running on is worked out in many places in its code instead of one.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1553"
-    },
-    {
-      "rule": "OS-03",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-03",
-      "kind": "pending",
-      "reason": "There is no way yet to test from one machine how Editora behaves on another operating system.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1553"
-    },
-    {
       "rule": "OS-04",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-04",

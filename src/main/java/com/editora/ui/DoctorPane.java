@@ -735,8 +735,7 @@ final class DoctorPane extends Region implements TabContent {
         String home = System.getProperty("user.home", "");
         List<String> header = new ArrayList<>();
         header.add(com.editora.AppInfo.versionLine());
-        header.add(System.getProperty("os.name", "") + " " + System.getProperty("os.version", "") + " ("
-                + System.getProperty("os.arch", "") + ") · Java " + System.getProperty("java.version", ""));
+        header.add(com.editora.Os.description() + " · Java " + System.getProperty("java.version", ""));
         header.add(machine.getText());
         if (remoteTarget != null) {
             header.add(remoteNote.getText());

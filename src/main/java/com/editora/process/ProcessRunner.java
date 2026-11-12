@@ -11,7 +11,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -570,7 +569,7 @@ public final class ProcessRunner {
         // An environment Editora was started from (`source .venv/bin/activate && editora`) leads: the login
         // shell rebuilds PATH from the profile and loses the activation, and putting that first sent every
         // python3 lookup (Pyright's, Run's) to the system Python (review B2).
-        dirs.addAll(activatedEnvironmentBins(System.getenv(), File.pathSeparatorChar == ';'));
+        dirs.addAll(activatedEnvironmentBins(System.getenv(), com.editora.Os.isWindows()));
         addPathEntries(dirs, loginShellPath());
         addPathEntries(dirs, System.getenv("PATH"));
         for (String d : EXTRA_PATH_DIRS) {
@@ -668,7 +667,7 @@ public final class ProcessRunner {
     private static final String PATH_MARK_END = "__EDITORA_PATH_END__";
 
     private static @Nullable String queryLoginShellPath() {
-        if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+        if (com.editora.Os.isWindows()) {
             return null; // Windows has no POSIX login-shell PATH convention
         }
         String shell = System.getenv("SHELL");
@@ -751,9 +750,7 @@ public final class ProcessRunner {
         if (exe.isEmpty() || exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0) {
             return command; // already an absolute/relative path
         }
-        boolean windows = System.getProperty("os.name", "")
-                .toLowerCase(java.util.Locale.ROOT)
-                .contains("win");
+        boolean windows = com.editora.Os.isWindows();
         return resolveExecutable(command, augmentedPath(), windows);
     }
 
@@ -769,9 +766,7 @@ public final class ProcessRunner {
         if (exe.isEmpty() || exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0) {
             return command;
         }
-        boolean windows = System.getProperty("os.name", "")
-                .toLowerCase(java.util.Locale.ROOT)
-                .contains("win");
+        boolean windows = com.editora.Os.isWindows();
         return resolveExecutable(command, dir.toString(), windows);
     }
 

@@ -184,7 +184,7 @@ public final class PythonInterpreters {
 
     /** Whether this JVM runs on Windows. */
     public static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        return com.editora.Os.isWindows();
     }
 
     /** Resolves the interpreter for {@code in}. Never null: the last step always answers. */

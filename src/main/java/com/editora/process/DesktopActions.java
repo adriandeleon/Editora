@@ -2,7 +2,6 @@ package com.editora.process;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -49,14 +48,11 @@ public final class DesktopActions {
     private DesktopActions() {}
 
     public static Os currentOs() {
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (os.contains("mac")) {
-            return Os.MAC;
-        }
-        if (os.contains("win")) {
-            return Os.WINDOWS;
-        }
-        return Os.LINUX;
+        return switch (com.editora.Os.current()) {
+            case MAC -> Os.MAC;
+            case WINDOWS -> Os.WINDOWS;
+            case LINUX -> Os.LINUX;
+        };
     }
 
     /**
