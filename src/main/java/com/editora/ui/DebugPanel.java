@@ -203,6 +203,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** A field watchpoint on {@code name}, a variable of container {@code parentRef}, when it is a field. */
         default void watchField(int parentRef, String name) {}
 
+        /** Whether a value's type can be looked up (a language server finds the stopped code's types). */
+        default boolean canJumpToType() {
+            return false;
+        }
+
+        /** Jump to Type Source: opens the declaration of the type a value has ({@code type}, else read from {@code value}). */
+        default void jumpToType(String type, String value) {}
+
         /** Load a row the stop's time budget left unloaded (a click on it); delivers the loaded row (B201). */
         default void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
             cb.accept(row);
@@ -452,7 +460,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** A variables-tree row; {@code ref > 0} means expandable, {@code parentRef} is the DAP container
      *  reference (for set-variable), and {@code kind} drives rendering + context actions. {@code named} /
      *  {@code indexed} are the child counts the adapter reported (0 = unknown). {@code failed} marks a watch
-     *  the adapter could not evaluate: its {@code value} is the adapter's message, drawn as an error. */
+     *  the adapter could not evaluate: its {@code value} is the adapter's message, drawn as an error.
+     *  {@code evaluateName}: the expression the adapter says gives the value ({@code null}: it gave none). */
     record VarRow(
             String name,
             String value,
@@ -463,7 +472,22 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             int named,
             int indexed,
             boolean failed,
-            DapModels.@Nullable ValueNote note) {
+            DapModels.@Nullable ValueNote note,
+            @Nullable String evaluateName) {
+        VarRow(
+                String name,
+                String value,
+                String type,
+                int ref,
+                int parentRef,
+                Kind kind,
+                int named,
+                int indexed,
+                boolean failed,
+                DapModels.@Nullable ValueNote note) {
+            this(name, value, type, ref, parentRef, kind, named, indexed, failed, note, null);
+        }
+
         VarRow(String name, String value, String type, int ref, int parentRef, Kind kind) {
             this(name, value, type, ref, parentRef, kind, 0, 0, false);
         }
@@ -2148,7 +2172,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 menu.getItems().addAll(toWatches, clearResult);
             }
             if (row.kind() == Kind.VARIABLE) {
-                String expression = pathExpression(variables.getSelectionModel().getSelectedItem());
+                String expression = expression(variables.getSelectionModel().getSelectedItem());
+                // VS Code's Copy as Expression: what evaluates to this value in the stopped frame, for a watch,
+                // a condition or the console.
+                javafx.scene.control.MenuItem copyExpression =
+                        new javafx.scene.control.MenuItem(tr("debugpanel.copyExpression"));
+                copyExpression.setOnAction(e -> copyToClipboard(expression));
+                menu.getItems().add(copyExpression);
                 javafx.scene.control.MenuItem toWatches =
                         new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
                 toWatches.setGraphic(Icons.newFile());
@@ -2168,6 +2198,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     watchField.setOnAction(e -> actions.watchField(row.parentRef(), row.name()));
                     menu.getItems().add(watchField);
                 }
+            }
+            if (row.kind() != Kind.EXCEPTION
+                    && DebugTypeSource.parse(row.type(), row.value()) != null
+                    && actions.canJumpToType()) {
+                // IntelliJ's Jump to Type Source: the class of the value, which may be a subclass of the declared one.
+                javafx.scene.control.MenuItem jumpToType =
+                        new javafx.scene.control.MenuItem(tr("debugpanel.jumpToTypeSource"));
+                jumpToType.setOnAction(e -> actions.jumpToType(row.type(), row.value()));
+                menu.getItems().add(jumpToType);
             }
             if (row.kind() != Kind.EXCEPTION) {
                 menu.getItems().addAll(markItems(row));
@@ -2331,7 +2370,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             if (value == null) {
                 return;
             }
-            actions.setVariable(row.parentRef(), row.name(), value, pathExpression(item), selectedFrameId, newValue -> {
+            actions.setVariable(row.parentRef(), row.name(), value, expression(item), selectedFrameId, newValue -> {
                 item.setValue(new VarRow(
                         row.name(),
                         newValue,
@@ -2340,7 +2379,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         row.parentRef(),
                         Kind.VARIABLE,
                         row.named(),
-                        row.indexed()));
+                        row.indexed(),
+                        false,
+                        null,
+                        row.evaluateName()));
                 if (!actions.refreshValues()) { // the inline values and other rows may show it too (B205)
                     refreshWatchesNode();
                 }
@@ -2403,7 +2445,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private javafx.scene.control.Menu viewAsMenu(VarRow row) {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("debugpanel.viewAs"));
         String expression = row.kind() == Kind.VARIABLE
-                ? pathExpression(variables.getSelectionModel().getSelectedItem())
+                ? expression(variables.getSelectionModel().getSelectedItem())
                 : row.name();
         for (ViewAs how : ViewAs.values()) {
             javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(
@@ -2446,6 +2488,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             actions.openText(title, text, ViewAs.TEXT.language);
             actions.say(tr("status.debug.viewAsFailed", how.name(), e.getMessage() == null ? "" : e.getMessage()));
         }
+    }
+
+    /**
+     * The expression that gives {@code item}'s value in the stopped frame: the adapter's own ({@code evaluateName}:
+     * {@code list.get(0)}, {@code d['key']}, where a path would read {@code list[0]} or {@code d.key}), else the path
+     * of names down to it ({@link #pathExpression}). Pure.
+     */
+    static String expression(TreeItem<VarRow> item) {
+        VarRow row = item == null ? null : item.getValue();
+        String given = row == null || row.kind() != Kind.VARIABLE ? null : row.evaluateName();
+        return given != null && !given.isBlank() ? given : pathExpression(item);
     }
 
     /**
@@ -3113,7 +3166,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 v.namedVariables(),
                 v.indexedVariables(),
                 false,
-                note);
+                note,
+                v.evaluateName());
     }
 
     /**
@@ -3135,9 +3189,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 row.named(),
                 row.indexed(),
                 false,
-                DapModels.ValueNote.LOADING));
+                DapModels.ValueNote.LOADING,
+                row.evaluateName()));
         DapModels.VariableInfo asked = new DapModels.VariableInfo(
-                row.name(), row.value(), row.type(), row.ref(), row.named(), row.indexed(), true);
+                row.name(),
+                row.value(),
+                row.type(),
+                row.ref(),
+                row.named(),
+                row.indexed(),
+                true,
+                null,
+                row.evaluateName());
         actions.loadValue(asked, v -> {
             TreeItem<VarRow> parent = item.getParent();
             int idx = parent == null ? -1 : parent.getChildren().indexOf(item);

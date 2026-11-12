@@ -291,7 +291,8 @@ final class LazyValues {
                 v.namedVariables(),
                 v.indexedVariables(),
                 true,
-                DapModels.ValueNote.NOT_LOADED);
+                DapModels.ValueNote.NOT_LOADED,
+                v.evaluateName());
     }
 
     /** {@code r} under the name of the row that asked ({@code asker}): one object can be several variables. */
@@ -310,7 +311,8 @@ final class LazyValues {
                 r.namedVariables(),
                 r.indexedVariables(),
                 r.lazy(),
-                r.note());
+                r.note(),
+                asker.evaluateName());
     }
 
     /** {@link #resolved(DapModels.VariableInfo, DapModels.VariableInfo, boolean)} after a breakpoint or step. */
@@ -339,7 +341,8 @@ final class LazyValues {
                     child.namedVariables(),
                     child.indexedVariables(),
                     false,
-                    paused ? DapModels.ValueNote.NO_TO_STRING_AFTER_PAUSE : DapModels.ValueNote.TO_STRING_FAILED);
+                    paused ? DapModels.ValueNote.NO_TO_STRING_AFTER_PAUSE : DapModels.ValueNote.TO_STRING_FAILED,
+                    lazy.evaluateName());
         }
         String bare = boxedValue(type, value);
         // A boxed value's only children are its own `value` field: nothing worth a level of its own.
@@ -350,7 +353,10 @@ final class LazyValues {
                 type,
                 leaf ? 0 : child.variablesReference(),
                 leaf ? 0 : child.namedVariables(),
-                leaf ? 0 : child.indexedVariables());
+                leaf ? 0 : child.indexedVariables(),
+                false,
+                null,
+                lazy.evaluateName());
     }
 
     /** Pure: whether a lazy child's value is java-debug's "no toString()": the row's own text plus " null". */

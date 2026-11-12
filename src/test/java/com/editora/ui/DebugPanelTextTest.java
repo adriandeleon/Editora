@@ -180,4 +180,13 @@ class DebugPanelTextTest {
                 List.of(1, 3),
                 rows.stream().map(com.editora.dap.DapModels.ThreadStatus::id).toList());
     }
+
+    @Test
+    void aRunsTimeReadsAsAPerfTip() {
+        assertEquals("≤ 1 ms", DebugPanelText.elapsed(400_000));
+        assertEquals("≤ 1 ms", DebugPanelText.elapsed(-5));
+        assertEquals("12 ms", DebugPanelText.elapsed(12_700_000));
+        assertEquals("1.5 s", DebugPanelText.elapsed(1_520_000_000L));
+        assertEquals("2 min 3 s", DebugPanelText.elapsed(123_400_000_000L));
+    }
 }

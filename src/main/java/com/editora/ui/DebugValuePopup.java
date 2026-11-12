@@ -360,7 +360,7 @@ final class DebugValuePopup implements DebugValuePresenter {
         if (sel == tree.getRoot()) {
             return expression;
         }
-        String below = DebugPanel.pathExpression(sel); // up to (and including) the root's own name
+        String below = DebugPanel.expression(sel); // the adapter's own, or the path up to (and including) the root
         return below.isEmpty() ? expression : below;
     }
 

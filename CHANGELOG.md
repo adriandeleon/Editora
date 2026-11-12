@@ -48,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *Copy details* text carries both. The conformance is worked out from the list, so it cannot claim more than
   the list shows.
 
+- **Debugger small wins: Copy as Expression, Jump to Type Source, Run to Here in the gutter, step timing and
+  logpoint tokens.** *Copy as Expression* on a variable copies what gives its value in the stopped code, as the
+  debugger itself names it (`items.get(0)` in Java, `d['k']` in Python, rather than `items[0]`); Add to Watches, Set
+  Value and View As use it too. *Jump to Type Source* opens the class a value really has, which may be a subclass of
+  the variable's type, in your code or the JDK's, through the language server. While the program is paused, hovering
+  a line number turns it into an arrow: click it to run to that line, Shift+click to ignore the breakpoints on the
+  way. After a step or Continue, the time the program ran appears faintly after the line it stopped on (*Show how
+  long each step took* in Settings → Debug turns it off). A logpoint's message can use `$FUNCTION`, `$CALLER`,
+  `$CALLSTACK`, `$TID` and `$TNAME` for the method, its caller, the call stack and the thread; such a logpoint
+  pauses the program briefly at each hit while Editora writes the message.
+
 - **Debug JavaScript in the browser.** *Debug in Browser…* opens a web page in Chrome, Edge or another Chromium
   browser (Chromium, Brave, Vivaldi) under the debugger, as VS Code does: breakpoints in the page's scripts stop it,
   with its variables, call stack, console output, stepping and evaluate as for a Node.js program, and through source

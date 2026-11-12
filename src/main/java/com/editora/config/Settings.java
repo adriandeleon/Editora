@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 168;
+    public static final int SCHEMA_VERSION = 169;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -889,6 +889,11 @@ public class Settings {
     private boolean debugPythonSubprocesses = true;
     /** Debug History: how many stops a session keeps to go back to (0 = none). In memory only, never saved. */
     private int debugHistoryStops = 200;
+    /**
+     * Visual Studio's PerfTips: after a step or Continue, the time the program ran until it stopped, shown faintly
+     * after the line it stopped on.
+     */
+    private boolean debugStepTiming = true;
     /**
      * Java debugging: the exception classes the exception breakpoints are limited to, separated by commas
      * (e.g. {@code java.lang.IllegalStateException}); blank = every exception.
@@ -3627,6 +3632,14 @@ public class Settings {
 
     /** The most stops Debug History may keep. */
     public static final int MAX_DEBUG_HISTORY_STOPS = 5_000;
+
+    public boolean isDebugStepTiming() {
+        return debugStepTiming;
+    }
+
+    public void setDebugStepTiming(boolean debugStepTiming) {
+        this.debugStepTiming = debugStepTiming;
+    }
 
     public boolean isDebugPythonSubprocesses() {
         return debugPythonSubprocesses;

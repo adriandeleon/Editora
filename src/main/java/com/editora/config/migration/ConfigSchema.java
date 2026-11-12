@@ -396,7 +396,10 @@ public enum ConfigSchema {
                     // in a session of its own. Additive: absent is the default.
                     Map.entry(166, (Migration) ConfigMigrations::identity),
                     // v167→168: + debugBrowser (the browser web pages are debugged in; "" chooses one). Additive.
-                    Map.entry(167, (Migration) ConfigMigrations::identity)),
+                    Map.entry(167, (Migration) ConfigMigrations::identity),
+                    // v168→169: + debugStepTiming (on) — the time a step or Continue ran, after the line it stopped
+                    // on. Additive.
+                    Map.entry(168, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

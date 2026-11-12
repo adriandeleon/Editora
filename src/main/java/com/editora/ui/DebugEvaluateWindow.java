@@ -270,7 +270,7 @@ final class DebugEvaluateWindow {
         if (sel == tree.getRoot()) {
             return shownExpression;
         }
-        return DebugPanel.pathExpression(sel);
+        return DebugPanel.expression(sel);
     }
 
     private void fillHistory() {
