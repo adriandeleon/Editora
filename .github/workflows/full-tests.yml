@@ -492,5 +492,7 @@ jobs:
       # LoadedSourcesProbeFxTest#javascript*: js-debug lists the program's file first and opens a Node internal read-only.
       # SourcelessFramesProbeFxTest: on js-debug, eval'd code stops (debugger statement, step into, a breakpoint set in
       # it) in a read-only tab holding the code, its line marked.
+      # BrowserDebugProbeFxTest: on js-debug and a headless Chrome, F5 on an HTML file stops in its inline script and
+      # in a script it loads; a launch.json chrome configuration opens a file: URL and stops.
       - name: Test the TypeScript server, JavaScript debugging and Pyright
-        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,TriggeredBreakpointsProbeFxTest#javascript,LoadedSourcesProbeFxTest#javascript*,SourcelessFramesProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,TriggeredBreakpointsProbeFxTest#javascript,LoadedSourcesProbeFxTest#javascript*,SourcelessFramesProbeFxTest,BrowserDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test

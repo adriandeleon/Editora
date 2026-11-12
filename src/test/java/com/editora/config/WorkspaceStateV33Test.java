@@ -26,7 +26,7 @@ class WorkspaceStateV33Test {
         assertTrue(config.getWorkspaceState().getDebugPausedWatches().isEmpty());
         assertTrue(config.getWorkspaceState().getDebugEvaluateHistory().isEmpty());
         assertEquals(WorkspaceState.SCHEMA_VERSION, config.getWorkspaceState().getSchemaVersion());
-        assertEquals(35, ConfigSchema.WORKSPACE.currentVersion());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, ConfigSchema.WORKSPACE.currentVersion());
     }
 
     @Test

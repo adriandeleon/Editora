@@ -164,7 +164,11 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         RunPanel.installLinkClicks(detail, () -> onLink);
         ConsoleContextMenu.install(detail); // right-click Select All / Copy
 
-        SplitPane split = new SplitPane(tree, new VirtualizedScrollPane<>(detail));
+        // The keymap's find chord, pressed in the output, opens a find bar over it (Escape closes it).
+        VirtualizedScrollPane<CodeArea> detailScroll = new VirtualizedScrollPane<>(detail);
+        VBox detailBox = new VBox(ConsoleFindBar.install(detail), detailScroll);
+        VBox.setVgrow(detailScroll, Priority.ALWAYS);
+        SplitPane split = new SplitPane(tree, detailBox);
         split.setDividerPositions(0.5);
         VBox.setVgrow(split, Priority.ALWAYS);
         getChildren().addAll(header, filterBar, split);

@@ -361,6 +361,64 @@ public final class Browsers {
         };
     }
 
+    /**
+     * The program of browser {@code id} on the real OS, for a debugger to start with its own flags (not through
+     * {@code open -a} or a desktop launcher); null when it is not found that way (a Flatpak or Snap install), or for
+     * the system default.
+     */
+    public static @Nullable String executable(String id) {
+        return executable(
+                currentOs(),
+                id,
+                Browsers::resolveBin,
+                Files::exists,
+                System::getenv,
+                System.getProperty("user.home", ""));
+    }
+
+    /** Pure {@link #executable(String)}. */
+    static @Nullable String executable(
+            Os os,
+            String id,
+            UnaryOperator<String> resolveBin,
+            Predicate<Path> fileExists,
+            Function<String, @Nullable String> env,
+            String home) {
+        Spec s = specFor(id);
+        if (s == null) {
+            return null;
+        }
+        return switch (os) {
+            case MAC -> {
+                String app = s.macApp();
+                if (app == null) {
+                    yield null;
+                }
+                List<Path> bundles = new ArrayList<>(List.of(Path.of("/Applications", app + ".app")));
+                if (!home.isEmpty()) {
+                    bundles.add(Path.of(home, "Applications", app + ".app"));
+                }
+                for (Path bundle : bundles) {
+                    Path program = bundle.resolve("Contents").resolve("MacOS").resolve(app);
+                    if (fileExists.test(program)) {
+                        yield program.toString();
+                    }
+                }
+                yield null;
+            }
+            case LINUX -> {
+                for (String bin : s.linuxBins()) {
+                    String resolved = resolveBin.apply(bin);
+                    if (resolved.indexOf('/') >= 0) {
+                        yield resolved;
+                    }
+                }
+                yield null;
+            }
+            case WINDOWS -> windowsExe(s, env, fileExists);
+        };
+    }
+
     /** The display name of a known browser id (or of a launcher id, its file name), for a browser not found. */
     public static String knownName(String id) {
         Spec s = specFor(id);

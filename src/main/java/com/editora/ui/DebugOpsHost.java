@@ -239,6 +239,24 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public List<String> debugBrowserUrls() {
+        return mc.config.getWorkspaceState().getDebugBrowserUrls();
+    }
+
+    @Override
+    public void persistDebugBrowserUrls(List<String> urls) {
+        mc.config.getWorkspaceState().setDebugBrowserUrls(urls);
+        mc.config.save();
+    }
+
+    @Override
+    public void servePage(
+            com.editora.editor.EditorBuffer b,
+            java.util.function.Consumer<HtmlPreviewCoordinator.@Nullable Served> onPage) {
+        mc.htmlPreview.serveForDebug(b, onPage);
+    }
+
+    @Override
     public boolean debugBreakpointsMuted() {
         return mc.config.getWorkspaceState().isDebugBreakpointsMuted();
     }

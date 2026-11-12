@@ -390,4 +390,28 @@ class BrowsersTest {
         assertFalse(got.isEmpty());
         assertEquals(Browsers.SYSTEM_DEFAULT, got.get(got.size() - 1).id());
     }
+
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the Unix paths are built with the real file system's separator")
+    void aDebuggerStartsTheBrowsersOwnProgram() {
+        UnaryOperator<String> resolve = name -> "microsoft-edge".equals(name) ? "/usr/bin/microsoft-edge" : name;
+        assertEquals(
+                "/usr/bin/microsoft-edge",
+                Browsers.executable(Os.LINUX, "edge", resolve, p -> false, n -> null, "/home/me"));
+        assertNull(
+                Browsers.executable(Os.LINUX, "chrome", resolve, p -> false, n -> null, "/home/me"),
+                "a Flatpak launcher is not a program to pass flags to");
+        Predicate<Path> inHome =
+                p -> p.toString().equals("/home/me/Applications/Brave Browser.app/Contents/MacOS/Brave Browser");
+        assertEquals(
+                "/home/me/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+                Browsers.executable(Os.MAC, "brave", resolve, inHome, n -> null, "/home/me"));
+        assertNull(Browsers.executable(Os.MAC, "chrome", resolve, inHome, n -> null, "/home/me"));
+        assertNull(Browsers.executable(Os.LINUX, Browsers.SYSTEM_DEFAULT, resolve, p -> true, n -> null, "/home/me"));
+        Predicate<Path> chromeExe =
+                p -> p.toString().equals("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
+        assertEquals(
+                "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                Browsers.executable(Os.WINDOWS, "chrome", resolve, chromeExe, n -> null, ""));
+    }
 }

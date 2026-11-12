@@ -123,6 +123,29 @@ final class SettingsDebugPage {
             config.getSettings().setCppDebugger(now);
             w.apply();
         });
+        debugBrowserCombo = new ComboBox<>();
+        debugBrowserCombo.getItems().add("");
+        debugBrowserCombo.getItems().addAll(com.editora.dap.BrowserLaunch.BROWSER_IDS);
+        debugBrowserCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String id) {
+                return id == null
+                        ? ""
+                        : id.isEmpty() ? tr("settings.debug.browser.auto") : com.editora.web.Browsers.knownName(id);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        debugBrowserCombo.valueProperty().addListener((obs, was, now) -> {
+            if (w.loading || now == null) {
+                return;
+            }
+            config.getSettings().setDebugBrowser(now);
+            w.apply();
+        });
         debugHistoryCombo = new ComboBox<>();
         debugHistoryCombo.getItems().setAll(0, 50, 200, 1000, 5000);
         debugHistoryCombo.setConverter(new StringConverter<>() {
@@ -212,6 +235,8 @@ final class SettingsDebugPage {
     private CheckBox debugCppCheck;
     /** C and C++'s debugger: CodeLLDB or GDB. */
     private ComboBox<String> debugCppDebuggerCombo;
+    /** The browser web pages are debugged in ("" chooses one). */
+    private ComboBox<String> debugBrowserCombo;
     /** Debug History: the stops a session keeps. */
     private ComboBox<Integer> debugHistoryCombo;
 
@@ -350,6 +375,13 @@ final class SettingsDebugPage {
                 nodeLink.setWrapText(true);
                 nodeLink.setOnAction(e -> w.sidebar.getSelectionModel().select(Category.BUILD_TOOLS));
                 w.cardRow(c, Category.DEBUG, nodeLink, "node nodejs node.js runtime path debug build tools");
+                w.controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.browser"),
+                        tr("settings.debug.browser.hint"),
+                        debugBrowserCombo,
+                        "debug browser chrome edge chromium brave vivaldi web page html javascript");
             }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
             DebugAdapterSettings.Binding binding = java.util.Objects.requireNonNull(DebugAdapterSettings.of(dbg.id()));
@@ -588,6 +620,11 @@ final class SettingsDebugPage {
         debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
         debugCppCheck.setSelected(settings.isCppDebugEnabled());
         debugCppDebuggerCombo.setValue(settings.getCppDebugger());
+        String browser = settings.getDebugBrowser();
+        if (!debugBrowserCombo.getItems().contains(browser)) {
+            debugBrowserCombo.getItems().add(browser); // an id set in settings.json
+        }
+        debugBrowserCombo.setValue(browser);
         debugGdbPathField.setText(settings.getGdbPath());
         int stops = settings.getDebugHistoryStops();
         if (!debugHistoryCombo.getItems().contains(stops)) {

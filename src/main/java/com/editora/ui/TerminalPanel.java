@@ -1552,7 +1552,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             return;
         }
         placeFindBar(tab);
-        findBar.open(view, view.selectedText());
+        findBar.openOrNext(view, view.selectedText()); // asked for again while open: the next match
     }
 
     /** The tab the find bar is over, or null. */

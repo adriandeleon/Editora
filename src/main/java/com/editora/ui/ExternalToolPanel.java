@@ -72,7 +72,8 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
 
         VirtualizedScrollPane<CodeArea> scroll = new VirtualizedScrollPane<>(output);
         VBox.setVgrow(scroll, Priority.ALWAYS);
-        getChildren().addAll(header, scroll);
+        // The keymap's find chord, pressed in the console, opens a find bar over it (Escape closes it).
+        getChildren().addAll(header, ConsoleFindBar.install(output), scroll);
     }
 
     public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {
