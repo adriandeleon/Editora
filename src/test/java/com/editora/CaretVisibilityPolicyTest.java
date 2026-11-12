@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * AUTO, already hides the caret of a read-only area and shows it in a focused editable one, which is all any
  * caller here has wanted.
  */
+@Tag("guard")
 class CaretVisibilityPolicyTest {
 
     @Test

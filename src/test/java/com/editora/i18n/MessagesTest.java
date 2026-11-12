@@ -12,6 +12,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+@Tag("guard")
 class MessagesTest {
 
     /** The non-base bundled locales; each must mirror the English base's key set exactly. */
@@ -227,6 +229,11 @@ class MessagesTest {
         // is shown via tr(key) with no args, so MessageFormat never touches it).
         java.util.regex.Pattern placeholder = java.util.regex.Pattern.compile("\\{(\\d+)\\s*[,}]");
 
+        // Each catalog is read once: read again for every key, they took this test a minute.
+        Map<String, Properties> catalogs = new java.util.LinkedHashMap<>();
+        catalogs.put("", base);
+        LOCALES.forEach(l -> catalogs.put("_" + l, loadProps("/com/editora/i18n/messages_" + l + ".properties")));
+
         Set<String> problems = new TreeSet<>();
         for (String key : base.stringPropertyNames()) {
             java.util.regex.Matcher m = placeholder.matcher(base.getProperty(key));
@@ -237,12 +244,9 @@ class MessagesTest {
             if (indices.isEmpty()) {
                 continue; // not a MessageFormat value — tr(key) returns it verbatim, apostrophes fine
             }
-            List<String> catalogs = new java.util.ArrayList<>();
-            catalogs.add("");
-            LOCALES.forEach(l -> catalogs.add("_" + l));
-            for (String suffix : catalogs) {
-                Properties cat = loadProps("/com/editora/i18n/messages" + suffix + ".properties");
-                String value = cat.getProperty(key);
+            for (Map.Entry<String, Properties> catalog : catalogs.entrySet()) {
+                String suffix = catalog.getKey();
+                String value = catalog.getValue().getProperty(key);
                 if (value == null) {
                     continue; // key-parity is covered by another test
                 }

@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import com.editora.AppInfo;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>The licence and homepage are pinned to {@link AppInfo} for the same reason: a software centre showing
  * a licence that contradicts the About dialog is worse than showing none.
  */
+@Tag("guard")
 class LinuxAppStreamMetadataTest {
 
     private static final Path METAINFO = Path.of("packaging", "linux", "com.editora.Editora.metainfo.xml");

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -28,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * bundled libraries (commonmark, LSP4J, JLaTeXMath, SnakeYAML, …) were missing from it. A dependency is added
  * in one file and attributed in another, with no compiler between them, so this test is the link.
  */
+@Tag("guard")
 class NoticeCoverageTest {
 
     private static final Path REPO = Path.of(System.getProperty("user.dir"));

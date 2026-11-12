@@ -11,6 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * ({@code runInUserLocale}/{@code applyUserEnv}) for anything long-lived, anything whose output the user
  * reads, and any JVM tool handed the user's paths.
  */
+@Tag("guard")
 class ChildLocalePolicyTest {
 
     private static final Path MAIN = Path.of("src/main/java/com/editora");

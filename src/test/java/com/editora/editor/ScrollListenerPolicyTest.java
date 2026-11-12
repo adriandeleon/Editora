@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code EditorBuffer.installFormatBarListeners} rather than registering one each (K5 in the 2026-10 perf
  * review). This pins the count so a new feature joins that listener instead of adding a dispatch per step.
  */
+@Tag("guard")
 class ScrollListenerPolicyTest {
 
     @Test

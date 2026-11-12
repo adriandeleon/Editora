@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * first of two stacked comments documents nothing: it is almost always a member's doc that lost its member when
  * something was inserted between them, so the reader of either member sees the wrong text.
  */
+@Tag("guard")
 class StackedJavadocTest {
 
     @Test

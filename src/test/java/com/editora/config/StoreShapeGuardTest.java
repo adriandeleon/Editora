@@ -15,6 +15,7 @@ import com.editora.config.migration.ConfigSchema;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  * {@code v → v+1} step in {@link ConfigSchema} (identity for an additive field), and replace the store's line
  * in {@link #PINNED} with the one the failure message prints.
  */
+@Tag("guard")
 class StoreShapeGuardTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();

@@ -76,15 +76,33 @@ worktree so branch switches and commits cannot interfere.
   `@Nullable` on what may be null and fix what NullAway reports rather than suppressing it
   ([null annotations](docs/conventions.md#null-annotations-jspecify-checked-by-nullaway)).
 - Run `mvn spotless:apply` after Java edits, then the narrow tests for what you changed
-  (`mvn -Dtest='Foo*Test' test`). Do not run the whole suite (`mvn verify`) before pushing: CI runs it
-  on Linux in about ten minutes, and several sessions share the machine. Label a pull request `full-ci`
-  when it is likely to differ on Windows or macOS or touches the terminal, a language server or a debug
-  adapter ([testing](docs/testing.md)).
+  (`mvn -Dtest='Foo*Test' test`). Before every push, also run the guard tests (`mvn test -Dgroups=guard`):
+  they check the repository itself (stacked Javadoc, store shapes, message catalogs, licence notices), no
+  narrow test runs them, and they were half of the failed pull-request runs
+  ([guard tests](docs/testing.md#guard-tests)). Do not run the whole suite (`mvn verify`) before pushing:
+  CI runs it on Linux in about fifteen minutes, and several sessions share the machine. A new test that
+  skips when a tool is missing needs a line in `scripts/ci/expected-skips-linux.txt`. Label a pull request
+  `full-ci` when it is likely to differ on Windows or macOS or touches the terminal, a language server or
+  a debug adapter ([testing](docs/testing.md)).
 - Update `CHANGELOG.md`, `TODO.md`, and contributor docs when the change affects them. `README.md` is a
   short landing page that defers to the website: touch it only when the highlights, install, build,
   command-line or configuration facts change. User-facing feature documentation goes to the
   separate website repository.
 - Do not commit generated build output, editor state, credentials, or unrelated user changes.
+
+## Pull requests — do not wait for CI
+
+A CI run takes about fifteen minutes. A session does not sit through it.
+
+- Once the pull request is open, go on to the next task. Do not poll the checks or sleep on them: look at
+  them when a step of the next task is done, or when the app reports a failure, and fix a red check before
+  anything else.
+- When the user asked for the change to be merged, arm auto-merge straight away
+  (`gh pr merge <number> --merge --auto`). `master` requires the two CI checks but not an up-to-date
+  branch, so the pull request merges by itself when they pass. Without that request, leave it open for the
+  user; do not wait either way.
+- The next task gets a new worktree from `origin/master`. Work that builds on the open pull request
+  starts from its branch instead: `scripts/worktree.sh new <branch> <open-branch>`.
 
 ## Architecture orientation
 

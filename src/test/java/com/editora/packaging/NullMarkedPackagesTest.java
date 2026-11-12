@@ -9,6 +9,7 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * or a marked one from losing the annotation. So the packages still unchecked are listed in
  * {@code unmarked-packages.txt}, and that list may only shrink.
  */
+@Tag("guard")
 class NullMarkedPackagesTest {
 
     private static final Path REPO = Path.of(System.getProperty("user.dir"));

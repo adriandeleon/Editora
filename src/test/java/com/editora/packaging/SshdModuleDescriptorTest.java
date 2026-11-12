@@ -10,6 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.sshd.client.SshClient;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * descriptor exports exactly the packages the resolved jar contains, and a version bump that changes the set
  * fails here, on every platform, instead of in a release build.
  */
+@Tag("guard")
 class SshdModuleDescriptorTest {
 
     private static final Path DESCRIPTOR =

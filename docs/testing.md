@@ -3,6 +3,7 @@
 ```
 mvn test                          # everything (pure + FX harness)
 mvn test -DexcludedGroups=fx      # pure suite only (fast, no toolkit)
+mvn test -Dgroups=guard           # the guard tests: before every push
 mvn verify                        # tests + Spotless check + JaCoCo coverage floors
 ```
 
@@ -17,6 +18,30 @@ decision helper and unit-test that** rather than drive the UI: effective-visibil
 predicates, caret-navigation math, path keying, and the like. See `ui/Chrome`, `editor/TextNav`,
 `config/PathKeys` for the pattern. When you write a feature, factor the decision out of the
 JavaFX code so it can be tested directly.
+
+## Guard tests
+
+Some tests check the repository, not the program: no Javadoc comment stacked on another
+(`StackedJavadocTest`), a store's shape pinned to its schema version (`StoreShapeGuardTest`), the six
+message catalogs in step (`MessagesTest`), every shipped dependency named in `NOTICE`
+(`NoticeCoverageTest`), every place that starts a process classified by locale
+(`ChildLocalePolicyTest`), the workflows' pinned actions (`ReleaseSupplyChainTest`). A change anywhere can
+break one, and the narrow tests for the change never run them, so they failed first in CI: in the week to
+12 November 2026 they were the only failure in 17 of the 35 pull-request runs that failed, each a
+fifteen-minute run spent on something that takes seconds to check.
+
+They carry `@Tag("guard")`. Run them before every push:
+
+```
+mvn test -Dgroups=guard
+```
+
+That is 22 classes and 95 tests, about half a minute once the project is compiled, most of it Maven
+starting.
+
+A new test of this kind gets the tag. It qualifies when it is pure (no toolkit), reads source files,
+resources or build files rather than exercising behaviour, and takes a second or two at most. The whole suite
+still runs them in CI; the tag only makes them cheap to run first.
 
 ## The headless-FX harness
 
@@ -272,7 +297,7 @@ without the network); and the release-asset manifest. The Java side has matching
 `SshdModuleDescriptorTest`, `WindowsFileAssociationsTest`) that read the workflows, the pom and the
 packaging files as text.
 
-CI runs in two tiers. **`ci.yml`** is the fast lane, about ten minutes: formatting, the whole suite on
+CI runs in two tiers. **`ci.yml`** is the fast lane, about fifteen minutes: formatting, the whole suite on
 Linux (four shards, coverage floors) and the scripts' own tests. It runs on every pull request and every
 push to `master`, and the two checks `master` requires come from it. **`full-tests.yml`** holds the rest:
 the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`, the FX suite (`-Dgroups=fx`) on
@@ -294,9 +319,15 @@ Linux by giving the test's `ProjectMapView` a narrower installed family, e.g. `v
 'Carlito';")` (how the trail-note placement failure behind `ProjectMapTrailNote.viewsRoomPan` was found: the card
 stood 242 px from the edge instead of 259, short of the note's 256).
 
-**Locally,** run `mvn spotless:apply` and the tests for what you changed (`mvn -Dtest='Foo*Test' test`),
-not the whole suite: CI's four shards run it in about ten minutes, and several sessions share this
-machine.
+**Locally,** run `mvn spotless:apply`, the tests for what you changed (`mvn -Dtest='Foo*Test' test`) and
+the [guard tests](#guard-tests) (`mvn test -Dgroups=guard`), not the whole suite: CI's four shards run it
+in about fifteen minutes, and several sessions share this machine.
+
+**Do not wait for a run.** Open the pull request and go on to the next task, in a new worktree; look at
+the checks when a step of that task is done. `master` requires `Build & Test (JDK 25)` and
+`Format (JDK 25)` but not an up-to-date branch, so a pull request with auto-merge armed
+(`gh pr merge <number> --merge --auto`) merges by itself when they pass. In the week to 12 November 2026 a
+pull request took 1.7 runs on average, about 23 minutes of CI, and 35 of 188 pull-request runs failed.
 
 Remote development is checked against real SSH servers by `RealSshdProbeFxTest`, an opt-in probe that CI
 skips. The `Remote probe` workflow runs it against macOS's own sshd on `macos-15` and against dropbear on

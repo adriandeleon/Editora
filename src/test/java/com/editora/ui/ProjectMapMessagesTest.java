@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * strings (in all six catalogs) with it. The help popover's rows, the type selector and the flow selector build
  * their keys from a prefix, and a filter chip's tooltip is its key plus {@code .help}, so those are exempt.
  */
+@Tag("guard")
 class ProjectMapMessagesTest {
 
     /**

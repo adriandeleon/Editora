@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * do, and Spanish as "tú", as most of its strings do. Round 3 found "setze den Cursor" among "Sie" sentences and
  * an export dialog that said "su configuración … Déjelo" among "tú" ones.
  */
+@Tag("guard")
 class HttpCatalogToneTest {
 
     private static final Pattern HTTP_KEY = Pattern.compile(

@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * correct one — until the day it matters. The checks are textual on purpose (the workflows are YAML that no
  * dependency of this project parses), and each message says what the rule protects.
  */
+@Tag("guard")
 class ReleaseSupplyChainTest {
 
     private static final Path REPO = Path.of(System.getProperty("user.dir"));
