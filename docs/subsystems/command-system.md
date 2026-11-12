@@ -294,6 +294,18 @@ caret/text chords it repurposes for local navigation, identified by id prefix in
 (`nav.*` and `edit.*`). Jump/window/view commands (`M-x`, `M-1`, `M-g`, …) and prefixes (`C-x …`)
 stay global so they work even while a tool window is focused.
 
+One exception: an editor-context command the window **runs itself**. A window that declares
+`editora.handlesCommands` (`KeyDispatcher.HANDLED_COMMANDS`, a `Predicate<String>` that is handed a
+command id and answers whether it ran it) is asked before a one-key editor-context chord is left to
+it, and a chord it answers `true` for is consumed. A Project Map card runs `nav.goToLine`,
+`nav.matchingBracket`, `nav.relatedFile` and `nav.back` / `nav.forward` on its own text and file this
+way: left to the card as a key, Ctrl+G did nothing there, because the card handles the command, not
+the key. The predicate must answer `false` for the caret chords the window handles as keys
+(`nav.lineDown`), which are then left to it as before. A text field inside the window is not asked
+(`runsOwnCommand`): its editing chords are the field's. Nor is the window asked about a key it
+claimed (`editora.claimsKeys`, below), which stays a key. Global commands and multi-key chords reach
+the same predicate where every command is dispatched, further down in `handle`.
+
 The completion popup and the quick-fix list are different: they float over the *editor*, whose
 caret and editing chords must keep working. Marking the area `ownsKeys` took every `nav.*`/`edit.*`
 chord off the keymap and left it to RichTextFX's built-ins (`C-a` selected the whole document, `M-f`

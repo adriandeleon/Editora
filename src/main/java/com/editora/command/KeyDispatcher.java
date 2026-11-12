@@ -370,15 +370,29 @@ public class KeyDispatcher {
         // work even while a tool window is focused. A focused text field gets the same treatment without
         // having to opt in: its caret is not the document's, so C-k / Ctrl+V / Ctrl+Z typed there must edit
         // the field, never the buffer behind it.
-        if (pending.isEmpty()
-                && !prefix
-                && isEditorContext(commandId) // checked first: plain typing must not walk the ancestor chain
-                && (leftToFocusOwner(commandId, ownsKeys(event.getTarget()), inTextInput(event.getTarget()))
-                        || ownsChord(event.getTarget(), token, commandId))) {
-            if (macro == MacroCapture.RECORDING) {
-                macroCapture().key(event, event.getTarget()); // the focus owner acts on it, so only the key replays it
+        if (commandId != null && pending.isEmpty() && !prefix && isEditorContext(commandId)) {
+            // isEditorContext is checked first: plain typing must not walk the ancestor chain.
+            boolean ownsKeys = ownsKeys(event.getTarget());
+            boolean textInput = inTextInput(event.getTarget());
+            if (leftToFocusOwner(commandId, ownsKeys, textInput) || ownsChord(event.getTarget(), token, commandId)) {
+                // …unless the window runs this very command itself (HANDLED_COMMANDS): a Project Map card's Go to
+                // Line is nav.goToLine, one key in most keymaps. The card has no key handler for it, so the key
+                // left to it did nothing, while a multi-key chord of the same command was offered to it further down.
+                // A key it claimed (CLAIMED_KEYS) stays a key, whatever the keymap binds it to.
+                if (runsOwnCommand(commandId, ownsKeys, textInput)
+                        && !claimsKey(event.getTarget(), token)
+                        && handledByFocusOwner(event.getTarget(), commandId)) {
+                    event.consume();
+                    consumedPress = true;
+                    prefixArg.reset(); // the component ran its own version of the command, once
+                    return;
+                }
+                if (macro == MacroCapture.RECORDING) {
+                    // The focus owner acts on it, so only the key replays it.
+                    macroCapture().key(event, event.getTarget());
+                }
+                return; // let the focused window or field handle this editor-context key
             }
-            return; // let the focused window or field handle this editor-context key
         }
         // A key the focused component declared its own (the Project tree's F2 = rename file) wins over a
         // global binding of the same key (F2 = rename symbol in the VS Code/Sublime/IntelliJ keymaps).
@@ -609,6 +623,15 @@ public class KeyDispatcher {
     }
 
     /**
+     * Whether an editor-context chord that is left to the focus owner is first offered to it as a command (see
+     * {@link #HANDLED_COMMANDS}). Only in a key-owning window, and never from a text field inside one: there the
+     * chord edits the field, as it does in any other text field. Pure — tested.
+     */
+    static boolean runsOwnCommand(@Nullable String commandId, boolean ownsKeys, boolean textInput) {
+        return isEditorContext(commandId) && ownsKeys && !textInput;
+    }
+
+    /**
      * True if the event is aimed at a text-entry control — a {@link TextInputControl}, or an editable combo
      * box / spinner, whose inner field receives the keys the control is sent. The editor itself is a
      * RichTextFX area, not a {@code TextInputControl}, so it never matches. Decided here rather than by an
@@ -707,6 +730,11 @@ public class KeyDispatcher {
      * editor tab, a different file. Unlike {@link #CLAIMED_KEYS} it is keyed by command, so it follows the user's
      * keymap and leaves a prefix such as {@code C-c} alone. A component that does not run the command passes it to
      * the nearest enclosing one that declares this too: a Map card's Go to File reaches the Map window's own.
+     *
+     * <p>It is asked for an editor-context command as well ({@code nav.goToLine}), before a one-key chord of it is
+     * left to a key-owning window (see {@link #runsOwnCommand}). So answer {@code true} only for a command the
+     * component really runs: a caret chord it handles as a key ({@code nav.lineDown}) must be answered
+     * {@code false}, or the key never arrives.
      */
     public static final String HANDLED_COMMANDS = "editora.handlesCommands";
 

@@ -819,11 +819,18 @@ final class DiffCoordinator {
     /** Pick a second file and diff it against the active file. */
     void compareActiveWithFile() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null) {
+        compareWithFile(b == null ? null : b.getPath());
+    }
+
+    /**
+     * Pick a second file and diff it against {@code basePath}: the tab menu's Compare With…, which is about the
+     * tab that was right-clicked and not the active one. A null path (an untitled buffer) says there is no file.
+     */
+    void compareWithFile(@Nullable Path basePath) {
+        if (basePath == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
-        Path basePath = b.getPath();
         String leftName = basePath.getFileName().toString();
         FileFinder picker = new FileFinder(
                 ops::finderStartDir,
