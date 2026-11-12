@@ -473,6 +473,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The VCS menu is named Git.** Git is the one version-control system Editora works with, and every row of the
+  menu is a Git command. The rows and their order are unchanged.
+- **Run ▸ Debugger is four submenus.** The Debugger submenu had grown to fifty rows, taller than the screen, and
+  scrolled. Its rows are now grouped by what they are for:
+  - **Launch and Attach:** Run and Debug Selected Configuration, Start Configuration…, Start Compound…, Edit
+    Compounds…, Attach to Process…, Reattach, Debug in Browser…, Attach to Browser….
+  - **Stepping:** Pause, the step commands, Run to Cursor, Force Run to Cursor, Restart Frame.
+  - **Breakpoints:** Toggle Breakpoint and the other breakpoint kinds, Edit Breakpoint…, the breakpoint list, its
+    groups, export and import, Mute Breakpoints, and the exception breakpoints.
+  - **Debugger:** Evaluate Expression, watches and values, Debug History, and the Threads, Loaded Sources, Modules,
+    Disassembly and Memory views.
+  - Toggle Breakpoint, Attach to Process… and Reattach moved from the top of Run into these submenus, so Run keeps
+    to twenty rows. Their keys are unchanged.
+- **"Maven: New Project…" is "Maven: New Maven Project…".** In the File menu, where a row drops the command's
+  "Maven:" prefix, it read "New Project…" and named no build tool; it now reads "New Maven Project…". "Maven: New
+  Project in Folder…" is "Maven: New Maven Project in Folder…" to match.
+- **Simple UI mode's menus no longer list Encrypt File and Toggle Comment.** The Simple File menu had "Encrypt
+  File…" and the Simple Edit menu had "Toggle Comment", neither a plain editing action. Both are still in the
+  full menu bar (Tools ▸ Encryption and Edit), and in Simple UI mode from the command palette and their keys.
 - **One place decides which operating system Editora runs on.** Sixty-odd separate checks, spelled a
   dozen ways, now ask one class. Nothing changes on Windows, macOS or Linux; a system that is none of the
   three (a BSD) is now treated as Linux throughout, where some checks used to treat it as nothing at all.

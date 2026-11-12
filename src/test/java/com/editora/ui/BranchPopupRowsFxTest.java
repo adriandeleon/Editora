@@ -17,9 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The branch dropdown's rows are shaped like the VCS menu's, because they offer the same actions.
+ * The branch dropdown's rows are shaped like the Git menu's, because they offer the same actions.
  *
- * <p>It used to render them as bare text at the command palette's 12.5px while the VCS menu drew the very
+ * <p>It used to render them as bare text at the command palette's 12.5px while the Git menu drew the very
  * same commands with a glyph at 14px — two different-looking lists of one set of actions. Each row now
  * carries its {@code commandId} so both surfaces take the glyph from one table ({@link MenuBarIcons}),
  * which is what stops them drifting apart again.
@@ -38,7 +38,7 @@ class BranchPopupRowsFxTest {
     }
 
     /**
-     * Every action the dropdown offers has a glyph, and it is the VCS menu's glyph for that command.
+     * Every action the dropdown offers has a glyph, and it is the Git menu's glyph for that command.
      *
      * <p>Asserted as an agreement with {@link MenuBarIcons} rather than against named glyphs, so redrawing
      * an icon keeps passing and only a divergence — or an unmapped command — fails.

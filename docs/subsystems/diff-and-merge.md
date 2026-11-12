@@ -65,7 +65,7 @@ last choices. Navigation operates in source-row coordinates so collapsing does n
 The Rules menu adds case-insensitive matching and a switch between smart and positional changed-line
 alignment. Both are also available as `diff.toggleIgnoreCase` and `diff.toggleSmartAlignment` commands.
 
-The VCS menu and palette can compare the active local file against another file, clipboard text, or an empty
+The Git menu and palette can compare the active local file against another file, clipboard text, or an empty
 document. Full diff panes can swap sides after an off-thread recomputation. The pane swaps headers, patch
 labels, view state, Git-action direction, and its editable-side marker as one operation; the coordinator keeps
 the underlying local target fixed and applies the same orientation to later refreshes and option changes.

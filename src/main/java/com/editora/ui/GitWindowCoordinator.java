@@ -301,7 +301,7 @@ final class GitWindowCoordinator {
                 return; // another repository became active while the branches were being listed
             }
             List<BranchPopup.MenuAction> actions = List.of(
-                    // Each row names its command so the popup takes the VCS menu's own glyph (and chord) for it.
+                    // Each row names its command so the popup takes the Git menu's own glyph (and chord) for it.
                     new BranchPopup.MenuAction(
                             tr("branch.newBranch"), "git.newBranch", inRoot(root, host.git()::newBranch)),
                     new BranchPopup.MenuAction(tr("branch.pull"), "git.pull", inRoot(root, this::pull)),
