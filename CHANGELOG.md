@@ -619,6 +619,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Save as Administrator is grayed on Windows, and says why.** It was offered there in the File menu, the
+  command palette and Settings, and did nothing: Windows has no prompt Editora can ask for administrator
+  rights for one save. The command, its toggle and the Settings row are still listed, disabled, with that
+  reason. Linux and macOS are unchanged.
 - **Logpoints work in C#.** netcoredbg doesn't support logpoints, so a C# logpoint stopped the program like a plain
   breakpoint and logged nothing. When a debugger can't log logpoints itself, Editora now logs the message in the Debug
   console, with each `{expression}` evaluated where the program stopped, and lets it go on. The editor is not taken to
