@@ -32,13 +32,15 @@ final class AboutDialog {
 
     /**
      * Shows the About dialog. Shared by the {@code help.about} command and the toolbar About button.
-     * The settings-file path is a link that opens that file in the editor via {@code openFile}.
+     * The settings-file path is a link that opens that file in the editor via {@code openFile}. The two
+     * Pauta links run registered commands through {@code runCommand}, so the palette reaches the same pages.
      */
     static void show(
             Window owner,
             Path settingsFile,
             Consumer<Path> openFile,
             Consumer<String> openUrl,
+            Consumer<String> runCommand,
             String commit,
             Updates updates) {
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.INFORMATION));
@@ -109,6 +111,20 @@ final class AboutDialog {
                 openUrl.accept(com.editora.AppInfo.RELEASES_PAGE);
             }
         }));
+        // The Pauta edition and the conformance (pauta-project.dev): the conformance comes from the helper,
+        // never typed here, and at Partial the edition's link says "Working toward", not "Built to".
+        com.editora.PautaConformance.Conformance conformance = com.editora.PautaConformance.conformance();
+        links.getChildren()
+                .add(aboutLink(
+                        tr(editionKey(conformance), com.editora.AppInfo.PAUTA_EDITION),
+                        () -> runCommand.accept("help.pautaRules")));
+        Hyperlink conformanceLink =
+                aboutLink(tr("about.pautaConformance", PautaWindow.conformanceName(conformance)), () -> {});
+        conformanceLink.setOnAction(e -> {
+            alert.close(); // About is modal: the Pauta window opens once it is out of the way
+            runCommand.accept("help.pauta");
+        });
+        links.getChildren().add(conformanceLink);
         Hyperlink settingsLink = aboutLink(
                 tr("settings.aboutSettingsLabel") + " " + SettingsWindow.displaySettingsPath(settingsFile), () -> {
                     if (openFile != null) {
@@ -147,6 +163,16 @@ final class AboutDialog {
         alert.getButtonTypes()
                 .setAll(new ButtonType(tr("dialog.close"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE));
         alert.showAndWait();
+    }
+
+    /**
+     * The catalog key of the edition's link: "Built to Pauta 6.0.1", or at Partial "Working toward Pauta
+     * 6.0.1", since the app does not meet that edition yet.
+     */
+    static String editionKey(com.editora.PautaConformance.Conformance conformance) {
+        return conformance == com.editora.PautaConformance.Conformance.PARTIAL
+                ? "about.pautaWorkingToward"
+                : "about.pauta";
     }
 
     /** The About panel's view of the update check: what the last check found, and a way to check again. */
@@ -232,7 +258,7 @@ final class AboutDialog {
     }
 
     /** The monospace environment block, also what "Copy details" puts on the clipboard. */
-    private static String environmentDetails(String versionString, String commit, Path settingsFile) {
+    static String environmentDetails(String versionString, String commit, Path settingsFile) {
         StringBuilder sb = new StringBuilder();
         sb.append(com.editora.AppInfo.NAME)
                 .append(' ')
@@ -243,6 +269,10 @@ final class AboutDialog {
         if (commit != null && !commit.isBlank()) {
             sb.append(tr("about.commit", commit)).append('\n');
         }
+        // Plain English like the rest of the block: it goes into bug reports.
+        sb.append("Pauta: ").append(com.editora.AppInfo.PAUTA_EDITION).append('\n');
+        sb.append(com.editora.PautaConformance.environmentLine(com.editora.PautaConformance.exceptions()))
+                .append('\n');
         sb.append("Java: ")
                 .append(System.getProperty("java.version", "?"))
                 .append(" (")

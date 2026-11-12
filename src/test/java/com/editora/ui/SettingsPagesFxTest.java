@@ -52,6 +52,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SettingsPagesFxTest {
 
     private SettingsRig rig;
+
+    /** The command ids About's Pauta links ran, in order. */
+    private final java.util.List<String> aboutCommands = new java.util.ArrayList<>();
+
     private Settings settings;
 
     @BeforeAll
@@ -827,7 +831,7 @@ class SettingsPagesFxTest {
                 }
             }
         });
-        AboutDialog.show(rig.owner, settingsFile, openFile, openUrl, commit, updates);
+        AboutDialog.show(rig.owner, settingsFile, openFile, openUrl, aboutCommands::add, commit, updates);
         if (failure[0] != null) {
             throw new AssertionError(failure[0]);
         }
@@ -981,6 +985,49 @@ class SettingsPagesFxTest {
             assertEquals(List.of(settingsFile), files);
             assertFalse(details[0].contains(tr("about.commit", " ")), "a build with no commit recorded says nothing");
         });
+    }
+
+    /**
+     * Pauta's About rules: the edition and the conformance are two links that run commands, and two lines of
+     * the environment block right after the commit, so Copy details carries them.
+     */
+    @Test
+    void theAboutPanelNamesThePautaEditionAndTheConformance() throws Exception {
+        com.editora.PautaConformance.Conformance conformance = com.editora.PautaConformance.conformance();
+        String edition = tr(AboutDialog.editionKey(conformance), AppInfo.PAUTA_EDITION);
+        String conformanceLink = tr("about.pautaConformance", PautaWindow.conformanceName(conformance));
+        FxTestSupport.runOnFx(() -> {
+            boolean[] closed = new boolean[1];
+            about(rig.config.getSettingsFile(), null, null, "abc1234", updates(UpdateStatus.NONE), pane -> {
+                Window panel = pane.getScene().getWindow();
+                SettingsRig.button(pane, edition).fire();
+                assertTrue(panel.isShowing(), "the rules open in the browser: About stays");
+                SettingsRig.button(pane, conformanceLink).fire();
+                closed[0] = !panel.isShowing();
+            });
+            assertTrue(closed[0], "About is modal: it closes before the Pauta window opens");
+            assertEquals(List.of("help.pautaRules", "help.pauta"), aboutCommands);
+        });
+        // At Partial the link never says "Built to": the app does not meet that edition yet.
+        assertEquals(
+                conformance == com.editora.PautaConformance.Conformance.PARTIAL,
+                edition.equals(tr("about.pautaWorkingToward", AppInfo.PAUTA_EDITION)));
+        assertEquals("about.pauta", AboutDialog.editionKey(com.editora.PautaConformance.Conformance.CORE));
+
+        List<String> lines = AboutDialog.environmentDetails(AppInfo.VERSION, "abc1234", rig.config.getSettingsFile())
+                .lines()
+                .toList();
+        assertEquals(tr("about.commit", "abc1234"), lines.get(1));
+        assertEquals("Pauta: " + AppInfo.PAUTA_EDITION, lines.get(2));
+        assertEquals(
+                com.editora.PautaConformance.environmentLine(com.editora.PautaConformance.exceptions()), lines.get(3));
+        // With no commit to show, the two lines follow the version line.
+        assertEquals(
+                "Pauta: " + AppInfo.PAUTA_EDITION,
+                AboutDialog.environmentDetails(AppInfo.VERSION, "", rig.config.getSettingsFile())
+                        .lines()
+                        .toList()
+                        .get(1));
     }
 
     @Test

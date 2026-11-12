@@ -1,0 +1,1084 @@
+{
+  "exceptions": [
+    {
+      "rule": "OS-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-01",
+      "kind": "pending",
+      "reason": "Save as Administrator is offered on Windows, where it does nothing, instead of being disabled there.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1553"
+    },
+    {
+      "rule": "OS-02",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-02",
+      "kind": "pending",
+      "reason": "Which operating system Editora is running on is worked out in many places in its code instead of one.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1553"
+    },
+    {
+      "rule": "OS-03",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-03",
+      "kind": "pending",
+      "reason": "There is no way yet to test from one machine how Editora behaves on another operating system.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1553"
+    },
+    {
+      "rule": "OS-04",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-04",
+      "kind": "pending",
+      "reason": "A few things differ between systems beyond the documented list: deleting on Windows does not use the Recycle Bin, a key rebound on macOS is kept apart from the other systems, and WSL targets appear on Windows only.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1553"
+    },
+    {
+      "rule": "PAUTA-13",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/conformance/#pauta-13",
+      "kind": "pending",
+      "reason": "The user guide on the website has no page yet that lists this conformance and these exceptions.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1554"
+    },
+    {
+      "rule": "PAUTA-14",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/conformance/#pauta-14",
+      "kind": "pending",
+      "reason": "The website's conformance page is not generated from Editora's own list of exceptions yet.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1554"
+    },
+    {
+      "rule": "PLAT-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/platform/#plat-01",
+      "kind": "pending",
+      "reason": "Building Editora from source on a JDK newer than 25 stops at the format check unless that check is skipped.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1555"
+    },
+    {
+      "rule": "PLAT-04",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/platform/#plat-04",
+      "kind": "pending",
+      "reason": "One internal package is still opened to the JSON library although nothing reads it that way any more.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1555"
+    },
+    {
+      "rule": "PLAT-14",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/platform/#plat-14",
+      "kind": "pending",
+      "reason": "The snippets file is edited as text, to keep your comments, rather than read into typed data.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1555"
+    },
+    {
+      "rule": "REPO-02",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/repository/#repo-02",
+      "kind": "pending",
+      "reason": "Some older changelog entries do not open with a one-line summary, and a few sections use headings of their own.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1556"
+    },
+    {
+      "rule": "DOCS-02",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-02",
+      "kind": "pending",
+      "reason": "The plugin authors' guide in the repository also explains installing and troubleshooting plugins, which belongs in the user guide on the website.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1557"
+    },
+    {
+      "rule": "DOCS-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-04",
+      "kind": "pending",
+      "reason": "The website does not check on every build that its generated pages still match the app.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1557"
+    },
+    {
+      "rule": "DOCS-05",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-05",
+      "kind": "pending",
+      "reason": "The notes on a GitHub release are a list of commits rather than notes written for users.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1557"
+    },
+    {
+      "rule": "DOCS-07",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-07",
+      "kind": "pending",
+      "reason": "Welcome Page is in the View menu rather than the Help menu.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1557"
+    },
+    {
+      "rule": "DOCS-08",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-08",
+      "kind": "pending",
+      "reason": "The Help menu has no row that opens a keyboard reference.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1557"
+    },
+    {
+      "rule": "DOCS-14",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-14",
+      "kind": "pending",
+      "reason": "One developer guide in the repository is a dated review report rather than a lasting explanation.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1557"
+    },
+    {
+      "rule": "DOCS-18",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-18",
+      "kind": "pending",
+      "reason": "Screenshots for the website are not taken by a built-in capture at double resolution.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1557"
+    },
+    {
+      "rule": "QUAL-02",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/quality/#qual-02",
+      "kind": "pending",
+      "reason": "One null-safety warning in the code is silenced rather than fixed.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1558"
+    },
+    {
+      "rule": "QUAL-03",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/quality/#qual-03",
+      "kind": "pending",
+      "reason": "Several large parts of the code have no minimum test coverage set.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1558"
+    },
+    {
+      "rule": "QUAL-06",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/quality/#qual-06",
+      "kind": "pending",
+      "reason": "Some tests that start the user interface are not marked as such, so the fast test run cannot leave them out.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1558"
+    },
+    {
+      "rule": "QUAL-07",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/quality/#qual-07",
+      "kind": "pending",
+      "reason": "Many tests wait for a fixed time instead of for the thing they are waiting on.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1558"
+    },
+    {
+      "rule": "PERF-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-01",
+      "kind": "pending",
+      "reason": "A few file operations still run on the interface's own thread, some start-up reads among them, so a slow disk can briefly freeze the window.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-03",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-03",
+      "kind": "pending",
+      "reason": "The debugger tool checks in Settings can show an older answer over a newer one when a path is changed quickly.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-04",
+      "kind": "pending",
+      "reason": "A few background threads are unnamed or can keep Editora from exiting promptly.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-05",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-05",
+      "kind": "pending",
+      "reason": "When a debugged Java program ends, Editora waits for its exit code on a shared background pool that other work also needs.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-06",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-06",
+      "kind": "pending",
+      "reason": "The commit graph in the Git Log is repainted more than once for a single change.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-23",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-23",
+      "kind": "pending",
+      "reason": "The debugger's completion list and the file finder start their work on every keystroke instead of after a short pause.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-07",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-07",
+      "kind": "pending",
+      "reason": "Output from the AI agent and from Git commands is handed to the window as it arrives rather than in timed batches.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-08",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-08",
+      "kind": "pending",
+      "reason": "The crontab preview and the pull-request checks card build every row at once, which slows down with very long lists.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-10",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-10",
+      "kind": "pending",
+      "reason": "Two places recompute styles for a large part of the window more often than needed, the shortcut list in Settings among them.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-12",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-12",
+      "kind": "pending",
+      "reason": "Importing breakpoints reads the chosen file whole, whatever its size.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "PERF-14",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/performance/#perf-14",
+      "kind": "pending",
+      "reason": "The Output panel is built with the window even when it is never opened.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1559"
+    },
+    {
+      "rule": "KBD-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-01",
+      "kind": "pending",
+      "reason": "A few buttons have no command behind them, among them Clear in the Message Log and Save Output and Previous Run in the build console, so the palette and the keyboard cannot reach them.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1560"
+    },
+    {
+      "rule": "KBD-03",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-03",
+      "kind": "pending",
+      "reason": "The ten Go to Bookmark commands take their titles from a shared template, so they have no description in the Command Palette.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1560"
+    },
+    {
+      "rule": "KBD-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-04",
+      "kind": "pending",
+      "reason": "A disabled menu row does not say why it is unavailable.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1560"
+    },
+    {
+      "rule": "KBD-13",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-13",
+      "kind": "pending",
+      "reason": "The title of the Universal Argument command includes its key.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1560"
+    },
+    {
+      "rule": "KBD-14",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-14",
+      "kind": "pending",
+      "reason": "After a prefix key, nothing lists the keys that can follow.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1560"
+    },
+    {
+      "rule": "KBD-15",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-15",
+      "kind": "pending",
+      "reason": "Clear in the Message Log and Save Output and Previous Run in the build console can only be pressed with the mouse.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1560"
+    },
+    {
+      "rule": "ACC-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-01",
+      "kind": "pending",
+      "reason": "Not every control has a name for screen readers, the rows of the in-window menus among them, and no test sweeps every window for them.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1561"
+    },
+    {
+      "rule": "ACC-02",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-02",
+      "kind": "pending",
+      "reason": "Clickable items in the status bar cannot be activated by a screen reader, and messages there are not announced.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1561"
+    },
+    {
+      "rule": "ACC-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-04",
+      "kind": "pending",
+      "reason": "Animations do not stop when the system asks for reduced motion.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1561"
+    },
+    {
+      "rule": "ACC-06",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-06",
+      "kind": "pending",
+      "reason": "There is no pair of commands in every keymap for moving between the regions of the window.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1561"
+    },
+    {
+      "rule": "ACC-07",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-07",
+      "kind": "pending",
+      "reason": "The release steps do not include a pass with a screen reader.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1561"
+    },
+    {
+      "rule": "ACC-08",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-08",
+      "kind": "pending",
+      "reason": "The Command Palette does not tell a screen reader which row is selected.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1561"
+    },
+    {
+      "rule": "ACC-09",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-09",
+      "kind": "pending",
+      "reason": "There is no high-contrast theme, and the high-contrast setting of Windows is not followed.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1561"
+    },
+    {
+      "rule": "WIN-03",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-03",
+      "kind": "pending",
+      "reason": "On Windows and Linux the menu bar sits below the title bar unless you turn on the extended window setting.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1562"
+    },
+    {
+      "rule": "WIN-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-04",
+      "kind": "pending",
+      "reason": "Some dialogs do not load Editora's own styles, so they can look slightly different.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1562"
+    },
+    {
+      "rule": "WIN-11",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-11",
+      "kind": "pending",
+      "reason": "The order of a dialog's buttons follows the operating system instead of being the same everywhere.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1562"
+    },
+    {
+      "rule": "WIN-12",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-12",
+      "kind": "pending",
+      "reason": "There is no zoom for the whole interface: zooming changes the editor text only.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1562"
+    },
+    {
+      "rule": "WIN-13",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-13",
+      "kind": "pending",
+      "reason": "Quitting from the macOS menu or Dock closes each window in turn instead of going through Editora's own Quit.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1562"
+    },
+    {
+      "rule": "WIN-15",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-15",
+      "kind": "pending",
+      "reason": "On macOS, Settings is not in the application menu.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1562"
+    },
+    {
+      "rule": "ICON-07",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-07",
+      "kind": "pending",
+      "reason": "Some parts of the interface take their warning, error and success colors directly from the theme instead of the shared state colors.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1563"
+    },
+    {
+      "rule": "ICON-08",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-08",
+      "kind": "pending",
+      "reason": "Some interface colors are fixed values that do not follow the theme.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1563"
+    },
+    {
+      "rule": "ICON-09",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-09",
+      "kind": "pending",
+      "reason": "A few hints are drawn in the faintest text color, which can be hard to read.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1563"
+    },
+    {
+      "rule": "ICON-11",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-11",
+      "kind": "pending",
+      "reason": "The heaviest cells of the Project Map's dependency matrix use a text color the themes do not define.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1563"
+    },
+    {
+      "rule": "ICON-14",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-14",
+      "kind": "pending",
+      "reason": "Some of the checks that keep text readable run as slower interface tests.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1563"
+    },
+    {
+      "rule": "ICON-16",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-16",
+      "kind": "pending",
+      "reason": "There is no theme that follows the system's light or dark setting.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1563"
+    },
+    {
+      "rule": "ICON-18",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-18",
+      "kind": "pending",
+      "reason": "Amber, red and green are used for a few things besides warnings, errors and success, such as bookmarks and Stop buttons.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1563"
+    },
+    {
+      "rule": "TBAR-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-01",
+      "kind": "pending",
+      "reason": "The main toolbar's buttons and the buttons that leave Zen and Expert mode have a tooltip but no name for screen readers.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
+      "rule": "TBAR-03",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-03",
+      "kind": "pending",
+      "reason": "Some toolbar tooltips use a name of their own instead of the command's title, and the Stop button shows no shortcut.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
+      "rule": "TBAR-14",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-14",
+      "kind": "pending",
+      "reason": "Tooltips do not all appear after the same delay.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
+      "rule": "TBAR-02",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-02",
+      "kind": "pending",
+      "reason": "Toolbar and tool-stripe buttons take the keyboard focus when you press Tab.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
+      "rule": "TBAR-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-04",
+      "kind": "pending",
+      "reason": "The separators in the Debug panel's toolbar are drawn as lines rather than spacing.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
+      "rule": "TBAR-08",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-08",
+      "kind": "pending",
+      "reason": "Three buttons you can add to the toolbar, TODO, Bookmarks and Zen Mode, have no menu row.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
+      "rule": "TBAR-17",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-17",
+      "kind": "pending",
+      "reason": "A few toolbar buttons stay enabled when their command cannot run, Save As among them.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
+      "rule": "TBAR-12",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-12",
+      "kind": "pending",
+      "reason": "A tool-stripe button's tooltip does not update when its panel's title changes.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1564"
+    },
+    {
+      "rule": "TABS-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-01",
+      "kind": "pending",
+      "reason": "There is no Previous Tab command, and image, hex, PDF, diff and pull-request review tabs have no right-click menu.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1565"
+    },
+    {
+      "rule": "TABS-02",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-02",
+      "kind": "pending",
+      "reason": "Image, hex and PDF tabs show no tooltip with the file's full path.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1565"
+    },
+    {
+      "rule": "TABS-06",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-06",
+      "kind": "pending",
+      "reason": "A closed image, hex or PDF tab is not offered by Reopen Closed Tab.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1565"
+    },
+    {
+      "rule": "TABS-08",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-08",
+      "kind": "pending",
+      "reason": "A tab's tooltip does not name the file's Git status.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1565"
+    },
+    {
+      "rule": "TABS-13",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-13",
+      "kind": "pending",
+      "reason": "The tool-stripe buttons do not run their panels' commands, and a few of those commands only open their panel and never hide it.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1565"
+    },
+    {
+      "rule": "MENU-14",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/menus/#menu-14",
+      "kind": "pending",
+      "reason": "Some menu rows have no icon.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1566"
+    },
+    {
+      "rule": "MENU-15",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/menus/#menu-15",
+      "kind": "pending",
+      "reason": "Many right-click menus and drop-downs do not show the shortcuts of their rows.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1566"
+    },
+    {
+      "rule": "MENU-16",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/menus/#menu-16",
+      "kind": "pending",
+      "reason": "Menu text has a fixed size, since there is no zoom for the whole interface.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1566"
+    },
+    {
+      "rule": "MENU-18",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/menus/#menu-18",
+      "kind": "pending",
+      "reason": "Rows of right-click menus are laid out by the theme rather than with the menu bar's icon column and spacing.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1566"
+    },
+    {
+      "rule": "MENU-17",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/menus/#menu-17",
+      "kind": "pending",
+      "reason": "In the CUA, VS Code and Sublime keymaps F10 steps the debugger, and no command focuses the menu bar instead.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1566"
+    },
+    {
+      "rule": "MENU-05",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/menus/#menu-05",
+      "kind": "pending",
+      "reason": "Some trees, lists and read-only consoles have no right-click menu, among them the Hierarchy and References panels and the Debug Log.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1566"
+    },
+    {
+      "rule": "MENU-09",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/menus/#menu-09",
+      "kind": "pending",
+      "reason": "The Menu key and Shift+F10 do not open the row's menu in every list, the Problems panel among them.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1566"
+    },
+    {
+      "rule": "MENU-12",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/menus/#menu-12",
+      "kind": "pending",
+      "reason": "Most rows that delete or discard are not marked red.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1566"
+    },
+    {
+      "rule": "TRAY-09",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/tray-and-background/#tray-09",
+      "kind": "pending",
+      "reason": "When a desktop notification cannot be shown, nothing records why.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1567"
+    },
+    {
+      "rule": "SET-04",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/settings/#set-04",
+      "kind": "pending",
+      "reason": "The Enable plugins setting names the restart it needs in a note below it rather than in its own row.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1568"
+    },
+    {
+      "rule": "SET-06",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/settings/#set-06",
+      "kind": "pending",
+      "reason": "A few settings, terminal notifications among them, have no command in the Command Palette.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1568"
+    },
+    {
+      "rule": "SET-07",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/settings/#set-07",
+      "kind": "pending",
+      "reason": "When both are given, the EDITORA_CONFIG_DIR variable wins over the --dev flag.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1568"
+    },
+    {
+      "rule": "SET-09",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/settings/#set-09",
+      "kind": "pending",
+      "reason": "Your own templates and snippets are saved without a format version.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1568"
+    },
+    {
+      "rule": "SET-10",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/settings/#set-10",
+      "kind": "pending",
+      "reason": "A template or snippet file written by a newer Editora is not recognized as newer or backed up before it is read.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1568"
+    },
+    {
+      "rule": "SET-11",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/settings/#set-11",
+      "kind": "pending",
+      "reason": "A few numbers in the settings file, such as the Local History limits, are not checked against their valid range when the file is read.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1568"
+    },
+    {
+      "rule": "SET-13",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/settings/#set-13",
+      "kind": "pending",
+      "reason": "On a machine with no system keychain, AI API keys are kept in the settings file.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1568"
+    },
+    {
+      "rule": "SET-16",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/settings/#set-16",
+      "kind": "pending",
+      "reason": "Whether plugins need a signed registry can be turned off from Settings and the Command Palette.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1568"
+    },
+    {
+      "rule": "DIAG-04",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/diagnostics/#diag-04",
+      "kind": "pending",
+      "reason": "An unexpected error is written to the Debug Log without a message in the status bar.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1569"
+    },
+    {
+      "rule": "DIAG-06",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/diagnostics/#diag-06",
+      "kind": "pending",
+      "reason": "A problem report does not include a summary of your settings.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1569"
+    },
+    {
+      "rule": "CLI-12",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-12",
+      "kind": "pending",
+      "reason": "An option Editora does not know is ignored on the command line instead of being refused.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1570"
+    },
+    {
+      "rule": "CLI-13",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-13",
+      "kind": "pending",
+      "reason": "The short flag -v does not print the version; -V and --version do.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1570"
+    },
+    {
+      "rule": "CLI-11",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-11",
+      "kind": "pending",
+      "reason": "On Windows there is no console launcher, so command-line output does not appear in the terminal that started Editora.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1570"
+    },
+    {
+      "rule": "CLI-07",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-07",
+      "kind": "pending",
+      "reason": "A launch with --diff-ui, --new-file or --disable-plugins starts a second Editora instead of handing over to the one already running.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1570"
+    },
+    {
+      "rule": "INTL-07",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-07",
+      "kind": "pending",
+      "reason": "A few labels are not translated, such as the line label in the Bookmarks panel.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1571"
+    },
+    {
+      "rule": "INTL-09",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-09",
+      "kind": "pending",
+      "reason": "One French message about Maven versions loses an apostrophe.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1571"
+    },
+    {
+      "rule": "INTL-10",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-10",
+      "kind": "pending",
+      "reason": "A few messages can show a line number with a thousands separator.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1571"
+    },
+    {
+      "rule": "INTL-12",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-12",
+      "kind": "pending",
+      "reason": "Some messages write a plural as (s) instead of choosing the right form.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1571"
+    },
+    {
+      "rule": "INTL-13",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-13",
+      "kind": "pending",
+      "reason": "Some translations translate the names of modifier keys.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1571"
+    },
+    {
+      "rule": "INTL-14",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-14",
+      "kind": "pending",
+      "reason": "Dates and numbers follow the interface language alone, not your system's region.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1571"
+    },
+    {
+      "rule": "QOPEN-01",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/quick-open/#qopen-01",
+      "kind": "pending",
+      "reason": "Three choices still use a plain system dialog instead of the picker: the Git reset mode, the merge parent to revert against and the settings backup to restore.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1572"
+    },
+    {
+      "rule": "QOPEN-10",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/quick-open/#qopen-10",
+      "kind": "pending",
+      "reason": "A few pickers open empty when they have nothing to list, Bookmarks and Recent Files among them.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1572"
+    },
+    {
+      "rule": "WELC-03",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/welcome/#welc-03",
+      "kind": "pending",
+      "reason": "The Help menu has no Welcome Page row, since the row is in the View menu.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1573"
+    },
+    {
+      "rule": "ABOUT-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/about/#about-01",
+      "kind": "pending",
+      "reason": "On macOS, About Editora is in the Help menu rather than the application menu.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1574"
+    },
+    {
+      "rule": "ABOUT-10",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/about/#about-10",
+      "kind": "pending",
+      "reason": "An available update is shown in the accent color in About rather than amber.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1574"
+    },
+    {
+      "rule": "CONF-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-01",
+      "kind": "pending",
+      "reason": "Clearing a file's bookmarks removes them and their notes at once, with no question and no undo.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "CONF-03",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-03",
+      "kind": "pending",
+      "reason": "Some questions before a destructive action are answered with a plain OK, or name the action without marking it red.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "CONF-14",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-14",
+      "kind": "pending",
+      "reason": "Many dialogs still use the system's stock OK and Cancel buttons.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "CONF-13",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-13",
+      "kind": "pending",
+      "reason": "In some questions before a destructive action, Enter runs the action instead of cancelling.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "CONF-05",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-05",
+      "kind": "pending",
+      "reason": "The Save, Discard and Cancel buttons of the unsaved-changes question are not in a fixed order on every system.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "CONF-07",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-07",
+      "kind": "pending",
+      "reason": "Editora asks before a few actions that can be undone, such as moving a file to the trash.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "CONF-10",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-10",
+      "kind": "pending",
+      "reason": "Deleting a remote site or an external tool does not say that it cannot be undone.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "CONF-11",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-11",
+      "kind": "pending",
+      "reason": "The Force Push command can be run directly, without a rejected push first.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "CONF-12",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-12",
+      "kind": "pending",
+      "reason": "Some confirmation questions cannot be answered automatically in tests.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1575"
+    },
+    {
+      "rule": "FIND-01",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-01",
+      "kind": "pending",
+      "reason": "The Debug Log window and the Run, External Tools and Debug consoles have no find bar.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1576"
+    },
+    {
+      "rule": "FIND-02",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-02",
+      "kind": "pending",
+      "reason": "The views that have no find bar yet cannot search as you type or count the matches.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1576"
+    },
+    {
+      "rule": "FIND-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-04",
+      "kind": "pending",
+      "reason": "The find bar in consoles has no command of its own, and running Find again in the terminal does not step to the next match.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1576"
+    },
+    {
+      "rule": "FIND-05",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-05",
+      "kind": "pending",
+      "reason": "The console find bar searches from the selection and, like a Project Map card's, highlights only the current match.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1576"
+    },
+    {
+      "rule": "FIND-06",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-06",
+      "kind": "pending",
+      "reason": "Shift+Enter does not step to the previous match in the editor's find bar.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1576"
+    },
+    {
+      "rule": "FIND-07",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-07",
+      "kind": "pending",
+      "reason": "The views that have no find bar yet also lack the Escape key that closes it and returns the keyboard.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1576"
+    },
+    {
+      "rule": "FIND-09",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-09",
+      "kind": "pending",
+      "reason": "The find fields of consoles, the terminal and Project Map cards do not follow the keymap's text-editing keys.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1576"
+    },
+    {
+      "rule": "FIND-16",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-16",
+      "kind": "pending",
+      "reason": "The match-case button of a Project Map card's find bar cannot be reached with Tab or a command.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1576"
+    },
+    {
+      "rule": "MLOG-03",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/message-log/#mlog-03",
+      "kind": "pending",
+      "reason": "The Message Log closes on Ctrl+G and Alt+G whatever the keymap binds.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1577"
+    },
+    {
+      "rule": "MLOG-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/message-log/#mlog-04",
+      "kind": "pending",
+      "reason": "The Message Log copies on Ctrl+C or Cmd+C only, not on the keymap's own copy key.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1577"
+    },
+    {
+      "rule": "MLOG-05",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/templates/message-log/#mlog-05",
+      "kind": "pending",
+      "reason": "Three status messages whose names suggest a failure are not shown as errors.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1577"
+    },
+    {
+      "rule": "REL-04",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-04",
+      "kind": "pending",
+      "reason": "Release notes are not taken from the changelog.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-09",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-09",
+      "kind": "pending",
+      "reason": "The Linux app ID is com.editora.Editora rather than one under io.github.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-12",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-12",
+      "kind": "pending",
+      "reason": "Editora cannot be installed with Homebrew yet.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-13",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-13",
+      "kind": "pending",
+      "reason": "Editora cannot be installed with winget yet.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-14",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-14",
+      "kind": "pending",
+      "reason": "No access token for publishing to package managers is set up, since none is used yet.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-16",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-16",
+      "kind": "pending",
+      "reason": "The runnable jar downloads for Linux are not signed like the other Linux downloads.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-17",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-17",
+      "kind": "pending",
+      "reason": "The Windows installer is not signed.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-25",
+      "level": "SHOULD",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-25",
+      "kind": "pending",
+      "reason": "A few automated build steps download Maven's dependencies again instead of reusing a cache.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-31",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-31",
+      "kind": "pending",
+      "reason": "One automated check can cancel its own earlier run on the main branch.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    },
+    {
+      "rule": "REL-29",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.0.1/release/#rel-29",
+      "kind": "pending",
+      "reason": "Before a release, only the macOS build is started as packaged to confirm it launches.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1578"
+    }
+  ]
+}

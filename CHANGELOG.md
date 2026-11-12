@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pauta conformance.** Editora now says which edition of [Pauta](https://pauta-project.dev/), the guidelines
+  its family of apps follows, it is working toward and how far it has come. *Help → Pauta Conformance* (also in
+  the Command Palette) lists every rule of Pauta 6.0.1 that Editora does not meet yet, each with one sentence on
+  what is different and a link to the issue that tracks it; a rule's ID opens the rule, and *Copy as text* copies
+  the list as Markdown. About gains *Working toward Pauta 6.0.1* and *Pauta conformance: Partial*, and its
+  *Copy details* text carries both. The conformance is worked out from the list, so it cannot claim more than
+  the list shows.
+
 - **Mark Object.** Right-click a variable, watch or result that shows an object and choose *Mark Object…* to give
   it a label, as in IntelliJ. The label then shows before that object's value wherever it appears in the session (in
   Variables, watches, results, the hover popup and Debug History), so you can follow one object as it moves between

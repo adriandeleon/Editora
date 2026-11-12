@@ -600,6 +600,7 @@ final class MenuBarModel {
                                 "view.debugLog",
                                 "help.reportProblem",
                                 SEPARATOR,
+                                "help.pauta",
                                 "help.about")));
     }
 

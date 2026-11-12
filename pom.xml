@@ -32,6 +32,10 @@
              groupId io.github.adriandeleon, vendored in the in-project m2-repo (see <repositories>).
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
         <richtextfx.version>0.11.7-inlay.2</richtextfx.version>
+        <!-- The Pauta edition this app works toward (pauta-project.dev; ABOUT-08): the one source for About, the
+             Pauta window and the tests that hold README.md and AGENTS.md to it. Filtered into
+             build-info.properties like the version. -->
+        <pauta.version>6.0.1</pauta.version>
         <atlantafx.version>3.0.0</atlantafx.version>
         <jackson.version>2.22.4</jackson.version>
         <junit.version>6.1.3</junit.version>

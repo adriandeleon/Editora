@@ -525,6 +525,9 @@ public class App extends Application {
                         // Completing the future publishes it — start() reads no message before join().
                         String language = uiLanguage(settings);
                         com.editora.i18n.Messages.init(language);
+                        // The bundled pauta.json is parsed here as well, so About and the Pauta window read
+                        // no resource on the FX thread.
+                        com.editora.PautaConformance.exceptions();
                         SharedConfig shared = manager.shared();
                         com.editora.plugin.PluginManager plugins = com.editora.ui.WindowManager.discoverPlugins(shared);
                         manager.setStartupSessionScan(com.editora.config.SessionScan.of(

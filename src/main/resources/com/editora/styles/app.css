@@ -4148,6 +4148,33 @@
     -fx-text-fill: -color-fg-muted;
 }
 
+/* ---- Pauta window (PautaWindow): built like About, so it shares the .about-* head and content rules ---- */
+.pauta-conformance {
+    -fx-background-radius: 10;
+    -fx-padding: 2 10 2 10;
+    -fx-font-size: 11.5px;
+}
+.pauta-conformance.complete { -fx-background-color: -state-green-bg; -fx-text-fill: -state-green; }
+.pauta-conformance.core { -fx-background-color: -state-accent-bg; -fx-text-fill: -state-accent; }
+.pauta-conformance.partial { -fx-background-color: -state-amber-bg; -fx-text-fill: -state-amber; }
+/* The list scrolls past about ten rows; the rest of the window stays put. */
+.pauta-list {
+    -fx-max-height: 300px;
+    -fx-pref-viewport-height: 300px;
+    -fx-background-color: transparent;
+}
+.pauta-list > .viewport { -fx-background-color: transparent; }
+.pauta-group { -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
+.pauta-rule {
+    -fx-font-family: "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: -state-accent;
+    -fx-padding: 0;
+}
+.pauta-level { -fx-font-size: 11.5px; -fx-text-fill: -color-fg-muted; }
+.pauta-reason > .text { -fx-fill: -color-fg-default; }
+.pauta-reason > .hyperlink { -fx-padding: 0; }
+
 .settings-preview {
     -fx-border-width: 0;
     -fx-border-color: transparent;
