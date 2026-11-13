@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Thread Dump in the debugger.** Debug: Thread Dump, also in the Threads view's and the call stack's menus, shows
+  every thread of the program with its call stack in a window of its own, as IntelliJ's Get Thread Dump does. Threads
+  whose stacks are the same are merged into one row (twenty pool workers waiting in one place read as one), a filter
+  finds a thread by its name or a frame, and a frame opens its code with Enter or a double-click, even after the
+  program went on. On a running program it pauses for a moment, takes the dump and lets the program go on without
+  moving the editor: the way to see what a program that hangs is doing. Copy puts the dump on the clipboard as text,
+  Open as Text opens it in a read-only tab, and Take Again takes a new one. Works with Java, Python, Go and every
+  other adapter that lists threads.
+
 - **A zoom for the whole interface.** View → Zoom → Zoom In Interface, Zoom Out Interface and Reset
   Interface Zoom (also in the command palette, and as Interface zoom under Settings → Appearance) scale the
   menus, toolbar, tabs, tool windows, dialogs and status bar together, from 80% to 200% in steps of 10. It
@@ -646,6 +655,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Deleting a file on Windows moves it to the Recycle Bin.** Delete in the Project tree, Move Original to
+  Trash after encrypting, and the clean-up of unused pasted images deleted for good on Windows, where
+  Editora reached no trash at all. They now use the Recycle Bin, as Explorer does, for files on a local
+  drive. A file on a network share, a WSL distribution or a removable drive has no Recycle Bin, and the
+  question before deleting it still says the delete cannot be undone. Linux and macOS are unchanged.
 - **Save as Administrator is grayed on Windows, and says why.** It was offered there in the File menu, the
   command palette and Settings, and did nothing: Windows has no prompt Editora can ask for administrator
   rights for one save. The command, its toggle and the Settings row are still listed, disabled, with that

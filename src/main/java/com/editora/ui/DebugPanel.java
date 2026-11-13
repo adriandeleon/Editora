@@ -145,6 +145,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Threads view → Resume Thread: resumes {@code threadId} alone. */
         default void resumeThread(int threadId) {}
 
+        /** Thread Dump (Threads view and call stack menus): every thread's stack, in the Thread Dump window. */
+        default void threadDump() {}
+
         /** Threads view → Show Frames: shows suspended thread {@code thread}'s call stack and variables. */
         default void showThread(DapModels.ThreadStatus thread) {
             selectThread(thread.id());
@@ -713,6 +716,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 copy.setGraphic(Icons.copy());
                 copy.setOnAction(ev -> copyCallStack());
                 items.add(copy);
+                items.add(threadDumpItem());
             }
             stackMenu.getItems().setAll(items);
             if (!items.isEmpty()) {
@@ -1688,6 +1692,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             pause.setOnAction(e -> actions.pauseThread(t.id()));
             menu.getItems().add(pause);
         }
+        menu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), threadDumpItem());
+    }
+
+    /** Thread Dump…, in the Threads view's menu and the call stack's. */
+    private javafx.scene.control.MenuItem threadDumpItem() {
+        javafx.scene.control.MenuItem dump = new javafx.scene.control.MenuItem(tr("debugpanel.threadDump"));
+        dump.setOnAction(e -> actions.threadDump());
+        return dump;
     }
 
     /** Shows the frames of the selected thread when it is suspended (Enter, a double-click, Show Frames). */

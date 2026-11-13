@@ -442,6 +442,7 @@ final class MenuBarModel {
                                                 "debug.showHistory",
                                                 SEPARATOR,
                                                 "debug.threads",
+                                                "debug.threadDump",
                                                 "debug.loadedSources",
                                                 "debug.modules",
                                                 "debug.showDisassembly",

@@ -171,10 +171,11 @@ class TrashTest {
         String home = dir.toString();
         Path file = Files.writeString(dir.resolve("f.txt"), "x");
 
-        assertSame(
-                Trash.NONE,
-                Trash.forPlatform(com.editora.Os.parse("Windows 11"), home, Map.of(), null),
-                "no Recycle Bin without AWT");
+        // Windows has the Recycle Bin, reached through the shell: there only where there is a Windows shell.
+        Trash.Bin windows = Trash.forPlatform(com.editora.Os.Kind.WINDOWS, home, Map.of(), null);
+        boolean onWindows = System.getProperty("os.name", "").startsWith("Windows");
+        assertEquals(onWindows, windows instanceof WindowsRecycleBin, "the Recycle Bin on Windows itself");
+        assertEquals(!onWindows, windows == Trash.NONE, "and no trash where shell32 cannot be loaded");
         assertSame(
                 Trash.NONE,
                 Trash.forPlatform(com.editora.Os.parse("Linux"), home, Map.of(), "off"),

@@ -166,12 +166,12 @@ class IoEdgeCasesTest {
     // --- Trash ---
 
     @Test
-    void thereIsNoTrashWhenItIsSwitchedOffOrThePlatformHasNoneOrHomeIsUnknown() {
+    void thereIsNoTrashWhenItIsSwitchedOffOrHomeIsUnknown() {
         Map<String, String> env = Map.of();
         assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Linux"), dir.toString(), env, " OFF "));
         assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Linux"), null, env, null));
         assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Linux"), "  ", env, null));
-        assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.parse("Windows 11"), dir.toString(), env, null));
+        assertSame(Trash.NONE, Trash.forPlatform(com.editora.Os.Kind.WINDOWS, dir.toString(), env, "off"));
         assertSame(
                 Trash.NONE,
                 Trash.forPlatform(com.editora.Os.parse("Linux"), "bad\0home", env, null),

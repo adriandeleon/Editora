@@ -108,10 +108,9 @@ public class App extends Application {
         com.editora.process.ExecTargets.setRemoteTools(shared::remoteTool);
         // Folders bind-mounted into a container the user works in: their tools run there once allowed.
         com.editora.process.ExecTargets.registerMapped(com.editora.container.ContainerBindings.shared());
-        // Folders inside a WSL distribution (\\wsl.localhost\…): their tools run in it once allowed.
-        if (com.editora.Os.isWindows()) {
-            com.editora.process.ExecTargets.registerMapped(com.editora.wsl.WslTargets.shared());
-        }
+        // Folders inside a WSL distribution (\\wsl.localhost\…): their tools run in it once allowed. Registered on
+        // every OS: the resolver only reads a path's text, and only Windows has paths that begin that way.
+        com.editora.process.ExecTargets.registerMapped(com.editora.wsl.WslTargets.shared());
         // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking
         // token. Reaped by the stamped pid + start instant, before any MCP server starts this session (#464).
         com.editora.mcp.McpServer.reapStaleEndpoint(shared.getConfigDir());

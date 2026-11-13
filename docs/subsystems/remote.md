@@ -198,7 +198,7 @@ only while its pid still has the recorded start time (`ContainerExecTarget.reapO
 container job runs `ContainerProbeFxTest` against Docker on `ubuntu-latest`. `ContainerProbeFxTest` is the opt-in check against a real engine
 (`-Dcontainer.probe=podman -Dcontainer.probe.image=<an image already present>`).
 
-**WSL** (`wsl/`, Windows only). A folder inside a WSL distribution, opened from Windows as
+**WSL** (`wsl/`). A folder inside a WSL distribution, opened from Windows as
 `\\wsl.localhost\<distro>\…` (or `\\wsl$\<distro>\…`), has its tools run inside that distribution:
 `WslExecTarget` runs `wsl.exe -d <distro> --exec /bin/sh -c <guard> editora <script> <argv>…`, the same script
 as a container's. That argv does not reach `wsl.exe` as given: Windows joins it into one command line, Java
@@ -208,8 +208,8 @@ line encoded for `printf %b` (letters and digits as they are, other bytes as `\0
 through dash and bash). So the pid line, Stop (a second `wsl.exe` running `kill`, `LauncherProcess`), the login
 environment (`RemoteEnv`) and port relays (`PortRelays`, `RelayPortForward`) are shared. Paths are mapped by
 `WslPaths`: `\\wsl.localhost\<distro>\x` ↔ `/x`, and a Windows drive `C:\x` ↔ `/mnt/c/x` (a path elsewhere
-passes as it is). `WslTargets` is the mapped resolver `App` registers on Windows only; it recognises the share
-prefix without I/O and keeps one target per distribution. `ContainerCoordinator` asks once per distribution
+passes as it is). `WslTargets` is the mapped resolver `App` registers on every OS (no OS check: only Windows has
+paths that begin with the share prefix); it recognises that prefix without I/O and keeps one target per distribution. `ContainerCoordinator` asks once per distribution
 (`wsl:<distro>`, kept with the hosts' answers) when such a project opens; Containers: Run This Project's Tools
 Here withdraws the answer. The cache folder and the home are the distribution's (`~/.cache/editora`).
 The `Remote probe` workflow's `wsl` job runs `WslProbeTest` on `windows-latest` against a WSL 1 Ubuntu
