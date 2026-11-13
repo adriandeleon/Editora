@@ -35,6 +35,20 @@ final class SurefireReports {
         }
     }
 
+    /** The seconds a report's test class took: the {@code time} of its {@code <testsuite>}; 0 without one. */
+    static double seconds(Path report) {
+        try {
+            var factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            String time = factory.newDocumentBuilder().parse(report.toFile()).getDocumentElement().getAttribute("time");
+            return time.isEmpty() ? 0 : Double.parseDouble(time);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } catch (ParserConfigurationException | SAXException | NumberFormatException e) {
+            throw new IllegalStateException(report + ": " + e.getMessage(), e);
+        }
+    }
+
     /** Every {@code <testcase>} element of a report, at any depth. */
     static List<Element> testCases(Path report) {
         try {
