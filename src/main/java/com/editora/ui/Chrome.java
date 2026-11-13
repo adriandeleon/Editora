@@ -331,7 +331,51 @@ final class Chrome {
             boolean selection,
             boolean projectMap,
             boolean terminalOpen,
-            boolean debugRunning) {
+            boolean debugRunning,
+            boolean debugPostMortem) {
+
+        /**
+         * A context whose session, if any, runs a program rather than showing a core dump: the neutral value for
+         * callers that are not asking about core dumps.
+         */
+        PaletteContext(
+                boolean hasBuffer,
+                boolean inRepo,
+                boolean markdownLike,
+                boolean csvFile,
+                boolean httpFile,
+                boolean typstFile,
+                boolean hasPreview,
+                boolean debugActive,
+                boolean debugSuspended,
+                boolean debugRestartable,
+                boolean gitOperation,
+                boolean exportablePreview,
+                boolean printableTab,
+                boolean selection,
+                boolean projectMap,
+                boolean terminalOpen,
+                boolean debugRunning) {
+            this(
+                    hasBuffer,
+                    inRepo,
+                    markdownLike,
+                    csvFile,
+                    httpFile,
+                    typstFile,
+                    hasPreview,
+                    debugActive,
+                    debugSuspended,
+                    debugRestartable,
+                    gitOperation,
+                    exportablePreview,
+                    printableTab,
+                    selection,
+                    projectMap,
+                    terminalOpen,
+                    debugRunning,
+                    false);
+        }
 
         /**
          * A context whose program runs whenever its session is live and not paused — the neutral value for callers
@@ -601,6 +645,19 @@ final class Chrome {
     private static final java.util.Set<String> PRINTS_THE_SELECTION =
             java.util.Set.of("editor.printSelection", "editor.exportSelectionPdf");
 
+    /** Debug commands that run the program on, which a core dump's session cannot: its program is not running. */
+    private static final java.util.Set<String> DEBUG_RUNS_PROGRAM = java.util.Set.of(
+            "debug.continue",
+            "debug.pause",
+            "debug.stepOver",
+            "debug.stepInto",
+            "debug.stepOut",
+            "debug.runToCursor",
+            "debug.forceRunToCursor",
+            "debug.jumpToLine",
+            "debug.smartStepInto",
+            "debug.restartFrame");
+
     /** Debug commands that only mean anything while a thread is suspended at a stop. */
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
             "debug.showException",
@@ -660,6 +717,9 @@ final class Chrome {
             return NEEDS_GIT_OPERATION.contains(id) && !c.gitOperation()
                     ? new DisabledReason("palette.disabled.needsGitOperation", null)
                     : null;
+        }
+        if (c.debugPostMortem() && DEBUG_RUNS_PROGRAM.contains(id)) {
+            return new DisabledReason("status.debug.coreCannotRun", null);
         }
         if (DEBUG_NEEDS_SUSPENDED.contains(id)) {
             return c.debugSuspended() ? null : new DisabledReason("palette.disabled.needsSuspended", null);

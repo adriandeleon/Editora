@@ -1784,6 +1784,30 @@ a breakpoint in the main thread): debugpy and Delve walk every thread at a stop 
 (Delve's goroutines are named `[Go 33] main.work`; the runtime's own parked goroutines stay apart, their stacks
 differ); java-debug at a stop gives the breakpoint's thread alone, and paused for the dump gives every thread, the
 workers merged. `DebugThreadDumpWindowFxTest` covers the window against `FakeDebugAdapter`'s `idleThreads`.
+**Core dumps** (`debug.openCoreDump`, Run → Launch after Reattach; GoLand's and CLion's Open Core Dump) open the
+memory of a program that crashed, or that `gcore` dumped, to look at its threads, stacks and variables.
+[`dap/CoreDumps`](../../src/main/java/com/editora/dap/CoreDumps.java) reads a Linux (ELF) core's notes: `NT_FILE`
+lists the files the process had mapped, the program among them, and `NT_PRPSINFO` the process's name (cut to 15
+characters), which picks the program when it is not the first mapped (`programOf`). Another core — a macOS Mach-O one,
+a Windows minidump — names none, nor does a core whose program has since moved: the program is then asked for
+(`DebugCoordinator.chooseFile`, a test's hook). `languageOf` reads the program's bytes: Go's build information
+(`\xff Go buildinf:`, in every Go program since 1.13) is Go, opened on Delve (`"mode": "core"`, `coreFilePath`);
+Rust's library path (`/rustc/`) is Rust, and anything else C/C++, both on CodeLLDB, whose launch has
+`targetCreateCommands: ["target create "<program>" --core "<core>""]` and an empty `processCreateCommands` (nothing
+starts). A session whose launch opens a core — those, or a launch.json configuration with Delve's `mode: core`, an LLDB
+`target create -c`/`--core`, or cppdbg's `coreDumpPath` (`CoreDumps.isCore`) — is post-mortem
+(`DapManager.isPostMortem`): Continue, the steps, Run to Cursor, Jump to Line, Restart Frame and Resume Thread are
+refused with `status.debug.coreCannotRun`, the Debug window disables their buttons and its state line reads *Core dump:
+SIGSEGV…*, and the palette and menus grey them with that reason (`PaletteContext.debugPostMortem`). Evaluate, watches,
+the threads and Thread Dump work as at any stop. The stop selects the first frame in the program's own code — under the
+project or the program's folder (`DebugCoordinator.ownFrame`) — rather than the runtime's frames that raised the signal
+(Go's `runtime.raise`, libc's `raise`); that frame is the one drawn as the crash. Measured: CodeLLDB loads an ELF core
+and stops with `reason: exception` and the signal (`SIGSEGV: address not mapped to object`), and answers a step with
+`elf-core does not support resuming processes`; Delve stops with `can not continue execution of core process`, accepts
+`next` and `continue` and stops again, lists every goroutine, and puts a pointer's fields under one unnamed child.
+`CoreDumpWindowFxTest` covers the flow against `FakeDebugAdapter` (with `FakeCoreFile`, the smallest ELF core);
+`CoreDumpProbeFxTest` has a C and a Go program dump their own core with `gcore` (after `prctl(PR_SET_PTRACER_ANY)`, which
+Yama's `ptrace_scope` 1 needs) and opens each on the real debugger.
 **Type renderers** (IntelliJ's Java Type Renderers, Visual Studio's natvis; Settings → Debugging → Type renderers,
 `debugTypeRenderers`, settings 172, and the Variables menu's **Customize Rendering…**) show a value of a type as the
 user's expressions say. A [`dap/TypeRenderer`](../../src/main/java/com/editora/dap/TypeRenderer.java) (a Jackson bean)

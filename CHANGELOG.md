@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Open Core Dump.** Run → Launch → Debug: Open Core Dump… opens the core file a crashed Go, C, C++ or Rust program
+  left (or one `gcore` made) in the debugger, as GoLand and CLion do: the crashed thread's stack, shown at the program's
+  own line rather than the runtime's, every other thread, and their variables, which you can evaluate and watch. On
+  Linux the program is found in the core; otherwise Editora asks for it. Go cores open in Delve, the rest in CodeLLDB.
+  A core cannot be run, so Continue and the steps are disabled and say why. A launch.json configuration that opens a
+  core (Delve's `"mode": "core"`) gets the same treatment.
+
 - **Breakpoint filters.** A breakpoint can now stop only in some threads (`worker-*`), only when called from some
   functions (`OrderService.save`), or only on one object, the one you marked with Mark Object, as IntelliJ's
   breakpoint filters do. Set them in Edit Breakpoint; patterns are separated by commas, `*` and `?` are wildcards and
