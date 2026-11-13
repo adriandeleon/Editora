@@ -7690,7 +7690,10 @@ final class DebugCoordinator {
         instanceFilter.setPromptText(tr("dialog.debug.instanceFilterPrompt"));
         instanceFilter.setMaxWidth(Double.MAX_VALUE);
         for (javafx.scene.control.Control c : List.of(threadFilter, callerFilter, instanceFilter)) {
-            c.setTooltip(new javafx.scene.control.Tooltip(tr("dialog.debug.filtersHint")));
+            javafx.scene.control.Tooltip hint = com.editora.editor.ControlNames.tooltip(tr("dialog.debug.filtersHint"));
+            hint.setWrapText(true);
+            hint.setMaxWidth(UiZoom.px(360));
+            c.setTooltip(hint);
         }
 
         GridPane grid = new GridPane();
