@@ -165,6 +165,27 @@ Editable non-buffer tabs implement `hasUnsavedChanges()`, `unsavedStateToken()`,
 version, dirty state, and pending writes, until one complete pass runs without another prompt. A successful
 save of an older snapshot therefore never authorizes disposal of newer text typed during the save.
 
+What every tab of the strip gets, whatever it shows, comes from `MainController.addContentTab`:
+
+- **A header that is the title**: the tab's own text stays empty and `TabHeaders.contentHeader` builds the
+  graphic (icon, pin marker, title, drag handle). A tab that shows a file, which is any tab `tabPath(Tab)`
+  answers a path for (an editor, a restored file not built yet, an image, a PDF, a hex view), has the full
+  path as its tooltip; `bufferHeader` then adds a buffer's dirty, read-only, remote and encryption markers.
+- **The tab operations in its right-click menu**: `TabContextMenu.buildForContent` gives a non-editor tab
+  Close, Close Others, Close All, Close Unmodified, Close to the Left and Right, and for a viewer's file
+  Reveal in Map, Reveal in File Manager, Open Terminal, Copy Path and Pin. A tab with rows of its own (a
+  terminal's Rename, a preview's Lock) passes them to `installContentTabMenu(tab, rows…)` and they come
+  first; never build a tab a `ContextMenu` of its own. An editor's tab replaces the menu with the longer
+  `TabContextMenu.build`.
+- **Pin** for a tab that shows a file. A tab with no file (Welcome, a diff, a terminal) is not pinned: the
+  session saves pins by path and could not bring that one back.
+- **Reopen Closed Tab**: `rememberClosed` records the file of an editor's tab with its caret and of a
+  viewer's tab without one (`ClosedTabs`, twenty entries, a file listed once). An entry closed as a hex view
+  says so, because a text file opened as hex would otherwise come back as text.
+- **Git status**: `TabGitStatus.apply` gives the tab the class the Project tree gives the file's row and
+  hands `TabHeaders.gitStatus` the status in words, which stays the tooltip's last line across header
+  rebuilds, so the color is never the status's only sign.
+
 ## Package map
 
 | Package | Responsibility |

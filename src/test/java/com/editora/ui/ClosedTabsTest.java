@@ -18,8 +18,8 @@ class ClosedTabsTest {
         ClosedTabs closed = new ClosedTabs();
         closed.closed(A, 3);
         closed.closed(B, 7);
-        assertEquals(new ClosedTabs.Entry(B, 7), closed.pop());
-        assertEquals(new ClosedTabs.Entry(A, 3), closed.pop());
+        assertEquals(new ClosedTabs.Entry(B, 7, false), closed.pop());
+        assertEquals(new ClosedTabs.Entry(A, 3, false), closed.pop());
         assertNull(closed.pop());
     }
 
@@ -30,7 +30,7 @@ class ClosedTabsTest {
         closed.closed(B, 2);
         closed.closed(A, 9);
         assertEquals(2, closed.size());
-        assertEquals(new ClosedTabs.Entry(A, 9), closed.pop());
+        assertEquals(new ClosedTabs.Entry(A, 9, false), closed.pop());
         assertEquals(B, closed.pop().path());
     }
 
@@ -54,12 +54,21 @@ class ClosedTabsTest {
         closed.closed(A, -5);
         closed.closed(B, 0);
         closed.forget(B);
-        assertEquals(new ClosedTabs.Entry(A, 0), closed.pop());
+        assertEquals(new ClosedTabs.Entry(A, 0, false), closed.pop());
 
         ClosedTabs one = new ClosedTabs(0); // a capacity below one is one
         one.closed(A, 0);
         one.closed(B, 0);
         assertEquals(1, one.size());
         assertEquals(B, one.pop().path());
+    }
+
+    @Test
+    void aFileClosedInItsHexViewSaysSoAndAFileIsStillListedOnce() {
+        ClosedTabs closed = new ClosedTabs();
+        closed.closed(A, 5);
+        closed.closed(A, 0, true); // the same file, closed again as bytes
+        assertEquals(1, closed.size());
+        assertEquals(new ClosedTabs.Entry(A, 0, true), closed.pop());
     }
 }

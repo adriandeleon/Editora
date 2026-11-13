@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -33,13 +34,15 @@ final class TabHeaders {
 
     private final Supplier<EditorArea> editorArea;
     private final Predicate<Tab> pinned;
+    private final Function<Tab, @Nullable Path> path;
 
     /** The tab whose header is being dragged, for drops on a group body ({@link EditorArea}). */
     private @Nullable Tab draggedTab;
 
-    TabHeaders(Supplier<EditorArea> editorArea, Predicate<Tab> pinned) {
+    TabHeaders(Supplier<EditorArea> editorArea, Predicate<Tab> pinned, Function<Tab, @Nullable Path> path) {
         this.editorArea = editorArea;
         this.pinned = pinned;
+        this.path = path;
     }
 
     @Nullable
@@ -49,8 +52,9 @@ final class TabHeaders {
 
     /**
      * Gives {@code tab} the generic header of a {@link TabContent}: its icon and title in a draggable
-     * graphic. Buffer tabs replace it via {@link #bufferHeader}; a restore placeholder gets it again when
-     * its file moves before its editor exists.
+     * graphic, its pin when it is pinned, and for a tab that shows a file (an image, a PDF, a hex view, a
+     * restored file not built yet) the full path as its tooltip. Buffer tabs replace it via
+     * {@link #bufferHeader}; a restore placeholder gets it again when its file moves before its editor exists.
      */
     void contentHeader(Tab tab, TabContent content) {
         Label title = new Label(content.title());
@@ -58,6 +62,14 @@ final class TabHeaders {
         HBox header = UiZoom.spacing(new HBox(), 6);
         header.getStyleClass().add("tab-header");
         header.setAlignment(Pos.CENTER_LEFT);
+        if (pinned.test(tab)) {
+            header.getChildren().add(Icons.pin());
+        }
+        Path file = path.apply(tab);
+        tab.setText(""); // the header is the title
+        if (file != null) {
+            setTooltip(tab, tooltip(file));
+        }
         Node icon = content.icon();
         if (icon != null) {
             header.getChildren().add(icon);
@@ -127,7 +139,38 @@ final class TabHeaders {
         if (encrypted && state != null) {
             tip.setText(EncryptionViews.tabTooltip(tip.getText(), state));
         }
+        setTooltip(tab, tip);
+    }
+
+    /** Tab property: the tooltip's own text, before the Git status line. */
+    private static final Object TIP_TEXT = new Object();
+
+    /** Tab property: the file's Git status in words ("Git: modified"), while it has one. */
+    private static final Object GIT_WORDS = new Object();
+
+    /** Sets {@code tab}'s tooltip, with the file's Git status as a last line while it has one. */
+    private static void setTooltip(Tab tab, Tooltip tip) {
+        tab.getProperties().put(TIP_TEXT, tip.getText());
+        if (tab.getProperties().get(GIT_WORDS) instanceof String words) {
+            tip.setText(tip.getText() + "\n" + words);
+        }
         tab.setTooltip(tip);
+    }
+
+    /**
+     * The file's Git status changed ({@code words} null: it has none): the tooltip says it in words, so the
+     * title's color is not the status's only sign.
+     */
+    static void gitStatus(Tab tab, @Nullable String words) {
+        if (words == null) {
+            tab.getProperties().remove(GIT_WORDS);
+        } else {
+            tab.getProperties().put(GIT_WORDS, words);
+        }
+        Tooltip tip = tab.getTooltip();
+        if (tip != null && tab.getProperties().get(TIP_TEXT) instanceof String text) {
+            tip.setText(words == null ? text : text + "\n" + words);
+        }
     }
 
     /** Tab property: the title last rendered, so a sibling knows whether its own needs re-rendering. */

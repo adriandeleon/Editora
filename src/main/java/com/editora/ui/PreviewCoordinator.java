@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.input.Clipboard;
@@ -61,6 +60,9 @@ final class PreviewCoordinator {
 
         /** Adds {@code content} as a new, selected tab of the focused editor group. */
         Tab addContentTab(com.editora.editor.TabContent content);
+
+        /** Gives {@code tab} the tab menu, with {@code own} rows first. */
+        void installContentTabMenu(Tab tab, MenuItem... own);
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
 
@@ -908,13 +910,11 @@ final class PreviewCoordinator {
         sidePreviews.add(pane); // once it has a tab: a preview without one is taken for closed
         MenuItem lock = MenuChords.tag(new MenuItem(), "view.toggleMarkdownPreviewLock");
         lock.setOnAction(e -> pane.setLocked(!pane.isLocked()));
-        MenuItem close = new MenuItem(tr("menu.close"));
-        close.setGraphic(Icons.closeTab());
-        close.setOnAction(e -> host.editorArea().remove(tab));
-        ContextMenu menu = new ContextMenu(lock, close);
-        menu.setOnShowing(e -> lock.setText(
-                tr(pane.isLocked() ? "markdown.sidePreview.unlockHint" : "markdown.sidePreview.lockHint")));
-        tab.setContextMenu(menu);
+        // Its words follow the lock each time the menu opens.
+        Runnable words = () ->
+                lock.setText(tr(pane.isLocked() ? "markdown.sidePreview.unlockHint" : "markdown.sidePreview.lockHint"));
+        lock.getProperties().put(TabContextMenu.ON_SHOWING, words);
+        host.installContentTabMenu(tab, lock);
         if (toSide) {
             host.editorArea().moveActiveToNextGroup();
             if (source != null) {
