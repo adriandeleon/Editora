@@ -165,6 +165,42 @@ class RustDebugWindowFxTest {
                         .anyMatch(a -> java.util.Arrays.asList(a.getFilters()).contains("rust_panic")));
     }
 
+    /**
+     * A Rust run configuration debugs its file as F5 does — Cargo builds the package, the program for the file runs
+     * on CodeLLDB — with its arguments and variables; with no folder of its own it runs in the package's, with one
+     * there. No caret picks a test: the program is what runs.
+     */
+    @Test
+    void aRustConfigurationDebugsItsPackagesProgram() throws Exception {
+        var cfg = new com.editora.config.RunConfiguration(
+                "Shelf",
+                "rust",
+                root.resolve("src/main.rs").toString(),
+                "",
+                "",
+                "--all 'a b'",
+                "",
+                "",
+                "MODE=dev",
+                "",
+                "");
+        FxTestSupport.runOnFx(() -> debug.debugConfig(cfg));
+        Map<String, Object> launch = nextLaunch().launchArgs;
+        assertEquals("/built/shelf", launch.get("program"), "the binary Cargo reported for src/main.rs");
+        assertEquals(List.of("--all", "a b"), launch.get("args"));
+        assertEquals(Map.of("MODE", "dev"), launch.get("env"));
+        assertEquals(root.toString(), launch.get("cwd"), "blank: the package's folder, as F5");
+        assertEquals("Shelf", sessionName());
+        FxTestSupport.runOnFx(manager::stop);
+        await("stopped", () -> !call(manager::isActive));
+
+        Path data = Files.createDirectories(root.resolve("data"));
+        var inData = new com.editora.config.RunConfiguration(
+                "Shelf", "rust", root.resolve("src/main.rs").toString(), "", "", "", "", data.toString(), "", "", "");
+        FxTestSupport.runOnFx(() -> debug.debugConfig(inData));
+        assertEquals(data.toString(), nextLaunch().launchArgs.get("cwd"));
+    }
+
     @Test
     void debugTestAtCaretRunsTheTestBinaryFilteredToItAndRestartRepeatsIt() throws Exception {
         EditorBuffer main = open(root.resolve("src/main.rs"));

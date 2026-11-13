@@ -188,6 +188,50 @@ class GoDebugWindowFxTest {
         assertEquals(List.of("-test.run", "^TestSecond$"), again.launchArgs.get("args"), "Restart repeats the test");
     }
 
+    /**
+     * A Go run configuration debugs its file as F5 does — the package, on Delve — with what the configuration adds:
+     * its arguments, its variables, and its own working directory for the program while Delve still builds in the
+     * package. The session is the configuration's.
+     */
+    @Test
+    void aGoConfigurationDebugsItsFileWithItsArgumentsVariablesAndFolder() throws Exception {
+        Path data = Files.createDirectories(root.resolve("data"));
+        var cfg = new com.editora.config.RunConfiguration(
+                "Serve",
+                "go",
+                root.resolve("main.go").toString(),
+                "",
+                "",
+                "-v 'a b'",
+                "",
+                data.toString(),
+                "MODE=dev",
+                "",
+                "");
+        FxTestSupport.runOnFx(() -> debug.debugConfig(cfg));
+        FakeDebugAdapter.Session session = nextSession("launch");
+        Map<String, Object> launch = session.launchArgs;
+        assertEquals("debug", launch.get("mode"));
+        assertEquals(root.toAbsolutePath().toString(), launch.get("program"), "the package, as F5");
+        assertEquals(List.of("-v", "a b"), launch.get("args"));
+        assertEquals(Map.of("MODE", "dev"), launch.get("env"));
+        assertEquals(data.toString(), launch.get("cwd"), "the program runs in the configuration's folder");
+        assertEquals(root.toAbsolutePath().toString(), launch.get("dlvCwd"), "and is built in the package");
+        assertEquals("Serve", sessionName());
+    }
+
+    /** Without a folder of its own the program runs where F5 runs it; a file that is not there starts nothing. */
+    @Test
+    void aGoConfigurationWithNoFolderRunsWhereF5Does() throws Exception {
+        var cfg = new com.editora.config.RunConfiguration(
+                "Plain", "go", root.resolve("main.go").toString(), "", "", "", "", "", "", "", "");
+        FxTestSupport.runOnFx(() -> debug.debugConfig(cfg));
+        Map<String, Object> launch = nextSession("launch").launchArgs;
+        assertEquals(root.toAbsolutePath().toString(), launch.get("cwd"));
+        assertFalse(launch.containsKey("dlvCwd"));
+        assertEquals(List.of(), launch.get("args"));
+    }
+
     @Test
     void attachToProcessAttachesDelveByProcessId() throws Exception {
         open(root.resolve("main.go"));

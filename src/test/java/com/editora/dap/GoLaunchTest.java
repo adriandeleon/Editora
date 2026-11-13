@@ -101,6 +101,40 @@ class GoLaunchTest {
         assertEquals("calc_test.go", GoLaunch.sessionName(test, TESTS, 0));
     }
 
+    /** A run configuration's own working directory: the program runs there, Delve still builds in the package. */
+    @Test
+    void aLaunchInAnotherFolderStillBuildsInThePackage(@TempDir Path dir) throws Exception {
+        Path pkg = Files.createDirectories(dir.resolve("mod/cmd/app"));
+        Path main = Files.writeString(pkg.resolve("main.go"), "package main\n");
+        Path data = Files.createDirectories(dir.resolve("data"));
+        Map<String, Object> launch =
+                GoLaunch.launch(main, "package main\n", -1, true, List.of(), Map.of("MODE", "dev"), false, data);
+        assertEquals(data.toString(), launch.get("cwd"));
+        assertEquals(pkg.toAbsolutePath().toString(), launch.get("dlvCwd"));
+        assertEquals(pkg.toAbsolutePath().toString(), launch.get("program"));
+        assertEquals(Map.of("MODE", "dev"), launch.get("env"));
+        Map<String, Object> asFile =
+                GoLaunch.launch(main, "package main\n", -1, true, List.of(), Map.of(), false, null);
+        assertEquals(pkg.toAbsolutePath().toString(), asFile.get("cwd"), "no folder of its own: the file's");
+        assertFalse(asFile.containsKey("dlvCwd"), "and the request Debug File sends, unchanged");
+    }
+
+    /** Run builds what Delve would: the package, the lone file, or a test file's package tests. */
+    @Test
+    void runBuildsThePackageTheFileOrTheTestBinary() {
+        Path out = Path.of("/cache/main-1a2b");
+        List<String> go = List.of("/opt/go/bin/go");
+        assertEquals(
+                List.of("/opt/go/bin/go", "build", "-o", out.toString(), "."),
+                GoLaunch.buildArgv(go, Path.of("/mod/cmd/app/main.go"), true, out));
+        assertEquals(
+                List.of("go", "build", "-o", out.toString(), "hello.go"),
+                GoLaunch.buildArgv(List.of("go"), Path.of("/tmp/hello.go"), false, out));
+        assertEquals(
+                List.of("go", "test", "-c", "-o", out.toString(), "."),
+                GoLaunch.buildArgv(List.of("go"), Path.of("/mod/calc_test.go"), true, out));
+    }
+
     @Test
     void anAttachIsByProcessIdOnThisMachine() {
         assertEquals(

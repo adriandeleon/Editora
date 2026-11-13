@@ -142,6 +142,43 @@ class NativeBuildTest {
                 Files.write(dir.resolve("macho"), new byte[] {(byte) 0xcf, (byte) 0xfa, (byte) 0xed, (byte) 0xfe})));
     }
 
+    /** A run configuration's variables reach the program on either debugger; without any the request is as before. */
+    @Test
+    void aLaunchCarriesAConfigurationsVariables() {
+        Map<String, String> env = Map.of("MODE", "dev");
+        assertEquals(
+                env,
+                NativeBuild.launch(Path.of("/p/app"), List.of(), Path.of("/p"), env, false)
+                        .get("env"));
+        assertEquals(
+                env,
+                NativeBuild.gdbLaunch(Path.of("/p/app"), List.of(), Path.of("/p"), env)
+                        .get("env"));
+        assertFalse(NativeBuild.launch(Path.of("/p/app"), List.of(), Path.of("/p"), false)
+                .containsKey("env"));
+        assertFalse(NativeBuild.gdbLaunch(Path.of("/p/app"), List.of(), Path.of("/p"))
+                .containsKey("env"));
+    }
+
+    /** A lone file's program is named after the file and its path; a plan's program is the one that is there. */
+    @Test
+    void aBuiltProgramIsFoundWhereItsPlanPutIt(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("tally.c"), "int main(void) { return 0; }\n");
+        Path cache = dir.resolve("cache");
+        Path out = NativeBuild.outputFor(file, cache);
+        assertEquals(cache, out.getParent());
+        assertTrue(out.getFileName().toString().startsWith("tally-"), out.toString());
+        assertFalse(
+                out.equals(NativeBuild.outputFor(dir.resolve("other/tally.c"), cache)),
+                "two files of one name do not share a program");
+        NativeBuild.Plan plan = NativeBuild.plan(file, false, null, null, cache);
+        assertEquals(out, plan.output());
+        assertNull(NativeBuild.executable(plan, file), "nothing built yet");
+        Files.createDirectories(cache);
+        Files.writeString(out, "");
+        assertEquals(out, NativeBuild.executable(plan, file));
+    }
+
     @Test
     void codelldbsRequestsAreForCAndCpp() {
         Map<String, Object> launch = NativeBuild.launch(Path.of("/p/app"), List.of("-v"), Path.of("/p"), false);

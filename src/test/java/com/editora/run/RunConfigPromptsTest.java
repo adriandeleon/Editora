@@ -29,4 +29,19 @@ class RunConfigPromptsTest {
                 "settings.runConfig.interpreter",
                 RunConfigPrompts.labels("python").get(1));
     }
+
+    /** A C, C++, Go or Rust configuration's target is a source file, and its blank folder is the file's. */
+    @Test
+    void aCompiledTypeSpeaksOfASourceFile() {
+        for (String type : new String[] {"c", "cpp", "go", "rust"}) {
+            assertEquals(
+                    "settings.runConfig.targetSource",
+                    RunConfigPrompts.labels(type).get(0),
+                    type);
+            assertEquals("settings.runConfig.targetPromptSource", RunConfigPrompts.target(type), type);
+            assertEquals("settings.runConfig.workingDirPromptSource", RunConfigPrompts.workingDir(type), type);
+            assertEquals("settings.runConfig.beforeLaunchPromptSource", RunConfigPrompts.beforeLaunch(type), type);
+        }
+        assertEquals("settings.runConfig.workingDirPrompt", RunConfigPrompts.workingDir("shell"));
+    }
 }

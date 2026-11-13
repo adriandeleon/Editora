@@ -115,7 +115,8 @@ public final class RunConfigWorkingDirectory {
         return ScriptRunCommand.PYTHON.equals(cfg.type())
                 || ScriptRunCommand.SHELL.equals(cfg.type())
                 || ScriptRunCommand.NODE.equals(cfg.type())
-                || ScriptRunCommand.isJvmScript(cfg.type());
+                || ScriptRunCommand.isJvmScript(cfg.type())
+                || ScriptRunCommand.isCompiled(cfg.type());
     }
 
     private static boolean isLocal(Path path) {

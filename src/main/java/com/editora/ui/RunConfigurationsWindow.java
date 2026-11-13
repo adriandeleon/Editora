@@ -254,7 +254,7 @@ public final class RunConfigurationsWindow {
         UiZoom.gaps(form, 8, 8);
         formRow(form, 0, "settings.runConfig.name", name);
         formRow(form, 1, "settings.runConfig.type", type);
-        // A script's path can be picked rather than typed (Python and shell only: make and npm name targets).
+        // A script's or source file's path can be picked rather than typed (make and npm name targets).
         Button browse = new Button(tr("settings.runConfig.browse"));
         browse.setId("run-config-browse");
         browse.setMinWidth(Region.USE_PREF_SIZE);
@@ -576,7 +576,21 @@ public final class RunConfigurationsWindow {
 
     /** The types the Type box offers, in its order. */
     static final List<String> TYPES = List.of(
-            "java", "python", "python-module", "node", "shell", "groovy", "kotlin", "clojure", "scala", "make", "npm");
+            "java",
+            "python",
+            "python-module",
+            "node",
+            "shell",
+            "groovy",
+            "kotlin",
+            "clojure",
+            "scala",
+            "c",
+            "cpp",
+            "go",
+            "rust",
+            "make",
+            "npm");
 
     /**
      * The {@link FileIcons} glyph a configuration type is shown with: the one its files carry (a makefile's for
@@ -594,6 +608,10 @@ public final class RunConfigurationsWindow {
             case "python", "python-module" -> "python";
             case "node" -> "javascript";
             case "shell" -> "shell";
+            case "c" -> "c";
+            case "cpp" -> "cpp";
+            case "go" -> "go";
+            case "rust" -> "code"; // what a Rust file carries: FileIcons has no glyph of Rust's own
             case "make" -> FileIcons.iconKeyFor("Makefile");
             default -> "generic";
         };
