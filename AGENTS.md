@@ -80,7 +80,7 @@ worktree so branch switches and commits cannot interfere.
   they check the repository itself (stacked Javadoc, store shapes, message catalogs, licence notices), no
   narrow test runs them, and they were half of the failed pull-request runs
   ([guard tests](docs/testing.md#guard-tests)). Do not run the whole suite (`mvn verify`) before pushing:
-  CI runs it on Linux in about fifteen minutes, and several sessions share the machine. A new test that
+  CI runs it on Linux in about ten minutes, and several sessions share the machine. A new test that
   skips when a tool is missing needs a line in `scripts/ci/expected-skips-linux.txt`. Label a pull request
   `full-ci` when it is likely to differ on Windows or macOS or touches the terminal, a language server or
   a debug adapter ([testing](docs/testing.md)).
@@ -92,7 +92,7 @@ worktree so branch switches and commits cannot interfere.
 
 ## Pull requests — do not wait for CI
 
-A CI run takes about fifteen minutes. A session does not sit through it.
+A CI run takes about ten minutes. A session does not sit through it.
 
 - Once the pull request is open, go on to the next task. Do not poll the checks or sleep on them: look at
   them when a step of the next task is done, or when the app reports a failure, and fix a red check before
