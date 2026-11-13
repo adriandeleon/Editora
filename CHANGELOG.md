@@ -43,7 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory is the folder Debug uses for the file. With such a file in front, Run Configurations → Add and Save as
   Run Configuration propose a configuration for it, where Add used to make a Java one. Until now these files could
   be debugged but not run. A Go or Rust test file runs or debugs all its tests. These configurations build and run on
-  this computer only, not on a remote host, in a container or on a deployment.
+  this computer only, not on a remote host, in a container or on a deployment. Run on a Go file of a package other
+  than `main` says the file has no program to run, and builds nothing.
 - **Thread Dump in the debugger.** Debug: Thread Dump, also in the Threads view's and the call stack's menus, shows
   every thread of the program with its call stack in a window of its own, as IntelliJ's Get Thread Dump does. Threads
   whose stacks are the same are merged into one row (twenty pool workers waiting in one place read as one), a filter

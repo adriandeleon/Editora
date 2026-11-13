@@ -137,6 +137,30 @@ public final class GoLaunch {
         return ExternalAdapter.launchRequest("go", program, args, where, env, stopOnEntry, extra);
     }
 
+    /** A file's package clause: {@code package main}. */
+    private static final Pattern PACKAGE = Pattern.compile("^package\\s+(\\w+)");
+
+    /**
+     * The package Go source {@code text} declares ({@code main} for a program), read from its package clause: the
+     * first line that is not blank, a comment or a build constraint. Null when there is none to read.
+     */
+    public static @Nullable String packageName(@Nullable String text) {
+        if (text == null) {
+            return null;
+        }
+        // Comments may come first (a licence, the package's documentation, //go:build lines).
+        String code = text.replaceAll("(?s)/\\*.*?\\*/", " ");
+        for (String line : code.split("\n", -1)) {
+            String l = line.strip();
+            if (l.isEmpty() || l.startsWith("//")) {
+                continue;
+            }
+            Matcher m = PACKAGE.matcher(l);
+            return m.find() ? m.group(1) : null;
+        }
+        return null;
+    }
+
     /**
      * What {@code go} (its argv) is asked to build for running Go file {@code file} without a debugger, in the
      * file's folder, into {@code output}: its package when it is in a module ({@code go build -o out .}), the file

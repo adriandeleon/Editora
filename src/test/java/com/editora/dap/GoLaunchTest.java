@@ -135,6 +135,22 @@ class GoLaunchTest {
                 GoLaunch.buildArgv(List.of("go"), Path.of("/mod/calc_test.go"), true, out));
     }
 
+    /** The package clause says whether a file is a program's: it follows any comments and build constraints. */
+    @Test
+    void theDeclaredPackageIsReadPastCommentsAndBuildConstraints() {
+        assertEquals("main", GoLaunch.packageName("package main\n\nfunc main() {}\n"));
+        assertEquals("shelf", GoLaunch.packageName("// Package shelf counts.\npackage shelf\n"));
+        assertEquals(
+                "main",
+                GoLaunch.packageName(
+                        "/*\n * Licence.\n * package nope\n */\n//go:build linux\n\npackage main // the program\n"));
+        assertEquals("shelf_test", GoLaunch.packageName("\tpackage shelf_test\n"));
+        assertNull(GoLaunch.packageName("func main() {}\npackage main\n"), "code before it: not a package clause");
+        assertNull(GoLaunch.packageName(""));
+        assertNull(GoLaunch.packageName("// only a comment\n"));
+        assertNull(GoLaunch.packageName(null));
+    }
+
     @Test
     void anAttachIsByProcessIdOnThisMachine() {
         assertEquals(
