@@ -2937,7 +2937,8 @@ final class WindowCommandRegistrar {
                         "tool.github",
                         () -> host.github().ifEnabled(() -> host.toolWindows().toggle(host.githubToolWindow()))));
         // History / Log, blame, and stash (Core-trio parity with IntelliJ/VSCode).
-        host.registry().register(Command.of("tool.gitLog", () -> host.git().ifEnabled(host.gitWindows()::showGitLog)));
+        host.registry()
+                .register(Command.of("tool.gitLog", () -> host.git().ifEnabled(host.gitWindows()::toggleGitLog)));
         // Toggles, as every other tool-window command does. Only the command closes: the Project tree, the tab
         // menu and Recent Changes go through the coordinator and always end with the window open.
         host.registry()

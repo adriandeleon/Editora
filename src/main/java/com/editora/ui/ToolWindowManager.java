@@ -331,7 +331,7 @@ public class ToolWindowManager {
         button.getStyleClass().addAll("tool-stripe-button", "flat");
         button.setFocusTraversable(false); // a toolbar button: the tool window's command reaches it
         nameStripeButton(tw, button);
-        button.setOnAction(e -> toggle(tw));
+        button.setOnAction(e -> pressStripe(tw));
         // Right-click → Hide the icon (persisted; re-show from Settings → Tool Windows).
         MenuItem hide = new MenuItem(tr("toolwindow.hide"), Icons.closeSmall());
         hide.setOnAction(e -> setVisible(tw, false));
@@ -903,6 +903,33 @@ public class ToolWindowManager {
             close(tw);
         } else {
             open(tw);
+        }
+    }
+
+    /** Runs a tool window's command by id; false when there is none to run. See {@link #setStripeCommand}. */
+    private java.util.function.Predicate<String> stripeCommand = id -> false;
+
+    /**
+     * How a stripe button runs its tool window's command ({@code tool.<id>}): a press is the command, so it does
+     * what the command does first (tests that the feature is on, refreshes the panel). {@code run} answers false
+     * for an id it has no command for, and the button then toggles the window itself.
+     */
+    public void setStripeCommand(java.util.function.Predicate<String> run) {
+        this.stripeCommand = run == null ? id -> false : run;
+    }
+
+    /** A press of {@code tw}'s stripe button: its command, which shows the window or hides it. */
+    void pressStripe(ToolWindow tw) {
+        boolean wasOpen = isOpen(tw);
+        String command = tw.getCommandId();
+        if (command == null || !stripeCommand.test(command)) {
+            toggle(tw);
+            return;
+        }
+        // A window on screen always closes on its button, also when its command now refuses to run (its
+        // feature was turned off while it was open): the button must never leave a panel that cannot be hidden.
+        if (wasOpen && isOpen(tw)) {
+            close(tw);
         }
     }
 
