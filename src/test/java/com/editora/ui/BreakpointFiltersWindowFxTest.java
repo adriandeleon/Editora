@@ -147,6 +147,7 @@ class BreakpointFiltersWindowFxTest {
         session.awaitRequest("launch");
         session.frames = List.of(frame(1, "save", script.toString(), LINE), frame(2, caller, script.toString(), 3));
         await("running", () -> call(manager::state) == DapManager.State.RUNNING);
+        sent(session);
         return session;
     }
 
@@ -187,12 +188,22 @@ class BreakpointFiltersWindowFxTest {
         return shown;
     }
 
-    private SourceBreakpoint sent(FakeDebugAdapter.Session session) {
-        List<SetBreakpointsArguments> sent = session.breakpoints.stream()
+    /**
+     * The breakpoint last sent for the script, once one has been: the session can be running before the adapter
+     * has the script's breakpoints.
+     */
+    private SourceBreakpoint sent(FakeDebugAdapter.Session session) throws InterruptedException {
+        await("the script's breakpoints sent", () -> !sentForScript(session).isEmpty());
+        return sentForScript(session).getLast().getBreakpoints()[0];
+    }
+
+    private List<SetBreakpointsArguments> sentForScript(FakeDebugAdapter.Session session) {
+        return session.breakpoints.stream()
                 .filter(a -> a.getSource() != null
-                        && script.toString().equals(a.getSource().getPath()))
+                        && script.toString().equals(a.getSource().getPath())
+                        && a.getBreakpoints() != null
+                        && a.getBreakpoints().length > 0)
                 .toList();
-        return sent.getLast().getBreakpoints()[0];
     }
 
     @Test
@@ -233,14 +244,16 @@ class BreakpointFiltersWindowFxTest {
         assertTrue(hit(session), "the second passing hit");
 
         // A filtered logpoint: its message is not sent, Editora writes it at a passing hit.
+        int sends = sentForScript(session).size();
         FxTestSupport.runOnFx(() -> {
             var mgr = call(fx.controller::activeBuffer).getBreakpointManager();
             mgr.setHitCondition(LINE, "");
             mgr.setLogMessage(LINE, "saved {o}");
         });
-        await(
-                "re-sent as a logpoint",
-                () -> "".equals(String.valueOf(sent(session).getLogMessage()).replace("null", "")));
+        await("re-sent as a logpoint", () -> {
+            List<SetBreakpointsArguments> now = sentForScript(session);
+            return now.size() > sends && now.getLast().getBreakpoints()[0].getLogMessage() == null;
+        });
         long before = continues(session);
         session.stop(session.mainThread, "breakpoint");
         await(
