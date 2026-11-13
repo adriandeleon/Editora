@@ -346,7 +346,8 @@ class DebugPanelWatchesFxTest {
                             tr("debugpanel.addWatch"),
                             tr("debugpanel.removeAllWatches"),
                             null,
-                            tr("debugpanel.hexValues")),
+                            tr("debugpanel.hexValues"),
+                            tr("debugpanel.muteRenderers")),
                     labels(menu));
             menu.get(1).fire();
         });
@@ -362,9 +363,13 @@ class DebugPanelWatchesFxTest {
             stopWithLocals();
 
             assertEquals(
-                    java.util.Arrays.asList(tr("debugpanel.addWatch"), null, tr("debugpanel.hexValues")),
+                    java.util.Arrays.asList(
+                            tr("debugpanel.addWatch"),
+                            null,
+                            tr("debugpanel.hexValues"),
+                            tr("debugpanel.muteRenderers")),
                     labels(menuFor(row("Locals"))),
-                    "a scope: only Add, and the number format");
+                    "a scope: only Add, the number format and Mute Type Renderers");
             List<MenuItem> onVariable = menuFor(row("Locals", "count"));
             assertEquals(
                     java.util.Arrays.asList(
@@ -377,7 +382,8 @@ class DebugPanelWatchesFxTest {
                             null, // separator
                             tr("debugpanel.addWatch"),
                             null,
-                            tr("debugpanel.hexValues")),
+                            tr("debugpanel.hexValues"),
+                            tr("debugpanel.muteRenderers")),
                     labels(onVariable));
 
             promptAnswer = "7";
@@ -385,7 +391,7 @@ class DebugPanelWatchesFxTest {
             assertEquals("<7>", row("Locals", "count").getValue().value());
 
             promptAnswer = "name.length()";
-            onVariable.get(onVariable.size() - 3).fire(); // + Add watch…
+            onVariable.get(onVariable.size() - 4).fire(); // + Add watch…
             assertEquals(List.of("count", "name.length()"), panel.getWatches());
 
             promptAnswer = "count + 1";
@@ -396,7 +402,11 @@ class DebugPanelWatchesFxTest {
             ContextMenu menu = tree().getContextMenu();
             menu.getOnShowing().handle(new javafx.stage.WindowEvent(menu, javafx.stage.WindowEvent.WINDOW_SHOWING));
             assertEquals(
-                    java.util.Arrays.asList(tr("debugpanel.addWatch"), null, tr("debugpanel.hexValues")),
+                    java.util.Arrays.asList(
+                            tr("debugpanel.addWatch"),
+                            null,
+                            tr("debugpanel.hexValues"),
+                            tr("debugpanel.muteRenderers")),
                     labels(menu.getItems()),
                     "no row: still a way to add");
         });
