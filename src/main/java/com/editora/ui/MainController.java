@@ -433,6 +433,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         return mcpBridge.listCommands();
     }
 
+    /**
+     * A stripe button's press: its tool window's command, when there is one. The Terminal's button stays a
+     * plain toggle, because its command gives an open terminal the keyboard before it hides it (a decision
+     * kept: it is what the key does in VS Code and IntelliJ), and a click on the button of a window on screen
+     * has always hidden it.
+     */
+    private boolean runStripeCommand(String id) {
+        if ("tool.terminal".equals(id) || registry.get(id).isEmpty()) {
+            return false;
+        }
+        registry.run(id);
+        return true;
+    }
+
     @Override
     public boolean executeCommand(String id) {
         return mcpBridge.executeCommand(id);
@@ -2109,6 +2123,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 ? ExtendedWindow.header(menuBar.node(), stage)
                                 : menuBar.node());
         toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
+        toolWindows.setStripeCommand(this::runStripeCommand);
         projectDeletes = new ProjectDeleteCoordinator(
                 path -> windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path),
                 buffer -> ownerOf(buffer).revealBufferLocal(buffer),
@@ -2581,6 +2596,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                             ToolWindow tw = buildToolWindows.get(tool);
                             if (tw != null) {
                                 toolWindows.open(tw, true);
+                            }
+                        }
+
+                        @Override
+                        public void toggleTasks() {
+                            ToolWindow tw = buildToolWindows.get(tool);
+                            if (tw != null) {
+                                toolWindows.toggle(tw);
                             }
                         }
 

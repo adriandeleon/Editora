@@ -50,6 +50,11 @@ final class BuildCoordinator {
         /** Opens (and focuses) this tool's tasks-tree tool window. */
         void openTasks();
 
+        /** {@code tool.<id>}: shows this tool's tasks window when it is hidden, hides it when it shows. */
+        default void toggleTasks() {
+            openTasks();
+        }
+
         /** Opens (and focuses) the shared Output console tool window. */
         void openConsole();
 
@@ -1170,7 +1175,7 @@ final class BuildCoordinator {
 
     void registerCommands(CommandRegistry registry) {
         String id = tool.id();
-        registry.register(Command.of("tool." + id, ops::openTasks));
+        registry.register(Command.of("tool." + id, ops::toggleTasks)); // shows the tasks window, or hides it
         registry.register(Command.of(id + ".showActions", this::showActionsPopup));
         registry.register(Command.of(id + ".runCustom", this::runCustom));
         registry.register(Command.of(id + ".stop", this::stop));

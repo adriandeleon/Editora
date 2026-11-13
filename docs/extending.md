@@ -242,7 +242,13 @@ themed in [`styles/syntax.css`](../src/main/resources/com/editora/styles/syntax.
            "myId", tr("toolwindow.myId"), ToolWindow.Side.BOTTOM, Icons::myGlyph, myPanel, "tool.myId");
    toolWindows.register(myToolWindow);
    ```
-3. Add the `tool.myId` toggle command + a keybinding, and the `toolwindow.myId` i18n key.
+3. Add the `tool.myId` toggle command + a keybinding, and the `toolwindow.myId` i18n key. The command's id
+   is `tool.` and the window's id, and it shows the window when it is hidden and hides it when it shows:
+   `toolWindows.toggle(tw)`, after whatever it has to do first (test that the feature is on with a status
+   line that says why not, refresh the panel). The window's stripe button runs this command
+   (`ToolWindowManager.pressStripe`), so the button never opens a panel the command would refuse, and a
+   command that only opens leaves the button unable to hide the window. `ToolWindowCommandsFxTest` runs
+   every tool window's command twice and fails on one that does not hide what it showed.
 4. Use `ToolWindowManager.setAvailable(tw, condition)` for a **transient** hide (e.g. "only in a
    git repo") — distinct from the persisted `setVisible` show/hide preference.
 
