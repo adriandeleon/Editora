@@ -83,4 +83,27 @@ class RunConfigSuggestionFxTest {
         open(dir.resolve("notes.md"), "# public static void main(String[] args)\n");
         assertNull(suggestion());
     }
+
+    private com.editora.config.RunConfiguration blank() throws Exception {
+        return FxTestSupport.callOnFx(() -> (com.editora.config.RunConfiguration)
+                FxTestSupport.call(fx.controller, "suggestedBlankConfiguration", new Class[] {}));
+    }
+
+    /** Add's Type follows the active file even when the file is not the thing to launch: a makefile is make's. */
+    @Test
+    void aMakefileOrPackageJsonSuggestsItsOwnType(@TempDir Path dir) throws Exception {
+        open(dir.resolve("Makefile"), "all:\n\techo hi\n");
+        assertEquals("make", blank().type());
+        open(dir.resolve("package.json"), "{\"scripts\": {\"build\": \"tsc\"}}\n");
+        assertEquals("npm", blank().type());
+        open(dir.resolve("tool.py"), "print('hi')\n");
+        assertEquals("python", blank().type());
+    }
+
+    /** No configuration type launches a C file, so there is nothing to suggest and Add keeps its Java default. */
+    @Test
+    void aFileNoTypeLaunchesSuggestsNoType(@TempDir Path dir) throws Exception {
+        open(dir.resolve("tally.c"), "int main(void) { return 0; }\n");
+        assertNull(blank());
+    }
 }

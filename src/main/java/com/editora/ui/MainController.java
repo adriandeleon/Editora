@@ -4919,20 +4919,34 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** A configuration for the active Python, shell, Groovy or Kotlin file (Add / Save as Run Configuration), or null. */
     com.editora.config.@Nullable RunConfiguration suggestedScriptConfiguration() {
         EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null) {
+        Path file = b == null ? null : b.getPath();
+        if (b == null || file == null) {
             return null;
         }
-        String type = b.isShell()
-                ? "shell"
-                : b.isPython()
-                        ? "python"
-                        : com.editora.run.NodeRunPlan.isNodeLanguage(b.getLanguage())
-                                ? "node"
-                                : com.editora.run.ScriptRunCommand.isJvmScript(b.getLanguage())
-                                        ? b.getLanguage()
-                                        : null;
-        if (type == null) return null;
-        return com.editora.run.RunConfigDefaults.forScript(type, b.getPath(), windowProjectRoot());
+        String type = runConfigTypeOf(b);
+        // (forScript answers null for the types that launch no script file: Java, make, npm.)
+        return type == null ? null : com.editora.run.RunConfigDefaults.forScript(type, file, windowProjectRoot());
+    }
+
+    /**
+     * A blank configuration of the type that launches the active file, or null when no type does: what Run
+     * Configurations → Add starts from when the file is not itself something to launch (a makefile, a
+     * {@code package.json}, a script not saved yet), so its Type is not Java whatever is open.
+     */
+    com.editora.config.@Nullable RunConfiguration suggestedBlankConfiguration() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            return null;
+        }
+        String type = runConfigTypeOf(b);
+        return type == null
+                ? null
+                : com.editora.run.RunConfigDefaults.blankOfType(type, b.getPath(), windowProjectRoot());
+    }
+
+    private static @Nullable String runConfigTypeOf(EditorBuffer b) {
+        Path name = b.getPath() == null ? null : b.getPath().getFileName();
+        return com.editora.run.RunConfigDefaults.typeFor(name == null ? null : name.toString(), b.getLanguage());
     }
 
     /**
