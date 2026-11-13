@@ -49,6 +49,9 @@ final class WindowSessionCoordinator {
 
         Set<Tab> pinned();
 
+        /** Draws the pin on a restored viewer tab just added to {@link #pinned}. */
+        void renderViewerPin(Tab tab);
+
         void showWelcomeIfNoTabs();
 
         void refreshProjectPanelList();
@@ -258,6 +261,7 @@ final class WindowSessionCoordinator {
                 Tab tab = host.fileWorkflows().openImageTab(p, active);
                 if (f.isPinned()) {
                     host.pinned().add(tab);
+                    host.renderViewerPin(tab);
                 }
                 tabs.add(tab);
                 continue;
@@ -267,6 +271,7 @@ final class WindowSessionCoordinator {
                 Tab tab = host.fileWorkflows().openPdfTab(p, active);
                 if (f.isPinned()) {
                     host.pinned().add(tab);
+                    host.renderViewerPin(tab);
                 }
                 tabs.add(tab);
                 continue;

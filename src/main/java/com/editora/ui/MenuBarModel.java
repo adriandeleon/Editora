@@ -655,6 +655,7 @@ final class MenuBarModel {
                                 "window.other",
                                 SEPARATOR,
                                 "buffer.next",
+                                "buffer.previous",
                                 "buffer.togglePin",
                                 SEPARATOR,
                                 "window.maximize",

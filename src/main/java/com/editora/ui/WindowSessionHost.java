@@ -92,6 +92,11 @@ final class WindowSessionHost implements WindowSessionCoordinator.Host {
     }
 
     @Override
+    public void renderViewerPin(Tab tab) {
+        mc.renderViewerPin(tab);
+    }
+
+    @Override
     public void showWelcomeIfNoTabs() {
         mc.showWelcomeIfNoTabs();
     }

@@ -785,6 +785,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void previousBuffer() {
+        mc.previousBuffer();
+    }
+
+    @Override
     public void findShowOrNext() {
         mc.findShowOrNext();
     }

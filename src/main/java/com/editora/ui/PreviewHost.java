@@ -132,6 +132,11 @@ final class PreviewHost implements PreviewCoordinator.Host {
     }
 
     @Override
+    public void installContentTabMenu(Tab tab, javafx.scene.control.MenuItem... own) {
+        mc.installContentTabMenu(tab, own);
+    }
+
+    @Override
     public void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
         mc.promptText(title, label, initial, onAccept);
     }
