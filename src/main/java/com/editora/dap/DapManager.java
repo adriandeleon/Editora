@@ -202,6 +202,10 @@ public final class DapManager {
     private volatile @Nullable DapClient client;
     private volatile long sessionEpoch;
     private volatile boolean managerClosed;
+
+    /** The session opened a core dump ({@link CoreDumps}): it is looked at, never run. */
+    private volatile boolean postMortem;
+
     private volatile @Nullable Future<?> startupTask;
     private final Object sessionLock = new Object();
     private State state = State.INACTIVE;
@@ -2237,6 +2241,7 @@ public final class DapManager {
         restartAction = () -> startExternal(file, language, launch, tail);
         debugFile = file;
         long epoch = beginSession();
+        postMortem = CoreDumps.isCore(launch);
         setState(State.STARTING);
         List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor(language.id());
@@ -3892,7 +3897,7 @@ public final class DapManager {
         if (c == null) {
             return;
         }
-        if (state == State.SUSPENDED && refuseWhileEvaluating()) {
+        if (refusePostMortem() || (state == State.SUSPENDED && refuseWhileEvaluating())) {
             return;
         }
         long epoch = sessionEpoch;
@@ -3933,7 +3938,7 @@ public final class DapManager {
      *  adapter answers with a {@code stopped(reason=pause)} event, which flows through onStopped. */
     public void pause() {
         DapClient c = client;
-        if (c == null || state != State.RUNNING) {
+        if (c == null || state != State.RUNNING || postMortem) {
             return;
         }
         c.threads().whenComplete((list, e) -> {
@@ -4012,7 +4017,8 @@ public final class DapManager {
         if (c == null || state == State.INACTIVE || state == State.STARTING) {
             return;
         }
-        if (state == State.SUSPENDED && threadId == currentThreadId && refuseWhileEvaluating()) {
+        if (refusePostMortem()
+                || (state == State.SUSPENDED && threadId == currentThreadId && refuseWhileEvaluating())) {
             return;
         }
         long epoch = sessionEpoch;
@@ -4163,7 +4169,7 @@ public final class DapManager {
      *  removed on the next stop (or on termination). Call on the FX thread while SUSPENDED. */
     public void runToCursor(Path file, int line) {
         DapClient c = client;
-        if (c == null || state != State.SUSPENDED || file == null) {
+        if (c == null || state != State.SUSPENDED || file == null || refusePostMortem()) {
             return;
         }
         tempBreakpointFile = file;
@@ -4184,7 +4190,7 @@ public final class DapManager {
      */
     public void forceRunToCursor(Path file, int line) {
         DapClient c = client;
-        if (c == null || state != State.SUSPENDED || file == null) {
+        if (c == null || state != State.SUSPENDED || file == null || refusePostMortem()) {
             return;
         }
         List<Path> muted = new ArrayList<>();
@@ -4231,7 +4237,7 @@ public final class DapManager {
      */
     public void jumpToLine(Path file, int line, Consumer<String> onError) {
         DapClient c = client;
-        if (c == null || state != State.SUSPENDED || file == null) {
+        if (c == null || state != State.SUSPENDED || file == null || refusePostMortem()) {
             return;
         }
         int threadId = currentThreadId;
@@ -4436,7 +4442,7 @@ public final class DapManager {
         if (c == null || state != State.SUSPENDED || stepPendingEpoch == sessionEpoch) {
             return;
         }
-        if (refuseWhileEvaluating()) {
+        if (refusePostMortem() || refuseWhileEvaluating()) {
             return;
         }
         long epoch = sessionEpoch;
@@ -4803,6 +4809,20 @@ public final class DapManager {
      */
     public boolean evaluationRunning() {
         return consoleEvaluations > 0;
+    }
+
+    /** Whether the session opened a core dump, which is looked at and never run (Continue, Step, Run to Cursor…). */
+    public boolean isPostMortem() {
+        return postMortem && state != State.INACTIVE;
+    }
+
+    /** In a core dump's session: says it cannot be run, and true. */
+    private boolean refusePostMortem() {
+        if (!isPostMortem()) {
+            return false;
+        }
+        listener.onStatus(tr("status.debug.coreCannotRun"));
+        return true;
     }
 
     /** Refuses a control while a console evaluation runs, saying why (FX thread); true when refused. */
@@ -5547,6 +5567,7 @@ public final class DapManager {
      */
     private long beginSession() {
         jsNoise = new JsLaunch.InspectorNoise();
+        postMortem = false;
         Future<?> startup = startupTask;
         startupTask = null;
         if (startup != null) {
