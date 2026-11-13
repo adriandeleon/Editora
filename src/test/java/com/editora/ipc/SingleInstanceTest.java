@@ -116,6 +116,33 @@ class SingleInstanceTest {
     }
 
     @Test
+    void aNewFileOrDiffLaunchIsOnlySentToARunningBuildThatOpensThem(@TempDir Path dir) throws Exception {
+        SingleInstance.Result primary = SingleInstance.start(dir, List.of(), true);
+        try {
+            awaitServing(primary);
+            CopyOnWriteArrayList<List<String>> received = new CopyOnWriteArrayList<>();
+            primary.instance().setListener(received::add);
+            List<String> diff = List.of("--diff-ui", "/a/left.txt", "/a/right.txt");
+
+            // This build says it opens them, so the launch is handed over with its arguments.
+            SingleInstance.Result sent = SingleInstance.start(dir, diff, true, SingleInstance.Needs.NEW_WINDOWS);
+            assertTrue(sent.forwarded());
+            assertTrue(waitFor(() -> !received.isEmpty()));
+            assertEquals(List.of(diff), List.copyOf(received));
+
+            // A build from before that, still running across an upgrade, would show nothing: not sent.
+            Path endpoint = dir.resolve(SingleInstance.ENDPOINT_FILE);
+            Files.writeString(endpoint, Files.readString(endpoint).replace("opens=", "opened="));
+            SingleInstance.Result held = SingleInstance.start(dir, diff, true, SingleInstance.Needs.NEW_WINDOWS);
+            assertEquals(SingleInstance.Role.STANDALONE, held.role(), "it starts its own editor, as before");
+            assertTrue(SingleInstance.start(dir, List.of(), true, SingleInstance.Needs.ANY)
+                    .forwarded());
+        } finally {
+            close(primary);
+        }
+    }
+
+    @Test
     void aLaunchWithNothingToOpenIsNotSentToARunningBuildThatWouldIgnoreIt(@TempDir Path dir) throws Exception {
         // An older build still running across an upgrade: it only knows "open these files".
         SingleInstance.Result primary = SingleInstance.start(dir, List.of(), true);

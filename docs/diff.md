@@ -16,7 +16,8 @@ developer and manual-test reference.
 - A Project-tree folder's Git menu can compare that subtree with HEAD, a branch, a tag, or a selected
   revision. The review includes staged, unstaged, deleted, and untracked files, excludes ignored files, and
   loads each changed file only when selected.
-- `editora --diff-ui LEFT RIGHT` launches an isolated, focused viewer for two files or two directories. The
+- `editora --diff-ui LEFT RIGHT` launches an isolated, focused viewer for two files or two directories, as a
+  window of the Editora already running when there is one. The
   Editora-mark button restores the normal application chrome without closing the comparison.
 
 ## Review controls

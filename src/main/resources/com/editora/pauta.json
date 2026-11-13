@@ -465,14 +465,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1569"
     },
     {
-      "rule": "CLI-12",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-12",
-      "kind": "pending",
-      "reason": "An option Editora does not know is ignored on the command line instead of being refused.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1570"
-    },
-    {
       "rule": "CLI-11",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/command-line/#cli-11",
@@ -485,7 +477,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/command-line/#cli-07",
       "kind": "pending",
-      "reason": "A launch with --diff-ui, --new-file or --disable-plugins starts a second Editora instead of handing over to the one already running.",
+      "reason": "A launch with --disable-plugins starts a second Editora instead of handing over to the one already running.",
       "link": "https://github.com/adriandeleon/Editora/issues/1570"
     },
     {

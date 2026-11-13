@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--` on the command line.** Every argument after `--` is a file, so `editora -- -notes.txt` opens a file
+  whose name starts with a dash, and a lone `-` is a file name too.
 - **Breakpoint filters.** A breakpoint can now stop only in some threads (`worker-*`), only when called from some
   functions (`OrderService.save`), or only on one object, the one you marked with Mark Object, as IntelliJ's
   breakpoint filters do. Set them in Edit Breakpoint; patterns are separated by commas, `*` and `?` are wildcards and
@@ -539,6 +541,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A mistyped option on the command line stops the launch.** `editora --config-dri /tmp/x` used to ignore
+  the option it did not know and start on your real settings. It now prints `Editora: unknown option:
+  --config-dri` and how to get help, and exits with status 2 before any window opens. This holds for an option
+  with one dash too. The JVM options a launcher can leave among the arguments (`--add-exports`,
+  `--add-opens`, `-p`) are still passed over, with their values.
+- **`--new-file` and `--diff-ui` use the Editora already running.** `editora --new-file` and `editora
+  --diff-ui LEFT RIGHT` each started a second Editora on the same settings. They now open their window (the
+  new buffer, the comparison) in the one already running, as a launch with files does. `--new-instance` still
+  starts a separate one, and so does `--disable-plugins`.
 - **Every tooltip appears after the same short wait.** Tooltips on labels, list rows, badges, tabs and the
   status bar waited a full second, while buttons and gutter markers answered in 400 ms. All of them now show
   after 400 ms.
