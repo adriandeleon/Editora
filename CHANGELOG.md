@@ -688,6 +688,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A closed project window is released from memory.** Closing a project window left the whole window in memory,
+  with its files, panels and tools, until Editora quit, so memory grew with every project opened and closed. The No
+  Project window stayed the same way once its Project Map had been opened, and so did the last window to run Import
+  Configuration. All three are released now when the window closes.
 - **Deleting a file on Windows moves it to the Recycle Bin.** Delete in the Project tree, Move Original to
   Trash after encrypting, and the clean-up of unused pasted images deleted for good on Windows, where
   Editora reached no trash at all. They now use the Recycle Bin, as Explorer does, for files on a local

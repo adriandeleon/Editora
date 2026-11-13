@@ -241,8 +241,13 @@ abstract class MapFileReader<F, T> {
     private void submit(Runnable task) {
         ExecutorService running = worker;
         if (running == null) {
+            // The name alone, not this reader: a single-thread executor's cleaner keeps its thread factory until the
+            // executor is collected (shutdownNow leaves it registered), and this reader holds the executor. A factory
+            // that read the name off the reader closed that ring, so neither was ever collected, and through the file
+            // source (the Project panel's) the whole window stayed in memory after it closed.
+            String name = threadName;
             running = Executors.newSingleThreadExecutor(runnable -> {
-                Thread thread = new Thread(runnable, threadName);
+                Thread thread = new Thread(runnable, name);
                 thread.setDaemon(true);
                 return thread;
             });
