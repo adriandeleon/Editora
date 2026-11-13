@@ -799,6 +799,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             for (int id : runningThreads) {
                 all.add(thread(id, "worker-" + id));
             }
+            for (int id : idleThreads) {
+                all.add(thread(id, "pool-" + id));
+            }
             ThreadsResponse response = new ThreadsResponse();
             response.setThreads(all.toArray(new org.eclipse.lsp4j.debug.Thread[0]));
             return CompletableFuture.completedFuture(response);
@@ -924,6 +927,8 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public volatile List<StackFrame> frames;
         /** Extra threads that are listed but not suspended: their {@code stackTrace} is refused. */
         public final List<Integer> runningThreads = new CopyOnWriteArrayList<>();
+        /** Extra threads that are listed and suspended, named {@code pool-<id>}: their stack is the main thread's. */
+        public final List<Integer> idleThreads = new CopyOnWriteArrayList<>();
 
         /** A child for {@link #variables}; {@code reference > 0} makes it expandable. */
         public static org.eclipse.lsp4j.debug.Variable variable(String name, String value, int reference) {

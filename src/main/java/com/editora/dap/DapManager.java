@@ -4559,6 +4559,38 @@ public final class DapManager {
 
     // --- Inspection (results marshaled to FX) ---------------------------------------------------
 
+    /**
+     * A thread dump: every thread of the session with its status and call stack, in the order the adapter lists them
+     * (callback on the FX thread). Every thread is asked for its stack, a running one too — an adapter that stops the
+     * whole program without saying so still walks it — and one it refuses has none. Empty with no session.
+     */
+    public void threadStacks(Consumer<List<DapModels.ThreadStack>> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(List.of());
+            return;
+        }
+        threadStatuses(statuses -> {
+            List<CompletableFuture<List<DapModels.StackFrameInfo>>> asked = new ArrayList<>();
+            for (DapModels.ThreadStatus t : statuses) {
+                asked.add(c.stackTrace(t.id()).exceptionally(e -> List.of()));
+            }
+            CompletableFuture.allOf(asked.toArray(CompletableFuture[]::new))
+                    .whenComplete((v, e) -> fx(() -> {
+                        if (client != c) {
+                            return;
+                        }
+                        List<DapModels.ThreadStack> out = new ArrayList<>();
+                        for (int i = 0; i < statuses.size(); i++) {
+                            List<DapModels.StackFrameInfo> frames = asked.get(i).getNow(List.of());
+                            out.add(new DapModels.ThreadStack(
+                                    statuses.get(i), frames == null ? List.of() : originalFrames(frames)));
+                        }
+                        cb.accept(out);
+                    }));
+        });
+    }
+
     public void stackTrace(int threadId, Consumer<List<DapModels.StackFrameInfo>> cb) {
         DapClient c = client;
         if (c == null) {

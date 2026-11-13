@@ -1714,6 +1714,27 @@ shown, the next still-stopped thread is brought forward as after Continue, and a
 shown because the shown one was resumed alone — brings it forward (`showSuspendedThread`). The adapter's `thread`
 events (start/exit) reach the panel as `onThreadsChanged`, coalesced into one listing per 250 ms while the view is
 shown. The opt-in `ThreadsViewProbeFxTest` checks Pause Thread and Resume Thread act on one thread against java-debug.
+**Thread Dump** (`debug.threadDump`, IntelliJ's Get Thread Dump; also in the Threads view's menu and the call stack's)
+is every thread's stack at one moment. `DapManager.threadStacks` asks `threadStatuses`, then sends `stackTrace` for
+every thread at once — a running one too, since an adapter that stops the whole program without `allThreadsStopped`
+still walks it — and a refused one has no frames. Suspended, the dump is of the stop. Running, the coordinator sets
+`DebugSession.dumpPause` and pauses (java-debug's `pauseAll`): the `pause` stop that comes is the dump's, made a quiet
+stop as a recording breakpoint's is (`quietStop`), the stacks are taken and the program resumed (`resumeAll` for Java),
+the editor never taken to it (`dumpAndContinue`); another stop the user sees coming first is shown and dumped as usual.
+[`ui/ThreadDump`](../../src/main/java/com/editora/ui/ThreadDump.java) (pure) holds the dump: the shown thread first and
+the JVM's housekeeping threads last, java-debug's `Thread [main]` named `main`; `groups(merge)` merges threads whose
+stacks match frame for frame in one state (Merge Identical Stacks; a thread without frames is never merged); `matches`
+filters on a thread's name or a frame's text; `text` prints it as `jstack` does, one quoted name, `#id` and state per
+row and an `at` line per frame. [`ui/DebugThreadDumpWindow`](../../src/main/java/com/editora/ui/DebugThreadDumpWindow.java)
+lists the rows beside the selected one's stack; Enter or a double-click opens a frame's file at its line, a library
+class through `openLibraryFrame`, or a `sourceReference` frame's text while the session lasts — the frames are a
+snapshot, valid after the program went on. Copy, Open as Text (a read-only tab) and Take Again sit below it. A dump with
+running threads that have no stack (java-debug with *Suspend all threads* off stops the breakpoint's thread alone)
+says so and suggests Pause, then Take Again. Measured (`ThreadDumpProbeFxTest`, three workers blocked in one place and
+a breakpoint in the main thread): debugpy and Delve walk every thread at a stop and the workers merge into one row
+(Delve's goroutines are named `[Go 33] main.work`; the runtime's own parked goroutines stay apart, their stacks
+differ); java-debug at a stop gives the breakpoint's thread alone, and paused for the dump gives every thread, the
+workers merged. `DebugThreadDumpWindowFxTest` covers the window against `FakeDebugAdapter`'s `idleThreads`.
 The **exception card** ([`ui/DebugExceptionCard`](../../src/main/java/com/editora/ui/DebugExceptionCard.java)) opens
 under the line that threw once `exceptionInfo` has answered (`onExceptionInfo`) and that frame is the one painted
 (`paintedFrame.id() == exceptionFrameId`), once per stop by itself and again through `debug.showException`. It is a

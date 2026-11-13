@@ -2080,6 +2080,12 @@ final class DebugCoordinator {
                     panel().setState(state);
                 }
                 evaluateWindows.forEach(DebugEvaluateWindow::sessionChanged); // their results were that stop's
+                if (threadDumpWindow != null) {
+                    threadDumpWindow.sessionChanged(); // Take Again needs a live session
+                }
+                if (state != DapManager.State.RUNNING && state != DapManager.State.SUSPENDED) {
+                    s().dumpPause = false; // the pause it waited for will not come
+                }
                 if (state == DapManager.State.STARTING) {
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
                     nameSession(s().sessionLabel); // ending the replaced session cleared it
@@ -2182,10 +2188,24 @@ final class DebugCoordinator {
                 // (netcoredbg): Editora writes its message, and the program goes on.
                 String logMessage = recording ? null : logpointToWrite(reason, frames);
                 armTriggered(reason, frames); // a breakpoint others wait for: they stop from now on
-                s().quietStop = recording || logMessage != null ? s().stopSerial : -1;
+                // Thread Dump paused the running program: the pause's stop is the dump's, taken quietly. Another stop
+                // the user sees came first: the dump is of it.
+                boolean dumpWanted = s().dumpPause && !recording && logMessage == null;
+                boolean dumpStop = dumpWanted && "pause".equals(reason);
+                if (dumpWanted) {
+                    s().dumpPause = false;
+                }
+                s().quietStop = recording || logMessage != null || dumpStop ? s().stopSerial : -1;
                 if (logMessage != null) {
                     logAndContinue(threadId, logMessage, frames);
                     return;
+                }
+                if (dumpStop) {
+                    dumpAndContinue();
+                    return;
+                }
+                if (dumpWanted) {
+                    takeThreadDump(s(), false, null);
                 }
                 if (!recording) {
                     // Before the call stack is set: that shows the stop's line, and the time goes after it.
@@ -2581,6 +2601,11 @@ final class DebugCoordinator {
             @Override
             public void showHistoryFrame(DebugHistory.Stop stop, int frame) {
                 DebugCoordinator.this.showHistoryFrame(stop, frame);
+            }
+
+            @Override
+            public void threadDump() {
+                DebugCoordinator.this.threadDump();
             }
 
             @Override
@@ -7846,6 +7871,136 @@ final class DebugCoordinator {
     void showThreads() {
         ops.openToolWindow();
         panel().showThreadsView(true);
+    }
+
+    // --- Thread Dump: every thread's stack at one moment (IntelliJ's Get Thread Dump) -----------------
+
+    /** The Thread Dump window, built on the first dump; one for all sessions, showing the last dump taken. */
+    private @Nullable DebugThreadDumpWindow threadDumpWindow;
+
+    /**
+     * Debug: Thread Dump ({@code debug.threadDump}): every thread of the program with its call stack, in the Thread
+     * Dump window. Suspended, the dump is of the stop. Running, the program is paused for it and goes on after, the
+     * editor left where it is — the way to see what a program that hangs is doing.
+     */
+    void threadDump() {
+        DebugSession session = s();
+        switch (session.dap.state()) {
+            case SUSPENDED -> takeThreadDump(session, false, null);
+            case RUNNING -> {
+                session.dumpPause = true;
+                host.setStatus(tr("status.debug.threadDumpPausing"));
+                session.dap.pause();
+            }
+            default -> host.setStatus(tr("status.debug.threadDumpNoSession"));
+        }
+    }
+
+    /** The {@code pause} stop Thread Dump asked for: the dump is taken, then the program goes on. */
+    private void dumpAndContinue() {
+        DebugSession session = s();
+        int serial = session.stopSerial;
+        takeThreadDump(session, true, () -> {
+            // Unless the user acted first (a step, Stop) or it stopped again meanwhile.
+            if (serial == session.stopSerial && session.dap.state() == DapManager.State.SUSPENDED) {
+                session.dap.resume();
+            }
+        });
+    }
+
+    /**
+     * Asks {@code session} for every thread's stack and shows the dump; {@code afterwards} runs once the stacks are in
+     * (the program may go on then), before the window opens.
+     */
+    private void takeThreadDump(DebugSession session, boolean pausedForIt, @Nullable Runnable afterwards) {
+        String name = session.sessionLabel.isEmpty() ? dumpSessionName(session) : session.sessionLabel;
+        session.dap.threadStacks(stacks -> {
+            if (afterwards != null) {
+                afterwards.run();
+            }
+            if (stacks.isEmpty()) {
+                host.setStatus(tr("status.debug.threadDumpEmpty"));
+                return;
+            }
+            ThreadDump dump = new ThreadDump(name, java.time.LocalTime.now(), pausedForIt, stacks);
+            threadDumpWindow().show(host.window(), dump);
+            host.setStatus(tr("status.debug.threadDumpTaken", stacks.size()));
+        });
+    }
+
+    /** A session without a label is named by the file it debugs, else plainly. */
+    private static String dumpSessionName(DebugSession session) {
+        Path file = session.dap.debugFile();
+        return file != null && file.getFileName() != null ? file.getFileName().toString() : tr("threaddump.untitled");
+    }
+
+    private DebugThreadDumpWindow threadDumpWindow() {
+        DebugThreadDumpWindow window = threadDumpWindow;
+        if (window == null) {
+            window = new DebugThreadDumpWindow(new DebugThreadDumpWindow.Actions() {
+                @Override
+                public void openFrame(DapModels.StackFrameInfo frame) {
+                    openDumpFrame(frame);
+                }
+
+                @Override
+                public void openText(String title, String text) {
+                    ops.openReadOnlyDoc(title, text, "text");
+                }
+
+                @Override
+                public void takeAgain() {
+                    threadDump();
+                }
+
+                @Override
+                public boolean canTakeAgain() {
+                    DapManager.State state = dap().state();
+                    return state == DapManager.State.SUSPENDED || state == DapManager.State.RUNNING;
+                }
+            });
+            threadDumpWindow = window;
+        }
+        return window;
+    }
+
+    /** The Thread Dump window, when one was opened (test read). */
+    @Nullable
+    DebugThreadDumpWindow threadDumpWindowIfOpen() {
+        return threadDumpWindow;
+    }
+
+    /**
+     * Opens a dumped frame's code: its file at its line; a library class's source, as the call stack opens one; or the
+     * debugger's own copy, while the session lasts. The frame is a snapshot's, so the execution line is not drawn.
+     */
+    private void openDumpFrame(DapModels.StackFrameInfo frame) {
+        Path file = frame.file();
+        if (file != null && hasSource(frame)) {
+            openSourceLine(file, frame.line());
+            return;
+        }
+        Path anchor = dap().debugFile();
+        String uri = frame.sourceUri();
+        if (uri != null && anchor != null) {
+            ops.openLibraryFrame(anchor, uri, frame.line(), lib -> {});
+            return;
+        }
+        DapModels.LoadedSource reference = frame.reference();
+        if (reference != null && dap().state() != DapManager.State.INACTIVE) {
+            openReferenceSource(reference, doc -> {
+                int line = Math.max(0, frame.line());
+                doc.getFocusedArea()
+                        .moveTo(
+                                Math.min(
+                                        line,
+                                        doc.getFocusedArea().getParagraphs().size() - 1),
+                                0);
+                doc.getFocusedArea().requestFollowCaret();
+            });
+            return;
+        }
+        host.setStatus(tr("status.debug.noSource", DebugPanelText.frameName(frame.name())));
     }
 
     /** Focuses the evaluate field at the top of Variables ({@code debug.focusEvaluate}). */
