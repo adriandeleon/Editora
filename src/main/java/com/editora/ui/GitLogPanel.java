@@ -78,7 +78,7 @@ import static com.editora.i18n.Messages.tr;
  * knows the repo root and runs {@code git}.
  *
  * <p>A file history is headed by a chip — "Git history: Foo.java ✕" — whose ✕ (or Escape in the commit
- * list) goes back to the branch's log. The toolbar buttons take keyboard focus.
+ * list) goes back to the branch's log. Every toolbar button runs a command, so none is a Tab stop.
  */
 public final class GitLogPanel extends VBox implements ToolWindowContent {
 
@@ -259,8 +259,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         showAllButton = new Button("✕");
         showAllButton.getStyleClass().add("project-filter-clear");
         showAllButton.setMinWidth(Region.USE_PREF_SIZE);
-        Icons.name(showAllButton, tr("gitlog.showAllTip"));
-        showAllButton.setOnAction(e -> actions.showAll());
+        CommandTips.name(showAllButton, "git.log.showBranchLog");
+        showAllButton.setOnAction(e -> showBranchLog());
         showAllButton.setVisible(false);
         showAllButton.setManaged(false);
         HBox header = UiZoom.spacing(new HBox(filterLabel, showAllButton), 2);
@@ -280,20 +280,18 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         searchLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
         Button endSearch = new Button("✕");
         endSearch.getStyleClass().add("project-filter-clear");
-        Icons.name(endSearch, tr("gitlog.clearSearch"));
-        endSearch.setOnAction(e -> actions.searchHistory(""));
+        CommandTips.name(endSearch, "git.log.endSearch");
+        endSearch.setOnAction(e -> endSearch());
         searchChip.getChildren().setAll(searchLabel, endSearch);
         searchChip.setAlignment(Pos.CENTER_LEFT);
         searchChip.setMinWidth(0);
         searchChip.setVisible(false);
         searchChip.setManaged(false);
-        Button refresh = iconButton(Icons.refresh(), tr("gitlog.refreshTip"), actions::refresh);
-        // The toolbar controls no command runs are Tab stops: without a mouse there was no way to them at
-        // all. The all-branches toggle has its command (git.log.toggleAllBranches), so it leaves the Tab order.
-        for (javafx.scene.control.ButtonBase button : List.of(showAllButton, endSearch, refresh)) {
-            button.setFocusTraversable(true);
+        Button refresh = commandButton(Icons.refresh(), "git.log.refresh", this::refreshLog);
+        // Every toolbar button runs a command (git.log.*), which the palette and a key reach: none is a Tab stop.
+        for (javafx.scene.control.ButtonBase button : List.of(showAllButton, endSearch, allBranchesButton)) {
+            button.setFocusTraversable(false);
         }
-        allBranchesButton.setFocusTraversable(false);
         HBox toolbar = UiZoom.spacing(new HBox(header, searchChip, allBranchesButton, refresh), 2);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -451,6 +449,29 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         }
         filterField.clear();
         actions.searchHistory(query);
+    }
+
+    /** Leaves a file's history for the branch's log ({@code git.log.showBranchLog}); false when none is shown. */
+    boolean showBranchLog() {
+        boolean fileHistory = view.fileHistory();
+        if (fileHistory) {
+            actions.showAll();
+        }
+        return fileHistory;
+    }
+
+    /** Ends the history search ({@code git.log.endSearch}); false when no search is listed. */
+    boolean endSearch() {
+        boolean searching = !view.search().isEmpty();
+        if (searching) {
+            actions.searchHistory("");
+        }
+        return searching;
+    }
+
+    /** Reloads the listing ({@code git.log.refresh}). */
+    void refreshLog() {
+        actions.refresh();
     }
 
     /** Moves focus to the filter box (the {@code git.log.search} command). */

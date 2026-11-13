@@ -213,7 +213,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-01",
       "kind": "pending",
-      "reason": "Many buttons and right-click rows have no command behind them, so the palette and the keyboard cannot reach them.",
+      "reason": "Some right-click rows and some buttons inside panels still do their work with no command behind them, so the palette cannot run them.",
       "link": "https://github.com/adriandeleon/Editora/issues/1560"
     },
     {
@@ -230,14 +230,6 @@
       "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-14",
       "kind": "pending",
       "reason": "After a prefix key, nothing lists the keys that can follow.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1560"
-    },
-    {
-      "rule": "KBD-15",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-15",
-      "kind": "pending",
-      "reason": "Some buttons can only be pressed with the mouse, among them the zoom buttons of the PDF and image viewers and a few in the diff viewer and the Project Map.",
       "link": "https://github.com/adriandeleon/Editora/issues/1560"
     },
     {
@@ -390,14 +382,6 @@
       "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-14",
       "kind": "pending",
       "reason": "Tooltips on labels, list rows and badges still appear after one second, not the 400 ms that buttons and gutter markers use.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1564"
-    },
-    {
-      "rule": "TBAR-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-02",
-      "kind": "pending",
-      "reason": "Some panel toolbar buttons that no command runs still take the keyboard focus on Tab, in the Project Map and the Git log among them.",
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
     },
     {

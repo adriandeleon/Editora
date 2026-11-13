@@ -139,7 +139,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         showAll.setGraphic(Icons.project());
         showAll.getStyleClass().addAll("flat", "scope-toggle");
         showAll.setFocusTraversable(false);
-        Icons.name(showAll, tr("bookmarks.showAllTip"));
+        CommandTips.name(showAll, "bookmarks.toggleAllProjects");
         showAll.setSelected(true);
         showAll.selectedProperty().addListener((o, w, n) -> refresh());
 
@@ -177,6 +177,11 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         refresh();
+    }
+
+    /** Bookmarks: Show from All Projects — as a click on the toggle (the tree is rebuilt). */
+    void toggleAllProjects() {
+        showAll.fire();
     }
 
     /**

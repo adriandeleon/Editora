@@ -107,8 +107,7 @@ final class ProjectMapNotePreview extends StackPane {
         kind.setText(tr("project.map.notes.editable"));
         kind.getStyleClass().add("project-map-note-preview-kind");
         close.getStyleClass().add("project-map-preview-button");
-        Icons.name(close, tr("project.map.preview.close"));
-        close.setOnAction(event -> onClose.run());
+        MapButtonCommands.bind(this, close, "projectMap.cardClose", () -> onClose.run());
 
         titleBar.getStyleClass().addAll("project-map-preview-header", "project-map-note-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);

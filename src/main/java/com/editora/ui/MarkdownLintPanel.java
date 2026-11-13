@@ -125,7 +125,7 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
             actions.refresh();
         });
         bySeverity.setGraphic(Icons.arrowDown());
-        Icons.name(bySeverity, tr("markdownLint.sortBySeverity"));
+        CommandTips.name(bySeverity, "markdownLint.toggleBySeverity");
         bySeverity.setFocusTraversable(false);
         bySeverity.selectedProperty().addListener((o, was, on) -> showRows());
         fileName.getStyleClass().add("markdown-lint-file");
@@ -306,6 +306,11 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
 
     private static boolean isHeader(MarkdownLint.Diagnostic d) {
         return HEADER.equals(d.severity());
+    }
+
+    /** Markdown Lint: Most Severe First — as a click on the toggle (the rows are shown again). */
+    void toggleBySeverity() {
+        bySeverity.fire();
     }
 
     /** Fills the list from {@link #unsorted}: as found, or most severe first (a project stays grouped by file). */

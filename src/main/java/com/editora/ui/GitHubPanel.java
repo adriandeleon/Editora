@@ -281,7 +281,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         });
 
         Button createPr = commandButton(Icons.newFile(), "github.createPr", actions::createPr);
-        Button refresh = iconButton(Icons.refresh(), tr("github.panel.refreshTip"), actions::refresh);
+        Button refresh = commandButton(Icons.refresh(), "github.refreshList", this::refreshList);
         repository.getStyleClass().add("github-repository");
         repository.setGraphic(Icons.github());
         repository.setMinWidth(0);
@@ -608,6 +608,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     /** A toolbar button that runs {@code commandId}: named after the command, with its live chord. */
     private static Button commandButton(javafx.scene.Node icon, String commandId, Runnable action) {
         return CommandTips.name(iconButton(icon, CommandTips.title(commandId), action), commandId);
+    }
+
+    /** Fetches the shown segment's list again (the refresh button, {@code github.refreshList}). */
+    void refreshList() {
+        actions.refresh();
     }
 
     private static VBox buildLoading() {

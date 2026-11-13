@@ -66,9 +66,9 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     private final Label status = new Label();
     private final ProgressBar progress = new ProgressBar(0);
-    private final ToggleButton passedChip = chip("test-chip-pass", "testrunner.filter.passed");
-    private final ToggleButton failedChip = chip("test-chip-fail", "testrunner.filter.failed");
-    private final ToggleButton skippedChip = chip("test-chip-skip", "testrunner.filter.skipped");
+    private final ToggleButton passedChip = chip("test-chip-pass", "test.togglePassed");
+    private final ToggleButton failedChip = chip("test-chip-fail", "test.toggleFailed");
+    private final ToggleButton skippedChip = chip("test-chip-skip", "test.toggleSkipped");
     private final Label elapsed = new Label();
     private final TextField filterField = new TextField();
 
@@ -115,7 +115,8 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         followToggle.setGraphic(Icons.arrowDown());
         followToggle.getStyleClass().add("toolbar-restore");
         followToggle.setSelected(true);
-        Icons.name(followToggle, tr("testrunner.followRunning"));
+        followToggle.setFocusTraversable(false); // test.toggleFollow reaches it
+        CommandTips.name(followToggle, "test.toggleFollow");
 
         HBox toolbar = UiZoom.spacing(new HBox(rerunButton, rerunFailedButton, stopButton, followToggle), 2);
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -236,6 +237,21 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     /** {@code test.showAllTests}: back to everything, query cleared. */
     void clearFilter() {
         setFilter(TestFilter.ALL);
+    }
+
+    /** {@code test.togglePassed} / {@code toggleFailed} / {@code toggleSkipped}: a click on that count chip. */
+    void toggleBucket(Bucket bucket) {
+        ToggleButton chip = switch (bucket) {
+            case PASSED -> passedChip;
+            case FAILED -> failedChip;
+            case SKIPPED -> skippedChip;
+        };
+        chip.fire();
+    }
+
+    /** {@code test.toggleFollow}: a click on the follow button. */
+    void toggleFollow() {
+        followToggle.fire();
     }
 
     /** {@code test.filterTests}: put the caret in the filter field. */
@@ -675,14 +691,15 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     /**
      * A header count chip that is also its status filter: click to hide/show that bucket. A deselected chip
-     * dims (the {@code .test-chip:!selected} rule) so the tree's state is readable from the header.
+     * dims (the {@code .test-chip:!selected} rule) so the tree's state is readable from the header. It is named
+     * after {@code commandId}, the command that does the same.
      */
-    private ToggleButton chip(String colorClass, String tooltipKey) {
+    private ToggleButton chip(String colorClass, String commandId) {
         ToggleButton b = new ToggleButton();
         b.getStyleClass().addAll("test-chip", colorClass);
         b.setSelected(true);
         b.setFocusTraversable(false);
-        Icons.name(b, tr(tooltipKey));
+        CommandTips.name(b, commandId);
         b.setOnAction(e -> rebuild());
         return b;
     }

@@ -34,6 +34,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A command for 44 buttons only the mouse could press.** Each is in the command palette, can be given a key
+  under Settings → Keymaps, and the button's tooltip shows that key. On the Project Map: Back, Forward and
+  History (the list of places the Map has been), Mouse and Keyboard Help, Options, and for the card the
+  keyboard is in: Previous and Next Declaration in Card, Smaller and Larger Text in Card, Pin or Unpin Card,
+  Show or Hide Card Structure, Show or Hide Card Notes and Close Card, plus Turn Hierarchy Around and Hide
+  Trail Stop Note. Diff: Undo Last Applied Change, Save Result, Export as Patch and Leave Diff-Only Window.
+  Git Log: Back to Branch Log, End Search and Refresh; GitHub: Refresh List; Local History: Back to the
+  Current File. Debug: Add Evaluated Expression to Watches, Close Ended Session, and Previous and Next Page of
+  Memory. Gradle, sbt and Mill: Load All Tasks. Test Results: Follow Newest Test Result and Show or Hide
+  Passed, Failed and Skipped Tests. Also Agent: Open in Separate Window or Dock Back, Structure: Filter by
+  Kind, Bookmarks and Notes: Show from All Projects, Markdown Lint: Most Severe First, Viewer: Previous Page,
+  Next Page and Fit to Window for a PDF or an image, and Project: Choose a Project to Delete, which does from
+  the keyboard what the trash on a row of the project dropdown does. A command with nothing to act on (no Map
+  on screen, the keyboard not in a card, the tab not a PDF) says so in the status bar.
 - **Type renderers in the debugger.** Choose how the debugger shows a value of a type, as IntelliJ's type renderers
   and Visual Studio's natvis do: a Money object as `12.50 EUR` rather than `Money@1f3a`, and its children as the fields
   or expressions that matter, with the debugger's own under [Raw View]. Right-click a value in Variables and choose
@@ -518,6 +532,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Zoom In, Zoom Out and Reset Zoom zoom an image or a PDF.** With an image or a PDF in the active tab, the
+  three content zoom commands (and their keys) now zoom it, as its −, + and 1:1 buttons do; before, they
+  changed the text zoom of editors you were not looking at.
+- **Panel toolbar buttons no longer take a Tab stop.** The Project Map's Back, Forward, Help and Options, the
+  Git Log's three toolbar buttons, Test Results' Follow toggle and Structure's kind filter are out of the Tab
+  order now that each has a command, so Tab goes straight to the content. The Map's history list, which the
+  Menu key on Back or Forward opened, is the new Project Map: History command.
 - **A new run configuration starts as the type of the file in front.** Run Configurations → Add made a Java
   configuration for anything that was not a script it could propose whole. With a makefile open it now makes a
   Make target configuration, and with a `package.json` an npm script one, each set to run in that file's

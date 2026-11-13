@@ -492,6 +492,20 @@ pure translation between that and what a keymap takes (overrides, chord → id w
 - **Toolbar buttons stay out of the Tab order** (`setFocusTraversable(false)`, which `Icons.toolbarButton`
   does) when a command also runs what they do. A toolbar button with no command behind it stays a Tab stop
   until it has one: taking it out would leave it to the mouse alone.
+- **A button gets its command in its area's `…ButtonCommands` class**
+  ([`MapButtonCommands`](../../src/main/java/com/editora/ui/MapButtonCommands.java),
+  [`DiffGitButtonCommands`](../../src/main/java/com/editora/ui/DiffGitButtonCommands.java),
+  [`DebugBuildTestButtonCommands`](../../src/main/java/com/editora/ui/DebugBuildTestButtonCommands.java),
+  [`PanelViewerButtonCommands`](../../src/main/java/com/editora/ui/PanelViewerButtonCommands.java)), each a
+  `static void register(MainController)` that `MainController` calls after the window's other commands. The
+  button and the command call one package-private method on the panel, and the button is named after the
+  command. Where there are several targets the command acts on the one in use: the active tab's viewer, the
+  session the Debug window shows, and on the Project Map the card the keyboard is in
+  (`MapButtonCommands.actionAt` walks up from the Map scene's focus owner to the first node that took the
+  command with `bind`; a column or a note stuck on a card passes what it did not take to its card with
+  `stuckOn`). A command with nothing to act on sets a status line that says why and does nothing else: it
+  never opens the window it would act on. A control inside the content (a card's title-bar buttons, a
+  viewer's bar) keeps its Tab stop; only a button of a toolbar leaves the Tab order.
 - **Tooltip delay**: `ControlNames.TOOLTIP_DELAY` (400 ms), which `ControlNames.name` and `LazyTooltip`
   set on every tooltip they make; a tooltip built by hand sets the same constant. It cannot live in the
   stylesheet: `-fx-show-delay` does not survive the precompiled `.bss` form (`StylesheetBinaryTest`).

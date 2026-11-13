@@ -71,8 +71,8 @@ final class ProjectMapTrailEditor extends VBox {
         HBox.setHgrow(heading, Priority.ALWAYS);
         Button close = new Button("×");
         close.getStyleClass().addAll("flat", "project-map-preview-close");
-        Icons.name(close, tr("project.map.trails.editor.close"));
-        close.setOnAction(event -> dispose());
+        MapButtonCommands.bind(
+                this, close, "projectMap.cardClose", () -> tr("project.map.trails.editor.close"), this::dispose);
         HBox header = UiZoom.spacing(new HBox(heading, renameTrail, close), 6);
         header.getStyleClass().add("project-map-trail-editor-header");
         header.setAlignment(Pos.CENTER_LEFT);
