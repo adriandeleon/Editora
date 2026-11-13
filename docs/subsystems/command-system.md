@@ -486,7 +486,10 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   [`CommandTips.name(control, "command.id")`](../../src/main/java/com/editora/ui/CommandTips.java): the
   command's title without its category and the keymap's chord, "Save (C-x C-s)", named again on a keymap
   switch (`CommandTips.refresh()`, from `SettingsReapply`). A third argument supplies the title where the
-  command's would mislead (a toggle that reads Maximize or Restore); a fourth adds a line under the name
+  command's would mislead (a toggle that reads Maximize or Restore) or says less than the button does where
+  it stands ("Hide this preview's Structure" on a Map column). Those buttons keep their words on purpose:
+  the state or the place is what a sighted user and a screen reader both need from the name, and the chord
+  shown is still the command's. A fourth argument adds a line under the name
   (what the diff bar's Swap does). A supplier must not capture the view the button sits in more than it
   needs to: the tip lives in the control's own properties so that it cannot pin a closed window.
 - **Toolbar buttons stay out of the Tab order** (`setFocusTraversable(false)`, which `Icons.toolbarButton`
