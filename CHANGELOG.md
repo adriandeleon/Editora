@@ -532,6 +532,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A tool window's stripe button and its command do the same thing.** A click on a stripe button now runs
+  the window's command instead of toggling the panel past it. So a button does not open a panel whose
+  feature is off (Debug, the language-server windows, Personal Notes, Commit, GitHub, the AI Agent) or the
+  TODO window for a file with no matches: it says why in the status bar, as the command does. Remote Sites
+  is refreshed when its button opens it. A window that is on screen always hides on its button. The
+  Terminal's button is unchanged.
+- **Tool Window: Git Log and the build tools' commands hide their window too.** Tool Window: Git Log, Maven,
+  Gradle, Package Scripts, Cargo, Go, sbt, Mill, Scala CLI, Clojure CLI, Leiningen and Babashka only ever
+  opened their window; run again they now hide it, as every other Tool Window command does. A key bound to
+  one of them now toggles.
 - **Zoom In, Zoom Out and Reset Zoom zoom an image or a PDF.** With an image or a PDF in the active tab, the
   three content zoom commands (and their keys) now zoom it, as its −, + and 1:1 buttons do; before, they
   changed the text zoom of editors you were not looking at.

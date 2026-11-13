@@ -397,7 +397,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-13",
       "kind": "pending",
-      "reason": "The tool-stripe buttons do not run their panels' commands, and a few of those commands only open their panel and never hide it.",
+      "reason": "The Terminal command gives an open terminal the keyboard before it hides it, so its stripe button does not run it, and the File Information and External Tools commands are not named after their windows.",
       "link": "https://github.com/adriandeleon/Editora/issues/1565"
     },
     {
