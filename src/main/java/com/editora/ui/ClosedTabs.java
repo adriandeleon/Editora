@@ -14,8 +14,11 @@ import org.jspecify.annotations.Nullable;
  */
 final class ClosedTabs {
 
-    /** A closed file and where its caret was. */
-    record Entry(Path path, int caret) {}
+    /**
+     * A closed file, where its caret was, and whether the tab showed its bytes ({@code hex}): a file opened as
+     * hex comes back as hex. An image or a PDF needs no mark, since its name decides its viewer.
+     */
+    record Entry(Path path, int caret, boolean hex) {}
 
     static final int DEFAULT_CAPACITY = 20;
 
@@ -32,11 +35,16 @@ final class ClosedTabs {
 
     /** Records that {@code path}'s tab was closed with the caret at {@code caret}. */
     void closed(@Nullable Path path, int caret) {
+        closed(path, caret, false);
+    }
+
+    /** As {@link #closed(Path, int)}; {@code hex} when the tab was the file's hex view. */
+    void closed(@Nullable Path path, int caret, boolean hex) {
         if (path == null) {
             return;
         }
         forget(path);
-        entries.addFirst(new Entry(path, Math.max(0, caret)));
+        entries.addFirst(new Entry(path, Math.max(0, caret), hex));
         while (entries.size() > capacity) {
             entries.removeLast();
         }

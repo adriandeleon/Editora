@@ -367,6 +367,8 @@ final class WindowCommandRegistrar {
 
         void nextBuffer();
 
+        void previousBuffer();
+
         void findShowOrNext();
 
         void findShowOrPrevious();
@@ -534,6 +536,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("file.revealInFileManager", host::revealActiveBuffer));
         host.registry().register(Command.of("file.openTerminal", host::openTerminalForActiveBuffer));
         host.registry().register(Command.of("buffer.next", host::nextBuffer));
+        host.registry().register(Command.of("buffer.previous", host::previousBuffer));
         host.registry().register(Command.of("app.quit", host::onQuit));
         // Quit and start again (a setting that applies at startup). A cancelled quit (unsaved files) cancels it.
         host.registry().register(Command.of("app.restart", () -> {

@@ -34,6 +34,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Buffer: Previous.** The tab before the selected one, wrapping to the last: the other way round from
+  Buffer: Next, and beside it in the Window menu. Like Next it has no key of its own until you give it one
+  under Settings → Keymaps.
+- **Image, PDF and hex tabs are tabs like any other.** Their right-click menu has Close, Close Other Tabs,
+  Close All Tabs, Close Unmodified Tabs, Close Tabs to the Left and to the Right, Reveal in Map, Reveal in
+  File Manager, Open Terminal Here, Copy Path and Pin Tab. They can be pinned, and the pin is kept across a
+  restart. Their tooltip is the file's full path. Reopen Closed Tab brings them back in the viewer they were
+  in, so a text file you had opened as hex comes back as hex.
+- **Every tab has the tab operations in its right-click menu.** A diff, a pull request review, a Markdown
+  preview, a terminal moved to the editor, Welcome and Doctor had no menu or one row, Close. They now have
+  Close, Close Other Tabs, Close All Tabs, Close Unmodified Tabs and Close Tabs to the Left and Right, after
+  the rows of their own (a terminal's Rename and Move to Terminal Tool Window, a preview's lock).
+- **A tab's tooltip names its file's Git status.** Under the path it says "Git: modified", "Git: untracked"
+  and so on, so the title's color is not the only sign of it. Image, PDF and hex tabs are tinted by their
+  file's Git status as editor tabs are.
 - **Run configurations for C, C++, Go and Rust.** Run Configurations has four new types: C program, C++ program,
   Go program and Rust program (Cargo). Each names a source file, and that file is built the way Debug builds it: a C
   or C++ file's CMake or Make project, or the file alone with `cc` or `c++`; a Go file's package, or the file alone

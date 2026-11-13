@@ -52,4 +52,15 @@ class TabGitStatusTest {
                     "a local tab beside a remote repository");
         }
     }
+
+    @Test
+    void aStatusIsNamedInWords() {
+        assertEquals(GitFileStatus.MODIFIED, TabGitStatus.statusFor(ROOT.resolve("src/Changed.java"), STATUS));
+        assertNull(TabGitStatus.statusFor(ROOT.resolve("Clean.java"), STATUS));
+        com.editora.i18n.Messages.init("en");
+        assertEquals("Git: modified", TabGitStatus.words(GitFileStatus.MODIFIED));
+        for (GitFileStatus status : GitFileStatus.values()) {
+            assertEquals(-1, TabGitStatus.words(status).indexOf("git.fileStatus"), status + " has its word");
+        }
+    }
 }
