@@ -2081,6 +2081,7 @@ final class DebugCoordinator {
                                                     s().relaunch == SUBPROCESS
                                                             ? "status.debug.cannotRestartSubprocess"
                                                             : "status.debug.cannotRestartAttached"));
+                    panel().setPostMortem(dap().isPostMortem());
                     panel().setState(state);
                 }
                 evaluateWindows.forEach(DebugEvaluateWindow::sessionChanged); // their results were that stop's
@@ -2189,13 +2190,19 @@ final class DebugCoordinator {
                 panel().setStopReason(reason);
                 panel().setStoppedThread(threadId); // Debug History keys this stop's frames by it
                 // The frame that threw: its line is drawn red while it is the one shown (review C13).
+                // A core dump's crash is shown where the program's own code was, below the runtime's frames that
+                // raised the signal (Go's runtime.raise, libc's abort).
+                List<Path> ownCode = dap().isPostMortem() ? ownCodeRoots() : List.of();
+                int crashed = ownCode.isEmpty()
+                        ? firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop)
+                        : ownFrame(frames, DebugCoordinator.this::showsOnStop, ownCode);
                 s().exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
-                        ? frames.get(firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop))
-                                .id()
+                        ? frames.get(crashed).id()
                         : -1;
                 // Selects the first frame that has source to show → selectFrame highlights + loads vars. A step
                 // that went into library code shows that code (B5): the user asked to go there.
-                int shown = frameToShow(reason, frames, DebugCoordinator.this::showsOnStop);
+                int shown =
+                        ownCode.isEmpty() ? frameToShow(reason, frames, DebugCoordinator.this::showsOnStop) : crashed;
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
@@ -3347,6 +3354,38 @@ final class DebugCoordinator {
             return 0; // a step into code the debugger has only in memory shows it too
         }
         return firstFrameWithSource(frames, has);
+    }
+
+    /**
+     * Pure: the frame a core dump's stop selects — the topmost one whose source can be shown and is under one of
+     * {@code own} (the project, the program's folder); the topmost with source when none is.
+     */
+    static int ownFrame(
+            List<DapModels.StackFrameInfo> frames, Predicate<DapModels.StackFrameInfo> has, List<Path> own) {
+        for (int i = 0; i < frames.size() && i < MAX_SOURCE_SEARCH; i++) {
+            DapModels.StackFrameInfo f = frames.get(i);
+            if (f.file() != null
+                    && has.test(f)
+                    && own.stream().anyMatch(f.file().toAbsolutePath()::startsWith)) {
+                return i;
+            }
+        }
+        return firstFrameWithSource(frames, has);
+    }
+
+    /** Where a core dump's program's own code is: the project, and the folder of the program that dumped it. */
+    private List<Path> ownCodeRoots() {
+        List<Path> roots = new ArrayList<>();
+        Path root = ops.projectRoot();
+        if (root != null) {
+            roots.add(root.toAbsolutePath());
+        }
+        Path program = s().coreProgram;
+        Path folder = program == null ? null : program.getParent();
+        if (folder != null) {
+            roots.add(folder.toAbsolutePath());
+        }
+        return roots;
     }
 
     /**
@@ -6879,6 +6918,74 @@ final class DebugCoordinator {
         nameSession(name + " (" + pid + ")");
         Runnable start = () -> withClosedBreakpoints(() -> dap().startExternal(anchor, language, attach));
         s().relaunch = start; // attaches again
+        start.run();
+    }
+
+    /** The file a core dump or its program is chosen with: the open dialog, or what a test answers. */
+    java.util.function.@Nullable Function<javafx.stage.FileChooser, java.io.@Nullable File> chooseFile;
+
+    private @Nullable Path chooseFile(String title, @Nullable Path folder) {
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(title);
+        if (folder != null && Files.isDirectory(folder)) {
+            chooser.setInitialDirectory(folder.toFile());
+        }
+        java.io.File chosen = chooseFile != null ? chooseFile.apply(chooser) : chooser.showOpenDialog(host.window());
+        return chosen == null ? null : chosen.toPath();
+    }
+
+    /**
+     * Debug: Open Core Dump… — asks for a core dump, finds the program it is the memory of (a Linux core names it;
+     * otherwise, or when that file is gone, asks for it too), and opens the core in the program's debugger: Delve
+     * for Go, CodeLLDB for C, C++ and Rust. The session shows the crashed thread's stack, the other threads and
+     * their variables; nothing runs ({@link com.editora.dap.CoreDumps}).
+     */
+    void debugOpenCoreDump() {
+        Path root = ops.projectRoot();
+        Path core = chooseFile(tr("debug.core.chooseCore"), root);
+        if (core == null) {
+            return;
+        }
+        host.setStatus(tr("status.debug.core.reading", String.valueOf(core.getFileName())));
+        Thread.ofPlatform().daemon().name("editora-core-dump").start(() -> {
+            Path named = com.editora.dap.CoreDumps.programOf(core);
+            Platform.runLater(() -> {
+                host.setStatus(null);
+                Path program = named != null && Files.isRegularFile(named)
+                        ? named
+                        : chooseFile(
+                                tr("debug.core.chooseProgram", String.valueOf(core.getFileName())), core.getParent());
+                if (program != null) {
+                    openCoreDump(core, program);
+                }
+            });
+        });
+    }
+
+    /** Opens {@code core}, the memory of {@code program}, in the debugger of the language {@code program} is in. */
+    void openCoreDump(Path core, Path program) {
+        Thread.ofPlatform().daemon().name("editora-core-dump").start(() -> {
+            com.editora.dap.DebugLanguage language = com.editora.dap.CoreDumps.languageOf(program);
+            Platform.runLater(() -> openCoreDump(core, program, language));
+        });
+    }
+
+    private void openCoreDump(Path core, Path program, com.editora.dap.DebugLanguage language) {
+        if (!debugEffectiveFor(language.id())) {
+            host.setStatus(unavailableMessage(language.id(), null));
+            return;
+        }
+        EditorBuffer b = host.activeBuffer();
+        Path active = b != null && language.editorLanguages().contains(b.getLanguage()) ? b.getPath() : null;
+        Path root = ops.projectRoot();
+        Path anchor = active != null ? active : root != null ? root : program;
+        java.util.Map<String, Object> launch = com.editora.dap.CoreDumps.launch(language, program, core);
+        ops.openToolWindow();
+        nameSession(
+                tr("debug.core.session", String.valueOf(core.getFileName()), String.valueOf(program.getFileName())));
+        s().coreProgram = program;
+        Runnable start = () -> withClosedBreakpoints(() -> dap().startExternal(anchor, language, launch));
+        s().relaunch = start; // opens the core again
         start.run();
     }
 

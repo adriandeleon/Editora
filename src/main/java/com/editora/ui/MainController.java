@@ -928,7 +928,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                         && b.getFocusedArea().getSelection().getLength() > 0,
                 projectPanel != null && projectPanel.isMapOutputAvailable(),
                 terminalCoordinator != null && terminalCoordinator.hasTerminals(),
-                debugCoordinator != null && debugCoordinator.programRunning());
+                debugCoordinator != null && debugCoordinator.programRunning(),
+                focusedDap().isPostMortem());
     }
 
     private void setupRecentFiles() {

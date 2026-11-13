@@ -160,6 +160,10 @@ final class DebugSession {
     /** A breakpoint's filters were checked and passed: the stop is handled anew, this time shown. */
     boolean filtersPassed;
 
+    /** The program whose core dump the session opened (Open Core Dump), whose folder holds its own code. */
+    @Nullable
+    Path coreProgram;
+
     /** Each filtered breakpoint's hits that passed its filters this session ({@code file:line}), for its hit count. */
     final java.util.Map<String, Integer> filteredHits = new java.util.HashMap<>();
 

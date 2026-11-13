@@ -1403,12 +1403,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             later.play();
         }
         // Green play = Start when idle, Continue when paused; Pause is its complement while running.
-        start.setDisable(preparing || !(state == DapManager.State.INACTIVE || suspended));
-        pause.setDisable(!running);
-        stepOver.setDisable(!suspended);
-        stepInto.setDisable(!suspended);
-        stepOut.setDisable(!suspended);
-        runToCursor.setDisable(!suspended);
+        // A core dump is looked at, never run: its stop has nothing to continue or step.
+        boolean drives = suspended && !postMortem;
+        start.setDisable(preparing || !(state == DapManager.State.INACTIVE || drives));
+        pause.setDisable(!running || postMortem);
+        stepOver.setDisable(!drives);
+        stepInto.setDisable(!drives);
+        stepOut.setDisable(!drives);
+        runToCursor.setDisable(!drives);
         stop.setDisable(!active && !preparing);
         restart.setDisable(!active || restartBlocked != null);
         // Usable while the program runs as well as while it is paused (Enter only evaluates when paused):
@@ -1466,7 +1468,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             refused = null;
         }
         boolean active = lastState != DapManager.State.INACTIVE;
-        start.setDisable(preparing || !(!active || lastState == DapManager.State.SUSPENDED));
+        start.setDisable(preparing || !(!active || (lastState == DapManager.State.SUSPENDED && !postMortem)));
         stop.setDisable(!active && !preparing);
         refreshStatus();
         refreshTooltips(); // the call stack's hint: how to cancel, not how to start
@@ -1503,6 +1505,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         refreshStatus();
     }
 
+    /** The session opened a core dump: nothing runs, so Continue, the steps and Run to Cursor stay disabled. */
+    private boolean postMortem;
+
+    /** Whether the session is a core dump's ({@link #postMortem}); set before {@link #setState}. */
+    public void setPostMortem(boolean postMortem) {
+        this.postMortem = postMortem;
+    }
+
     /** The state line of a launch its build stopped ({@link #setLaunchRefused}); null otherwise. */
     private @Nullable String refused;
 
@@ -1526,6 +1536,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** The state line's state: how far the session has got, or the launch getting ready for it. */
     private String stateText() {
         boolean idle = lastState == DapManager.State.INACTIVE;
+        if (postMortem && lastState == DapManager.State.SUSPENDED) {
+            return stoppedException.isEmpty()
+                    ? tr("debugpanel.state.core")
+                    : tr("debugpanel.state.coreNamed", stoppedException);
+        }
         if (stoppedOnException && lastState == DapManager.State.SUSPENDED) {
             return stoppedException.isEmpty()
                     ? tr("debugpanel.state.exception")
