@@ -40,7 +40,9 @@ Debug can run a program in a tab instead of their consoles.
 ## The tool window
 
 - **`ui/TerminalCoordinator`** owns the panel and the commands: `tool.terminal` (shows the terminal and
-  focuses it; hides it only when it already has the keyboard, as IntelliJ's Alt+F12 does), `terminal.new`,
+  focuses it; hides it only when it already has the keyboard, as IntelliJ's Alt+F12 does; kept so on purpose,
+  which is why the Terminal's stripe button is the one that does not run its command but toggles the window
+  itself: `MainController.runStripeCommand`), `terminal.new`,
   `terminal.close`, `terminal.find`, `terminal.next`/`previous` (also Ctrl+PageDown/PageUp in a terminal),
   `terminal.rename`, `terminal.moveTabLeft`/`Right` (also Ctrl+Shift+PageUp/PageDown, a drag of the tab, or the
   tab's own menu) and `terminal.focusEditor` (Shift+Escape in every keymap). The Window menu has Terminal and New

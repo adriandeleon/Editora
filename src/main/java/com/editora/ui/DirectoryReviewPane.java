@@ -97,7 +97,7 @@ final class DirectoryReviewPane implements TabContent {
         Button previous = button(Icons.arrowUp(), tr("diff.previousFile"), () -> selectRelative(-1));
         Button next = button(Icons.arrowDown(), tr("diff.nextFile"), () -> selectRelative(1));
         exitDiffUiButton.setGraphic(Icons.editora());
-        Icons.name(exitDiffUiButton, tr("tooltip.diffUiExit"));
+        CommandTips.name(exitDiffUiButton, "diff.exitDiffMode");
         exitDiffUiButton.getStyleClass().addAll("flat", "diff-toolbar-button", "diff-ui-exit");
         exitDiffUiButton.setFocusTraversable(false);
         exitDiffUiButton.setVisible(false);

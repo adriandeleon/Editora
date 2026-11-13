@@ -768,6 +768,15 @@ final class GitWindowCoordinator {
         openGitLog(null);
     }
 
+    /** {@code tool.gitLog}: shows the log when it is hidden, hides it when it shows, as every tool command does. */
+    void toggleGitLog() {
+        if (host.toolWindows().isOpen(host.gitLogToolWindow())) {
+            host.toolWindows().close(host.gitLogToolWindow());
+        } else {
+            showGitLog();
+        }
+    }
+
     /** Opens the Git Log filtered to the active file's history. */
     void showFileHistory() {
         EditorBuffer b = host.activeBuffer();

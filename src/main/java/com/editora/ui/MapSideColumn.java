@@ -89,9 +89,9 @@ abstract class MapSideColumn implements CardAttachment {
         HBox.setHgrow(title, Priority.ALWAYS);
         Button close = new Button("×");
         close.getStyleClass().add("project-map-preview-button");
-        Icons.name(close, closeText);
+        MapButtonCommands.bind(column, close, "projectMap.cardClose", () -> closeText, this::close);
         close.setFocusTraversable(false);
-        close.setOnAction(event -> onClose.run());
+        MapButtonCommands.stuckOn(column, card);
         header = UiZoom.spacing(new HBox(title, close), 6);
         header.getStyleClass().add("project-map-card-structure-header");
         header.setAlignment(Pos.CENTER_LEFT);
@@ -128,6 +128,13 @@ abstract class MapSideColumn implements CardAttachment {
         button.getStyleClass().add("project-map-preview-button");
         button.setFocusTraversable(false);
         header.getChildren().add(header.getChildren().size() - 1, button);
+    }
+
+    /** Adds {@code button} to the header: it runs {@code action}, as card command {@code id} does in the column. */
+    protected final void addHeaderButton(
+            Button button, String id, java.util.function.Supplier<String> title, Runnable action) {
+        addHeaderButton(button);
+        MapButtonCommands.bind(column, button, id, title, action);
     }
 
     /** Puts {@code parts} under the header, the last one taking the height left. */

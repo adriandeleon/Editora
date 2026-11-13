@@ -99,7 +99,11 @@ final class DebugSessionsView extends BorderPane {
             } else {
                 Button close = new Button("×");
                 close.getStyleClass().addAll("flat", "small", "debug-session-close");
-                Icons.name(close, tr("debug.sessions.close", tab.title()));
+                if (tab.shown()) { // the command closes the shown session, so only its × carries the chord
+                    CommandTips.name(close, "debug.closeEndedSession", () -> tr("debug.sessions.close", tab.title()));
+                } else {
+                    Icons.name(close, tr("debug.sessions.close", tab.title()));
+                }
                 close.setFocusTraversable(false);
                 close.setOnAction(e -> actions.close(tab.session()));
                 strip.getChildren().add(close);
@@ -116,6 +120,17 @@ final class DebugSessionsView extends BorderPane {
             strip.getChildren().add(stopAll);
         }
         showStrip(true);
+    }
+
+    /** {@code debug.closeEndedSession}: the shown session's × when it has ended; false when it has no ×. */
+    boolean closeShownEnded() {
+        for (Tab tab : tabs()) {
+            if (tab.shown() && !tab.live() && stripShown()) {
+                actions.close(tab.session());
+                return true;
+            }
+        }
+        return false;
     }
 
     private void showStrip(boolean on) {

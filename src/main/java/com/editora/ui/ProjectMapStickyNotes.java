@@ -72,6 +72,7 @@ final class ProjectMapStickyNotes implements CardAttachment {
         Sheet() {
             getStyleClass().add("project-map-sticky-note");
             getProperties().put("editora.ownsKeys", Boolean.TRUE);
+            MapButtonCommands.stuckOn(this, card); // a card command typed in a sheet is its card's
             // Alt+arrows move a sheet, as they move its card (see ProjectMapPreview.geometryStep).
             getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, ProjectMapPreview.GEOMETRY_KEYS);
             setManaged(false);
@@ -183,8 +184,12 @@ final class ProjectMapStickyNotes implements CardAttachment {
             close.getStyleClass().addAll("flat", "project-map-sticky-note-close");
             close.setFocusTraversable(false);
             // One name, for the tooltip and a screen reader alike: what closing does, and that the note is kept.
-            Icons.name(close, tr("project.map.sticky.closeHelp"));
-            close.setOnAction(event -> closeNote(this.note));
+            MapButtonCommands.bind(
+                    this,
+                    close,
+                    "projectMap.cardClose",
+                    () -> tr("project.map.sticky.closeHelp"),
+                    () -> closeNote(this.note));
             HBox header = new HBox(where, close);
             header.getStyleClass().add("project-map-sticky-note-header");
             header.setAlignment(Pos.CENTER_LEFT);

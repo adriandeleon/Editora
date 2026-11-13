@@ -709,7 +709,8 @@ class ProjectMapNavReviewFxTest {
                 card.focusContent();
                 assertTrue(within(h.scene().getFocusOwner(), card), "precondition: the card has the keyboard");
                 Button close = (Button) card.lookupAll(".project-map-preview-button").stream()
-                        .filter(node -> tr("project.map.preview.close").equals(node.getAccessibleText()))
+                        .filter(node -> node.getAccessibleText() != null
+                                && node.getAccessibleText().startsWith(CommandTips.title("projectMap.cardClose")))
                         .findFirst()
                         .orElseThrow();
                 close.fire();

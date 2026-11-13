@@ -99,6 +99,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private final Button detachButton = new Button();
     /** Pops the panel out into (or back from) a separate window. Set by the coordinator; no-op until then. */
     private Runnable onDetach = () -> {};
+
+    private boolean detached;
     /** Receives the prompt text when the user sends (coordinator → agent). */
     private @Nullable Consumer<String> onSend;
 
@@ -171,9 +173,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         modelLabel.setOnMouseClicked(e -> onPickModel.run());
         modeLabel.getStyleClass().add("agent-header-label");
         modeLabel.setOnMouseClicked(e -> onPickMode.run());
-        iconButton(detachButton, Icons.detach(), () -> onDetach.run());
-        Icons.name(detachButton, tr("agent.detach"));
-        // The other three are commands: each is named after its own, with the chord the keymap binds to it.
+        // Each is named after its command, with the chord the keymap binds to it; this one in its own words.
+        iconButton(detachButton, Icons.detach(), this::toggleDetached);
+        CommandTips.name(detachButton, "agent.toggleDetached", () -> tr(detached ? "agent.redock" : "agent.detach"));
         iconButton(historyButton, Icons.history(), onResumeSession);
         CommandTips.name(historyButton, "agent.resumeSession");
         iconButton(newSessionButton, Icons.newFile(), onNewSession);
@@ -261,7 +263,13 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
     /** Updates the detach button's name to reflect the current state (docked ⇢ pop out, floating ⇢ dock). */
     public void setDetached(boolean detached) {
-        Icons.name(detachButton, tr(detached ? "agent.redock" : "agent.detach"));
+        this.detached = detached;
+        CommandTips.refresh(detachButton);
+    }
+
+    /** Agent: Open in Separate Window or Dock Back — as the detach button. */
+    void toggleDetached() {
+        onDetach.run();
     }
 
     private void send() {
