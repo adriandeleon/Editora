@@ -118,7 +118,9 @@ not expose mutation paths, and a comparison that degrades while a Result draft i
 
 ## Standalone viewer
 
-`editora --diff-ui LEFT RIGHT` starts one isolated, session-free window and opens either a normal
+`editora --diff-ui LEFT RIGHT` starts one isolated, session-free window (in the running editor when the
+launch is handed over: `WindowManager.openExternalDiffUi`, with its sides made absolute by
+`App.forwardArgs`) and opens either a normal
 `DiffViewerPane` for two files or `DirectoryReviewPane` for two directories. The app toolbar, menu, status bar,
 tab header, breadcrumb, and tool stripes are suppressed before the stage is shown; file reads, directory scans,
 and diff computation stay on bounded daemon executors. A mixed file/directory pair is rejected. The full-UI

@@ -73,6 +73,48 @@ class ExternalLaunchWindowFxTest {
         }
     }
 
+    @Test
+    void aForwardedNewFileAndAForwardedDiffEachOpenInAWindowOfThisEditor() throws Exception {
+        Path dir = Files.createTempDirectory("editora-external-window");
+        Path working = Files.writeString(dir.resolve("working-on.txt"), "in progress\n");
+        Path left = Files.writeString(dir.resolve("left.txt"), "one\n");
+        Path right = Files.writeString(dir.resolve("right.txt"), "two\n");
+
+        FxWindowFixture fx = FxWindowFixture.create(
+                dir, false, false, false, List.of(new MainController.OpenTarget(working, 0, 0)), true, c -> {});
+        try {
+            assertEquals(1, windowCount(fx), "precondition: one window");
+
+            // editora --new-file=notes.md, handed over: a new buffer of that name, in a window of its own.
+            FxTestSupport.runOnFx(
+                    () -> fx.windowManager.openExternalLaunchInNewWindow(List.of(), false, false, false, "notes.md"));
+            assertEquals(2, windowCount(fx), "the new buffer has a window");
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> {
+                        MainController c = lastController(fx);
+                        com.editora.editor.EditorBuffer buffer = c.activeBuffer();
+                        return buffer != null && "notes.md".equals(buffer.getTitle()) && buffer.getPath() == null;
+                    }),
+                    "a new, unsaved buffer called notes.md is in front");
+
+            // editora --diff-ui left right, handed over: the diff, in a window of its own.
+            FxTestSupport.runOnFx(
+                    () -> fx.windowManager.openExternalDiffUi(new WindowManager.DiffUiRequest(left, right)));
+            assertEquals(3, windowCount(fx), "the diff has a window");
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> lastController(fx).chrome.diffUiActive()),
+                    "and that window is the diff's");
+            assertTrue(hasFileOpen(fx, working), "the window in use still has its file");
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    private static MainController lastController(FxWindowFixture fx) {
+        List<?> windows = FxTestSupport.field(fx.windowManager, "windows");
+        return FxTestSupport.field(windows.get(windows.size() - 1), "controller");
+    }
+
     /** Applies an external launch the way {@code App.openForwardedLaunch} does. */
     private static void deliver(FxWindowFixture fx, Path file) throws Exception {
         FxTestSupport.runOnFx(() -> fx.windowManager.openExternalLaunchInNewWindow(

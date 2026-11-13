@@ -176,8 +176,10 @@ editora --diff-ui LEFT RIGHT
 ```
 
 File and `--project` arguments are additive: the previous session restores, then the given files
-open on top and the caret jumps to any `LINE:COLUMN`. A second launch hands its files to the running
-instance unless `--new-instance` is given. When something goes wrong, **Help → Report a Problem…** (or
+open on top and the caret jumps to any `LINE:COLUMN`. A second launch is handed to the running
+instance (its files, its `--new-file` buffer or its `--diff-ui` comparison open in a window there) unless
+`--new-instance` or `--disable-plugins` is given. An option not listed above is an error: nothing starts
+and the exit status is 2. Every argument after `--` is a file, also one whose name starts with a dash. When something goes wrong, **Help → Report a Problem…** (or
 `editora --report` when Editora will not start) prepares the debug log for a bug report. The command-line page in the
 [user docs](https://editora-project.dev/docs/) has the details and the launcher's location per package.
 

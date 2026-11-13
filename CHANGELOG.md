@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--` on the command line.** Every argument after `--` is a file, so `editora -- -notes.txt` opens a file
+  whose name starts with a dash, and a lone `-` is a file name too.
 - **A command for 44 buttons only the mouse could press.** Each is in the command palette, can be given a key
   under Settings → Keymaps, and the button's tooltip shows that key. On the Project Map: Back, Forward and
   History (the list of places the Map has been), Mouse and Keyboard Help, Options, and for the card the
@@ -532,6 +534,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A mistyped option on the command line stops the launch.** `editora --config-dri /tmp/x` used to ignore
+  the option it did not know and start on your real settings. It now prints `Editora: unknown option:
+  --config-dri` and how to get help, and exits with status 2 before any window opens. This holds for an option
+  with one dash too. The JVM options a launcher can leave among the arguments (`--add-exports`,
+  `--add-opens`, `-p`) are still passed over, with their values.
+- **`--new-file` and `--diff-ui` use the Editora already running.** `editora --new-file` and `editora
+  --diff-ui LEFT RIGHT` each started a second Editora on the same settings. They now open their window (the
+  new buffer, the comparison) in the one already running, as a launch with files does. `--new-instance` still
+  starts a separate one, and so does `--disable-plugins`.
 - **A tool window's stripe button and its command do the same thing.** A click on a stripe button now runs
   the window's command instead of toggling the panel past it. So a button does not open a panel whose
   feature is off (Debug, the language-server windows, Personal Notes, Commit, GitHub, the AI Agent) or the

@@ -153,10 +153,82 @@ class AppArgsTest {
     @Test
     void aRealFileAfterAForeignFlagIsStillOpened() {
         // Existence is what distinguishes a leaked value from a genuine argument, so a file that is really
-        // there wins even in the ambiguous position.
+        // there wins even in the ambiguous position. (main refuses an option Editora does not define, so this
+        // is for arguments that reach fileTargets some other way.)
         assertEquals(
                 List.of(new OpenTarget(Path.of("a.txt"), 0, 0)),
-                App.fileTargets(List.of("--add-exports", "a.txt"), p -> true));
+                App.fileTargets(List.of("--some-flag", "a.txt"), p -> true));
+    }
+
+    @Test
+    void aLaunchersJvmOptionIsSkippedByNameWithItsValueInBothForms() {
+        // Never refused, and the value never opened as a file, even when something by that name exists.
+        for (List<String> args : List.of(
+                List.of("--add-exports", "javafx.graphics/com.sun.glass.ui=com.editora", "a.txt"),
+                List.of("--add-exports=javafx.graphics/com.sun.glass.ui=com.editora", "a.txt"),
+                List.of("--add-opens", "java.base/java.lang=ALL-UNNAMED", "a.txt"),
+                List.of("--add-opens=java.base/java.lang=ALL-UNNAMED", "a.txt"),
+                List.of("-p", "/some/module/path", "a.txt"),
+                List.of("--enable-native-access=javafx.graphics,com.sun.jna", "a.txt"),
+                List.of("--enable-native-access", "javafx.graphics,com.sun.jna", "a.txt"))) {
+            assertNull(App.unknownOption(args), args.toString());
+            assertEquals(
+                    List.of(new OpenTarget(Path.of("a.txt"), 0, 0)), App.fileTargets(args, p -> true), args.toString());
+        }
+    }
+
+    @Test
+    void anOptionEditoraDoesNotDefineIsNamedWithOneDashOrTwo() {
+        assertEquals("--config-dri", App.unknownOption(List.of("--config-dri", "/tmp/cfg", "a.txt")));
+        assertEquals("--zenn", App.unknownOption(List.of("--zen", "--zenn")));
+        assertEquals("-x", App.unknownOption(List.of("a.txt", "-x")));
+        assertEquals("--config-dirs=/x", App.unknownOption(List.of("--config-dirs=/x")));
+        // Every option of the help text, its values and its operands are known.
+        assertNull(App.unknownOption(List.of(
+                "--config-dir",
+                "-odd-name",
+                "--dev",
+                "--project=/repo",
+                "--new-file",
+                "--new-file=n.md",
+                "--single-window",
+                "--single-window=proj",
+                "--no-session",
+                "--new-instance",
+                "--zen",
+                "--expert",
+                "--simple",
+                "--disable-plugins",
+                "--report",
+                "--check-terminal",
+                "-v",
+                "-V",
+                "--version",
+                "-h",
+                "--help",
+                "a.txt:3")));
+        assertNull(App.unknownOption(List.of("--diff-ui", "-left", "-right")), "the two sides are operands");
+        assertNull(App.unknownOption(null));
+        assertNull(App.unknownOption(List.of()));
+    }
+
+    @Test
+    void aLoneDashAndEverythingAfterDoubleDashAreFiles() {
+        assertNull(App.unknownOption(List.of("-", "--", "--zen", "-x")));
+        assertEquals(
+                List.of(
+                        new OpenTarget(Path.of("-"), 0, 0), new OpenTarget(Path.of("--zen"), 0, 0),
+                        new OpenTarget(Path.of("-x"), 0, 0), new OpenTarget(Path.of("--config-dir"), 0, 0)),
+                App.fileTargets(List.of("-", "--", "--zen", "-x", "--config-dir"), NOTHING_EXISTS));
+        // No option is read after "--": the scanners all stop there.
+        List<String> args = List.of("a.txt", "--", "--zen", "--dev", "--new-file", "--diff-ui", "--config-dir", "/x");
+        assertFalse(App.zenFlag(args));
+        assertFalse(App.devFlag(args));
+        assertFalse(App.diffUiFlag(args));
+        assertNull(App.newFileArg(args));
+        assertNull(App.configDirArg(args));
+        assertNull(App.diffUiArg(args));
+        assertTrue(App.zenFlag(List.of("--zen", "--", "x")));
     }
 
     @Test
@@ -230,8 +302,8 @@ class AppArgsTest {
         Files.writeString(real, "x");
         Path missing = dir.resolve("missing.txt");
 
-        assertEquals(List.of(new OpenTarget(real, 0, 0)), App.fileTargets(List.of("--add-exports", real.toString())));
-        assertEquals(List.of(), App.fileTargets(List.of("--add-exports", missing.toString())));
+        assertEquals(List.of(new OpenTarget(real, 0, 0)), App.fileTargets(List.of("--some-flag", real.toString())));
+        assertEquals(List.of(), App.fileTargets(List.of("--some-flag", missing.toString())));
     }
 
     @Test
@@ -378,12 +450,31 @@ class AppArgsTest {
     }
 
     @Test
-    void launchesThatNeedAWindowOfTheirOwnAreNotForwarded() {
-        // --new-file asks for a buffer no running window has an entry point for; --diff-ui is a standalone
-        // tool window with its own startup chrome. Each still gets its own process.
-        assertFalse(App.shouldForwardLaunch(List.of("--new-file=notes.md", "/src/Foo.java")));
-        assertFalse(App.shouldForwardLaunch(List.of("--new-file")));
-        assertFalse(App.shouldForwardLaunch(List.of("--diff-ui", "/src/old.java", "/src/new.java")));
+    void aNewFileAndADiffAreHandedToTheRunningEditorToo() {
+        // One instance runs per config folder: only --new-instance asks for another (and --disable-plugins,
+        // the way out of an editor that hangs).
+        assertTrue(App.shouldForwardLaunch(List.of("--new-file=notes.md", "/src/Foo.java")));
+        assertTrue(App.shouldForwardLaunch(List.of("--new-file")));
+        assertTrue(App.shouldForwardLaunch(List.of("--diff-ui", "/src/old.java", "/src/new.java")));
+        assertFalse(App.shouldForwardLaunch(List.of("--new-instance", "--new-file")));
+
+        // What is sent says what to open, with the diff's sides made absolute where the launch was typed.
+        Path cwd = Path.of("/work").toAbsolutePath();
+        assertEquals(
+                List.of("--new-file=notes.md"), App.forwardArgs(List.of("--new-file=notes.md"), cwd, NOTHING_EXISTS));
+        assertEquals(List.of("--new-file"), App.forwardArgs(List.of("--new-file"), cwd, NOTHING_EXISTS));
+        List<String> diff = App.forwardArgs(List.of("--diff-ui", "old.java", "sub/new.java"), cwd, NOTHING_EXISTS);
+        assertEquals(
+                List.of(
+                        "--diff-ui",
+                        cwd.resolve("old.java").toString(),
+                        cwd.resolve("sub/new.java").toString()),
+                diff);
+        // …and the receiving process reads the same request back out of it.
+        assertEquals(
+                new com.editora.ui.WindowManager.DiffUiRequest(cwd.resolve("old.java"), cwd.resolve("sub/new.java")),
+                App.diffUiArg(diff));
+        assertEquals(List.of(), App.fileTargets(diff, NOTHING_EXISTS), "the sides are not editor tabs");
     }
 
     @Test
@@ -449,7 +540,7 @@ class AppArgsTest {
         Predicate<Path> exists = p -> p.equals(cwd.resolve("real.txt"));
 
         List<String> forwarded =
-                App.forwardArgs(List.of("--add-exports", "javafx.graphics/x=y", "real.txt", "typo.txt"), cwd, exists);
+                App.forwardArgs(List.of("--some-flag", "javafx.graphics/x=y", "real.txt", "typo.txt"), cwd, exists);
 
         assertEquals(
                 List.of(
@@ -458,7 +549,7 @@ class AppArgsTest {
                 forwarded);
         assertEquals(
                 List.of(cwd.resolve("real.txt").toString()),
-                App.forwardArgs(List.of("--add-exports", "real.txt"), cwd, exists),
+                App.forwardArgs(List.of("--some-flag", "real.txt"), cwd, exists),
                 "a value that does exist there is a file, as fileTargets decides");
     }
 

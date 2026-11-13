@@ -59,6 +59,21 @@ public final class SingleInstance implements AutoCloseable {
     /** Endpoint-file value: this instance handles launches with nothing to open and {@code --project} ones. */
     private static final String ACCEPTS_ANY = "any";
 
+    /** Endpoint-file key and value: this instance opens a forwarded {@code --new-file} and {@code --diff-ui}. */
+    private static final String OPENS = "opens";
+
+    private static final String OPENS_NEW_WINDOWS = "newFile,diffUi";
+
+    /** What a running instance has to understand to be handed a launch, least first. */
+    public enum Needs {
+        /** "Open these files": every instance understands it. */
+        FILES,
+        /** A launch with nothing to open, or one that names a project. */
+        ANY,
+        /** A new buffer or a standalone diff window ({@code --new-file}, {@code --diff-ui}). */
+        NEW_WINDOWS
+    }
+
     /** How long to wait for the running instance: generous enough for a busy FX thread, short enough that a
      *  dead endpoint doesn't visibly stall the launch we're about to do ourselves instead. */
     private static final int CONNECT_TIMEOUT_MS = 700;
@@ -165,13 +180,22 @@ public final class SingleInstance implements AutoCloseable {
      * acknowledge such a launch and then do nothing visible with it.
      */
     public static Result start(Path configDir, List<String> args, boolean allowForward, boolean filesOnly) {
+        return start(configDir, args, allowForward, filesOnly ? Needs.FILES : Needs.ANY);
+    }
+
+    /**
+     * As {@link #start(Path, List, boolean, boolean)}, for a launch that asks for more than an instance of any
+     * age understands: it is delivered only to one whose endpoint file says it handles {@code needs}. An older
+     * build, still running across an upgrade, would acknowledge a {@code --diff-ui} launch and show no diff.
+     */
+    public static Result start(Path configDir, List<String> args, boolean allowForward, Needs needs) {
         if (configDir == null) {
             return new Result(Role.STANDALONE, null);
         }
         Path endpoint = configDir.resolve(ENDPOINT_FILE);
         Endpoint existing = read(endpoint);
         if (existing != null) {
-            if (allowForward && (filesOnly || existing.acceptsAnyLaunch) && forward(existing, args)) {
+            if (allowForward && existing.handles(needs) && forward(existing, args)) {
                 return new Result(Role.FORWARDED, null);
             }
             // Either we may not forward, or nobody answered — a crash leaves the file advertising a dead
@@ -233,6 +257,7 @@ public final class SingleInstance implements AutoCloseable {
             props.setProperty("token", newToken);
             props.setProperty("pid", String.valueOf(ProcessHandle.current().pid()));
             props.setProperty("accepts", ACCEPTS_ANY); // see start(…, filesOnly)
+            props.setProperty(OPENS, OPENS_NEW_WINDOWS); // see start(…, Needs)
             // The token is a credential for "make this editor open files", so it gets the same owner-only
             // treatment as everything else derived from the config dir.
             ConfigWriter.createOwnerOnly(tmp);
@@ -424,7 +449,17 @@ public final class SingleInstance implements AutoCloseable {
     }
 
     /** The endpoint file's contents; {@code null} from {@link #read} when absent or unusable. */
-    private record Endpoint(int port, String token, boolean acceptsAnyLaunch) {}
+    private record Endpoint(int port, String token, boolean acceptsAnyLaunch, boolean opensNewWindows) {
+
+        /** Whether the instance behind this endpoint understands a launch that needs {@code needs}. */
+        boolean handles(Needs needs) {
+            return switch (needs) {
+                case FILES -> true;
+                case ANY -> acceptsAnyLaunch;
+                case NEW_WINDOWS -> acceptsAnyLaunch && opensNewWindows;
+            };
+        }
+    }
 
     private static @Nullable Endpoint read(Path file) {
         if (!Files.isRegularFile(file)) {
@@ -445,7 +480,11 @@ public final class SingleInstance implements AutoCloseable {
             if (port <= 0 || port > 65535 || token == null || token.isBlank()) {
                 return null;
             }
-            return new Endpoint(port, token, ACCEPTS_ANY.equals(props.getProperty("accepts")));
+            return new Endpoint(
+                    port,
+                    token,
+                    ACCEPTS_ANY.equals(props.getProperty("accepts")),
+                    OPENS_NEW_WINDOWS.equals(props.getProperty(OPENS)));
         } catch (NumberFormatException e) {
             return null;
         }
