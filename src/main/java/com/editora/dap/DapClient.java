@@ -1477,11 +1477,17 @@ public final class DapClient implements IDebugProtocolClient {
             if (lb.condition() != null && !lb.condition().isBlank()) {
                 sb.setCondition(lb.condition());
             }
-            if (lb.logMessage() != null && !lb.logMessage().isBlank() && !LogpointTokens.uses(lb.logMessage())) {
+            // A filtered breakpoint stops at every hit: Editora checks its filters, then counts it and logs its
+            // message.
+            boolean filtered = !lb.filters().none();
+            if (lb.logMessage() != null
+                    && !lb.logMessage().isBlank()
+                    && !LogpointTokens.uses(lb.logMessage())
+                    && !filtered) {
                 // A message with $FUNCTION, $CALLSTACK…: no adapter knows those, so it stops and Editora logs it.
                 sb.setLogMessage(lb.logMessage());
             }
-            if (lb.hitCondition() != null && !lb.hitCondition().isBlank()) {
+            if (lb.hitCondition() != null && !lb.hitCondition().isBlank() && !filtered) {
                 sb.setHitCondition(lb.hitCondition());
             }
             sbs.add(sb);

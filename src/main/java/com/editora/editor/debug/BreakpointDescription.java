@@ -47,6 +47,15 @@ public final class BreakpointDescription {
         if (!bp.hitCondition().isEmpty()) {
             out.add(tr("debug.breakpoint.hitCondition", bp.hitCondition()));
         }
+        if (!bp.filters().thread().isEmpty()) {
+            out.add(tr("debug.breakpoint.threadFilter", bp.filters().thread()));
+        }
+        if (!bp.filters().caller().isEmpty()) {
+            out.add(tr("debug.breakpoint.callerFilter", bp.filters().caller()));
+        }
+        if (!bp.filters().instance().isEmpty()) {
+            out.add(tr("debug.breakpoint.instanceFilter", bp.filters().instance()));
+        }
         if (bp.hasLambdas()) {
             String numbers =
                     String.join(", ", bp.lambdas().stream().map(String::valueOf).toList());

@@ -157,6 +157,12 @@ final class DebugSession {
     /** The stop a recording breakpoint made, whose frame is not shown in the editor; -1 for none. */
     int quietStop = -1;
 
+    /** A breakpoint's filters were checked and passed: the stop is handled anew, this time shown. */
+    boolean filtersPassed;
+
+    /** Each filtered breakpoint's hits that passed its filters this session ({@code file:line}), for its hit count. */
+    final java.util.Map<String, Integer> filteredHits = new java.util.HashMap<>();
+
     /** The type renderers at work in this session's stop (built on first use, see DebugCoordinator.rendering). */
     @Nullable
     TypeRendering rendering;

@@ -80,6 +80,16 @@ final class ObjectMarks {
         return labels.isEmpty();
     }
 
+    /** Whether an object carries {@code label} (a breakpoint's instance filter names one by it). */
+    boolean hasLabel(String label) {
+        return labels.containsValue(tidy(label));
+    }
+
+    /** The labels given, in the order they were (the instance filter's choices). */
+    java.util.List<String> labels() {
+        return java.util.List.copyOf(new java.util.LinkedHashSet<>(labels.values()));
+    }
+
     void clear() {
         labels.clear();
     }

@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Breakpoint filters.** A breakpoint can now stop only in some threads (`worker-*`), only when called from some
+  functions (`OrderService.save`), or only on one object, the one you marked with Mark Object, as IntelliJ's
+  breakpoint filters do. Set them in Edit Breakpoint; patterns are separated by commas, `*` and `?` are wildcards and
+  `!` excludes. Editora checks the filters at each stop and lets the program go on, unseen, when one fails, so they
+  work with every language, and a filtered breakpoint's hit count and log message count only the hits that pass. Mark
+  the object at the breakpoint's first stop, and the following stops are that object's.
+
 - **Type renderers in the debugger.** Choose how the debugger shows a value of a type, as IntelliJ's type renderers
   and Visual Studio's natvis do: a Money object as `12.50 EUR` rather than `Money@1f3a`, and its children as the fields
   or expressions that matter, with the debugger's own under [Raw View]. Right-click a value in Variables and choose

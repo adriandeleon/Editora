@@ -1125,17 +1125,21 @@ class DebugReviewCWindowFxTest {
             double height = card.getLayoutBounds().getHeight();
             // A hint left on one line made the card ~600 px tall; six rows of fields and a wrapped hint are ~405.
             assertTrue(height < 450, "the card is " + height + " px tall: the hint wraps where it is laid out");
-            for (Node n : card.lookupAll(".label")) {
-                if (n instanceof javafx.scene.control.Label l
-                        && l.getParent() instanceof javafx.scene.layout.GridPane) {
-                    double w = l.getWidth();
-                    if (l.getStyleClass().contains("settings-note")) {
-                        assertTrue(l.getHeight() >= l.prefHeight(w) - 0.5, "the hint is not clipped");
-                    } else {
-                        assertTrue(w >= l.prefWidth(-1) - 0.5, l.getText() + " is shown whole");
-                    }
-                }
-            }
+            assertLabelsWhole(card);
+            // The filters, folded away until their link opens them: then their labels are whole too.
+            javafx.scene.control.Hyperlink filters =
+                    (javafx.scene.control.Hyperlink) card.lookup(".debug-breakpoint-filters-toggle");
+            filters.fire();
+            javafx.scene.Parent root = card.getScene().getRoot();
+            root.applyCss();
+            root.layout(); // the overlay sizes the card again, as the next pulse does
+            assertLabelsWhole(card);
+            assertTrue(
+                    card.lookupAll(".label").stream()
+                            .anyMatch(n -> n instanceof javafx.scene.control.Label l
+                                    && l.getText().equals(tr("dialog.debug.threadFilterLabel"))
+                                    && l.getWidth() > 0),
+                    "the thread filter is shown");
         });
         FxTestSupport.runOnFx(overlay::hide);
     }
@@ -1196,5 +1200,21 @@ class DebugReviewCWindowFxTest {
             }
         }
         return out;
+    }
+
+    /** Every label of the card's form that is shown is whole; the form's hint is not clipped. */
+    private static void assertLabelsWhole(Node card) {
+        for (Node n : card.lookupAll(".label")) {
+            if (n instanceof javafx.scene.control.Label l
+                    && l.getParent() instanceof javafx.scene.layout.GridPane grid
+                    && grid.isVisible()) {
+                double w = l.getWidth();
+                if (l.getStyleClass().contains("settings-note")) {
+                    assertTrue(l.getHeight() >= l.prefHeight(w) - 0.5, "the hint is not clipped");
+                } else {
+                    assertTrue(w >= l.prefWidth(-1) - 0.5, l.getText() + " is shown whole");
+                }
+            }
+        }
     }
 }
