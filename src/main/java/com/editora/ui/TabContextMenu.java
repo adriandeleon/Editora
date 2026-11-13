@@ -12,7 +12,8 @@ import com.editora.editor.MenuChords;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The right-click menu of an editor tab; built lazily on first use by {@link MainController}.
+ * The right-click menus of the tab strip, built lazily on first use by {@link MainController}: an editor
+ * tab's ({@link #build}) and every other tab's ({@link #buildForContent}).
  *
  * <p>Simple UI mode trims it, as it trims the menu bar, to saving, printing, closing and the file's own
  * place on disk: the Git, Local History, diff, terminal and bulk-close entries are hidden while the mode is on
@@ -20,6 +21,99 @@ import static com.editora.i18n.Messages.tr;
  */
 final class TabContextMenu {
     private TabContextMenu() {}
+
+    /** Property of a tab's own row: a {@link Runnable} the menu runs each time it opens (to set the row's words). */
+    static final Object ON_SHOWING = new Object();
+
+    /**
+     * The menu of a tab that is not an editor's: an image, a PDF, a hex view, a diff, a review, a preview, a
+     * terminal, the Welcome page. The tab's {@code own} rows come first, then the tab operations every tab has,
+     * then, for a viewer's file, its place on disk and its pin.
+     */
+    static void buildForContent(MainController c, Tab tab, ContextMenu menu, MenuItem... own) {
+        MenuItem close = LazyContextMenu.item(tr("menu.close"), Icons.closeTab(), () -> c.closeTab(tab));
+        MenuItem closeOthers =
+                LazyContextMenu.item(tr("menu.closeOthers"), Icons.closeOtherTabs(), () -> c.closeOtherTabs(tab));
+        MenuItem closeAll = LazyContextMenu.item(tr("menu.closeAll"), Icons.closeAllTabs(), () -> c.closeAllTabs());
+        MenuItem closeUnmodified = LazyContextMenu.item(
+                tr("menu.closeUnmodified"), Icons.closeUnmodifiedTabs(), () -> c.closeUnmodifiedTabs());
+        MenuItem closeLeft =
+                LazyContextMenu.item(tr("menu.closeLeft"), Icons.closeTabsLeft(), () -> c.closeTabsToLeft(tab));
+        MenuItem closeRight =
+                LazyContextMenu.item(tr("menu.closeRight"), Icons.closeTabsRight(), () -> c.closeTabsToRight(tab));
+        MenuItem revealInMap = LazyContextMenu.item(tr("project.map.menu.revealInMap"), Icons.locateFile(), () -> {
+            java.nio.file.Path file = MainController.tabPath(tab);
+            if (file != null && c.projectsEnabled()) {
+                c.projectPanel().showInMap(file);
+            }
+        });
+        MenuItem reveal = LazyContextMenu.item(tr("menu.revealInFileManager"), Icons.revealInFiles(), () -> {
+            java.nio.file.Path file = MainController.tabPath(tab);
+            c.revealInFileManager(file, false, com.editora.vfs.Vfs.isLocal(file));
+        });
+        MenuItem terminal = LazyContextMenu.item(tr("menu.openTerminal"), Icons.terminal(), () -> {
+            java.nio.file.Path file = MainController.tabPath(tab);
+            c.openTerminalAt(file, false, com.editora.vfs.Vfs.isLocal(file));
+        });
+        MenuItem copyPath =
+                LazyContextMenu.item(tr("menu.copyPath"), Icons.copy(), () -> c.copyPath(MainController.tabPath(tab)));
+        MenuItem pin = LazyContextMenu.item(tr("menu.pin"), Icons.pin(), () -> c.togglePin(tab));
+        // Each row a command also does shows that command's chord: the shortcut for "this, on the active tab".
+        MenuChords.tag(close, "buffer.close");
+        MenuChords.tag(closeOthers, "buffer.closeOthers");
+        MenuChords.tag(closeAll, "buffer.closeAll");
+        MenuChords.tag(closeUnmodified, "buffer.closeUnmodified");
+        MenuChords.tag(closeLeft, "buffer.closeLeft");
+        MenuChords.tag(closeRight, "buffer.closeRight");
+        MenuChords.tag(revealInMap, "projectMap.revealActiveFile");
+        MenuChords.tag(reveal, "file.revealInFileManager");
+        MenuChords.tag(terminal, "file.openTerminal");
+        MenuChords.tag(copyPath, "buffer.copyPath");
+        MenuChords.tag(pin, "buffer.togglePin");
+        menu.getItems().setAll(own);
+        menu.getItems()
+                .addAll(
+                        new SeparatorMenuItem(),
+                        close,
+                        closeOthers,
+                        closeAll,
+                        closeUnmodified,
+                        new SeparatorMenuItem(),
+                        closeLeft,
+                        closeRight,
+                        new SeparatorMenuItem(),
+                        revealInMap,
+                        reveal,
+                        terminal,
+                        copyPath,
+                        pin);
+        menu.setOnShowing(e -> {
+            for (MenuItem row : own) {
+                if (row.getProperties().get(ON_SHOWING) instanceof Runnable words) {
+                    words.run();
+                }
+            }
+            boolean simple = c.chrome.simpleModeActive();
+            java.nio.file.Path path = MainController.tabPath(tab);
+            boolean hasPath = path != null;
+            close.setDisable(!tab.isClosable());
+            closeUnmodified.setVisible(!simple);
+            closeLeft.setVisible(!simple);
+            closeRight.setVisible(!simple);
+            closeLeft.setDisable(c.eligibleToLeft(tab).isEmpty());
+            closeRight.setDisable(c.eligibleToRight(tab).isEmpty());
+            // The file rows are a viewer's: a diff, a terminal or the Welcome page shows no one file.
+            revealInMap.setVisible(hasPath && c.projectsEnabled());
+            reveal.setVisible(hasPath);
+            reveal.setDisable(!com.editora.vfs.Vfs.isLocal(path)); // a remote file has no place in this file manager
+            terminal.setVisible(hasPath && !simple);
+            copyPath.setVisible(hasPath);
+            // As on a file's tab, Unpin stays reachable in Simple mode for a tab pinned before it was turned on.
+            pin.setVisible(hasPath && (!simple || c.pinned.contains(tab)));
+            pin.setText(tr(c.pinned.contains(tab) ? "menu.unpin" : "menu.pin"));
+            LazyContextMenu.collapseSeparators(menu.getItems());
+        });
+    }
 
     static void build(MainController c, Tab tab, EditorBuffer buffer, ContextMenu menu) {
         MenuItem save = LazyContextMenu.item(tr("menu.save"), Icons.save(), () -> c.fileWorkflows.save(buffer));

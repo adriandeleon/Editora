@@ -19,7 +19,6 @@ import javafx.geometry.Orientation;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
@@ -971,12 +970,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Tab tab = addContentTab(welcomePane, true);
         tab.getStyleClass().add("ui-surface-tab"); // the page is on the UI surface, so is its selected tab
         welcomeTab = tab;
-        // Welcome is not a document: only a Close action (no Save/Rename/Pin).
-        MenuItem close = new MenuItem(tr("menu.close"));
-        close.setGraphic(Icons.closeTab());
-        close.setOnAction(e -> closeTab(tab));
-        MenuChords.tag(close, "buffer.close"); // as on a file's tab: the shortcut closes the active tab
-        tab.setContextMenu(new ContextMenu(close));
+        // Welcome is not a document: its menu is the tab operations alone (no Save/Rename/Pin).
         tab.setOnClosed(e -> {
             if (welcomeTab == tab) {
                 welcomeTab = null;
@@ -998,11 +992,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         Tab tab = addContentTab(doctorCoordinator.pane(), true);
         tab.getStyleClass().add("ui-surface-tab");
         doctorTab = tab;
-        MenuItem close = new MenuItem(tr("menu.close"));
-        close.setGraphic(Icons.closeTab());
-        close.setOnAction(e -> closeTab(tab));
-        MenuChords.tag(close, "buffer.close"); // as on a file's tab: the shortcut closes the active tab
-        tab.setContextMenu(new ContextMenu(close));
         tab.setOnClosed(e -> {
             if (doctorTab == tab) {
                 doctorTab = null;
@@ -1013,7 +1002,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /**
      * Shows a terminal moved out of the Terminal tool window as an editor tab, selected, with the keyboard. Its menu
-     * acts on the terminal: Rename, Move to Terminal Tool Window, Close. A close asks what the panel would ask.
+     * acts on the terminal (Rename, Move to Terminal Tool Window) before the tab operations. A close asks what
+     * the panel would ask.
      */
     void openTerminalEditorTab(TerminalEditorTab terminal) {
         Tab tab = addContentTab(terminal, true);
@@ -1028,10 +1018,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem back = new MenuItem(tr("terminal.tab.moveToToolWindow"), Icons.dock());
         back.setOnAction(e -> terminalCoordinator.moveToToolWindow(terminal));
         MenuChords.tag(back, "terminal.moveToToolWindow");
-        MenuItem close = new MenuItem(tr("menu.close"), Icons.closeTab());
-        close.setOnAction(e -> terminalCoordinator.requestClose(terminal));
-        MenuChords.tag(close, "buffer.close"); // closeTab on a terminal tab is this same requestClose
-        tab.setContextMenu(new ContextMenu(rename, back, new javafx.scene.control.SeparatorMenuItem(), close));
+        installContentTabMenu(tab, rename, back); // Close there is closeTab, which is this same requestClose
     }
 
     /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
@@ -3601,7 +3588,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             TabHeaders.toggleClass(tab, "pinned", true);
             tabHeaders.contentHeader(tab, placeholder); // again, now that the pin is known
         }
-        tab.setTooltip(TabHeaders.tooltip(placeholder.path()));
         // The tab menu is a buffer's; opening it on a placeholder builds the editor first.
         tab.setContextMenu(LazyContextMenu.of(menu -> {
             EditorBuffer built = ensureBuffer(tab);
@@ -3810,6 +3796,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         tab.setUserData(content);
         tabHeaders.contentHeader(tab, content);
         tab.setClosable(content.closeable());
+        installContentTabMenu(tab); // every tab of the strip has the tab operations; a buffer's menu replaces it
         tab.setOnCloseRequest(e -> {
             if (!closes.confirmClose(tab)) {
                 e.consume();
@@ -3825,7 +3812,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         return tab;
     }
     /** Tab headers (icon, title, markers, drag handle); see {@link TabHeaders}. */
-    private final TabHeaders tabHeaders = new TabHeaders(() -> editorArea, tab -> pinned.contains(tab));
+    private final TabHeaders tabHeaders =
+            new TabHeaders(() -> editorArea, tab -> pinned.contains(tab), MainController::tabPath);
 
     /** Refreshes a tab's title (pin + dirty markers), style classes, and full-path tooltip. */
     void updateTabMeta(Tab tab, EditorBuffer buffer) {
@@ -4184,6 +4172,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             closedTabs.closed(buffer.getPath(), buffer.getArea().getCaretPosition());
         } else if (placeholder != null) {
             closedTabs.closed(placeholder.path(), placeholder.caret()); // a restored tab never shown
+        } else if (buffer == null) {
+            // A viewer's file comes back too, in its viewer: an image, a PDF, or a file's bytes.
+            closedTabs.closed(tabPath(tab), 0, hexPaneOf(tab) != null);
         }
     }
 
@@ -4192,12 +4183,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         for (ClosedTabs.Entry entry = closedTabs.pop(); entry != null; entry = closedTabs.pop()) {
             Path path = entry.path();
             Tab open = tabForPath(path);
-            if (open != null) {
+            if (open != null && (hexPaneOf(open) != null) == entry.hex()) {
                 editorArea.select(open); // reopened some other way since
                 return;
             }
             if (com.editora.vfs.Vfs.isLocal(path) && !Files.exists(path)) {
                 continue; // deleted since: the next one back
+            }
+            if (entry.hex()) {
+                fileWorkflows.openHexTab(path, true); // its bytes again, though its name would open it as text
+                return;
             }
             int caret = entry.caret();
             fileWorkflows.openThen(path, () -> {
@@ -4317,11 +4312,16 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Copies the buffer's absolute path to the system clipboard. */
     void copyPath(@Nullable EditorBuffer buffer) {
-        if (buffer == null || buffer.getPath() == null) {
+        copyPath(buffer == null ? null : buffer.getPath());
+    }
+
+    /** Copies {@code path} in full to the clipboard: a buffer's file or a viewer's. */
+    void copyPath(@Nullable Path path) {
+        if (path == null) {
             return;
         }
         ClipboardContent content = new ClipboardContent();
-        content.putString(buffer.getPath().toAbsolutePath().toString());
+        content.putString(path.toAbsolutePath().toString());
         Clipboard.getSystemClipboard().setContent(content);
         setStatus(tr("status.copiedPath"));
     }
@@ -4404,9 +4404,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         EditorBuffer buffer = ensureBuffer(tab); // a restored tab not built yet has a header to mark: build it
-        if (buffer == null) {
-            // The Welcome tab or a viewer: its header has no pin marker to show, and buffer.togglePin reaches
-            // here with whatever tab is selected. Pinning it used to throw after the tab was already pinned.
+        if (buffer == null && tabPath(tab) == null) {
+            // The Welcome tab, a diff, a terminal: no file to keep open, and the session would not bring the
+            // pin back. buffer.togglePin reaches here with whatever tab is selected.
             setStatus(tr("status.noFileOpen"));
             return;
         }
@@ -4416,8 +4416,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Either way the tab belongs at the end of its strip's pinned group: last of them once pinned, first
         // after them once unpinned.
         editorArea.moveToPinBoundary(tab, pinned::contains);
-        updateTabMeta(tab, buffer);
+        if (buffer != null) {
+            updateTabMeta(tab, buffer);
+        } else {
+            renderViewerPin(tab); // an image, a PDF or a hex view: pinned as a file's tab is
+        }
         setStatus(tr(pinned.contains(tab) ? "status.pinned" : "status.unpinned"));
+    }
+
+    /** Draws the pin marker (or its absence) on a viewer tab, whose header is the generic one. */
+    void renderViewerPin(Tab tab) {
+        if (bufferOf(tab) == null && tab.getUserData() instanceof TabContent content) {
+            TabHeaders.toggleClass(tab, "pinned", pinned.contains(tab));
+            tabHeaders.contentHeader(tab, content);
+        }
     }
 
     /** Prompts for a new name for the buffer's file; see {@link #renameFileTo}. */
@@ -4465,6 +4477,14 @@ public class MainController implements com.editora.mcp.McpBridge {
             recentFiles.add(target);
         }
         statusBar.refresh();
+    }
+
+    /**
+     * The right-click menu of a tab that is not an editor's: the tab operations (and, for a viewer's file, its
+     * place on disk), after the tab's {@code own} rows.
+     */
+    void installContentTabMenu(Tab tab, MenuItem... own) {
+        tab.setContextMenu(LazyContextMenu.of(menu -> TabContextMenu.buildForContent(this, tab, menu, own)));
     }
 
     /** Builds and attaches the right-click context menu for a tab. */
@@ -4637,9 +4657,18 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean sessionClosed;
 
     void nextBuffer() {
+        stepBuffer(1);
+    }
+
+    /** {@code buffer.previous}: the tab before the selected one, wrapping to the last. */
+    void previousBuffer() {
+        stepBuffer(-1);
+    }
+
+    private void stepBuffer(int step) {
         int count = editorArea.focusedSize(); // within the split group, as IntelliJ's (thirteenth review AK3)
         if (count > 1) {
-            int idx = (editorArea.selectedIndex() + 1) % count;
+            int idx = Math.floorMod(editorArea.selectedIndex() + step, count);
             editorArea.select(idx);
             Platform.runLater(() -> TabFocus.focusTab(editorArea.selectedTab(), MainController::bufferOf)); // AQ2, AL1
         }

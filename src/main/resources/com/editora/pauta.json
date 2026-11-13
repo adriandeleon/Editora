@@ -393,38 +393,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
     },
     {
-      "rule": "TABS-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-01",
-      "kind": "pending",
-      "reason": "There is no Previous Tab command, and image, hex, PDF, diff and pull-request review tabs have no right-click menu.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1565"
-    },
-    {
-      "rule": "TABS-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-02",
-      "kind": "pending",
-      "reason": "Image, hex and PDF tabs show no tooltip with the file's full path.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1565"
-    },
-    {
-      "rule": "TABS-06",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-06",
-      "kind": "pending",
-      "reason": "A closed image, hex or PDF tab is not offered by Reopen Closed Tab.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1565"
-    },
-    {
-      "rule": "TABS-08",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-08",
-      "kind": "pending",
-      "reason": "A tab's tooltip does not name the file's Git status.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1565"
-    },
-    {
       "rule": "TABS-13",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-13",
