@@ -785,16 +785,30 @@ public class WindowManager {
      */
     public void openExternalLaunchInNewWindow(
             List<MainController.OpenTarget> files, boolean zen, boolean expert, boolean simple) {
-        if (files == null || files.isEmpty()) {
+        openExternalLaunchInNewWindow(files, zen, expert, simple, null);
+    }
+
+    /**
+     * As {@link #openExternalLaunchInNewWindow(List, boolean, boolean, boolean)}, for a launch that also asked
+     * for a new buffer ({@code --new-file[=name]}; {@code ""} is an unnamed one): the buffer opens in the new
+     * window, as it would have in a window of the launch's own process.
+     */
+    public void openExternalLaunchInNewWindow(
+            List<MainController.OpenTarget> files,
+            boolean zen,
+            boolean expert,
+            boolean simple,
+            @Nullable String newFile) {
+        if ((files == null || files.isEmpty()) && newFile == null) {
             return;
         }
         if (restorePending()) {
             // A window still to be built may be the one that has this file open; deciding now would open a
             // second buffer over it in a new window.
-            deferredExternalLaunches.add(() -> openExternalLaunchInNewWindow(files, zen, expert, simple));
+            deferredExternalLaunches.add(() -> openExternalLaunchInNewWindow(files, zen, expert, simple, newFile));
             return;
         }
-        Holder holding = holderWithAnyOf(files);
+        Holder holding = newFile == null ? holderWithAnyOf(files) : null; // a new buffer is in no window yet
         if (holding != null) {
             presentForExternalLaunch(holding.stage());
             holding.controller().openExternalFiles(files); // focuses the tab, honours a :line
@@ -808,7 +822,7 @@ public class WindowManager {
         // writing a session file of its own (persistSession returns early under --no-session).
         noSession = true;
         try {
-            Stage stage = buildWindow(key, null, untitledStateFile(key), files, zen, expert, null, simple);
+            Stage stage = buildWindow(key, null, untitledStateFile(key), files, zen, expert, newFile, simple);
             transientWindows.add(key);
             presentForExternalLaunch(stage);
         } catch (RuntimeException | Error t) {
@@ -816,6 +830,33 @@ public class WindowManager {
                     .log(java.util.logging.Level.WARNING, "Failed to open a window for an external launch", t);
             // Fall back to the old behaviour rather than dropping the user's file on the floor.
             openExternalFiles(files, zen, expert, simple);
+        } finally {
+            noSession = restoreNoSession;
+        }
+    }
+
+    /**
+     * A {@code --diff-ui LEFT RIGHT} launch handed over by another process: the two-file diff in a window of
+     * its own in this editor, session-free like {@link #launchDiffUi}'s, without that launch's hold on the
+     * primary stage or on how the session is saved.
+     */
+    public void openExternalDiffUi(DiffUiRequest request) {
+        if (restorePending()) {
+            deferredExternalLaunches.add(() -> openExternalDiffUi(request));
+            return;
+        }
+        String key = WindowKeys.UNTITLED_PREFIX + "diff-"
+                + java.util.UUID.randomUUID().toString().substring(0, 8);
+        boolean restoreNoSession = noSession;
+        noSession = true; // the diff and nothing else: no saved tabs restored into it, no session written
+        try {
+            Stage stage = buildWindow(key, null, untitledStateFile(key), List.of(), false, false, null, false, request);
+            transientWindows.add(key);
+            presentForExternalLaunch(stage);
+        } catch (RuntimeException | Error t) {
+            java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                    .log(java.util.logging.Level.WARNING, "Failed to open a diff window for an external launch", t);
+            presentForExternalLaunch(); // the editor comes forward, so the launch is not silent
         } finally {
             noSession = restoreNoSession;
         }

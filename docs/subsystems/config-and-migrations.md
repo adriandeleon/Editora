@@ -106,11 +106,35 @@ Two paths:
 `SharedConfig` shares the stores between the *windows* of one process. Two *processes* on the same
 directory are a different matter, and are avoided where possible: `App.shouldForwardLaunch` hands **every**
 launch to the editor already running on that config directory — a launch with files (new window), with
-`--project` (that project's window) or with nothing to open (the editor is brought forward,
-`WindowManager.presentForExternalLaunch`) — unless it carries `--new-instance`, `--new-file` or `--diff-ui`.
+`--project` (that project's window), with `--new-file` (a new buffer in a new window), with `--diff-ui` (the
+diff in a window of its own, `WindowManager.openExternalDiffUi`) or with nothing to open (the editor is
+brought forward, `WindowManager.presentForExternalLaunch`) — unless it carries `--new-instance`, or
+`--disable-plugins`, the way out of an editor that a plugin hangs at startup. That exception is on purpose
+(decided 2026-11-13): the editor such a launch would be handed to is the hung one, so it keeps a process of
+its own, and `pauta.json` lists the rule on handing launches over as unmet for it.
 `--dev` and `--config-dir` do not opt out; they select which directory, and therefore which running editor,
 a launch belongs to. A second JVM on `~/.editora` therefore needs `--new-instance` (or a launch that arrives
 before the first process has published its endpoint, or cannot reach it).
+
+A launch is only handed to a running editor that understands it. The endpoint file says what its process
+handles (`accepts=any`, `opens=newFile,diffUi`), and `SingleInstance.start(…, Needs)` holds back a launch
+that needs more: a build from before `--diff-ui` was forwarded, still running across an upgrade, would
+acknowledge the launch and show nothing, so that launch starts its own process as it used to.
+
+## Options the command line does not know
+
+`App.main` refuses an option Editora does not define before the GUI starts and before the launch can be
+handed over: it prints `Editora: unknown option: <option>` and how to get help on standard error and exits
+with status 2 (`App.unknownOption`, pure). One dash or two makes no difference. Ignored, a mistyped
+`--config-dir` would start the editor on the real settings. Three kinds of argument are not unknown options:
+
+- A lone `-`, and every argument after `--`, is a file. Every option scanner reads only what stands before
+  `--` (`App.options`), so `editora -- --zen` opens a file called `--zen` and does not enter Zen mode.
+- The JVM options a launcher can leave among the program's arguments (`--add-exports`, `--add-opens`, `-p`,
+  `--enable-native-access`) are skipped by name with their value, in both forms (`--add-exports VALUE`,
+  `--add-exports=VALUE`). The value is never opened as a file.
+- A new option goes into `KNOWN_FLAGS`, `VALUE_OPTIONS` or `KNOWN_PREFIXES` in `App`, and into `helpText`;
+  until it is there the launch is refused.
 
 `App.start` calls `SharedConfig.claimInstance()` before any window is built. The claim is an OS file lock
 on `<configDir>/instance.lock` ([`InstanceLock`](../../src/main/java/com/editora/config/InstanceLock.java)),

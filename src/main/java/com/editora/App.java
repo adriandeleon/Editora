@@ -84,8 +84,8 @@ public class App extends Application {
         // crash and can be attached to a bug report (the in-memory capture was installed in main()).
         com.editora.ui.DebugLog.attachFile(shared.getConfigDir());
 
-        // Claim the config dir. A launch that is not forwarded (--new-instance, --new-file, --diff-ui, or one
-        // that could not reach the running editor) is a second process on the same directory; only the first
+        // Claim the config dir. A launch that is not forwarded (--new-instance, --disable-plugins, or one that
+        // could not reach the running editor) is a second process on the same directory; only the first
         // may garbage-collect shared data, and WindowManager tells the user of a later one about the other.
         shared.claimInstance();
         // Point the spawned-server ledger at the config dir and reap any LSP/DAP server leaked by a
@@ -219,8 +219,8 @@ public class App extends Application {
     }
 
     /**
-     * Applies a launch that arrived from another process: open its files in the running editor, honouring a
-     * focus-mode flag if it carried one.
+     * Applies a launch that arrived from another process: open its files, its new buffer or its diff in the
+     * running editor, honouring a focus-mode flag if it carried one.
      *
      * <p>Routed through the very same {@code WindowManager.openExternalFiles} that Finder's Apple Event uses
      * on macOS, so a forwarded launch and an OS-delivered one cannot behave differently — the two paths
@@ -231,7 +231,13 @@ public class App extends Application {
         try {
             // fileTargets, not a second parser: these are the argv the forwarding process would itself have
             // parsed, so they must resolve identically here.
+            com.editora.ui.WindowManager.DiffUiRequest diff = diffUiArg(args);
+            if (diff != null) {
+                windows.openExternalDiffUi(diff); // its own window, as a launch of its own would have had
+                return;
+            }
             java.util.List<com.editora.ui.MainController.OpenTarget> targets = fileTargets(args);
+            String newFile = newFileArg(args);
             com.editora.config.Project project = forwardedProject(shared, projectArg(args));
             if (project != null) {
                 // --project DIR: that project's window, and the files in it — what the launch would have
@@ -243,7 +249,7 @@ public class App extends Application {
                 windows.presentForExternalLaunch();
                 return;
             }
-            if (targets.isEmpty()) {
+            if (targets.isEmpty() && newFile == null) {
                 // The launcher clicked again, or `editora` with no file: nothing to open, so show the editor.
                 windows.presentForExternalLaunch();
                 return;
@@ -251,7 +257,7 @@ public class App extends Application {
             // In a NEW window: had this launch not been forwarded it would have started its own process, and
             // so its own window. Reusing the process is the point of the handoff; reusing the window was not,
             // and it silently took over whatever the user was working in.
-            windows.openExternalLaunchInNewWindow(targets, zenFlag(args), expertFlag(args), simpleFlag(args));
+            windows.openExternalLaunchInNewWindow(targets, zenFlag(args), expertFlag(args), simpleFlag(args), newFile);
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Could not apply a forwarded launch", e);
         }
@@ -340,6 +346,7 @@ public class App extends Application {
             return null;
         }
         String prefix = "--config-dir=";
+        args = options(args);
         for (int i = 0; i < args.size(); i++) {
             String a = args.get(i);
             if (a == null) {
@@ -384,7 +391,7 @@ public class App extends Application {
         // keep-alive thread keeps the JVM alive after main() returns — so a plain return would print
         // the text and then hang until killed. (The fat-jar Launcher path has no toolkit and is
         // unaffected, but exit(0) is correct there too.)
-        for (String a : args) {
+        for (String a : options(java.util.List.of(args))) {
             if ("--help".equals(a) || "-h".equals(a)) {
                 System.out.println(helpText());
                 System.exit(0);
@@ -402,6 +409,14 @@ public class App extends Application {
             if ("--report".equals(a)) {
                 System.exit(report(java.util.List.of(args)));
             }
+        }
+        // An option Editora does not define stops the launch, before the GUI and before the launch can be
+        // handed to a running editor: ignored, a mistyped --config-dir would start on the real settings.
+        String unknown = unknownOption(java.util.List.of(args));
+        if (unknown != null) {
+            System.err.println(AppInfo.NAME + ": unknown option: " + unknown);
+            System.err.println("Run 'editora --help' for usage.");
+            System.exit(2);
         }
         // Force-kill any LSP/DAP server we spawn if the JVM exits without going through a window-close
         // teardown — a plain `kill`/SIGTERM, an OS quit, or most crashes. Without this, killing the app
@@ -430,6 +445,10 @@ public class App extends Application {
         // A launch that is more than "open these files" needs a running editor that knows what to do with it;
         // one from before that (still running across an upgrade) would acknowledge it and show nothing.
         boolean filesOnly = !fileTargets(argList).isEmpty() && projectArg(argList) == null;
+        // A new buffer or a diff window is asked of a running editor only if it says it opens them.
+        com.editora.ipc.SingleInstance.Needs needs = newFileArg(argList) != null || diffUiFlag(argList)
+                ? com.editora.ipc.SingleInstance.Needs.NEW_WINDOWS
+                : filesOnly ? com.editora.ipc.SingleInstance.Needs.FILES : com.editora.ipc.SingleInstance.Needs.ANY;
         // The config prefetch starts before the single-instance probe so the two overlap: a stale endpoint
         // (a crash left the file behind, and something else now holds the port) costs the probe up to its
         // connect timeout. Only the read-only warm-up runs meanwhile; the load itself waits at loadGate,
@@ -441,9 +460,9 @@ public class App extends Application {
                 configDir,
                 forward ? forwardArgs(argList, java.nio.file.Path.of("").toAbsolutePath()) : argList,
                 forward,
-                filesOnly);
+                needs);
         if (singleInstance.forwarded()) {
-            if (fileTargets(argList).isEmpty()) {
+            if (fileTargets(argList).isEmpty() && needs != com.editora.ipc.SingleInstance.Needs.NEW_WINDOWS) {
                 // Nothing visible happens in this terminal, so say where the launch went.
                 System.err.println(AppInfo.NAME + " is already running with this configuration (" + configDir
                         + "); this launch was handed to it. Use --new-instance to start a separate editor.");
@@ -665,10 +684,14 @@ public class App extends Application {
                   --version, -v, -V     Print the version and exit
                   --help, -h            Print this help and exit
 
+                An option not listed here is an error: nothing starts and the exit status is 2.
+
                 Arguments:
                   FILE                  Open FILE
                   FILE:LINE             Open FILE and jump to LINE
-                  FILE:LINE:COLUMN      Open FILE and jump to LINE and COLUMN""".formatted(AppInfo.NAME);
+                  FILE:LINE:COLUMN      Open FILE and jump to LINE and COLUMN
+                  -- FILE ...           Every argument after -- is a file, also one whose name starts
+                                        with a dash""".formatted(AppInfo.NAME);
     }
 
     /** The {@code --project=DIR} / {@code --project DIR} value, or {@code null} when not given. */
@@ -678,12 +701,12 @@ public class App extends Application {
 
     /** True if {@code --dev} is present (dev mode: separate ~/.editora-dev config; future: more logging). */
     static boolean devFlag(java.util.List<String> args) {
-        return args != null && args.contains("--dev");
+        return args != null && options(args).contains("--dev");
     }
 
     /** True if {@code --new-instance} is present: start a separate editor rather than reusing a running one. */
     static boolean newInstanceFlag(java.util.List<String> args) {
-        return args != null && args.contains("--new-instance");
+        return args != null && options(args).contains("--new-instance");
     }
 
     /**
@@ -705,27 +728,23 @@ public class App extends Application {
      * window, and a launch with nothing to open brings the editor forward. ({@code --no-session} and
      * {@code --single-window} only make a cold start cheap; forwarding makes both moot.)
      *
-     * <p>Not forwarded: {@code --new-instance}, the explicit request for a separate process;
-     * {@code --diff-ui}, a standalone tool window with its own startup chrome; and {@code --new-file}, which
-     * asks for a buffer no running window has an entry point for yet.
+     * <p>Not forwarded: {@code --new-instance}, the explicit request for a separate process, and
+     * {@code --disable-plugins}, the way out of a plugin that hangs Editora at startup: the editor it would be
+     * handed to is the one that hangs, with its plugins loaded. {@code --new-file} and {@code --diff-ui} are
+     * forwarded: each opens its window in the running editor.
      */
     static boolean shouldForwardLaunch(java.util.List<String> args) {
         if (args == null || newInstanceFlag(args)) {
             return false;
         }
-        if (disablePluginsFlag(args)) {
-            return false; // the running editor has its plugins loaded: this launch is about not loading them
-        }
-        if (diffUiFlag(args)) {
-            return false; // a standalone diff owns its window and startup chrome
-        }
-        return newFileArg(args) == null;
+        return !disablePluginsFlag(args); // the running editor has its plugins loaded
     }
 
     /**
      * The arguments to send to a running instance in place of this launch's own: the focus-mode flags, a
-     * {@code --project} directory made <b>absolute</b>, then every file target as an absolute path with its
-     * {@code :line[:column]} suffix re-attached.
+     * {@code --project} directory made <b>absolute</b>, {@code --new-file}, {@code --diff-ui} with its two
+     * sides made absolute, then every file target as an absolute path with its {@code :line[:column]} suffix
+     * re-attached.
      *
      * <p>Raw argv used to be forwarded, and the receiving process resolved it against <em>its</em> working
      * directory — so {@code cd ~/projB && editora README.md} reported "Failed to open", or opened the
@@ -756,6 +775,16 @@ public class App extends Application {
         if (project != null) {
             out.add("--project=" + cwd.resolve(project).normalize());
         }
+        String newFile = newFileArg(args);
+        if (newFile != null) {
+            out.add(newFile.isEmpty() ? "--new-file" : "--new-file=" + newFile);
+        }
+        com.editora.ui.WindowManager.DiffUiRequest diff = diffUiArg(args); // validated by main before this
+        if (diff != null) {
+            out.add("--diff-ui");
+            out.add(cwd.resolve(diff.left()).normalize().toString());
+            out.add(cwd.resolve(diff.right()).normalize().toString());
+        }
         for (com.editora.ui.MainController.OpenTarget t : fileTargets(args, p -> exists.test(cwd.resolve(p)))) {
             String position = t.line() <= 0 ? "" : ":" + t.line() + (t.column() > 0 ? ":" + t.column() : "");
             out.add(cwd.resolve(t.file()).normalize() + position);
@@ -765,27 +794,27 @@ public class App extends Application {
 
     /** True if {@code --zen} is present (a session-only Zen override — the saved session is untouched). */
     static boolean zenFlag(java.util.List<String> args) {
-        return args != null && args.contains("--zen");
+        return args != null && options(args).contains("--zen");
     }
 
     /** True if {@code --expert} is present (session-only Expert mode override, like {@code --zen}). */
     static boolean expertFlag(java.util.List<String> args) {
-        return args != null && args.contains("--expert");
+        return args != null && options(args).contains("--expert");
     }
 
     /** True if {@code --disable-plugins} is present (this session loads no plugin; nothing is saved). */
     static boolean disablePluginsFlag(java.util.List<String> args) {
-        return args != null && args.contains("--disable-plugins");
+        return args != null && options(args).contains("--disable-plugins");
     }
 
     /** True if {@code --simple} is present (session-only Simple UI mode override). */
     static boolean simpleFlag(java.util.List<String> args) {
-        return args != null && args.contains("--simple");
+        return args != null && options(args).contains("--simple");
     }
 
     /** True when the standalone two-file diff viewer was requested. */
     static boolean diffUiFlag(java.util.List<String> args) {
-        return args != null && args.contains("--diff-ui");
+        return args != null && options(args).contains("--diff-ui");
     }
 
     /**
@@ -797,6 +826,7 @@ public class App extends Application {
         if (args == null) {
             return null;
         }
+        args = options(args);
         int index = args.indexOf("--diff-ui");
         if (index < 0) {
             return null;
@@ -827,7 +857,7 @@ public class App extends Application {
      * restores everything as usual.
      */
     static boolean noSessionFlag(java.util.List<String> args) {
-        return args != null && args.contains("--no-session");
+        return args != null && options(args).contains("--no-session");
     }
 
     /**
@@ -841,7 +871,7 @@ public class App extends Application {
             return null;
         }
         String prefix = "--new-file=";
-        for (String a : args) {
+        for (String a : options(args)) {
             if (a == null) {
                 continue;
             }
@@ -867,7 +897,7 @@ public class App extends Application {
             return null;
         }
         String prefix = "--single-window=";
-        for (String a : args) {
+        for (String a : options(args)) {
             if (a == null) {
                 continue;
             }
@@ -886,6 +916,7 @@ public class App extends Application {
             return null;
         }
         String prefix = name + "=";
+        args = options(args);
         for (int i = 0; i < args.size(); i++) {
             String a = args.get(i);
             if (a == null) {
@@ -898,6 +929,66 @@ public class App extends Application {
             if (a.equals(name) && i + 1 < args.size() && args.get(i + 1) != null) {
                 String v = args.get(i + 1).trim();
                 return v.isEmpty() ? null : v;
+            }
+        }
+        return null;
+    }
+
+    /** The end-of-options separator: every argument after it is a file, whatever it starts with. */
+    static final String END_OF_OPTIONS = "--";
+
+    /**
+     * The part of {@code args} where options are read: everything before {@code --}. Every option scanner
+     * goes through this, so {@code editora -- --zen} opens a file called {@code --zen} and does not enter Zen
+     * mode.
+     */
+    static java.util.List<String> options(java.util.List<String> args) {
+        int end = args.indexOf(END_OF_OPTIONS);
+        return end < 0 ? args : args.subList(0, end);
+    }
+
+    /**
+     * JVM options a launcher can leave among the program's arguments: the module-system options Editora's own
+     * launchers pass ({@code pom.xml}'s {@code javaOptions}). They are skipped by name, each with its value
+     * (the next argument, or after {@code =} in the same one): never refused, since they are not the user's
+     * mistake, and the value is never opened as a file.
+     */
+    private static final java.util.Set<String> LAUNCHER_OPTIONS =
+            java.util.Set.of("--add-exports", "--add-opens", "-p", "--enable-native-access");
+
+    /** Whether {@code a} is a launcher's JVM option, alone or with its value after {@code =}. */
+    static boolean isLauncherOption(String a) {
+        int eq = a.indexOf('=');
+        return LAUNCHER_OPTIONS.contains(eq < 0 ? a : a.substring(0, eq));
+    }
+
+    /**
+     * The first option Editora does not define, or {@code null} when every argument is an option it knows, a
+     * launcher's JVM option, or a file. {@link #main} refuses such a launch before the GUI starts: a mistyped
+     * {@code --config-dir} that is ignored starts the editor on the real settings, which is the one thing the
+     * flag was typed to avoid. One dash or two makes no difference. A lone {@code -} and everything after
+     * {@code --} are files.
+     */
+    static @Nullable String unknownOption(java.util.List<String> args) {
+        if (args == null) {
+            return null;
+        }
+        java.util.List<String> options = options(args);
+        for (int i = 0; i < options.size(); i++) {
+            String a = options.get(i);
+            if (a == null || !a.startsWith("-") || a.equals("-")) {
+                continue;
+            }
+            if (VALUE_OPTIONS.contains(a)) {
+                i++; // its value, which may start with a dash
+            } else if ("--diff-ui".equals(a)) {
+                i += Math.min(2, options.size() - i - 1); // its two operands
+            } else if (isLauncherOption(a)) {
+                if (a.indexOf('=') < 0) {
+                    i++;
+                }
+            } else if (!isEditoraOption(a)) {
+                return a;
             }
         }
         return null;
@@ -919,6 +1010,8 @@ public class App extends Application {
             "--new-file",
             "--new-instance",
             "--single-window",
+            "--report",
+            "--check-terminal",
             "--version",
             "-V",
             "-v",
@@ -963,10 +1056,14 @@ public class App extends Application {
      * would go stale the way {@code commandsForAllServers} did (#723), whereas this one we own — and if it
      * <em>does</em> drift, the cost is one missing-file message, not a broken feature.
      *
-     * <p>No {@code --} end-of-options separator: eleven independent scanners parse these arguments, so only
-     * this one would honour it and {@code editora -- --zen} would open a file <em>and</em> enter Zen mode. It
-     * would only ever matter for a not-yet-existing file sitting directly after a foreign flag, since a file
-     * that is really there already wins.
+     * <p>A launcher's JVM options ({@code --add-exports}, {@code --add-opens}, {@code -p}) are skipped by name
+     * with their value, and {@link #main} refuses any other option Editora does not define
+     * ({@link #unknownOption}), so the foreign-option test above only still matters for arguments that reach
+     * this method some other way.
+     *
+     * <p>After {@code --} every argument is a file, and a lone {@code -} is one anywhere: that is how a file
+     * whose name starts with a dash is opened at all. The option scanners all stop at {@code --}
+     * ({@link #options}), so {@code editora -- --zen} opens a file and does not enter Zen mode.
      */
     static java.util.List<com.editora.ui.MainController.OpenTarget> fileTargets(java.util.List<String> args) {
         return fileTargets(args, java.nio.file.Files::exists);
@@ -981,23 +1078,36 @@ public class App extends Application {
             return out;
         }
         boolean afterForeignOption = false;
+        boolean filesOnly = false; // after "--": every argument is a file, whatever it starts with
         for (int i = 0; i < args.size(); i++) {
             String a = args.get(i);
             if (a == null || a.isEmpty()) {
                 continue;
             }
-            if (VALUE_OPTIONS.contains(a)) {
+            if (!filesOnly && a.equals(END_OF_OPTIONS)) {
+                filesOnly = true;
+                afterForeignOption = false;
+                continue;
+            }
+            if (!filesOnly && VALUE_OPTIONS.contains(a)) {
                 i++; // skip the value token
                 afterForeignOption = false;
                 continue;
             }
-            if ("--diff-ui".equals(a)) {
+            if (!filesOnly && isLauncherOption(a)) {
+                if (a.indexOf('=') < 0) {
+                    i++; // its value: never a file, whether or not something by that name exists
+                }
+                afterForeignOption = false;
+                continue;
+            }
+            if (!filesOnly && "--diff-ui".equals(a)) {
                 // Its two operands belong to the comparison, not to the ordinary editor-tab target list.
                 i += Math.min(2, args.size() - i - 1);
                 afterForeignOption = false;
                 continue;
             }
-            if (a.startsWith("-")) {
+            if (!filesOnly && a.startsWith("-") && !a.equals("-")) { // a lone "-" is a file's name
                 afterForeignOption = !isEditoraOption(a);
                 continue;
             }
