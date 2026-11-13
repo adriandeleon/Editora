@@ -148,8 +148,8 @@ class PomServerSupportTest {
     @Test
     void theLeftOutStatusPluralizes() {
         com.editora.i18n.Messages.init("en");
-        String one = com.editora.i18n.Messages.tr("status.maven.completionLeftOutMore", "a/pom.xml", "3", 1);
-        String two = com.editora.i18n.Messages.tr("status.maven.completionLeftOutMore", "a/pom.xml", "3", 2);
+        String one = com.editora.i18n.Messages.tr("status.maven.completionLeftOutMore", "a/pom.xml", 3, 1);
+        String two = com.editora.i18n.Messages.tr("status.maven.completionLeftOutMore", "a/pom.xml", 3, 2);
         assertTrue(one.startsWith("Left out a/pom.xml"), one);
         assertTrue(one.contains("one more pom:"), one);
         assertTrue(two.contains("2 more poms:"), two);

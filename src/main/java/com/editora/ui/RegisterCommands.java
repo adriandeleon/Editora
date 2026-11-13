@@ -189,10 +189,7 @@ final class RegisterCommands {
         }
         Registers.Position p = (Registers.Position) register;
         Path path = Vfs.parseStorable(p.file());
-        return tr(
-                "register.position",
-                path == null ? p.file() : String.valueOf(path.getFileName()),
-                String.valueOf(p.offset()));
+        return tr("register.position", path == null ? p.file() : String.valueOf(path.getFileName()), p.offset());
     }
 
     private void jump(Registers.Position position) {

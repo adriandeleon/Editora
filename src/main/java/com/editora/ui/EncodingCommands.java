@@ -128,12 +128,7 @@ final class EncodingCommands {
         }
         String shown = EditorConfigCharset.displayName(decoded.charset());
         if (!decoded.ok()) {
-            host.setStatus(tr(
-                    "status.encoding.notValid",
-                    file.getFileName(),
-                    shown,
-                    String.valueOf(decoded.line()),
-                    String.valueOf(decoded.column())));
+            host.setStatus(tr("status.encoding.notValid", file.getFileName(), shown, decoded.line(), decoded.column()));
             done.accept(false);
             return;
         }

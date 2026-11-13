@@ -192,7 +192,7 @@ final class MapHierarchyTree extends MapSideColumn {
         Path file = group.file();
         Path fileName = file.getFileName();
         String where = fileName == null ? file.toString() : fileName.toString();
-        String text = tr("project.map.hierarchy.row", group.label(), where, String.valueOf(group.line() + 1));
+        String text = tr("project.map.hierarchy.row", group.label(), where, group.line() + 1);
         return group.count() > 1 ? tr("project.map.hierarchy.rowCalls", text, String.valueOf(group.count())) : text;
     }
 

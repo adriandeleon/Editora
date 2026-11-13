@@ -20,6 +20,15 @@ public final class GpgStatus {
         public String arg(int i) {
             return i < args.size() ? args.get(i) : "";
         }
+
+        /** Argument {@code i} as a count: 0 when it is missing or is not a number. */
+        public int count(int i) {
+            try {
+                return Integer.parseInt(arg(i));
+            } catch (NumberFormatException notANumber) {
+                return 0;
+            }
+        }
     }
 
     private final List<Line> lines;

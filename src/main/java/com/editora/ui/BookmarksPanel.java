@@ -710,7 +710,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 label.getStyleClass().add("bookmark-label");
                 row.getChildren().addAll(Icons.bookmark(), label);
                 if (!m.bm().isFolder()) {
-                    Text line = new Text("line " + (m.bm().line() + 1));
+                    Text line = new Text(tr("bookmarks.line", m.bm().line() + 1));
                     line.getStyleClass().add("bookmark-line-number");
                     row.getChildren().add(line);
                 }

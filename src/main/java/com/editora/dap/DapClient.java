@@ -645,7 +645,7 @@ public final class DapClient implements IDebugProtocolClient {
             }
             Thread.sleep(40);
         }
-        throw new IllegalStateException(com.editora.i18n.Messages.tr("debug.error.noConnection", String.valueOf(port)));
+        throw new IllegalStateException(com.editora.i18n.Messages.tr("debug.error.noConnection", port));
     }
 
     /**

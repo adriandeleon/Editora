@@ -541,6 +541,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dates and numbers keep your system's region.** Editora wrote them the way the bare interface language
+  does: an Austrian system got German formats, and choosing English on a French system changed every date.
+  They now follow the system: its region is kept when no language is chosen in Settings or the chosen one
+  is the system's own, and only another language brings its own formats. Numbers inside messages follow
+  the same rule as the rest of the window.
+- **Modifier keys are named the same in every language.** The German, Spanish, French and Italian
+  translations said Strg, Umschalt, Mayús, Maj and Maiusc where the key caps, the keymaps and the docs say
+  Ctrl and Shift, and translated Option on a Mac. They now read Ctrl, Shift, Control and Option everywhere.
 - **A mistyped option on the command line stops the launch.** `editora --config-dri /tmp/x` used to ignore
   the option it did not know and start on your real settings. It now prints `Editora: unknown option:
   --config-dri` and how to get help, and exits with status 2 before any window opens. This holds for an option
@@ -753,6 +761,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Messages with a count say one or several.** "Replaced 1 occurrence(s)", "Updated 3 link(s) in 1 file(s)"
+  and 20 more messages now word the count in each of the six languages: "Replaced 1 occurrence", "3 liens
+  mis à jour dans 1 fichier". The translations had each invented a notation for it ("Datei(en)",
+  "immagine/i", "ligação(ões)").
+- **Line numbers in messages are no longer grouped like quantities.** Messages that name a line, a column,
+  a port or a process id showed "line 1,234" past line 999 (or "1.234" in German).
+- **Two labels were English in every language**: the line number beside a bookmark in the Bookmarks panel,
+  and the find bar's in-selection toggle.
 - **The debugger's toolbar shows the new keys after a keymap switch.** Continue, Step Over and the other
   buttons of the Debug window kept the old keymap's keys in their tooltips until the next debug session
   changed state.

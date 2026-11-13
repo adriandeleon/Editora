@@ -52,7 +52,7 @@ class SaveFidelityFxTest {
 
             assertEquals(hex(original), hex(Files.readAllBytes(file)), "no '?' and no byte-order mark on disk");
             assertTrue(FxTestSupport.callOnFx(buffer::isDirty), "the buffer still holds text that is not saved");
-            assertStatus(fx, tr("status.save.cannotEncodeSurrogate", "emoji.txt", "1", "U+D83D"));
+            assertStatus(fx, tr("status.save.cannotEncodeSurrogate", "emoji.txt", 1, "U+D83D"));
             assertEquals("UTF-8", statusSegment(fx, "encoding"), "the file's encoding is not switched");
         }
     }

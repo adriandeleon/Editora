@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -469,7 +470,121 @@ class MessagesTest {
             Map.entry("mermaid.diagnosticLine", new int[] {0, 1}),
             Map.entry("notes.line", new int[] {0}),
             Map.entry("status.snippetFileSyntaxError", new int[] {2}),
-            Map.entry("status.snippetEntryError", new int[] {2}));
+            Map.entry("status.snippetEntryError", new int[] {2}),
+            Map.entry("debug.smartStep.line", new int[] {0}),
+            Map.entry("dialog.debug.groupTitle", new int[] {0}),
+            Map.entry("debug.triggered.prompt", new int[] {0}),
+            Map.entry("status.debug.temporaryAdded", new int[] {0}),
+            Map.entry("status.debug.recordingAdded", new int[] {0}),
+            Map.entry("status.debug.triggeredAdded", new int[] {0}),
+            Map.entry("status.debug.triggeredRemoved", new int[] {0}),
+            Map.entry("status.debug.groupSet", new int[] {0}),
+            Map.entry("status.debug.groupNone", new int[] {0}),
+            Map.entry("status.debug.lambdaAdded", new int[] {0, 1}),
+            Map.entry("status.debug.lambdaRemoved", new int[] {0, 1}),
+            Map.entry("debug.gutter.stopInLambda", new int[] {0}),
+            Map.entry("status.debug.noLambdaHere", new int[] {0}),
+            Map.entry("status.debug.temporaryRemoved", new int[] {0}),
+            Map.entry("dialog.goToLine.content", new int[] {0}),
+            Map.entry("project.map.gutter.breakpoint", new int[] {0}),
+            Map.entry("picker.lsp.chooseImport", new int[] {1}),
+            Map.entry("status.lsp.problem", new int[] {0}),
+            Map.entry("dialog.note.titleForLine", new int[] {1}),
+            Map.entry("dialog.note.titleForLines", new int[] {1, 2}),
+            Map.entry("project.map.results.symbolRow", new int[] {3}),
+            Map.entry("project.map.results.textRow", new int[] {1}),
+            Map.entry("project.map.preview.goToLine.range", new int[] {0, 1}),
+            Map.entry("dialog.debug.pinLabel", new int[] {0}),
+            Map.entry("status.debug.pinned", new int[] {1}),
+            Map.entry("status.debug.unpinned", new int[] {1}),
+            Map.entry("status.debug.unpinnedLine", new int[] {0}),
+            Map.entry("status.debug.noPins", new int[] {0}),
+            Map.entry("debugpanel.pinToLine", new int[] {1}),
+            Map.entry("testrunner.finishedAborted", new int[] {0}),
+            Map.entry("status.fillColumn.set", new int[] {0}),
+            Map.entry("table.header.column", new int[] {0}),
+            Map.entry("debug.hcr.jdkMismatch", new int[] {0, 1}),
+            Map.entry("status.run.needJdk25", new int[] {0}),
+            Map.entry("status.run.needJdkVersion", new int[] {0, 1}),
+            Map.entry("status.run.needSource25", new int[] {0}),
+            Map.entry("status.debug.needSource25", new int[] {0}),
+            Map.entry("dialog.revertMerge.parent", new int[] {0}),
+            Map.entry("statusbar.tip.offset", new int[] {0}),
+            Map.entry("debugpanel.goToIndexLabel", new int[] {0}),
+            Map.entry("debug.sessions.untitled", new int[] {0}),
+            Map.entry("debugpanel.history.banner", new int[] {0}),
+            Map.entry("debugpanel.history.seen", new int[] {0}),
+            Map.entry("debugpanel.history.label", new int[] {0}),
+            Map.entry("debugpanel.history.entry", new int[] {0}),
+            Map.entry("debug.console.recorded", new int[] {0}),
+            Map.entry("project.map.status.trail.declarationGone", new int[] {0}),
+            Map.entry("project.map.status.trail.stopGone", new int[] {0}),
+            Map.entry("project.map.status.trail.linesPastEnd", new int[] {0, 1, 2}),
+            Map.entry("pdf.footer.page", new int[] {0}),
+            Map.entry("print.footer.page", new int[] {0}),
+            Map.entry("print.preview.page", new int[] {0}),
+            Map.entry("print.preview.printingPage", new int[] {0}),
+            Map.entry("pdfviewer.pageOf", new int[] {0}),
+            Map.entry("print.preview.pageField", new int[] {0, 1}),
+            Map.entry("print.preview.pageInvalid", new int[] {0}),
+            Map.entry("status.pdf.exportingPage", new int[] {0}),
+            Map.entry("project.map.preview.showingLines", new int[] {0}),
+            Map.entry("http.env.parseError", new int[] {0, 1}),
+            Map.entry("dialog.debug.breakpointTitleAt", new int[] {1}),
+            Map.entry("dialog.debug.logpointTitleAt", new int[] {1}),
+            Map.entry("debug.error.noConnection", new int[] {0}),
+            Map.entry("status.encoding.notValid", new int[] {2, 3}),
+            Map.entry("status.save.cannotEncodeSurrogate", new int[] {1}),
+            Map.entry("http.redirect.notReplacedError", new int[] {1}),
+            Map.entry("status.plugins.cmdFailedOutput", new int[] {1}),
+            Map.entry("jsonl.check.invalid", new int[] {0}),
+            Map.entry("status.maven.completionLeftOut", new int[] {1}),
+            Map.entry("status.maven.completionLeftOutMore", new int[] {1}),
+            Map.entry("status.maven.whyEntities", new int[] {0}),
+            Map.entry("status.maven.whyDuplicate", new int[] {1}),
+            Map.entry("status.maven.whyUnknown", new int[] {1}),
+            Map.entry("project.map.hierarchy.row", new int[] {2}),
+            Map.entry("project.map.history.cardEntry", new int[] {1}),
+            Map.entry("project.map.trails.stop.lines", new int[] {1, 2}),
+            Map.entry("debug.attachProcess.row", new int[] {1}),
+            Map.entry("project.map.places.place", new int[] {0}),
+            Map.entry("register.position", new int[] {1}),
+            Map.entry("settings.rulers.notAColumn", new int[] {1}),
+            Map.entry("http.script.crashed", new int[] {0}),
+            Map.entry("http.preScript.why.crashed", new int[] {0}),
+            Map.entry("statusbar.tip.indentMixed", new int[] {0}),
+            Map.entry("debug.error.jsNodeTooOld", new int[] {2}),
+            Map.entry("debug.notice.jsCondition", new int[] {1}),
+            Map.entry("debugpanel.state.exited", new int[] {0}),
+            Map.entry("debug.runToHere.tooltip", new int[] {0}),
+            Map.entry("status.debug.logpointAdded", new int[] {0}),
+            Map.entry("status.debug.attachQueued", new int[] {0}),
+            Map.entry("status.lsp.pomUnreadableAt", new int[] {2, 3}),
+            Map.entry("backlinks.link", new int[] {0}),
+            Map.entry("editor.narrow.bar", new int[] {0, 1}),
+            Map.entry("testrunner.debugWaiting", new int[] {0}),
+            Map.entry("status.testrunner.debugNoAttach", new int[] {0}),
+            Map.entry("pom.invalidAt", new int[] {0, 1}),
+            Map.entry("pom.gotoLine", new int[] {0}),
+            Map.entry("project.map.structure.lines", new int[] {0, 1}),
+            Map.entry("project.map.preview.lines", new int[] {0, 1}),
+            Map.entry("project.map.sticky.line", new int[] {0}),
+            Map.entry("project.map.sticky.lines", new int[] {0, 1}),
+            Map.entry("project.map.accessible.symbol", new int[] {2}),
+            Map.entry("project.map.accessible.row.symbol", new int[] {2}),
+            Map.entry("preview.errorAt", new int[] {0, 1}),
+            Map.entry("preview.errorAtLine", new int[] {0}),
+            Map.entry("status.lsp.bashCannotFormatAt", new int[] {0}),
+            Map.entry("status.lsp.bashCannotFormatPosix", new int[] {0}),
+            Map.entry("lsp.codeAction.bashFixAt", new int[] {2}),
+            Map.entry("structure.targetAtLine", new int[] {1}),
+            Map.entry("project.map.graph.at", new int[] {1}),
+            Map.entry("project.map.graph.where", new int[] {1}),
+            Map.entry("project.map.history.titleTip", new int[] {1, 2}),
+            Map.entry("project.map.deps.whyLine", new int[] {1}),
+            Map.entry("project.map.changes.step", new int[] {3}),
+            Map.entry("project.map.changes.lineAdded", new int[] {0}),
+            Map.entry("project.map.changes.lineRemoved", new int[] {0}));
 
     @Test
     void identifierArgumentsAreNeverDigitGrouped() {
@@ -483,7 +598,11 @@ class MessagesTest {
                     problems.add(name(lang) + " / " + key + " is missing");
                     return;
                 }
-                Object[] args = {"a", "b", "c"};
+                // Text for the other arguments, except where the pattern asks for a number ({n,choice,…}).
+                Object[] args = new Object[6];
+                for (int i = 0; i < args.length; i++) {
+                    args[i] = value.matches("(?s).*\\{" + i + "\\s*,.*") ? (Object) 2 : "a" + i;
+                }
                 for (int index : indices) {
                     args[index] = 1234567 + index;
                 }
@@ -496,6 +615,74 @@ class MessagesTest {
             });
         }
         assertTrue(problems.isEmpty(), "use {n,number,#} for these arguments:\n" + String.join("\n", problems));
+    }
+
+    /** A plural written as an ending in brackets or after a slash: file(s), Datei(en), ligação(ões), immagine/i. */
+    private static final Pattern BRACKETED_PLURAL =
+            Pattern.compile("(?U)\\w\\((?:s|es|e|en|er|n|ns|ões)\\)|\\p{L}{3}/[ie]\\b");
+
+    /**
+     * A message with a count words it for the count, with a {@code {0,choice,…}} limb for each form the language
+     * needs: "Replaced 1 occurrence", never "Replaced 1 occurrence(s)". The bracketed ending is English; the
+     * other languages change more than one ending, and their translators had each invented a notation.
+     */
+    @Test
+    void noMessageWithACountWritesItsPluralAsAnEndingInBrackets() {
+        Set<String> problems = new TreeSet<>();
+        for (String lang : ALL_CATALOGS) {
+            Properties props = catalog(lang);
+            for (String key : props.stringPropertyNames()) {
+                String value = props.getProperty(key);
+                if (PLACEHOLDER.matcher(value).find()
+                        && BRACKETED_PLURAL.matcher(value).find()) {
+                    problems.add(name(lang) + " / " + key + " = " + value);
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), "use a {n,choice,…} limb for each form:\n" + String.join("\n", problems));
+    }
+
+    /** The count picks the form: one of something, several, and none, in the way each language says none. */
+    @Test
+    void aCountPicksTheSingularOrThePluralInEveryLanguage() {
+        for (String lang : ALL_CATALOGS) {
+            Properties props = catalog(lang);
+            java.util.Locale locale = java.util.Locale.forLanguageTag(name(lang));
+            for (String key :
+                    List.of("search.replaced", "status.markdown.imageDropped", "markdown.links.update.item")) {
+                java.text.MessageFormat format = new java.text.MessageFormat(props.getProperty(key), locale);
+                String one = format.format(new Object[] {1, 1});
+                String two = format.format(new Object[] {2, 2});
+                String none = format.format(new Object[] {0, 0});
+                assertNotEquals(one.replace('1', '2'), two, name(lang) + " / " + key + ": one and two read alike");
+                // French says "0 fichier"; the other five say none in the plural.
+                String like = "fr".equals(lang) ? one.replace('1', '0') : two.replace('2', '0');
+                assertEquals(like, none, name(lang) + " / " + key);
+            }
+        }
+    }
+
+    /** A modifier key in another language, as a word of its own: "Umschalt" but not "Umschalter" (a switcher). */
+    private static final Pattern TRANSLATED_MODIFIER =
+            Pattern.compile("(?U)\\b(?:Strg|Umschalt|Maj|Mayús|Maiusc|Wahltaste|Opción|Opzione)\\b");
+
+    /**
+     * A chord's modifiers read the same in every language: Ctrl, Alt, Shift, and on a Mac Control, Option and
+     * the glyphs. The keymaps, the docs and the key caps use one spelling, and a user who changes the language
+     * keeps the chords they learned: "Strg+D" and "Maj+Entrée" were the same keys under other names.
+     */
+    @Test
+    void noTranslationRenamesAModifierKey() {
+        Set<String> problems = new TreeSet<>();
+        for (String lang : LOCALES) {
+            Properties props = catalog(lang);
+            for (String key : props.stringPropertyNames()) {
+                if (TRANSLATED_MODIFIER.matcher(props.getProperty(key)).find()) {
+                    problems.add(lang + " / " + key + " = " + props.getProperty(key));
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), "write Ctrl, Alt, Shift, Control and Option:\n" + String.join("\n", problems));
     }
 
     /** {@code tr("key")} / {@code tr("key", …)} with a literal key, and the two keys of {@code tr(c ? "a" : "b")}. */

@@ -48,7 +48,7 @@ public class FindReplaceBar extends HBox {
     private final CheckBox regex = new CheckBox(".*");
     private final CheckBox wholeWord = new CheckBox("W");
     private final CheckBox preserveCase = new CheckBox("AB");
-    private final CheckBox inSelection = new CheckBox("Sel");
+    private final CheckBox inSelection = new CheckBox(tr("find.inSelection.short"));
     private final Label countLabel = new Label();
 
     private final PauseTransition debounce = new PauseTransition(Duration.millis(150));

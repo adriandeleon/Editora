@@ -189,7 +189,11 @@ public final class VariableResolver implements SnippetParser.Variables {
             case "CURRENT_SECOND" -> fmt("ss");
             case "CURRENT_SECONDS_UNIX" -> String.valueOf(now.atZone(zone).toEpochSecond());
             case "CURRENT_TIMEZONE_OFFSET" -> timezoneOffset();
-            case "RANDOM" -> String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+            case "RANDOM" ->
+                String.format(
+                        java.util.Locale.ROOT,
+                        "%06d",
+                        ThreadLocalRandom.current().nextInt(1_000_000));
             case "RANDOM_HEX" ->
                 String.format("%06x", ThreadLocalRandom.current().nextInt(0x1000000));
             case "UUID" -> UUID.randomUUID().toString();

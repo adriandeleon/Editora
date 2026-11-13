@@ -1462,10 +1462,11 @@ final class EncryptionCoordinator {
                 if (res == null) {
                     host.services().setError(tr("encryption.import.none"));
                 } else {
-                    String imported = res.arg(2);
-                    String unchanged = res.arg(4);
+                    // The counts are numbers so that each language can word one key and several.
+                    int imported = res.count(2);
+                    int unchanged = res.count(4);
                     host.setStatus(
-                            "0".equals(imported)
+                            imported == 0
                                     ? tr("encryption.import.unchanged", unchanged)
                                     : tr("encryption.import.done", imported));
                 }

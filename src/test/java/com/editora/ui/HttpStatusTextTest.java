@@ -77,18 +77,19 @@ class HttpStatusTextTest {
         assertEquals(-1, HttpStatusText.firstToShow(List.of()));
     }
 
+    /** The locale every date and number in the window uses, which start-up sets once: not the bare language. */
     @Test
-    void numbersFollowTheUiLanguage() {
-        String before = com.editora.i18n.Messages.current();
+    void numbersFollowTheLocaleTheWindowFormatsWith() {
+        java.util.Locale before = java.util.Locale.getDefault(java.util.Locale.Category.FORMAT);
         try {
-            com.editora.i18n.Messages.init("de");
+            java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.GERMANY);
             assertEquals("1,4", HttpStatusText.seconds(1.44));
             assertEquals("4,9 KB", HttpStatusText.size(5000));
-            com.editora.i18n.Messages.init("en");
+            java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.UK);
             assertEquals("1.4", HttpStatusText.seconds(1.44));
             assertEquals("598 B", HttpStatusText.size(598));
         } finally {
-            com.editora.i18n.Messages.init(before);
+            java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, before);
         }
     }
 

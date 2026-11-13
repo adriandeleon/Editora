@@ -61,7 +61,7 @@ final class JsonLinesMarks {
     static String message(JsonLines.Problem p) {
         return switch (p.kind()) {
             case TRAILING -> tr("jsonl.check.trailing");
-            case INVALID -> tr("jsonl.check.invalid", String.valueOf(p.errorColumn()), p.detail());
+            case INVALID -> tr("jsonl.check.invalid", p.errorColumn(), p.detail());
         };
     }
 }
