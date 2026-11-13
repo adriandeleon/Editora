@@ -1,97 +1,73 @@
 package com.editora.config;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
+import com.editora.ui.UserKeys;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Key-binding overrides belong to the keymap they were made in; switching keymap must not carry them over. */
+/** Key bindings belong to the keymap they were made in: they are stored under it and apply only while it runs. */
 class SettingsKeymapOverridesTest {
 
-    private static Settings cuaWithOverrides() {
+    private static final Map<String, Map<String, List<String>>> CUA_BINDINGS =
+            Map.of("cua", Map.of("find.show", List.of("f8")));
+
+    private static Settings cuaWithBindings() {
         Settings s = new Settings();
         s.setKeymap("cua");
-        s.setKeybindings(new LinkedHashMap<>(Map.of("C-f", "", "<f7>", "find.show")));
-        s.setKeybindingsMac(new LinkedHashMap<>(Map.of("Cmd-f", "")));
+        s.setKeyBindings(new LinkedHashMap<>(CUA_BINDINGS));
         return s;
     }
 
     @Test
-    void switchingKeymapParksTheOverridesAndSwitchingBackRestoresThem() {
-        Settings s = cuaWithOverrides();
+    void aKeymapsBindingsWaitWithItWhileAnotherKeymapIsActive() {
+        Settings s = cuaWithBindings();
+        assertEquals("find.show", UserKeys.overrides(s).get("f8"), "precondition: in force under CUA");
 
-        s.switchKeymap("emacs");
+        s.setKeymap("emacs");
 
-        assertEquals("emacs", s.getKeymap());
-        assertTrue(s.keybindingsFor(false).isEmpty(), "CUA's overrides do not apply to Emacs");
-        assertTrue(s.keybindingsFor(true).isEmpty());
-        assertEquals(
-                Map.of("C-f", "", "<f7>", "find.show"), s.getKeymapKeybindings().get("cua"));
-        assertEquals(Map.of("Cmd-f", ""), s.getKeymapKeybindingsMac().get("cua"));
+        assertTrue(UserKeys.overrides(s).isEmpty(), "CUA's bindings do not apply to Emacs");
+        assertEquals(CUA_BINDINGS, s.getKeyBindings(), "they are still CUA's");
 
-        s.keybindingsFor(false).put("C-t", "file.save"); // an override made while in Emacs
-        s.switchKeymap("cua");
+        s.getKeyBindings().put("emacs", Map.of("file.save", List.of("C-x s"))); // a binding made while in Emacs
+        s.setKeymap("cua");
 
-        assertEquals(Map.of("C-f", "", "<f7>", "find.show"), s.keybindingsFor(false));
-        assertEquals(Map.of("Cmd-f", ""), s.keybindingsFor(true));
-        assertFalse(s.getKeymapKeybindings().containsKey("cua"), "the active keymap's overrides are not kept twice");
-        assertEquals(Map.of("C-t", "file.save"), s.getKeymapKeybindings().get("emacs"));
-        assertFalse(s.getKeymapKeybindingsMac().containsKey("emacs"), "nothing to park is not parked");
+        assertEquals("find.show", UserKeys.overrides(s).get("f8"), "CUA's come back with CUA");
+        assertTrue(UserKeys.overrides(s).values().stream().noneMatch("file.save"::equals), "and Emacs's stay behind");
+        assertEquals(Map.of("file.save", List.of("C-x s")), s.getKeyBindings().get("emacs"));
     }
 
     @Test
-    void choosingTheKeymapAlreadyInUseMovesNothing() {
-        Settings s = cuaWithOverrides();
-        s.switchKeymap("cua");
-        assertEquals(2, s.keybindingsFor(false).size());
-        assertTrue(s.getKeymapKeybindings().isEmpty());
-    }
-
-    @Test
-    void parkedOverridesSurviveASaveAndLoad() throws Exception {
-        Settings s = cuaWithOverrides();
-        s.switchKeymap("vscode");
+    void everyKeymapsBindingsSurviveASaveAndLoad() throws Exception {
+        Settings s = cuaWithBindings();
+        s.setKeymap("vscode");
         ObjectMapper mapper = new ObjectMapper();
 
         Settings loaded = mapper.readValue(mapper.writeValueAsBytes(s), Settings.class);
 
         assertEquals("vscode", loaded.getKeymap());
-        assertTrue(loaded.keybindingsFor(false).isEmpty(), "loading a file switches nothing");
-        loaded.switchKeymap("cua");
-        assertEquals(Map.of("C-f", "", "<f7>", "find.show"), loaded.keybindingsFor(false));
-    }
-
-    /**
-     * What the v105→106 step relies on: a file written before overrides were per-keymap has only
-     * {@code keybindings}, and those stay in force under the keymap the file names.
-     */
-    @Test
-    void anOlderFilesOverridesStayWithTheKeymapItNames() throws Exception {
-        Settings loaded = new ObjectMapper()
-                .readValue(
-                        "{\"schemaVersion\":105,\"keymap\":\"cua\",\"keybindings\":{\"<f7>\":\"find.show\"}}",
-                        Settings.class);
-        assertEquals(Map.of("<f7>", "find.show"), loaded.keybindingsFor(false));
-        loaded.switchKeymap("emacs");
-        assertTrue(loaded.keybindingsFor(false).isEmpty());
-        assertEquals(Map.of("<f7>", "find.show"), loaded.getKeymapKeybindings().get("cua"));
+        assertTrue(UserKeys.overrides(loaded).isEmpty(), "loading a file switches nothing");
+        assertEquals(CUA_BINDINGS, loaded.getKeyBindings());
+        loaded.setKeymap("cua");
+        assertEquals("find.show", UserKeys.overrides(loaded).get("f8"));
     }
 
     @Test
-    void resetToDefaultsParksTheOverridesUnderTheKeymapItLeaves() {
-        Settings s = cuaWithOverrides();
+    void resetToDefaultsLeavesTheBindingsWithTheKeymapItLeaves() {
+        Settings s = cuaWithBindings();
         String defaultKeymap = new Settings().getKeymap();
 
         Settings.resetToDefaults(s);
 
         assertEquals(defaultKeymap, s.getKeymap());
-        assertTrue(s.keybindingsFor(false).isEmpty(), "CUA's overrides are not applied to the default keymap");
-        s.switchKeymap("cua");
-        assertEquals(Map.of("C-f", "", "<f7>", "find.show"), s.keybindingsFor(false), "and they are not lost");
+        assertTrue(UserKeys.overrides(s).isEmpty(), "CUA's bindings are not applied to the default keymap");
+        assertEquals(CUA_BINDINGS, s.getKeyBindings(), "and they are not lost");
+        s.setKeymap("cua");
+        assertEquals("find.show", UserKeys.overrides(s).get("f8"));
     }
 }

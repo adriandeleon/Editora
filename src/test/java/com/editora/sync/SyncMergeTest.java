@@ -42,16 +42,16 @@ class SyncMergeTest {
         return SyncMerge.merge(SyncCategory.KEYBINDINGS, "keybindings.json", base, mine, theirs);
     }
 
-    /** A {@code keybindings.json} of the emacs keymap's Windows/Linux overrides: chord, command, chord, … */
+    /** A {@code keybindings.json} of the emacs keymap's bindings: command, chord ("" for unbound), command, … */
     private static String keyFile(String... pairs) {
-        StringBuilder sb = new StringBuilder("{\"formatVersion\":1,\"keymaps\":{\"emacs\":{\"windowsLinux\":{");
+        StringBuilder sb = new StringBuilder("{\"formatVersion\":2,\"keymaps\":{\"emacs\":{\"shared\":{");
         for (int i = 0; i < pairs.length; i += 2) {
             sb.append(i == 0 ? "" : ",")
                     .append('"')
                     .append(pairs[i])
-                    .append("\":\"")
-                    .append(pairs[i + 1])
-                    .append('"');
+                    .append("\":[")
+                    .append(pairs[i + 1].isEmpty() ? "" : '"' + pairs[i + 1] + '"')
+                    .append(']');
         }
         return sb.append("}}}}").toString();
     }
@@ -261,40 +261,52 @@ class SyncMergeTest {
     // --- key bindings ----------------------------------------------------------------------------------
 
     @Test
-    void keyBindingsChangedOnBothSidesAreAllKeptChordByChord() {
+    void keyBindingsChangedOnBothSidesAreAllKeptCommandByCommand() {
         SyncMerge.FileResult r = keybindings(
-                keyFile("C-x s", "file.save"),
-                keyFile("C-x s", "file.save", "C-c a", "mine.cmd"),
-                keyFile("C-c b", "their.cmd"));
+                keyFile("file.save", "C-x s"),
+                keyFile("file.save", "C-x s", "mine.cmd", "C-c a"),
+                keyFile("their.cmd", "C-c b"));
         assertEquals(
-                KeybindingsFile.text(
-                        Map.of("emacs\twindowsLinux\tC-c a", "mine.cmd", "emacs\twindowsLinux\tC-c b", "their.cmd")),
+                KeybindingsFile.text(Map.of("emacs\tshared\tmine.cmd", "C-c a", "emacs\tshared\ttheir.cmd", "C-c b")),
                 r.text());
         assertEquals(
-                List.of("emacs: C-c b", "emacs: C-x s"),
+                List.of("emacs: file.save", "emacs: their.cmd"),
                 r.received().stream().sorted().toList());
-        assertEquals(List.of("emacs: C-c a"), r.sent());
+        assertEquals(List.of("emacs: mine.cmd"), r.sent());
         assertTrue(r.conflicts().isEmpty());
     }
 
     @Test
-    void aChordBoundDifferentlyOnBothSidesKeepsThisMachinesCommand() {
+    void aCommandBoundDifferentlyOnBothSidesKeepsThisMachinesChords() {
         SyncMerge.FileResult r =
-                keybindings(keyFile("C-c a", "old"), keyFile("C-c a", "mine.cmd"), keyFile("C-c a", "their.cmd"));
-        assertEquals(KeybindingsFile.text(Map.of("emacs\twindowsLinux\tC-c a", "mine.cmd")), r.text());
-        assertEquals(List.of("emacs: C-c a"), r.conflicts());
+                keybindings(keyFile("some.cmd", "C-c o"), keyFile("some.cmd", "C-c a"), keyFile("some.cmd", "C-c b"));
+        assertEquals(KeybindingsFile.text(Map.of("emacs\tshared\tsome.cmd", "C-c a")), r.text());
+        assertEquals(List.of("emacs: some.cmd"), r.conflicts());
     }
 
     @Test
-    void anUnbindIsAnEntryLikeABinding() {
-        SyncMerge.FileResult r = keybindings(null, null, keyFile("C-x C-s", ""));
-        assertEquals(List.of("emacs: C-x C-s"), r.received());
-        assertTrue(r.text().contains("\"C-x C-s\" : \"\""), r.text());
+    void anUnboundCommandIsAnEntryLikeABinding() {
+        SyncMerge.FileResult r = keybindings(null, null, keyFile("file.save", ""));
+        assertEquals(List.of("emacs: file.save"), r.received());
+        assertTrue(r.text().contains("\"file.save\" : [ ]"), r.text());
+    }
+
+    @Test
+    void aLayout1FileOnTheOtherSideIsMergedCommandByCommand() {
+        SyncMerge.FileResult r = keybindings(
+                null,
+                keyFile("mine.cmd", "C-c a"),
+                "{\"formatVersion\":1,\"keymaps\":{\"emacs\":{\"windowsLinux\":"
+                        + "{\"C-x C-s\":\"\",\"C-x s\":\"file.save\"}}}}");
+        assertEquals(
+                KeybindingsFile.text(Map.of("emacs\tshared\tmine.cmd", "C-c a", "emacs\tshared\tfile.save", "C-x s")),
+                r.text());
+        assertEquals(List.of("emacs: file.save"), r.received());
     }
 
     @Test
     void aKeyBindingsFileFromANewerEditoraIsLeftAlone() {
-        SyncMerge.FileResult r = keybindings(null, keyFile("C-c a", "x"), "{\"formatVersion\":99}");
+        SyncMerge.FileResult r = keybindings(null, keyFile("some.cmd", "C-c a"), "{\"formatVersion\":99}");
         assertEquals(SyncMerge.Skip.REMOTE_NEWER, r.skip());
     }
 }

@@ -2,6 +2,7 @@ package com.editora.config;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -18,10 +19,9 @@ public class Settings {
      * Restores every preference on {@code live} to its default, in place — {@code live} is the one instance
      * every window holds, so it must be mutated, not replaced. Backs Settings → Advanced → "Reset to
      * Defaults". Deliberately preserves the two things that page doesn't own: {@link #getFontZoom() fontZoom}
-     * (the editor's Ctrl-+/- text zoom) and {@link #getKeybindings() keybindings} (the Keymaps page's own
-     * "Reset all"). The reset does put the keymap back to the default, and key-binding overrides belong to the
-     * keymap they were made in — so the preserved overrides are parked under the old keymap, not applied to
-     * the default one.
+     * (the editor's Ctrl-+/- text zoom) and the user's {@link #getKeyBindings() key bindings} (the Keymaps
+     * page's own "Reset all"). The reset does put the keymap back to the default, and key bindings belong to
+     * the keymap they were made in, so the ones made in the keymap just left stay with it.
      *
      * <p>Driven off the serialized form rather than a hand-written list of setters. The list version had gone
      * stale: it restored <b>23 of 181</b> fields, so "Reset to Defaults" silently left ~87% of preferences
@@ -31,11 +31,8 @@ public class Settings {
      */
     public static void resetToDefaults(Settings live) {
         double fontZoom = live.getFontZoom();
-        String keymap = live.getKeymap();
-        Map<String, String> keybindings = live.getKeybindings();
-        Map<String, String> keybindingsMac = live.getKeybindingsMac();
-        Map<String, Map<String, String>> parked = live.getKeymapKeybindings();
-        Map<String, Map<String, String>> parkedMac = live.getKeymapKeybindingsMac();
+        Map<String, Map<String, List<String>>> keyBindings = live.getKeyBindings();
+        Map<String, Map<String, List<String>>> keyBindingsMacOnly = live.getKeyBindingsMacOnly();
         ObjectMapper mapper = new ObjectMapper();
         try {
             mapper.readerForUpdating(live).readValue(mapper.writeValueAsBytes(new Settings()));
@@ -43,17 +40,13 @@ public class Settings {
             throw new IllegalStateException("Could not reset settings to their defaults", e);
         }
         live.setFontZoom(fontZoom);
-        String defaultKeymap = live.getKeymap();
-        live.setKeymap(keymap);
-        live.setKeybindings(keybindings);
-        live.setKeybindingsMac(keybindingsMac);
-        live.setKeymapKeybindings(parked);
-        live.setKeymapKeybindingsMac(parkedMac);
-        live.switchKeymap(defaultKeymap);
+        // Key bindings are kept per keymap, so the ones made in the keymap just left wait there for it.
+        live.setKeyBindings(keyBindings);
+        live.setKeyBindingsMacOnly(keyBindingsMacOnly);
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 170;
+    public static final int SCHEMA_VERSION = 171;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -1118,29 +1111,23 @@ public class Settings {
     private int pdfCodeFontSize = DEFAULT_PDF_CODE_FONT_SIZE;
 
     /**
-     * Optional per-binding overrides applied on top of the named keymap: chord -&gt; command id. <b>Split per
-     * platform</b> because a chord is modifier-specific (Cmd on macOS, Ctrl elsewhere) and a rebind's UNBIND
-     * suppressors key to the <em>resolved</em> chord — one shared map double-binds a command across OSes when a
-     * config is synced (a mac-written {@code Cmd-S UNBIND} matches nothing on Windows, leaving the Ctrl-S default
-     * live alongside the new chord). {@link #keybindings} holds the Ctrl-based (Windows/Linux) overrides;
-     * {@link #keybindingsMac} the Cmd-based (macOS) ones. Read the running platform's via {@link #keybindingsFor}
-     * (#439).
+     * The user's own key bindings, once for every operating system: keymap id -&gt; command id -&gt; the chords
+     * the user gave that command (an empty list: they unbound it). Chords are written as Windows and Linux
+     * write them; a keymap with a macOS variant reads {@code C-} as {@code Cmd-} there. What each system's
+     * keymap unbinds is worked out when it loads, from that system's own defaults, so nothing here is specific
+     * to one system (see {@code com.editora.command.UserKeyBindings}).
      *
-     * <p>Both maps are the overrides of the <b>active</b> {@link #keymap} only. A rebind also stores a blank
-     * suppressor for each chord the keymap bound to that command by default, and the same chord means something
-     * else in another keymap (CUA's {@code C-f} is Find, Emacs' is forward-char) — so overrides carried across a
-     * keymap switch unbound unrelated keys. {@link #switchKeymap} parks them in {@link #keymapKeybindings} /
-     * {@link #keymapKeybindingsMac} (keymap id -&gt; overrides) and brings back the ones made in the keymap
-     * being switched to.
+     * <p>Kept per keymap because a chord means something else in another keymap (CUA's {@code C-f} is Find,
+     * Emacs' is forward-char): the bindings made in one wait there while another is active.
      */
-    private Map<String, String> keybindings = new LinkedHashMap<>();
+    private Map<String, Map<String, List<String>>> keyBindings = new LinkedHashMap<>();
 
-    private Map<String, String> keybindingsMac = new LinkedHashMap<>();
-
-    /** Overrides parked for the keymaps that are not active (see {@link #keybindings}); never the active one. */
-    private Map<String, Map<String, String>> keymapKeybindings = new LinkedHashMap<>();
-
-    private Map<String, Map<String, String>> keymapKeybindingsMac = new LinkedHashMap<>();
+    /**
+     * The chords only a Mac can type (the real Control key in a keymap that swaps it for Command, or Command
+     * in the Emacs keymap), in macOS notation and used on macOS alone: keymap id -&gt; command id -&gt; chords.
+     * A command listed here uses these on a Mac in place of its entry in {@link #keyBindings}.
+     */
+    private Map<String, Map<String, List<String>>> keyBindingsMacOnly = new LinkedHashMap<>();
 
     public int getSchemaVersion() {
         return schemaVersion;
@@ -4880,79 +4867,19 @@ public class Settings {
         return allowed.contains(v) ? v : allowed.get(0);
     }
 
-    public Map<String, String> getKeybindings() {
-        return keybindings;
+    public Map<String, Map<String, List<String>>> getKeyBindings() {
+        return keyBindings;
     }
 
-    public void setKeybindings(Map<String, String> keybindings) {
-        this.keybindings = keybindings;
+    public void setKeyBindings(Map<String, Map<String, List<String>>> keyBindings) {
+        this.keyBindings = keyBindings == null ? new LinkedHashMap<>() : keyBindings;
     }
 
-    public Map<String, String> getKeybindingsMac() {
-        return keybindingsMac;
+    public Map<String, Map<String, List<String>>> getKeyBindingsMacOnly() {
+        return keyBindingsMacOnly;
     }
 
-    public void setKeybindingsMac(Map<String, String> keybindingsMac) {
-        this.keybindingsMac = keybindingsMac;
-    }
-
-    public Map<String, Map<String, String>> getKeymapKeybindings() {
-        return keymapKeybindings;
-    }
-
-    public void setKeymapKeybindings(Map<String, Map<String, String>> keymapKeybindings) {
-        this.keymapKeybindings = keymapKeybindings == null ? new LinkedHashMap<>() : keymapKeybindings;
-    }
-
-    public Map<String, Map<String, String>> getKeymapKeybindingsMac() {
-        return keymapKeybindingsMac;
-    }
-
-    public void setKeymapKeybindingsMac(Map<String, Map<String, String>> keymapKeybindingsMac) {
-        this.keymapKeybindingsMac = keymapKeybindingsMac == null ? new LinkedHashMap<>() : keymapKeybindingsMac;
-    }
-
-    /**
-     * Changes the keymap, taking the key-binding overrides with it: the current ones (both platforms) are
-     * parked under the keymap being left, and those made earlier in {@code next} become the active ones.
-     * {@link #setKeymap} is the plain property setter (it is what loading a file calls) and moves nothing.
-     */
-    public void switchKeymap(String next) {
-        if (java.util.Objects.equals(next, keymap)) {
-            return;
-        }
-        keybindings = swapOverrides(keymapKeybindings, keymap, keybindings, next);
-        keybindingsMac = swapOverrides(keymapKeybindingsMac, keymap, keybindingsMac, next);
-        keymap = next;
-    }
-
-    private static Map<String, String> swapOverrides(
-            Map<String, Map<String, String>> parked, String from, Map<String, String> active, String to) {
-        if (active != null && !active.isEmpty()) {
-            parked.put(String.valueOf(from), active);
-        } else {
-            parked.remove(String.valueOf(from));
-        }
-        Map<String, String> restored = parked.remove(String.valueOf(to));
-        return restored == null ? new LinkedHashMap<>() : new LinkedHashMap<>(restored);
-    }
-
-    /** The keybinding overrides for the running platform (Cmd map on macOS, Ctrl map elsewhere); never null. */
-    public Map<String, String> keybindingsFor(boolean mac) {
-        Map<String, String> m = mac ? keybindingsMac : keybindings;
-        if (m == null) {
-            m = new LinkedHashMap<>();
-            setKeybindingsFor(mac, m);
-        }
-        return m;
-    }
-
-    /** Replaces the running platform's keybinding overrides (see {@link #keybindingsFor}). */
-    public void setKeybindingsFor(boolean mac, Map<String, String> overrides) {
-        if (mac) {
-            this.keybindingsMac = overrides;
-        } else {
-            this.keybindings = overrides;
-        }
+    public void setKeyBindingsMacOnly(Map<String, Map<String, List<String>>> keyBindingsMacOnly) {
+        this.keyBindingsMacOnly = keyBindingsMacOnly == null ? new LinkedHashMap<>() : keyBindingsMacOnly;
     }
 }

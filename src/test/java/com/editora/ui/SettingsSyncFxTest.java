@@ -12,6 +12,8 @@ import javafx.scene.control.Label;
 
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import com.editora.command.UserKeyBindings;
+import com.editora.command.UserKeyBindings.Store;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.QuietGit;
@@ -189,33 +191,34 @@ class SettingsSyncFxTest {
     @Order(4)
     void keyBindingsChangedOnEitherComputerReachTheOtherAndTheLiveKeymap() throws Exception {
         String keymap = FxTestSupport.callOnFx(settings::getKeymap);
-        String platform = KeymapManager.isMac() ? "macOS" : "windowsLinux";
+        // As this system types the chord: a keymap with a macOS variant has Cmd there where the file has Ctrl.
+        String here = KeymapManager.isMac()
+                ? UserKeyBindings.toMac("C-c z", KeymapManager.hasMacVariant(KeymapManager.resolveName(keymap)))
+                : "C-c z";
         writeOther(
                 "keybindings.json",
-                "{\"formatVersion\":1,\"keymaps\":{\"" + keymap + "\":{\"" + platform
-                        + "\":{\"C-c z\":\"file.save\"}},\"zzother\":{\"" + platform
-                        + "\":{\"C-c y\":\"file.open\"}}}}");
+                "{\"formatVersion\":2,\"keymaps\":{\"" + keymap + "\":{\"shared\":{\"file.save\":[\"C-c z\"]}},"
+                        + "\"zzother\":{\"shared\":{\"file.open\":[\"C-c y\"]}}}}");
         assertTrue(otherSyncs().ok());
 
         SettingsSync.State state = syncNow();
         assertEquals(SettingsSync.Phase.IDLE, state.phase(), state.report().detail());
         assertEquals(
-                "file.save",
+                List.of("C-c z"),
                 FxTestSupport.callOnFx(
-                        () -> settings.keybindingsFor(KeymapManager.isMac()).get("C-c z")));
+                        () -> settings.getKeyBindings().get(keymap).get("file.save")));
         KeymapManager live = FxTestSupport.field(fx.windowManager, "keymap");
-        assertEquals("file.save", FxTestSupport.callOnFx(() -> live.bindings().get("C-c z")), "used without a restart");
+        assertEquals("file.save", FxTestSupport.callOnFx(() -> live.bindings().get(here)), "used without a restart");
         assertEquals(
-                "file.open",
-                FxTestSupport.callOnFx(() -> (KeymapManager.isMac()
-                                ? settings.getKeymapKeybindingsMac()
-                                : settings.getKeymapKeybindings())
-                        .get("zzother")
-                        .get("C-c y")),
+                List.of("C-c y"),
+                FxTestSupport.callOnFx(
+                        () -> settings.getKeyBindings().get("zzother").get("file.open")),
                 "another keymap's binding waits for a switch to that keymap");
 
         FxTestSupport.runOnFx(() -> {
-            settings.keybindingsFor(KeymapManager.isMac()).put("C-c x", "file.close");
+            Store store = UserKeys.store(settings, keymap);
+            store.shared().put("file.close", List.of("C-c x"));
+            UserKeys.put(settings, keymap, store);
             fx.windowManager.reloadSharedKeymap();
         });
         state = syncNow();
@@ -223,8 +226,8 @@ class SettingsSyncFxTest {
         assertEquals(1, state.report().sent().size());
         assertTrue(otherSyncs().ok());
         String theirs = Files.readString(other.resolve("keybindings.json"));
-        assertTrue(theirs.contains("\"C-c x\" : \"file.close\""), theirs);
-        assertTrue(theirs.contains("\"C-c z\" : \"file.save\""), theirs);
+        assertTrue(theirs.contains("\"file.close\" : [ \"C-c x\" ]"), theirs);
+        assertTrue(theirs.contains("\"file.save\" : [ \"C-c z\" ]"), theirs);
     }
 
     @Test

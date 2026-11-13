@@ -139,6 +139,13 @@ class SettingsListEditorsFxTest {
         return text.get();
     }
 
+    /** Whether any keymap's stored bindings, shared or the Mac's own, name {@code commandId}. */
+    private static boolean hasBinding(com.editora.config.Settings settings, String commandId) {
+        return java.util.stream.Stream.of(settings.getKeyBindings(), settings.getKeyBindingsMacOnly())
+                .flatMap(byKeymap -> byKeymap.values().stream())
+                .anyMatch(bindings -> bindings.containsKey(commandId));
+    }
+
     private static ListView<ExternalTool> toolList(SettingsWindow w) {
         return FxTestSupport.field(FxTestSupport.field(w, "externalToolsEditor"), "list");
     }
@@ -623,11 +630,8 @@ class SettingsListEditorsFxTest {
                         keymap.commandFor("C-M-9"),
                         "the chord follows the tool to its new command id");
                 assertFalse(
-                        fx.shared
-                                .getSettings()
-                                .keybindingsFor(KeymapManager.isMac())
-                                .containsValue("externalTool.run.fmt"),
-                        "no override is left on the id nothing registers");
+                        hasBinding(fx.shared.getSettings(), "externalTool.run.fmt"),
+                        "no binding is left on the id nothing registers");
                 ListView<ExternalTool> list = toolList(w);
                 list.getSelectionModel().select(0);
                 answeringDialogs(
@@ -638,10 +642,7 @@ class SettingsListEditorsFxTest {
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {
                 assertNull(keymap.commandFor("C-M-9"), "removing the tool frees its chord");
-                assertFalse(fx.shared
-                        .getSettings()
-                        .keybindingsFor(KeymapManager.isMac())
-                        .containsValue("externalTool.run.format-json"));
+                assertFalse(hasBinding(fx.shared.getSettings(), "externalTool.run.format-json"));
                 FxTestSupport.<Stage>field(w, "stage").hide();
             });
         }

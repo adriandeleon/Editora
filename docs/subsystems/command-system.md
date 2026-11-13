@@ -418,13 +418,28 @@ there's no global dispatcher to interfere. The **conflict check** lives in
 `KeymapManager.commandFor`) reports whether the chord is already taken, and a confirmation dialog
 warns before stealing it. The same path serves the inline Macros keybinding row.
 
-User overrides persist in `Settings.keybindings` (a `Map<String,String>` of chord → id, with blank
-values meaning UNBIND), serialized with the rest of `settings.json`. That map is the **active keymap's**
-overrides: a rebind stores UNBIND suppressors for the keymap's default chords, and the same chord is a
-different command in another keymap, so overrides must not follow a keymap switch. Change the keymap through
-`KeymapLayers.switchKeymap` → `Settings.switchKeymap`, which parks the current overrides in
-`Settings.keymapKeybindings` (keymap id → overrides; `…Mac` for the Cmd-based map) and restores the ones made
-earlier in the keymap being switched to. `Settings.setKeymap` is the bare property setter and moves nothing.
+The user's bindings persist in `Settings.keyBindings`, **one set for every operating system**: keymap id →
+command id → the chords the user gave it (an empty list: unbound), serialized with the rest of
+`settings.json`. [`UserKeyBindings`](../../src/main/java/com/editora/command/UserKeyBindings.java) is the
+pure translation between that and what a keymap takes (overrides, chord → id with a blank id meaning UNBIND):
+
+- **Stored by command, not by chord.** A rebind also unbinds the command's default chords, and those are
+  `Cmd` chords on macOS and `Ctrl` chords elsewhere; stored as chords, a Mac's unbinds unbound nothing on
+  Linux and the command ended up bound twice (#439, which was first fixed by keeping two maps). So only the
+  intent is stored, and `UserKeyBindings.derive` works each system's overrides out when the keymap loads,
+  against that system's own defaults (the plugins' chords included). An edit is made on the derived overrides
+  with `KeybindingEdits` as before, and `UserKeyBindings.edit` writes back only the commands it changed.
+- **Chords are stored as Windows and Linux write them.** A keymap with a `.mac.json` variant reads `C-` as
+  `Cmd-` on macOS; Emacs, which has none, reads chords as written. A chord recorded on a Mac that the others
+  cannot type (the real Control key in a variant keymap, `Cmd` in Emacs) goes in `Settings.keyBindingsMacOnly`
+  and is used on macOS alone. A chord macOS takes for itself (`Cmd-Space`) is left out there, and the command
+  keeps its default on the Mac.
+- **Per keymap**, because the same chord is a different command in another keymap: bindings made in one wait
+  there while another is active. `KeymapLayers.switchKeymap` moves only the bindings of commands no bundled
+  keymap binds (a macro, an external tool, a run configuration), unless the chord is taken in the new keymap.
+- [`UserKeys`](../../src/main/java/com/editora/ui/UserKeys.java) is where this meets `Settings`, the running
+  OS and the active keymap: `UserKeys.overrides(settings)` to read, `UserKeys.edit(settings, base, overrides)`
+  to write. Nothing else touches the two maps.
 
 ## Pickers, input cards and row menus
 

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
@@ -54,14 +55,18 @@ class ConfigManagerTest {
     }
 
     @Test
-    void keybindingChordKeysRoundTripInJson(@TempDir Path dir) {
+    void keyBindingsRoundTripInJson(@TempDir Path dir) {
         ConfigManager config = new ConfigManager(dir);
         config.load();
-        config.getSettings().getKeybindings().put("C-x C-s", "file.save");
+        config.getSettings().getKeyBindings().put("emacs", Map.of("file.save", List.of("C-x s", "f5")));
+        config.getSettings().getKeyBindingsMacOnly().put("emacs", Map.of("edit.copy", List.of("Cmd-c")));
         config.save();
 
         Settings reloaded = new ConfigManager(dir).load();
-        assertEquals("file.save", reloaded.getKeybindings().get("C-x C-s"));
+        assertEquals(
+                List.of("C-x s", "f5"), reloaded.getKeyBindings().get("emacs").get("file.save"));
+        assertEquals(
+                List.of("Cmd-c"), reloaded.getKeyBindingsMacOnly().get("emacs").get("edit.copy"));
     }
 
     @Test
@@ -70,14 +75,14 @@ class ConfigManagerTest {
         Settings old = new Settings();
         old.setFontSize(20);
         old.setTheme("light");
-        old.setKeybindings(java.util.Map.of("C-x C-s", "file.save"));
+        old.setKeyBindings(Map.of("emacs", Map.of("file.save", List.of("C-x s"))));
         new TomlMapper().writeValue(legacy.toFile(), old);
 
         Settings settings = new ConfigManager(dir).load();
 
         assertEquals(20, settings.getFontSize());
         assertEquals("light", settings.getTheme());
-        assertEquals("file.save", settings.getKeybindings().get("C-x C-s"));
+        assertEquals(List.of("C-x s"), settings.getKeyBindings().get("emacs").get("file.save"));
         assertTrue(Files.exists(dir.resolve("settings.json")), "JSON replacement written");
         assertFalse(Files.exists(legacy), "the legacy name is retired only after the replacement is written");
         assertTrue(
@@ -86,7 +91,9 @@ class ConfigManagerTest {
         var json = new ObjectMapper().readTree(dir.resolve("settings.json").toFile());
         assertEquals(20, json.get("fontSize").asInt());
         assertEquals("light", json.get("theme").asText());
-        assertEquals("file.save", json.get("keybindings").get("C-x C-s").asText());
+        assertEquals(
+                "C-x s",
+                json.get("keyBindings").get("emacs").get("file.save").get(0).asText());
     }
 
     @Test

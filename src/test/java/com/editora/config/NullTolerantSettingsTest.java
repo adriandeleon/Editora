@@ -59,16 +59,14 @@ class NullTolerantSettingsTest {
 
     /**
      * The settings whose value is handed on as it is. Their readers take {@code null} for "not set" themselves
-     * (the theme and keymap names are normalised where they are applied, the key-binding maps where they are
-     * read), so they are not held to the promise here. A new text setting belongs on this list only for the
+     * (the theme and keymap names are normalised where they are applied), so they are not held to the promise
+     * here. A new text setting belongs on this list only for the
      * same reason.
      */
     private static final List<String> PASSED_ON_AS_IS = List.of(
             "setAutoSave",
             "setEditorTheme",
             "setFontFamily",
-            "setKeybindings",
-            "setKeybindingsMac",
             "setKeymap",
             "setTheme",
             "setTodoPriorityCriticalColor",

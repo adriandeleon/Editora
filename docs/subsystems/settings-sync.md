@@ -25,14 +25,14 @@ describe one installation's connection and must stay local if settings are synce
 
 ## Key bindings
 
-A rebind is stored in `settings.json`: the active keymap's overrides in `keybindings` /
-`keybindingsMac`, the other keymaps' parked in `keymapKeybindings` / `keymapKeybindingsMac` (see
-`Settings.switchKeymap`). `sync/KeybindingsFile` renders exactly those four maps as the repository's
-`keybindings.json` — keymap, then platform (`windowsLinux`, `macOS`), then chord to command, sorted, a
-blank command being an unbind — and writes a merged file back into them. Overrides travel per keymap,
-so a computer running another keymap keeps them parked until it switches; which keymap is active stays
-each computer's own choice. Both platforms' maps are synced on every computer, as `settings.json`
-already holds both.
+A rebind is stored in `settings.json` by command, per keymap, in `keyBindings` (and `keyBindingsMacOnly`
+for the chords only a Mac can type; see [command-system](command-system.md)). `sync/KeybindingsFile`
+renders exactly those two maps as the repository's `keybindings.json` — keymap, then `shared` or
+`macOnly`, then command to its chords, sorted, an empty list being an unbind — and writes a merged file
+back into them. The merge unit is one command of one keymap. Bindings travel per keymap, so a computer
+running another keymap has them for when it switches; which keymap is active stays each computer's own
+choice. The file is layout 2; a layout 1 file (by chord, apart for `windowsLinux` and `macOS`) written by
+an older Editora is still read and converted, and an older Editora refuses a layout 2 file as newer.
 
 `SettingsSync.LiveTarget` stands in for the file: it renders the text on the FX thread for a read,
 compares it for the "still what I read" check, backs the old text up as `keybindings.json` in the

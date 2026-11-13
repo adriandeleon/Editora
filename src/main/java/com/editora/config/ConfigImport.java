@@ -99,8 +99,7 @@ public final class ConfigImport {
     }
 
     /** The {@code settings.json} keys of the key-binding part. */
-    static final Set<String> KEY_BINDING_KEYS =
-            Set.of("keymap", "keybindings", "keybindingsMac", "keymapKeybindings", "keymapKeybindingsMac");
+    static final Set<String> KEY_BINDING_KEYS = Set.of("keymap", "keyBindings", "keyBindingsMacOnly");
     /** The {@code settings.json} keys of the external-tools part. */
     static final Set<String> EXTERNAL_TOOL_KEYS = Set.of("externalTools");
 

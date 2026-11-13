@@ -428,8 +428,7 @@ final class PluginCoordinator {
             c.replacedChords.put(chord, before);
         }
         keymap.applyOverrides(Map.of(chord, commandId == null ? "" : commandId));
-        boolean usersOwn = KeymapLayers.userBindings(
-                        config.getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac()))
+        boolean usersOwn = KeymapLayers.userBindings(UserKeys.overrides(config.getSettings()))
                 .containsKey(chord); // the user's binding is put back on top: nothing was taken from them
         if (before != null
                 && !usersOwn
@@ -445,8 +444,7 @@ final class PluginCoordinator {
      * after the user's overrides, so without this a plugin took back any chord the user had rebound.
      */
     private void reapplyUserBindings() {
-        keymap.applyOverrides(KeymapLayers.userBindings(
-                config.getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac())));
+        keymap.applyOverrides(KeymapLayers.userBindings(UserKeys.overrides(config.getSettings())));
     }
 
     /** Runs a plugin's declared external command via the subprocess runner; reports the result. */

@@ -1560,11 +1560,7 @@ public class WindowManager {
         Settings settings = shared.getSettings();
         List<java.util.Map<String, String>> pluginKeymaps = KeymapLayers.pluginKeymaps(
                 settings, pluginManager, com.editora.command.KeymapManager.resolveName(settings.getKeymap()));
-        KeymapLayers.rebuild(
-                keymap,
-                settings.getKeymap(),
-                pluginKeymaps,
-                settings.keybindingsFor(com.editora.command.KeymapManager.isMac()));
+        KeymapLayers.rebuild(keymap, settings, pluginKeymaps);
         settingsSync.keymapReloaded(); // a changed key binding is synced like a changed snippet
         broadcastSettingsApplied();
         // Every open Settings window shows the keymap: its combo, the shortcut list, the chord chips and the

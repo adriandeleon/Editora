@@ -481,9 +481,7 @@ final class EditorSettingsCoordinator {
             wm.reloadSharedKeymap();
         } else {
             host.keymap().loadNamed(host.config().getSettings().getKeymap());
-            host.keymap()
-                    .applyOverrides(
-                            host.config().getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac()));
+            host.keymap().applyOverrides(UserKeys.overrides(host.config().getSettings()));
         }
     }
 
@@ -514,16 +512,19 @@ final class EditorSettingsCoordinator {
         return rows;
     }
 
-    /** Persists a new user-overrides map (for the running platform), then reloads the shared keymap live. */
+    /**
+     * Persists an edit of this system's overrides (as the user's bindings by command, the same on every
+     * system: {@link UserKeys#edit}), then reloads the shared keymap live.
+     */
     void applyKeybindingOverrides(java.util.Map<String, String> overrides) {
-        host.config().getSettings().setKeybindingsFor(com.editora.command.KeymapManager.isMac(), overrides);
+        UserKeys.edit(host.config().getSettings(), baseBindings(), overrides);
         host.config().save();
         reloadKeymap();
     }
 
-    /** This platform's current user overrides (Cmd map on macOS, Ctrl map elsewhere) — see {@link Settings}. */
+    /** The user's bindings as this system's overrides, chord to command, for the active keymap. */
     java.util.Map<String, String> currentKeybindings() {
-        return host.config().getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac());
+        return UserKeys.overrides(host.config().getSettings(), baseBindings());
     }
 
     void rebindShortcut(String commandId, String chordSeq) {
@@ -544,18 +545,9 @@ final class EditorSettingsCoordinator {
         return com.editora.command.KeybindingEdits.taken(baseBindings(), currentKeybindings(), commandId);
     }
 
-    /** Drops every binding of a command that no longer exists (a deleted macro), in every keymap and platform. */
+    /** Drops every binding of a command that no longer exists (a deleted macro), in every keymap. */
     void forgetShortcut(String commandId) {
-        Settings s = host.config().getSettings();
-        for (boolean mac : new boolean[] {false, true}) {
-            s.setKeybindingsFor(
-                    mac, com.editora.command.KeybindingEdits.withoutCommand(s.keybindingsFor(mac), commandId));
-        }
-        for (var parked : java.util.List.of(s.getKeymapKeybindings(), s.getKeymapKeybindingsMac())) {
-            if (parked != null) {
-                parked.values().forEach(m -> m.values().removeIf(commandId::equals));
-            }
-        }
+        UserKeys.forget(host.config().getSettings(), commandId);
         host.config().save();
         reloadKeymap();
     }

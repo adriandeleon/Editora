@@ -488,12 +488,18 @@ class ConfigMigrationsTest {
         current.put("projectSupport", false); // Projects deliberately turned off
         current.putArray("toolbarLayout").add("file.new").add("file.saveAs"); // Recent deliberately removed
         current.putArray("todoPatterns"); // every TODO keyword deliberately removed
-        current.putObject("keybindings").put("C-k", "file.save");
-        current.putObject("keybindingsMac").put("Cmd-k", "file.save");
+        current.putObject("keyBindings")
+                .putObject("vscode")
+                .putArray("file.save")
+                .add("C-M-S-f11");
+        current.putObject("keyBindingsMacOnly")
+                .putObject("vscode")
+                .putArray("edit.paste")
+                .add("C-Cmd-v");
         ObjectNode expected = current.deepCopy();
         expected.put("schemaVersion", ConfigSchema.SETTINGS.currentVersion());
 
-        assertEquals(127, ConfigSchema.SETTINGS.versionWithoutMarker(current), "its newest key dates it");
+        assertEquals(171, ConfigSchema.SETTINGS.versionWithoutMarker(current), "its newest key dates it");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, current.deepCopy(), mapper);
 
         assertEquals(expected, out, "nothing but the marker changes");
@@ -725,23 +731,158 @@ class ConfigMigrationsTest {
         assertFalse(same.has("mavenArchetypeCatalogUrl"));
     }
 
-    /** v105→106: overrides became per-keymap; an existing file's stay in place, under the keymap it names. */
+    /**
+     * A file from before bindings were kept per keymap (v106) has only the two maps of the keymap it names: brought
+     * up to date, they are that keymap's bindings, by command and for every system.
+     */
     @Test
-    void perKeymapOverridesStepKeepsExistingKeybindingsWhereTheyAre() throws Exception {
-        JsonNode stored = mapper.readTree(
-                "{\"schemaVersion\":105,\"keymap\":\"cua\","
-                        + "\"keybindings\":{\"C-f\":\"\",\"<f7>\":\"find.show\"},\"keybindingsMac\":{\"Cmd-k\":\"file.save\"}}");
+    void anOldFilesKeybindingsBecomeTheBindingsOfTheKeymapItNames() throws Exception {
+        JsonNode stored = mapper.readTree("{\"schemaVersion\":105,\"keymap\":\"cua\","
+                + "\"keybindings\":{\"C-f\":\"\",\"f8\":\"find.show\"},\"keybindingsMac\":{\"Cmd-k\":\"file.save\"}}");
 
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
 
         assertEquals(
                 ConfigSchema.SETTINGS.currentVersion(), out.get("schemaVersion").asInt());
         assertEquals("cua", out.get("keymap").asText());
-        assertEquals(stored.get("keybindings"), out.get("keybindings"));
-        assertEquals(stored.get("keybindingsMac"), out.get("keybindingsMac"));
+        assertFalse(out.has("keybindings"));
+        assertFalse(out.has("keybindingsMac"));
+        // Find lost C-f and kept f3 beside the new f8; Save gained a chord on the Mac, written as the others type it.
+        assertEquals(
+                mapper.readTree("{\"cua\":{\"find.show\":[\"f3\",\"f8\"],\"file.save\":[\"C-s\",\"C-k\"]}}"),
+                out.get("keyBindings"));
+        assertEquals(mapper.createObjectNode(), out.get("keyBindingsMacOnly"));
         com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
-        assertEquals("find.show", loaded.keybindingsFor(false).get("<f7>"));
-        assertTrue(loaded.getKeymapKeybindings().isEmpty(), "nothing is parked for the other keymaps yet");
+        assertEquals(
+                java.util.List.of("f3", "f8"),
+                loaded.getKeyBindings().get("cua").get("find.show"));
+        assertEquals(java.util.Set.of("cua"), loaded.getKeyBindings().keySet(), "the other keymaps have none yet");
+    }
+
+    /**
+     * v170→171: the active keymap's two maps and the ones parked for the other keymaps become one store by
+     * command, and the four keys they were kept under are gone.
+     */
+    @Test
+    void keyBindingsByCommandConvertsTheActiveKeymapsMapsAndTheParkedOnes() throws Exception {
+        JsonNode stored = mapper.readTree("""
+                {
+                  "schemaVersion" : 170,
+                  "keymap" : "vscode",
+                  "fontSize" : 17,
+                  "keybindings" : { "C-s" : "", "C-M-S-f11" : "file.save", "C-z" : "", "C-M-S-f10" : "edit.undo" },
+                  "keybindingsMac" : { "Cmd-s" : "", "M-Cmd-S-f11" : "file.save", "Cmd-v" : "", "C-Cmd-v" : "edit.paste" },
+                  "keymapKeybindings" : {
+                    "emacs" : { "C-x C-s" : "", "C-x s" : "file.save" },
+                    "cua" : { "C-f" : "", "f3" : "", "f8" : "find.show" }
+                  },
+                  "keymapKeybindingsMac" : {
+                    "sublime" : { "Cmd-s" : "", "C-Cmd-s" : "file.save" }
+                  }
+                }
+                """);
+
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
+
+        assertEquals(171, out.get("schemaVersion").asInt());
+        assertEquals(mapper.readTree("""
+                {
+                  "emacs" : { "file.save" : [ "C-x s" ] },
+                  "cua" : { "find.show" : [ "f8" ] },
+                  "vscode" : { "file.save" : [ "C-M-S-f11" ], "edit.undo" : [ "C-M-S-f10" ] }
+                }
+                """), out.get("keyBindings"));
+        assertEquals(mapper.readTree("""
+                {
+                  "sublime" : { "file.save" : [ "C-Cmd-s" ] },
+                  "vscode" : { "edit.paste" : [ "C-Cmd-v" ] }
+                }
+                """), out.get("keyBindingsMacOnly"));
+        for (String gone :
+                java.util.List.of("keybindings", "keybindingsMac", "keymapKeybindings", "keymapKeybindingsMac")) {
+            assertFalse(out.has(gone), gone);
+        }
+        assertEquals("vscode", out.get("keymap").asText());
+        assertEquals(17, out.get("fontSize").asInt(), "nothing else changes");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertEquals(
+                java.util.List.of("C-M-S-f11"),
+                loaded.getKeyBindings().get("vscode").get("file.save"));
+        assertEquals(
+                java.util.List.of("C-Cmd-v"),
+                loaded.getKeyBindingsMacOnly().get("vscode").get("edit.paste"));
+    }
+
+    @Test
+    void keyBindingsByCommandReadsAnUnbindAsACommandWithNoChords() throws Exception {
+        JsonNode out = ConfigMigrations.keyBindingsByCommand(
+                mapper.readTree("{\"keymap\":\"cua\",\"keybindings\":{\"C-f\":\"\",\"f3\":\"\"}}"));
+        assertEquals(mapper.readTree("{\"cua\":{\"find.show\":[]}}"), out.get("keyBindings"));
+    }
+
+    /** A name that is not a bundled keymap ran as the default one, so that is the keymap its bindings were made in. */
+    @Test
+    void keyBindingsByCommandPutsAnUnknownKeymapsBindingsUnderTheDefaultKeymap() throws Exception {
+        JsonNode out = ConfigMigrations.keyBindingsByCommand(
+                mapper.readTree("{\"keymap\":\"vim\",\"keybindings\":{\"C-x C-s\":\"\",\"C-x s\":\"file.save\"}}"));
+        assertEquals(mapper.readTree("{\"emacs\":{\"file.save\":[\"C-x s\"]}}"), out.get("keyBindings"));
+        assertEquals("vim", out.get("keymap").asText(), "the configured name is not this step's to change");
+    }
+
+    /** A keymap this build does not ship (a newer Editora's, synced here) keeps the bindings parked under it. */
+    @Test
+    void keyBindingsByCommandKeepsBindingsParkedUnderAKeymapItDoesNotKnow() throws Exception {
+        JsonNode out = ConfigMigrations.keyBindingsByCommand(mapper.readTree("""
+                {
+                  "keymap" : "emacs",
+                  "keymapKeybindings" : { "helix" : { "C-x s" : "file.save", "C-q" : "" } },
+                  "keymapKeybindingsMac" : { "helix" : { "Cmd-k" : "edit.copy" } }
+                }"""));
+        assertEquals(
+                mapper.readTree("{\"helix\":{\"file.save\":[\"C-x s\"]}}"),
+                out.get("keyBindings"),
+                "the binding is kept; the bare unbind has no known command to belong to");
+        assertEquals(
+                mapper.readTree("{\"helix\":{\"edit.copy\":[\"Cmd-k\"]}}"),
+                out.get("keyBindingsMacOnly"),
+                "with no macOS form known for the keymap, a Cmd chord stays the Mac's own");
+    }
+
+    @Test
+    void keyBindingsByCommandLeavesAFileWithoutTheOldKeysAsItIs() throws Exception {
+        for (String json : java.util.List.of(
+                "{\"schemaVersion\":170,\"keymap\":\"cua\",\"fontSize\":17}",
+                "{\"keymap\":\"cua\",\"keyBindings\":{\"cua\":{\"find.show\":[\"f8\"]}},\"keyBindingsMacOnly\":{}}",
+                "[]")) {
+            JsonNode in = mapper.readTree(json);
+            assertEquals(mapper.readTree(json), ConfigMigrations.keyBindingsByCommand(in), json);
+        }
+    }
+
+    /** Safe to repeat: bindings already in the new shape are the newer ones, and are not replaced. */
+    @Test
+    void keyBindingsByCommandKeepsAKeymapsBindingsThatAreAlreadyInTheNewShape() throws Exception {
+        JsonNode in = mapper.readTree("""
+                {
+                  "keymap" : "cua",
+                  "keybindings" : { "C-f" : "", "f3" : "", "f8" : "find.show" },
+                  "keybindingsMac" : { "Cmd-s" : "", "C-Cmd-s" : "file.save" },
+                  "keymapKeybindings" : { "emacs" : { "C-x C-s" : "", "C-x s" : "file.save" } },
+                  "keyBindings" : { "cua" : { "find.show" : [ "f9" ] } },
+                  "keyBindingsMacOnly" : { "cua" : { "file.open" : [ "C-Cmd-o" ] } }
+                }
+                """);
+
+        JsonNode out = ConfigMigrations.keyBindingsByCommand(in);
+
+        assertEquals(
+                mapper.readTree("{\"cua\":{\"find.show\":[\"f9\"]},\"emacs\":{\"file.save\":[\"C-x s\"]}}"),
+                out.get("keyBindings"),
+                "CUA keeps what it has; Emacs, which had none, is converted");
+        assertEquals(mapper.readTree("{\"cua\":{\"file.open\":[\"C-Cmd-o\"]}}"), out.get("keyBindingsMacOnly"));
+        assertFalse(out.has("keybindings"));
+        assertFalse(out.has("keybindingsMac"));
+        assertFalse(out.has("keymapKeybindings"));
     }
 
     @Test
