@@ -297,7 +297,7 @@ without the network); and the release-asset manifest. The Java side has matching
 `SshdModuleDescriptorTest`, `WindowsFileAssociationsTest`) that read the workflows, the pom and the
 packaging files as text.
 
-CI runs in two tiers. **`ci.yml`** is the fast lane, about fifteen minutes: formatting, the whole suite on
+CI runs in two tiers. **`ci.yml`** is the fast lane, about ten minutes: formatting, the whole suite on
 Linux (six shards, coverage floors) and the scripts' own tests. It runs on every pull request and every
 push to `master`, and the two checks `master` requires come from it. **`full-tests.yml`** holds the rest:
 the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`, the FX suite (`-Dgroups=fx`) on
@@ -321,7 +321,7 @@ stood 242 px from the edge instead of 259, short of the note's 256).
 
 **Locally,** run `mvn spotless:apply`, the tests for what you changed (`mvn -Dtest='Foo*Test' test`) and
 the [guard tests](#guard-tests) (`mvn test -Dgroups=guard`), not the whole suite: CI's six shards run it
-in about fifteen minutes, and several sessions share this machine.
+in about ten minutes, and several sessions share this machine.
 
 **Do not wait for a run.** Open the pull request and go on to the next task, in a new worktree; look at
 the checks when a step of that task is done. `master` requires `Build & Test (JDK 25)` and
@@ -339,7 +339,8 @@ one JVM on one runner it took 15 minutes and grew with every pull request. `scri
 deals the test classes out: it lists the files under `src/test/java` that Surefire would pick by itself
 and gives each shard the same share of the time, not of the classes: the longest class first, each to
 the shard with the least so far, the `*FxTest` classes dealt separately from the rest. A run waits for its
-slowest shard, and dealt by name one shard of four carried 95 seconds of tests more than the average. A
+slowest shard, and dealt by name one shard of four carried 95 seconds of tests more than the average. The
+first run with six shards took 10.5 minutes where the median had been 14. A
 shard runs `test` with its list as Surefire's `includesFile`; the `build` job (the check `master`
 requires, "Build & Test (JDK 25)") then fails if any shard failed, checks that every test class has a
 report (`ShardTests.java check`), checks the skips, joins the six JaCoCo data files and applies the
@@ -355,7 +356,7 @@ java scripts/ci/ShardTests.java loads 6
 ```
 
 The durations are in `scripts/ci/test-timings.txt`: the classes that take a second or more on a Linux
-runner, about 360 of 2,500, which are nine tenths of the time. A class that is not listed counts as 0.1
+runner, about 400 of 2,500, which are nine tenths of the time. A class that is not listed counts as 0.1
 seconds, so a new class needs no line and a stale file costs only balance. Each shard prints the expected
 loads (the "List this shard's test classes" step); when they have drifted from what the shards take, or
 after a slow class is split or sped up, write the file again from a green run on `master`:
