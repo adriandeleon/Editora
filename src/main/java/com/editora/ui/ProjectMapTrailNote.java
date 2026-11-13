@@ -101,12 +101,9 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         close.getStyleClass().addAll("flat", "project-map-sticky-note-close");
         close.setFocusTraversable(false);
         // One name, for the tooltip and a screen reader alike: what closing does, and that the note is kept.
-        MapButtonCommands.bind(
-                this,
-                close,
-                "projectMap.cardClose",
-                () -> tr("project.map.trails.note.closeHelp"),
-                () -> onClose.run());
+        // The sheet never takes the keyboard, so Close Card cannot find it: hiding it is a command of its own.
+        close.setOnAction(event -> close());
+        CommandTips.name(close, "projectMap.trailNoteHide", () -> tr("project.map.trails.note.closeHelp"));
         MapButtonCommands.stuckOn(this, card);
         HBox top = new HBox(where, close);
         top.getStyleClass().add("project-map-sticky-note-header");
@@ -429,5 +426,10 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         zoom.yProperty().unbind();
         host.getChildren().remove(this);
         onMoved.run();
+    }
+
+    /** Hides this stop's note, as its × does: it stays in the trail. */
+    void close() {
+        onClose.run();
     }
 }

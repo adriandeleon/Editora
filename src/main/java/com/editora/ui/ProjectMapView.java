@@ -422,6 +422,9 @@ final class ProjectMapView extends VBox {
         forwardButton.getStyleClass().add("project-map-nav-button");
         CommandTips.name(backButton, "projectMap.back");
         CommandTips.name(forwardButton, "projectMap.forward");
+        // Out of the Tab order: each has its command, and so has the list their Menu key opens (showHistoryMenu).
+        backButton.setFocusTraversable(false);
+        forwardButton.setFocusTraversable(false);
         backButton.setMinWidth(Region.USE_PREF_SIZE);
         forwardButton.setMinWidth(Region.USE_PREF_SIZE);
         backButton.setOnAction(event -> moveHistory(-1));
@@ -4704,6 +4707,16 @@ final class ProjectMapView extends VBox {
         }
         menu.show(owner, javafx.geometry.Side.BOTTOM, 0, 0);
         event.consume();
+    }
+
+    /** Shows the places the Map has been, under the Back button; false when there are none yet. */
+    boolean showHistoryMenu() {
+        ContextMenu menu = historyMenu();
+        if (menu.getItems().isEmpty()) {
+            return false;
+        }
+        menu.show(backButton, javafx.geometry.Side.BOTTOM, 0, 0);
+        return true;
     }
 
     /**

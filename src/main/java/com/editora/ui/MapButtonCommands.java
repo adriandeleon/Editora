@@ -44,6 +44,27 @@ final class MapButtonCommands {
     private MapButtonCommands() {}
 
     static void register(MainController mc) {
+        // The list the Menu key on Back and Forward opens: with it a command, those two are not Tab stops.
+        mc.registry.register(Command.of(
+                "projectMap.history",
+                () -> withMap(mc, view -> {
+                    raise(view);
+                    if (!view.showHistoryMenu()) {
+                        mc.setStatus(tr("status.projectMap.noHistory"));
+                    }
+                })));
+        // A trail stop's note never takes the keyboard (it is a sheet of labels), so its × has a command of its own.
+        mc.registry.register(Command.of(
+                "projectMap.trailNoteHide",
+                () -> withMap(mc, view -> {
+                    for (Node child : List.copyOf(view.viewsCanvasHost().getChildren())) {
+                        if (child instanceof ProjectMapTrailNote note) {
+                            note.close();
+                            return;
+                        }
+                    }
+                    mc.setStatus(tr("status.projectMap.noTrailNote"));
+                })));
         mc.registry.register(Command.of("projectMap.back", () -> withMap(mc, view -> view.moveHistory(-1))));
         mc.registry.register(Command.of("projectMap.forward", () -> withMap(mc, view -> view.moveHistory(1))));
         mc.registry.register(Command.of(
@@ -111,7 +132,7 @@ final class MapButtonCommands {
         if (panel == null || !panel.isMapShowing()) {
             mc.setStatus(tr("status.projectMap.notShowing"));
         } else {
-            op.accept(panel.mapView()); // PLACEHOLDER: ProjectPanel has no accessor for its private mapView yet
+            op.accept(panel.mapView());
         }
     }
 

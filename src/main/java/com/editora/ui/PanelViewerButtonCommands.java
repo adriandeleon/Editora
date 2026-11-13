@@ -18,6 +18,22 @@ final class PanelViewerButtonCommands {
 
     /** Registers this area's commands on {@code mc}'s registry. */
     static void register(MainController mc) {
+        // The trash on a row of the project dropdown deletes that project; Project: Delete only this window's.
+        mc.registry.register(Command.of("project.deleteChosen", () -> {
+            if (!mc.projectsEnabled()) {
+                mc.setStatus(tr("palette.disabled.featureOff", tr("command.view.toggleProjects")));
+                return;
+            }
+            QuickOpen<com.editora.config.Project> picker = new QuickOpen<>(
+                    tr("project.deletePicker.title"),
+                    tr("project.picker.prompt"),
+                    () -> mc.projects.list(),
+                    com.editora.config.Project::name,
+                    com.editora.config.Project::root,
+                    mc::deleteProject);
+            picker.setOverlayHost(mc.overlayHost);
+            picker.show(mc.stage);
+        }));
         mc.registry.register(Command.of("agent.toggleDetached", () -> {
             if (mc.agentCoordinator.isEnabled()) {
                 mc.agentCoordinator.panel().toggleDetached();
