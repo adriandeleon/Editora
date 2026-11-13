@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * The {@link ExecTargets} resolver for folders inside a WSL distribution ({@code \\wsl.localhost\<distro>\…},
  * {@code \\wsl$\<distro>\…}): one target per distribution and share spelling. A lookup of the path's text —
- * no I/O. Registered on Windows only.
+ * no I/O. Registered on every OS; only Windows has such paths.
  */
 public final class WslTargets implements ExecTargets.Resolver {
 
