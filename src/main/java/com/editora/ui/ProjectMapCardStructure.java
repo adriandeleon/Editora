@@ -32,6 +32,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -150,7 +151,7 @@ final class ProjectMapCardStructure implements CardAttachment {
         title.setMinWidth(0);
         title.setMaxWidth(Double.MAX_VALUE);
         title.setTextOverrun(OverrunStyle.ELLIPSIS);
-        title.setTooltip(new Tooltip());
+        title.setTooltip(ControlNames.tooltip());
         HBox.setHgrow(title, Priority.ALWAYS);
         Button close = new Button("×");
         close.getStyleClass().add("project-map-preview-button");
@@ -808,7 +809,7 @@ final class ProjectMapCardStructure implements CardAttachment {
 
         private long shownStyles = -1;
 
-        private final Tooltip tip = new Tooltip();
+        private final Tooltip tip = ControlNames.tooltip();
 
         RowCell() {
             getStyleClass().add("project-map-card-structure-row");

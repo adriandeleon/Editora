@@ -373,23 +373,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-03",
       "kind": "pending",
-      "reason": "The tool window header buttons keep words of their own instead of their command's title, and the debugger's toolbar does not rename itself after a keymap switch.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1564"
-    },
-    {
-      "rule": "TBAR-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-14",
-      "kind": "pending",
-      "reason": "Tooltips on labels, list rows and badges still appear after one second, not the 400 ms that buttons and gutter markers use.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1564"
-    },
-    {
-      "rule": "TBAR-17",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-17",
-      "kind": "pending",
-      "reason": "A few toolbar buttons stay enabled when their command cannot run, Save As among them.",
+      "reason": "Some buttons keep words of their own where they say more than their command's title, such as Maximize or Restore on a tool window's header.",
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
     },
     {

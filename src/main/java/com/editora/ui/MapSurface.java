@@ -58,6 +58,7 @@ import javafx.scene.text.TextAlignment;
 import javafx.stage.WindowEvent;
 import javafx.util.Duration;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.git.GitFileStatus;
 import com.editora.ui.ProjectMapView.FlowDirection;
@@ -248,7 +249,7 @@ final class MapSurface extends Region {
     /** Heat-tinted row fills by fill, heat, text, muted ink and step ({@link ProjectMapActivity#tinted}). */
     private final Map<List<Object>, Color> activityTints = new HashMap<>();
 
-    private final Tooltip nodeTooltip = new Tooltip();
+    private final Tooltip nodeTooltip = ControlNames.tooltip();
     private final Text textMeasurer = new Text();
     private final List<NodeBox> boxes = new ArrayList<>();
     private final List<ColumnBox> columnBoxes = new ArrayList<>();
@@ -524,7 +525,6 @@ final class MapSurface extends Region {
         // position 14 one more child, canvasA11y, is a tree of the rows on screen, each a tree item.
         setAccessibleRole(AccessibleRole.PARENT);
         setAccessibleHelp(tr("project.map.accessibleHelp"));
-        nodeTooltip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
         nodeTooltip.setHideDelay(Duration.millis(100));
         nodeTooltip.setWrapText(true);
         UiZoom.follow(nodeTooltip, () -> nodeTooltip.setMaxWidth(UiZoom.px(520)));
@@ -2178,7 +2178,7 @@ final class MapSurface extends Region {
         CheckBox showHidden = new CheckBox(tr("project.map.column.showHidden"));
         showHidden.getStyleClass().add("project-map-column-hidden");
         showHidden.setSelected(columnShowHidden.getOrDefault(id, view.showHiddenDefault));
-        showHidden.setTooltip(new Tooltip(tr("project.map.column.showHiddenHelp")));
+        showHidden.setTooltip(ControlNames.tooltip(tr("project.map.column.showHiddenHelp")));
         showHidden.setAccessibleText(tr("project.map.column.showHidden"));
         showHidden.selectedProperty().addListener((obs, old, selected) -> {
             if (syncingHidden) {

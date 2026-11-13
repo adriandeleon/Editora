@@ -42,6 +42,7 @@ import javafx.util.StringConverter;
 import com.editora.build.BuildTool;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
@@ -822,7 +823,7 @@ public class SettingsWindow {
 
         // The kit puts the search at the top of the nav rail, not spanning the window: search scopes the
         // sidebar (it greys categories and auto-selects the first hit), so it lives with the sidebar.
-        modifiedOnly.setTooltip(new Tooltip(tr("settings.search.modifiedOnly.tip")));
+        modifiedOnly.setTooltip(ControlNames.tooltip(tr("settings.search.modifiedOnly.tip")));
         modifiedOnly.setAccessibleHelp(tr("settings.search.modifiedOnly.tip"));
         modifiedOnly.setOnAction(e -> filter(searchField.getText()));
         modifiedOnly.getStyleClass().add(atlantafx.base.theme.Styles.SMALL); // under the search: it filters it
@@ -2315,7 +2316,7 @@ public class SettingsWindow {
         // No problem: a value too long to read in the field is the tooltip, whole (XML/pom review 3, C28)
         String text = field.getText();
         String tip = why != null ? why : text != null && text.length() > 24 ? text : null;
-        Tooltip tooltip = tip == null ? null : new Tooltip(tip);
+        Tooltip tooltip = tip == null ? null : ControlNames.tooltip(tip);
         if (tooltip != null) {
             tooltip.setWrapText(true);
             tooltip.setMaxWidth(UiZoom.px(480));
@@ -3633,7 +3634,7 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.advanced"), tr("settings.advanced.subtitle"));
         Card fileSection = card(p, tr("settings.section.file"));
         Hyperlink link = new Hyperlink(displaySettingsPath(config.getSettingsFile()));
-        link.setTooltip(new Tooltip(tr("settings.openFileTip")));
+        link.setTooltip(ControlNames.tooltip(tr("settings.openFileTip")));
         link.setOnAction(e -> {
             if (onOpenFile != null) {
                 onOpenFile.accept(config.getSettingsFile());
@@ -3649,7 +3650,7 @@ public class SettingsWindow {
 
         Path sessionLog = DebugLog.sessionFile(config.getConfigDir());
         Hyperlink sessionLink = new Hyperlink(sessionLog == null ? "" : displaySettingsPath(sessionLog));
-        sessionLink.setTooltip(new Tooltip(tr("settings.openFileTip")));
+        sessionLink.setTooltip(ControlNames.tooltip(tr("settings.openFileTip")));
         sessionLink.setOnAction(e -> {
             if (onOpenFile != null && sessionLog != null) {
                 onOpenFile.accept(sessionLog);
@@ -3938,7 +3939,7 @@ public class SettingsWindow {
     static Node infoIcon(String tooltipText) {
         Node icon = Icons.about();
         icon.getStyleClass().add("settings-info-icon");
-        Tooltip tip = new Tooltip(tooltipText);
+        Tooltip tip = ControlNames.tooltip(tooltipText);
         tip.setWrapText(true);
         UiZoom.follow(icon, () -> tip.setMaxWidth(UiZoom.px(320)));
         Tooltip.install(icon, tip);

@@ -103,7 +103,7 @@ final class ProjectScopeSettings {
         userButton.setToggleGroup(group);
         projectButton.setToggleGroup(group);
         userButton.setSelected(true);
-        userButton.setTooltip(new javafx.scene.control.Tooltip(tr("settings.scope.userTip")));
+        userButton.setTooltip(com.editora.editor.ControlNames.tooltip(tr("settings.scope.userTip")));
         // A toggle group lets the selected button be clicked off; the scope is always one of the two.
         group.selectedToggleProperty().addListener((o, was, now) -> {
             if (now == null) {
@@ -270,7 +270,7 @@ final class ProjectScopeSettings {
         String named = projectName.get();
         String name = root == null ? "" : named == null || named.isBlank() ? folderName(root) : named;
         projectButton.setText(root == null ? tr("settings.scope.project") : tr("settings.scope.projectNamed", name));
-        projectButton.setTooltip(root == null ? null : new javafx.scene.control.Tooltip(root.toString()));
+        projectButton.setTooltip(root == null ? null : com.editora.editor.ControlNames.tooltip(root.toString()));
         bar.pseudoClassStateChanged(PROJECT, project);
         if (owner.get() instanceof javafx.stage.Stage stage) {
             stage.setTitle(project ? tr("settings.window.projectTitle", name) : tr("settings.window.title"));

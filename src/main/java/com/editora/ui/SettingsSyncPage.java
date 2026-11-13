@@ -9,12 +9,12 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.ui.SettingsWindow.Card;
 import com.editora.ui.SettingsWindow.Category;
@@ -134,7 +134,7 @@ final class SettingsSyncPage {
         syncUrlField.textProperty().addListener((o, was, now) -> {
             boolean secret = com.editora.sync.SyncEngine.hasCredentials(now);
             urlField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, secret);
-            urlField.setTooltip(secret ? new Tooltip(tr("settings.sync.repo.credentials")) : null);
+            urlField.setTooltip(secret ? ControlNames.tooltip(tr("settings.sync.repo.credentials")) : null);
         });
         w.commitOnEnterOrBlur(syncUrlField, settings::getSyncRepoUrl, text -> {
             if (com.editora.sync.SyncEngine.hasCredentials(text)) {
@@ -157,7 +157,7 @@ final class SettingsSyncPage {
         syncBranchField.textProperty().addListener((o, was, now) -> {
             boolean bad = !now.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(now.strip());
             branchField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
-            branchField.setTooltip(bad ? new Tooltip(tr("settings.sync.branch.invalid")) : null);
+            branchField.setTooltip(bad ? ControlNames.tooltip(tr("settings.sync.branch.invalid")) : null);
         });
         w.commitOnEnterOrBlur(syncBranchField, settings::getSyncBranch, text -> {
             if (!text.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(text.strip())) {
@@ -442,7 +442,7 @@ final class SettingsSyncPage {
         syncPill.setText(pill.text());
         syncPill.setAccessibleText(pill.accessibleText());
         syncPill.getStyleClass().setAll("settings-git-status", pill.level().pillClass());
-        syncPill.setTooltip(new Tooltip(syncStateLabel.getText()));
+        syncPill.setTooltip(ControlNames.tooltip(syncStateLabel.getText()));
         // The line under the pill: a notice, the reason a run failed, or what the last run did. The pill alone
         // says "Not connected" and "syncing…".
         SettingsSync.Phase phase = state == null ? SettingsSync.Phase.OFF : state.phase();

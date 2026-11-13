@@ -21,6 +21,7 @@ import javafx.util.Duration;
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
 import com.editora.dap.DapModels;
+import com.editora.editor.ControlNames;
 import com.editora.editor.completion.CompletionPopup;
 import org.jspecify.annotations.Nullable;
 
@@ -68,7 +69,7 @@ final class DebugCompletion {
     private final javafx.scene.Node node;
     private final Source source;
     private final CompletionPopup popup = new CompletionPopup();
-    private final Tooltip note = new Tooltip();
+    private final Tooltip note = ControlNames.tooltip();
     private final PauseTransition noteTimer = new PauseTransition(Duration.seconds(3));
     /** Answers to an older request than this one are dropped (the text moved on meanwhile). */
     private int request;

@@ -13,13 +13,13 @@ import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.util.Duration;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
 import org.jspecify.annotations.Nullable;
@@ -129,7 +129,7 @@ public final class MarkdownPreviewPane implements TabContent {
         lock.setSelected(locked);
         lock.setText(tr(locked ? "markdown.sidePreview.locked" : "markdown.sidePreview.following"));
         String hint = tr(locked ? "markdown.sidePreview.unlockHint" : "markdown.sidePreview.lockHint");
-        lock.setTooltip(new Tooltip(hint));
+        lock.setTooltip(ControlNames.tooltip(hint));
         lock.setAccessibleText(hint);
     }
 

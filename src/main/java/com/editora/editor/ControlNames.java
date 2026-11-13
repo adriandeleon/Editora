@@ -4,6 +4,8 @@ import javafx.scene.control.Control;
 import javafx.scene.control.Tooltip;
 import javafx.util.Duration;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The one place a control gets its name: its tooltip and its accessible text are set together, from one
  * string, so a screen reader says what a sighted user reads. An icon-only button is named here and nowhere
@@ -21,15 +23,31 @@ public final class ControlNames {
 
     private ControlNames() {}
 
+    /**
+     * A tooltip that shows after {@link #TOOLTIP_DELAY}: every tooltip in the app is made here (or by
+     * {@link #name}), never with {@code new Tooltip}, so none answers faster or slower than its neighbors.
+     */
+    public static Tooltip tooltip(@Nullable String text) {
+        Tooltip tooltip = new Tooltip(text);
+        tooltip.setShowDelay(TOOLTIP_DELAY);
+        return tooltip;
+    }
+
+    /** As {@link #tooltip(String)}, for a tooltip whose text is set later. */
+    public static Tooltip tooltip() {
+        Tooltip tooltip = new Tooltip();
+        tooltip.setShowDelay(TOOLTIP_DELAY);
+        return tooltip;
+    }
+
     /** Sets {@code control}'s tooltip and accessible text to {@code name}. Call it again when the name changes. */
     public static <C extends Control> C name(C control, String name) {
         control.setAccessibleText(name);
-        Tooltip tooltip = new Tooltip(name);
+        Tooltip tooltip = tooltip(name);
         // A name that is a sentence (the diff bar's, a toggle that explains itself) wraps instead of running
         // the width of the screen; a short one is unaffected.
         tooltip.setWrapText(true);
         UiZoom.follow(control, "tooltipWidth", () -> tooltip.setMaxWidth(UiZoom.px(360)));
-        tooltip.setShowDelay(TOOLTIP_DELAY);
         control.setTooltip(tooltip);
         return control;
     }

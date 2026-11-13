@@ -30,6 +30,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import com.editora.git.CommitMessages;
@@ -255,7 +256,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     /** Holds the Commit button so a tooltip can explain it while it is disabled (a disabled node shows none). */
     private final StackPane commitRow = new StackPane(commitButton);
 
-    private final Tooltip commitBlockedTip = new Tooltip();
+    private final Tooltip commitBlockedTip = ControlNames.tooltip();
     /** A commit is running (hooks can take minutes): no second one may start until it reports back. */
     private boolean committing;
     /** Groups the user collapsed; a status update rebuilds the rows but must not reopen them. */
@@ -280,7 +281,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         // The branch name keeps a readable minimum; its full text is in the tooltip.
         UiZoom.minWidth(branchLabel, BRANCH_MIN_WIDTH);
         branchLabel.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
-        Tooltip branchTip = new Tooltip();
+        Tooltip branchTip = ControlNames.tooltip();
         branchTip.textProperty().bind(branchLabel.textProperty());
         branchLabel.setTooltip(branchTip);
         // The push indicator is a few characters ("↑2 ↓1", "↑ publish") and is never cut: cut, it read "↑…".
@@ -316,7 +317,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         filterField.getStyleClass().add("bookmarks-filter");
         // Where the list's own key is written down: on the field focus lands on, and for a screen reader on
         // the list itself. (Rows keep their tooltip for the path.)
-        filterField.setTooltip(new Tooltip(tr("gitpanel.spaceHint")));
+        filterField.setTooltip(ControlNames.tooltip(tr("gitpanel.spaceHint")));
         tree.setAccessibleHelp(tr("gitpanel.spaceHint"));
         filterField.textProperty().addListener((o, w, n) -> renderFiles());
         FilterFieldNav.install(filterField, tree, this::openSelected);
@@ -365,14 +366,14 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         aiCommitButton.setVisible(false); // hidden until setAiAvailable(true) — off by default
         aiCommitButton.setManaged(false);
         amendCheck.getStyleClass().add("git-commit-option");
-        amendCheck.setTooltip(new Tooltip(tr("gitpanel.amendTip")));
+        amendCheck.setTooltip(ControlNames.tooltip(tr("gitpanel.amendTip")));
         amendCheck.setOnAction(e -> setAmending(amendCheck.isSelected()));
         signOffCheck.getStyleClass().add("git-commit-option");
-        signOffCheck.setTooltip(new Tooltip(tr("gitpanel.signOffTip")));
+        signOffCheck.setTooltip(ControlNames.tooltip(tr("gitpanel.signOffTip")));
         signOffCheck.setOnAction(e -> actions.setSignOff(signOffCheck.isSelected()));
         guideLabel.getStyleClass().add("git-message-guide");
         guideLabel.setMinWidth(Region.USE_PREF_SIZE);
-        guideLabel.setTooltip(new Tooltip(tr("gitpanel.guide.tip")));
+        guideLabel.setTooltip(ControlNames.tooltip(tr("gitpanel.guide.tip")));
         historyButton.setGraphic(Icons.history());
         historyButton.getStyleClass().addAll("flat", "git-toolbar-button");
         historyButton.setFocusTraversable(false);
@@ -961,7 +962,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             tip = tr("gitpanel.upToDate", status.upstream());
         }
         aheadLabel.setText(text);
-        aheadLabel.setTooltip(new Tooltip(tip));
+        aheadLabel.setTooltip(ControlNames.tooltip(tip));
         aheadLabel.getStyleClass().removeAll("git-ahead-active", "git-ahead-clean");
         aheadLabel.getStyleClass().add(needsPush ? "git-ahead-active" : "git-ahead-clean");
         pushButton.getStyleClass().remove("git-needs-push");
@@ -1539,7 +1540,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 setGraphic(fileRow);
                 // Color the row by status (same palette as the Project tree) so the two windows match.
                 getStyleClass().add(GitFileStatus.of(e).cssClass());
-                setTooltip(new Tooltip(e.path()));
+                setTooltip(ControlNames.tooltip(e.path()));
             }
         }
 

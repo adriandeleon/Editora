@@ -30,6 +30,7 @@ import javafx.util.StringConverter;
 
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
@@ -1272,6 +1273,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     public void setChordLookup(java.util.function.Function<String, String> chordFor) {
         this.chordFor = chordFor == null ? id -> "" : chordFor;
         refreshTooltips();
+        // A keymap switch names every command button again (CommandTips.refresh); this toolbar's names have
+        // a form of their own, so it asks to be told.
+        CommandTips.follow(start, this::refreshTooltips);
     }
 
     /** Whether a frame's source can be shown; frames without are drawn muted. */
@@ -1549,7 +1553,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             restartBlockedTip = null;
         }
         if (blocked != null) {
-            restartBlockedTip = new Tooltip(blocked);
+            restartBlockedTip = ControlNames.tooltip(blocked);
             Tooltip.install(restartHolder, restartBlockedTip);
         }
         restart.setAccessibleHelp(blocked);
@@ -1638,7 +1642,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private void buildThreadsView() {
         threadsToggle.getStyleClass().addAll("debug-threads-toggle", "small");
         threadsToggle.setFocusTraversable(false);
-        threadsToggle.setTooltip(new javafx.scene.control.Tooltip(tr("debugpanel.threadsViewTip")));
+        threadsToggle.setTooltip(com.editora.editor.ControlNames.tooltip(tr("debugpanel.threadsViewTip")));
         threadsToggle.selectedProperty().addListener((o, was, on) -> showThreadsView(on));
         threadList.getStyleClass().add("debug-stack");
         threadList.setVisible(false);

@@ -13,7 +13,6 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -21,6 +20,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.todo.TodoPattern;
 import com.editora.todo.TodoPatterns;
@@ -93,7 +93,7 @@ final class TodoSettingsPane {
         String shownName = p.getName() == null ? "" : p.getName();
         CheckBox enabled = new CheckBox();
         enabled.setSelected(p.isEnabled());
-        enabled.setTooltip(new Tooltip(tr("settings.todo.enabledTip")));
+        enabled.setTooltip(ControlNames.tooltip(tr("settings.todo.enabledTip")));
         enabled.setAccessibleText(tr("settings.todo.enabledTip") + " — " + shownName);
         TextField name = new TextField(shownName);
         name.setPromptText(tr("settings.todo.namePrompt"));
@@ -104,12 +104,12 @@ final class TodoSettingsPane {
         regex.setAccessibleText(tr("settings.todo.regexPrompt") + " — " + shownName);
         HBox.setHgrow(regex, Priority.ALWAYS);
         ColorPicker color = new ColorPicker(parseColor(p.getColor()));
-        color.setTooltip(new Tooltip(tr("settings.todo.colorPrompt")));
+        color.setTooltip(ControlNames.tooltip(tr("settings.todo.colorPrompt")));
         color.setAccessibleText(tr("settings.todo.colorPrompt") + " — " + shownName);
         UiZoom.prefWidth(color, 56);
         CheckBox caseSensitive = new CheckBox(tr("settings.todo.case"));
         caseSensitive.setSelected(p.isCaseSensitive());
-        caseSensitive.setTooltip(new Tooltip(tr("settings.todo.caseTip")));
+        caseSensitive.setTooltip(ControlNames.tooltip(tr("settings.todo.caseTip")));
         caseSensitive.setAccessibleText(tr("settings.todo.caseTip") + " — " + shownName);
         Button remove = new Button("✕");
         // One name for the tooltip and the screen reader: which pattern it removes, as this row's other controls say.
@@ -184,7 +184,7 @@ final class TodoSettingsPane {
     /** Marks {@code field} red with {@code why} as its tooltip, or clears that when {@code why} is null. */
     private static void flag(TextField field, @Nullable String why) {
         field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
-        field.setTooltip(why == null ? null : new Tooltip(why));
+        field.setTooltip(why == null ? null : ControlNames.tooltip(why));
         field.setAccessibleHelp(why);
     }
 

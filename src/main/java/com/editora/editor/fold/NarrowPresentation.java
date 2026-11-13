@@ -135,7 +135,7 @@ public final class NarrowPresentation {
         HBox box = UiZoom.spacing(new HBox(text, spacer, widen), 10);
         box.getStyleClass().add("narrow-bar");
         box.setAlignment(Pos.CENTER_LEFT);
-        javafx.scene.control.Tooltip.install(box, new javafx.scene.control.Tooltip(tr("editor.narrow.tip")));
+        javafx.scene.control.Tooltip.install(box, com.editora.editor.ControlNames.tooltip(tr("editor.narrow.tip")));
         return box;
     }
 

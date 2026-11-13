@@ -26,7 +26,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
@@ -41,6 +40,7 @@ import com.editora.doctor.DoctorReport;
 import com.editora.doctor.DoctorStatus;
 import com.editora.doctor.DoctorSummary;
 import com.editora.doctor.DoctorText;
+import com.editora.editor.ControlNames;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
@@ -1053,7 +1053,7 @@ final class DoctorPane extends Region implements TabContent {
             label.setMinWidth(Region.USE_PREF_SIZE);
         }
         if (text.length() > TOOLTIP_THRESHOLD) {
-            label.setTooltip(new Tooltip(text));
+            label.setTooltip(ControlNames.tooltip(text));
         }
         return label;
     }

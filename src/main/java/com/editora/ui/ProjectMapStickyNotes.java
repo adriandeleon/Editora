@@ -13,7 +13,6 @@ import javafx.geometry.Pos;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -28,6 +27,7 @@ import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import com.editora.editor.ControlNames;
 import com.editora.editor.notes.NoteAnchors;
 import org.jspecify.annotations.Nullable;
 
@@ -137,7 +137,7 @@ final class ProjectMapStickyNotes implements CardAttachment {
         private More(int count, int total) {
             getStyleClass().add("project-map-sticky-more");
             open.setText(tr("project.map.sticky.more", count));
-            open.setTooltip(new Tooltip(tr("project.map.sticky.moreHelp", total - count, total)));
+            open.setTooltip(ControlNames.tooltip(tr("project.map.sticky.moreHelp", total - count, total)));
             open.setAccessibleText(tr("project.map.sticky.moreHelp", total - count, total));
             open.getStyleClass().addAll("flat", "project-map-sticky-more-button");
             open.setMaxWidth(Double.MAX_VALUE);
@@ -233,7 +233,7 @@ final class ProjectMapStickyNotes implements CardAttachment {
             String label = where(value);
             where.setText(label);
             String quoted = value.anchor().selectedText().strip();
-            where.setTooltip(quoted.isEmpty() ? null : new Tooltip(quoted));
+            where.setTooltip(quoted.isEmpty() ? null : ControlNames.tooltip(quoted));
             editor.setAccessibleText(tr("project.map.sticky.accessible", label));
         }
 

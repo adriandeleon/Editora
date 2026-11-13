@@ -6,6 +6,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.shape.Circle;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 
 import static com.editora.i18n.Messages.tr;
@@ -20,7 +21,7 @@ final class HttpEnvPill extends Button {
 
     private final Circle dot = new Circle(3.5);
     private final Label text = new Label();
-    private final Tooltip tip = new Tooltip();
+    private final Tooltip tip = ControlNames.tooltip();
 
     HttpEnvPill(Runnable onOpen) {
         getStyleClass().addAll("http-env-pill", "flat");

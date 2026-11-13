@@ -486,7 +486,10 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   [`CommandTips.name(control, "command.id")`](../../src/main/java/com/editora/ui/CommandTips.java): the
   command's title without its category and the keymap's chord, "Save (C-x C-s)", named again on a keymap
   switch (`CommandTips.refresh()`, from `SettingsReapply`). A third argument supplies the title where the
-  command's would mislead (a toggle that reads Maximize or Restore); a fourth adds a line under the name
+  command's would mislead (a toggle that reads Maximize or Restore) or says less than the button does where
+  it stands ("Hide this preview's Structure" on a Map column). Those buttons keep their words on purpose:
+  the state or the place is what a sighted user and a screen reader both need from the name, and the chord
+  shown is still the command's. A fourth argument adds a line under the name
   (what the diff bar's Swap does). A supplier must not capture the view the button sits in more than it
   needs to: the tip lives in the control's own properties so that it cannot pin a closed window.
 - **Toolbar buttons stay out of the Tab order** (`setFocusTraversable(false)`, which `Icons.toolbarButton`
@@ -506,9 +509,20 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   `stuckOn`). A command with nothing to act on sets a status line that says why and does nothing else: it
   never opens the window it would act on. A control inside the content (a card's title-bar buttons, a
   viewer's bar) keeps its Tab stop; only a button of a toolbar leaves the Tab order.
-- **Tooltip delay**: `ControlNames.TOOLTIP_DELAY` (400 ms), which `ControlNames.name` and `LazyTooltip`
-  set on every tooltip they make; a tooltip built by hand sets the same constant. It cannot live in the
-  stylesheet: `-fx-show-delay` does not survive the precompiled `.bss` form (`StylesheetBinaryTest`).
+- **Tooltip delay**: every tooltip is made by `ControlNames.tooltip(text)` (or `ControlNames.tooltip()` for
+  one whose text is set later), which gives it `ControlNames.TOOLTIP_DELAY` (400 ms); `ControlNames.name`,
+  `Icons.name`, `CommandTips` and `LazyTooltip` go through it. Never `new Tooltip(…)` and never
+  `setShowDelay`: `TooltipDelayTest` fails on either outside `ControlNames`, and on a tooltip declared in
+  FXML. The delay cannot live in the stylesheet: `-fx-show-delay` does not survive the precompiled `.bss`
+  form (`StylesheetBinaryTest`).
+- **A main toolbar button is disabled while its command cannot act.** `WindowToolbar.refreshCommandState`
+  gives every toolbar button, one added from the catalog included (`track`), the answer the menus and the
+  palette give for its command (`Chrome.paletteEnabled`); `MainController.refreshMenuEnablement` pushes both
+  from a tab switch, Git finding a repository and a debug session changing state. A command that needs
+  something to act on says so in `Chrome.contextReason`, once, for all three. The buttons with a finer state
+  (Save, Undo, Redo, Cut, Copy, Paste, the splits, the run buttons) keep the events that set it.
+- **A toolbar that builds names of a form of its own** (the debugger's, which adds the panel's letter to the
+  chord) calls `CommandTips.follow(anchor, refresh)` so that a keymap switch names it again with the rest.
 - **Chords on menu rows**: a right-click or drop-down row that does what a command does is tagged with that
   command's id, [`MenuChords.tag(item, "command.id")`](../../src/main/java/com/editora/editor/MenuChords.java),
   and then shows the command's chord in the menu's right-hand column. The chord is read from the live

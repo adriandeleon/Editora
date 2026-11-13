@@ -8,7 +8,6 @@ import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -16,6 +15,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.editor.spell.SpellDictionaries;
 import com.editora.ui.SettingsWindow.Card;
@@ -130,14 +130,14 @@ final class SettingsSpellPage {
         // The dictionaries get a card of their own: both switches, both file links, then the word list.
         Card dict = w.card(p, tr("settings.dict.title"));
         Hyperlink techLink = new Hyperlink(tr("settings.dict.openTechnical"));
-        techLink.setTooltip(new Tooltip(tr("settings.dict.openTechnicalTip")));
+        techLink.setTooltip(ControlNames.tooltip(tr("settings.dict.openTechnicalTip")));
         techLink.setOnAction(e -> {
             if (onOpenTechnicalDictionary != null) {
                 onOpenTechnicalDictionary.run();
             }
         });
         Hyperlink personalLink = new Hyperlink(tr("settings.dict.openPersonal"));
-        personalLink.setTooltip(new Tooltip(tr("settings.dict.openPersonalTip")));
+        personalLink.setTooltip(ControlNames.tooltip(tr("settings.dict.openPersonalTip")));
         personalLink.setOnAction(e -> {
             if (onOpenPersonalDictionary != null) {
                 onOpenPersonalDictionary.run();

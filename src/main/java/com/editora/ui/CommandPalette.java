@@ -26,6 +26,7 @@ import javafx.scene.layout.VBox;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.search.FuzzyMatch;
 import org.jspecify.annotations.Nullable;
@@ -500,7 +501,7 @@ public class CommandPalette {
                 // reads as a bug rather than a state.
                 String why = disabledReason.apply(item);
                 if (why != null && !why.isBlank()) {
-                    Tooltip tip = new Tooltip(why);
+                    Tooltip tip = ControlNames.tooltip(why);
                     tip.setWrapText(true);
                     tip.setMaxWidth(UiZoom.px(380));
                     tip.getStyleClass().add("palette-disabled-tooltip");

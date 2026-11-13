@@ -33,6 +33,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.UiZoom;
 import com.editora.editor.fold.NarrowLines;
@@ -1618,8 +1619,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             // Show the cleaned leading doc comment (if any) as a hover tooltip.
             if (!same) {
                 if (item.doc() != null && !item.doc().isEmpty()) {
-                    Tooltip tip = new Tooltip(item.doc());
-                    tip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
+                    Tooltip tip = ControlNames.tooltip(item.doc());
                     tip.setWrapText(true);
                     tip.setMaxWidth(UiZoom.px(480));
                     setTooltip(tip);

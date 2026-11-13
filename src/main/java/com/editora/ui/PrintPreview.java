@@ -25,7 +25,6 @@ import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.ScrollEvent;
@@ -41,6 +40,7 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
+import com.editora.editor.ControlNames;
 import com.editora.print.PrintService;
 import org.jspecify.annotations.Nullable;
 
@@ -558,7 +558,7 @@ final class PrintPreview {
         String printer = job.printerName();
         String paper = layout.getPaper().getName();
         infoLabel.setText((printer == null || printer.isBlank() ? "" : printer + " · ") + paper + " · " + orientation);
-        infoLabel.setTooltip(new Tooltip(infoLabel.getText()));
+        infoLabel.setTooltip(ControlNames.tooltip(infoLabel.getText()));
     }
 
     /** Scales the sheet for the zoom setting and the viewport, and shows the resulting percentage. */
@@ -593,7 +593,7 @@ final class PrintPreview {
         pageField.setPrefColumnCount(Math.max(2, Integer.toString(count).length()));
         pageAfter.setText(tr("print.preview.pageAfter", count));
         pageField.setAccessibleText(pageText());
-        pageField.setTooltip(new Tooltip(tr("print.preview.pageField", Math.min(1, count), count)));
+        pageField.setTooltip(ControlNames.tooltip(tr("print.preview.pageField", Math.min(1, count), count)));
         pageField.setDisable(count == 0 || printing);
         if (stage.getScene() != null) {
             arrangeBar(stage.getScene().getWidth()); // more digits may no longer fit beside the buttons

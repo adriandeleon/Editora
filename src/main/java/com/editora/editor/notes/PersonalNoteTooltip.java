@@ -2,6 +2,7 @@ package com.editora.editor.notes;
 
 import javafx.scene.control.Tooltip;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -15,7 +16,7 @@ public final class PersonalNoteTooltip {
     }
 
     public static Tooltip create(@Nullable String text) {
-        Tooltip tooltip = text == null ? new Tooltip() : new Tooltip(text);
+        Tooltip tooltip = text == null ? ControlNames.tooltip() : ControlNames.tooltip(text);
         tooltip.getStyleClass().add("personal-note-tooltip");
         // Tooltip owns a separate popup scene and may replace it when first shown, so an author stylesheet
         // attached here would be lost. Keep the shell color inline; rich Markdown graphics carry app.css.

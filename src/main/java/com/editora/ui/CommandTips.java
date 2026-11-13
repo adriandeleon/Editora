@@ -79,7 +79,23 @@ final class CommandTips {
     static void refresh(Control control) {
         if (control.getProperties().get(KEY) instanceof Tip tip) {
             apply(control, tip);
+        } else if (control.getProperties().get(FOLLOWER) instanceof Runnable again) {
+            again.run();
         }
+    }
+
+    /** Property key of a {@link #follow} control: what names it (and its neighbors) again. */
+    private static final Object FOLLOWER = new Object();
+
+    /**
+     * Runs {@code again} on every {@link #refresh()}, for the life of {@code anchor}: for a toolbar that builds
+     * names of a form of its own (the debugger's, which adds the panel's letter to the chord) and so has to be
+     * told when the keymap changed. {@code again} must not capture more of the view than {@code anchor} does:
+     * it lives in the control's own properties.
+     */
+    static void follow(Control anchor, Runnable again) {
+        anchor.getProperties().put(FOLLOWER, again);
+        NAMED.add(anchor);
     }
 
     /** A command's title without its palette category: "File: Save" is "Save". */
