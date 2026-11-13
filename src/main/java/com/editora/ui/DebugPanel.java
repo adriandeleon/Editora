@@ -215,6 +215,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Jump to Type Source: opens the declaration of the type a value has ({@code type}, else read from {@code value}). */
         default void jumpToType(String type, String value) {}
 
+        /** Customize Rendering…: the type renderer of a value's type ({@code type}, else read from {@code value}). */
+        default void customizeRendering(String type, String value) {}
+
+        /** Whether type renderers are muted (Mute Renderers): every value as the debugger shows it. */
+        default boolean renderersMuted() {
+            return false;
+        }
+
+        /** Mute Renderers: on or off. */
+        default void toggleRenderersMuted() {}
+
         /** Load a row the stop's time budget left unloaded (a click on it); delivers the loaded row (B201). */
         default void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
             cb.accept(row);
@@ -2236,6 +2247,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 jumpToType.setOnAction(e -> actions.jumpToType(row.type(), row.value()));
                 menu.getItems().add(jumpToType);
             }
+            if (row.kind() != Kind.EXCEPTION && DebugTypeSource.parse(row.type(), row.value()) != null) {
+                // IntelliJ's Customize Data Views → Java Type Renderers, for this value's type.
+                javafx.scene.control.MenuItem customize =
+                        new javafx.scene.control.MenuItem(tr("debugpanel.customizeRendering"));
+                customize.setOnAction(e -> actions.customizeRendering(row.type(), row.value()));
+                menu.getItems().add(customize);
+            }
             if (row.kind() != Kind.EXCEPTION) {
                 menu.getItems().addAll(markItems(row));
                 if (StringViews.isString(row.value())) {
@@ -2279,7 +2297,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         hex.setSelected(actions.hexValues());
         hex.setOnAction(e -> toggleHexValues());
         com.editora.editor.MenuChords.tag(hex, "debug.toggleHex");
-        menu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), hex);
+        javafx.scene.control.CheckMenuItem mute =
+                new javafx.scene.control.CheckMenuItem(tr("debugpanel.muteRenderers"));
+        mute.setSelected(actions.renderersMuted());
+        mute.setOnAction(e -> actions.toggleRenderersMuted());
+        com.editora.editor.MenuChords.tag(mute, "debug.muteRenderers");
+        menu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), hex, mute);
     }
 
     /**

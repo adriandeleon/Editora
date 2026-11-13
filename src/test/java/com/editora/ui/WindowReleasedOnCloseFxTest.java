@@ -6,6 +6,7 @@ import java.nio.file.Path;
 
 import javafx.stage.Stage;
 
+import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -71,6 +72,65 @@ class WindowReleasedOnCloseFxTest {
         }
     }
 
+    /**
+     * The Project Map reads the project's imports and metrics on workers of their own ({@link MapFileReader}), started
+     * as soon as the Map is given a folder: at once in a project window, and when the Map is first opened in the No
+     * Project window. Each worker's thread factory read the thread's name off the reader, so it held the reader; the
+     * JDK keeps the factory of a single-thread executor until the executor is collected (its cleaner, which {@code
+     * shutdownNow} leaves registered), and the reader holds that executor. Nothing in that ring could be collected,
+     * and the reader's file source is the Project panel, which holds the window. Every project window stayed in
+     * memory after it was closed, whether or not it had shown the Map.
+     */
+    @Test
+    void aClosedProjectWindowIsReleased(@TempDir Path dir) throws Exception {
+        assertTrue(
+                collected(openAndClose(dir, false, FxWindowFixture::useProject)),
+                "a closed project window is still reachable (a Map reader's worker?)");
+    }
+
+    @Test
+    void aWindowThatShowedTheProjectMapIsReleased(@TempDir Path dir) throws Exception {
+        assertTrue(
+                collected(openAndClose(dir, false, WindowReleasedOnCloseFxTest::showTheMap)),
+                "a window that showed the Project Map is still reachable after it closed");
+    }
+
+    private static void showTheMap(FxWindowFixture fx) throws Exception {
+        FxTestSupport.runOnFx(() ->
+                FxTestSupport.<CommandRegistry>field(fx.controller, "registry").run("project.toggleMapView"));
+        FxTestSupport.drainFx();
+        boolean showing = FxTestSupport.callOnFx(() ->
+                FxTestSupport.<ProjectPanel>field(fx.controller, "projectPanel").isMapShowing());
+        assertTrue(showing, "the Map opened, so its readers have a folder and a worker each");
+    }
+
+    /**
+     * Import Configuration kept its "Restart now" action, which runs a command of the window it was started from, in
+     * a static field: the last window to run the command stayed in memory after it was closed.
+     */
+    @Test
+    void aWindowThatRanImportConfigurationIsReleased(@TempDir Path dir) throws Exception {
+        ConfigImportFlow.chooser = (owner, start) -> null; // no native chooser here: the import is cancelled at once
+        try {
+            assertTrue(
+                    collected(openAndClose(dir, false, WindowReleasedOnCloseFxTest::importConfiguration)),
+                    "the window Import Configuration was last run from is still reachable after it closed");
+        } finally {
+            ConfigImportFlow.resetSeams();
+        }
+    }
+
+    private static void importConfiguration(FxWindowFixture fx) throws Exception {
+        FxTestSupport.runOnFx(() ->
+                FxTestSupport.<CommandRegistry>field(fx.controller, "registry").run("config.import"));
+        FxTestSupport.drainFx();
+    }
+
+    /** Something done in a window before it closes. */
+    private interface Use {
+        void in(FxWindowFixture fx) throws Exception;
+    }
+
     private static WeakReference<MainController> openSecondAndClose(FxWindowFixture fx) throws Exception {
         MainController second = FxTestSupport.callOnFx(() -> fx.windowManager.buildWindowForTest());
         FxTestSupport.runOnFx(() -> {
@@ -89,6 +149,11 @@ class WindowReleasedOnCloseFxTest {
      * would itself root it and make the assertion meaningless.
      */
     private static WeakReference<MainController> openAndClose(Path dir, boolean focusEditor) throws Exception {
+        return openAndClose(dir, focusEditor, fx -> {});
+    }
+
+    /** As above, and {@code use} the window once its file is open. */
+    private static WeakReference<MainController> openAndClose(Path dir, boolean focusEditor, Use use) throws Exception {
         Path file = Files.writeString(dir.resolve("A.java"), "class A {\n    void m() {}\n}\n");
         FxWindowFixture fx = FxWindowFixture.create();
         try {
@@ -106,6 +171,7 @@ class WindowReleasedOnCloseFxTest {
                 assertTrue(focused, "the editor area took focus, so its caret blink timer is running");
                 FxTestSupport.drainFx();
             }
+            use.in(fx);
             return new WeakReference<>(fx.controller);
         } finally {
             fx.dispose();

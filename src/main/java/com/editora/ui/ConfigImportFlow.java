@@ -48,6 +48,8 @@ final class ConfigImportFlow {
     private final WindowManager windows;
     private final Consumer<String> status;
     private final BackgroundTasks tasks;
+    /** Restarts Editora (null: not available, so the last dialog only says to restart). */
+    private final @Nullable Runnable restart;
 
     /** Picks the zip, starting in the given folder (null: cancelled). Replaceable by tests (no native chooser). */
     static java.util.function.BiFunction<Window, Path, Path> chooser = ConfigImportFlow::chooseZip;
@@ -55,8 +57,6 @@ final class ConfigImportFlow {
     static Function<Question, Optional<Set<Part>>> ask = ConfigImportFlow::askDialog;
     /** Says how it went; {@code restart} is offered when parts need one. Replaceable by tests. */
     static Consumer<Outcome> tell = ConfigImportFlow::tellDialog;
-    /** Restarts Editora (null: not available, so the last dialog only says to restart). */
-    static @Nullable Runnable restart; // set by WindowCommandHost.importConfig to the app.restart command
 
     /** Puts the real chooser and dialogs back after a test replaced them. */
     static void resetSeams() {
@@ -68,21 +68,36 @@ final class ConfigImportFlow {
     /** What the parts dialog shows. */
     record Question(Window owner, String zipName, List<ConfigImport.Summary> parts, int leftOut) {}
 
-    /** How an import ended: the parts applied, those that wait for a restart, the backup; or why it failed. */
+    /**
+     * How an import ended: the parts applied, those that wait for a restart, the backup; or why it failed.
+     * {@code restart} restarts Editora, offered when parts need it (null: the dialog only says to restart).
+     */
     record Outcome(
             Window owner,
             Set<Part> applied,
             Set<Part> needRestart,
             @Nullable Path backup,
-            @Nullable String failure) {}
+            @Nullable String failure,
+            @Nullable Runnable restart) {}
 
+    /**
+     * {@code restart}: what the last dialog's "Restart now" runs. It belongs to this one import, not to the class: it
+     * runs a command of the window the import was started from, and kept in a static field it held that window in
+     * memory after it closed.
+     */
     ConfigImportFlow(
-            Window owner, SharedConfig shared, WindowManager windows, Consumer<String> status, BackgroundTasks tasks) {
+            Window owner,
+            SharedConfig shared,
+            WindowManager windows,
+            Consumer<String> status,
+            BackgroundTasks tasks,
+            @Nullable Runnable restart) {
         this.owner = owner;
         this.shared = shared;
         this.windows = windows;
         this.status = status;
         this.tasks = tasks;
+        this.restart = restart;
     }
 
     /** Runs the whole flow from the file chooser. */
@@ -135,7 +150,8 @@ final class ConfigImportFlow {
                     if (failure != null) {
                         Throwable why = failure.getCause() == null ? failure : failure.getCause();
                         status.accept(tr("status.importConfig.failed", String.valueOf(why.getMessage())));
-                        tell.accept(new Outcome(owner, Set.of(), Set.of(), null, String.valueOf(why.getMessage())));
+                        tell.accept(
+                                new Outcome(owner, Set.of(), Set.of(), null, String.valueOf(why.getMessage()), null));
                         return;
                     }
                     reloadLive(parts);
@@ -143,7 +159,7 @@ final class ConfigImportFlow {
                     parts.stream().filter(p -> !p.live()).forEach(later::add);
                     status.accept(
                             tr("status.importConfig.done", backup.getFileName().toString()));
-                    tell.accept(new Outcome(owner, parts, later, backup, null));
+                    tell.accept(new Outcome(owner, parts, later, backup, null, restart));
                 }));
     }
 
@@ -172,7 +188,7 @@ final class ConfigImportFlow {
                 ? tr("dialog.importConfig.refused." + r.reason().name(), r.entry() == null ? "" : r.entry())
                 : tr("dialog.importConfig.unreadable", String.valueOf(why.getMessage()));
         status.accept(text);
-        tell.accept(new Outcome(owner, Set.of(), Set.of(), null, text));
+        tell.accept(new Outcome(owner, Set.of(), Set.of(), null, text, null));
     }
 
     // --- the dialogs -----------------------------------------------------------------------------------------
@@ -295,6 +311,7 @@ final class ConfigImportFlow {
         }
         alert.setContentText(body.toString());
         ButtonType restartNow = new ButtonType(tr("dialog.importConfig.restartNow"), ButtonBar.ButtonData.OK_DONE);
+        Runnable restart = o.restart();
         if (!o.needRestart().isEmpty() && restart != null) {
             alert.getButtonTypes().setAll(restartNow, ButtonType.CLOSE);
         }

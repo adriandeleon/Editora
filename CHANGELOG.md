@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Next Page and Fit to Window for a PDF or an image, and Project: Choose a Project to Delete, which does from
   the keyboard what the trash on a row of the project dropdown does. A command with nothing to act on (no Map
   on screen, the keyboard not in a card, the tab not a PDF) says so in the status bar.
+- **Type renderers in the debugger.** Choose how the debugger shows a value of a type, as IntelliJ's type renderers
+  and Visual Studio's natvis do: a Money object as `12.50 EUR` rather than `Money@1f3a`, and its children as the fields
+  or expressions that matter, with the debugger's own under [Raw View]. Right-click a value in Variables and choose
+  Customize Rendering…, or manage them under Settings → Debugging → Type renderers. Expressions are the debugged
+  language's, with `this` (or `self`) for the value. Renderers apply in Variables, watches, the Evaluate window and
+  hover; a watch or evaluation that calls a method or assigns is not evaluated again. Mute Type Renderers, in the
+  Variables menu, shows values as the debugger gives them. Checked with Java, Python and Go.
+
 - **Buffer: Previous.** The tab before the selected one, wrapping to the last: the other way round from
   Buffer: Next, and beside it in the Window menu. Like Next it has no key of its own until you give it one
   under Settings → Keymaps.
@@ -72,7 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory is the folder Debug uses for the file. With such a file in front, Run Configurations → Add and Save as
   Run Configuration propose a configuration for it, where Add used to make a Java one. Until now these files could
   be debugged but not run. A Go or Rust test file runs or debugs all its tests. These configurations build and run on
-  this computer only, not on a remote host, in a container or on a deployment.
+  this computer only, not on a remote host, in a container or on a deployment. Run on a Go file of a package other
+  than `main` says the file has no program to run, and builds nothing.
 - **Thread Dump in the debugger.** Debug: Thread Dump, also in the Threads view's and the call stack's menus, shows
   every thread of the program with its call stack in a window of its own, as IntelliJ's Get Thread Dump does. Threads
   whose stacks are the same are merged into one row (twenty pool workers waiting in one place read as one), a filter
@@ -709,6 +718,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A closed project window is released from memory.** Closing a project window left the whole window in memory,
+  with its files, panels and tools, until Editora quit, so memory grew with every project opened and closed. The No
+  Project window stayed the same way once its Project Map had been opened, and so did the last window to run Import
+  Configuration. All three are released now when the window closes.
 - **Deleting a file on Windows moves it to the Recycle Bin.** Delete in the Project tree, Move Original to
   Trash after encrypting, and the clean-up of unused pasted images deleted for good on Windows, where
   Editora reached no trash at all. They now use the Recycle Bin, as Explorer does, for files on a local

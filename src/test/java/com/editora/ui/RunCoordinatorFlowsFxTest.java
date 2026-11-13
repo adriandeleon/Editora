@@ -726,20 +726,22 @@ class RunCoordinatorFlowsFxTest {
     }
 
     /**
-     * A {@code go} that, asked to {@code build -o OUT x}, records the request and the folder it was made in and
-     * writes a program printing its arguments, its folder and {@code MODE}; it fails as a compiler does while
-     * {@code go.fail} exists.
+     * A {@code go} that, asked to {@code build -o OUT x} (or {@code test -c -o OUT .}), records the request and the
+     * folder it was made in and writes a program printing its arguments, its folder and {@code MODE}; it fails as a
+     * compiler does while {@code go.fail} exists.
      */
     private Path standInGo() throws Exception {
         Path exe = outside.resolve("fake-go");
         Files.writeString(
                 exe,
                 "#!/bin/sh\n"
-                        + "echo \"$1 $4 in $(basename \"$PWD\")\" >> \"" + outside.resolve("go.log") + "\"\n"
+                        + "out=; prev=; last=\n"
+                        + "for a in \"$@\"; do [ \"$prev\" = -o ] && out=\"$a\"; prev=\"$a\"; last=\"$a\"; done\n"
+                        + "echo \"$1 $last in $(basename \"$PWD\")\" >> \"" + outside.resolve("go.log") + "\"\n"
                         + "if [ -f \"" + outside.resolve("go.fail") + "\" ]; then\n"
                         + "  echo './hello.go:3:1: error: boom' >&2\n  exit 1\nfi\n"
-                        + "printf '#!/bin/sh\\necho \"hello $* in $(basename \"$PWD\") MODE=$MODE\"\\n' > \"$3\"\n"
-                        + "chmod +x \"$3\"\n");
+                        + "printf '#!/bin/sh\\necho \"hello $* in $(basename \"$PWD\") MODE=$MODE\"\\n' > \"$out\"\n"
+                        + "chmod +x \"$out\"\n");
         Files.setPosixFilePermissions(exe, PosixFilePermissions.fromString("rwxr-xr-x"));
         return exe;
     }
@@ -795,6 +797,39 @@ class RunCoordinatorFlowsFxTest {
         assertFalse(FxTestSupport.callOnFx(run::isRunning));
         assertTrue(rawConsole().contains("./hello.go:3:1: error: boom"), rawConsole());
         assertFalse(statuses().contains(tr("status.run.ok")), statuses().toString());
+    }
+
+    /**
+     * A Go file of a package other than {@code main} has no program: {@code go build -o} would write the package's
+     * archive and exit 0, and starting that failed with "permission denied". It is said before anything is built,
+     * and the form opens at the file to change. A test file of such a package still runs its tests.
+     */
+    @Test
+    void aGoFileThatIsNotInPackageMainIsNotBuilt() throws Exception {
+        host.configDir = outside.resolve("config");
+        host.settings.setGoCommand(standInGo().toString());
+        Files.createDirectories(project.resolve("shelf"));
+        Files.writeString(project.resolve("shelf/shelf.go"), "// Package shelf counts.\npackage shelf\n");
+        Files.writeString(project.resolve("shelf/shelf_test.go"), "package shelf\n");
+        RunConfiguration library =
+                new RunConfiguration("Shelf", "go", "shelf/shelf.go", "", "", "", "", "", "", "", "");
+
+        FxTestSupport.runOnFx(() -> run.runConfig(library));
+        FxTestSupport.drainFx();
+        assertEquals(List.of(tr("status.run.goNotMain", "shelf.go", "shelf")), statuses());
+        assertEquals(List.of("Shelf"), ops.edited, "its form opens at the file");
+        assertFalse(Files.exists(outside.resolve("go.log")), "nothing was built");
+        assertFalse(FxTestSupport.callOnFx(run::consoleInUse), "nothing was launched");
+
+        clearLog();
+        RunConfiguration tests =
+                new RunConfiguration("Shelf tests", "go", "shelf/shelf_test.go", "", "", "", "", "", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(tests));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(
+                List.of("test . in shelf"),
+                Files.readAllLines(outside.resolve("go.log")),
+                "its package's tests are built");
     }
 
     /** What cannot be built is said, and its form opened where that helps: no file, no Cargo package. */
