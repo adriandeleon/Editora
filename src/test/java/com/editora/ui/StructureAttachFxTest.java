@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import javafx.scene.Scene;
@@ -13,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -59,6 +62,9 @@ class StructureAttachFxTest {
             StructurePanel panel = new StructurePanel();
             new Scene(new StackPane(panel), 300, 400); // open tool window
             EditorBuffer buffer = new EditorBuffer();
+            // Java, so the text has regions to detect: plain text has none, and nothing would ever land.
+            // Set on the empty document; the load that follows is not scanned on the FX thread.
+            buffer.setLanguageOverride("java");
             buffer.setInitialContent(SOURCE);
             long generationBefore = generation(buffer);
             int regionsBefore = buffer.getFoldManager().regions().size();
@@ -69,29 +75,46 @@ class StructureAttachFxTest {
                 generationBefore,
                 generation(buffer),
                 regionsBefore,
-                buffer.getFoldManager().regions().size()
+                buffer.getFoldManager().regions().size(),
+                panel.outline().size(),
+                FxTestSupport.<Integer>field(panel, "treeBuilds")
             };
         });
         StructurePanel panel = (StructurePanel) r[0];
         EditorBuffer buffer = (EditorBuffer) r[1];
         assertTrue((Long) r[3] > (Long) r[2], "attach asked for a (background) detection");
-        assertEquals(r[4], r[5], "which did not run on the FX thread inside attach");
+        assertEquals(0, r[4], "the loaded text was not scanned yet");
+        assertEquals(0, r[5], "and attach did not scan it on the FX thread");
+        assertEquals(0, r[6], "so the outline attach built has no rows yet");
+        int buildsAtAttach = (Integer) r[7];
 
+        // Wait for what the test means: the regions land, and the outline is rebuilt from them. Both happen
+        // in one FX turn (the manager applies the regions and tells the panel), so one read sees both.
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        int children = 0;
+        Object[] landed = null;
         while (System.nanoTime() < deadline) {
-            children = FxTestSupport.callOnFx(() -> {
-                TreeView<?> tree = FxTestSupport.field(panel, "tree");
-                return tree.getRoot() == null ? 0 : tree.getRoot().getChildren().size();
+            landed = FxTestSupport.callOnFx(() -> new Object[] {
+                buffer.getFoldManager().regions().size(),
+                panel.outline(),
+                FxTestSupport.<Integer>field(panel, "treeBuilds"),
+                FxTestSupport.<TreeView<?>>field(panel, "tree")
+                        .getRoot()
+                        .getChildren()
+                        .size()
             });
-            if (children > 0
-                    && FxTestSupport.callOnFx(
-                            () -> !buffer.getFoldManager().regions().isEmpty())) {
+            if ((Integer) landed[0] > 0) {
                 break;
             }
-            Thread.sleep(20);
+            Thread.sleep(5);
         }
-        assertTrue(children > 0, "the outline is built from the regions when the detection lands");
+        assertNotNull(landed);
+        assertTrue((Integer) landed[0] > 0, "the background detection landed its regions");
+        @SuppressWarnings("unchecked")
+        List<StructurePanel.Outline> outline = (List<StructurePanel.Outline>) landed[1];
+        assertFalse(outline.isEmpty(), "the outline is built from the regions when the detection lands");
+        assertEquals(0, outline.getFirst().line(), "from the class on the first line down");
+        assertTrue((Integer) landed[2] > buildsAtAttach, "by a rebuild of the tree");
+        assertTrue((Integer) landed[3] > 0, "which shows it");
         FxTestSupport.runOnFx(buffer::dispose);
     }
 
