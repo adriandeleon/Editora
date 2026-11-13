@@ -15,7 +15,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -24,6 +23,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
@@ -114,14 +114,14 @@ final class SearchInFilesPopup {
         // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).
         com.editora.command.TextInputKeymap.installShared(query);
 
-        caseSensitive.setTooltip(new Tooltip(tr("search.caseTip")));
-        regex.setTooltip(new Tooltip(tr("search.regexTip")));
-        wholeWord.setTooltip(new Tooltip(tr("find.wholeWord")));
+        caseSensitive.setTooltip(ControlNames.tooltip(tr("search.caseTip")));
+        regex.setTooltip(ControlNames.tooltip(tr("search.regexTip")));
+        wholeWord.setTooltip(ControlNames.tooltip(tr("find.wholeWord")));
         caseSensitive.selectedProperty().addListener((o, a, b) -> runSearch());
         regex.selectedProperty().addListener((o, a, b) -> runSearch());
         wholeWord.selectedProperty().addListener((o, a, b) -> runSearch());
         backendBadge.getStyleClass().add("search-backend-badge");
-        backendBadge.setTooltip(new Tooltip(tr("search.backendRipgrepTip")));
+        backendBadge.setTooltip(ControlNames.tooltip(tr("search.backendRipgrepTip")));
         backendBadge.setVisible(false);
         backendBadge.setManaged(false);
         Region toggleSpacer = new Region();

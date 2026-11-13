@@ -14,13 +14,13 @@ import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.text.Text;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -211,7 +211,7 @@ final class HttpTabStrip extends HBox {
         String text = detail == null || detail.isBlank() ? name : name + " — " + detail;
         ToggleButton b = buttonOf(tab);
         b.setAccessibleText(text);
-        b.setTooltip(new Tooltip(text));
+        b.setTooltip(ControlNames.tooltip(text));
     }
 
     /** The tab's button. */

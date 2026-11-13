@@ -15,6 +15,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import com.editora.editor.CanvasGuards;
+import com.editora.editor.ControlNames;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
@@ -257,7 +258,7 @@ public final class TodoStripe extends Region implements SecondaryPane.Followed {
             return;
         }
         if (tooltip == null) {
-            tooltip = new Tooltip();
+            tooltip = ControlNames.tooltip();
             tooltip.getStyleClass().add("todo-stripe-tooltip");
             tooltip.setWrapText(true);
             Tooltip made = tooltip;

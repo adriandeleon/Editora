@@ -10,6 +10,7 @@ import javafx.scene.control.Tooltip;
 import javafx.util.Duration;
 
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.markdown.WordCount;
 import com.editora.text.LanguageRegistry;
@@ -32,7 +33,7 @@ final class StatusWordCount {
     static final int INLINE_CHARS = 200_000;
 
     private final Label label = new Label();
-    private final Tooltip tooltip = new Tooltip();
+    private final Tooltip tooltip = ControlNames.tooltip();
     private final Supplier<Settings> settings;
     private final PauseTransition selectionPause = new PauseTransition(Duration.millis(250));
 

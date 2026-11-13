@@ -4,10 +4,10 @@ import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.layout.Region;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
@@ -80,7 +80,7 @@ final class WindowToolbar {
         // No "Project:" label: it is the only labelled control on a bar of unlabelled icons, and the combo
         // already reads "No Project" or the project's name. Its explanation moves onto the combo itself —
         // where it was also the one hardcoded English string on the toolbar.
-        toolbarProjectCombo.setTooltip(new Tooltip(tr("toolbar.project.tip")));
+        toolbarProjectCombo.setTooltip(ControlNames.tooltip(tr("toolbar.project.tip")));
         toolbarProjectCombo.setOnDeleteProject(mc::deleteProject); // per-item delete in the dropdown
         projectToolbarGap = new Region();
         UiZoom.minWidth(projectToolbarGap, 78); // ≈ 3 toolbar-icon widths between the icon cluster and the combo
@@ -172,7 +172,7 @@ final class WindowToolbar {
         if (com.editora.AppInfo.isSnapshot()) {
             Label snapshotBadge = new Label(tr("badge.snapshot"));
             snapshotBadge.getStyleClass().add("snapshot-badge");
-            snapshotBadge.setTooltip(new Tooltip(tr("badge.snapshot.tip", com.editora.AppInfo.VERSION)));
+            snapshotBadge.setTooltip(ControlNames.tooltip(tr("badge.snapshot.tip", com.editora.AppInfo.VERSION)));
             items.addAll(toolbarGap(14), snapshotBadge);
         }
 
@@ -181,8 +181,8 @@ final class WindowToolbar {
         if (mc.config.isDev()) {
             Label devBadge = new Label(tr("badge.devMode"));
             devBadge.getStyleClass().add("dev-mode-badge");
-            devBadge.setTooltip(
-                    new Tooltip(tr("badge.devMode.tip", mc.config.getConfigDir().toString())));
+            devBadge.setTooltip(ControlNames.tooltip(
+                    tr("badge.devMode.tip", mc.config.getConfigDir().toString())));
             items.addAll(toolbarGap(14), devBadge);
         }
 
@@ -254,6 +254,51 @@ final class WindowToolbar {
         button.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
         button.setFocusTraversable(false);
         CommandTips.name(button, commandId);
+        track(button, commandId);
+    }
+
+    /** The toolbar's buttons by the command each runs (weak: a rebuilt toolbar drops the buttons it replaces). */
+    private final java.util.Map<Button, String> commandButtons = new java.util.WeakHashMap<>();
+
+    /** Records a toolbar button and its command, so that {@link #refreshCommandState} keeps its state. */
+    void track(Button button, String commandId) {
+        commandButtons.put(button, commandId);
+    }
+
+    /**
+     * Disables each toolbar button whose command cannot act now, by the answer the menus and the palette give
+     * ({@link Chrome#paletteEnabled}): its feature is off, or it has nothing to act on (Save As with no file in
+     * front, a Git button outside a repository). Pushed with the menus' own refresh, from a tab switch, Git
+     * finding a repository and a debug session changing state; nothing polls. The buttons with a finer state of
+     * their own (Save, Undo, Redo, Cut, Copy, Paste, the splits, the run buttons) are left to the events that
+     * set it.
+     */
+    void refreshCommandState() {
+        if (mc.saveButton == null) {
+            return; // toolbar not built yet
+        }
+        Chrome.PaletteGates gates = mc.paletteGates();
+        Chrome.PaletteContext context = mc.paletteContext();
+        for (java.util.Map.Entry<Button, String> e : commandButtons.entrySet()) {
+            Button button = e.getKey();
+            if (!hasOwnState(button)) {
+                button.setDisable(!Chrome.paletteEnabled(e.getValue(), gates, context));
+            }
+        }
+    }
+
+    private boolean hasOwnState(Button b) {
+        return b == mc.saveButton
+                || b == mc.undoButton
+                || b == mc.redoButton
+                || b == mc.cutButton
+                || b == mc.copyButton
+                || b == mc.pasteButton
+                || b == mc.splitVerticalButton
+                || b == mc.splitHorizontalButton
+                || b == mc.runConfigRunButton
+                || b == mc.runConfigDebugButton
+                || b == mc.runConfigStopButton;
     }
 
     /** Names every toolbar button again from the current keymap (after a live keymap switch). */

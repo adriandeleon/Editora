@@ -17,7 +17,6 @@ import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.SplitPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -27,6 +26,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.diff.InlineDiff;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.git.GitChanges;
 import com.editora.git.GitService;
@@ -133,9 +133,9 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         }
         Icons.name(previous, tr("project.map.changes.previousTip"));
         Icons.name(next, tr("project.map.changes.nextTip"));
-        openInEditor.setTooltip(new Tooltip(tr("project.map.changes.openInEditorTip")));
-        compare.setTooltip(new Tooltip(tr("project.map.changes.compareTip")));
-        refresh.setTooltip(new Tooltip(tr("project.map.changes.refreshTip")));
+        openInEditor.setTooltip(ControlNames.tooltip(tr("project.map.changes.openInEditorTip")));
+        compare.setTooltip(ControlNames.tooltip(tr("project.map.changes.compareTip")));
+        refresh.setTooltip(ControlNames.tooltip(tr("project.map.changes.refreshTip")));
         previous.setOnAction(event -> step(false));
         next.setOnAction(event -> step(true));
         openInEditor.setOnAction(event -> openLine(diff.getSelectionModel().getSelectedIndex(), true));
@@ -162,7 +162,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         against.getStyleClass().addAll("flat", "project-map-changes-against");
         against.setMnemonicParsing(false);
         against.setFocusTraversable(false);
-        against.setTooltip(new Tooltip(tr("project.map.changes.againstTip")));
+        against.setTooltip(ControlNames.tooltip(tr("project.map.changes.againstTip")));
         against.setAccessibleText(tr("project.map.changes.againstTip"));
         HBox head = new HBox(against);
         UiZoom.padding(head, 4, 6, 0, 6);
@@ -183,7 +183,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
     void show(Path root, @Nullable Path select) {
         boolean sameRoot = root.equals(this.root);
         this.root = root;
-        title.setTooltip(new Tooltip(root.toString()));
+        title.setTooltip(ControlNames.tooltip(root.toString()));
         if (select != null && select.startsWith(root)) {
             wanted = relative(root, select);
         } else if (!sameRoot) {
@@ -705,7 +705,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
             setText(null);
             setGraphic(box);
             setAccessibleText(item.path() + ", " + statusName(item.status()) + ", " + counts.getText());
-            setTooltip(new Tooltip(item.path() + "\n" + statusName(item.status())));
+            setTooltip(ControlNames.tooltip(item.path() + "\n" + statusName(item.status())));
         }
     }
 

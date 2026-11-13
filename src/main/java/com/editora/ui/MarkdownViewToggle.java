@@ -2,9 +2,9 @@ package com.editora.ui;
 
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
 
@@ -72,7 +72,7 @@ public class MarkdownViewToggle extends HBox {
     private static ToggleButton segment(String label, String tooltip) {
         ToggleButton b = new ToggleButton(label);
         b.getStyleClass().addAll("md-viewmode-segment", "flat");
-        b.setTooltip(new Tooltip(tooltip));
+        b.setTooltip(ControlNames.tooltip(tooltip));
         b.setFocusTraversable(false);
         return b;
     }

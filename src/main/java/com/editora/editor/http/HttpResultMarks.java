@@ -19,6 +19,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 
 import com.editora.editor.CodeLensShift;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.Inlay;
@@ -330,7 +331,7 @@ public final class HttpResultMarks {
         a.setCursor(Cursor.HAND);
         if (r.tooltip() != null && !r.tooltip().isEmpty()) {
             if (tooltip == null) {
-                tooltip = new Tooltip();
+                tooltip = ControlNames.tooltip();
                 tooltip.setWrapText(true);
                 Tooltip made = tooltip;
                 UiZoom.follow(made, () -> made.setMaxWidth(UiZoom.px(420)));

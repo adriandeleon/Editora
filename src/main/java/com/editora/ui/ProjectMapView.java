@@ -30,7 +30,6 @@ import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -46,6 +45,7 @@ import javafx.stage.Popup;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import com.editora.git.GitFileStatus;
@@ -1236,7 +1236,7 @@ final class ProjectMapView extends VBox {
         typeFilter.setOnAction(event -> updateFilters());
         hideUnmatched.getStyleClass().add("project-map-hide-unmatched");
         hideUnmatched.setMinWidth(Region.USE_PREF_SIZE);
-        hideUnmatched.setTooltip(new Tooltip(tr("project.map.filter.hideUnmatched.help")));
+        hideUnmatched.setTooltip(ControlNames.tooltip(tr("project.map.filter.hideUnmatched.help")));
         hideUnmatched.setAccessibleHelp(tr("project.map.filter.hideUnmatched.help"));
         hideUnmatched.selectedProperty().addListener((obs, old, hide) -> {
             surface.setHideUnmatched(hide);
@@ -1244,7 +1244,7 @@ final class ProjectMapView extends VBox {
         });
         narrowedBadge.getStyleClass().add("project-map-narrowed-badge");
         narrowedBadge.setMinWidth(Region.USE_PREF_SIZE);
-        narrowedBadge.setTooltip(new Tooltip(tr("project.map.narrowed.help")));
+        narrowedBadge.setTooltip(ControlNames.tooltip(tr("project.map.narrowed.help")));
         narrowedBadge.setAccessibleHelp(tr("project.map.narrowed.help"));
         showNarrowed(0);
         surface.setOnNarrowedChanged(this::showNarrowed);
@@ -1453,7 +1453,7 @@ final class ProjectMapView extends VBox {
         ToggleButton button = new ToggleButton(tr(key));
         button.getStyleClass().add("project-map-filter-chip");
         button.setMinWidth(Region.USE_PREF_SIZE);
-        button.setTooltip(new Tooltip(tr(key + ".help")));
+        button.setTooltip(ControlNames.tooltip(tr(key + ".help")));
         button.setAccessibleHelp(tr(key + ".help"));
         return button;
     }
@@ -4945,7 +4945,7 @@ final class ProjectMapView extends VBox {
         crumb.getStyleClass().add("project-map-breadcrumb");
         crumb.setOnMouseEntered(event -> {
             if (crumb.getTooltip() == null) {
-                crumb.setTooltip(new Tooltip(path.toString()));
+                crumb.setTooltip(ControlNames.tooltip(path.toString()));
             }
         });
         crumb.setOnAction(event -> revealPath(path));

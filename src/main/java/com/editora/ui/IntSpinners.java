@@ -6,6 +6,7 @@ import javafx.scene.control.Tooltip;
 import javafx.util.StringConverter;
 
 import atlantafx.base.theme.Styles;
+import com.editora.editor.ControlNames;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -41,7 +42,7 @@ final class IntSpinners {
             }
         });
         spinner.setEditable(true);
-        Tooltip reason = new Tooltip(tr("settings.number.range", min, max));
+        Tooltip reason = ControlNames.tooltip(tr("settings.number.range", min, max));
         // After each commit: text that is a value is shown as the value in force (" 8 " → "8"); any other text
         // stays, marked, until it is fixed or an arrow sets a value.
         Runnable settle = () -> {

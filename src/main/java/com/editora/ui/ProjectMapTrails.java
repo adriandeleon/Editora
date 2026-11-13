@@ -752,7 +752,7 @@ final class ProjectMapTrails {
         String name = stopTitle(at);
         title.setText(stopCardGone ? tr("project.map.trails.bar.cardClosed", name) : name);
         title.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("gone"), stopCardGone);
-        title.setTooltip(new javafx.scene.control.Tooltip(
+        title.setTooltip(com.editora.editor.ControlNames.tooltip(
                 stopCardGone ? tr("project.map.trails.bar.cardClosedHelp") : shown.label() + " — " + name));
         previous.setDisable(stop <= 0);
         next.setDisable(stop >= count - 1);

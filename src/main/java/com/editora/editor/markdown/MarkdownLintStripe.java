@@ -14,6 +14,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import com.editora.editor.CanvasGuards;
+import com.editora.editor.ControlNames;
 import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.UiZoom;
@@ -250,7 +251,7 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
             return;
         }
         if (tooltip == null) {
-            tooltip = new Tooltip();
+            tooltip = ControlNames.tooltip();
             tooltip.getStyleClass().add("todo-stripe-tooltip");
             tooltip.setWrapText(true);
             Tooltip made = tooltip;

@@ -12,7 +12,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -27,6 +26,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -428,7 +428,7 @@ final class ProjectMapOverviewCard extends StackPane {
                                     ProjectMapActivity.names(owned.owners().reviewers()))
                             : ProjectMapActivity.names(owned.owners().approvers()),
                     "project-map-overview-muted");
-            meta.setTooltip(new Tooltip(String.join("\n", ProjectMapActivity.ownerLines(owned.owners()))));
+            meta.setTooltip(ControlNames.tooltip(String.join("\n", ProjectMapActivity.ownerLines(owned.owners()))));
             UiZoom.padding(meta, 0, 0, 3, 4);
             // Two lines, as Most changed: a long owner list never squeezes the folder's name to "…" (B8).
             rows.getChildren().addAll(name, meta);
@@ -556,7 +556,7 @@ final class ProjectMapOverviewCard extends StackPane {
         Button link = new Button(label);
         link.setMnemonicParsing(false); // snake_case names keep their first underscore (review 3 E4)
         link.getStyleClass().addAll("flat", "project-map-overview-link");
-        link.setTooltip(new Tooltip(tr("project.map.overview.reveal")));
+        link.setTooltip(ControlNames.tooltip(tr("project.map.overview.reveal")));
         if (target != null) {
             link.setOnAction(event -> onReveal.accept(target));
         }

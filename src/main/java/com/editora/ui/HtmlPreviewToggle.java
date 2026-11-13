@@ -10,8 +10,8 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.Tooltip;
 
+import com.editora.editor.ControlNames;
 import com.editora.web.Browsers.Browser;
 
 import static com.editora.i18n.Messages.tr;
@@ -36,7 +36,7 @@ public class HtmlPreviewToggle extends Button {
         setGraphic(Icons.htmlPreview());
         getStyleClass().addAll("html-preview-toggle", "flat");
         setFocusTraversable(false);
-        setTooltip(new Tooltip(tr("tooltip.htmlPreview")));
+        setTooltip(ControlNames.tooltip(tr("tooltip.htmlPreview")));
         setOnAction(e -> showMenu());
     }
 

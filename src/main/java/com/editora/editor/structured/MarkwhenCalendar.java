@@ -19,6 +19,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.ControlNames;
 import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
 import com.editora.markwhen.Timeline;
@@ -163,7 +164,7 @@ public final class MarkwhenCalendar {
         if (e.color() != null) {
             chip.setStyle("-fx-background-color: " + MarkwhenPaint.toRgba(e.color()) + ";");
         }
-        Tooltip.install(chip, new Tooltip(e.tooltip()));
+        Tooltip.install(chip, ControlNames.tooltip(e.tooltip()));
         return chip;
     }
 

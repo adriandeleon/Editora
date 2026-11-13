@@ -65,6 +65,9 @@ final class ToolbarCoordinator {
         /** Re-run the chrome passes after a rebuild (Simple-mode hides + separator collapse). */
         void afterRebuild();
 
+        /** A button built from the catalog runs {@code commandId}: its disabled state follows the command's. */
+        default void trackButton(javafx.scene.control.Button button, String commandId) {}
+
         /** Open the Settings window on the Toolbar page. */
         void openSettingsToolbarPage();
 
@@ -160,6 +163,7 @@ final class ToolbarCoordinator {
         String commandId = item.commandId(); // null only for Recent, a base widget that never gets here
         if (commandId != null) {
             CommandTips.name(b, commandId); // the command's title and live chord, as tooltip and accessible text
+            ops.trackButton(b, commandId); // and disabled while the command cannot act
         }
         b.setOnAction(e -> {
             if (commandId != null) {

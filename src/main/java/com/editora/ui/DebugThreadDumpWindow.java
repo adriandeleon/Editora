@@ -14,7 +14,6 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -27,6 +26,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.dap.DapModels;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -312,7 +312,7 @@ final class DebugThreadDumpWindow {
                 for (DapModels.ThreadStack t : g.threads()) {
                     names.append(names.isEmpty() ? "" : "\n").append(ThreadDump.name(t));
                 }
-                setTooltip(new Tooltip(names.toString()));
+                setTooltip(ControlNames.tooltip(names.toString()));
             } else {
                 setTooltip(null);
             }

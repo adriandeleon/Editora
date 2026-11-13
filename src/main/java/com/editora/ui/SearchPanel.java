@@ -12,7 +12,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -23,6 +22,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
@@ -97,9 +97,9 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         queryCombo.setPromptText(tr("search.queryPrompt"));
         queryCombo.setVisibleRowCount(12);
         replaceField.setPromptText(tr("search.replacePrompt"));
-        caseBox.setTooltip(new Tooltip(tr("search.caseTip")));
-        regexBox.setTooltip(new Tooltip(tr("search.regexTip")));
-        wordBox.setTooltip(new Tooltip(tr("find.wholeWord")));
+        caseBox.setTooltip(ControlNames.tooltip(tr("search.caseTip")));
+        regexBox.setTooltip(ControlNames.tooltip(tr("search.regexTip")));
+        wordBox.setTooltip(ControlNames.tooltip(tr("find.wholeWord")));
         HBox.setHgrow(queryCombo, Priority.ALWAYS);
         queryCombo.setMaxWidth(Double.MAX_VALUE);
 
@@ -154,8 +154,8 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
         includeField.setPromptText(tr("search.includePrompt"));
         excludeField.setPromptText(tr("search.excludePrompt"));
-        includeField.setTooltip(new Tooltip(tr("search.globsTip")));
-        excludeField.setTooltip(new Tooltip(tr("search.globsTip")));
+        includeField.setTooltip(ControlNames.tooltip(tr("search.globsTip")));
+        excludeField.setTooltip(ControlNames.tooltip(tr("search.globsTip")));
         includeField.setOnAction(e -> runSearch());
         excludeField.setOnAction(e -> runSearch());
         includeField.setAccessibleText(tr("search.includePrompt"));
@@ -171,7 +171,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
         summary.getStyleClass().add("search-summary");
         backendBadge.getStyleClass().add("search-backend-badge");
-        backendBadge.setTooltip(new Tooltip(tr("search.backendRipgrepTip")));
+        backendBadge.setTooltip(ControlNames.tooltip(tr("search.backendRipgrepTip")));
         backendBadge.setVisible(false);
         backendBadge.setManaged(false);
         Region summarySpacer = new Region();
@@ -239,7 +239,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
      *  {@code fullPath} (nullable) is the hover tooltip with the absolute path. */
     public void setScope(String display, @Nullable String fullPath) {
         scopeLabel.setText(display == null ? "" : display);
-        scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : new Tooltip(fullPath));
+        scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : ControlNames.tooltip(fullPath));
     }
 
     /** Show/hide the "ripgrep" backend badge (the controller calls this from applyRipgrepSupport). */

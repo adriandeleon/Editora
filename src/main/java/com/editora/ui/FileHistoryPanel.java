@@ -42,6 +42,7 @@ import com.editora.config.HistoryRevision;
 import com.editora.config.Settings;
 import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels.DiffModel;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.git.RelativeTime;
 import com.editora.history.HistoryBlobStore;
@@ -140,7 +141,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
     // --- Left: revision list (single-file) / folder tree ---
     private final Label fileLabel = new Label(tr("history.noFile"));
-    private final Tooltip fileTip = new Tooltip();
+    private final Tooltip fileTip = ControlNames.tooltip();
     private final Button backToFile;
     private final TextField filter = new TextField();
     private final ListView<HistoryRevision> revisions = new ListView<>();
@@ -152,7 +153,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     private final BorderPane rightPane = new BorderPane();
     private final HBox diffToolbar;
     private final Label headerInfo = new Label();
-    private final Tooltip headerTip = new Tooltip();
+    private final Tooltip headerTip = ControlNames.tooltip();
     private final ToggleButton ignoreWs = new ToggleButton(tr("history.window.ignoreWhitespace"));
     private final ToggleButton wordLevel = new ToggleButton(tr("history.window.highlightWords"));
     private final Button restore = new Button(tr("history.window.revert"));
@@ -262,12 +263,12 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         headerInfo.setMinWidth(0);
         headerInfo.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(headerInfo, Priority.ALWAYS);
-        ignoreWs.setTooltip(new Tooltip(tr("history.window.ignoreWhitespace")));
-        wordLevel.setTooltip(new Tooltip(tr("history.window.highlightWords")));
+        ignoreWs.setTooltip(ControlNames.tooltip(tr("history.window.ignoreWhitespace")));
+        wordLevel.setTooltip(ControlNames.tooltip(tr("history.window.highlightWords")));
         wordLevel.setSelected(true); // word-level emphasis on by default (matches the editor diff)
         ignoreWs.setOnAction(e -> recompute());
         wordLevel.setOnAction(e -> recompute());
-        restore.setTooltip(new Tooltip(tr("history.window.revertTip")));
+        restore.setTooltip(ControlNames.tooltip(tr("history.window.revertTip")));
         restore.setOnAction(e -> restoreShown());
         restore.setMinWidth(Region.USE_PREF_SIZE);
         diffToolbar = UiZoom.spacing(new HBox(headerInfo, ignoreWs, wordLevel, restore), 8);
@@ -873,7 +874,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                     setAccessibleText(g.display());
                 }
                 setGraphic(box);
-                setTooltip(new Tooltip(g.path()));
+                setTooltip(ControlNames.tooltip(g.path()));
                 MenuItem purge = item(tr("history.menu.purge"), Icons.trash(), () -> actions.purgeFile(g.path()));
                 purge.getStyleClass().add("danger"); // a destructive row reads red
                 setContextMenu(new ContextMenu(purge));
@@ -885,7 +886,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 HBox box = UiZoom.spacing(new HBox(Icons.history(), when, tag), 8);
                 box.setAlignment(Pos.CENTER_LEFT);
                 setGraphic(box);
-                setTooltip(new Tooltip(tooltipText(r)));
+                setTooltip(ControlNames.tooltip(tooltipText(r)));
                 setAccessibleText(fullTime(r.timestamp()) + ", " + what);
                 MenuItem restoreItem = item(tr("history.menu.restore"), Icons.undo(), () -> restoreRevision(r));
                 setContextMenu(new ContextMenu(restoreItem));
@@ -956,7 +957,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             } else {
                 setGraphic(line);
             }
-            setTooltip(new Tooltip(tooltipText(r)));
+            setTooltip(ControlNames.tooltip(tooltipText(r)));
             setAccessibleText(accessibleText(r, tag));
             MenuItem restoreItem = item(tr("history.menu.restore"), Icons.undo(), () -> restoreRevision(r));
             String labelText = labelled ? tr("history.menu.editLabel") : tr("history.menu.setLabel");

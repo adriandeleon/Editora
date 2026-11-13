@@ -9,7 +9,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -17,6 +16,7 @@ import javafx.stage.Window;
 
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
@@ -198,10 +198,10 @@ public final class StatusBar extends HBox {
 
         getStyleClass().add("status-bar");
         echo.getStyleClass().addAll("status-message", "status-segment-clickable");
-        echo.setTooltip(new Tooltip(tr("statusbar.tip.messageLog")));
+        echo.setTooltip(ControlNames.tooltip(tr("statusbar.tip.messageLog")));
         echo.setOnMouseClicked(e -> registry.run("view.messageLog"));
         unreadErrors.getStyleClass().addAll("status-unread-errors", "status-segment-clickable");
-        unreadErrors.setTooltip(new Tooltip(tr("statusbar.tip.unreadErrors")));
+        unreadErrors.setTooltip(ControlNames.tooltip(tr("statusbar.tip.unreadErrors")));
         unreadErrors.setOnMouseClicked(e -> registry.run("view.messageLog"));
         unreadErrors.setVisible(false);
         unreadErrors.setManaged(false);
@@ -237,7 +237,7 @@ public final class StatusBar extends HBox {
         githubChecks.setManaged(false);
 
         httpEnv.getStyleClass().addAll("status-segment", "status-segment-clickable", "status-http-env");
-        httpEnv.setTooltip(new Tooltip(tr("statusbar.tip.httpEnv")));
+        httpEnv.setTooltip(ControlNames.tooltip(tr("statusbar.tip.httpEnv")));
         httpEnv.setOnMouseClicked(e -> onHttpEnvClicked.run());
         httpEnv.setVisible(false); // shown only for an .http buffer with the HTTP Client on
         httpEnv.setManaged(false);
@@ -280,13 +280,13 @@ public final class StatusBar extends HBox {
         UiZoom.maxHeight(lspProgress, 10);
         lspProgress.setVisible(false); // shown only while a language server is loading
         lspProgress.setManaged(false);
-        lspProgress.setTooltip(new Tooltip(tr("statusbar.tip.lspLoading")));
+        lspProgress.setTooltip(ControlNames.tooltip(tr("statusbar.tip.lspLoading")));
         debugProgress.getStyleClass().add("status-lsp-progress");
         UiZoom.prefWidth(debugProgress, 90);
         UiZoom.maxHeight(debugProgress, 10);
         debugProgress.setVisible(false);
         debugProgress.setManaged(false);
-        debugProgress.setTooltip(new Tooltip(tr("statusbar.tip.debugLoading")));
+        debugProgress.setTooltip(ControlNames.tooltip(tr("statusbar.tip.debugLoading")));
         debug.setVisible(false);
         debug.setManaged(false);
 
@@ -378,7 +378,7 @@ public final class StatusBar extends HBox {
         Button out = zoomButton("−", "view.textZoomOut");
         Button in = zoomButton("+", "view.textZoomIn");
         zoomPercent.getStyleClass().addAll("status-segment", "status-segment-clickable", "text-zoom-percent");
-        zoomPercent.setTooltip(new Tooltip(tr("statusbar.tip.zoomReset")));
+        zoomPercent.setTooltip(ControlNames.tooltip(tr("statusbar.tip.zoomReset")));
         zoomPercent.setOnMouseClicked(e -> registry.run("view.textZoomReset"));
         HBox group = new HBox(out, zoomPercent, in);
         group.getStyleClass().add("text-zoom");
@@ -399,7 +399,7 @@ public final class StatusBar extends HBox {
     private Label segment(String commandId, String hint) {
         Label label = new Label();
         label.getStyleClass().addAll("status-segment", "status-segment-clickable");
-        label.setTooltip(new Tooltip(hint));
+        label.setTooltip(ControlNames.tooltip(hint));
         asButton(label, commandId, hint);
         return label;
     }
@@ -435,7 +435,7 @@ public final class StatusBar extends HBox {
         Label seg = new Label(text == null ? "" : text);
         seg.getStyleClass().add("status-segment");
         if (hint != null && !hint.isBlank()) {
-            seg.setTooltip(new Tooltip(hint));
+            seg.setTooltip(ControlNames.tooltip(hint));
             seg.setAccessibleHelp(hint);
         }
         if (commandId != null && !commandId.isBlank()) {
@@ -787,7 +787,7 @@ public final class StatusBar extends HBox {
         markdownLint.setText(show ? tr("statusbar.markdownLint", total) : "");
         markdownLint.setTooltip(
                 show
-                        ? new javafx.scene.control.Tooltip(
+                        ? com.editora.editor.ControlNames.tooltip(
                                 tr("statusbar.tip.markdownLintCounts", errors, warnings, hints))
                         : null);
         markdownLint.setVisible(show);
@@ -833,7 +833,7 @@ public final class StatusBar extends HBox {
     public void setPythonInterpreter(@Nullable String text, @Nullable String tooltip) {
         boolean show = text != null && !text.isBlank() && !simpleMode;
         pythonInterpreter.setText(show ? text : "");
-        pythonInterpreter.setTooltip(show && tooltip != null ? new Tooltip(tooltip) : null);
+        pythonInterpreter.setTooltip(show && tooltip != null ? ControlNames.tooltip(tooltip) : null);
         pythonInterpreter.setAccessibleHelp(show ? tooltip : null); // what a screen reader says it does (C112)
         pythonInterpreter.setVisible(show);
         pythonInterpreter.setManaged(show);
@@ -994,7 +994,8 @@ public final class StatusBar extends HBox {
         boolean isRemote = com.editora.vfs.Vfs.isRemote(path) && !simpleMode;
         remote.setVisible(isRemote);
         remote.setManaged(isRemote);
-        remote.setTooltip(isRemote && path != null ? new Tooltip(com.editora.vfs.Vfs.displayLabel(path)) : null);
+        remote.setTooltip(
+                isRemote && path != null ? ControlNames.tooltip(com.editora.vfs.Vfs.displayLabel(path)) : null);
         position.setVisible(hasBuffer);
         position.setManaged(hasBuffer);
         // Narrowing is a property of the buffer, not of the window: re-derive the chip on every tab switch, or

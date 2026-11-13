@@ -27,6 +27,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.i18n.Messages;
@@ -1917,7 +1918,7 @@ public final class MarkdownRenderer {
         if (dest == null || dest.isBlank()) {
             return;
         }
-        Tooltip tip = new Tooltip(says);
+        Tooltip tip = ControlNames.tooltip(says);
         java.util.function.Consumer<String> onLinkClick = ctx.onLinkClick();
         boolean first = true;
         for (int i = from; i < flow.getChildren().size(); i++) {
@@ -2037,12 +2038,12 @@ public final class MarkdownRenderer {
         PreviewImageLoader.loadInto(view, url, max, width > 0, () -> {
             Label missing = inlineCode(imagePlaceholder(alt, null));
             missing.getStyleClass().add("md-image-missing");
-            Tooltip.install(missing, new Tooltip(dest));
+            Tooltip.install(missing, ControlNames.tooltip(dest));
             slot.getChildren().setAll(missing);
         });
         String tip = title != null && !title.isBlank() ? title : alt;
         if (tip != null && !tip.isBlank()) {
-            Tooltip.install(view, new Tooltip(tip));
+            Tooltip.install(view, ControlNames.tooltip(tip));
             view.setAccessibleText(tip);
         }
         return enlargeable(slot, ctx);
