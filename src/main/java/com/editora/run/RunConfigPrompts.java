@@ -3,7 +3,8 @@ package com.editora.run;
 /**
  * The prompt (placeholder) message keys the Run Configurations form shows for each type, so a blank field says
  * what it means for that type: an npm configuration's target is a script name from {@code package.json}, a
- * Node script's Interpreter is "automatic", a Python one's is the project's venv. Pure.
+ * Node script's Interpreter is "automatic", a Python one's is the project's venv, a C file's working directory is
+ * where its program is built. Pure.
  */
 public final class RunConfigPrompts {
 
@@ -19,6 +20,9 @@ public final class RunConfigPrompts {
         }
         if (ScriptRunCommand.NODE.equals(type)) {
             return "settings.runConfig.targetPromptNode";
+        }
+        if (ScriptRunCommand.isCompiled(type)) {
+            return "settings.runConfig.targetPromptSource";
         }
         return "settings.runConfig.targetPrompt";
     }
@@ -53,11 +57,20 @@ public final class RunConfigPrompts {
         if (ScriptRunCommand.NODE.equals(type)) {
             return "settings.runConfig.workingDirPromptNode";
         }
+        if (ScriptRunCommand.isCompiled(type)) {
+            return "settings.runConfig.workingDirPromptSource";
+        }
         return "settings.runConfig.workingDirPrompt";
     }
 
-    /** The Before launch prompt key: a Node or npm configuration's example is an npm build, not Maven's. */
+    /**
+     * The Before launch prompt key: a Node or npm configuration's example is an npm build, not Maven's, and a C, C++,
+     * Go or Rust one's says its build needs no step.
+     */
     public static String beforeLaunch(String type) {
+        if (ScriptRunCommand.isCompiled(type)) {
+            return "settings.runConfig.beforeLaunchPromptSource";
+        }
         return ScriptRunCommand.NODE.equals(type) || ScriptRunCommand.NPM.equals(type)
                 ? "settings.runConfig.beforeLaunchPromptNode"
                 : "settings.runConfig.beforeLaunchPrompt";
@@ -73,6 +86,12 @@ public final class RunConfigPrompts {
                     "settings.runConfig.targetScript",
                     "settings.runConfig.interpreterNode",
                     "settings.runConfig.interpreterOptionsNode");
+        }
+        if (ScriptRunCommand.isCompiled(type)) {
+            return java.util.List.of(
+                    "settings.runConfig.targetSource",
+                    "settings.runConfig.interpreter",
+                    "settings.runConfig.interpreterOptions");
         }
         return java.util.List.of(
                 ScriptRunCommand.NPM.equals(type) ? "settings.runConfig.targetScript" : "settings.runConfig.target",

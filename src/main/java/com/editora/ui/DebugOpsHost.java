@@ -52,6 +52,11 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
 
     @Override
     public boolean trustBuild(Path root, List<String> items) {
+        return trustBuild(mc, root, items);
+    }
+
+    /** Asks (once per folder) whether {@code root}'s build files may run: Debug's and Run's CMake and Make builds. */
+    static boolean trustBuild(MainController mc, Path root, List<String> items) {
         if (mc.config.getTrustStore().isTrusted(root)) {
             return true;
         }

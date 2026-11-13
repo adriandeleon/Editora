@@ -196,6 +196,47 @@ class GoDebugProbeFxTest {
         return f.get(60, TimeUnit.SECONDS);
     }
 
+    /** Prints where it runs, a variable and its arguments: what a run configuration sets. */
+    private static final String WHERE = """
+            package main
+
+            import (
+            \t"fmt"
+            \t"os"
+            )
+
+            func main() {
+            \tdir, _ := os.Getwd()
+            \tfmt.Println("in", dir, "MODE", os.Getenv("MODE"), "args", os.Args[1:])
+            }
+            """;
+
+    /**
+     * A run configuration's launch: the program runs in the configuration's working directory, with its variables
+     * and arguments, while Delve still builds the package from the package's folder ({@code dlvCwd}).
+     */
+    @Test
+    void aConfigurationsFolderVariablesAndArgumentsReachTheProgram(@TempDir Path dir) throws Exception {
+        Path root = module(Files.createDirectories(dir.resolve("mod")), Map.of("main.go", WHERE));
+        Path data = Files.createDirectories(dir.resolve("data")).toRealPath();
+        Path main = root.resolve("main.go");
+        Session session = new Session();
+        DapManager manager = manager(session, List.of());
+        try {
+            Map<String, Object> launch =
+                    GoLaunch.launch(main, WHERE, -1, true, List.of("one", "two"), Map.of("MODE", "dev"), false, data);
+            assertEquals(root.toString(), launch.get("dlvCwd"));
+            FxTestSupport.runOnFx(() -> manager.startExternal(main, DebugLanguages.GO, launch));
+            assertTrue(
+                    session.ended.await(120, TimeUnit.SECONDS),
+                    "the session ends with the program: " + session.states + " errors: " + session.errors);
+            String out = session.output.toString();
+            assertTrue(out.contains("in " + data + " MODE dev args [one two]"), out + " errors: " + session.errors);
+        } finally {
+            FxTestSupport.runOnFx(manager::shutdown);
+        }
+    }
+
     @Test
     void aPackageStopsAtItsBreakpointWithItsVariablesStepsListsGoroutinesAndEnds(@TempDir Path dir) throws Exception {
         Path root = module(dir, Map.of("main.go", MAIN, "square.go", SQUARE));

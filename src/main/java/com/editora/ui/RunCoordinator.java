@@ -174,6 +174,15 @@ final class RunCoordinator {
             return List.of(tool.commandExample());
         }
 
+        /**
+         * Whether a build may run the code of {@code root} — a CMake or Make project, which has no build tool of
+         * its own here — after asking, as a build tool's first build does ({@code items}: what will run, one line
+         * each); false when the user declined. As {@code DebugCoordinator.Ops#trustBuild}.
+         */
+        default boolean trustBuild(Path root, List<String> items) {
+            return true;
+        }
+
         /** Runs the Gradle Run task via the build tool (streams to Output) — the no-jdtls Gradle
          *  fallback. Runs {@code bootRun} for a Spring Boot project, else {@code run}; {@code root} locates the
          *  build script. */
@@ -539,6 +548,10 @@ final class RunCoordinator {
             runJvmScriptConfig(cfg, cwd, script, args, env, elsewhere);
             return;
         }
+        if (ScriptRunCommand.isCompiled(cfg.type())) {
+            runCompiledConfig(cfg, cwd, script, args, env, remote || elsewhere);
+            return;
+        }
         if (ScriptRunCommand.NODE.equals(cfg.type())) {
             if (script == null) {
                 reportIncomplete(cfg, "status.run.configNeedsTarget"); // a target that is no valid path
@@ -837,32 +850,7 @@ final class RunCoordinator {
                         source.getFileName().toString(), plan.compile(), "status.run.kotlinCompile"),
                 cwd,
                 env,
-                new BeforeLaunchStep.Console() {
-                    @Override
-                    public void started(String commandLine) {
-                        consoleDir = source.getParent(); // kotlinc's error lines name the file: links resolve
-                        consoleUsed = true;
-                        ops.openToolWindow();
-                        panel().started(commandLine);
-                        runtimeGeneration++; // the compile is not the program: no runtime chip for it
-                        panel().setRuntime(null);
-                    }
-
-                    @Override
-                    public void output(String line, boolean stderr) {
-                        panel().appendOutput(line, stderr);
-                    }
-
-                    @Override
-                    public void ended(int code, @Nullable String launchError) {
-                        if (launchError != null) {
-                            panel().failed(launchError);
-                        } else if (code != 0) {
-                            panel().finished(code);
-                        }
-                        ops.onRunStateChanged();
-                    }
-                },
+                compileConsole(source.getParent(), true), // kotlinc's error lines name the file: links resolve
                 () -> {
                     try {
                         com.editora.run.KotlinBuild.finish(plan);
@@ -873,6 +861,356 @@ final class RunCoordinator {
                     launch.run();
                 });
         ops.onRunStateChanged(); // the compile is running now: the toolbar's Stop button applies to it
+    }
+
+    /**
+     * The Run console as a compile before a program shows itself in it: its command line and output, and how it
+     * ended only when it failed — the program follows a compile that worked. {@code dir} is where its error lines'
+     * file names resolve; not {@code first}: a later step of the same build, which keeps what the one before wrote.
+     */
+    private BeforeLaunchStep.Console compileConsole(@Nullable Path dir, boolean first) {
+        return new BeforeLaunchStep.Console() {
+            @Override
+            public void started(String commandLine) {
+                consoleDir = dir;
+                consoleUsed = true;
+                ops.openToolWindow();
+                if (first) {
+                    panel().started(commandLine);
+                } else {
+                    panel().appendOutput("$ " + commandLine, false);
+                }
+                runtimeGeneration++; // the compile is not the program: no runtime chip for it
+                panel().setRuntime(null);
+            }
+
+            @Override
+            public void output(String line, boolean stderr) {
+                panel().appendOutput(line, stderr);
+            }
+
+            @Override
+            public void ended(int code, @Nullable String launchError) {
+                if (launchError != null) {
+                    panel().failed(launchError);
+                } else if (code != 0) {
+                    panel().finished(code);
+                }
+                ops.onRunStateChanged();
+            }
+        };
+    }
+
+    /**
+     * A C, C++, Go or Rust configuration's launch.
+     *
+     * @param label the configuration's name
+     * @param source its source file
+     * @param args program arguments
+     * @param env the configuration's variables, for the program
+     * @param dir its own working directory, or null for where Debug File runs the program
+     * @param again the whole launch once more: Rerun builds an edited file again
+     */
+    private record CompiledRun(
+            String label,
+            Path source,
+            List<String> args,
+            java.util.Map<String, String> env,
+            @Nullable Path dir,
+            Runnable again) {}
+
+    /** A built program found for a {@link CompiledRun}, or why there is none ({@code problem}, said as it is). */
+    private record Built(
+            @Nullable Path program,
+            List<String> firstArgs,
+            @Nullable String problem) {
+        static Built of(@Nullable Path program, String missing) {
+            return new Built(program, List.of(), program == null ? missing : null);
+        }
+    }
+
+    /**
+     * Runs a C, C++, Go or Rust configuration: what Debug File builds for its source file is built in the Run
+     * console — a C or C++ file's CMake or Make project, or the file alone; a Go file's package, or the file alone;
+     * a Rust file's Cargo package — and the program that makes runs there with the configuration's arguments and
+     * variables, in its working directory when it names one. Run had no way to start these: only Debug did. On
+     * this machine only: the program is built into this machine's cache.
+     */
+    private void runCompiledConfig(
+            RunConfiguration cfg,
+            Path cwd,
+            @Nullable Path source,
+            List<String> args,
+            java.util.Map<String, String> env,
+            boolean elsewhere) {
+        if (source == null) {
+            reportIncomplete(cfg, "status.run.configNeedsTarget"); // a target that is no valid path
+            return;
+        }
+        if (elsewhere) {
+            host.setStatus(tr("status.run.compiledRemote", cfg.name()));
+            return;
+        }
+        boolean inTerminal = terminalRun;
+        CompiledRun run = new CompiledRun(
+                cfg.name(), source.toAbsolutePath(), args, env, cfg.workingDir().isBlank() ? null : cwd, () -> {
+                    terminalRun = inTerminal;
+                    runCompiledConfig(cfg, cwd, source, args, env, false);
+                });
+        if (ScriptRunCommand.GO.equals(cfg.type())) {
+            runGo(run);
+        } else if (ScriptRunCommand.RUST.equals(cfg.type())) {
+            runRust(run);
+        } else {
+            runNative(run, ScriptRunCommand.CPP.equals(cfg.type()));
+        }
+    }
+
+    /** A C or C++ file: {@link com.editora.dap.NativeBuild}'s plan for it, then the program that made. */
+    private void runNative(CompiledRun run, boolean cpp) {
+        Path source = run.source();
+        Path cmake = com.editora.dap.NativeBuild.cmakeRoot(source);
+        Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(source) : null;
+        com.editora.dap.NativeBuild.Plan plan =
+                com.editora.dap.NativeBuild.plan(source, cpp, cmake, make, builtProgramsDir());
+        if (plan == null) {
+            host.setStatus(tr("status.run.compiledHeaderAlone", source.getFileName()));
+            return;
+        }
+        if (plan.tool() != com.editora.dap.NativeBuild.Tool.COMPILER) {
+            // A CMake or Make project's build files are code: asked first, as Debug asks, so "no" builds nothing.
+            boolean isCmake = plan.tool() == com.editora.dap.NativeBuild.Tool.CMAKE;
+            String item = tr(
+                    isCmake ? "dialog.trust.item.cmake" : "dialog.trust.item.make",
+                    isCmake ? "CMakeLists.txt" : "Makefile");
+            if (!ops.trustBuild(plan.root(), List.of(item))) {
+                return;
+            }
+        }
+        if (!saveBuffersUnder(plan.root(), List.of("c", "cpp"))) {
+            return;
+        }
+        try {
+            if (plan.buildDir() != null) {
+                com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
+            }
+            if (plan.output() != null && plan.output().getParent() != null) {
+                java.nio.file.Files.createDirectories(plan.output().getParent());
+            }
+        } catch (java.io.IOException e) {
+            host.setStatus(tr("status.run.failed", e.getMessage()));
+            return;
+        }
+        String missing = tr("status.run.compiledNoProgram", source.getFileName());
+        buildThenRun(
+                run,
+                plan.root(),
+                plan.steps(),
+                "status.run.compiledBuild",
+                () -> Built.of(com.editora.dap.NativeBuild.executable(plan, source), missing),
+                plan.root());
+    }
+
+    /**
+     * A Go file: {@code go} builds its package (in a module, after the module's trust as a Go task asks it), the
+     * file alone outside one, or a test file's package tests ({@link com.editora.dap.GoLaunch#buildArgv}), and that
+     * program runs in the file's folder.
+     */
+    private void runGo(CompiledRun run) {
+        Path source = run.source();
+        Path folder = source.getParent();
+        if (folder == null) {
+            return; // not reached: the source is absolute
+        }
+        Path module = com.editora.dap.GoLaunch.moduleRoot(source);
+        List<String> go = module != null
+                ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
+                : com.editora.build.BuildExecutable.resolve(
+                        List.of(), host.settings().getGoCommand(), "go");
+        if (go == null) {
+            return; // the module was not trusted: nothing is built
+        }
+        if (!saveBuffersUnder(module != null ? module : folder, List.of("go"))) {
+            return;
+        }
+        Path output = com.editora.dap.NativeBuild.outputFor(source, builtProgramsDir());
+        try {
+            java.nio.file.Files.createDirectories(builtProgramsDir());
+        } catch (java.io.IOException e) {
+            host.setStatus(tr("status.run.failed", e.getMessage()));
+            return;
+        }
+        String missing = tr("status.run.compiledNoProgram", source.getFileName());
+        buildThenRun(
+                run,
+                folder,
+                List.of(com.editora.dap.GoLaunch.buildArgv(go, source, module != null, output)),
+                "status.run.compiledBuild",
+                () -> Built.of(java.nio.file.Files.isRegularFile(output) ? output : null, missing),
+                folder);
+    }
+
+    /**
+     * A Rust file: Cargo builds its package (after the package's trust, as a Cargo task asks it), Cargo's JSON
+     * messages say which executable is the file's ({@link com.editora.dap.RustLaunch}), and that runs in the
+     * package's folder — the program, or for a test file its test binary.
+     */
+    private void runRust(CompiledRun run) {
+        Path source = run.source();
+        Path root = com.editora.dap.RustLaunch.packageRoot(source);
+        if (root == null) {
+            host.setStatus(tr("status.run.rustNoPackage", source.getFileName()));
+            return;
+        }
+        List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
+        if (cargo == null) {
+            return; // the package was not trusted: nothing is built
+        }
+        if (!saveBuffersUnder(root, List.of("rust"))) {
+            return;
+        }
+        String text;
+        try {
+            text = java.nio.file.Files.readString(source);
+        } catch (java.io.IOException e) {
+            text = ""; // unreadable: Cargo says so
+        }
+        boolean hasProgram =
+                java.nio.file.Files.isRegularFile(root.resolve("src").resolve("main.rs"))
+                        || java.nio.file.Files.isDirectory(root.resolve("src").resolve("bin"));
+        // No caret picks a test: a test file runs all its tests.
+        com.editora.dap.RustLaunch.Plan plan = com.editora.dap.RustLaunch.plan(root, source, text, -1, hasProgram);
+        List<String> build = new ArrayList<>(cargo);
+        build.addAll(plan.buildArgs());
+        List<String> json = new ArrayList<>(cargo);
+        json.addAll(plan.jsonArgs());
+        String missing = tr("status.run.compiledNoProgram", source.getFileName());
+        buildThenRun(
+                run,
+                root,
+                List.of(build),
+                "status.run.cargoBuild",
+                () -> {
+                    // Nothing is left to build: Cargo only says where each executable went.
+                    var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, java.time.Duration.ofMinutes(2));
+                    if (!listed.ok()) {
+                        String why = listed.err().strip();
+                        return new Built(
+                                null,
+                                List.of(),
+                                tr(
+                                        "status.debug.rustBuildFailed",
+                                        why.isEmpty()
+                                                ? "exit " + listed.exit()
+                                                : why.lines()
+                                                        .reduce((a, z) -> z)
+                                                        .orElse(why)));
+                    }
+                    com.editora.dap.RustLaunch.Artifact artifact = com.editora.dap.RustLaunch.pick(
+                            com.editora.dap.RustLaunch.artifacts(listed.out()), source, plan.mode());
+                    return artifact == null
+                            ? new Built(null, List.of(), missing)
+                            : new Built(artifact.executable(), plan.testArgs(), null);
+                },
+                root);
+    }
+
+    /** Where a lone C, C++ or Go file's program is built for Run: the config folder's cache, else the temporary folder. */
+    private Path builtProgramsDir() {
+        Path config = host.configDir();
+        return config != null
+                ? config.resolve("cache").resolve("native-run")
+                : Path.of(System.getProperty("java.io.tmpdir"), "editora-native-run");
+    }
+
+    /** Saves the edited buffers of {@code languages} under {@code root}: a build reads them from disk. False when refused. */
+    private boolean saveBuffersUnder(Path root, List<String> languages) {
+        List<EditorBuffer> dirty = new ArrayList<>();
+        host.forEachBuffer(b -> {
+            Path p = b.getPath();
+            if (b.isDirty()
+                    && p != null
+                    && languages.contains(b.getLanguage())
+                    && p.toAbsolutePath().startsWith(root)) {
+                dirty.add(b);
+            }
+        });
+        for (EditorBuffer b : dirty) {
+            if (!ops.saveBuffer(b)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Set while a built program is being looked for off the FX thread: the console is busy, and Stop ends it. */
+    private boolean locatingProgram;
+
+    /** Bumped by each search for a built program, and by Stop: a search that was stopped launches nothing. */
+    private long locateGeneration;
+
+    /**
+     * Runs {@code steps} in {@code root} one after another in the Run console (a failed or stopped one ends it),
+     * asks {@code find} off the FX thread for the program they made, and runs it — in the run's own folder, else
+     * {@code defaultDir}.
+     */
+    private void buildThenRun(
+            CompiledRun run,
+            Path root,
+            List<List<String>> steps,
+            String statusKey,
+            java.util.function.Supplier<Built> find,
+            Path defaultDir) {
+        runBuildSteps(run, root, steps, 0, statusKey, () -> {
+            locatingProgram = true;
+            long generation = ++locateGeneration;
+            ops.onRunStateChanged();
+            Thread.ofVirtual().name("run-built-program").start(() -> {
+                Built found;
+                try {
+                    found = find.get();
+                } catch (RuntimeException e) {
+                    found = new Built(null, List.of(), tr("status.run.failed", String.valueOf(e.getMessage())));
+                }
+                Built built = found;
+                javafx.application.Platform.runLater(() -> {
+                    if (generation != locateGeneration || !locatingProgram) {
+                        return; // stopped meanwhile
+                    }
+                    locatingProgram = false;
+                    Path program = built.program();
+                    if (program == null) {
+                        host.setStatus(String.valueOf(built.problem()));
+                        ops.onRunStateChanged();
+                        return;
+                    }
+                    List<String> command = new ArrayList<>();
+                    command.add(program.toString());
+                    command.addAll(built.firstArgs());
+                    command.addAll(run.args());
+                    pendingRerun = run.again(); // Rerun builds an edited file again rather than replaying the program
+                    streamRun(
+                            run.label(), run.dir() != null ? run.dir() : defaultDir, command, run.env(), run.source());
+                });
+            });
+        });
+    }
+
+    /** Runs build step {@code index} of {@code steps} and those after it, then {@code then}. */
+    private void runBuildSteps(
+            CompiledRun run, Path root, List<List<String>> steps, int index, String statusKey, Runnable then) {
+        if (index >= steps.size()) {
+            then.run();
+            return;
+        }
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(String.valueOf(run.source().getFileName()), steps.get(index), statusKey),
+                root,
+                java.util.Map.of(),
+                compileConsole(root, index == 0),
+                () -> runBuildSteps(run, root, steps, index + 1, statusKey, then));
+        ops.onRunStateChanged(); // the build is running now: the toolbar's Stop button applies to it
     }
 
     /**
@@ -927,7 +1265,7 @@ final class RunCoordinator {
 
     /** Whether the console is busy: a program, or the build before one. */
     private boolean consoleRunning() {
-        return service.isRunning() || beforeLaunch.isActive();
+        return service.isRunning() || beforeLaunch.isActive() || locatingProgram;
     }
 
     /** The configuration's program running in a Terminal tab, or null; Run's Stop ends it. */
@@ -1019,6 +1357,10 @@ final class RunCoordinator {
         }
         if (debug && !given.isJava()) {
             host.setStatus(tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type." + given.type())));
+            return;
+        }
+        if (ScriptRunCommand.isCompiled(given.type())) {
+            host.setStatus(tr("status.run.compiledRemote", given.name())); // said before anything is deployed
             return;
         }
         if (!saveProjectBuffers(localRoot)) {
@@ -2866,6 +3208,13 @@ final class RunCoordinator {
         }
         if (beforeLaunch.isActive()) {
             beforeLaunch.stop(); // its exit reports "stopped" and the launch it gated never happens
+            return;
+        }
+        if (locatingProgram) {
+            locatingProgram = false; // the build is done; the program it made is not started
+            locateGeneration++;
+            host.setStatus(tr("status.run.stopped"));
+            ops.onRunStateChanged();
             return;
         }
         if (service.isRunning()) {

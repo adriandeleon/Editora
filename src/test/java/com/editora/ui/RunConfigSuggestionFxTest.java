@@ -89,6 +89,11 @@ class RunConfigSuggestionFxTest {
                 FxTestSupport.call(fx.controller, "suggestedBlankConfiguration", new Class[] {}));
     }
 
+    private com.editora.config.RunConfiguration script() throws Exception {
+        return FxTestSupport.callOnFx(() -> (com.editora.config.RunConfiguration)
+                FxTestSupport.call(fx.controller, "suggestedScriptConfiguration", new Class[] {}));
+    }
+
     /** Add's Type follows the active file even when the file is not the thing to launch: a makefile is make's. */
     @Test
     void aMakefileOrPackageJsonSuggestsItsOwnType(@TempDir Path dir) throws Exception {
@@ -100,10 +105,26 @@ class RunConfigSuggestionFxTest {
         assertEquals("python", blank().type());
     }
 
-    /** No configuration type launches a C file, so there is nothing to suggest and Add keeps its Java default. */
+    /** No configuration type launches a Markdown note, so there is nothing to suggest and Add keeps its Java default. */
     @Test
     void aFileNoTypeLaunchesSuggestsNoType(@TempDir Path dir) throws Exception {
-        open(dir.resolve("tally.c"), "int main(void) { return 0; }\n");
+        open(dir.resolve("notes.md"), "# Notes\n");
         assertNull(blank());
+    }
+
+    /** A C, C++, Go or Rust file in front is what Add and Save as Run Configuration propose: its own type, the file. */
+    @Test
+    void aCompiledSourceFileSuggestsAConfigurationForItself(@TempDir Path dir) throws Exception {
+        open(dir.resolve("tally.c"), "int main(void) { return 0; }\n");
+        assertEquals("c", script().type());
+        assertEquals("tally.c", script().name());
+        assertEquals(dir.resolve("tally.c").toString(), script().target(), "no project: the file as it is");
+        open(dir.resolve("tally.cpp"), "int main() { return 0; }\n");
+        assertEquals("cpp", script().type());
+        open(dir.resolve("main.go"), "package main\n\nfunc main() {}\n");
+        assertEquals("go", script().type());
+        open(dir.resolve("main.rs"), "fn main() {}\n");
+        assertEquals("rust", script().type());
+        assertEquals("", script().workingDir(), "blank: where Debug File runs the program");
     }
 }

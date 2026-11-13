@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run configurations for C, C++, Go and Rust.** Run Configurations has four new types: C program, C++ program,
+  Go program and Rust program (Cargo). Each names a source file, and that file is built the way Debug builds it: a C
+  or C++ file's CMake or Make project, or the file alone with `cc` or `c++`; a Go file's package, or the file alone
+  outside a module; a Rust file's Cargo package. Run then starts the program in the Run console, or a Terminal tab,
+  and Debug starts it under CodeLLDB (GDB when that is the C and C++ debugger) or Delve. Both use the
+  configuration's arguments, environment variables, working directory and before-launch step; a blank working
+  directory is the folder Debug uses for the file. With such a file in front, Run Configurations → Add and Save as
+  Run Configuration propose a configuration for it, where Add used to make a Java one. Until now these files could
+  be debugged but not run. A Go or Rust test file runs or debugs all its tests. These configurations build and run on
+  this computer only, not on a remote host, in a container or on a deployment.
 - **Thread Dump in the debugger.** Debug: Thread Dump, also in the Threads view's and the call stack's menus, shows
   every thread of the program with its call stack in a window of its own, as IntelliJ's Get Thread Dump does. Threads
   whose stacks are the same are merged into one row (twenty pool workers waiting in one place read as one), a filter
@@ -488,7 +498,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration for anything that was not a script it could propose whole. With a makefile open it now makes a
   Make target configuration, and with a `package.json` an npm script one, each set to run in that file's
   folder; a Python, shell, Node.js, Groovy, Kotlin, Scala or Clojure file not saved yet gets a configuration of
-  its type as well. A file no type launches (a C file, a note) still gets a Java one. The Type box also shows
+  its type as well. A file no type launches (a note, a C# file) still gets a Java one. The Type box also shows
   each type with the icon its files carry in the tabs and the Project tree.
 - **A key you rebind is rebound on every system.** Your own key bindings were kept apart for macOS and for
   Windows and Linux, so a chord changed on a Mac stayed as it was on your Linux or Windows computer, even

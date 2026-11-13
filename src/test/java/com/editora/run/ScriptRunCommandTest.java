@@ -40,6 +40,26 @@ class ScriptRunCommandTest {
         assertFalse(ScriptRunCommand.isJvmScript("java"));
     }
 
+    /** C, C++, Go and Rust: a source file that is built first. Only the shape is built here. */
+    @Test
+    void aCompiledTypeNamesASourceFile() {
+        for (String type : new String[] {"c", "cpp", "go", "rust"}) {
+            assertTrue(ScriptRunCommand.isCompiled(type), type);
+            assertTrue(ScriptRunCommand.isScript(type), type + " needs no jdtls");
+            assertTrue(ScriptRunCommand.needsTarget(type), type);
+            assertFalse(ScriptRunCommand.isJvmScript(type), type);
+            assertTrue(ScriptRunCommand.build(type, " ", List.of()).isEmpty(), type + " with no file is incomplete");
+        }
+        assertEquals(List.of("cc", "src/tally.c", "3"), ScriptRunCommand.build("c", "src/tally.c", List.of("3")));
+        assertEquals(List.of("c++", "tally.cc"), ScriptRunCommand.build("cpp", "tally.cc", List.of()));
+        assertEquals(List.of("go", "run", "main.go"), ScriptRunCommand.build("go", "main.go", List.of()));
+        assertEquals(List.of("cargo", "run", "src/main.rs"), ScriptRunCommand.build("rust", "src/main.rs", List.of()));
+        for (String type : new String[] {"java", "python", "shell", "make", "npm", "node", "kotlin", "csharp"}) {
+            assertFalse(ScriptRunCommand.isCompiled(type), type);
+        }
+        assertFalse(ScriptRunCommand.isCompiled(null));
+    }
+
     @Test
     void anNpmScriptRunsWithArgumentsAfterTheSeparator() {
         assertEquals(
