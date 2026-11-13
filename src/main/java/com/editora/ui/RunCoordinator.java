@@ -1014,13 +1014,28 @@ final class RunCoordinator {
     /**
      * A Go file: {@code go} builds its package (in a module, after the module's trust as a Go task asks it), the
      * file alone outside one, or a test file's package tests ({@link com.editora.dap.GoLaunch#buildArgv}), and that
-     * program runs in the file's folder.
+     * program runs in the file's folder. A file of another package than {@code main} has no program: {@code go
+     * build -o} writes its archive and exits 0, so that is said here, before anything is built.
      */
     private void runGo(CompiledRun run) {
         Path source = run.source();
         Path folder = source.getParent();
         if (folder == null) {
             return; // not reached: the source is absolute
+        }
+        if (!com.editora.dap.GoLaunch.isTestFile(source)) {
+            String declared;
+            try {
+                // (On disk it is what is on screen: the launch saved the file's own tab first.)
+                declared = com.editora.dap.GoLaunch.packageName(java.nio.file.Files.readString(source));
+            } catch (java.io.IOException e) {
+                declared = null; // unreadable: go says so
+            }
+            if (declared != null && !"main".equals(declared)) {
+                host.setStatus(tr("status.run.goNotMain", source.getFileName(), declared));
+                ops.editConfiguration(run.label()); // to the Source file field: another file is what would run
+                return;
+            }
         }
         Path module = com.editora.dap.GoLaunch.moduleRoot(source);
         List<String> go = module != null
@@ -1036,6 +1051,7 @@ final class RunCoordinator {
         Path output = com.editora.dap.NativeBuild.outputFor(source, builtProgramsDir());
         try {
             java.nio.file.Files.createDirectories(builtProgramsDir());
+            java.nio.file.Files.deleteIfExists(output); // the last build's program is not this one's
         } catch (java.io.IOException e) {
             host.setStatus(tr("status.run.failed", e.getMessage()));
             return;
@@ -1046,7 +1062,12 @@ final class RunCoordinator {
                 folder,
                 List.of(com.editora.dap.GoLaunch.buildArgv(go, source, module != null, output)),
                 "status.run.compiledBuild",
-                () -> Built.of(java.nio.file.Files.isRegularFile(output) ? output : null, missing),
+                // A program, not a package's archive (what go writes for a package whose clause was not read).
+                () -> Built.of(
+                        java.nio.file.Files.isRegularFile(output) && java.nio.file.Files.isExecutable(output)
+                                ? output
+                                : null,
+                        missing),
                 folder);
     }
 

@@ -1163,7 +1163,9 @@ What is built for it is decided at launch, by the code F5 uses:
   (`NativeBuild.plan`'s steps; `GoLaunch.buildArgv`: `go build -o`, or `go test -c` for a test file; Cargo's
   `RustLaunch.Plan`), finds the program off the FX thread (`NativeBuild.executable`, the Go output, Cargo's JSON
   messages through `RustLaunch.pick`) and streams it. A lone C, C++ or Go file's program goes to
-  `<config>/cache/native-run/<stem>-<hash>`. Rerun builds again. Stop during the search starts nothing.
+  `<config>/cache/native-run/<stem>-<hash>`. Rerun builds again. Stop during the search starts nothing. A Go file
+  whose package clause (`GoLaunch.packageName`) is not `main` is refused before the build: `go build -o` writes such
+  a package's archive and exits 0.
 - The configuration's variables go to the program, not to the build. The trust questions are F5's: the Go and
   Cargo build tools' (`Ops.buildExecutable`), and the folder's for CMake and Make (`Ops.trustBuild`).
 - Both paths refuse a file that runs elsewhere (a remote host, a container, WSL, a deployment): the program is built
