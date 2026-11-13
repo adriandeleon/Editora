@@ -99,7 +99,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Browser…* (and Debug ▸ Attach on an HTML file) attaches to a Chrome or Edge started with
   `--remote-debugging-port=9222`. launch.json `chrome` and `msedge` configurations work too. The browser runs with a
   profile of Editora's own, kept between sessions, so your everyday profile is left alone; Stop closes it. Choose
-  the browser under Settings → Debugging → JavaScript.
+  the browser under Settings → Debugging → JavaScript. The browser has 30 seconds to start (a launch.json
+  configuration's own `timeout` decides otherwise); when the debugger gives up on it, or it exits while starting,
+  the status line says so and the Debug console has the debugger's own error.
 
 - **Mark Object.** Right-click a variable, watch or result that shows an object and choose *Mark Object…* to give
   it a label, as in IntelliJ. The label then shows before that object's value wherever it appears in the session (in

@@ -32,8 +32,8 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * session after the browser and the page, remembers the URL, and offers it next time; a chosen browser that is gone
  * falls back to one found, and none found is said. F5 on an HTML file serves its site and maps the served folder back
  * to the files; its breakpoints are sent. Attach to Browser attaches to a debugging port and Stop leaves the browser
- * open; a launch.json {@code chrome} configuration goes to js-debug as a browser launch. {@code BrowserDebugProbeFxTest}
- * drives the real js-debug and Chrome.
+ * open; a launch.json {@code chrome} configuration goes to js-debug as a browser launch; a launch js-debug drops
+ * without answering it is said on the status line. {@code BrowserDebugProbeFxTest} drives the real js-debug and Chrome.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class BrowserDebugWindowFxTest {
@@ -193,6 +193,35 @@ class BrowserDebugWindowFxTest {
         assertEquals(List.of("http://localhost:5173/app", ""), rows);
         FxTestSupport.runOnFx(() -> OverlayDriver.pick(fx.controller, "http://localhost:5173/app"));
         assertEquals("http://localhost:5173/app", session("launch").launchArgs.get("url"));
+    }
+
+    @Test
+    void aBrowserJsDebugGivesUpOnIsSaidInsteadOfEndingWithNothing() throws Exception {
+        open(script);
+        adapter.launchGate = new java.util.concurrent.CompletableFuture<>(); // js-debug still waits for the browser
+        try {
+            run("debug.browser");
+            awaitPrompt();
+            FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, "http://localhost:5173"));
+            FakeDebugAdapter.Session session = session("launch");
+            assertEquals(
+                    BrowserLaunch.LAUNCH_TIMEOUT_MILLIS,
+                    ((Number) session.launchArgs.get("timeout")).longValue(),
+                    "the browser gets longer to start than js-debug's own 10 s");
+            await("running", () -> call(manager::isActive));
+            // js-debug 1.117, when the browser has exited or is not ready in time: the connection closes, with no
+            // answer to the launch, no error and no event.
+            session.dropConnection();
+            await("ended", () -> !call(manager::isActive));
+            String said = status();
+            assertTrue(
+                    java.util.stream.LongStream.rangeClosed(0, 20)
+                            .anyMatch(seconds -> tr("status.debug.error", tr("debug.error.browserNotReady", seconds))
+                                    .equals(said)),
+                    said);
+        } finally {
+            adapter.launchGate = null;
+        }
     }
 
     @Test
