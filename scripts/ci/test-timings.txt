@@ -26,7 +26,7 @@
 2.9 com/editora/diff/DiffEngineTest.java
 1.7 com/editora/diff/PatchWriterTest.java
 2.4 com/editora/diff/ThreeWayMergeGitOracleTest.java
-51.4 com/editora/editops/IndentWindowTest.java
+31.0 com/editora/editops/IndentWindowTest.java
 1.2 com/editora/editor/IndentGuideOverlayFxTest.java
 1.2 com/editora/editor/InitialLoadFxTest.java
 7.6 com/editora/editor/OverlaysFollowTheTextFxTest.java
@@ -101,7 +101,6 @@
 8.4 com/editora/ui/CompletionPopupChordsFxTest.java
 1.3 com/editora/ui/ConfigImportFxTest.java
 5.2 com/editora/ui/ConsoleUndoFxTest.java
-20.2 com/editora/ui/ContainerCoordinatorFxTest.java
 12.9 com/editora/ui/CrashRecoveryFxTest.java
 6.1 com/editora/ui/CrashRecoveryOntoOpenFileFxTest.java
 1.3 com/editora/ui/CrossWindowDeleteFxTest.java
@@ -370,7 +369,6 @@
 21.1 com/editora/ui/SplitUndoHistoryFxTest.java
 11.0 com/editora/ui/SplitViewFxTest.java
 3.9 com/editora/ui/StaggeredWindowRestoreFxTest.java
-20.0 com/editora/ui/StructureAttachFxTest.java
 1.0 com/editora/ui/StructureClickFramesFxTest.java
 16.0 com/editora/ui/StructurePanelNarrowFxTest.java
 1.4 com/editora/ui/TabContextMenuFxTest.java
