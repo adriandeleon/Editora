@@ -140,7 +140,7 @@ public class App extends Application {
 
         KeymapManager keymap = new KeymapManager();
         keymap.loadNamed(settings.getKeymap());
-        keymap.applyOverrides(settings.keybindingsFor(KeymapManager.isMac()));
+        keymap.applyOverrides(com.editora.ui.UserKeys.overrides(settings));
 
         // Render the UI chrome in Inter on every platform (UI Kit v1). A listener on the live window
         // list covers windows opened later, so each project window, dialog and popup picks it up.

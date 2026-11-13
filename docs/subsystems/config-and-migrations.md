@@ -180,7 +180,9 @@ on once, `140 → 141` is the additive `buildBeforeRun`), with an additive ident
 the Default JDK at `102 → 103` (also used by standalone Java files), `104 → 105` as
 `retireUnusedSettingsKeys`, and an identity step at `105 → 106` for per-keymap key-binding overrides
 (`keybindings`/`keybindingsMac` keep their place and now mean "the active keymap's"; `keymapKeybindings`/
-`keymapKeybindingsMac` hold the other keymaps' and start empty), and `106 → 107` as `blankFrozenDefaultUrls`
+`keymapKeybindingsMac` hold the other keymaps' and start empty; all four are replaced at `170 → 171` by
+`keyBindingsByCommand`, which turns them into one set by command, `keyBindings` and `keyBindingsMacOnly`,
+and is safe to repeat), and `106 → 107` as `blankFrozenDefaultUrls`
 (`pluginRegistryUrl` and `mavenArchetypeCatalogUrl` are stored raw, blank meaning "the built-in default"; a
 file that froze the built-in address goes back to blank, and the step spells those old addresses out so it
 still recognises them after a default moves); `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK

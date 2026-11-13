@@ -1,69 +1,117 @@
 package com.editora.config;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
+import com.editora.command.KeybindingEdits;
+import com.editora.command.KeymapManager;
+import com.editora.command.UserKeyBindings;
+import com.editora.command.UserKeyBindings.Store;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Per-platform keybinding override maps (#439). */
+/**
+ * The settings hold one set of key bindings for every operating system: by command, per keymap, with the chords
+ * only a Mac can type beside them.
+ */
 class SettingsKeybindingsPlatformTest {
 
-    @Test
-    void keybindingsForPicksTheRightSlot() {
-        Settings s = new Settings();
-        s.setKeybindings(Map.of("C-k", "file.save")); // Ctrl slot (Windows/Linux)
-        s.setKeybindingsMac(Map.of("Cmd-k", "file.save")); // Cmd slot (macOS)
+    /** What {@code keymap} binds on one system once the bindings {@code s} holds for it are applied. */
+    private static Map<String, String> bindings(Settings s, String keymap, boolean mac) {
+        Store store = new Store(
+                s.getKeyBindings().getOrDefault(keymap, Map.of()),
+                s.getKeyBindingsMacOnly().getOrDefault(keymap, Map.of()));
+        Map<String, String> out = new LinkedHashMap<>(KeymapManager.defaults(keymap, mac));
+        UserKeyBindings.derive(store, out, mac, KeymapManager.hasMacVariant(keymap))
+                .overrides()
+                .forEach((chord, command) -> {
+                    if (command.isBlank()) {
+                        out.remove(chord);
+                    } else {
+                        out.put(chord, command);
+                    }
+                });
+        return out;
+    }
 
-        assertEquals(Map.of("Cmd-k", "file.save"), s.keybindingsFor(true));
-        assertEquals(Map.of("C-k", "file.save"), s.keybindingsFor(false));
+    private static List<String> chordsOf(Map<String, String> bindings, String command) {
+        return KeybindingEdits.defaultChords(bindings, command);
+    }
+
+    /** #439: a rebind in a config shared between systems must move the command on each, not bind it twice. */
+    @Test
+    void oneStoredRebindMovesTheCommandOnEverySystem() {
+        Settings s = new Settings();
+        s.setKeyBindings(Map.of("vscode", Map.of("file.save", List.of("C-M-S-f11"))));
+
+        Map<String, String> linux = bindings(s, "vscode", false);
+        assertEquals(List.of("C-M-S-f11"), chordsOf(linux, "file.save"));
+        assertNull(linux.get("C-s"), "the default is gone, not left bound beside the new chord");
+
+        Map<String, String> mac = bindings(s, "vscode", true);
+        assertEquals(List.of("M-Cmd-S-f11"), chordsOf(mac, "file.save"), "the same binding, as a Mac types it");
+        assertNull(mac.get("Cmd-s"));
     }
 
     @Test
-    void aMacWrittenConfigAppliesNoOverridesOnWindowsLinux() {
-        // The #439 scenario: a synced config edited on macOS carries Cmd-based overrides (including the
-        // Cmd-S UNBIND suppressor) in the mac slot, with the base slot cleared by the migration. Read on a
-        // non-mac machine, keybindingsFor(false) must be EMPTY — otherwise the stale Cmd-S UNBIND fails to
-        // suppress the live Ctrl-S default and the command double-binds to both Ctrl-S and the new chord.
+    void aMacOnlyChordIsUsedOnAMacAndLeavesTheOtherSystemsAtTheirDefaults() {
         Settings s = new Settings();
-        Map<String, String> macOverrides = new LinkedHashMap<>();
-        macOverrides.put("Cmd-s", ""); // UNBIND the old default
-        macOverrides.put("F5", "file.save"); // a platform-neutral new chord that WOULD leak
-        s.setKeybindingsMac(macOverrides);
-        s.setKeybindings(new LinkedHashMap<>()); // base slot cleared
+        s.setKeyBindingsMacOnly(Map.of("vscode", Map.of("file.save", List.of("C-Cmd-s"))));
 
-        assertTrue(s.keybindingsFor(false).isEmpty(), "no overrides leak onto Windows/Linux");
-        assertEquals(macOverrides, s.keybindingsFor(true), "the mac machine still gets them");
+        assertEquals(List.of("C-Cmd-s"), chordsOf(bindings(s, "vscode", true), "file.save"));
+        assertEquals(KeymapManager.defaults("vscode", false), bindings(s, "vscode", false));
     }
 
     @Test
-    void keybindingsForNeverReturnsNullAndSetForRoundTrips() {
+    void theBindingsAreNeverNull() {
         Settings s = new Settings();
-        s.setKeybindingsMac(null);
-        assertNotNull(s.keybindingsFor(true), "a null slot degrades to an empty (mutable) map");
+        s.setKeyBindings(null);
+        s.setKeyBindingsMacOnly(null);
+        assertNotNull(s.getKeyBindings(), "null degrades to an empty (mutable) map");
+        assertNotNull(s.getKeyBindingsMacOnly());
 
-        s.keybindingsFor(true).put("Cmd-p", "palette.show");
-        assertEquals(
-                "palette.show", s.getKeybindingsMac().get("Cmd-p"), "the empty map is stored back, not thrown away");
-
-        s.setKeybindingsFor(false, Map.of("C-p", "palette.show"));
-        assertEquals(Map.of("C-p", "palette.show"), s.getKeybindings());
+        s.getKeyBindings().put("cua", Map.of("palette.show", List.of("C-p")));
+        assertEquals(List.of("C-p"), s.getKeyBindings().get("cua").get("palette.show"), "and what is put in it stays");
     }
 
     @Test
-    void resetToDefaultsPreservesBothPlatformMaps() {
+    void theBindingsSurviveAJsonRoundTrip() throws Exception {
         Settings s = new Settings();
-        s.setKeybindings(Map.of("C-k", "file.save"));
-        s.setKeybindingsMac(Map.of("Cmd-k", "file.save"));
+        s.setKeyBindings(Map.of(
+                "emacs", Map.of("file.save", List.of("C-x s", "f5"), "view.toggleZen", List.of()),
+                "cua", Map.of("find.show", List.of("f8"))));
+        s.setKeyBindingsMacOnly(Map.of("vscode", Map.of("file.save", List.of("C-Cmd-s"))));
+        ObjectMapper mapper = new ObjectMapper();
+
+        Settings loaded = mapper.readValue(mapper.writeValueAsBytes(s), Settings.class);
+
+        assertEquals(s.getKeyBindings(), loaded.getKeyBindings());
+        assertEquals(s.getKeyBindingsMacOnly(), loaded.getKeyBindingsMacOnly());
+        assertTrue(
+                loaded.getKeyBindings().get("emacs").get("view.toggleZen").isEmpty(),
+                "an unbound command stays unbound");
+    }
+
+    @Test
+    void resetToDefaultsPreservesTheBindings() {
+        Settings s = new Settings();
+        s.setKeyBindings(Map.of("cua", Map.of("file.save", List.of("C-k"))));
+        s.setKeyBindingsMacOnly(Map.of("cua", Map.of("file.open", List.of("C-Cmd-o"))));
         s.setFontSize(22); // a page-owned setting Reset should clear
 
         Settings.resetToDefaults(s);
 
         assertEquals(14, s.getFontSize(), "an ordinary setting is reset to its default");
-        assertEquals(Map.of("C-k", "file.save"), s.getKeybindings(), "the Keymaps page owns its own reset");
-        assertEquals(Map.of("Cmd-k", "file.save"), s.getKeybindingsMac());
+        assertEquals(
+                Map.of("cua", Map.of("file.save", List.of("C-k"))),
+                s.getKeyBindings(),
+                "the Keymaps page owns its own reset");
+        assertEquals(Map.of("cua", Map.of("file.open", List.of("C-Cmd-o"))), s.getKeyBindingsMacOnly());
     }
 }

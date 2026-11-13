@@ -1,5 +1,9 @@
 package com.editora.ui;
 
+import java.util.List;
+import java.util.Map;
+
+import com.editora.command.UserKeyBindings.Store;
 import com.editora.config.Settings;
 import org.junit.jupiter.api.Test;
 
@@ -46,12 +50,19 @@ class SettingsResetFlowTest {
     void aResetCarriesAMacrosKeyToTheDefaultKeymapAsAKeymapSwitchDoes() {
         Settings live = new Settings();
         String defaultKeymap = live.getKeymap();
-        live.setKeymap("vscode".equals(defaultKeymap) ? "cua" : "vscode");
-        live.keybindingsFor(false).put("C-M-9", "macro.run.Tidy"); // no bundled keymap binds a macro
+        String other = "vscode".equals(defaultKeymap) ? "cua" : "vscode";
+        live.setKeymap(other);
+        Store store = UserKeys.store(live, other);
+        store.shared().put("macro.run.Tidy", List.of("C-M-9")); // no bundled keymap binds a macro
+        UserKeys.put(live, other, store);
 
         SettingsResetFlow.reset(live);
 
         assertEquals(defaultKeymap, live.getKeymap());
-        assertEquals("macro.run.Tidy", live.keybindingsFor(false).get("C-M-9"), "the macro keeps its key");
+        assertEquals(
+                Map.of("macro.run.Tidy", List.of("C-M-9")),
+                UserKeys.store(live, defaultKeymap).shared(),
+                "the macro keeps its key");
+        assertTrue(UserKeys.store(live, other).isEmpty(), "moved, not copied");
     }
 }

@@ -30,6 +30,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * stops with its locals, then one in a script file it loads; Stop closes the browser. A launch.json {@code chrome}
  * configuration opens a {@code file:} URL and stops at a breakpoint in its script. Run it with {@code ./mvnw test
  * -Dtest=BrowserDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true -Dnode.probe=true}.
+ *
+ * <p>The browser is started once before the tests ({@link #firstStart}): its first start on a machine, with nothing
+ * of it in memory, can take longer than a debugged browser is given to be ready, and how long that takes is the
+ * machine's, not what is probed here. On CI it sometimes passed js-debug's own 10 seconds, js-debug dropped the
+ * launch without a word, and the test that ran first failed.
  */
 @Tag("probe")
 @Tag("fx")
@@ -66,15 +71,63 @@ class BrowserDebugProbeFxTest {
     private static final Path HOME = Path.of(System.getProperty("user.home"));
 
     @BeforeAll
-    static void boot() throws Exception {
+    static void boot(@TempDir Path profile) throws Exception {
         FxTestSupport.bootToolkit();
+        String id = found();
+        if (optedIn() && id != null && Browsers.executable(id) != null) {
+            firstStart(Browsers.executable(id), profile);
+        }
     }
+
+    private static boolean optedIn() {
+        return Boolean.getBoolean("lsp.probe") && Boolean.getBoolean("node.probe");
+    }
+
+    /** The Chromium browser the tests debug in, or null when there is none. */
+    private static String found() {
+        return com.editora.dap.BrowserLaunch.pick(
+                Browsers.detect().stream().map(Browsers.Browser::id).toList(), null, null);
+    }
+
+    /**
+     * Starts the browser, headless, on an empty page and waits for it to exit, so that the starts under the debugger
+     * are not the machine's first. Says how long it took: the number to look at when a launch is given up on.
+     */
+    private static void firstStart(String executable, Path profile) throws InterruptedException {
+        long start = System.nanoTime();
+        String outcome;
+        try {
+            Process browser = new ProcessBuilder(
+                            executable,
+                            "--headless=new",
+                            "--no-sandbox",
+                            "--no-first-run",
+                            "--user-data-dir=" + profile,
+                            "--dump-dom",
+                            "about:blank")
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            if (browser.waitFor(FIRST_START_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
+                outcome = "exit code " + browser.exitValue();
+            } else {
+                browser.destroyForcibly();
+                outcome = "still running, ended";
+            }
+        } catch (java.io.IOException e) {
+            outcome = "not started: " + e.getMessage(); // the tests' own launches say what is wrong with it
+        }
+        System.out.printf(
+                "BrowserDebugProbeFxTest: the browser's first start took %.1f s (%s)%n",
+                (System.nanoTime() - start) / 1e9, outcome);
+    }
+
+    /** How long the browser's first start may take before it is ended and the tests go on anyway. */
+    private static final long FIRST_START_SECONDS = 120;
 
     /** A Chromium browser found here, or the test is skipped. */
     private static String browser() {
-        List<String> found =
-                Browsers.detect().stream().map(Browsers.Browser::id).toList();
-        String id = com.editora.dap.BrowserLaunch.pick(found, null, null);
+        String id = found();
         assumeTrue(id != null && Browsers.executable(id) != null, "needs Chrome, Edge or another Chromium browser");
         return id;
     }
@@ -95,7 +148,7 @@ class BrowserDebugProbeFxTest {
 
     @Test
     void f5OnAnHtmlFileStopsInItsInlineScriptAndInAScriptItLoads(@TempDir Path dir) throws Exception {
-        assumeTrue(Boolean.getBoolean("lsp.probe") && Boolean.getBoolean("node.probe"), "opt-in: Node probes");
+        assumeTrue(optedIn(), "opt-in: Node probes");
         assumeTrue(DebugAdapterLocator.locateJsDebugServer("", HOME).isPresent(), "needs js-debug");
         String browser = browser();
         Path site = Files.createDirectory(dir.resolve("site")).toRealPath();
@@ -140,7 +193,7 @@ class BrowserDebugProbeFxTest {
 
     @Test
     void aLaunchJsonChromeConfigurationOpensAFileUrl(@TempDir Path dir) throws Exception {
-        assumeTrue(Boolean.getBoolean("lsp.probe") && Boolean.getBoolean("node.probe"), "opt-in: Node probes");
+        assumeTrue(optedIn(), "opt-in: Node probes");
         assumeTrue(DebugAdapterLocator.locateJsDebugServer("", HOME).isPresent(), "needs js-debug");
         String browser = browser();
         Path root = Files.createDirectory(dir.resolve("web")).toRealPath();
@@ -211,15 +264,22 @@ class BrowserDebugProbeFxTest {
     /** A stop at {@code line} of {@code file} (the top frame's). */
     private static void awaitStop(MainController c, DapManager dap, DebugCoordinator debug, int line, String file)
             throws InterruptedException {
+        String what = "a stop at " + file + ":" + (line + 1);
+        boolean[] live = {false};
         try {
-            await(
-                    "a stop at " + file + ":" + (line + 1),
-                    90,
-                    () -> call(() -> dap.state() == DapManager.State.SUSPENDED
-                            && !debug.panel().callStack().isEmpty()
-                            && debug.panel().callStack().get(0).line() == line
-                            && debug.panel().callStack().get(0).file() != null
-                            && debug.panel().callStack().get(0).file().endsWith(file)));
+            await(what, 90, () -> {
+                // A session that has ended stops nowhere: say so now rather than wait the rest out.
+                DapManager.State state = call(dap::state);
+                if (live[0] && state == DapManager.State.INACTIVE) {
+                    throw new AssertionError("the session ended before " + what);
+                }
+                live[0] |= state != DapManager.State.INACTIVE;
+                return call(() -> dap.state() == DapManager.State.SUSPENDED
+                        && !debug.panel().callStack().isEmpty()
+                        && debug.panel().callStack().get(0).line() == line
+                        && debug.panel().callStack().get(0).file() != null
+                        && debug.panel().callStack().get(0).file().endsWith(file));
+            });
         } catch (AssertionError e) {
             String top = call(() -> debug.panel().callStack().isEmpty()
                     ? "no frames"

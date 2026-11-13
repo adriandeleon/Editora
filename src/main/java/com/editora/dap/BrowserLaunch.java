@@ -41,6 +41,13 @@ public final class BrowserLaunch {
     /** The port Chrome and Edge listen on for a debugger, as VS Code's attach configurations default to. */
     public static final int DEFAULT_PORT = 9222;
 
+    /**
+     * How long js-debug gives a browser it starts to be ready for the debugger ({@code timeout}), in milliseconds: as
+     * long as Editora waits for the launch to be answered. js-debug's own 10 seconds are too few for a browser's first
+     * start on a machine (nothing of it in memory yet), and when they run out it ends the session.
+     */
+    public static final long LAUNCH_TIMEOUT_MILLIS = DapClient.requestTimeoutSeconds() * 1000;
+
     /** launch.json types that debug a browser, as VS Code knows them. */
     private static final Set<String> TYPES = Set.of("chrome", CHROME, "msedge", EDGE);
 
@@ -97,6 +104,7 @@ public final class BrowserLaunch {
      * @param executable the browser's program; null or blank lets js-debug find the stable release
      * @param userDataDir the browser profile Editora keeps for debugging; null for js-debug's own
      * @param browserArgs more command-line arguments for the browser ({@code --headless=new} in tests)
+     * @return the request, with {@link #LAUNCH_TIMEOUT_MILLIS} for the browser to start in
      */
     public static Map<String, Object> launch(
             String type,
@@ -127,6 +135,7 @@ public final class BrowserLaunch {
         if (userDataDir != null) {
             m.put("userDataDir", userDataDir.toString());
         }
+        m.put("timeout", LAUNCH_TIMEOUT_MILLIS);
         return m;
     }
 
@@ -150,7 +159,8 @@ public final class BrowserLaunch {
     /**
      * A launch.json browser configuration ({@code body}, already without VS Code's own fields) as js-debug is sent
      * it: the type js-debug knows, {@code webRoot} defaulting to {@code workspace}, and a launch's profile defaulting
-     * to Editora's ({@code userDataDir}) — what the configuration says wins.
+     * to Editora's ({@code userDataDir}) and its {@code timeout} to {@link #LAUNCH_TIMEOUT_MILLIS} — what the
+     * configuration says wins.
      */
     public static Map<String, Object> configured(
             Map<String, Object> body, @Nullable Path workspace, @Nullable Path userDataDir) {
@@ -165,6 +175,7 @@ public final class BrowserLaunch {
             if (userDataDir != null) {
                 m.putIfAbsent("userDataDir", userDataDir.toString());
             }
+            m.putIfAbsent("timeout", LAUNCH_TIMEOUT_MILLIS);
         } else {
             m.putIfAbsent("port", DEFAULT_PORT);
         }

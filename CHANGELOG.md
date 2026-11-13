@@ -99,7 +99,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Browser…* (and Debug ▸ Attach on an HTML file) attaches to a Chrome or Edge started with
   `--remote-debugging-port=9222`. launch.json `chrome` and `msedge` configurations work too. The browser runs with a
   profile of Editora's own, kept between sessions, so your everyday profile is left alone; Stop closes it. Choose
-  the browser under Settings → Debugging → JavaScript.
+  the browser under Settings → Debugging → JavaScript. The browser has 30 seconds to start (a launch.json
+  configuration's own `timeout` decides otherwise); when the debugger gives up on it, or it exits while starting,
+  the status line says so and the Debug console has the debugger's own error.
 
 - **Mark Object.** Right-click a variable, watch or result that shows an object and choose *Mark Object…* to give
   it a label, as in IntelliJ. The label then shows before that object's value wherever it appears in the session (in
@@ -482,6 +484,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A key you rebind is rebound on every system.** Your own key bindings were kept apart for macOS and for
+  Windows and Linux, so a chord changed on a Mac stayed as it was on your Linux or Windows computer, even
+  in the Emacs keymap, whose chords are the same everywhere. They are now one set per keymap. In a keymap
+  with a macOS form (CUA, VS Code, IntelliJ, Sublime) a chord you record with Ctrl is used with Cmd on a
+  Mac, and the other way round. A chord only a Mac can type (one that uses the Control key there) stays the
+  Mac's own, and the other systems keep theirs. Existing bindings are converted and none is lost: where the
+  two systems had different bindings for a command, each keeps its own. Settings Sync's `keybindings.json`
+  changes layout with this; an older Editora will say the file was written by a newer one.
 - **The VCS menu is named Git.** Git is the one version-control system Editora works with, and every row of the
   menu is a Git command. The rows and their order are unchanged.
 - **Run ▸ Debugger is four submenus.** The Debugger submenu had grown to fifty rows, taller than the screen, and

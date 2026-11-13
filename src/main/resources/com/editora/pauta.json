@@ -1,14 +1,6 @@
 {
   "exceptions": [
     {
-      "rule": "OS-04",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/same-on-every-os/#os-04",
-      "kind": "pending",
-      "reason": "A key rebound on macOS is kept apart from one rebound on Windows or Linux, so a binding of your own does not follow you from one to the other.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1553"
-    },
-    {
       "rule": "PAUTA-13",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/conformance/#pauta-13",

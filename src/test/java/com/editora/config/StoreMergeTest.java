@@ -54,11 +54,11 @@ class StoreMergeTest {
     @Test
     void nestedObjectsAreMergedKeyByKey() throws Exception {
         assertEquals(
-                json("{'keybindings':{'file.save':'Ctrl+Alt+S','edit.copy':'Ctrl+Y'}}"),
+                json("{'keyBindings':{'emacs':{'file.save':['C-x s'],'edit.copy':['C-c c']}}}"),
                 merge(
-                        "{'keybindings':{}}",
-                        "{'keybindings':{'file.save':'Ctrl+Alt+S'}}",
-                        "{'keybindings':{'edit.copy':'Ctrl+Y'}}",
+                        "{'keyBindings':{}}",
+                        "{'keyBindings':{'emacs':{'file.save':['C-x s']}}}",
+                        "{'keyBindings':{'emacs':{'edit.copy':['C-c c']}}}",
                         StoreMerge.Keys.NONE));
     }
 

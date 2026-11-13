@@ -297,8 +297,8 @@ without the network); and the release-asset manifest. The Java side has matching
 `SshdModuleDescriptorTest`, `WindowsFileAssociationsTest`) that read the workflows, the pom and the
 packaging files as text.
 
-CI runs in two tiers. **`ci.yml`** is the fast lane, about fifteen minutes: formatting, the whole suite on
-Linux (four shards, coverage floors) and the scripts' own tests. It runs on every pull request and every
+CI runs in two tiers. **`ci.yml`** is the fast lane, about ten minutes: formatting, the whole suite on
+Linux (six shards, coverage floors) and the scripts' own tests. It runs on every pull request and every
 push to `master`, and the two checks `master` requires come from it. **`full-tests.yml`** holds the rest:
 the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`, the FX suite (`-Dgroups=fx`) on
 `macos-15` in three shards, and the probes against real tools (JDT LS and java-debug, the TypeScript
@@ -320,8 +320,8 @@ Linux by giving the test's `ProjectMapView` a narrower installed family, e.g. `v
 stood 242 px from the edge instead of 259, short of the note's 256).
 
 **Locally,** run `mvn spotless:apply`, the tests for what you changed (`mvn -Dtest='Foo*Test' test`) and
-the [guard tests](#guard-tests) (`mvn test -Dgroups=guard`), not the whole suite: CI's four shards run it
-in about fifteen minutes, and several sessions share this machine.
+the [guard tests](#guard-tests) (`mvn test -Dgroups=guard`), not the whole suite: CI's six shards run it
+in about ten minutes, and several sessions share this machine.
 
 **Do not wait for a run.** Open the pull request and go on to the next task, in a new worktree; look at
 the checks when a step of that task is done. `master` requires `Build & Test (JDK 25)` and
@@ -334,18 +334,36 @@ skips. The `Remote probe` workflow runs it against macOS's own sshd on `macos-15
 `ubuntu-latest`, by hand or on a push to a `probe/**` branch; locally, run it against a private `sshd` or
 dropbear on localhost ([remote](subsystems/remote.md)).
 
-On Linux the suite runs as four shards, each on its own runner (the `tests` job in `ci.yml`), because in
+On Linux the suite runs as six shards, each on its own runner (the `tests` job in `ci.yml`), because in
 one JVM on one runner it took 15 minutes and grew with every pull request. `scripts/ci/ShardTests.java`
-deals the test classes out: it lists the files under `src/test/java` that Surefire would pick by itself, and
-shard *n* of 4 takes every fourth one, the `*FxTest` classes dealt separately so each shard gets its
-share of the slow ones. A shard runs `test` with that list as Surefire's `includesFile`; the `build` job
-(the check `master` requires, "Build & Test (JDK 25)") then fails if any shard failed, checks that every
-test class has a report (`ShardTests.java check`), checks the skips, joins the four JaCoCo data files and
-applies the coverage floors with `mvn -DskipTests verify`. To run one shard locally:
+deals the test classes out: it lists the files under `src/test/java` that Surefire would pick by itself
+and gives each shard the same share of the time, not of the classes: the longest class first, each to
+the shard with the least so far, the `*FxTest` classes dealt separately from the rest. A run waits for its
+slowest shard, and dealt by name one shard of four carried 95 seconds of tests more than the average. The
+first run with six shards took 10.5 minutes where the median had been 14. A
+shard runs `test` with its list as Surefire's `includesFile`; the `build` job (the check `master`
+requires, "Build & Test (JDK 25)") then fails if any shard failed, checks that every test class has a
+report (`ShardTests.java check`), checks the skips, joins the six JaCoCo data files and applies the
+coverage floors. It compiles nothing: shard 1 uploads its `target/classes`, and the job runs the two
+JaCoCo goals by name (`mvn jacoco:report@jacoco-report jacoco:check@jacoco-check`), which takes seconds
+where `mvn -DskipTests verify` took two minutes. To run one shard locally, and to see what each is
+expected to take:
 
 ```
-java scripts/ci/ShardTests.java list 2 4 > target/shard-includes.txt
+java scripts/ci/ShardTests.java list 2 6 > target/shard-includes.txt
 mvn -Dsurefire.includesFile=target/shard-includes.txt test
+java scripts/ci/ShardTests.java loads 6
+```
+
+The durations are in `scripts/ci/test-timings.txt`: the classes that take a second or more on a Linux
+runner, about 400 of 2,500, which are nine tenths of the time. A class that is not listed counts as 0.1
+seconds, so a new class needs no line and a stale file costs only balance. Each shard prints the expected
+loads (the "List this shard's test classes" step); when they have drifted from what the shards take, or
+after a slow class is split or sped up, write the file again from a green run on `master`:
+
+```
+gh run download <run-id> --pattern 'test-shard-*' --dir target/ci-reports
+java scripts/ci/ShardTests.java timings target/ci-reports/test-shard-*/surefire-reports > scripts/ci/test-timings.txt
 ```
 
 Dependencies come from the Maven cache that `actions/setup-java` restores, so a run should fetch little from
@@ -362,7 +380,7 @@ class is added), and a new test class needs a name Surefire's defaults match (`*
 `*TestCase`) or it runs nowhere.
 
 The macOS FX job is split the same way, into three shards (`list n 3`, with `-Dgroups=fx` picking the FX
-tests out of each list), and each of those runs two test JVMs on its runner (`-DforkCount=2`). On the Linux runner
+tests out of each list, which the Linux durations balance well enough), and each of those runs two test JVMs on its runner (`-DforkCount=2`). On the Linux runner
 two JVMs gained little (16:34 to 13:25), which is why it is sharded across runners instead.
 
 Sharing the cores is also what shows a test that reads the result of background work without waiting

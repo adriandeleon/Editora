@@ -187,6 +187,15 @@ public final class DapManager {
     private volatile boolean jsClientConsole;
     /** js-debug's stderr for the starting JavaScript session, for the message when it dies while starting. */
     private volatile @Nullable AdapterStderr jsAdapterStderr;
+
+    /**
+     * The {@code launch} or {@code attach} a socket adapter has not answered yet: the session it was sent for, when,
+     * and whether it opens a browser. The session is RUNNING from the moment the adapter is connected, so this is what
+     * tells a session that never started its program from one that ran and ended.
+     */
+    private record UnansweredLaunch(long epoch, long sentNanos, boolean browser) {}
+
+    private volatile @Nullable UnansweredLaunch unansweredLaunch;
     /** Condition errors js-debug already reported this session (it repeats each one per script it loads). */
     private final java.util.Set<String> reportedConditionErrors = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -3536,7 +3545,13 @@ public final class DapManager {
                 c.dispose();
                 return;
             }
+            UnansweredLaunch sent = new UnansweredLaunch(
+                    epoch, System.nanoTime(), BrowserLaunch.isBrowserType(String.valueOf(request.get("type"))));
+            unansweredLaunch = sent;
             (attach ? c.attach(request) : c.launch(request)).whenComplete((v, le) -> {
+                if (unansweredLaunch == sent) {
+                    unansweredLaunch = null; // answered, or refused: the refusal is reported below
+                }
                 if (le != null) {
                     fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
                 } else if (attach && Boolean.FALSE.equals(request.get("continueOnAttach"))) {
@@ -4513,6 +4528,7 @@ public final class DapManager {
      * the adapter had launched it). End it at once and say why the session ended.
      */
     private void onTransportClosed(long epoch) {
+        awaitWhyLaunchWasDropped(epoch);
         fx(() -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -4520,6 +4536,8 @@ public final class DapManager {
             if (terminatedEpoch == epoch) {
                 return; // the terminated event is ending it (or has ended it) already
             }
+            UnansweredLaunch pending = unansweredLaunch;
+            UnansweredLaunch unanswered = pending != null && pending.epoch() == epoch ? pending : null;
             Debuggee program = debuggee;
             ProcessHandle launched = adapterProgram;
             boolean programRunning =
@@ -4529,13 +4547,48 @@ public final class DapManager {
             if (programRunning) {
                 outputPump.flush();
                 listener.onAdapterLost();
-            } else if (state == State.STARTING && jsSession) {
+            } else if (jsSession && (state == State.STARTING || unanswered != null)) {
                 // js-debug died before the program ran: ending quietly showed "Starting…" then "Not debugging"
-                // and nothing else (review D4) — say so, with what it wrote to stderr.
-                listener.onError(tr("debug.error.jsAdapterDied") + AdapterStderr.suffix(jsAdapterStderr));
+                // and nothing else (review D4) — say so, with what it wrote to stderr. So does a launch it never
+                // answered: js-debug 1.117 closes the connection, with no error, when the browser it started has
+                // exited or is not ready within its "timeout" — the session ended with nothing said at all.
+                listener.onError((unanswered != null && unanswered.browser()
+                                ? tr(
+                                        "debug.error.browserNotReady",
+                                        TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - unanswered.sentNanos()))
+                                : tr("debug.error.jsAdapterDied"))
+                        + AdapterStderr.suffix(jsAdapterStderr));
             }
             endSession(epoch);
         });
+    }
+
+    /** How long a dropped launch waits for the adapter's reason to arrive on its standard error. */
+    private static final long DROPPED_LAUNCH_STDERR_MILLIS = 300;
+
+    /**
+     * js-debug writes why it dropped a launch ("Unable to launch browser: …") to its standard error as it closes the
+     * connection, and nothing orders the two: gives those lines a moment to arrive, so the message has them. Only for
+     * a launch still unanswered, and never on the FX thread.
+     */
+    private void awaitWhyLaunchWasDropped(long epoch) {
+        UnansweredLaunch pending = unansweredLaunch;
+        AdapterStderr stderr = jsAdapterStderr;
+        if (!jsSession
+                || pending == null
+                || pending.epoch() != epoch
+                || stderr == null
+                || Platform.isFxApplicationThread()) {
+            return;
+        }
+        long end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DROPPED_LAUNCH_STDERR_MILLIS);
+        try {
+            while (stderr.text().isEmpty() && isCurrent(epoch) && System.nanoTime() < end) {
+                Thread.sleep(20);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** Final per-window shutdown: invalidates the session, stops transports, and releases the connect worker. */
