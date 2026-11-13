@@ -60,8 +60,9 @@ class CoreDumpsTest {
 
     @Test
     void delveOpensGoCoresAndCodelldbTheRest() {
+        // A path with a space; a quote, which a Windows path cannot have, is lldbQuoted's below.
         Path program = Path.of("/srv/my app/shelf");
-        Path core = Path.of("/tmp/core \"1\"");
+        Path core = Path.of("/tmp/core 1");
         Map<String, Object> go = CoreDumps.launch(DebugLanguages.GO, program, core);
         assertEquals("core", go.get("mode"));
         assertEquals(program.toString(), go.get("program"));
@@ -70,8 +71,10 @@ class CoreDumpsTest {
 
         Map<String, Object> lldb = CoreDumps.launch(DebugLanguages.RUST, program, core);
         assertEquals(
-                List.of("target create \"/srv/my app/shelf\" --core \"/tmp/core \\\"1\\\"\""),
+                List.of("target create " + CoreDumps.lldbQuoted(program.toString()) + " --core "
+                        + CoreDumps.lldbQuoted(core.toString())),
                 lldb.get("targetCreateCommands"));
+        assertEquals("\"/tmp/core \\\"1\\\"\"", CoreDumps.lldbQuoted("/tmp/core \"1\""));
         assertEquals(List.of(), lldb.get("processCreateCommands"), "nothing is started");
         assertEquals(List.of("rust"), lldb.get("sourceLanguages"));
         assertTrue(CoreDumps.isCore(lldb));
