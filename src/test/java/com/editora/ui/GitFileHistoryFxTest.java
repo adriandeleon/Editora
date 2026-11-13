@@ -619,7 +619,10 @@ class GitFileHistoryFxTest {
             window.fileHistory(file);
             Button back = FxTestSupport.callOnFx(() -> FxTestSupport.field(window.panel, "showAllButton"));
             assertTrue(FxTestSupport.callOnFx(back::isVisible), "the ✕ of the header chip");
-            assertEquals(tr("gitlog.showAllTip"), FxTestSupport.callOnFx(back::getAccessibleText));
+            assertTrue(
+                    FxTestSupport.callOnFx(back::getAccessibleText)
+                            .startsWith(CommandTips.title("git.log.showBranchLog")),
+                    "named after its command, Git Log: Back to Branch Log");
             assertTrue(FxTestSupport.callOnFx(
                     () -> back.getParent() == ((Label) FxTestSupport.field(window.panel, "filterLabel")).getParent()));
 
@@ -647,9 +650,9 @@ class GitFileHistoryFxTest {
                 return traversable;
             });
             assertTrue(stops.size() >= 3, "all branches, refresh and the chip's ✕: " + stops);
-            // The controls no command runs are Tab stops (without a mouse there was no way to them); the
-            // all-branches toggle has its command, so like every command's toolbar button it is not one.
-            assertEquals(1, stops.stream().filter(stop -> !stop).count(), "only All Branches leaves the Tab order");
+            // Each has its command (All Branches, Refresh, Back to Branch Log), so like every command's toolbar
+            // button none is a Tab stop: the palette and a key binding reach them, and Tab is for the log.
+            assertTrue(stops.stream().noneMatch(stop -> stop), "no Git log toolbar button is a Tab stop: " + stops);
         }
     }
 }

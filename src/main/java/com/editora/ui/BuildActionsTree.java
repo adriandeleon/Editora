@@ -82,6 +82,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final Button refreshButton;
     private final Button customButton;
     private @Nullable Button secondaryButton;
+    private @Nullable String commandToolId; // whose commands the toolbar runs, once nameAfterCommands has said
 
     /** The active toggle ids — the coordinator's set for the detected root (shared with the popup, so a
      *  profile checked here is the one the popup runs with), or this view's own until one is handed in. */
@@ -311,11 +312,14 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
      * Names the Refresh, Stop and Run Custom buttons after the build tool's own commands ({@code <toolId>.refresh},
      * {@code <toolId>.stop}, {@code <toolId>.runCustom}), title and live chord. Every build tool shares this
      * tree, so its owner says whose commands the buttons run; until it does they keep their generic names.
+     * The tool-specific action, where the tool has one, is its {@code <toolId>.loadAllTasks}.
      */
     void nameAfterCommands(String toolId) {
+        commandToolId = toolId;
         CommandTips.name(refreshButton, toolId + ".refresh");
         CommandTips.name(stopButton, toolId + ".stop");
         CommandTips.name(customButton, toolId + ".runCustom");
+        nameSecondary();
     }
 
     /** Adds a tool-specific toolbar action (Gradle's "Load all tasks…"), appended to the toolbar. */
@@ -325,6 +329,24 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         }
         secondaryButton = iconButton(Icons.tools(), label, action);
         toolbar.getChildren().add(secondaryButton);
+        nameSecondary();
+    }
+
+    /** Names the tool-specific action after {@code <toolId>.loadAllTasks}: the one such action there is. */
+    private void nameSecondary() {
+        if (secondaryButton != null && commandToolId != null) {
+            CommandTips.name(secondaryButton, commandToolId + ".loadAllTasks");
+        }
+    }
+
+    /** {@code <toolId>.loadAllTasks}: presses the tool-specific toolbar action; false when the tool has none. */
+    boolean runSecondaryAction() {
+        Button button = secondaryButton;
+        if (button == null) {
+            return false;
+        }
+        button.fire();
+        return true;
     }
 
     public void setOnRun(RunHandler onRun) {

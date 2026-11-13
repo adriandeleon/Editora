@@ -118,7 +118,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         showAll.setGraphic(Icons.project());
         showAll.getStyleClass().addAll("flat", "scope-toggle");
         showAll.setFocusTraversable(false);
-        Icons.name(showAll, tr("notes.showAllTip"));
+        CommandTips.name(showAll, "notes.toggleAllProjects");
         showAll.setSelected(true);
         showAll.selectedProperty().addListener((o, w, n) -> refresh());
 
@@ -176,6 +176,11 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         // Land on the filter field so the user can type to filter immediately; Down/Enter move into / open
         // the results (see FilterFieldNav in the constructor).
         filterField.requestFocus();
+    }
+
+    /** Show Notes from All Projects — as a click on the toggle (the tree is rebuilt). */
+    void toggleAllProjects() {
+        showAll.fire();
     }
 
     /** Rebuilds the tree grouped by project (General, current, and, by default, all others). */

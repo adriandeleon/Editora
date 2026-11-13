@@ -100,20 +100,11 @@ final class ProjectMapOverviewCard extends StackPane {
             button.getStyleClass().add("project-map-preview-button");
             button.setMinWidth(Region.USE_PREF_SIZE);
         }
-        Icons.name(zoomOut, tr("project.map.overview.zoomOut"));
-        Icons.name(zoomIn, tr("project.map.overview.zoomIn"));
-        zoomOut.setOnAction(event -> {
-            setTextZoom(textZoom / 1.1);
-            onTextZoomed.accept(textZoom); // the next Overview opens at this zoom
-        });
-        zoomIn.setOnAction(event -> {
-            setTextZoom(textZoom * 1.1);
-            onTextZoomed.accept(textZoom);
-        });
+        MapButtonCommands.bind(this, zoomOut, "projectMap.cardZoomOut", () -> zoomText(false));
+        MapButtonCommands.bind(this, zoomIn, "projectMap.cardZoomIn", () -> zoomText(true));
         close.getStyleClass().add("project-map-preview-button");
         close.setMinWidth(Region.USE_PREF_SIZE);
-        Icons.name(close, tr("project.map.preview.close"));
-        close.setOnAction(event -> onClose.run());
+        MapButtonCommands.bind(this, close, "projectMap.cardClose", () -> onClose.run());
         titleBar.getStyleClass().addAll("project-map-preview-header", "project-map-overview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
         titleBar.getChildren().setAll(title, zoomOut, zoomIn, close);
@@ -261,6 +252,12 @@ final class ProjectMapOverviewCard extends StackPane {
     /** The sections' text zoom (−/+), 1.0 at {@link #TEXT_SIZE}. */
     double textZoom() {
         return textZoom;
+    }
+
+    /** The −/+ buttons, {@code projectMap.cardZoomOut} and {@code .cardZoomIn}: the text a step smaller or larger. */
+    void zoomText(boolean in) {
+        setTextZoom(in ? textZoom * 1.1 : textZoom / 1.1);
+        onTextZoomed.accept(textZoom); // the next Overview opens at this zoom
     }
 
     /**

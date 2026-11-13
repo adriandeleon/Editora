@@ -45,10 +45,10 @@ final class DebugMemoryView extends VBox {
         where.getStyleClass().addAll("debug-eval", "debug-memory-address");
         where.setOnAction(e -> onGo.accept(where.getText().strip()));
         Button back = new Button("◀");
-        Icons.name(back, tr("debugpanel.memory.previous", PAGE));
+        CommandTips.name(back, "debug.memoryPreviousPage");
         back.setOnAction(e -> page(-1));
         Button next = new Button("▶");
-        Icons.name(next, tr("debugpanel.memory.next", PAGE));
+        CommandTips.name(next, "debug.memoryNextPage");
         next.setOnAction(e -> page(1));
         for (Button b : List.of(back, next)) {
             b.getStyleClass().add("small");
@@ -77,7 +77,7 @@ final class DebugMemoryView extends VBox {
         this.onPage = onPage;
     }
 
-    /** ◀ ({@code -1}) or ▶ ({@code +1}). */
+    /** ◀ ({@code -1}, {@code debug.memoryPreviousPage}) or ▶ ({@code +1}, {@code debug.memoryNextPage}). */
     void page(int direction) {
         onPage.accept(direction);
     }

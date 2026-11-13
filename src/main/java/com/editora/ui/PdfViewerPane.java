@@ -17,7 +17,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.ScrollEvent;
@@ -78,8 +77,8 @@ public final class PdfViewerPane implements TabContent {
     private final StackPane holder = new StackPane(imageView);
     private final Label zoomLabel = new Label();
     private final Label pageLabel = new Label();
-    private final Button prevButton = symbolButton("◀", tr("pdfviewer.prevPage"), () -> showPage(this.currentPage - 1));
-    private final Button nextButton = symbolButton("▶", tr("pdfviewer.nextPage"), () -> showPage(this.currentPage + 1));
+    private final Button prevButton = barButton("◀", this::previousPage);
+    private final Button nextButton = barButton("▶", this::nextPage);
     private Node toolbar;
 
     /** Single daemon thread: loads the document + rasterizes pages (PDDocument is not thread-safe). */
@@ -139,13 +138,17 @@ public final class PdfViewerPane implements TabContent {
 
     private Node buildToolbar() {
         pageLabel.getStyleClass().add("pdf-viewer-page");
-        Button out = symbolButton("−", tr("imageviewer.zoomOut"), () -> setZoom(zoom / ZOOM_STEP));
-        Button in = symbolButton("+", tr("imageviewer.zoomIn"), () -> setZoom(zoom * ZOOM_STEP));
-        Button fit = button(tr("imageviewer.fit"), tr("imageviewer.fitTip"), this::fitToWindow);
-        Button actual = symbolButton(tr("imageviewer.actualSize"), tr("imageviewer.actualSizeTip"), () -> {
-            fitMode = false;
-            setZoom(1.0);
-        });
+        // Each button is named after the command that does the same from the keyboard, with its chord.
+        CommandTips.name(prevButton, "viewer.previousPage");
+        CommandTips.name(nextButton, "viewer.nextPage");
+        Button out =
+                CommandTips.name(barButton("−", this::zoomOut), "view.textZoomOut", () -> tr("imageviewer.zoomOut"));
+        Button in = CommandTips.name(barButton("+", this::zoomIn), "view.textZoomIn", () -> tr("imageviewer.zoomIn"));
+        Button fit = CommandTips.name(barButton(tr("imageviewer.fit"), this::fitToWindow), "viewer.fit");
+        Button actual = CommandTips.name(
+                barButton(tr("imageviewer.actualSize"), this::actualSize),
+                "view.textZoomReset",
+                () -> tr("imageviewer.actualSizeTip"));
         zoomLabel.getStyleClass().add("pdf-viewer-zoom");
         Label spacer = new Label();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -166,20 +169,6 @@ public final class PdfViewerPane implements TabContent {
         Label l = new Label("|");
         l.getStyleClass().add("pdf-viewer-sep");
         return l;
-    }
-
-    /** A button that shows a word ("Fit"), which is its name; {@code tip} says more. */
-    private Button button(String text, String tip, Runnable action) {
-        Button b = barButton(text, action);
-        b.setTooltip(new Tooltip(tip));
-        return b;
-    }
-
-    /** A button that shows a symbol and no word ("◀", "−", "1:1"): {@code name} is its tooltip and what is read out. */
-    private Button symbolButton(String symbol, String name, Runnable action) {
-        Button b = barButton(symbol, action);
-        Icons.name(b, name);
-        return b;
     }
 
     private Button barButton(String text, Runnable action) {
@@ -312,9 +301,35 @@ public final class PdfViewerPane implements TabContent {
         root.setTop(null);
     }
 
-    private void fitToWindow() {
+    /** Viewer: Fit to Window — as the Fit button. */
+    void fitToWindow() {
         fitMode = true;
         apply();
+    }
+
+    /** Zooms in one step — as the "+" button ({@code view.textZoomIn} while this viewer is the active tab). */
+    void zoomIn() {
+        setZoom(zoom * ZOOM_STEP);
+    }
+
+    /** Zooms out one step — as the "−" button ({@code view.textZoomOut}). */
+    void zoomOut() {
+        setZoom(zoom / ZOOM_STEP);
+    }
+
+    /** Shows the page at its actual size, 100% — as the "1:1" button ({@code view.textZoomReset}). */
+    void actualSize() {
+        setZoom(1.0);
+    }
+
+    /** Viewer: Previous Page — as the "◀" button; nothing on the first page. */
+    void previousPage() {
+        showPage(currentPage - 1);
+    }
+
+    /** Viewer: Next Page — as the "▶" button; nothing on the last page. */
+    void nextPage() {
+        showPage(currentPage + 1);
     }
 
     private void setZoom(double z) {

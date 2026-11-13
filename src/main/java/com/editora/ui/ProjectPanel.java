@@ -1190,6 +1190,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return mapWindow.isShowing();
     }
 
+    /** The Map's view: what the Map's button commands ({@link MapButtonCommands}) act on while {@link #isMapShowing}. */
+    ProjectMapView mapView() {
+        return mapView;
+    }
+
     /** The Map's window (for tests: its stage, its content). */
     ProjectMapWindow mapWindow() {
         return mapWindow;

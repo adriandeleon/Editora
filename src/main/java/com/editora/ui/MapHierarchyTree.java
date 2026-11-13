@@ -97,8 +97,7 @@ final class MapHierarchyTree extends MapSideColumn {
         this.kind = asked.kind();
         this.name = asked.name();
 
-        flip.setOnAction(event -> turn());
-        addHeaderButton(flip);
+        addHeaderButton(flip, "projectMap.hierarchyFlip", () -> turnText(opposite(kind)), this::turn);
         tree.getStyleClass().addAll("project-map-card-structure-tree", "project-map-hierarchy-tree");
         tree.setCellFactory(view -> new RowCell());
         tree.setAccessibleHelp(tr("project.map.hierarchy.help"));
@@ -257,8 +256,7 @@ final class MapHierarchyTree extends MapSideColumn {
 
     private void relabel() {
         setTitle(titleText(kind, rootText()), tree);
-        String other = turnText(opposite(kind));
-        Icons.name(flip, other);
+        CommandTips.refresh(flip);
     }
 
     /** The tree's title: what it lists of {@code name}. Pure. */

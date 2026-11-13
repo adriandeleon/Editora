@@ -734,16 +734,8 @@ final class ProjectMapPreview extends StackPane {
         for (Button button : java.util.List.of(zoomOut, zoomIn)) {
             button.getStyleClass().add("project-map-preview-button");
         }
-        Icons.name(zoomOut, tr("project.map.preview.zoomOut"));
-        Icons.name(zoomIn, tr("project.map.preview.zoomIn"));
-        zoomOut.setOnAction(event -> {
-            setContentZoom(contentZoom / 1.1);
-            onContentZoomed.accept(contentZoom); // the owner opens its next card at this zoom
-        });
-        zoomIn.setOnAction(event -> {
-            setContentZoom(contentZoom * 1.1);
-            onContentZoomed.accept(contentZoom);
-        });
+        MapButtonCommands.bind(this, zoomOut, "projectMap.cardZoomOut", () -> zoomContent(false));
+        MapButtonCommands.bind(this, zoomIn, "projectMap.cardZoomIn", () -> zoomContent(true));
 
         open.setText(tr("project.map.preview.open"));
         open.getStyleClass().add("project-map-preview-button");
@@ -768,7 +760,8 @@ final class ProjectMapPreview extends StackPane {
             updateStructureButton();
             onStructureToggled.accept(structure.isSelected());
         });
-        updateStructureButton();
+        MapButtonCommands.bind(this, "projectMap.cardStructure", () -> setStructureShown(!structureShown()));
+        CommandTips.name(structure, "projectMap.cardStructure", this::structureHelp);
         notes.getStyleClass().addAll("project-map-preview-button", "project-map-preview-notes");
         notes.setGraphic(Icons.notes());
         notes.setVisible(false);
@@ -788,14 +781,15 @@ final class ProjectMapPreview extends StackPane {
             updateNotesButton();
             onNotesToggled.accept(notesOn);
         });
+        MapButtonCommands.bind(this, "projectMap.cardNotes", notes::fire); // a press: nothing while it has no note
+        CommandTips.name(notes, "projectMap.cardNotes", this::notesHelp);
         close.getStyleClass().add("project-map-preview-button");
         installPinAndStepping();
         for (javafx.scene.control.Control button : java.util.List.of(
                 zoomOut, zoomIn, structure, notes, pin, previousDeclaration, nextDeclaration, open, close)) {
             button.setMinWidth(Region.USE_PREF_SIZE); // "Open" stays "Open", never "O…"
         }
-        Icons.name(close, tr("project.map.preview.close"));
-        close.setOnAction(event -> onClose.run());
+        MapButtonCommands.bind(this, close, "projectMap.cardClose", () -> onClose.run());
 
         titleBar.getStyleClass().add("project-map-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
@@ -2443,10 +2437,13 @@ final class ProjectMapPreview extends StackPane {
     }
 
     private void updateStructureButton() {
-        String help = structure.isSelected()
+        CommandTips.refresh(structure);
+    }
+
+    private String structureHelp() {
+        return structure.isSelected()
                 ? tr("project.map.preview.hideStructure")
                 : tr("project.map.preview.showStructure");
-        Icons.name(structure, help);
     }
 
     /**
@@ -2511,15 +2508,18 @@ final class ProjectMapPreview extends StackPane {
         notes.setDisable(noteCount == 0);
         notes.setSelected(notesOn && !notesSuppressed);
         notes.setText(noteCount == 0 ? "" : Integer.toString(noteCount));
-        String help = noteCount == 0
+        CommandTips.refresh(notes);
+        requestLayout(); // pressed, the button no longer gives way
+    }
+
+    private String notesHelp() {
+        return noteCount == 0
                 ? tr("project.map.preview.noNotes")
                 : notesSuppressed
                         ? tr("project.map.preview.notesHiddenByOption")
                         : notesOn
                                 ? tr("project.map.preview.hideNotes")
                                 : tr("project.map.preview.showNotes", noteCount);
-        Icons.name(notes, help);
-        requestLayout(); // pressed, the button no longer gives way
     }
 
     /**
@@ -3424,26 +3424,24 @@ final class ProjectMapPreview extends StackPane {
             updatePinButton();
             onPinned.accept(pin.isSelected());
         });
-        updatePinButton();
+        MapButtonCommands.bind(this, "projectMap.cardPin", () -> setPinned(!pinned()));
+        CommandTips.name(
+                pin,
+                "projectMap.cardPin",
+                () -> pin.isSelected() ? tr("project.map.preview.unpin") : tr("project.map.preview.pin"));
         previousDeclaration.setGraphic(Icons.chevronLeft());
         nextDeclaration.setGraphic(Icons.chevronRight());
-        String back = tr(
-                "project.map.preview.previousDeclaration", ProjectMapHelp.chord("alt", ProjectMapHelp.key("pageUp")));
-        String forward =
-                tr("project.map.preview.nextDeclaration", ProjectMapHelp.chord("alt", ProjectMapHelp.key("pageDown")));
-        Icons.name(previousDeclaration, back);
-        Icons.name(nextDeclaration, forward);
         for (Button button : java.util.List.of(previousDeclaration, nextDeclaration)) {
             button.getStyleClass().addAll("project-map-preview-button", "project-map-preview-step");
         }
-        previousDeclaration.setOnAction(event -> stepDeclaration(-1));
-        nextDeclaration.setOnAction(event -> stepDeclaration(1));
+        MapButtonCommands.bind(
+                this, previousDeclaration, "projectMap.cardPreviousDeclaration", () -> stepDeclaration(-1));
+        MapButtonCommands.bind(this, nextDeclaration, "projectMap.cardNextDeclaration", () -> stepDeclaration(1));
         updateStepButtons();
     }
 
     private void updatePinButton() {
-        String help = pin.isSelected() ? tr("project.map.preview.unpin") : tr("project.map.preview.pin");
-        Icons.name(pin, help);
+        CommandTips.refresh(pin);
         requestLayout(); // pressed, the pin no longer gives way
     }
 
@@ -4978,6 +4976,12 @@ final class ProjectMapPreview extends StackPane {
     /** The card's text zoom (−/+), 1.0 at the editor's font size: what the Map remembers of a card (B6). */
     double contentZoom() {
         return contentZoom;
+    }
+
+    /** The −/+ buttons, {@code projectMap.cardZoomOut} and {@code .cardZoomIn}: a step smaller or larger. */
+    void zoomContent(boolean in) {
+        setContentZoom(in ? contentZoom * 1.1 : contentZoom / 1.1);
+        onContentZoomed.accept(contentZoom); // the owner opens its next card at this zoom
     }
 
     /** Sets the card's text zoom, clamped to 0.5–3.0: a card brought back from the last session (B6). */

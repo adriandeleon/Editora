@@ -189,6 +189,8 @@ final class ProjectMapView extends VBox {
     private Runnable onRevealActiveFile = () -> {};
     private final Button backButton = new Button("‹");
     private final Button forwardButton = new Button("›");
+    private final Button help = new Button("?");
+    private final MenuButton options = new MenuButton();
     private final MenuItem printButton = new MenuItem(tr("project.map.print"));
     /** The options menu's list of the open cards (review 3, C10). */
     private final javafx.scene.control.Menu openCardsMenu = new javafx.scene.control.Menu(tr("project.map.openCards"));
@@ -418,8 +420,11 @@ final class ProjectMapView extends VBox {
     private HBox buildNavigation() {
         backButton.getStyleClass().add("project-map-nav-button");
         forwardButton.getStyleClass().add("project-map-nav-button");
-        Icons.name(backButton, tr("project.map.navigation.back"));
-        Icons.name(forwardButton, tr("project.map.navigation.forward"));
+        CommandTips.name(backButton, "projectMap.back");
+        CommandTips.name(forwardButton, "projectMap.forward");
+        // Out of the Tab order: each has its command, and so has the list their Menu key opens (showHistoryMenu).
+        backButton.setFocusTraversable(false);
+        forwardButton.setFocusTraversable(false);
         backButton.setMinWidth(Region.USE_PREF_SIZE);
         forwardButton.setMinWidth(Region.USE_PREF_SIZE);
         backButton.setOnAction(event -> moveHistory(-1));
@@ -439,7 +444,7 @@ final class ProjectMapView extends VBox {
         revealActiveButton.setGraphic(Icons.locateFile());
         revealActiveButton.getStyleClass().addAll("project-map-nav-button", "project-map-reveal-active");
         revealActiveButton.setMinWidth(Region.USE_PREF_SIZE);
-        // The header bar's one button that is a command: named after it with its chord, and out of the Tab order.
+        // A header bar button that is a command: named after it with its chord, and out of the Tab order.
         CommandTips.name(revealActiveButton, "projectMap.revealActiveFile");
         revealActiveButton.setFocusTraversable(false);
         revealActiveButton.setOnAction(event -> onRevealActiveFile.run());
@@ -447,17 +452,15 @@ final class ProjectMapView extends VBox {
         revealActiveItem.setOnAction(event -> onRevealActiveFile.run());
         MenuChords.tag(revealActiveItem, "projectMap.revealActiveFile");
 
-        Button help = new Button("?");
         help.getStyleClass().addAll("project-map-nav-button", "project-map-help-button");
         help.setMinWidth(Region.USE_PREF_SIZE);
-        Icons.name(help, tr("project.map.help"));
-        help.setOnAction(event -> toggleHelp(help));
+        CommandTips.name(help, "projectMap.help").setFocusTraversable(false);
+        help.setOnAction(event -> toggleHelp());
 
-        MenuButton options = new MenuButton();
         options.setGraphic(Icons.more());
         options.getStyleClass().add("project-map-options");
         options.setMinWidth(Region.USE_PREF_SIZE);
-        Icons.name(options, tr("project.map.options"));
+        CommandTips.name(options, "projectMap.options").setFocusTraversable(false);
         // Each entry carries a glyph, the check marks of the options sitting in their own column beside it.
         keepZoomOnOpen.setGraphic(Icons.keepZoom());
         focusNewColumn.setGraphic(Icons.focusNewColumn());
@@ -1418,8 +1421,13 @@ final class ProjectMapView extends VBox {
         noMatchesLabel.setVisible(true);
     }
 
-    /** The mouse and keyboard model, which nothing else on screen spells out. */
-    private void toggleHelp(Node anchor) {
+    /** {@code projectMap.options}: shows the ⋯ button's menu. */
+    void showOptions() {
+        options.show();
+    }
+
+    /** The mouse and keyboard model, which nothing else on screen spells out: the ? button, {@code projectMap.help}. */
+    void toggleHelp() {
         if (helpPopup != null && helpPopup.isShowing()) {
             helpPopup.hide();
             return;
@@ -1435,9 +1443,9 @@ final class ProjectMapView extends VBox {
             helpPopup.getContent().add(ProjectMapHelp.build());
             helpPopup.setOnHidden(event -> helpHiddenAt = System.nanoTime());
         }
-        javafx.geometry.Bounds bounds = anchor.localToScreen(anchor.getBoundsInLocal());
+        javafx.geometry.Bounds bounds = help.localToScreen(help.getBoundsInLocal());
         if (bounds != null) {
-            helpPopup.show(anchor, bounds.getMinX(), bounds.getMaxY() + UiZoom.px(4));
+            helpPopup.show(help, bounds.getMinX(), bounds.getMaxY() + UiZoom.px(4));
         }
     }
 
@@ -4699,6 +4707,16 @@ final class ProjectMapView extends VBox {
         }
         menu.show(owner, javafx.geometry.Side.BOTTOM, 0, 0);
         event.consume();
+    }
+
+    /** Shows the places the Map has been, under the Back button; false when there are none yet. */
+    boolean showHistoryMenu() {
+        ContextMenu menu = historyMenu();
+        if (menu.getItems().isEmpty()) {
+            return false;
+        }
+        menu.show(backButton, javafx.geometry.Side.BOTTOM, 0, 0);
+        return true;
     }
 
     /**
