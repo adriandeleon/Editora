@@ -4,6 +4,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
+import com.editora.terminal.RunningProgram;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -132,6 +133,7 @@ class TerminalToolWindowFxTest {
             await(() -> FxTestSupport.callOnFx(() -> terminals.panel().activeView() != null), "the shell");
             long pid = FxTestSupport.callOnFx(
                     () -> terminals.panel().activeView().getSession().pid());
+            awaitShellAtItsPrompt(terminals); // its tab is closed below
 
             FxTestSupport.runOnFx(() -> registry.run("terminal.moveToEditor"));
             TerminalEditorTab shown = FxTestSupport.callOnFx(() -> fx.controller.editorArea.selectedTab() != null
@@ -200,6 +202,7 @@ class TerminalToolWindowFxTest {
                     () -> FxTestSupport.callOnFx(
                             () -> terminals.panel().viewsForTest().size() == 1),
                     "a new shell");
+            awaitShellAtItsPrompt(terminals);
             long other = FxTestSupport.callOnFx(() ->
                     terminals.panel().viewsForTest().getFirst().getSession().pid());
             FxTestSupport.runOnFx(() -> fx.controller.onNew());
@@ -222,6 +225,34 @@ class TerminalToolWindowFxTest {
             }
             assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "shell ended");
         }
+    }
+
+    /**
+     * Waits for the one shell here to reach its prompt: it has drawn something, and the programs its start-up
+     * files run have ended. Until then the shell is "running something" ({@link RunningProgram}), and closing its
+     * tab asks first. Nobody answers that question in a test, so the close held the FX thread until the call timed
+     * out: `FX task timed out`, three tries out of three, on runners where the shell was slow to start.
+     */
+    private static void awaitShellAtItsPrompt(TerminalCoordinator terminals) throws Exception {
+        await(
+                () -> FxTestSupport.callOnFx(() -> {
+                    var views = terminals.panel().viewsForTest();
+                    if (views.size() != 1 || views.getFirst().getSession() == null) {
+                        return false;
+                    }
+                    var session = views.getFirst().getSession();
+                    var buffer = session.getTextBuffer();
+                    buffer.lock();
+                    try {
+                        if (buffer.getScreenLines().isBlank()) {
+                            return false;
+                        }
+                    } finally {
+                        buffer.unlock();
+                    }
+                    return RunningProgram.in(session.pid()).isEmpty();
+                }),
+                "the shell to reach its prompt");
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
