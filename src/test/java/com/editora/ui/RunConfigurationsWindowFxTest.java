@@ -466,4 +466,207 @@ class RunConfigurationsWindowFxTest {
         assertEquals(java.util.List.of("dev"), opened, "Deployments… opens the one chosen");
         FxTestSupport.runOnFx(stage::close);
     }
+
+    /**
+     * Add follows the file in front: with a makefile open it makes a make configuration (in the makefile's
+     * folder, the target still to type) rather than the Java one it used to make for anything that was not a
+     * script, and the caret goes to the field that type launches.
+     */
+    @Test
+    void addTakesItsTypeFromTheActiveFile(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        Path root = dir.resolve("site");
+        RunConfiguration[] blank = {
+            com.editora.run.RunConfigDefaults.blankOfType("make", root.resolve("native/Makefile"), root)
+        };
+        RunConfigurationsWindow window = FxTestSupport.callOnFx(() ->
+                new RunConfigurationsWindow(config, () -> null, () -> null, () -> blank[0], () -> root, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show(null, null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        Button add = FxTestSupport.callOnFx(() -> stage.getScene().getRoot().lookupAll(".button").stream()
+                .filter(n ->
+                        n instanceof Button b && tr("settings.runConfig.add").equals(b.getText()))
+                .map(n -> (Button) n)
+                .findFirst()
+                .orElseThrow());
+        FxTestSupport.runOnFx(add::fire);
+        FxTestSupport.drainFx();
+
+        RunConfiguration added = persisted(config, tr("settings.runConfig.newName"));
+        assertEquals("make", added.type());
+        assertEquals("native", added.workingDir());
+        @SuppressWarnings("unchecked")
+        ComboBox<String> type = (ComboBox<String>) stage.getScene().lookup("#run-config-type");
+        assertEquals("make", FxTestSupport.callOnFx(type::getValue));
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> stage.getScene().lookup("#run-config-target").isVisible()),
+                "the make target is there to fill in");
+        assertFalse(
+                FxTestSupport.callOnFx(() -> stage.getScene()
+                        .lookup("#run-config-main-class")
+                        .getParent()
+                        .isVisible()),
+                "and no Java row is");
+
+        // A second one does not collide with the first, and a file no type launches still gets a Java one.
+        FxTestSupport.runOnFx(add::fire);
+        FxTestSupport.drainFx();
+        assertEquals(
+                "make",
+                persisted(config, tr("settings.runConfig.newName") + " (2)").type());
+        blank[0] = null;
+        FxTestSupport.runOnFx(add::fire);
+        FxTestSupport.drainFx();
+        assertEquals(
+                "java",
+                persisted(config, tr("settings.runConfig.newName") + " (3)").type());
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    /**
+     * With a C file in front, Add makes a C configuration for that file — not a Java one — and its form is the
+     * rows such a configuration launches with: the source file (which Browse can pick), arguments, a folder,
+     * variables. The same holds for C++, Go and Rust; a configuration saved before these types existed is read
+     * as it was.
+     */
+    @Test
+    void addMakesAConfigurationForTheCompiledSourceFileInFront(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        RunConfiguration old = new RunConfiguration("Serve", "example.Serve", "", "--port 8080", "", "");
+        config.getWorkspaceState().setRunConfigurations(new java.util.ArrayList<>(java.util.List.of(old)));
+        Path root = dir.resolve("site");
+        String[] open = {"c", "samples/debug/c/tally.c"};
+        RunConfigurationsWindow window = FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(
+                config,
+                () -> null,
+                () -> com.editora.run.RunConfigDefaults.forScript(open[0], root.resolve(open[1]), root),
+                () -> com.editora.run.RunConfigDefaults.blankOfType(open[0], root.resolve(open[1]), root),
+                () -> root,
+                () -> {}));
+        FxTestSupport.runOnFx(() -> window.show(null, null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        Button add = FxTestSupport.callOnFx(() -> stage.getScene().getRoot().lookupAll(".button").stream()
+                .filter(n ->
+                        n instanceof Button b && tr("settings.runConfig.add").equals(b.getText()))
+                .map(n -> (Button) n)
+                .findFirst()
+                .orElseThrow());
+        FxTestSupport.runOnFx(add::fire);
+        FxTestSupport.drainFx();
+
+        RunConfiguration added = persisted(config, "tally.c");
+        assertEquals("c", added.type());
+        assertEquals(Path.of("samples", "debug", "c", "tally.c").toString(), added.target());
+        assertEquals("", added.workingDir(), "blank: where Debug File runs the program");
+        assertEquals(old, persisted(config, "Serve"), "an older configuration is untouched");
+        @SuppressWarnings("unchecked")
+        ComboBox<String> type = (ComboBox<String>) stage.getScene().lookup("#run-config-type");
+        assertEquals("c", FxTestSupport.callOnFx(type::getValue));
+        assertEquals(
+                tr("settings.runConfig.type.c"),
+                FxTestSupport.callOnFx(() -> type.getConverter().toString("c")));
+        javafx.scene.control.TextField target =
+                (javafx.scene.control.TextField) stage.getScene().lookup("#run-config-target");
+        assertTrue(FxTestSupport.callOnFx(target::isVisible), "the source file's row");
+        assertEquals(tr("settings.runConfig.targetPromptSource"), FxTestSupport.callOnFx(target::getPromptText));
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> stage.getScene().lookup("#run-config-browse").isVisible()),
+                "Browse picks the file");
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> stage.getScene().lookup("#run-config-args").isVisible()),
+                "program arguments");
+        for (String hidden : java.util.List.of(
+                "#run-config-interpreter",
+                "#run-config-interpreter-options",
+                "#run-config-module",
+                "#run-config-vm-args",
+                "#run-config-jdk")) {
+            assertFalse(
+                    FxTestSupport.callOnFx(() -> stage.getScene().lookup(hidden).isVisible()),
+                    hidden + " is no part of a C configuration");
+        }
+        assertFalse(
+                FxTestSupport.callOnFx(() -> stage.getScene()
+                        .lookup("#run-config-main-class")
+                        .getParent()
+                        .isVisible()),
+                "nor is a main class");
+
+        // The other three: each file its own type, each a row of the Type box.
+        for (String[] next : new String[][] {
+            {"cpp", "samples/debug/cpp/tally.cpp"},
+            {"go", "samples/debug/go/main.go"},
+            {"rust", "samples/debug/rust/src/main.rs"}
+        }) {
+            open[0] = next[0];
+            open[1] = next[1];
+            FxTestSupport.runOnFx(add::fire);
+            FxTestSupport.drainFx();
+            String name = Path.of(next[1]).getFileName().toString();
+            assertEquals(next[0], persisted(config, name).type(), name);
+            assertEquals(Path.of(next[1]).toString(), persisted(config, name).target());
+            assertEquals(next[0], FxTestSupport.callOnFx(type::getValue));
+            assertTrue(FxTestSupport.callOnFx(() -> type.getItems().contains(next[0])), next[0]);
+            assertFalse(
+                    FxTestSupport.callOnFx(
+                            () -> stage.getScene().lookup("#run-config-vm-args").isVisible()),
+                    next[0] + " has no VM arguments");
+        }
+
+        // The Java one from before is still a Java configuration with its Java rows.
+        FxTestSupport.runOnFx(() -> window.show("Serve", null));
+        FxTestSupport.drainFx();
+        assertEquals("java", FxTestSupport.callOnFx(type::getValue));
+        assertTrue(FxTestSupport.callOnFx(
+                () -> stage.getScene().lookup("#run-config-vm-args").isVisible()));
+        assertEquals("example.Serve", persisted(config, "Serve").mainClass());
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    /** Every type the Type box offers has a glyph of its own, and the box shows the selected type's. */
+    @Test
+    void everyTypeIsShownWithAnIcon(@TempDir Path dir) throws Exception {
+        for (String type : RunConfigurationsWindow.TYPES) {
+            String key = RunConfigurationsWindow.iconKeyFor(type);
+            assertTrue(FileIcons.iconKeys().contains(key), type + " → " + key);
+            assertFalse("generic".equals(key), type + " has no glyph of its own");
+        }
+        assertEquals("generic", RunConfigurationsWindow.iconKeyFor("from-a-newer-build"));
+        assertEquals("generic", RunConfigurationsWindow.iconKeyFor(null));
+
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(
+                        new RunConfiguration("Deploy", "shell", "deploy.sh", "", "", "", "", "", "", "", "")));
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show("Deploy", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ComboBox<String> type = (ComboBox<String>) stage.getScene().lookup("#run-config-type");
+        assertEquals(
+                RunConfigurationsWindow.TYPES, FxTestSupport.callOnFx(() -> java.util.List.copyOf(type.getItems())));
+        FxTestSupport.runOnFx(() -> {
+            stage.getScene().getRoot().applyCss();
+            stage.getScene().getRoot().layout();
+        });
+        assertEquals(
+                tr("settings.runConfig.type.shell"),
+                FxTestSupport.callOnFx(() -> type.getButtonCell().getText()));
+        javafx.scene.Node shell =
+                FxTestSupport.callOnFx(() -> type.getButtonCell().getGraphic());
+        assertTrue(shell != null, "the box shows the selected type's glyph");
+        FxTestSupport.runOnFx(() -> {
+            type.setValue("npm");
+            stage.getScene().getRoot().applyCss();
+            stage.getScene().getRoot().layout();
+        });
+        assertTrue(
+                FxTestSupport.callOnFx(() -> type.getButtonCell().getGraphic()) != shell,
+                "and changes it with the type");
+        FxTestSupport.runOnFx(stage::close);
+    }
 }

@@ -132,11 +132,7 @@ public final class NativeBuild {
             return null;
         }
         Path dir = file.toAbsolutePath().getParent();
-        String stem = name.contains(".") ? name.substring(0, name.lastIndexOf('.')) : name;
-        String hash =
-                Integer.toHexString(file.toAbsolutePath().normalize().toString().hashCode());
-        boolean windows = com.editora.Os.isWindows();
-        Path out = outputDir.resolve(stem + "-" + hash + (windows ? ".exe" : ""));
+        Path out = outputFor(file, outputDir);
         return new Plan(
                 Tool.COMPILER,
                 dir == null ? file.toAbsolutePath() : dir,
@@ -150,6 +146,33 @@ public final class NativeBuild {
                 null,
                 out,
                 name);
+    }
+
+    /**
+     * Where the program built from lone source file {@code file} goes in {@code outputDir}: named after the file and
+     * its path ({@code tally-1a2b3c}, {@code .exe} on Windows), so two files of one name do not share a program and
+     * a file built again replaces its own.
+     */
+    public static Path outputFor(Path file, Path outputDir) {
+        String name = String.valueOf(file.getFileName());
+        String stem = name.contains(".") ? name.substring(0, name.lastIndexOf('.')) : name;
+        String hash =
+                Integer.toHexString(file.toAbsolutePath().normalize().toString().hashCode());
+        return outputDir.resolve(stem + "-" + hash + (com.editora.Os.isWindows() ? ".exe" : ""));
+    }
+
+    /**
+     * The program {@code plan}'s build made for {@code file}: CMake's code model says ({@link #cmakeExecutable}),
+     * Make's folder is searched ({@link #makeExecutable}), the compiler's is its output. Null when there is none.
+     * Reads files.
+     */
+    public static @Nullable Path executable(Plan plan, Path file) {
+        Path exe = switch (plan.tool()) {
+            case CMAKE -> plan.buildDir() == null ? null : cmakeExecutable(plan.buildDir(), file);
+            case MAKE -> makeExecutable(plan.root(), file);
+            case COMPILER -> plan.output();
+        };
+        return exe != null && Files.isRegularFile(exe) ? exe : null;
     }
 
     /** Asks CMake (before it configures {@code buildDir}) to write its code model, read by {@link #cmakeExecutable}. */
@@ -307,10 +330,16 @@ public final class NativeBuild {
      * ({@code terminal}, with its input).
      */
     public static Map<String, Object> launch(Path program, List<String> args, Path cwd, boolean terminal) {
+        return launch(program, args, cwd, Map.of(), terminal);
+    }
+
+    /** As {@link #launch(Path, List, Path, boolean)}, with {@code env} added to the program's environment. */
+    public static Map<String, Object> launch(
+            Path program, List<String> args, Path cwd, Map<String, String> env, boolean terminal) {
         Map<String, Object> extra = new LinkedHashMap<>();
         extra.put("sourceLanguages", List.of("cpp"));
         extra.put("terminal", terminal ? "integrated" : "console");
-        return ExternalAdapter.launchRequest("lldb", program.toString(), args, cwd.toString(), Map.of(), false, extra);
+        return ExternalAdapter.launchRequest("lldb", program.toString(), args, cwd.toString(), env, false, extra);
     }
 
     /**
@@ -318,12 +347,20 @@ public final class NativeBuild {
      * (C and C++'s debugger set to GDB). Its output comes as the adapter's output events.
      */
     public static Map<String, Object> gdbLaunch(Path program, List<String> args, Path cwd) {
+        return gdbLaunch(program, args, cwd, Map.of());
+    }
+
+    /** As {@link #gdbLaunch(Path, List, Path)}, with {@code env} added to the program's environment. */
+    public static Map<String, Object> gdbLaunch(Path program, List<String> args, Path cwd, Map<String, String> env) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "gdb");
         m.put("request", "launch");
         m.put("program", program.toString());
         m.put("args", List.copyOf(args));
         m.put("cwd", cwd.toString());
+        if (!env.isEmpty()) {
+            m.put("env", Map.copyOf(env));
+        }
         return m;
     }
 

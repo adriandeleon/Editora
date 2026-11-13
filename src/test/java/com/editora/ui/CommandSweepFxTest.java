@@ -201,8 +201,12 @@ class CommandSweepFxTest {
     /** The printer-job supplier every window of the sweep gets: there is no printer, so there is no job. */
     private static final Supplier<PrintPreview.Job> NO_PRINTER = () -> null;
 
-    /** What each state's sweep saw, for the cross-state checks of {@link #theListsNameRegisteredCommands}. */
-    private static final Map<State, Sweep> RESULTS = new EnumMap<>(State.class);
+    /**
+     * The commands that reached a native chooser in each state's sweep, for the cross-state check of
+     * {@link #theListsNameRegisteredCommands}. Only the ids: a {@link Sweep} holds its window, and kept here
+     * each state's window (some 180 MB of it) stayed in memory for the rest of the JVM.
+     */
+    private static final Map<State, Set<String>> REACHED_CHOOSER = new EnumMap<>(State.class);
 
     @BeforeAll
     static void boot() throws Exception {
@@ -221,7 +225,7 @@ class CommandSweepFxTest {
             sweep.problems.addAll(outside.violations(sweep));
         }
         sweep.problems.addAll(stillRunning(before));
-        RESULTS.put(state, sweep);
+        REACHED_CHOOSER.put(state, Set.copyOf(sweep.reachedChooser));
         assertEquals(
                 sweep.registered - EXCLUDED.size(),
                 sweep.ran,
@@ -259,9 +263,9 @@ class CommandSweepFxTest {
         assertEquals(List.of(), stale);
 
         // The second half needs every state's sweep; run alone, this method has none to look at.
-        assumeTrue(RESULTS.keySet().containsAll(List.of(State.values())), "the sweeps did not all run");
+        assumeTrue(REACHED_CHOOSER.keySet().containsAll(List.of(State.values())), "the sweeps did not all run");
         Set<String> reached = new LinkedHashSet<>();
-        RESULTS.values().forEach(sweep -> reached.addAll(sweep.reachedChooser));
+        REACHED_CHOOSER.values().forEach(reached::addAll);
         List<String> never = NATIVE_CHOOSER.stream()
                 .filter(id -> !reached.contains(id))
                 .sorted()

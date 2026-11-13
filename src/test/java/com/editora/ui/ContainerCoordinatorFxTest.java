@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +50,9 @@ class ContainerCoordinatorFxTest {
     private final AtomicInteger changes = new AtomicInteger();
     private final AtomicInteger asked = new AtomicInteger();
     private final List<String> status = new CopyOnWriteArrayList<>();
+    /** The threads the coordinator is asking the engine on. */
+    private final List<Thread> asking = new CopyOnWriteArrayList<>();
+
     private boolean answer;
     private ContainerCoordinator coordinator;
 
@@ -119,6 +123,8 @@ class ContainerCoordinatorFxTest {
                 return engine;
             }
         };
+        coordinator.background =
+                task -> asking.add(Thread.ofVirtual().name("container-binding").start(task));
         coordinator.consent = target -> {
             asked.incrementAndGet();
             return answer;
@@ -133,12 +139,18 @@ class ContainerCoordinatorFxTest {
         ExecTargets.setRemoteEnabled(null);
     }
 
+    /**
+     * Runs {@code action} and waits for what it started to finish: each question to the engine, asked off the
+     * FX thread, and the answer it posts back. The answer is queued before the asking thread ends, so one more
+     * turn of the FX thread after the join has run it.
+     */
     private void settle(Runnable action) throws Exception {
         FxTestSupport.runOnFx(action);
-        for (int i = 0; i < 100; i++) {
-            Thread.sleep(20);
-            FxTestSupport.runOnFx(() -> {}); // the binding's answer is posted back to the FX thread
+        for (Thread lookup : List.copyOf(asking)) {
+            assertTrue(lookup.join(Duration.ofSeconds(20)), "the engine was asked and answered");
+            asking.remove(lookup);
         }
+        FxTestSupport.runOnFx(() -> {});
     }
 
     @Test

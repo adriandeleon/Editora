@@ -52,6 +52,21 @@ public final class ScriptRunCommand {
      */
     public static final String CLOJURE = "clojure";
 
+    /**
+     * A C source file: built as Debug File builds it (its CMake project, its Make project, else the file alone by
+     * {@code cc}), then the program that made is run.
+     */
+    public static final String C = "c";
+
+    /** A C++ source file: as {@link #C}, a lone file compiled by {@code c++}. */
+    public static final String CPP = "cpp";
+
+    /** A Go file: its package when it is in a module, else the file alone, built by {@code go} and run. */
+    public static final String GO = "go";
+
+    /** A Rust file of a Cargo package: Cargo builds it, and the program (or test binary) for the file is run. */
+    public static final String RUST = "rust";
+
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
@@ -63,7 +78,17 @@ public final class ScriptRunCommand {
                 || MAKE.equals(type)
                 || NPM.equals(type)
                 || NODE.equals(type)
-                || isJvmScript(type);
+                || isJvmScript(type)
+                || isCompiled(type);
+    }
+
+    /**
+     * Whether {@code type} names a source file that is built into a program first ({@link #C}, {@link #CPP},
+     * {@link #GO}, {@link #RUST}): its target is that file, and what is built for it is decided where it is
+     * launched, as Debug File decides it.
+     */
+    public static boolean isCompiled(@Nullable String type) {
+        return C.equals(type) || CPP.equals(type) || GO.equals(type) || RUST.equals(type);
     }
 
     /**
@@ -106,7 +131,12 @@ public final class ScriptRunCommand {
      * {@code make} does, so it is a valid configuration rather than an incomplete one.
      */
     public static boolean needsTarget(String type) {
-        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || NODE.equals(type) || isJvmScript(type);
+        return isPython(type)
+                || SHELL.equals(type)
+                || NPM.equals(type)
+                || NODE.equals(type)
+                || isJvmScript(type)
+                || isCompiled(type);
     }
 
     /**
@@ -190,6 +220,20 @@ public final class ScriptRunCommand {
                 }
                 // The shape only; the real Node, its flags and environment come from NodeRunPlan.
                 argv.add("node");
+                argv.add(t);
+            }
+            case C, CPP, GO, RUST -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only: what is built for the file, and the program that makes, are decided at launch.
+                argv.addAll(
+                        switch (type) {
+                            case C -> List.of("cc");
+                            case CPP -> List.of("c++");
+                            case GO -> List.of("go", "run");
+                            default -> List.of("cargo", "run");
+                        });
                 argv.add(t);
             }
             case NPM -> {

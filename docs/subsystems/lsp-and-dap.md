@@ -1150,6 +1150,25 @@ output (`beforeLaunchConsole(false)`). Restart builds again.
 The `launch` adds `sourceLanguages: ["cpp"]`. A thrown C++ exception stops it (`cpp_throw`, on by default as
 CodeLLDB has it, sent as the profile's default: see **External adapters**).
 
+**Run configurations for C, C++, Go and Rust.** The types `c`, `cpp`, `go` and `rust`
+(`ScriptRunCommand.isCompiled`) name a source file, resolved like a script's (`RunConfigWorkingDirectory.script`).
+What is built for it is decided at launch, by the code F5 uses:
+- **Debug.** `DebugCoordinator.debugCompiledConfig` runs the configuration's before-launch step, then calls
+  `debugNative`, `debugGo` or `debugRust`, the same methods Debug File reaches. `LaunchExtras` carries what the
+  configuration adds: its variables for the program's environment, its working directory (null when blank: the
+  folder F5 uses) and whether a step of its own has already written to the Debug console. No caret picks a test,
+  so a Go or Rust test file debugs all its tests. A Go launch in another folder sends Delve `dlvCwd`, the package's
+  folder, since Delve builds from its own working directory.
+- **Run.** There was no Run for these languages. `RunCoordinator.runCompiledConfig` builds in the Run console
+  (`NativeBuild.plan`'s steps; `GoLaunch.buildArgv`: `go build -o`, or `go test -c` for a test file; Cargo's
+  `RustLaunch.Plan`), finds the program off the FX thread (`NativeBuild.executable`, the Go output, Cargo's JSON
+  messages through `RustLaunch.pick`) and streams it. A lone C, C++ or Go file's program goes to
+  `<config>/cache/native-run/<stem>-<hash>`. Rerun builds again. Stop during the search starts nothing.
+- The configuration's variables go to the program, not to the build. The trust questions are F5's: the Go and
+  Cargo build tools' (`Ops.buildExecutable`), and the folder's for CMake and Make (`Ops.trustBuild`).
+- Both paths refuse a file that runs elsewhere (a remote host, a container, WSL, a deployment): the program is built
+  into this machine's cache.
+
 **Attach to Process: native programs.** On Linux `LocalProcesses` lists a program built with debug information
 (`ProgramFiles.kind`: `.debug_info` and no Go section). It's listed as Rust when rustc's `.debug_gdb_scripts` or
 `.rustc` is there, else as native. CodeLLDB attaches by `pid` with that language's `sourceLanguages`

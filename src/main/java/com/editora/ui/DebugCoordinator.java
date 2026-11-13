@@ -4597,6 +4597,21 @@ final class DebugCoordinator {
      * builds it with the {@code go} the Go build tool runs, after the module's trust as a Go task asks it.
      */
     private void debugGoFile(EditorBuffer b, Path path, List<String> args) {
+        debugGo(path, b.getContent(), caretLine(b), args, LaunchExtras.NONE);
+    }
+
+    /**
+     * What a run configuration adds to a file's launch: variables for the program's environment, the folder it runs
+     * in (null: where Debug File runs it), and whether a before-launch step of its own has already written to the
+     * Debug console, which the build's output then follows instead of replacing.
+     */
+    private record LaunchExtras(
+            java.util.Map<String, String> env, @Nullable Path cwd, boolean afterStep) {
+        static final LaunchExtras NONE = new LaunchExtras(java.util.Map.of(), null, false);
+    }
+
+    /** {@link #debugGoFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
+    private void debugGo(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
         Path module = com.editora.dap.GoLaunch.moduleRoot(path);
         List<String> go = module != null
                 ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
@@ -4605,10 +4620,8 @@ final class DebugCoordinator {
         if (go == null) {
             return; // the module was not trusted: nothing is built
         }
-        int caret = caretLine(b);
-        String text = b.getContent();
-        java.util.Map<String, Object> launch =
-                com.editora.dap.GoLaunch.launch(path, text, caret, module != null, args, java.util.Map.of(), false);
+        java.util.Map<String, Object> launch = com.editora.dap.GoLaunch.launch(
+                path, text, caret, module != null, args, extras.env(), false, extras.cwd());
         nameSession(com.editora.dap.GoLaunch.sessionName(path, text, caret));
         dap().setExternalPathDirs("go", goToolDirs(go));
         Path built = module != null ? module : path.toAbsolutePath().getParent();
@@ -4647,6 +4660,11 @@ final class DebugCoordinator {
      * which executable to launch.
      */
     private void debugRustFile(EditorBuffer b, Path path, List<String> args) {
+        debugRust(path, b.getContent(), caretLine(b), args, LaunchExtras.NONE);
+    }
+
+    /** {@link #debugRustFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
+    private void debugRust(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
         Path root = com.editora.dap.RustLaunch.packageRoot(path);
         if (root == null) {
             host.setStatus(tr("status.debug.rustNoPackage", path.getFileName()));
@@ -4659,11 +4677,11 @@ final class DebugCoordinator {
         boolean hasProgram =
                 java.nio.file.Files.isRegularFile(root.resolve("src").resolve("main.rs"))
                         || java.nio.file.Files.isDirectory(root.resolve("src").resolve("bin"));
-        com.editora.dap.RustLaunch.Plan plan =
-                com.editora.dap.RustLaunch.plan(root, path, b.getContent(), caretLine(b), hasProgram);
+        com.editora.dap.RustLaunch.Plan plan = com.editora.dap.RustLaunch.plan(root, path, text, caret, hasProgram);
         nameSession(plan.sessionName());
-        s().relaunch = () -> startRust(path, root, cargo, plan, args); // the same test again, wherever the caret is now
-        startRust(path, root, cargo, plan, args);
+        // the same test again, wherever the caret is now
+        s().relaunch = () -> startRust(path, root, cargo, plan, args, extras);
+        startRust(path, root, cargo, plan, args, extras);
     }
 
     /**
@@ -4672,7 +4690,12 @@ final class DebugCoordinator {
      * launches the one for {@code path} on CodeLLDB.
      */
     private void startRust(
-            Path path, Path root, List<String> cargo, com.editora.dap.RustLaunch.Plan plan, List<String> args) {
+            Path path,
+            Path root,
+            List<String> cargo,
+            com.editora.dap.RustLaunch.Plan plan,
+            List<String> args,
+            LaunchExtras extras) {
         saveBuffersUnder(root, "rust");
         if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
@@ -4690,10 +4713,12 @@ final class DebugCoordinator {
                                 String.valueOf(path.getFileName()), build, "status.run.cargoBuild"),
                         root,
                         java.util.Map.of(),
-                        beforeLaunchConsole(),
+                        beforeLaunchConsole(!extras.afterStep()),
                         () -> startOffFx("editora-cargo-artifacts", session -> () -> {
                             var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, CARGO_LIST_TIMEOUT);
-                            laterIn(session, () -> launchRustArtifact(path, root, plan, args, terminal, listed));
+                            laterIn(
+                                    session,
+                                    () -> launchRustArtifact(path, root, plan, args, terminal, listed, extras));
                         }));
         updateDebugAvailability();
     }
@@ -4708,7 +4733,8 @@ final class DebugCoordinator {
             com.editora.dap.RustLaunch.Plan plan,
             List<String> args,
             boolean terminal,
-            com.editora.process.ProcessRunner.Result listed) {
+            com.editora.process.ProcessRunner.Result listed,
+            LaunchExtras extras) {
         if (!listed.ok()) {
             String why = listed.err().strip();
             host.setStatus(tr(
@@ -4727,7 +4753,12 @@ final class DebugCoordinator {
         List<String> programArgs = new java.util.ArrayList<>(plan.testArgs());
         programArgs.addAll(args);
         java.util.Map<String, Object> launch = com.editora.dap.RustLaunch.launch(
-                artifact.executable(), programArgs, root, java.util.Map.of(), false, terminal);
+                artifact.executable(),
+                programArgs,
+                extras.cwd() != null ? extras.cwd() : root,
+                extras.env(),
+                false,
+                terminal);
         ops.openToolWindow();
         withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.RUST, launch));
     }
@@ -4738,10 +4769,15 @@ final class DebugCoordinator {
      * compiler — then the executable that made is launched ({@link com.editora.dap.NativeBuild}).
      */
     private void debugNativeFile(EditorBuffer b, Path path, List<String> args) {
+        debugNative(path, "cpp".equals(b.getLanguage()), args, LaunchExtras.NONE);
+    }
+
+    /** {@link #debugNativeFile} for {@code path}, a lone file compiled as C++ ({@code cpp}) or as C. */
+    private void debugNative(Path path, boolean cpp, List<String> args, LaunchExtras extras) {
         Path cmake = com.editora.dap.NativeBuild.cmakeRoot(path);
         Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(path) : null;
         com.editora.dap.NativeBuild.Plan plan =
-                com.editora.dap.NativeBuild.plan(path, "cpp".equals(b.getLanguage()), cmake, make, nativeOutputDir());
+                com.editora.dap.NativeBuild.plan(path, cpp, cmake, make, nativeOutputDir());
         if (plan == null) {
             host.setStatus(tr("status.debug.nativeHeaderAlone", path.getFileName()));
             return;
@@ -4756,8 +4792,8 @@ final class DebugCoordinator {
             }
         }
         nameSession(plan.sessionName());
-        s().relaunch = () -> startNative(path, plan, args);
-        startNative(path, plan, args);
+        s().relaunch = () -> startNative(path, plan, args, extras);
+        startNative(path, plan, args, extras);
     }
 
     /** Where a lone C or C++ file's program is compiled to: the config folder's cache, else the temporary folder. */
@@ -4769,7 +4805,7 @@ final class DebugCoordinator {
     }
 
     /** Saves the project's C and C++ files, runs {@code plan}'s build steps in the Debug console, then launches. */
-    private void startNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args) {
+    private void startNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args, LaunchExtras extras) {
         saveBuffersUnder(plan.root(), "c");
         saveBuffersUnder(plan.root(), "cpp");
         if (beforeLaunchActive() || s().pendingBuild != null) {
@@ -4788,12 +4824,16 @@ final class DebugCoordinator {
             return;
         }
         boolean terminal = host.settings().isDebugProgramConsole();
-        runNativeSteps(path, plan, 0, () -> launchNative(path, plan, args, terminal));
+        runNativeSteps(path, plan, 0, !extras.afterStep(), () -> launchNative(path, plan, args, terminal, extras));
         updateDebugAvailability();
     }
 
-    /** Runs {@code plan}'s build step {@code index} and those after it, then {@code then}; a failed one ends it. */
-    private void runNativeSteps(Path path, com.editora.dap.NativeBuild.Plan plan, int index, Runnable then) {
+    /**
+     * Runs {@code plan}'s build step {@code index} and those after it, then {@code then}; a failed one ends it. The
+     * first one starts the Debug console afresh when {@code fresh}.
+     */
+    private void runNativeSteps(
+            Path path, com.editora.dap.NativeBuild.Plan plan, int index, boolean fresh, Runnable then) {
         if (index >= plan.steps().size()) {
             then.run();
             return;
@@ -4805,30 +4845,30 @@ final class DebugCoordinator {
                                 String.valueOf(path.getFileName()), plan.steps().get(index), "status.run.nativeBuild"),
                         plan.root(),
                         java.util.Map.of(),
-                        beforeLaunchConsole(index == 0),
+                        beforeLaunchConsole(fresh && index == 0),
                         // after the step has ended: the next one is not refused as "still running"
-                        () -> later(() -> runNativeSteps(path, plan, index + 1, then)));
+                        () -> later(() -> runNativeSteps(path, plan, index + 1, fresh, then)));
     }
 
     /** Finds the executable {@code plan} built (off the FX thread) and launches it, or says there is none. */
-    private void launchNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args, boolean terminal) {
+    private void launchNative(
+            Path path,
+            com.editora.dap.NativeBuild.Plan plan,
+            List<String> args,
+            boolean terminal,
+            LaunchExtras extras) {
         startOffFx("editora-native-executable", session -> () -> {
-            Path exe = switch (plan.tool()) {
-                case CMAKE ->
-                    plan.buildDir() == null ? null : com.editora.dap.NativeBuild.cmakeExecutable(plan.buildDir(), path);
-                case MAKE -> com.editora.dap.NativeBuild.makeExecutable(plan.root(), path);
-                case COMPILER -> plan.output();
-            };
-            boolean there = exe != null && java.nio.file.Files.isRegularFile(exe);
+            Path exe = com.editora.dap.NativeBuild.executable(plan, path);
             laterIn(session, () -> {
-                if (!there || exe == null) {
+                if (exe == null) {
                     host.setStatus(tr("status.debug.nativeNoProgram", path.getFileName()));
                     return;
                 }
                 boolean gdb = gdbForCpp();
+                Path cwd = extras.cwd() != null ? extras.cwd() : plan.root();
                 java.util.Map<String, Object> launch = gdb
-                        ? com.editora.dap.NativeBuild.gdbLaunch(exe, args, plan.root())
-                        : com.editora.dap.NativeBuild.launch(exe, args, plan.root(), terminal);
+                        ? com.editora.dap.NativeBuild.gdbLaunch(exe, args, cwd, extras.env())
+                        : com.editora.dap.NativeBuild.launch(exe, args, cwd, extras.env(), terminal);
                 com.editora.dap.DebugLanguage profile =
                         gdb ? com.editora.dap.DebugLanguages.GDB : com.editora.dap.DebugLanguages.CPP;
                 ops.openToolWindow();
@@ -5637,7 +5677,8 @@ final class DebugCoordinator {
      * Debugs a saved {@link RunConfiguration} — its main class, program args, VM args, environment and
      * working directory, and its before-launch step.
      *
-     * <p>Java, Groovy, Clojure and Scala: the other script types run but do not debug yet.
+     * <p>Java, Groovy, Kotlin, Clojure, Scala, Node.js and npm, and C, C++, Go and Rust: the other script types run
+     * but do not debug yet.
      */
     void debugConfig(RunConfiguration cfg) {
         if (cfg.isDeployed()) {
@@ -5651,6 +5692,10 @@ final class DebugCoordinator {
         if (com.editora.run.ScriptRunCommand.NODE.equals(cfg.type())
                 || com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
             debugNodeConfig(cfg); // planned as Run plans it (NodeRunPlan / the package manager)
+            return;
+        }
+        if (com.editora.run.ScriptRunCommand.isCompiled(cfg.type())) {
+            debugCompiledConfig(cfg); // built and launched as Debug File does its source file
             return;
         }
         if (!cfg.isJava()) {
@@ -5931,6 +5976,114 @@ final class DebugCoordinator {
                                 withClosedBreakpoints(() -> dap().startJvmScript(script, cfg.type(), folder));
                             }
                         });
+    }
+
+    /**
+     * Debugs a C, C++, Go or Rust configuration: its source file exactly as Debug File debugs it — a C or C++ file's
+     * CMake or Make project built, or the file alone compiled, and the program on CodeLLDB (or GDB); a Go file's
+     * package, or the file alone, on Delve; a Rust file's Cargo package built and its program on CodeLLDB — with the
+     * configuration's arguments, its variables in the program's environment, its working directory when it names
+     * one (blank: where Debug File runs the program), after its before-launch step. No caret picks a test: a Go or
+     * Rust test file debugs all its tests. On this machine only.
+     */
+    private void debugCompiledConfig(RunConfiguration cfg) {
+        List<String> args = debugArgs(cfg.args());
+        if (args == null) {
+            return;
+        }
+        Path root = ops.projectRoot();
+        Path cwd = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
+        Path source = cwd == null ? null : com.editora.run.RunConfigWorkingDirectory.script(cfg, root, cwd);
+        if (cwd == null || source == null) {
+            host.setStatus(tr("status.run.configNeedsTarget", cfg.name()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (!com.editora.process.ExecTargets.runsHere(source)) {
+            host.setStatus(tr("debug.error.remoteLanguage"));
+            return;
+        }
+        if (!java.nio.file.Files.isRegularFile(source)) {
+            host.setStatus(tr("status.run.scriptMissing", cfg.name(), source.toString()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        boolean ownDir = !cfg.workingDir().isBlank();
+        if (ownDir && !java.nio.file.Files.isDirectory(cwd)) {
+            host.setStatus(tr("status.run.workingDirMissing", cfg.name(), cwd.toString()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        // C and C++ share one adapter (CodeLLDB, or GDB), registered as C++'s.
+        String type = cfg.type();
+        boolean nativeCode =
+                com.editora.run.ScriptRunCommand.C.equals(type) || com.editora.run.ScriptRunCommand.CPP.equals(type);
+        String language = nativeCode ? "cpp" : type;
+        if (!debugEffectiveFor(language, source)) {
+            host.setStatus(unavailableMessage(language, source));
+            return;
+        }
+        java.util.Map<String, String> env;
+        try {
+            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false), cwd);
+        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        } catch (com.editora.run.EnvVars.EnvFileException e) {
+            host.setStatus(
+                    tr("status.run.envFileUnreadable", cfg.name(), e.file().toString()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (beforeLaunchActive() || s().pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        String name = cfg.name();
+        boolean hasStep = !cfg.beforeLaunch().isBlank();
+        LaunchExtras extras = new LaunchExtras(env, ownDir ? cwd : null, hasStep);
+        Runnable launch = () -> {
+            ops.openToolWindow();
+            s().announceStart = true;
+            if (com.editora.run.ScriptRunCommand.GO.equals(type)) {
+                debugGo(source, sourceText(source), -1, args, extras);
+            } else if (com.editora.run.ScriptRunCommand.RUST.equals(type)) {
+                debugRust(source, sourceText(source), -1, args, extras);
+            } else {
+                debugNative(source, com.editora.run.ScriptRunCommand.CPP.equals(type), args, extras);
+            }
+            nameSession(name);
+            // Restart reads the configuration again: an edit made since the first launch applies.
+            s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
+        };
+        beforeLaunch()
+                .run(
+                        host,
+                        cfg,
+                        cwd,
+                        java.util.Map.of(),
+                        beforeLaunchConsole(),
+                        // after the step has ended: the build that follows is not refused as "still running"
+                        () -> later(launch));
+    }
+
+    /** The text of {@code file}: its open tab's (edits not saved yet count), else what is on disk, else none. */
+    private String sourceText(Path file) {
+        String[] open = new String[1];
+        host.forEachBuffer(b -> {
+            if (open[0] == null && b.getPath() != null && samePath(b.getPath(), file)) {
+                open[0] = b.getContent();
+            }
+        });
+        if (open[0] != null) {
+            return open[0];
+        }
+        try {
+            return java.nio.file.Files.readString(file);
+        } catch (java.io.IOException | java.io.UncheckedIOException e) {
+            return ""; // unreadable, or not text: the launch says what it could not build
+        }
     }
 
     /**

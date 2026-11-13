@@ -61,6 +61,8 @@ public final class RunConfigurationsWindow {
     private final Supplier<String> suggestion;
     /** A Python or shell configuration for the active script, or null — what Add proposes first. */
     private final @Nullable Supplier<RunConfiguration> scriptSuggestion;
+    /** A blank configuration of the active file's type (a makefile's make, a package.json's npm), or null. */
+    private final @Nullable Supplier<RunConfiguration> typeSuggestion;
     /** The window's project root (or null): where Browse starts, and what a chosen script is relative to. */
     private final @Nullable Supplier<java.nio.file.Path> projectRoot;
 
@@ -126,9 +128,26 @@ public final class RunConfigurationsWindow {
             @Nullable Supplier<RunConfiguration> scriptSuggestion,
             @Nullable Supplier<java.nio.file.Path> projectRoot,
             Runnable onChanged) {
+        this(config, suggestion, scriptSuggestion, null, projectRoot, onChanged);
+    }
+
+    /**
+     * @param suggestion the active Java main class, or null
+     * @param scriptSuggestion a configuration for the active Python or shell script, or null
+     * @param typeSuggestion a blank configuration of the type that launches the active file, or null
+     * @param projectRoot the window's project root, or null
+     */
+    public RunConfigurationsWindow(
+            ConfigManager config,
+            Supplier<String> suggestion,
+            @Nullable Supplier<RunConfiguration> scriptSuggestion,
+            @Nullable Supplier<RunConfiguration> typeSuggestion,
+            @Nullable Supplier<java.nio.file.Path> projectRoot,
+            Runnable onChanged) {
         this.config = config;
         this.suggestion = suggestion;
         this.scriptSuggestion = scriptSuggestion;
+        this.typeSuggestion = typeSuggestion;
         this.projectRoot = projectRoot;
         this.onChanged = onChanged == null ? () -> {} : onChanged;
     }
@@ -172,18 +191,7 @@ public final class RunConfigurationsWindow {
         });
 
         TextField name = new TextField();
-        ComboBox<String> type = new ComboBox<>(FXCollections.observableArrayList(
-                "java",
-                "python",
-                "python-module",
-                "node",
-                "shell",
-                "groovy",
-                "kotlin",
-                "clojure",
-                "scala",
-                "make",
-                "npm"));
+        ComboBox<String> type = new ComboBox<>(FXCollections.observableArrayList(TYPES));
         type.setConverter(new StringConverter<>() {
             @Override
             public String toString(String value) {
@@ -195,6 +203,9 @@ public final class RunConfigurationsWindow {
                 return value;
             }
         });
+        // Each type under the glyph its files carry in the tabs and the Project tree.
+        type.setCellFactory(lv -> new TypeCell());
+        type.setButtonCell(new TypeCell());
         TextField target = field("settings.runConfig.targetPrompt");
         TextField interpreter = field("settings.runConfig.interpreterPrompt");
         TextField interpreterOptions = field("settings.runConfig.interpreterOptionsPrompt");
@@ -243,7 +254,7 @@ public final class RunConfigurationsWindow {
         UiZoom.gaps(form, 8, 8);
         formRow(form, 0, "settings.runConfig.name", name);
         formRow(form, 1, "settings.runConfig.type", type);
-        // A script's path can be picked rather than typed (Python and shell only: make and npm name targets).
+        // A script's or source file's path can be picked rather than typed (make and npm name targets).
         Button browse = new Button(tr("settings.runConfig.browse"));
         browse.setId("run-config-browse");
         browse.setMinWidth(Region.USE_PREF_SIZE);
@@ -467,13 +478,23 @@ public final class RunConfigurationsWindow {
             // was open, and focus Main class for a .sh.
             RunConfiguration script = scriptSuggestion == null ? null : scriptSuggestion.get();
             String suggested = script != null || suggestion == null ? null : suggestion.get();
+            // Then the active file's type alone: a makefile is a make configuration whose target is still to
+            // be typed, not a Java one.
+            RunConfiguration blank =
+                    script != null || suggested != null || typeSuggestion == null ? null : typeSuggestion.get();
             RunConfiguration value = script != null
                     ? RunConfigDefaults.uniquelyNamed(script, taken)
-                    : RunConfigDefaults.newConfiguration(suggested, taken, tr("settings.runConfig.newName"));
+                    : blank != null
+                            ? RunConfigDefaults.uniquelyNamed(blank.withName(tr("settings.runConfig.newName")), taken)
+                            : RunConfigDefaults.newConfiguration(suggested, taken, tr("settings.runConfig.newName"));
             items.add(value);
             persist();
             list.getSelectionModel().select(value);
-            Platform.runLater(() -> (script != null ? args : suggested == null ? mainClass : name).requestFocus());
+            // The first field still to fill in: nothing of a script's, else what the type launches.
+            TextField first = script != null
+                    ? args
+                    : suggested != null ? name : RunConfigFields.usesTarget(value.type()) ? target : mainClass;
+            Platform.runLater(first::requestFocus);
         });
         Button remove = new Button(tr("settings.runConfig.remove"));
         remove.disableProperty()
@@ -551,6 +572,66 @@ public final class RunConfigurationsWindow {
         }
         stage.sizeToScene();
         return size;
+    }
+
+    /** The types the Type box offers, in its order. */
+    static final List<String> TYPES = List.of(
+            "java",
+            "python",
+            "python-module",
+            "node",
+            "shell",
+            "groovy",
+            "kotlin",
+            "clojure",
+            "scala",
+            "c",
+            "cpp",
+            "go",
+            "rust",
+            "make",
+            "npm");
+
+    /**
+     * The {@link FileIcons} glyph a configuration type is shown with: the one its files carry (a makefile's for
+     * make, {@code package.json}'s for npm), so a type is recognised before its name is read. An unknown type —
+     * one a newer build wrote — gets the plain document.
+     */
+    static String iconKeyFor(@Nullable String type) {
+        return switch (type == null ? "" : type) {
+            case "java" -> "java";
+            case "groovy" -> "groovy";
+            case "kotlin" -> "kotlin";
+            case "clojure" -> "clojure";
+            case "scala" -> "scala";
+            case "npm" -> "npm";
+            case "python", "python-module" -> "python";
+            case "node" -> "javascript";
+            case "shell" -> "shell";
+            case "c" -> "c";
+            case "cpp" -> "cpp";
+            case "go" -> "go";
+            case "rust" -> "code"; // what a Rust file carries: FileIcons has no glyph of Rust's own
+            case "make" -> FileIcons.iconKeyFor("Makefile");
+            default -> "generic";
+        };
+    }
+
+    /** A row of the Type box, and the box's own face: the type's glyph, then its name. */
+    private static final class TypeCell extends ListCell<String> {
+        private @Nullable String shown;
+
+        @Override
+        protected void updateItem(String value, boolean empty) {
+            super.updateItem(value, empty);
+            String type = empty ? null : value;
+            if (java.util.Objects.equals(type, shown) && (type == null) == (getGraphic() == null)) {
+                return; // the same row again: keep its glyph rather than build another
+            }
+            shown = type;
+            setText(type == null ? null : tr("settings.runConfig.type." + type));
+            setGraphic(type == null ? null : FileIcons.forIconKey(iconKeyFor(type)));
+        }
     }
 
     private static TextField field(String promptKey) {

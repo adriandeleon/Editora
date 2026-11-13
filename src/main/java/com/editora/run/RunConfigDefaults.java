@@ -45,6 +45,10 @@ public final class RunConfigDefaults {
      * <p>The working directory is written out too — the script's own folder, the one its gutter ▶ runs it in —
      * so the saved configuration behaves exactly like ▶, and the field shows where it runs instead of a blank
      * that means something else. Blank when that folder is the project root (blank means the root).
+     *
+     * <p>A C, C++, Go or Rust source file is proposed the same way, with a blank working directory: blank is
+     * where Debug File runs its program (the file's folder, or its CMake, Make or Cargo project's), which is only
+     * known once the file's project has been looked for.
      */
     public static com.editora.config.@Nullable RunConfiguration forScript(
             String type, java.nio.file.Path script, java.nio.file.@Nullable Path projectRoot) {
@@ -52,7 +56,8 @@ public final class RunConfigDefaults {
                 || !(ScriptRunCommand.PYTHON.equals(type)
                         || ScriptRunCommand.SHELL.equals(type)
                         || ScriptRunCommand.NODE.equals(type)
-                        || ScriptRunCommand.isJvmScript(type))
+                        || ScriptRunCommand.isJvmScript(type)
+                        || ScriptRunCommand.isCompiled(type))
                 || script.getFileName() == null
                 || ScriptRunCommand.KOTLIN.equals(type)
                         && KotlinRun.shape(script.getFileName().toString()) == KotlinRun.Shape.NONE) {
@@ -70,11 +75,70 @@ public final class RunConfigDefaults {
                     ? ""
                     : root.relativize(folder).toString();
         }
-        if (ScriptRunCommand.NODE.equals(type)) {
-            workingDir = ""; // blank: the package root (nearest package.json), as the gutter ▶ runs it
+        if (ScriptRunCommand.NODE.equals(type) || ScriptRunCommand.isCompiled(type)) {
+            // Blank: the package root (nearest package.json) as the gutter ▶ runs a Node script; where Debug File
+            // runs a built program.
+            workingDir = "";
         }
         return new com.editora.config.RunConfiguration(
                 script.getFileName().toString(), type, target, "", "", "", "", workingDir, "", "", "");
+    }
+
+    /**
+     * The run configuration type that launches a file named {@code fileName} written in {@code language}, or
+     * null when no type does (a Markdown note, a C# file). {@code package.json} is npm's, a makefile is make's,
+     * and a script goes by its language — so a script with no extension, or one not saved yet, still counts —
+     * as a C, C++, Go or Rust source file does. A Gradle build script is not a Kotlin file to run.
+     */
+    public static @Nullable String typeFor(@Nullable String fileName, @Nullable String language) {
+        if (fileName != null && fileName.equalsIgnoreCase("package.json")) {
+            return ScriptRunCommand.NPM;
+        }
+        if (language == null) {
+            return null;
+        }
+        if (ScriptRunCommand.KOTLIN.equals(language)) {
+            return fileName != null && KotlinRun.shape(fileName) == KotlinRun.Shape.NONE
+                    ? null
+                    : ScriptRunCommand.KOTLIN;
+        }
+        if (NodeRunPlan.isNodeLanguage(language)) {
+            return ScriptRunCommand.NODE;
+        }
+        return switch (language) {
+            case "java" -> ScriptRunCommand.JAVA;
+            case "python" -> ScriptRunCommand.PYTHON;
+            case "shell" -> ScriptRunCommand.SHELL;
+            case "makefile" -> ScriptRunCommand.MAKE;
+            case "c" -> ScriptRunCommand.C;
+            case "cpp" -> ScriptRunCommand.CPP;
+            case "go" -> ScriptRunCommand.GO;
+            case "rust" -> ScriptRunCommand.RUST;
+            default -> ScriptRunCommand.isJvmScript(language) ? language : null;
+        };
+    }
+
+    /**
+     * An unnamed configuration of {@code type} with nothing to launch filled in: what Add starts from when the
+     * active file says which type is wanted but is not itself the thing to run — a makefile (the target is
+     * still to be chosen), a {@code package.json} (so is the script), a script that has no file yet.
+     *
+     * <p>A make or npm configuration runs in {@code file}'s folder, so that is written out as the working
+     * directory: relative to {@code projectRoot} when inside it, and blank when it is the root itself.
+     */
+    public static com.editora.config.RunConfiguration blankOfType(
+            String type, java.nio.file.@Nullable Path file, java.nio.file.@Nullable Path projectRoot) {
+        String workingDir = "";
+        java.nio.file.Path folder = file == null ? null : file.normalize().getParent();
+        if (folder != null && (ScriptRunCommand.MAKE.equals(type) || ScriptRunCommand.NPM.equals(type))) {
+            workingDir = folder.toString();
+            if (projectRoot != null
+                    && folder.getFileSystem() == projectRoot.getFileSystem()
+                    && folder.startsWith(projectRoot.normalize())) {
+                workingDir = projectRoot.normalize().relativize(folder).toString();
+            }
+        }
+        return new com.editora.config.RunConfiguration("", type, "", "", "", "", "", workingDir, "", "", "");
     }
 
     /**

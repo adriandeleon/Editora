@@ -165,6 +165,48 @@ class NativeDebugWindowFxTest {
         assertEquals(root.resolve("shelf").toString(), again.launchArgs.get("program"), "Restart builds and launches");
     }
 
+    /**
+     * A C run configuration debugs its source file as F5 does (the Make project built, the program it made on
+     * CodeLLDB) after its own before-launch step, with its arguments and variables, in its own folder; the session
+     * is the configuration's. A configuration whose file is gone starts nothing and says which.
+     */
+    @Test
+    void aCConfigurationDebugsItsFileWithItsArgumentsVariablesAndFolder() throws Exception {
+        Path data = Files.createDirectories(root.resolve("data"));
+        Path stepRan = root.resolve("step.ran");
+        var cfg = new com.editora.config.RunConfiguration(
+                "Shelf",
+                "c",
+                root.resolve("shelf.c").toString(),
+                "",
+                "",
+                "3 'two words'",
+                "",
+                data.toString(),
+                "MODE=dev",
+                "touch " + stepRan,
+                "");
+        FxTestSupport.runOnFx(() -> debug.debugConfig(cfg));
+        FakeDebugAdapter.Session session = next("launch");
+        Map<String, Object> launch = session.launchArgs;
+        assertEquals(root.resolve("shelf").toString(), launch.get("program"), "the program make built, as F5");
+        assertEquals(List.of("3", "two words"), launch.get("args"));
+        assertEquals(Map.of("MODE", "dev"), launch.get("env"));
+        assertEquals(data.toString(), launch.get("cwd"), "the configuration's folder, not the project's");
+        assertEquals(List.of("cpp"), launch.get("sourceLanguages"));
+        assertTrue(Files.exists(stepRan), "its before-launch step ran first");
+        assertEquals("Shelf", call(() -> (String) FxTestSupport.field(debug.panel(), "sessionFile")));
+        FxTestSupport.runOnFx(manager::stop);
+        await("stopped", () -> !call(manager::isActive));
+
+        var gone = new com.editora.config.RunConfiguration(
+                "Gone", "cpp", root.resolve("gone.cpp").toString(), "", "", "", "", "", "", "", "");
+        int before = adapter.sessionCount();
+        FxTestSupport.runOnFx(() -> debug.debugConfig(gone));
+        FxTestSupport.drainFx();
+        assertEquals(before, adapter.sessionCount(), "nothing is started for a file that is not there");
+    }
+
     @Test
     void aLoneHeaderSaysToOpenItsSource() throws Exception {
         Path header = Files.writeString(fx.configDir.resolve("loose.h"), "int f(void);\n");

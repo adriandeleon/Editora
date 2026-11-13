@@ -323,6 +323,7 @@ public class SettingsWindow {
 
     private java.util.function.@Nullable Supplier<String> runConfigSuggestion;
     private java.util.function.@Nullable Supplier<com.editora.config.RunConfiguration> runConfigScriptSuggestion;
+    private java.util.function.@Nullable Supplier<com.editora.config.RunConfiguration> runConfigTypeSuggestion;
     private java.util.function.@Nullable Supplier<java.nio.file.Path> runConfigProjectRoot;
     private @Nullable RunConfigurationsWindow runConfigurationsWindow;
 
@@ -559,6 +560,7 @@ public class SettingsWindow {
                     config,
                     () -> runConfigSuggestion == null ? null : runConfigSuggestion.get(),
                     () -> runConfigScriptSuggestion == null ? null : runConfigScriptSuggestion.get(),
+                    () -> runConfigTypeSuggestion == null ? null : runConfigTypeSuggestion.get(),
                     () -> runConfigProjectRoot == null ? null : runConfigProjectRoot.get(),
                     onRunConfigsChanged);
             runConfigurationsWindow.setEditDeployments(editDeployments);
@@ -597,6 +599,15 @@ public class SettingsWindow {
             java.util.function.Supplier<java.nio.file.Path> projectRoot) {
         this.runConfigScriptSuggestion = suggestion;
         this.runConfigProjectRoot = projectRoot;
+    }
+
+    /**
+     * Supplies a blank configuration of the type that launches the active file (a makefile, a
+     * {@code package.json}): what Add starts from when neither a script nor a main class is on offer.
+     */
+    public void setRunConfigTypeSuggestion(
+            java.util.function.Supplier<com.editora.config.RunConfiguration> suggestion) {
+        this.runConfigTypeSuggestion = suggestion;
     }
 
     /**
