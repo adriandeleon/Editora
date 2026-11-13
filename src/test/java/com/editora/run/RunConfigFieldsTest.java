@@ -33,6 +33,19 @@ class RunConfigFieldsTest {
         assertFalse(RunConfigFields.usesInterpreter("groovy"), "its tool is found, not configured per entry");
     }
 
+    /** A C, C++, Go or Rust configuration is a source file, arguments, a folder and variables: nothing of a JVM's. */
+    @Test
+    void aCompiledTypeTakesASourceFileAndNoInterpreterOrJvmRows() {
+        for (String type : new String[] {"c", "cpp", "go", "rust"}) {
+            assertTrue(RunConfigFields.usesTarget(type), type);
+            assertTrue(RunConfigFields.usesScriptFile(type), type + ": Browse picks the file");
+            assertTrue(RunConfigPrompts.browses(type), type);
+            assertFalse(RunConfigFields.usesInterpreter(type), type);
+            assertFalse(RunConfigFields.usesJavaFields(type), type);
+            assertFalse(RunConfigFields.usesJvmFields(type), type);
+        }
+    }
+
     @Test
     void anUnknownTypeLocksNothingAway() {
         assertTrue(RunConfigFields.usesTarget("gradle"));

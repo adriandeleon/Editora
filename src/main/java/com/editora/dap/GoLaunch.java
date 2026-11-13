@@ -100,19 +100,58 @@ public final class GoLaunch {
             List<String> args,
             Map<String, String> env,
             boolean stopOnEntry) {
+        return launch(file, text, caretLine, inModule, args, env, stopOnEntry, null);
+    }
+
+    /**
+     * As {@link #launch(Path, String, int, boolean, List, Map, boolean)}, the program running in {@code cwd} (a run
+     * configuration's working directory) rather than the file's folder when it is not null. Delve builds in the
+     * file's folder either way ({@code dlvCwd}): a package is found from inside its module.
+     */
+    public static Map<String, Object> launch(
+            Path file,
+            String text,
+            int caretLine,
+            boolean inModule,
+            List<String> args,
+            Map<String, String> env,
+            boolean stopOnEntry,
+            @Nullable Path cwd) {
         Path dir = file.toAbsolutePath().getParent();
         String folder = dir == null ? "" : dir.toString();
-        String output = debugBinary();
+        String where = cwd == null ? folder : cwd.toString();
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("output", debugBinary());
+        if (cwd != null && !folder.isEmpty()) {
+            extra.put("dlvCwd", folder);
+        }
         if (isTestFile(file)) {
             String test = testAt(text, caretLine);
             List<String> testArgs = new ArrayList<>(test == null ? List.of() : testArgs(test));
             testArgs.addAll(args);
-            return ExternalAdapter.launchRequest(
-                    "go", folder, testArgs, folder, env, stopOnEntry, Map.of("mode", "test", "output", output));
+            extra.put("mode", "test");
+            return ExternalAdapter.launchRequest("go", folder, testArgs, where, env, stopOnEntry, extra);
         }
         String program = inModule ? folder : file.toAbsolutePath().toString();
-        return ExternalAdapter.launchRequest(
-                "go", program, args, folder, env, stopOnEntry, Map.of("mode", "debug", "output", output));
+        extra.put("mode", "debug");
+        return ExternalAdapter.launchRequest("go", program, args, where, env, stopOnEntry, extra);
+    }
+
+    /**
+     * What {@code go} (its argv) is asked to build for running Go file {@code file} without a debugger, in the
+     * file's folder, into {@code output}: its package when it is in a module ({@code go build -o out .}), the file
+     * alone outside one, and for a {@code _test.go} file its package's test binary ({@code go test -c}) — the same
+     * three things {@link #launch} has Delve build.
+     */
+    public static List<String> buildArgv(List<String> go, Path file, boolean inModule, Path output) {
+        List<String> argv = new ArrayList<>(go);
+        if (isTestFile(file)) {
+            argv.addAll(List.of("test", "-c", "-o", output.toString(), "."));
+            return argv;
+        }
+        argv.addAll(List.of("build", "-o", output.toString()));
+        argv.add(inModule ? "." : String.valueOf(file.getFileName()));
+        return argv;
     }
 
     /**

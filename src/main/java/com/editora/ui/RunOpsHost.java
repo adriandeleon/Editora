@@ -205,6 +205,11 @@ final class RunOpsHost implements RunCoordinator.Ops {
     }
 
     @Override
+    public boolean trustBuild(java.nio.file.Path root, List<String> items) {
+        return DebugOpsHost.trustBuild(mc, root, items);
+    }
+
+    @Override
     public List<String> mavenToggleArgs() {
         return mc.buildCoordinators.stream()
                 .filter(c -> c.tool() == BuildTool.MAVEN)
