@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Type renderers in the debugger.** Choose how the debugger shows a value of a type, as IntelliJ's type renderers
+  and Visual Studio's natvis do: a Money object as `12.50 EUR` rather than `Money@1f3a`, and its children as the fields
+  or expressions that matter, with the debugger's own under [Raw View]. Right-click a value in Variables and choose
+  Customize Rendering…, or manage them under Settings → Debugging → Type renderers. Expressions are the debugged
+  language's, with `this` (or `self`) for the value. Renderers apply in Variables, watches, the Evaluate window and
+  hover; a watch or evaluation that calls a method or assigns is not evaluated again. Mute Type Renderers, in the
+  Variables menu, shows values as the debugger gives them. Checked with Java, Python and Go.
+
 - **Buffer: Previous.** The tab before the selected one, wrapping to the last: the other way round from
   Buffer: Next, and beside it in the Window menu. Like Next it has no key of its own until you give it one
   under Settings → Keymaps.

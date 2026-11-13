@@ -64,6 +64,7 @@ com.editora.ui.MarkObjectProbeFxTest
 com.editora.ui.BrowserDebugProbeFxTest
 com.editora.ui.DebugSmallWinsProbeFxTest
 com.editora.ui.ThreadDumpProbeFxTest
+com.editora.ui.TypeRenderersProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

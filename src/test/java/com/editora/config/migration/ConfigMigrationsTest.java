@@ -784,7 +784,10 @@ class ConfigMigrationsTest {
 
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
 
-        assertEquals(171, out.get("schemaVersion").asInt());
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt(),
+                "upgraded to the current version");
         assertEquals(mapper.readTree("""
                 {
                   "emacs" : { "file.save" : [ "C-x s" ] },

@@ -4919,6 +4919,17 @@ public final class DapManager {
                 }));
     }
 
+    /**
+     * Sets a value no container of the debugger's holds (a type renderer's child) by evaluating {@code assignTo =
+     * value} in frame {@code frameId}; {@code cb} gets the new value, a failure goes to {@link Listener#onError}.
+     */
+    public void assignValue(String name, String assignTo, String value, int frameId, Consumer<String> cb) {
+        DapClient c = client;
+        if (c != null) {
+            assign(c, name, SetValueText.assignment(assignTo, value), frameId, cb);
+        }
+    }
+
     private void assign(DapClient c, String name, String assignment, int frameId, Consumer<String> cb) {
         c.evaluateFull(assignment, frameId, "repl")
                 .thenCompose(r -> repairString(c, r))
