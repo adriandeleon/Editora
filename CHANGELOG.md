@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Type renderers in the debugger.** Choose how the debugger shows a value of a type, as IntelliJ's type renderers
+  and Visual Studio's natvis do: a Money object as `12.50 EUR` rather than `Money@1f3a`, and its children as the fields
+  or expressions that matter, with the debugger's own under [Raw View]. Right-click a value in Variables and choose
+  Customize Rendering…, or manage them under Settings → Debugging → Type renderers. Expressions are the debugged
+  language's, with `this` (or `self`) for the value. Renderers apply in Variables, watches, the Evaluate window and
+  hover; a watch or evaluation that calls a method or assigns is not evaluated again. Mute Type Renderers, in the
+  Variables menu, shows values as the debugger gives them. Checked with Java, Python and Go.
+
 - **Thread Dump in the debugger.** Debug: Thread Dump, also in the Threads view's and the call stack's menus, shows
   every thread of the program with its call stack in a window of its own, as IntelliJ's Get Thread Dump does. Threads
   whose stacks are the same are merged into one row (twenty pool workers waiting in one place read as one), a filter

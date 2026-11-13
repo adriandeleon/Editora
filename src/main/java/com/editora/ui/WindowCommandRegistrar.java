@@ -2230,6 +2230,10 @@ final class WindowCommandRegistrar {
                         "debug.toggleHex", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleHex)));
         host.registry()
                 .register(Command.of(
+                        "debug.muteRenderers",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleRenderersMuted)));
+        host.registry()
+                .register(Command.of(
                         "debug.jumpToLine",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugJumpToLine)));
         // Debugger data inspection (parity with the Debug panel's own controls).

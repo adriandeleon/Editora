@@ -157,6 +157,10 @@ final class DebugSession {
     /** The stop a recording breakpoint made, whose frame is not shown in the editor; -1 for none. */
     int quietStop = -1;
 
+    /** The type renderers at work in this session's stop (built on first use, see DebugCoordinator.rendering). */
+    @Nullable
+    TypeRendering rendering;
+
     /**
      * Thread Dump asked for a pause: the program was running, and the {@code pause} stop that comes is the dump's — the
      * dump is taken and the program goes on, without the editor being taken to it.

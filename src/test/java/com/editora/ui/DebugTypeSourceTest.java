@@ -37,6 +37,17 @@ class DebugTypeSourceTest {
                 new DebugTypeSource.TypeName("Order", ""),
                 DebugTypeSource.parse("object", "Order {id: 3}"),
                 "js-debug");
+        assertEquals(
+                new DebugTypeSource.TypeName("Money", "main"),
+                DebugTypeSource.parse("", "main.Money {Amount: 12, Currency: \"EUR\"}"),
+                "Delve's local, typed by its value");
+        assertEquals(
+                new DebugTypeSource.TypeName("Owner", "main"),
+                DebugTypeSource.parse("", "*main.Owner {Name: \"Ann\"}"),
+                "a pointer");
+        assertNull(DebugTypeSource.parse("", "map[string]int [\"a\": 1, ]"), "a map");
+        assertNull(DebugTypeSource.parse("", "[]main.Money len: 2, cap: 2, [...]"), "a slice");
+        assertNull(DebugTypeSource.parse("", "order {id: 3}"), "a lower-case word alone is not a class");
     }
 
     @Test

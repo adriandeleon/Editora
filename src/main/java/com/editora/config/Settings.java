@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 171;
+    public static final int SCHEMA_VERSION = 172;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -895,6 +895,12 @@ public class Settings {
      * after the line it stopped on.
      */
     private boolean debugStepTiming = true;
+
+    /**
+     * Type renderers: how the debugger shows a value of a type, as an expression of the value and its children as
+     * named expressions (IntelliJ's Java Type Renderers). See {@link com.editora.dap.TypeRenderer}.
+     */
+    private java.util.List<com.editora.dap.TypeRenderer> debugTypeRenderers = new java.util.ArrayList<>();
     /**
      * Java debugging: the exception classes the exception breakpoints are limited to, separated by commas
      * (e.g. {@code java.lang.IllegalStateException}); blank = every exception.
@@ -3647,6 +3653,14 @@ public class Settings {
 
     public void setDebugStepTiming(boolean debugStepTiming) {
         this.debugStepTiming = debugStepTiming;
+    }
+
+    public java.util.List<com.editora.dap.TypeRenderer> getDebugTypeRenderers() {
+        return debugTypeRenderers == null ? java.util.List.of() : debugTypeRenderers;
+    }
+
+    public void setDebugTypeRenderers(java.util.List<com.editora.dap.TypeRenderer> debugTypeRenderers) {
+        this.debugTypeRenderers = debugTypeRenderers == null ? new java.util.ArrayList<>() : debugTypeRenderers;
     }
 
     public boolean isDebugPythonSubprocesses() {

@@ -406,7 +406,10 @@ public enum ConfigSchema {
                     // v170→171: the user's key bindings, kept by chord and apart for macOS and for Windows and
                     // Linux since v81, become one set by command for every system (keyBindings, with
                     // keyBindingsMacOnly for the chords only a Mac can type). Nothing is lost.
-                    Map.entry(170, (Migration) ConfigMigrations::keyBindingsByCommand)),
+                    Map.entry(170, (Migration) ConfigMigrations::keyBindingsByCommand),
+                    // v171→172: + debugTypeRenderers ([]) — how the debugger shows a value of a type (its value and
+                    // children as expressions). Additive.
+                    Map.entry(171, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

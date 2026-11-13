@@ -29,6 +29,7 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
 import com.editora.dap.LogpointTokens;
+import com.editora.dap.TypeRenderer;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.UiZoom;
 import com.editora.editor.debug.BreakpointManager;
@@ -243,6 +244,9 @@ final class DebugCoordinator {
 
         /** Persists Mute Breakpoints (workspace state + save). */
         default void persistDebugBreakpointsMuted(boolean muted) {}
+
+        /** Saves Settings' type renderers ({@code debugTypeRenderers}). */
+        default void persistDebugTypeRenderers(List<com.editora.dap.TypeRenderer> renderers) {}
 
         /** The per-file breakpoint map ({@code breakpoints.json}); path-string → that file's breakpoints. */
         Map<String, List<Breakpoint>> breakpointMap();
@@ -2104,6 +2108,9 @@ final class DebugCoordinator {
                 }
                 if (state != DapManager.State.SUSPENDED) {
                     s().shownFrame = null;
+                    if (s().rendering != null) {
+                        s().rendering.clear(); // its references were the stop's
+                    }
                     if (show) {
                         panel().setStopReason(null);
                     }
@@ -2487,13 +2494,13 @@ final class DebugCoordinator {
 
             @Override
             public void loadChildren(int ref, Consumer<List<DapModels.VariableInfo>> cb) {
-                dap().variables(ref, cb);
+                renderedVariables(ref, null, 0, 0, cb);
             }
 
             @Override
             public void loadChildrenPage(
                     int ref, boolean indexed, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
-                dap().variables(ref, indexed ? "indexed" : "named", start, count, cb);
+                renderedVariables(ref, indexed ? "indexed" : "named", start, count, cb);
             }
 
             @Override
@@ -2503,7 +2510,7 @@ final class DebugCoordinator {
 
             @Override
             public void evaluateWatch(String expr, int frameId, Consumer<DapModels.EvalResult> cb) {
-                dap().evaluateFull(expr, frameId, "watch", cb);
+                renderedEvaluate(expr, frameId, "watch", cb);
             }
 
             @Override
@@ -2533,6 +2540,10 @@ final class DebugCoordinator {
 
             @Override
             public void setVariable(int parentRef, String name, String value, Consumer<String> cb) {
+                if (rendering().owns(parentRef)) {
+                    host.setStatus(tr("status.debug.renderedChild", name)); // no expression to assign to
+                    return;
+                }
                 dap().setVariable(parentRef, name, value, cb);
             }
 
@@ -2558,8 +2569,32 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void customizeRendering(String type, String value) {
+                DebugCoordinator.this.customizeRendering(type, value);
+            }
+
+            @Override
+            public boolean renderersMuted() {
+                return renderersMuted;
+            }
+
+            @Override
+            public void toggleRenderersMuted() {
+                DebugCoordinator.this.toggleRenderersMuted();
+            }
+
+            @Override
             public void setVariable(
                     int parentRef, String name, String value, String assignTo, int frameId, Consumer<String> cb) {
+                if (rendering().owns(parentRef)) {
+                    // A renderer's child: no container of the debugger's holds it, so its expression is assigned.
+                    if (assignTo != null && !assignTo.isBlank() && frameId >= 0) {
+                        dap().assignValue(name, assignTo, value, frameId, cb);
+                    } else {
+                        host.setStatus(tr("status.debug.renderedChild", name));
+                    }
+                    return;
+                }
                 dap().setVariable(parentRef, name, value, assignTo, frameId, cb);
             }
 
@@ -7864,6 +7899,130 @@ final class DebugCoordinator {
         buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
     }
 
+    // --- type renderers: a value of a type shown as the user's expressions say (TypeRendering) ----------
+
+    /** Mute Renderers ({@code debug.muteRenderers}): every value as the debugger shows it. For every session. */
+    private boolean renderersMuted;
+
+    /** The focused session's type renderers at work, built on first use. */
+    TypeRendering rendering() {
+        DebugSession session = s();
+        TypeRendering rendering = session.rendering;
+        if (rendering == null) {
+            rendering = new TypeRendering(
+                    () -> host.settings().getDebugTypeRenderers(),
+                    () -> session.dap.sessionLanguage(),
+                    () -> renderersMuted,
+                    (expression, frameId, cb) -> session.dap.evaluateFull(expression, frameId, "watch", cb));
+            session.rendering = rendering;
+        }
+        return rendering;
+    }
+
+    /**
+     * The children of {@code ref} as the Variables tree, the Evaluate window and the value popup show them: a rendered
+     * value's own (Editora's reference), else the debugger's — {@code filter}, {@code start} and {@code count} page
+     * them as DAP does ({@code null} and 0: all) — each with its type's renderer applied.
+     */
+    private void renderedVariables(
+            int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
+        TypeRendering rendering = rendering();
+        if (rendering.owns(ref)) {
+            rendering.children(ref, cb);
+            return;
+        }
+        int frameId = s().debugFrameId;
+        Consumer<List<DapModels.VariableInfo>> render = vars -> rendering.apply(vars, frameId, cb);
+        if (filter == null && count == 0) {
+            dap().variables(ref, render);
+        } else {
+            dap().variables(ref, filter, start, count, render);
+        }
+    }
+
+    /**
+     * Evaluates {@code expression} ({@code context}: {@code watch}, {@code hover} or {@code repl}) and renders its
+     * value when its type has a renderer — only when evaluating it again cannot change anything (no call, no
+     * assignment): the renderer's expressions are the value's expression with more after it.
+     */
+    private void renderedEvaluate(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
+        TypeRendering rendering = rendering();
+        dap().evaluateFull(expression, frameId, context, r -> {
+            TypeRenderer renderer = r == null || r.failed() || !TypeRenderers.safeToRepeat(expression)
+                    ? null
+                    : rendering.rendererFor(r.type(), r.result());
+            if (renderer == null) {
+                cb.accept(r);
+                return;
+            }
+            rendering.render(
+                    renderer,
+                    expression,
+                    frameId,
+                    r.result(),
+                    r.variablesReference(),
+                    (value, ref, named) -> cb.accept(new DapModels.EvalResult(
+                            value,
+                            ref,
+                            r.type(),
+                            ref == r.variablesReference() ? r.namedVariables() : named,
+                            ref == r.variablesReference() ? r.indexedVariables() : 0,
+                            false)));
+        });
+    }
+
+    /**
+     * Customize Rendering… (the Variables menu, IntelliJ's Customize Data Views): the renderer of the type a value has,
+     * of the session's language — a new one named after the type when there is none — in its form; saved to Settings
+     * and the values shown again.
+     */
+    void customizeRendering(String type, String value) {
+        DebugTypeSource.TypeName name = DebugTypeSource.parse(type, value);
+        if (name == null) {
+            return;
+        }
+        String language = dap().sessionLanguage();
+        List<TypeRenderer> all = new ArrayList<>();
+        host.settings().getDebugTypeRenderers().forEach(r -> all.add(r.copy()));
+        int at = TypeRenderers.indexOf(all, language, type, value);
+        TypeRenderer initial =
+                at >= 0 ? all.get(at) : new TypeRenderer(true, language, TypeRenderers.typeName(name, type), "", "");
+        (rendererEditor != null
+                        ? rendererEditor
+                        : (RendererEditor) (r0, isNew) -> TypeRendererDialog.edit(host.window(), r0, isNew))
+                .edit(initial, at < 0)
+                .ifPresent(r -> {
+                    if (at >= 0) {
+                        all.set(at, r);
+                    } else {
+                        all.add(r);
+                    }
+                    ops.persistDebugTypeRenderers(all);
+                    host.setStatus(tr("status.debug.rendererSaved", TypeRenderers.label(r)));
+                    refreshStopValues();
+                });
+    }
+
+    /** Shows the renderer form; a test answers it without a window. */
+    interface RendererEditor {
+        java.util.Optional<TypeRenderer> edit(TypeRenderer initial, boolean isNew);
+    }
+
+    /** The renderer form; null: the dialog (a test sets one that answers without a window). */
+    @Nullable
+    RendererEditor rendererEditor;
+
+    /** Mute Renderers / Unmute Renderers: the values shown again, as the debugger or the renderers give them. */
+    void toggleRenderersMuted() {
+        renderersMuted = !renderersMuted;
+        host.setStatus(tr(renderersMuted ? "status.debug.renderersMuted" : "status.debug.renderersOn"));
+        refreshStopValues();
+    }
+
+    boolean renderersMuted() {
+        return renderersMuted;
+    }
+
     /**
      * Debug: Threads — opens the Debug window on its Threads view: every thread of the program, which are suspended,
      * and Pause / Resume / Show Frames for each.
@@ -8020,6 +8179,7 @@ final class DebugCoordinator {
             return false;
         }
         dap().forgetValues(); // B205: what the program now says, not this stop's first answers
+        rendering().clear(); // the tree is fetched again, and so are the rendered values
         dap().scopes(frame.id(), scopes -> {
             panel().setScopes(scopes);
             applyInlineValues(frame, scopes);
@@ -8109,7 +8269,7 @@ final class DebugCoordinator {
 
             @Override
             public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
-                dap().evaluateFull(expression, s().debugFrameId, "repl", cb);
+                renderedEvaluate(expression, s().debugFrameId, "repl", cb);
             }
 
             @Override
@@ -8134,7 +8294,7 @@ final class DebugCoordinator {
             @Override
             public void children(
                     int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
-                dap().variables(ref, filter, start, count, cb);
+                renderedVariables(ref, filter, start, count, cb);
             }
         };
     }
@@ -9015,7 +9175,7 @@ final class DebugCoordinator {
             valuePopup = new DebugValuePopup(new DebugValuePopup.Source() {
                 @Override
                 public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
-                    dap().evaluateFull(expression, s().debugFrameId, "hover", cb);
+                    renderedEvaluate(expression, s().debugFrameId, "hover", cb);
                 }
 
                 @Override
@@ -9025,7 +9185,7 @@ final class DebugCoordinator {
                         int start,
                         int count,
                         Consumer<List<DapModels.VariableInfo>> cb) {
-                    dap().variables(ref, filter, start, count, cb);
+                    renderedVariables(ref, filter, start, count, cb);
                 }
 
                 @Override
