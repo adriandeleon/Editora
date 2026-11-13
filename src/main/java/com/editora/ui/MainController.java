@@ -434,8 +434,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /**
      * A stripe button's press: its tool window's command, when there is one. The Terminal's button stays a
-     * plain toggle, because its command gives an open terminal the keyboard before it hides it, and a click on
-     * the button of a window on screen has always hidden it.
+     * plain toggle, because its command gives an open terminal the keyboard before it hides it (a decision
+     * kept: it is what the key does in VS Code and IntelliJ), and a click on the button of a window on screen
+     * has always hidden it.
      */
     private boolean runStripeCommand(String id) {
         if ("tool.terminal".equals(id) || registry.get(id).isEmpty()) {
