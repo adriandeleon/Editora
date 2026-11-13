@@ -11,7 +11,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
@@ -113,13 +112,15 @@ public final class ImageViewerPane implements TabContent {
     }
 
     private Node buildToolbar() {
-        Button out = symbolButton("−", tr("imageviewer.zoomOut"), () -> setZoom(zoom / ZOOM_STEP));
-        Button in = symbolButton("+", tr("imageviewer.zoomIn"), () -> setZoom(zoom * ZOOM_STEP));
-        Button fit = zoomButton(tr("imageviewer.fit"), tr("imageviewer.fitTip"), this::fitToWindow);
-        Button actual = symbolButton(tr("imageviewer.actualSize"), tr("imageviewer.actualSizeTip"), () -> {
-            fitMode = false;
-            setZoom(1.0);
-        });
+        // Each button is named after the command that does the same from the keyboard, with its chord.
+        Button out =
+                CommandTips.name(barButton("−", this::zoomOut), "view.textZoomOut", () -> tr("imageviewer.zoomOut"));
+        Button in = CommandTips.name(barButton("+", this::zoomIn), "view.textZoomIn", () -> tr("imageviewer.zoomIn"));
+        Button fit = CommandTips.name(barButton(tr("imageviewer.fit"), this::fitToWindow), "viewer.fit");
+        Button actual = CommandTips.name(
+                barButton(tr("imageviewer.actualSize"), this::actualSize),
+                "view.textZoomReset",
+                () -> tr("imageviewer.actualSizeTip"));
         zoomLabel.getStyleClass().add("image-viewer-zoom");
         Label spacer = new Label();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -131,20 +132,6 @@ public final class ImageViewerPane implements TabContent {
         bar.setAlignment(Pos.CENTER_LEFT);
         UiZoom.padding(bar, 6, 10, 6, 10);
         return bar;
-    }
-
-    /** A button that shows a word ("Fit"), which is its name; {@code tip} says more. */
-    private Button zoomButton(String text, String tip, Runnable action) {
-        Button b = barButton(text, action);
-        b.setTooltip(new Tooltip(tip));
-        return b;
-    }
-
-    /** A button that shows a symbol and no word ("−", "+", "1:1"): {@code name} is its tooltip and what is read out. */
-    private Button symbolButton(String symbol, String name, Runnable action) {
-        Button b = barButton(symbol, action);
-        Icons.name(b, name);
-        return b;
     }
 
     private Button barButton(String text, Runnable action) {
@@ -240,9 +227,24 @@ public final class ImageViewerPane implements TabContent {
     }
 
     /** Fits the image to the current viewport (or natural size if that's smaller); leaves fit mode on. */
-    private void fitToWindow() {
+    void fitToWindow() {
         fitMode = true;
         apply();
+    }
+
+    /** Zooms in one step — as the "+" button ({@code view.textZoomIn} while this viewer is the active tab). */
+    void zoomIn() {
+        setZoom(zoom * ZOOM_STEP);
+    }
+
+    /** Zooms out one step — as the "−" button ({@code view.textZoomOut}). */
+    void zoomOut() {
+        setZoom(zoom / ZOOM_STEP);
+    }
+
+    /** Shows the picture at its actual size, 100% — as the "1:1" button ({@code view.textZoomReset}). */
+    void actualSize() {
+        setZoom(1.0);
     }
 
     private void setZoom(double z) {

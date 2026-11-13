@@ -658,6 +658,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             projectPanel.setActiveFile(selected == null ? null : selected.getPath());
         }
         windowCommands.registerCommands();
+        // The commands behind buttons that only the mouse reached, each area's in a class of its own.
+        MapButtonCommands.register(this);
+        DiffGitButtonCommands.register(this);
+        DebugBuildTestButtonCommands.register(this);
+        PanelViewerButtonCommands.register(this);
         recovery.registerCommands(registry);
         setupToolbar();
         runConfigurations.refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set
@@ -5243,6 +5248,10 @@ public class MainController implements com.editora.mcp.McpBridge {
      * (not shown in the Settings window) and reflected in the status bar.
      */
     public void textZoom(int direction) {
+        // The content zoom zooms whatever the active tab shows: an image or a PDF has a zoom of its own.
+        if (PanelViewerButtonCommands.zoomViewer(this, direction)) {
+            return;
+        }
         Settings s = config.getSettings();
         double z = s.getFontZoom();
         if (direction > 0) {

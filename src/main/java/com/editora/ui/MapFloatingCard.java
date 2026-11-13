@@ -19,8 +19,6 @@ import javafx.scene.transform.Scale;
 
 import com.editora.editor.UiZoom;
 
-import static com.editora.i18n.Messages.tr;
-
 /**
  * A card of the Project Map there is one of at a time — the History card (gap 12), the Dependencies card (gap 14):
  * a code card's frame with a title bar and a close button, which floats over the map, moves by its title bar or
@@ -74,8 +72,7 @@ abstract class MapFloatingCard extends StackPane {
         HBox.setHgrow(title, Priority.ALWAYS);
         close.getStyleClass().add("project-map-preview-button");
         close.setMinWidth(Region.USE_PREF_SIZE);
-        Icons.name(close, tr("project.map.preview.close"));
-        close.setOnAction(event -> onClose.run());
+        MapButtonCommands.bind(this, close, "projectMap.cardClose", () -> onClose.run());
         titleBar.getStyleClass().add("project-map-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
         titleBar.getChildren().setAll(title, close);

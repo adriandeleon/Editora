@@ -2603,17 +2603,20 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalToWatches.setGraphic(Icons.newFile());
         evalToWatches.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-eval-watch");
         evalToWatches.setFocusTraversable(false);
-        Icons.name(evalToWatches, tr("debugpanel.evaluateToWatches"));
-        evalToWatches.setOnAction(e -> {
-            String text =
-                    evalField.getText().isBlank() && resultExpression != null ? resultExpression : evalField.getText();
-            addWatchExpression(text);
-        });
+        CommandTips.name(evalToWatches, "debug.watchEvaluated");
+        evalToWatches.setOnAction(e -> watchEvaluated());
         HBox bar = UiZoom.spacing(new HBox(evalField.node(), evalExpand, evalToWatches), 2);
         bar.getStyleClass().add("debug-evaluate-bar");
         bar.setAlignment(Pos.TOP_LEFT);
         HBox.setHgrow(evalField.node(), Priority.ALWAYS);
         return bar;
+    }
+
+    /** {@code debug.watchEvaluated}: the evaluate field's expression (else the one last evaluated) joins Watches. */
+    void watchEvaluated() {
+        String text =
+                evalField.getText().isBlank() && resultExpression != null ? resultExpression : evalField.getText();
+        addWatchExpression(text);
     }
 
     /**

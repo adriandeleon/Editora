@@ -101,8 +101,13 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         close.getStyleClass().addAll("flat", "project-map-sticky-note-close");
         close.setFocusTraversable(false);
         // One name, for the tooltip and a screen reader alike: what closing does, and that the note is kept.
-        Icons.name(close, tr("project.map.trails.note.closeHelp"));
-        close.setOnAction(event -> onClose.run());
+        MapButtonCommands.bind(
+                this,
+                close,
+                "projectMap.cardClose",
+                () -> tr("project.map.trails.note.closeHelp"),
+                () -> onClose.run());
+        MapButtonCommands.stuckOn(this, card);
         HBox top = new HBox(where, close);
         top.getStyleClass().add("project-map-sticky-note-header");
         top.setAlignment(Pos.CENTER_LEFT);

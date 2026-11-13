@@ -293,8 +293,11 @@ public final class DiffViewerPane implements TabContent {
         root.getStyleClass().add("diff-viewer");
         root.setAccessibleRole(AccessibleRole.PARENT);
         root.setAccessibleText(tr("diff.accessibleViewer", this.headerLeft, this.headerRight));
-        exportButton =
-                iconButton(Icons.saveAs(), tr("diff.tooltip.exportPatch"), () -> onExportPatch.accept(patchRequest()));
+        exportButton = CommandTips.name(
+                iconButton(Icons.saveAs(), CommandTips.title("diff.exportPatch"), this::exportPatch),
+                "diff.exportPatch",
+                () -> CommandTips.title("diff.exportPatch"),
+                () -> tr("diff.tooltip.exportPatch"));
         root.setTop(buildToolbar());
         resultDiffDelay.setOnFinished(e -> {
             if (resultEditing && resultArea != null) {
@@ -823,26 +826,8 @@ public final class DiffViewerPane implements TabContent {
         applyAllButton.setVisible(false);
         applyAllButton.setManaged(false);
         // Undo / Save the applied changes (shown only when a side is editable).
-        editButton(undoButton, Icons.undo(), tr("diff.undo"), () -> {
-            if (unappliedUndoDepth > 0) {
-                if (!undoAvailable.getAsBoolean()) {
-                    // The buffer was closed or its history is gone: there is nothing left to take back.
-                    unappliedUndoDepth = 0;
-                    updateEditButtons();
-                    return;
-                }
-                onUndo.run();
-                unappliedUndoDepth--;
-                // Undoing changes the buffer again: after a Save it is unsaved once more.
-                unsavedApplies = true;
-                updateEditButtons();
-            }
-        });
-        editButton(saveButton, Icons.save(), tr("diff.save"), () -> {
-            onSave.run();
-            unsavedApplies = false;
-            updateEditButtons();
-        });
+        editButton(undoButton, Icons.undo(), "diff.undoApplied", this::undoApplied);
+        editButton(saveButton, Icons.save(), "diff.saveResult", this::saveResult);
         saveButton.getStyleClass().add("success");
         updateEditButtons();
         editResultButton.setGraphic(Icons.edit());
@@ -878,7 +863,7 @@ public final class DiffViewerPane implements TabContent {
         swapButton.setVisible(false);
         swapButton.setManaged(false);
         exitDiffUiButton.setGraphic(Icons.editora());
-        Icons.name(exitDiffUiButton, tr("tooltip.diffUiExit"));
+        CommandTips.name(exitDiffUiButton, "diff.exitDiffMode");
         exitDiffUiButton.getStyleClass().addAll("flat", "diff-toolbar-button", "diff-ui-exit");
         exitDiffUiButton.setFocusTraversable(false);
         exitDiffUiButton.setOnAction(e -> onExitDiffUi.run());
@@ -1120,10 +1105,10 @@ public final class DiffViewerPane implements TabContent {
         }
     }
 
-    /** Configures an editable-only toolbar button (hidden until {@link #setEditable} shows it). */
-    private void editButton(Button b, Node icon, String tip, Runnable action) {
+    /** Configures an editable-only button, named after its command (hidden until {@link #setEditable} shows it). */
+    private void editButton(Button b, Node icon, String commandId, Runnable action) {
         b.setGraphic(icon);
-        Icons.name(b, tip);
+        CommandTips.name(b, commandId);
         b.getStyleClass().addAll("flat", "diff-toolbar-button");
         b.setFocusTraversable(false);
         b.setOnAction(e -> action.run());
@@ -1200,6 +1185,40 @@ public final class DiffViewerPane implements TabContent {
     public void swapComparisonSides() {
         if (swapEnabled) {
             swapButton.fire();
+        }
+    }
+
+    /** Takes back the last change applied here (the Undo button, {@code diff.undoApplied}), while it is offered. */
+    void undoApplied() {
+        if (!undoButton.isVisible() || unappliedUndoDepth <= 0) {
+            return;
+        }
+        if (!undoAvailable.getAsBoolean()) {
+            // The buffer was closed or its history is gone: there is nothing left to take back.
+            unappliedUndoDepth = 0;
+            updateEditButtons();
+            return;
+        }
+        onUndo.run();
+        unappliedUndoDepth--;
+        // Undoing changes the buffer again: after a Save it is unsaved once more.
+        unsavedApplies = true;
+        updateEditButtons();
+    }
+
+    /** Saves the changes applied here (the Save button, {@code diff.saveResult}), while some are unsaved. */
+    void saveResult() {
+        if (saveButton.isVisible() && !saveButton.isDisabled()) {
+            onSave.run();
+            unsavedApplies = false;
+            updateEditButtons();
+        }
+    }
+
+    /** Exports the comparison as a .patch (the Export button, {@code diff.exportPatch}), while it is offered. */
+    void exportPatch() {
+        if (!exportButton.isDisabled()) {
+            onExportPatch.accept(patchRequest());
         }
     }
 

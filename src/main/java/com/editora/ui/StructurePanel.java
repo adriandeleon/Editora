@@ -293,7 +293,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // label never fit beside the sort combo at the window's default width ("Filter b…"), the tooltip has it.
         kindFilter.getStyleClass().add("structure-kind-filter");
         kindFilter.setGraphic(Icons.find());
-        Icons.name(kindFilter, tr("structure.filter.kinds"));
+        CommandTips.name(kindFilter, "structure.filterKinds");
+        kindFilter.setFocusTraversable(false);
 
         javafx.scene.layout.Region toolbarSpacer = new javafx.scene.layout.Region();
         HBox.setHgrow(toolbarSpacer, Priority.ALWAYS);
@@ -1489,6 +1490,15 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         for (StructureNode n : nodes) {
             sortNodes(n.children());
         }
+    }
+
+    /** Structure: Filter by Kind… — shows the button's menu; false when the outline has no kinds to filter. */
+    boolean showKindFilter() {
+        if (kindFilter.isDisabled()) {
+            return false;
+        }
+        kindFilter.show();
+        return true;
     }
 
     /** Rebuilds the kind-filter dropdown from the kinds present in the outline (preserving existing toggles). */

@@ -154,8 +154,13 @@ final class ProjectMapCardStructure implements CardAttachment {
         HBox.setHgrow(title, Priority.ALWAYS);
         Button close = new Button("×");
         close.getStyleClass().add("project-map-preview-button");
-        Icons.name(close, tr("project.map.preview.hideStructure"));
-        close.setOnAction(event -> card.setStructureShown(false));
+        MapButtonCommands.bind( // its own words: the column goes, the card stays
+                column,
+                close,
+                "projectMap.cardClose",
+                () -> tr("project.map.preview.hideStructure"),
+                () -> card.setStructureShown(false));
+        MapButtonCommands.stuckOn(column, card);
         HBox header = UiZoom.spacing(new HBox(title, close), 6);
         header.getStyleClass().add("project-map-card-structure-header");
         header.setAlignment(Pos.CENTER_LEFT);

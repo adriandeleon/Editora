@@ -194,7 +194,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         fileLabel.setMaxWidth(Double.MAX_VALUE);
         fileLabel.setMinWidth(0);
         HBox.setHgrow(fileLabel, Priority.ALWAYS);
-        backToFile = iconButton(Icons.chevronLeft(), tr("history.backToFile"), this::showFileView);
+        backToFile = CommandTips.name(
+                iconButton(Icons.chevronLeft(), CommandTips.title("history.backToFile"), this::showFileView),
+                "history.backToFile");
         backToFile.setVisible(false);
         backToFile.setManaged(false);
         Button refresh = iconButton(Icons.refresh(), tr("history.refreshTip"), actions::refresh);
