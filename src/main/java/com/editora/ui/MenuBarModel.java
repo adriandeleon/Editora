@@ -434,6 +434,7 @@ final class MenuBarModel {
                                                 "debug.showException",
                                                 "debug.addWatch",
                                                 "debug.toggleHex",
+                                                "debug.muteRenderers",
                                                 "debug.pinValue",
                                                 "debug.unpinLine",
                                                 SEPARATOR,

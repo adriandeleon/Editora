@@ -273,6 +273,12 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public void persistDebugTypeRenderers(List<com.editora.dap.TypeRenderer> renderers) {
+        mc.config.getSettings().setDebugTypeRenderers(new java.util.ArrayList<>(renderers));
+        mc.config.save();
+    }
+
+    @Override
     public java.util.Map<String, List<com.editora.config.Breakpoint>> breakpointMap() {
         return mc.config.getBreakpoints();
     }

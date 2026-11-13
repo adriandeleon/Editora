@@ -1767,6 +1767,31 @@ a breakpoint in the main thread): debugpy and Delve walk every thread at a stop 
 (Delve's goroutines are named `[Go 33] main.work`; the runtime's own parked goroutines stay apart, their stacks
 differ); java-debug at a stop gives the breakpoint's thread alone, and paused for the dump gives every thread, the
 workers merged. `DebugThreadDumpWindowFxTest` covers the window against `FakeDebugAdapter`'s `idleThreads`.
+**Type renderers** (IntelliJ's Java Type Renderers, Visual Studio's natvis; Settings → Debugging → Type renderers,
+`debugTypeRenderers`, settings 172, and the Variables menu's **Customize Rendering…**) show a value of a type as the
+user's expressions say. A [`dap/TypeRenderer`](../../src/main/java/com/editora/dap/TypeRenderer.java) (a Jackson bean)
+holds the type, the debug language it applies to (`""`: all), the value as an expression of `this` (or `self`) and the
+children as `name = expression` lines. [`ui/TypeRenderers`](../../src/main/java/com/editora/ui/TypeRenderers.java) is
+pure: `match` compares types by `DebugTypeSource.parse` (own name, generics and pointers aside; the qualifiers must agree
+when both have one; a subclass is its own type — the adapter names the value's class), `substitute` puts the value's
+expression in parentheses for each `this`/`self` outside string literals, `children` reads the lines, `safeToRepeat`
+says whether a typed expression can be evaluated again (no call, assignment, increment, `new` or `delete`), and
+`unquote` drops a string result's quotes. [`ui/TypeRendering`](../../src/main/java/com/editora/ui/TypeRendering.java),
+one per session, works client-side: the coordinator's `renderedVariables` sends every `variables` answer (Variables,
+the Evaluate window, the value popup) through `apply`, which evaluates each matching value's renderer with the
+adapter's `evaluateName` (context `watch`, the shown frame) — a value with no `evaluateName` is left as the debugger
+gives it — and, when it lists children, hands the row a reference of Editora's own (from 1 900 000 000 up, above what
+adapters number) answered by `children`: each expression evaluated, rendered in turn, then `[Raw View]` with the
+debugger's own reference. A failed value expression keeps the debugger's value; a failed child shows the adapter's
+message. `renderedEvaluate` does the same for a watch, a hover or an evaluation, only when `safeToRepeat`. The
+references are dropped on resume and on a refresh. Set Value on a renderer's child assigns its expression
+(`DapManager.assignValue`), there being no container to send `setVariable` to. **Mute Type Renderers**
+(`debug.muteRenderers`, the Variables menu) shows every value as the debugger gives it. Measured
+(`TypeRenderersProbeFxTest`, a Money with an Owner and a list of two): java-debug names a nested class `Money`
+(`Main$Money` parses the same) and its list element `items.get(0)`; debugpy gives `items[0]`; Delve gives locals no
+type — the value leads with it (`main.Money {Amount: 12, …}`), which `DebugTypeSource` now reads, as it read js-debug's
+`Point {x: 1}` — and cannot join strings, so its renderer shows one field. `TypeRenderersWindowFxTest` covers the
+window against `FakeDebugAdapter` (`evaluateTypes` types an evaluation), `TypeRenderersEditorFxTest` the Settings list.
 The **exception card** ([`ui/DebugExceptionCard`](../../src/main/java/com/editora/ui/DebugExceptionCard.java)) opens
 under the line that threw once `exceptionInfo` has answered (`onExceptionInfo`) and that frame is the one painted
 (`paintedFrame.id() == exceptionFrameId`), once per stop by itself and again through `debug.showException`. It is a

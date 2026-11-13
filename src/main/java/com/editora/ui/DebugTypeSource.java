@@ -23,8 +23,13 @@ final class DebugTypeSource {
 
     private static final Pattern IDENTIFIER = Pattern.compile("[\\p{L}_$][\\p{L}\\p{N}_$]*");
 
-    /** js-debug's type of every object is {@code object}: its class leads the value ({@code Point {x: 1}}). */
-    private static final Pattern JS_CLASS = Pattern.compile("^([\\p{Lu}_$][\\p{L}\\p{N}_$]*) [{(\\[]");
+    /**
+     * The type leading a value, for an adapter that types every object {@code object} (js-debug: {@code Point {x:
+     * 1}}) or gives no type (Delve's locals: {@code main.Money {Amount: 12}}, a pointer's {@code *main.Owner {…}}): a
+     * capitalized name, or a package-qualified one, before its braces.
+     */
+    private static final Pattern JS_CLASS = Pattern.compile(
+            "^\\*?((?:[\\p{L}_$][\\p{L}\\p{N}_$]*\\.)+[\\p{L}_$][\\p{L}\\p{N}_$]*|[\\p{Lu}_$][\\p{L}\\p{N}_$]*) [{(\\[]");
 
     /** Built-in types no project declares: Java's primitives, C's, Go's, Rust's, Python's and JavaScript's. */
     private static final Set<String> BUILT_IN = Set.of(

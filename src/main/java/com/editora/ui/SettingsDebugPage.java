@@ -260,6 +260,10 @@ final class SettingsDebugPage {
     /** The Debugging page's line saying Java debugging needs LSP; empty while it is on. */
     private @Nullable Label javaDebugLspNote;
 
+    /** Settings → Debugging's Type renderers list (built with the page). */
+    @Nullable
+    TypeRenderersEditor typeRenderers;
+
     VBox build() {
         VBox p = w.page(tr("settings.cat.debug"), tr("settings.debug.subtitle"));
         Card master = w.card(p, null);
@@ -301,6 +305,26 @@ final class SettingsDebugPage {
                 tr("settings.debug.historyStops.hint"),
                 debugHistoryCombo,
                 "debug history back forward stops time travel earlier values remember");
+        // Type renderers (IntelliJ's Java Type Renderers): every language's, one list.
+        Card renderersCard = w.card(p, tr("settings.debug.typeRenderers"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), renderersCard.box());
+        typeRenderers = new TypeRenderersEditor(new TypeRenderersEditor.Hooks(
+                () -> config.getSettings().getDebugTypeRenderers(),
+                list -> {
+                    config.getSettings().setDebugTypeRenderers(list);
+                    w.apply();
+                },
+                (owner, initial, isNew) -> TypeRendererDialog.edit(owner, initial, isNew),
+                () -> w.stage));
+        w.cardRow(
+                renderersCard,
+                Category.DEBUG,
+                typeRenderers.node(),
+                "debug type renderers render value children expression toString natvis customize data views show");
+        Label renderersNote = SettingsWindow.note(tr("settings.debug.typeRenderers.hint"));
+        renderersNote.setWrapText(true);
+        UiZoom.maxWidth(renderersNote, 460);
+        w.cardRow(renderersCard, Category.DEBUG, renderersNote, "debug type renderers this self expression");
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             Card c = w.card(p, tr(dbg.sectionKey()));
             SettingsDependents.bind(debugCheck.selectedProperty(), c.box());
@@ -641,6 +665,9 @@ final class SettingsDebugPage {
         debugBrowserCombo.setValue(browser);
         debugGdbPathField.setText(settings.getGdbPath());
         debugStepTimingCheck.setSelected(settings.isDebugStepTiming());
+        if (typeRenderers != null) {
+            typeRenderers.reload();
+        }
         int stops = settings.getDebugHistoryStops();
         if (!debugHistoryCombo.getItems().contains(stops)) {
             debugHistoryCombo.getItems().add(stops); // a value set in settings.json
