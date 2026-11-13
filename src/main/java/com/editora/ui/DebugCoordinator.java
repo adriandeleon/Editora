@@ -2092,6 +2092,7 @@ final class DebugCoordinator {
                 }
                 if (state == DapManager.State.STARTING) {
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
+                    s().filteredHits.clear(); // and a filtered breakpoint's hit count
                     nameSession(s().sessionLabel); // ending the replaced session cleared it
                     refreshExceptionToggles(); // the session's language decides what Caught / Uncaught mean
                     s().sessionAnnounced = !s().announceStart;
@@ -2177,6 +2178,11 @@ final class DebugCoordinator {
                 s().stopException = null; // a new stop: the last one's exception is not this one's
                 hideExceptionCard();
                 List<DapModels.StackFrameInfo> frames = currentLines(stopFrames);
+                if (s().filtersPassed) {
+                    s().filtersPassed = false;
+                } else if (filteredStop(threadId, reason, frames, () -> onStopped(threadId, reason, stopFrames))) {
+                    return; // a breakpoint with filters: Editora checks them before the stop is shown
+                }
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
                 panel().setStoppedThread(threadId); // Debug History keys this stop's frames by it
@@ -2856,7 +2862,7 @@ final class DebugCoordinator {
                 top.line(),
                 b -> b.column() <= 0
                         && (LogpointTokens.uses(b.logMessage())
-                                || !adapterLogs
+                                || (!adapterLogs || !b.filters().none())
                                         && b.logMessage() != null
                                         && !b.logMessage().isBlank()));
         return lb == null ? null : lb.logMessage();
@@ -2985,6 +2991,86 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.recordingLimit", MAX_RECORDED_STOPS));
             return false;
         }
+        return true;
+    }
+
+    // --- breakpoint filters: a thread, a caller, a marked object (StopFilters), checked at the stop -------------
+
+    /**
+     * When the stop is on a breakpoint with filters, checks them — its caller, then its thread's name, then whether
+     * {@code this} (or {@code self}) is the object its mark names — and counts the hit for its hit count; a stop that
+     * passes is shown ({@code again}: the stop handled anew), else the program goes on without it being shown. True
+     * when it is such a breakpoint's stop (the check is under way, the stop held quiet meanwhile).
+     *
+     * <p>An instance filter whose mark no object carries in this session passes: mark the object at the first stop,
+     * and the following ones are its own.
+     */
+    private boolean filteredStop(int threadId, String reason, List<DapModels.StackFrameInfo> frames, Runnable again) {
+        if (!"breakpoint".equals(reason) || frames.isEmpty()) {
+            return false;
+        }
+        DapModels.StackFrameInfo top = frames.getFirst();
+        Path file = top.file();
+        if (file == null) {
+            return false;
+        }
+        DapModels.LineBreakpoint lb =
+                sentBreakpointAt(file, top.line(), b -> !b.filters().none());
+        if (lb == null) {
+            return false;
+        }
+        DebugSession session = s();
+        int serial = session.stopSerial;
+        session.quietStop = serial; // not shown while it is decided
+        com.editora.config.StopFilters f = lb.filters();
+        Consumer<Boolean> decide = passed -> later(() -> inSession(session, () -> {
+            if (serial != session.stopSerial || session.dap.state() != DapManager.State.SUSPENDED) {
+                return; // the user acted first, or it stopped again
+            }
+            boolean stop = passed
+                    && StopFilterCheck.hitMatches(
+                            lb.hitCondition(),
+                            session.filteredHits.merge(key(file) + ":" + top.line(), 1, Integer::sum));
+            if (stop) {
+                session.filtersPassed = true;
+                again.run();
+            } else {
+                session.dap.resume();
+            }
+        }));
+        String caller = frames.size() > 1 ? frames.get(1).name() : null;
+        if (!StopFilterCheck.matches(f.caller(), StopFilterCheck.callerNames(caller))) {
+            decide.accept(false);
+            return true;
+        }
+        Runnable instance = () -> {
+            String label = ObjectMarks.tidy(f.instance());
+            if (label.isEmpty() || !session.marks.hasLabel(label)) {
+                decide.accept(true);
+                return;
+            }
+            session.dap.evaluateFull(
+                    StopFilterCheck.selfName(session.dap.sessionLanguage()),
+                    top.id(),
+                    "watch",
+                    r -> decide.accept(r != null && !r.failed() && label.equals(session.marks.labelOf(r.result()))));
+        };
+        if (f.thread().isEmpty()) {
+            instance.run();
+            return true;
+        }
+        session.dap.threads(threads -> {
+            String name = threads.stream()
+                    .filter(t -> t.id() == threadId)
+                    .map(DapModels.ThreadInfo::name)
+                    .findFirst()
+                    .orElse("");
+            if (StopFilterCheck.matches(f.thread(), List.of(DebugPanelText.threadName(name), name))) {
+                instance.run();
+            } else {
+                decide.accept(false);
+            }
+        });
         return true;
     }
 
@@ -7592,6 +7678,23 @@ final class DebugCoordinator {
         // Wait for: another breakpoint this one waits for in each session (a triggered breakpoint).
         javafx.scene.control.ComboBox<BreakpointsPicker.Entry> waitFor = waitForChoice(b, line, bp);
         javafx.scene.control.ComboBox<String> group = groups.groupField(bp.group());
+        // Filters (IntelliJ's): where a hit counts — a thread, a caller, a marked object. Checked by Editora.
+        TextField threadFilter = new TextField(bp.filters().thread());
+        threadFilter.setPromptText(tr("dialog.debug.threadFilterPrompt"));
+        TextField callerFilter = new TextField(bp.filters().caller());
+        callerFilter.setPromptText(tr("dialog.debug.callerFilterPrompt"));
+        javafx.scene.control.ComboBox<String> instanceFilter = new javafx.scene.control.ComboBox<>();
+        instanceFilter.setEditable(true);
+        instanceFilter.getItems().setAll(s().marks.labels());
+        instanceFilter.setValue(bp.filters().instance());
+        instanceFilter.setPromptText(tr("dialog.debug.instanceFilterPrompt"));
+        instanceFilter.setMaxWidth(Double.MAX_VALUE);
+        for (javafx.scene.control.Control c : List.of(threadFilter, callerFilter, instanceFilter)) {
+            javafx.scene.control.Tooltip hint = com.editora.editor.ControlNames.tooltip(tr("dialog.debug.filtersHint"));
+            hint.setWrapText(true);
+            hint.setMaxWidth(UiZoom.px(360));
+            c.setTooltip(hint);
+        }
 
         GridPane grid = new GridPane();
         UiZoom.gaps(grid, 8, 8);
@@ -7610,7 +7713,39 @@ final class DebugCoordinator {
         grid.add(waitFor, 1, 4);
         grid.add(new Label(tr("dialog.debug.groupLabel")), 0, 5);
         grid.add(group, 1, 5);
-        grid.add(UiZoom.spacing(new javafx.scene.layout.HBox(enabled, temporary, recording), 16), 1, 6);
+        // The filters show on a toggle beside the switches, on when the breakpoint has one: most breakpoints have
+        // none, and the form keeps its height (DebugReviewCWindowFxTest).
+        GridPane filterGrid = new GridPane();
+        UiZoom.gaps(filterGrid, 8, 8);
+        filterGrid.add(new Label(tr("dialog.debug.threadFilterLabel")), 0, 0);
+        filterGrid.add(threadFilter, 1, 0);
+        filterGrid.add(new Label(tr("dialog.debug.callerFilterLabel")), 0, 1);
+        filterGrid.add(callerFilter, 1, 1);
+        filterGrid.add(new Label(tr("dialog.debug.instanceFilterLabel")), 0, 2);
+        filterGrid.add(instanceFilter, 1, 2);
+        GridPane.setHgrow(threadFilter, Priority.ALWAYS);
+        GridPane.setHgrow(callerFilter, Priority.ALWAYS);
+        GridPane.setHgrow(instanceFilter, Priority.ALWAYS);
+        // A link, not a button: as tall as the switches beside it, so the form keeps its height.
+        javafx.scene.control.Hyperlink filtersToggle = new javafx.scene.control.Hyperlink();
+        filtersToggle.getStyleClass().add("debug-breakpoint-filters-toggle");
+        filterGrid.setVisible(!bp.filters().none());
+        filterGrid.managedProperty().bind(filterGrid.visibleProperty());
+        Runnable filtersText = () ->
+                filtersToggle.setText(tr("dialog.debug.filters") + (filterGrid.isVisible() ? " \u25BE" : " \u25B8"));
+        filtersText.run();
+        filtersToggle.setOnAction(e -> {
+            filterGrid.setVisible(!filterGrid.isVisible());
+            filtersToggle.setVisited(false);
+            filtersText.run();
+        });
+        // In the switches' own cell: hidden, the filters add no row (and no row gap) to the form.
+        javafx.scene.layout.VBox switches = UiZoom.spacing(
+                new javafx.scene.layout.VBox(
+                        UiZoom.spacing(new javafx.scene.layout.HBox(enabled, temporary, recording, filtersToggle), 16),
+                        filterGrid),
+                8);
+        grid.add(switches, 1, 6);
         grid.add(note(tr("dialog.debug.logMessageHint")), 1, 7);
         GridPane.setHgrow(condition, Priority.ALWAYS);
         GridPane.setHgrow(logMessage, Priority.ALWAYS);
@@ -7633,6 +7768,13 @@ final class DebugCoordinator {
                     mgr.setTemporary(line, temporary.isSelected());
                     mgr.setRecording(line, recording.isSelected());
                     mgr.setGroup(line, BreakpointGroups.groupIn(group));
+                    String instance = instanceFilter.getEditor() == null
+                            ? instanceFilter.getValue()
+                            : instanceFilter.getEditor().getText();
+                    mgr.setFilters(
+                            line,
+                            new com.editora.config.StopFilters(
+                                    threadFilter.getText(), callerFilter.getText(), instance));
                     BreakpointsPicker.Entry trigger = waitFor.getValue();
                     if (trigger != null && trigger.line() < 0) {
                         trigger = null; // "no other breakpoint"

@@ -3,6 +3,7 @@ package com.editora.dap;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.editora.config.StopFilters;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -292,6 +293,8 @@ public final class DapModels {
      * A breakpoint to send to the adapter for one file: 0-based {@code line} + optional condition/log, and the 1-based
      * {@code column} a lambda breakpoint stops at (the lambda's start), or 0 for the line itself. {@code recording} is
      * Editora's alone (the adapter is not told): a stop on it is recorded in Debug History and the program goes on.
+     * {@code filters} are Editora's too: a filtered breakpoint is sent without its hit count and log message, and
+     * Editora decides at the stop.
      */
     public record LineBreakpoint(
             int line,
@@ -299,7 +302,22 @@ public final class DapModels {
             @Nullable String logMessage,
             @Nullable String hitCondition,
             int column,
-            boolean recording) {
+            boolean recording,
+            StopFilters filters) {
+        public LineBreakpoint {
+            filters = StopFilters.of(filters);
+        }
+
+        public LineBreakpoint(
+                int line,
+                @Nullable String condition,
+                @Nullable String logMessage,
+                @Nullable String hitCondition,
+                int column,
+                boolean recording) {
+            this(line, condition, logMessage, hitCondition, column, recording, StopFilters.NONE);
+        }
+
         public LineBreakpoint(
                 int line,
                 @Nullable String condition,

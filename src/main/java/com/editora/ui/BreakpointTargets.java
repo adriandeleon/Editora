@@ -37,13 +37,14 @@ final class BreakpointTargets {
                             bp.logMessage(),
                             bp.hitCondition(),
                             found.get(n - 1).stop() + 1, // DAP columns start at 1
-                            bp.records()));
+                            bp.records(),
+                            bp.filters()));
                 }
             }
         }
         if (bp.stopsOnLine() || lambdas.isEmpty()) {
             out.add(new DapModels.LineBreakpoint(
-                    line, bp.condition(), bp.logMessage(), bp.hitCondition(), 0, bp.records()));
+                    line, bp.condition(), bp.logMessage(), bp.hitCondition(), 0, bp.records(), bp.filters()));
         }
         out.addAll(lambdas);
         return out;

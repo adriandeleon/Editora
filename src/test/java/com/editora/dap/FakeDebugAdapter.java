@@ -1008,6 +1008,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
         /** The type {@code evaluate} gives an expression's value (none for the rest). */
         public final Map<String, String> evaluateTypes = new java.util.concurrent.ConcurrentHashMap<>();
 
+        /** What {@code evaluate} answers for an expression, in place of {@code val(<expression>)}. */
+        public final Map<String, String> evaluateResults = new java.util.concurrent.ConcurrentHashMap<>();
+
         /** Evaluates to {@code val(<expression>)}; an expression starting with {@code bad} is refused. */
         @Override
         public CompletableFuture<org.eclipse.lsp4j.debug.EvaluateResponse> evaluate(
@@ -1022,7 +1025,8 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 return gate;
             }
             org.eclipse.lsp4j.debug.EvaluateResponse response = new org.eclipse.lsp4j.debug.EvaluateResponse();
-            response.setResult("val(" + args.getExpression() + ")");
+            String scripted = evaluateResults.get(args.getExpression());
+            response.setResult(scripted != null ? scripted : "val(" + args.getExpression() + ")");
             response.setType(evaluateTypes.get(args.getExpression()));
             if (lowLevel && !args.getExpression().equals("noaddress")) {
                 response.setMemoryReference("0x2000");

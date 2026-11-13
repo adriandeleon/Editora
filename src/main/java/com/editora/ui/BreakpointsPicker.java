@@ -471,7 +471,13 @@ final class BreakpointsPicker {
             for (Breakpoint bp : list) {
                 if (bp.enabled()) {
                     lines.add(new DapModels.LineBreakpoint(
-                            bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
+                            bp.line(),
+                            bp.condition(),
+                            bp.logMessage(),
+                            bp.hitCondition(),
+                            0,
+                            bp.records(),
+                            bp.filters()));
                 }
             }
             for (DapManager each : managers.get()) {
