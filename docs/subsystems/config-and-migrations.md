@@ -109,7 +109,9 @@ launch to the editor already running on that config directory — a launch with 
 `--project` (that project's window), with `--new-file` (a new buffer in a new window), with `--diff-ui` (the
 diff in a window of its own, `WindowManager.openExternalDiffUi`) or with nothing to open (the editor is
 brought forward, `WindowManager.presentForExternalLaunch`) — unless it carries `--new-instance`, or
-`--disable-plugins`, the way out of an editor that a plugin hangs at startup.
+`--disable-plugins`, the way out of an editor that a plugin hangs at startup. That exception is on purpose
+(decided 2026-11-13): the editor such a launch would be handed to is the hung one, so it keeps a process of
+its own, and `pauta.json` lists the rule on handing launches over as unmet for it.
 `--dev` and `--config-dir` do not opt out; they select which directory, and therefore which running editor,
 a launch belongs to. A second JVM on `~/.editora` therefore needs `--new-instance` (or a launch that arrives
 before the first process has published its endpoint, or cannot reach it).
