@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **View as Table in the debugger.** Right-click a list, array, slice, set or map in Variables or a watch and choose
+  View as Table: each element is a row and each of its fields a column, as in IntelliJ and Visual Studio. Columns sort
+  (numbers by value), a filter keeps the rows that mention some text, Copy puts the rows on the clipboard ready for a
+  spreadsheet, and Open as CSV opens them in a CSV tab. The table keeps the values of the stop it was opened at;
+  Refresh reads them again at the current stop. Large collections show their first 1,000 elements. Checked with
+  Python, Java and Go.
+
 - **`--` on the command line.** Every argument after `--` is a file, so `editora -- -notes.txt` opens a file
   whose name starts with a dash, and a lone `-` is a file name too.
 - **Breakpoint filters.** A breakpoint can now stop only in some threads (`worker-*`), only when called from some

@@ -219,6 +219,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Customize Rendering…: the type renderer of a value's type ({@code type}, else read from {@code value}). */
         default void customizeRendering(String type, String value) {}
 
+        /**
+         * View as Table: the collection {@code ref} (named {@code name}, given by {@code expression}; {@code named}
+         * and {@code indexed} children as its debugger counted them) as a table of its elements and their fields.
+         */
+        default void viewAsTable(String name, String expression, int ref, int named, int indexed) {}
+
         /** Whether type renderers are muted (Mute Renderers): every value as the debugger shows it. */
         default boolean renderersMuted() {
             return false;
@@ -362,6 +368,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private Runnable onHistoryChanged = () -> {};
 
     private int selectedFrameId = -1;
+
+    /** The frame shown (its variables are), -1 for none. */
+    int selectedFrameId() {
+        return selectedFrameId;
+    }
     /** Guard so programmatically selecting the current thread in the combo doesn't re-fetch its stack. */
     private boolean settingThreads;
 
@@ -2262,6 +2273,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 menu.getItems().addAll(markItems(row));
                 if (StringViews.isString(row.value())) {
                     menu.getItems().add(viewAsMenu(row));
+                }
+                if (row.ref() > 0
+                        && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.RESULT)) {
+                    // IntelliJ's and Visual Studio's table view of a collection: its elements as rows.
+                    javafx.scene.control.MenuItem asTable =
+                            new javafx.scene.control.MenuItem(tr("debugpanel.viewAsTable"));
+                    String expression = row.kind() == Kind.VARIABLE
+                            ? expression(variables.getSelectionModel().getSelectedItem())
+                            : row.name();
+                    asTable.setOnAction(
+                            e -> actions.viewAsTable(row.name(), expression, row.ref(), row.named(), row.indexed()));
+                    menu.getItems().add(asTable);
                 }
             }
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
