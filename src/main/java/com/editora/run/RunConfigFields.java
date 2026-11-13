@@ -20,12 +20,16 @@ public final class RunConfigFields {
         return !ScriptRunCommand.JAVA.equals(type);
     }
 
-    /** Whether {@code type}'s target is a script file (Python or shell), which Browse can pick. */
+    /**
+     * Whether {@code type}'s target is a file — a script (Python, shell …) or a source file that is built first
+     * (C, C++, Go, Rust) — which Browse can pick.
+     */
     public static boolean usesScriptFile(String type) {
         return ScriptRunCommand.PYTHON.equals(type)
                 || ScriptRunCommand.SHELL.equals(type)
                 || ScriptRunCommand.NODE.equals(type)
-                || ScriptRunCommand.isJvmScript(type);
+                || ScriptRunCommand.isJvmScript(type)
+                || ScriptRunCommand.isCompiled(type);
     }
 
     /**

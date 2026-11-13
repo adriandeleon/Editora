@@ -72,9 +72,17 @@ class RunCoordinatorFlowsFxTest {
         volatile String promptAnswer;
         volatile String promptInitial;
 
+        /** Where a built program is cached; null (the default) is the temporary folder. */
+        volatile Path configDir;
+
         @Override
         public Settings settings() {
             return settings;
+        }
+
+        @Override
+        public Path configDir() {
+            return configDir;
         }
 
         @Override
@@ -715,6 +723,120 @@ class RunCoordinatorFlowsFxTest {
         FxTestSupport.runOnFx(() -> run.runConfig(plain));
         awaitStatus(tr("status.run.ok"));
         assertEquals("AFTER in sub\n", console());
+    }
+
+    /**
+     * A {@code go} that, asked to {@code build -o OUT x}, records the request and the folder it was made in and
+     * writes a program printing its arguments, its folder and {@code MODE}; it fails as a compiler does while
+     * {@code go.fail} exists.
+     */
+    private Path standInGo() throws Exception {
+        Path exe = outside.resolve("fake-go");
+        Files.writeString(
+                exe,
+                "#!/bin/sh\n"
+                        + "echo \"$1 $4 in $(basename \"$PWD\")\" >> \"" + outside.resolve("go.log") + "\"\n"
+                        + "if [ -f \"" + outside.resolve("go.fail") + "\" ]; then\n"
+                        + "  echo './hello.go:3:1: error: boom' >&2\n  exit 1\nfi\n"
+                        + "printf '#!/bin/sh\\necho \"hello $* in $(basename \"$PWD\") MODE=$MODE\"\\n' > \"$3\"\n"
+                        + "chmod +x \"$3\"\n");
+        Files.setPosixFilePermissions(exe, PosixFilePermissions.fromString("rwxr-xr-x"));
+        return exe;
+    }
+
+    /**
+     * A Go configuration: Run had no way to start a Go file. The file is built first (in its folder, by the
+     * {@code go} of Settings), and the program that made runs with the configuration's arguments and variables —
+     * in the file's folder, or the configuration's own. Rerun builds again; a build that fails runs nothing.
+     */
+    @Test
+    void aGoConfigurationBuildsItsFileAndRunsTheProgramThatMade() throws Exception {
+        host.configDir = outside.resolve("config");
+        host.settings.setGoCommand(standInGo().toString());
+        Files.createDirectories(project.resolve("cmd"));
+        Files.createDirectories(project.resolve("data"));
+        Files.writeString(project.resolve("cmd/hello.go"), "package main\n\nfunc main() {}\n");
+        Path goLog = outside.resolve("go.log");
+        RunConfiguration cfg = new RunConfiguration(
+                "Hello", "go", "cmd/hello.go", "", "", "one 'two three'", "", "", "MODE=dev", "", "");
+
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("hello one two three in cmd MODE=dev\n", console(), "in the file's folder, as Debug File");
+        assertEquals(List.of("build hello.go in cmd"), Files.readAllLines(goLog));
+        assertTrue(
+                statuses().contains(tr("status.run.compiledBuild", "hello.go")),
+                statuses().toString());
+        try (var built = Files.list(outside.resolve("config/cache/native-run"))) {
+            assertEquals(1, built.count(), "the program is built into the cache, not beside the source");
+        }
+
+        // Its own working directory is the program's; the package is still built where it is.
+        clearLog();
+        RunConfiguration inData =
+                new RunConfiguration("Hello", "go", "cmd/hello.go", "", "", "", "", "data", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(inData));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("hello  in data MODE=\n", console());
+        assertEquals(List.of("build hello.go in cmd", "build hello.go in cmd"), Files.readAllLines(goLog));
+
+        // Rerun builds the file again rather than starting the old program.
+        clearLog();
+        FxTestSupport.runOnFx(run::rerunLast);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(3, Files.readAllLines(goLog).size());
+        assertEquals("hello  in data MODE=\n", console());
+
+        // A build that fails says why, and starts nothing.
+        Files.createFile(outside.resolve("go.fail"));
+        clearLog();
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.compiledBuildFailed", "hello.go", "./hello.go:3:1: error: boom"));
+        assertFalse(FxTestSupport.callOnFx(run::isRunning));
+        assertTrue(rawConsole().contains("./hello.go:3:1: error: boom"), rawConsole());
+        assertFalse(statuses().contains(tr("status.run.ok")), statuses().toString());
+    }
+
+    /** What cannot be built is said, and its form opened where that helps: no file, no Cargo package. */
+    @Test
+    void aCompiledConfigurationSaysWhatItCannotBuild() throws Exception {
+        RunConfiguration noFile = new RunConfiguration("Tally", "c", "", "", "", "", "", "", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(noFile));
+        FxTestSupport.drainFx();
+        assertEquals(List.of(tr("status.run.configNeedsTarget", "Tally")), statuses());
+        assertEquals(List.of("Tally"), ops.edited);
+
+        clearLog();
+        RunConfiguration gone = new RunConfiguration("Gone", "cpp", "src/gone.cpp", "", "", "", "", "", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(gone));
+        FxTestSupport.drainFx();
+        assertEquals(
+                List.of(tr(
+                        "status.run.scriptMissing",
+                        "Gone",
+                        project.resolve("src/gone.cpp").toString())),
+                statuses());
+
+        clearLog();
+        Files.writeString(project.resolve("loose.rs"), "fn main() {}\n");
+        RunConfiguration loose = new RunConfiguration("Loose", "rust", "loose.rs", "", "", "", "", "", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(loose));
+        FxTestSupport.drainFx();
+        assertEquals(List.of(tr("status.run.rustNoPackage", "loose.rs")), statuses());
+
+        // A Cargo package is the repository's code: declining its trust builds nothing.
+        clearLog();
+        Files.createDirectories(project.resolve("crate/src"));
+        Files.writeString(project.resolve("crate/Cargo.toml"), "[package]\nname = \"crate\"\n");
+        Files.writeString(project.resolve("crate/src/main.rs"), "fn main() {}\n");
+        ops.refuseTrust = true;
+        RunConfiguration crate =
+                new RunConfiguration("Crate", "rust", "crate/src/main.rs", "", "", "", "", "", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(crate));
+        FxTestSupport.drainFx();
+        assertEquals(List.of("cargo@crate"), ops.buildExecutables, "Cargo's own trust question, for the package");
+        assertEquals(List.of(), buildRuns(), "and nothing built after a no");
+        assertFalse(FxTestSupport.callOnFx(run::consoleInUse), "nothing was launched");
     }
 
     @Test

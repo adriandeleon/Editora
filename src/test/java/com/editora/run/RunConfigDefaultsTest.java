@@ -211,11 +211,40 @@ class RunConfigDefaultsTest {
         assertEquals("make", RunConfigDefaults.typeFor("rules.mk", "makefile"));
         assertEquals("npm", RunConfigDefaults.typeFor("package.json", "json"));
         assertEquals("python", RunConfigDefaults.typeFor(null, "python"), "a script not saved yet");
+        assertEquals("c", RunConfigDefaults.typeFor("tally.c", "c"));
+        assertEquals("cpp", RunConfigDefaults.typeFor("tally.cc", "cpp"));
+        assertEquals("go", RunConfigDefaults.typeFor("main.go", "go"));
+        assertEquals("rust", RunConfigDefaults.typeFor("main.rs", "rust"));
+    }
+
+    /** A C, C++, Go or Rust source file is proposed like a script, and runs where Debug File runs its program. */
+    @Test
+    void aSourceFileProposesAConfigurationThatBuildsIt() {
+        java.nio.file.Path root = java.nio.file.Path.of("/work/site").toAbsolutePath();
+        com.editora.config.RunConfiguration c =
+                RunConfigDefaults.forScript("c", root.resolve("samples/debug/c/tally.c"), root);
+        assertEquals("tally.c", c.name());
+        assertEquals("c", c.type());
+        assertEquals(java.nio.file.Path.of("samples", "debug", "c", "tally.c").toString(), c.target());
+        assertEquals("", c.workingDir(), "blank: the folder Debug File runs the program in");
+        for (String type : new String[] {"cpp", "go", "rust"}) {
+            com.editora.config.RunConfiguration other =
+                    RunConfigDefaults.forScript(type, root.resolve("src/main.x"), root);
+            assertEquals(type, other.type());
+            assertEquals(java.nio.file.Path.of("src", "main.x").toString(), other.target());
+            assertEquals("", other.workingDir(), type);
+        }
+        java.nio.file.Path outside =
+                java.nio.file.Path.of("/elsewhere/hello.go").toAbsolutePath();
+        com.editora.config.RunConfiguration loose = RunConfigDefaults.forScript("go", outside, root);
+        assertEquals(outside.toString(), loose.target());
+        assertEquals("", loose.workingDir());
+        assertEquals("", RunConfigDefaults.blankOfType("rust", null, root).workingDir());
     }
 
     @Test
     void aFileNoTypeLaunchesSaysNothing() {
-        assertEquals(null, RunConfigDefaults.typeFor("tally.c", "c"));
+        assertEquals(null, RunConfigDefaults.typeFor("Program.cs", "csharp"));
         assertEquals(null, RunConfigDefaults.typeFor("notes.md", "markdown"));
         assertEquals(null, RunConfigDefaults.typeFor("tsconfig.json", "json"), "only package.json is npm's");
         assertEquals(null, RunConfigDefaults.typeFor("build.gradle.kts", "kotlin"), "Gradle runs its build script");

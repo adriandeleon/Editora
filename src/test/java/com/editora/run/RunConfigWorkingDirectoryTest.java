@@ -74,6 +74,22 @@ class RunConfigWorkingDirectoryTest {
         assertNull(RunConfigWorkingDirectory.script(config("make", "all", ""), dir));
     }
 
+    /** A C, C++, Go or Rust target is a file like a script's: relative to the project, or absolute with none open. */
+    @Test
+    void aSourceFileIsResolvedLikeAScript(@org.junit.jupiter.api.io.TempDir Path root) {
+        for (String type : new String[] {"c", "cpp", "go", "rust"}) {
+            RunConfiguration cfg = config(type, "src/main.x", "");
+            Path cwd = RunConfigWorkingDirectory.resolve(cfg, root);
+            assertEquals(root, cwd, type);
+            assertEquals(root.resolve("src/main.x"), RunConfigWorkingDirectory.script(cfg, root, cwd), type);
+        }
+        Path loose = root.resolve("elsewhere/hello.go");
+        assertEquals(
+                loose.getParent(),
+                RunConfigWorkingDirectory.resolve(config("go", loose.toString(), ""), null),
+                "no project: a place to resolve from is still needed");
+    }
+
     @Test
     void aPythonScriptRunsInItsOwnFolderLikeRunFile(@org.junit.jupiter.api.io.TempDir Path root) {
         // C8 / decision 2: a configuration ran at the project root while ▶ ran in the script's folder.
