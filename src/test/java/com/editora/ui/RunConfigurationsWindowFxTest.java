@@ -466,4 +466,105 @@ class RunConfigurationsWindowFxTest {
         assertEquals(java.util.List.of("dev"), opened, "Deployments… opens the one chosen");
         FxTestSupport.runOnFx(stage::close);
     }
+
+    /**
+     * Add follows the file in front: with a makefile open it makes a make configuration (in the makefile's
+     * folder, the target still to type) rather than the Java one it used to make for anything that was not a
+     * script, and the caret goes to the field that type launches.
+     */
+    @Test
+    void addTakesItsTypeFromTheActiveFile(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        Path root = dir.resolve("site");
+        RunConfiguration[] blank = {
+            com.editora.run.RunConfigDefaults.blankOfType("make", root.resolve("native/Makefile"), root)
+        };
+        RunConfigurationsWindow window = FxTestSupport.callOnFx(() ->
+                new RunConfigurationsWindow(config, () -> null, () -> null, () -> blank[0], () -> root, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show(null, null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        Button add = FxTestSupport.callOnFx(() -> stage.getScene().getRoot().lookupAll(".button").stream()
+                .filter(n ->
+                        n instanceof Button b && tr("settings.runConfig.add").equals(b.getText()))
+                .map(n -> (Button) n)
+                .findFirst()
+                .orElseThrow());
+        FxTestSupport.runOnFx(add::fire);
+        FxTestSupport.drainFx();
+
+        RunConfiguration added = persisted(config, tr("settings.runConfig.newName"));
+        assertEquals("make", added.type());
+        assertEquals("native", added.workingDir());
+        @SuppressWarnings("unchecked")
+        ComboBox<String> type = (ComboBox<String>) stage.getScene().lookup("#run-config-type");
+        assertEquals("make", FxTestSupport.callOnFx(type::getValue));
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> stage.getScene().lookup("#run-config-target").isVisible()),
+                "the make target is there to fill in");
+        assertFalse(
+                FxTestSupport.callOnFx(() -> stage.getScene()
+                        .lookup("#run-config-main-class")
+                        .getParent()
+                        .isVisible()),
+                "and no Java row is");
+
+        // A second one does not collide with the first, and a file no type launches still gets a Java one.
+        FxTestSupport.runOnFx(add::fire);
+        FxTestSupport.drainFx();
+        assertEquals(
+                "make",
+                persisted(config, tr("settings.runConfig.newName") + " (2)").type());
+        blank[0] = null;
+        FxTestSupport.runOnFx(add::fire);
+        FxTestSupport.drainFx();
+        assertEquals(
+                "java",
+                persisted(config, tr("settings.runConfig.newName") + " (3)").type());
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    /** Every type the Type box offers has a glyph of its own, and the box shows the selected type's. */
+    @Test
+    void everyTypeIsShownWithAnIcon(@TempDir Path dir) throws Exception {
+        for (String type : RunConfigurationsWindow.TYPES) {
+            String key = RunConfigurationsWindow.iconKeyFor(type);
+            assertTrue(FileIcons.iconKeys().contains(key), type + " → " + key);
+            assertFalse("generic".equals(key), type + " has no glyph of its own");
+        }
+        assertEquals("generic", RunConfigurationsWindow.iconKeyFor("from-a-newer-build"));
+        assertEquals("generic", RunConfigurationsWindow.iconKeyFor(null));
+
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(
+                        new RunConfiguration("Deploy", "shell", "deploy.sh", "", "", "", "", "", "", "", "")));
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show("Deploy", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ComboBox<String> type = (ComboBox<String>) stage.getScene().lookup("#run-config-type");
+        assertEquals(
+                RunConfigurationsWindow.TYPES, FxTestSupport.callOnFx(() -> java.util.List.copyOf(type.getItems())));
+        FxTestSupport.runOnFx(() -> {
+            stage.getScene().getRoot().applyCss();
+            stage.getScene().getRoot().layout();
+        });
+        assertEquals(
+                tr("settings.runConfig.type.shell"),
+                FxTestSupport.callOnFx(() -> type.getButtonCell().getText()));
+        javafx.scene.Node shell =
+                FxTestSupport.callOnFx(() -> type.getButtonCell().getGraphic());
+        assertTrue(shell != null, "the box shows the selected type's glyph");
+        FxTestSupport.runOnFx(() -> {
+            type.setValue("npm");
+            stage.getScene().getRoot().applyCss();
+            stage.getScene().getRoot().layout();
+        });
+        assertTrue(
+                FxTestSupport.callOnFx(() -> type.getButtonCell().getGraphic()) != shell,
+                "and changes it with the type");
+        FxTestSupport.runOnFx(stage::close);
+    }
 }

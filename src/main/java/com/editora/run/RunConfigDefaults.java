@@ -78,6 +78,59 @@ public final class RunConfigDefaults {
     }
 
     /**
+     * The run configuration type that launches a file named {@code fileName} written in {@code language}, or
+     * null when no type does (a C file, a Markdown note). {@code package.json} is npm's, a makefile is make's,
+     * and a script goes by its language — so a script with no extension, or one not saved yet, still counts.
+     * A Gradle build script is not a Kotlin file to run.
+     */
+    public static @Nullable String typeFor(@Nullable String fileName, @Nullable String language) {
+        if (fileName != null && fileName.equalsIgnoreCase("package.json")) {
+            return ScriptRunCommand.NPM;
+        }
+        if (language == null) {
+            return null;
+        }
+        if (ScriptRunCommand.KOTLIN.equals(language)) {
+            return fileName != null && KotlinRun.shape(fileName) == KotlinRun.Shape.NONE
+                    ? null
+                    : ScriptRunCommand.KOTLIN;
+        }
+        if (NodeRunPlan.isNodeLanguage(language)) {
+            return ScriptRunCommand.NODE;
+        }
+        return switch (language) {
+            case "java" -> ScriptRunCommand.JAVA;
+            case "python" -> ScriptRunCommand.PYTHON;
+            case "shell" -> ScriptRunCommand.SHELL;
+            case "makefile" -> ScriptRunCommand.MAKE;
+            default -> ScriptRunCommand.isJvmScript(language) ? language : null;
+        };
+    }
+
+    /**
+     * An unnamed configuration of {@code type} with nothing to launch filled in: what Add starts from when the
+     * active file says which type is wanted but is not itself the thing to run — a makefile (the target is
+     * still to be chosen), a {@code package.json} (so is the script), a script that has no file yet.
+     *
+     * <p>A make or npm configuration runs in {@code file}'s folder, so that is written out as the working
+     * directory: relative to {@code projectRoot} when inside it, and blank when it is the root itself.
+     */
+    public static com.editora.config.RunConfiguration blankOfType(
+            String type, java.nio.file.@Nullable Path file, java.nio.file.@Nullable Path projectRoot) {
+        String workingDir = "";
+        java.nio.file.Path folder = file == null ? null : file.normalize().getParent();
+        if (folder != null && (ScriptRunCommand.MAKE.equals(type) || ScriptRunCommand.NPM.equals(type))) {
+            workingDir = folder.toString();
+            if (projectRoot != null
+                    && folder.getFileSystem() == projectRoot.getFileSystem()
+                    && folder.startsWith(projectRoot.normalize())) {
+                workingDir = projectRoot.normalize().relativize(folder).toString();
+            }
+        }
+        return new com.editora.config.RunConfiguration("", type, "", "", "", "", "", workingDir, "", "", "");
+    }
+
+    /**
      * The main class a {@code .java} file picked with Run Configurations → Main class → <b>Browse…</b> launches,
      * so nobody has to work a fully qualified name out by hand. A {@code static void main} the file declares
      * wins (the one in the class named after the file first); otherwise the file's package plus its name — a

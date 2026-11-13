@@ -33,6 +33,7 @@ final class SettingsWindowWiring {
         // Read on each Add click, not now: the Settings window outlives whichever tab is in front.
         settingsWindow.setRunConfigSuggestion(mc::suggestedMainClass);
         settingsWindow.setRunConfigScriptSuggestion(mc::suggestedScriptConfiguration, mc::windowProjectRoot);
+        settingsWindow.setRunConfigTypeSuggestion(mc::suggestedBlankConfiguration);
         settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
         settingsWindow.setMcpConfirm(mc::confirmEnableMcp); // security notice before enabling MCP
         settingsWindow.setOnRestart(() -> mc.registry.run("app.restart")); // footer's Restart now

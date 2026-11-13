@@ -484,6 +484,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A new run configuration starts as the type of the file in front.** Run Configurations → Add made a Java
+  configuration for anything that was not a script it could propose whole. With a makefile open it now makes a
+  Make target configuration, and with a `package.json` an npm script one, each set to run in that file's
+  folder; a Python, shell, Node.js, Groovy, Kotlin, Scala or Clojure file not saved yet gets a configuration of
+  its type as well. A file no type launches (a C file, a note) still gets a Java one. The Type box also shows
+  each type with the icon its files carry in the tabs and the Project tree.
 - **A key you rebind is rebound on every system.** Your own key bindings were kept apart for macOS and for
   Windows and Linux, so a chord changed on a Mac stayed as it was on your Linux or Windows computer, even
   in the Emacs keymap, whose chords are the same everywhere. They are now one set per keymap. In a keymap

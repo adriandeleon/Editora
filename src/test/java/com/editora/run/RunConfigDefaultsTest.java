@@ -198,4 +198,56 @@ class RunConfigDefaultsTest {
         assertEquals("Demo", RunConfigDefaults.renamedForMainClass("Demo", "p.Old", "test.App", "New", List.of()));
         assertEquals("Demo", RunConfigDefaults.renamedForMainClass("Demo", "", "test.App", "New", List.of()));
     }
+
+    @Test
+    void aFileSaysWhichTypeLaunchesIt() {
+        assertEquals("java", RunConfigDefaults.typeFor("App.java", "java"));
+        assertEquals("python", RunConfigDefaults.typeFor("tool.py", "python"));
+        assertEquals("shell", RunConfigDefaults.typeFor("deploy", "shell"), "a shebang script with no extension");
+        assertEquals("node", RunConfigDefaults.typeFor("server.ts", "typescript"));
+        assertEquals("groovy", RunConfigDefaults.typeFor("job.groovy", "groovy"));
+        assertEquals("kotlin", RunConfigDefaults.typeFor("App.kt", "kotlin"));
+        assertEquals("make", RunConfigDefaults.typeFor("Makefile", "makefile"));
+        assertEquals("make", RunConfigDefaults.typeFor("rules.mk", "makefile"));
+        assertEquals("npm", RunConfigDefaults.typeFor("package.json", "json"));
+        assertEquals("python", RunConfigDefaults.typeFor(null, "python"), "a script not saved yet");
+    }
+
+    @Test
+    void aFileNoTypeLaunchesSaysNothing() {
+        assertEquals(null, RunConfigDefaults.typeFor("tally.c", "c"));
+        assertEquals(null, RunConfigDefaults.typeFor("notes.md", "markdown"));
+        assertEquals(null, RunConfigDefaults.typeFor("tsconfig.json", "json"), "only package.json is npm's");
+        assertEquals(null, RunConfigDefaults.typeFor("build.gradle.kts", "kotlin"), "Gradle runs its build script");
+        assertEquals(null, RunConfigDefaults.typeFor("untitled", null));
+    }
+
+    @Test
+    void aBlankMakeOrNpmConfigurationRunsInItsFilesFolder() {
+        java.nio.file.Path root = java.nio.file.Path.of("/work/site").toAbsolutePath();
+        com.editora.config.RunConfiguration make =
+                RunConfigDefaults.blankOfType("make", root.resolve("native/Makefile"), root);
+        assertEquals("make", make.type());
+        assertEquals("", make.target(), "the default goal until one is typed");
+        assertEquals("native", make.workingDir());
+        assertEquals(
+                java.nio.file.Path.of("web", "app").toString(),
+                RunConfigDefaults.blankOfType("npm", root.resolve("web/app/package.json"), root)
+                        .workingDir());
+        assertEquals(
+                "",
+                RunConfigDefaults.blankOfType("make", root.resolve("Makefile"), root)
+                        .workingDir(),
+                "blank means the project root");
+        java.nio.file.Path outside =
+                java.nio.file.Path.of("/elsewhere/Makefile").toAbsolutePath();
+        assertEquals(
+                outside.getParent().toString(),
+                RunConfigDefaults.blankOfType("make", outside, root).workingDir());
+        assertEquals("", RunConfigDefaults.blankOfType("make", null, root).workingDir());
+        com.editora.config.RunConfiguration python =
+                RunConfigDefaults.blankOfType("python", root.resolve("tools/x.py"), root);
+        assertEquals("python", python.type());
+        assertEquals("", python.workingDir(), "a script's folder is its own default");
+    }
 }
