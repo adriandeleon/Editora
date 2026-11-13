@@ -34,6 +34,7 @@ import javafx.scene.text.Text;
 
 import com.editora.config.Bookmark;
 import com.editora.config.PathDisplay;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -146,7 +147,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         // An info badge explaining that bookmarks are scoped per project.
         Label info = new Label("ⓘ");
         info.getStyleClass().add("info-badge");
-        Tooltip infoTip = new Tooltip(SCOPE_HINT);
+        Tooltip infoTip = ControlNames.tooltip(SCOPE_HINT);
         infoTip.setWrapText(true);
         UiZoom.follow(info, () -> infoTip.setMaxWidth(UiZoom.px(320)));
         Tooltip.install(info, infoTip);
@@ -693,7 +694,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setText(PathDisplay.fileName(f.file()));
                 getStyleClass().add("bookmark-file-row");
                 setGraphic(FileIcons.forProjectItem(PathDisplay.fileName(f.file()), f.folder()));
-                setTooltip(new Tooltip(f.file().toString()));
+                setTooltip(ControlNames.tooltip(f.file().toString()));
                 MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());
                 deleteAll.getStyleClass().add("danger"); // a destructive row reads red
@@ -714,7 +715,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                     row.getChildren().add(line);
                 }
                 setGraphic(row);
-                setTooltip(new Tooltip(m.bm().isFolder() ? m.file().toString() : m.file() + ":" + (m.bm().line() + 1)));
+                setTooltip(ControlNames.tooltip(
+                        m.bm().isFolder() ? m.file().toString() : m.file() + ":" + (m.bm().line() + 1)));
                 MenuItem edit = new MenuItem(tr("bookmarks.editNoteItem"));
                 edit.setGraphic(Icons.edit());
                 edit.setOnAction(e -> editNote(m));

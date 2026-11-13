@@ -16,6 +16,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.diff.PatchParser.FilePatch;
+import com.editora.editor.ControlNames;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
@@ -308,7 +309,7 @@ public final class PrReviewPane extends Region implements TabContent {
         // The status class colors the letter + icon (the .pr-review-file-row.git-status-* CSS).
         row.getStyleClass().addAll("pr-review-file-row", r.status().cssClass());
         row.setAlignment(Pos.CENTER_LEFT);
-        Tooltip.install(row, new Tooltip(r.displayPath()));
+        Tooltip.install(row, ControlNames.tooltip(r.displayPath()));
         row.setOnMouseClicked(e -> link.fire());
         return row;
     }

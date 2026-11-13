@@ -19,6 +19,7 @@ import javafx.scene.input.TransferMode;
 import javafx.scene.layout.HBox;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
@@ -257,7 +258,7 @@ final class TabHeaders {
 
     /** The full-path tooltip of a file tab ("untitled" for none; a remote file shows its display label). */
     static Tooltip tooltip(@Nullable Path p) {
-        return new Tooltip(
+        return ControlNames.tooltip(
                 p == null
                         ? "untitled"
                         : com.editora.vfs.Vfs.isRemote(p)

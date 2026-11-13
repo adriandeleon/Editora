@@ -5,6 +5,7 @@ import java.util.function.Supplier;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
@@ -72,7 +73,7 @@ public final class MermaidLintHover {
             }
             Tooltip t = tooltip;
             if (t == null) {
-                t = new Tooltip();
+                t = ControlNames.tooltip();
                 t.getStyleClass().add("mermaid-lint-tooltip");
                 t.setWrapText(true);
                 Tooltip made = t;

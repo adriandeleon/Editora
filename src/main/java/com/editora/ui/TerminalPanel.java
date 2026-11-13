@@ -20,7 +20,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
@@ -28,6 +27,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 
 import com.editora.command.KeyDispatcher;
+import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import com.editora.terminal.DesktopNotifier;
@@ -574,7 +574,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         Label target = new Label(targetLabel.apply(dir));
         target.getStyleClass().add("terminal-target-chip");
         tab.setGraphic(target);
-        tab.setTooltip(new Tooltip());
+        tab.setTooltip(ControlNames.tooltip());
         tab.setOnCloseRequest(e -> {
             e.consume(); // closed by requestClose once it may be
             requestClose(tab);
@@ -632,7 +632,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         Label target = new Label(targetLabel.apply(dir));
         target.getStyleClass().add("terminal-target-chip");
         tab.setGraphic(target);
-        tab.setTooltip(new Tooltip(title));
+        tab.setTooltip(ControlNames.tooltip(title));
         tab.setOnCloseRequest(e -> {
             e.consume(); // closed by requestClose once it may be
             requestClose(tab);

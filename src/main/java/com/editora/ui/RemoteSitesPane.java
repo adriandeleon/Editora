@@ -104,7 +104,9 @@ final class RemoteSitesPane {
                 // sideways), and the whole of it, with the address, is in the tooltip.
                 setPrefWidth(0);
                 setTooltip(
-                        empty || c == null ? null : new javafx.scene.control.Tooltip(c.displayLabel() + "\n" + c.id()));
+                        empty || c == null
+                                ? null
+                                : com.editora.editor.ControlNames.tooltip(c.displayLabel() + "\n" + c.id()));
             }
         });
 
@@ -378,7 +380,7 @@ final class RemoteSitesPane {
     /** Marks {@code field} red with {@code problemKey}'s text as its tooltip, or clears that. */
     private static void mark(TextField field, @Nullable String problemKey) {
         field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, problemKey != null);
-        field.setTooltip(problemKey == null ? null : new javafx.scene.control.Tooltip(tr(problemKey)));
+        field.setTooltip(problemKey == null ? null : com.editora.editor.ControlNames.tooltip(tr(problemKey)));
     }
 
     /**
@@ -400,7 +402,7 @@ final class RemoteSitesPane {
                 .thenAccept(readable -> javafx.application.Platform.runLater(() -> {
                     if (!readable && path.equals(keyPath.getText())) {
                         keyPath.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_WARNING, true);
-                        keyPath.setTooltip(new javafx.scene.control.Tooltip(
+                        keyPath.setTooltip(com.editora.editor.ControlNames.tooltip(
                                 path.isBlank()
                                         ? tr("settings.remote.check.keyNone")
                                         : tr("settings.remote.check.keyMissing", path)));

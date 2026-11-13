@@ -20,7 +20,6 @@ import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -36,6 +35,7 @@ import com.editora.config.Deployment;
 import com.editora.config.RunConfiguration;
 import com.editora.deploy.DeployExcludes;
 import com.editora.deploy.DeployRoot;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
 import org.jspecify.annotations.Nullable;
@@ -160,12 +160,13 @@ public final class DeploymentsWindow {
         excludes.setId("deploy-excludes");
         excludes.setPromptText(tr("deploy.field.excludesPrompt"));
         excludes.setPrefRowCount(5);
-        excludes.setTooltip(new Tooltip(tr("deploy.field.excludesHint", String.join("  ", DeployExcludes.DEFAULTS))));
+        excludes.setTooltip(
+                ControlNames.tooltip(tr("deploy.field.excludesHint", String.join("  ", DeployExcludes.DEFAULTS))));
         CheckBox gitignore = new CheckBox(tr("deploy.field.useGitignore"));
         gitignore.setId("deploy-gitignore");
         CheckBox deleteRemoved = new CheckBox(tr("deploy.field.deleteRemoved"));
         deleteRemoved.setId("deploy-delete-removed");
-        deleteRemoved.setTooltip(new Tooltip(tr("deploy.field.deleteRemovedHint")));
+        deleteRemoved.setTooltip(ControlNames.tooltip(tr("deploy.field.deleteRemovedHint")));
         CheckBox uploadOnSave = new CheckBox(tr("deploy.field.uploadOnSave"));
         uploadOnSave.setId("deploy-upload-on-save");
 

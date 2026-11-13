@@ -35,6 +35,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.Project;
 import com.editora.config.RecentFiles;
+import com.editora.editor.ControlNames;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
@@ -397,7 +398,7 @@ public final class WelcomePane extends Region implements TabContent {
         Path root = project.rootPath();
         String rootText = root == null ? "" : Vfs.displayLabel(root);
         HBox row = recentRowBox(link, folderLabel(Vfs.isLocal(root) ? WelcomeText.dirText(root, home) : rootText));
-        Tooltip.install(row, new Tooltip(rootText));
+        Tooltip.install(row, ControlNames.tooltip(rootText));
         row.setOnContextMenuRequested(e -> {
             menuFor(null, rootText).show(row, e.getScreenX(), e.getScreenY());
             e.consume();
@@ -450,7 +451,7 @@ public final class WelcomePane extends Region implements TabContent {
         Label where = folderLabel(WelcomeText.folderText(path, projectRoot, local ? home : null));
         HBox row = chip == null ? recentRowBox(link, where) : recentRowBox(link, chip, where);
         String pathText = Vfs.displayLabel(path);
-        Tooltip.install(row, new Tooltip(pathText));
+        Tooltip.install(row, ControlNames.tooltip(pathText));
         row.setOnContextMenuRequested(e -> {
             menuFor(path, pathText).show(row, e.getScreenX(), e.getScreenY());
             e.consume();
@@ -575,7 +576,7 @@ public final class WelcomePane extends Region implements TabContent {
                 row.getChildren().add(where);
             }
             row.setAlignment(Pos.BASELINE_LEFT);
-            Tooltip.install(row, new Tooltip("sftp://" + c.id()));
+            Tooltip.install(row, ControlNames.tooltip("sftp://" + c.id()));
             rows.add(row);
         }
         addCollapsed(box, rows);

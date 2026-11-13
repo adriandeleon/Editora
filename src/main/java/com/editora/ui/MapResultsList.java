@@ -118,7 +118,7 @@ final class MapResultsList extends MapSideColumn {
         HBox.setHgrow(filter, Priority.ALWAYS);
         tests.setSelected(true);
         tests.setFocusTraversable(false);
-        tests.setTooltip(new javafx.scene.control.Tooltip(tr("project.map.places.testsHelp")));
+        tests.setTooltip(com.editora.editor.ControlNames.tooltip(tr("project.map.places.testsHelp")));
         count.getStyleClass().add("project-map-card-structure-line");
         count.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
         HBox filters = UiZoom.spacing(new HBox(filter, tests, count), 6);

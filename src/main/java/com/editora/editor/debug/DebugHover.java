@@ -10,6 +10,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.util.Duration;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -226,7 +227,7 @@ public final class DebugHover {
                 return; // evaluation failed / mouse moved on — show nothing
             }
             if (tooltip == null) {
-                tooltip = new Tooltip();
+                tooltip = ControlNames.tooltip();
                 tooltip.getStyleClass().add("debug-value-tooltip");
                 tooltip.setWrapText(true);
                 Tooltip made = tooltip;

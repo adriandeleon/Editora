@@ -593,6 +593,10 @@ final class Chrome {
      */
     private static final java.util.Set<String> PRINTS_THE_TAB = java.util.Set.of("editor.print", "editor.exportPdf");
 
+    /** Commands outside the buffer families that do nothing without an editor in front. */
+    private static final java.util.Set<String> ACTS_ON_THE_BUFFER =
+            java.util.Set.of("file.save", "file.saveAs", "view.splitVertical", "view.splitHorizontal");
+
     /** The selection-only twins of {@link #PRINTS_THE_TAB}: a text buffer with some text selected. */
     private static final java.util.Set<String> PRINTS_THE_SELECTION =
             java.util.Set.of("editor.printSelection", "editor.exportSelectionPdf");
@@ -695,8 +699,12 @@ final class Chrome {
         if (id.startsWith("projectMap.") && !id.equals("projectMap.revealActiveFile")) {
             return c.projectMap() ? null : new DisabledReason("palette.disabled.needsProjectMap", null);
         }
-        // Whole-family buffer requirements: these do nothing on the Welcome page or an image/hex/PDF tab.
-        if (id.startsWith("edit.") || id.startsWith("nav.") || id.startsWith("markwhen.")) {
+        // Whole-family buffer requirements: these do nothing on the Welcome page or an image/hex/PDF tab. So do
+        // Save, Save As and the splits, which the toolbar offers: its buttons take this answer (TBAR-17).
+        if (id.startsWith("edit.")
+                || id.startsWith("nav.")
+                || id.startsWith("markwhen.")
+                || ACTS_ON_THE_BUFFER.contains(id)) {
             return c.hasBuffer() ? null : new DisabledReason("palette.disabled.needsBuffer", null);
         }
         return null;

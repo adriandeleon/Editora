@@ -49,6 +49,7 @@ import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
 import com.editora.config.PersonalNote;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.editor.notes.PersonalNoteTooltip;
@@ -739,7 +740,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         clear.managedProperty().bind(clear.visibleProperty()); // reclaim its width when hidden
 
         mapButton.getStyleClass().add("project-view-toggle");
-        mapButton.setTooltip(new Tooltip(tr("project.view.map.tooltip")));
+        mapButton.setTooltip(ControlNames.tooltip(tr("project.view.map.tooltip")));
         // Reachable by Tab: without it opening the Map was mouse-only (project.toggleMapView aside).
         mapButton.setFocusTraversable(true);
         mapButton.setOnAction(e -> openMapWindow(true));

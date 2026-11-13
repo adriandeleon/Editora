@@ -532,6 +532,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every tooltip appears after the same short wait.** Tooltips on labels, list rows, badges, tabs and the
+  status bar waited a full second, while buttons and gutter markers answered in 400 ms. All of them now show
+  after 400 ms.
+- **Toolbar buttons are greyed out when they cannot do anything.** Save As and the split buttons with no
+  file in front, and a button you added to the toolbar whose command has nothing to act on (Commit or Git Log
+  outside a repository, a tool window whose feature is off), are now disabled, as their menu rows are. Save
+  and Save As are greyed out in the menus and the command palette too while no file is in front.
 - **Zoom In, Zoom Out and Reset Zoom zoom an image or a PDF.** With an image or a PDF in the active tab, the
   three content zoom commands (and their keys) now zoom it, as its −, + and 1:1 buttons do; before, they
   changed the text zoom of editors you were not looking at.
@@ -718,6 +725,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The debugger's toolbar shows the new keys after a keymap switch.** Continue, Step Over and the other
+  buttons of the Debug window kept the old keymap's keys in their tooltips until the next debug session
+  changed state.
 - **A closed project window is released from memory.** Closing a project window left the whole window in memory,
   with its files, panels and tools, until Editora quit, so memory grew with every project opened and closed. The No
   Project window stayed the same way once its Project Map had been opened, and so did the last window to run Import

@@ -20,6 +20,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.agent.AcpJson;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
 import org.jspecify.annotations.Nullable;
@@ -531,7 +532,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             if (looksLikePath(text)) {
                 label.getStyleClass().add("agent-code-path");
                 label.setOnMouseClicked(e -> onOpenPath.accept(text));
-                Tooltip.install(label, new Tooltip(tr("agent.openFileTooltip")));
+                Tooltip.install(label, ControlNames.tooltip(tr("agent.openFileTooltip")));
             }
         } else if (node instanceof Parent parent) {
             for (Node child : parent.getChildrenUnmodifiable()) {

@@ -14,7 +14,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -29,6 +28,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
 import com.editora.config.PersonalNote;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 
 import static com.editora.i18n.Messages.tr;
@@ -188,7 +188,7 @@ final class ProjectMapNotePreview extends StackPane {
                 path.getFileName() == null
                         ? path.toString()
                         : path.getFileName().toString());
-        title.setTooltip(new Tooltip(path.toString()));
+        title.setTooltip(ControlNames.tooltip(path.toString()));
         setAccessibleText(tr("project.map.notes.accessible", path.toString()));
     }
 
@@ -303,7 +303,7 @@ final class ProjectMapNotePreview extends StackPane {
         Button where = new Button(ProjectMapStickyNotes.where(note), Icons.notes());
         where.getStyleClass().addAll("flat", "project-map-note-preview-where");
         String quoted = note.anchor().selectedText().strip();
-        where.setTooltip(new Tooltip(
+        where.setTooltip(ControlNames.tooltip(
                 quoted.isEmpty() ? tr("project.map.notes.openAt") : quoted + "\n" + tr("project.map.notes.openAt")));
         where.setAccessibleHelp(tr("project.map.notes.openAt"));
         int line = note.anchor().line();

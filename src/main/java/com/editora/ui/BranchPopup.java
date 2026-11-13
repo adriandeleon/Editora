@@ -13,7 +13,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -22,6 +21,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.search.FuzzyMatch;
 import org.jspecify.annotations.Nullable;
@@ -296,7 +296,7 @@ public final class BranchPopup {
         // Never the raw URL: one stored as https://user:token@host would put the token on screen.
         String shownUrl = com.editora.git.GitFormat.displayRemoteUrl(remoteUrl);
         remoteUrlLabel.setText(shownUrl);
-        remoteUrlLabel.setTooltip(shownUrl.isBlank() ? null : new Tooltip(shownUrl));
+        remoteUrlLabel.setTooltip(shownUrl.isBlank() ? null : ControlNames.tooltip(shownUrl));
         all = rows;
         present(owner, anchor);
     }
@@ -633,7 +633,8 @@ public final class BranchPopup {
                 setGraphic(header(h));
                 setDisable(!toggleable(h)); // during a search: a plain, non-selectable section label
                 if (toggleable(h)) {
-                    setTooltip(new Tooltip(tr(isFolded(h) ? "branchpopup.expand" : "branchpopup.collapse", h.title())));
+                    setTooltip(ControlNames.tooltip(
+                            tr(isFolded(h) ? "branchpopup.expand" : "branchpopup.collapse", h.title())));
                 }
             } else if (item instanceof ActionRow a) {
                 setDisable(false);
@@ -751,7 +752,7 @@ public final class BranchPopup {
             UiZoom.follow(up, () -> HBox.setMargin(up, UiZoom.insets(0, 0, 0, 18)));
             UiZoom.follow(more, () -> HBox.setMargin(more, UiZoom.insets(0, 0, 0, 6)));
             box.setAlignment(Pos.CENTER_LEFT);
-            setTooltip(new Tooltip(branchTooltip(br)));
+            setTooltip(ControlNames.tooltip(branchTooltip(br)));
             return box;
         }
 

@@ -17,7 +17,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -28,6 +27,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.CubicCurve;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -304,7 +304,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             String tip = self
                     ? tr("project.map.graph.selfTip", where)
                     : walkable ? tr("project.map.graph.nodeTip", where) : where;
-            setTooltip(new Tooltip(tip));
+            setTooltip(ControlNames.tooltip(tip));
             setAccessibleText(tip);
             setOnAction(event -> detail.setText(where));
             addEventFilter(KeyEvent.KEY_PRESSED, event -> {
@@ -356,7 +356,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             middle.setMnemonicParsing(false);
             middle.setWrapText(true);
             middle.setOnAction(event -> openSubject());
-            middle.setTooltip(new Tooltip(tr("project.map.graph.subjectTip")));
+            middle.setTooltip(ControlNames.tooltip(tr("project.map.graph.subjectTip")));
             curves.setManaged(false);
             curves.setMouseTransparent(true);
             UiZoom.follow(this, this::requestLayout);

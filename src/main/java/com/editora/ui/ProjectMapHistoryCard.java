@@ -14,7 +14,6 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -24,6 +23,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.git.BlameParser;
 import com.editora.git.GitFormat;
@@ -107,8 +107,8 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         changesButton.setToggleGroup(modes);
         blameButton.setToggleGroup(modes);
         changesButton.setSelected(true);
-        changesButton.setTooltip(new Tooltip(tr("project.map.history.changesTip")));
-        blameButton.setTooltip(new Tooltip(tr("project.map.history.blameTip")));
+        changesButton.setTooltip(ControlNames.tooltip(tr("project.map.history.changesTip")));
+        blameButton.setTooltip(ControlNames.tooltip(tr("project.map.history.blameTip")));
         modes.selectedToggleProperty().addListener((obs, was, now) -> {
             if (now != null) {
                 setMode(now == blameButton ? Mode.BLAME : Mode.CHANGES);
@@ -117,7 +117,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         });
         openCommit.getStyleClass().add("flat");
         openCommit.setMnemonicParsing(false);
-        openCommit.setTooltip(new Tooltip(tr("project.map.history.openCommitTip")));
+        openCommit.setTooltip(ControlNames.tooltip(tr("project.map.history.openCommitTip")));
         openCommit.setOnAction(event -> {
             LineHistory.Commit picked = pickedCommit();
             if (picked != null) {
@@ -178,7 +178,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
                 ? tr("project.map.history.titleFile", com.editora.config.PathDisplay.fileName(file))
                 : tr("project.map.history.title", name);
         title.setText(heading);
-        title.setTooltip(new Tooltip(tr(
+        title.setTooltip(ControlNames.tooltip(tr(
                 "project.map.history.titleTip",
                 com.editora.config.PathDisplay.fileName(file),
                 startLine + 1,
@@ -509,7 +509,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
             setText(null);
             setGraphic(box);
             setAccessibleText(item.subject() + ", " + detail.getText());
-            setTooltip(new Tooltip(item.hash() + "\n" + item.path()));
+            setTooltip(ControlNames.tooltip(item.hash() + "\n" + item.path()));
         }
     }
 
@@ -575,7 +575,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
             setText(null);
             setGraphic(box);
             setAccessibleText(blameLabel(item, now));
-            setTooltip(line == null || line.uncommitted() ? null : new Tooltip(line.summary()));
+            setTooltip(line == null || line.uncommitted() ? null : ControlNames.tooltip(line.summary()));
         }
     }
 }

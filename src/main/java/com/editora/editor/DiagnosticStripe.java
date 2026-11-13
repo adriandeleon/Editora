@@ -296,7 +296,7 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
             return;
         }
         if (tooltip == null) {
-            tooltip = new Tooltip();
+            tooltip = ControlNames.tooltip();
             tooltip.getStyleClass().add("lsp-diagnostic-tooltip");
             tooltip.setWrapText(true);
             Tooltip made = tooltip;

@@ -50,6 +50,7 @@ import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.MenuChords;
 import com.editora.editor.TabContent;
@@ -859,6 +860,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     void refreshMenuEnablement() {
         if (menuBar != null) {
             menuBar.refreshEnablement();
+        }
+        if (toolbar != null) {
+            toolbar.refreshCommandState(); // the toolbar's buttons take the same answer
         }
     }
 
@@ -2012,7 +2016,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         removeBtn.setGraphic(Icons.trash());
         removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
         removeBtn.setFocusTraversable(false);
-        removeBtn.setTooltip(new Tooltip(tr("tooltip.removeRecent")));
+        removeBtn.setTooltip(ControlNames.tooltip(tr("tooltip.removeRecent")));
         // Remove just this entry, after a confirmation, without opening it. The dropdown closes first: a
         // modal dialog over an open popup would leave the popup stacked above it. Deferred so the dialog's
         // nested event loop doesn't run inside this mouse press.
@@ -2025,7 +2029,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         CustomMenuItem item = new CustomMenuItem(row);
         item.setOnAction(e -> openRecent(path));
-        Tooltip.install(row, new Tooltip(path.toString()));
+        Tooltip.install(row, ControlNames.tooltip(path.toString()));
         return item;
     }
 

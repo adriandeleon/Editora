@@ -15,12 +15,12 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.util.Duration;
 
 import com.editora.editops.PreserveCase;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.UiZoom;
 import com.editora.editor.notes.NoteAnchors;
@@ -123,9 +123,9 @@ public class FindReplaceBar extends HBox {
     private void build() {
         findField.setPromptText(tr("find.prompt"));
         replaceField.setPromptText(tr("find.replacePrompt"));
-        wholeWord.setTooltip(new Tooltip(tr("find.wholeWord")));
-        preserveCase.setTooltip(new Tooltip(tr("find.preserveCase")));
-        inSelection.setTooltip(new Tooltip(tr("find.inSelection")));
+        wholeWord.setTooltip(ControlNames.tooltip(tr("find.wholeWord")));
+        preserveCase.setTooltip(ControlNames.tooltip(tr("find.preserveCase")));
+        inSelection.setTooltip(ControlNames.tooltip(tr("find.inSelection")));
         countLabel.getStyleClass().add("find-count");
 
         Button next = iconButton(Icons.findNext(), tr("find.next"));

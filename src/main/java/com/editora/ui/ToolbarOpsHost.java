@@ -31,6 +31,12 @@ final class ToolbarOpsHost implements ToolbarCoordinator.Ops {
     @Override
     public void afterRebuild() {
         mc.chrome.applySimpleMode(); // hides the curated Simple-mode buttons + collapses orphaned separators
+        mc.toolbar.refreshCommandState(); // the buttons just built start in their command's state
+    }
+
+    @Override
+    public void trackButton(javafx.scene.control.Button button, String commandId) {
+        mc.toolbar.track(button, commandId);
     }
 
     @Override

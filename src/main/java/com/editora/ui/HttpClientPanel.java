@@ -59,6 +59,7 @@ import javafx.util.StringConverter;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpResponseFormat;
@@ -131,7 +132,7 @@ public final class HttpClientPanel extends VBox {
     /** The whole status line ("200 OK · 83 ms · 177 B"), as read by a screen reader and tests. */
     private String statusLine = "";
 
-    private final Tooltip statusTip = new Tooltip();
+    private final Tooltip statusTip = ControlNames.tooltip();
     /** A note about the last run under the header (Run sent the caret's request instead), until the next run. */
     private final Label runSummary = new Label();
 
@@ -422,7 +423,7 @@ public final class HttpClientPanel extends VBox {
         previousRow.setMaxWidth(Double.MAX_VALUE);
         previousRow.setAlignment(Pos.CENTER_LEFT);
         previousRow.setTextOverrun(OverrunStyle.ELLIPSIS);
-        previousRow.setTooltip(new Tooltip(tr("httppanel.previous.tip")));
+        previousRow.setTooltip(ControlNames.tooltip(tr("httppanel.previous.tip")));
         previousRow.setOnAction(e -> showPrevious());
         previousPane.getStyleClass().add("http-previous-pane");
         UiZoom.padding(previousPane, 6, 2, 2, 2);
@@ -920,7 +921,7 @@ public final class HttpClientPanel extends VBox {
             runBlockedTip = null;
         }
         if (why != null) {
-            runBlockedTip = new Tooltip(why);
+            runBlockedTip = ControlNames.tooltip(why);
             Tooltip.install(runHost, runBlockedTip);
         }
     }

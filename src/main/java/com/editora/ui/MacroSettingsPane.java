@@ -23,7 +23,6 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
@@ -38,6 +37,7 @@ import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.config.ConfigManager;
 import com.editora.config.MacroStore;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.macro.Macro;
 import com.editora.macro.MacroKey;
@@ -142,9 +142,9 @@ final class MacroSettingsPane extends HBox {
         // a screen reader announced as the glyphs. Each is greyed where it cannot act.
         Button up = new Button(tr("settings.macro.moveUp"));
         Button down = new Button(tr("settings.macro.moveDown"));
-        up.setTooltip(new Tooltip(tr("settings.macro.moveUp.help")));
+        up.setTooltip(ControlNames.tooltip(tr("settings.macro.moveUp.help")));
         up.setAccessibleHelp(tr("settings.macro.moveUp.help"));
-        down.setTooltip(new Tooltip(tr("settings.macro.moveDown.help")));
+        down.setTooltip(ControlNames.tooltip(tr("settings.macro.moveDown.help")));
         down.setAccessibleHelp(tr("settings.macro.moveDown.help"));
         up.setOnAction(e -> moveStep(-1));
         down.setOnAction(e -> moveStep(1));

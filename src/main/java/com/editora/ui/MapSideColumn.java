@@ -6,7 +6,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.OverrunStyle;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
@@ -18,6 +17,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -85,7 +85,7 @@ abstract class MapSideColumn implements CardAttachment {
         title.setMinWidth(0);
         title.setMaxWidth(Double.MAX_VALUE);
         title.setTextOverrun(OverrunStyle.ELLIPSIS);
-        title.setTooltip(new Tooltip());
+        title.setTooltip(ControlNames.tooltip());
         HBox.setHgrow(title, Priority.ALWAYS);
         Button close = new Button("×");
         close.getStyleClass().add("project-map-preview-button");

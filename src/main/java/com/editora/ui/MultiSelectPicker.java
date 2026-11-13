@@ -91,7 +91,7 @@ public final class MultiSelectPicker {
         ListView<CheckBox> list = new ListView<>();
         for (Item<T> it : items) {
             CheckBox cb = new CheckBox(it.label());
-            cb.setTooltip(new javafx.scene.control.Tooltip(it.label())); // a row still too long says it whole
+            cb.setTooltip(com.editora.editor.ControlNames.tooltip(it.label())); // a row still too long says it whole
             cb.setSelected(it.preselected());
             cb.setFocusTraversable(false); // the ListView owns focus; Space toggles the selected row
             boxes.add(cb);

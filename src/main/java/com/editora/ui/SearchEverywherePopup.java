@@ -440,7 +440,7 @@ final class SearchEverywherePopup {
                 // rather than a state, and the explanation is the whole reason it is listed at all.
                 String why = ops.disabledReason(it);
                 if (why != null && !why.isBlank()) {
-                    javafx.scene.control.Tooltip tip = new javafx.scene.control.Tooltip(why);
+                    javafx.scene.control.Tooltip tip = com.editora.editor.ControlNames.tooltip(why);
                     tip.setWrapText(true);
                     tip.setMaxWidth(UiZoom.px(380));
                     tip.getStyleClass().add("palette-disabled-tooltip");

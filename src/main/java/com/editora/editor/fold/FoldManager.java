@@ -39,6 +39,7 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.SVGPath;
 import javafx.scene.text.Text;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.LazyTooltip;
 import com.editora.editor.git.BlameInfo;
 import com.editora.text.FoldRegions;
@@ -379,7 +380,7 @@ public final class FoldManager {
 
     private Tooltip linePreview() {
         if (linePreview == null) {
-            linePreview = new Tooltip();
+            linePreview = ControlNames.tooltip();
             linePreview.getStyleClass().add("fold-preview-tooltip");
             linePreview.setShowDuration(javafx.util.Duration.INDEFINITE);
             linePreview.setStyle(previewStyle);
@@ -1764,8 +1765,7 @@ public final class FoldManager {
         lineNo.setCursor(Cursor.HAND);
         Tooltip tip = runToHereTip;
         if (tip == null) {
-            tip = new Tooltip();
-            tip.setShowDelay(javafx.util.Duration.millis(300));
+            tip = ControlNames.tooltip();
             runToHereTip = tip;
         }
         tip.setText(runToHereTooltip.apply(idx));

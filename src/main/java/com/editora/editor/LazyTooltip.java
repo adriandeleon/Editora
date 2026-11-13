@@ -42,11 +42,10 @@ public final class LazyTooltip {
                 if (value == null || value.isBlank()) {
                     return;
                 }
-                Tooltip tip = new Tooltip(value);
+                Tooltip tip = ControlNames.tooltip(value);
                 if (styleClass != null) {
                     tip.getStyleClass().add(styleClass);
                 }
-                tip.setShowDelay(ControlNames.TOOLTIP_DELAY);
                 created++;
                 Tooltip.install(node, tip);
             }
