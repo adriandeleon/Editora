@@ -374,6 +374,20 @@ AltGr is reported as Ctrl+Alt, so requiring Alt-down **and** Ctrl-up excludes it
 AltGr typing and explicit Ctrl+Alt chords keep working. macOS is never affected (Option = Meta),
 and a *bound* `M-` chord still runs and consumes normally.
 
+### Reaching the menu bar from the keyboard
+
+Because a bare `Alt` is consumed (above), it does not open the menu bar as it does in a stock JavaFX window,
+and three keymaps give `F10` to the debugger. So the bar has a command of its own: `view.focusMenuBar`
+(`MainMenuBar.openFirstMenu`) opens the first menu with the keyboard on it, and the arrow keys walk the bar
+from there. Every keymap binds it: `f10` in Emacs and IntelliJ, where `F10` is free, and `C-S-f10` in CUA,
+VS Code and Sublime, where `f10` is Step Over. When there is no bar in the window to open (it is hidden, or
+it is the macOS system bar) the command says so in the status bar.
+
+The Help menu's keyboard reference is the keybinding editor: `help.keyboardShortcuts` opens Settings on the
+Keymaps page (`SettingsWindow.showKeymaps`). The Help menu's rows follow one order in every Pauta app, which
+`MenuBarModelTest.theHelpMenuFollowsTheOrderEveryPautaAppUses` holds: Command Palette, Documentation, Keyboard
+Shortcuts, Welcome Page, Check for Updates, Message Log, Debug Log, Report a Problem, Pauta Conformance, About.
+
 ### AltGr is typing, not `C-M-`
 
 Because AltGr arrives as Ctrl+Alt, AltGr+E (the euro sign on DE/ES/IT layouts) is indistinguishable

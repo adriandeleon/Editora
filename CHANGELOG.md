@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Keyboard Shortcuts in the Help menu.** Help → Keyboard Shortcuts opens the list of every command's keys
+  in Settings, where you can search it and change a key. It is in the Command Palette as *Keyboard Shortcuts*.
+- **Focus Menu Bar.** *View: Focus Menu Bar* opens the first menu so the arrow keys can walk the menu bar.
+  It is on F10 in the Emacs and IntelliJ keymaps and on Ctrl+Shift+F10 in the CUA, VS Code and Sublime
+  keymaps, where F10 steps the debugger and the menu bar could not be reached from the keyboard at all.
 - **Open Core Dump.** Run → Launch → Debug: Open Core Dump… opens the core file a crashed Go, C, C++ or Rust program
   left (or one `gcore` made) in the debugger, as GoLand and CLion do: the crashed thread's stack, shown at the program's
   own line rather than the runtime's, every other thread, and their variables, which you can evaluate and watch. On
@@ -549,6 +554,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Welcome Page is in the Help menu.** It moved from the View menu, in the full menu bar and in Simple
+  mode, and the Help menu's rows now run in one order: Command Palette, Documentation, Keyboard Shortcuts,
+  Welcome Page, Check for Updates, Message Log, Debug Log, Report a Problem, Pauta Conformance, About.
 - **A mistyped option on the command line stops the launch.** `editora --config-dri /tmp/x` used to ignore
   the option it did not know and start on your real settings. It now prints `Editora: unknown option:
   --config-dri` and how to get help, and exits with status 2 before any window opens. This holds for an option

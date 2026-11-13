@@ -237,8 +237,7 @@ final class MenuBarModel {
                                 submenu("menubar.view.zoom"),
                                 SEPARATOR,
                                 "view.toggleSimpleMode",
-                                "view.toggleZen",
-                                "view.welcome"),
+                                "view.toggleZen"),
                         List.of(new MenuSpec(
                                 "menubar.view.zoom",
                                 // The text zoom is the editor's; the three below it scale the whole interface.
@@ -676,9 +675,13 @@ final class MenuBarModel {
                 new MenuSpec(
                         "menubar.help",
                         List.of(
+                                // Pauta's order for a Help menu: the palette, the docs, the keys, the Welcome
+                                // page, then updates, the two logs, the problem report, conformance and About.
                                 "palette.show",
                                 SEPARATOR,
                                 "help.documentation",
+                                "help.keyboardShortcuts",
+                                "view.welcome",
                                 "help.checkForUpdates",
                                 "view.messageLog",
                                 "view.debugLog",
@@ -734,9 +737,10 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "view.settings",
                                 SEPARATOR,
-                                "view.toggleSimpleMode",
-                                "view.welcome")),
-                new MenuSpec("menubar.help", List.of("palette.show", "help.documentation", SEPARATOR, "help.about")));
+                                "view.toggleSimpleMode")),
+                new MenuSpec(
+                        "menubar.help",
+                        List.of("palette.show", "help.documentation", "view.welcome", SEPARATOR, "help.about")));
     }
 
     /**

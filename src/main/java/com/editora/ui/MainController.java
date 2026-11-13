@@ -677,6 +677,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         DiffGitButtonCommands.register(this);
         DebugBuildTestButtonCommands.register(this);
         PanelViewerButtonCommands.register(this);
+        HelpCommands.register(this);
         recovery.registerCommands(registry);
         setupToolbar();
         runConfigurations.refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set
