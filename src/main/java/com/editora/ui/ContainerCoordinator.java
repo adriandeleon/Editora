@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executor;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -56,6 +57,8 @@ final class ContainerCoordinator {
     Function<ContainerEngine, ContainerBindings.Lookup> lookups = ContainerBindings::lookup;
     /** The one-time question; replaceable in tests. */
     Predicate<com.editora.process.ExecTarget> consent = this::askToRunThere;
+    /** Where the engine is asked for a project's container; replaceable so a test can wait for the answer. */
+    Executor background = task -> Thread.ofVirtual().name("container-binding").start(task);
 
     /** Containers the user said "not now" to this session. */
     private final Set<String> declined = new HashSet<>();
@@ -100,7 +103,7 @@ final class ContainerCoordinator {
                 .getContainerBindings()
                 .get(root.toAbsolutePath().normalize().toString());
         ContainerBindings.Lookup lookup = lookups.apply(engine());
-        Thread.ofVirtual().name("container-binding").start(() -> {
+        background.execute(() -> {
             // The engine is asked only for a folder that has a dev container configuration, or a container
             // the user picked for it: most projects have neither, and need no `docker ps` when they open.
             ContainerExecTarget target = named != null || hasDevContainerConfig(root)
@@ -220,7 +223,7 @@ final class ContainerCoordinator {
         host.settings().setContainerBindings(bindings);
         host.requestSave();
         ContainerBindings.Lookup lookup = lookups.apply(engine());
-        Thread.ofVirtual().name("container-binding").start(() -> {
+        background.execute(() -> {
             ContainerExecTarget target = ContainerBindings.shared().bind(root, container, lookup);
             Platform.runLater(() -> {
                 if (target == null) {

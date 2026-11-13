@@ -5,8 +5,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -130,7 +132,14 @@ class IndentWindowTest {
 
     // --- the comparison ---------------------------------------------------------------------------
 
-    /** Compares every edit at every position; returns how many edits were compared. */
+    /**
+     * Compares every edit at every position; returns how many edits were compared. Each distinct comparison is
+     * made once: the same call with the same arguments gives the same answer, and repeating it only costs time
+     * (a shell edit reads some 20,000 characters above the caret, on both sides). So a closer, which does not
+     * depend on the indent unit, is compared once per tab size rather than once per unit; Enter, which depends
+     * on the unit but not on the tab size, once per unit; and a caret the positions name twice is compared
+     * once, except for its block Tab, whose other end differs each time.
+     */
     private static long compareAt(Sample s, int[] carets) {
         String text = s.text();
         String language = s.language();
@@ -138,39 +147,54 @@ class IndentWindowTest {
         Indenter.Style style = Indenter.styleFor(language);
         long compared = 0;
         Random random = new Random(text.length());
+        Set<String> enterUnits = new HashSet<>();
         for (int tabSize : new int[] {4, 2}) {
+            boolean closers = true; // on the first pass over this tab size
             for (Boolean insertSpaces : new Boolean[] {null, Boolean.TRUE}) {
                 Integer indentSize = insertSpaces == null ? null : 3;
                 String unit = IndentWindow.unit(doc, tabSize, insertSpaces, indentSize, language);
                 assertEquals(
                         Indenter.unitFor(text, tabSize, insertSpaces, indentSize, language), unit, s.name() + " unit");
+                boolean enter = enterUnits.add(unit);
+                Set<Integer> seen = new HashSet<>();
                 for (int caret : carets) {
                     String where = s.name() + " @" + caret + " tab " + tabSize + " spaces " + insertSpaces;
-                    assertEquals(
-                            Indenter.enterEdit(text, caret, language, tabSize, insertSpaces, indentSize),
-                            IndentWindow.enterEdit(doc, caret, language, unit),
-                            where + " enter");
-                    int lineStart = text.lastIndexOf('\n', caret - 1) + 1;
-                    String currentIndent = leading(text.substring(lineStart, caret));
-                    for (char typed : TYPED) {
+                    boolean first = seen.add(caret);
+                    if (first && enter) {
                         assertEquals(
-                                Indenter.closerAlignIndent(style, text, caret, tabSize, currentIndent, typed),
-                                IndentWindow.closerAlignIndent(style, doc, caret, tabSize, currentIndent, typed),
-                                where + " closer " + (int) typed);
+                                Indenter.enterEdit(text, caret, language, tabSize, insertSpaces, indentSize),
+                                IndentWindow.enterEdit(doc, caret, language, unit),
+                                where + " enter");
+                        compared++;
+                    }
+                    if (first && closers) {
+                        int lineStart = text.lastIndexOf('\n', caret - 1) + 1;
+                        String currentIndent = leading(text.substring(lineStart, caret));
+                        for (char typed : TYPED) {
+                            assertEquals(
+                                    Indenter.closerAlignIndent(style, text, caret, tabSize, currentIndent, typed),
+                                    IndentWindow.closerAlignIndent(style, doc, caret, tabSize, currentIndent, typed),
+                                    where + " closer " + (int) typed);
+                        }
+                        compared += TYPED.length;
                     }
                     int end = Math.min(text.length(), caret + random.nextInt(400));
                     for (boolean shift : new boolean[] {false, true}) {
-                        assertEquals(
-                                wholeTab(text, caret, caret, language, tabSize, shift, insertSpaces, indentSize),
-                                IndentWindow.tabEdit(doc, caret, caret, language, tabSize, shift, unit),
-                                where + " tab shift=" + shift);
+                        if (first) {
+                            assertEquals(
+                                    wholeTab(text, caret, caret, language, tabSize, shift, insertSpaces, indentSize),
+                                    IndentWindow.tabEdit(doc, caret, caret, language, tabSize, shift, unit),
+                                    where + " tab shift=" + shift);
+                            compared++;
+                        }
                         assertEquals(
                                 wholeTab(text, caret, end, language, tabSize, shift, insertSpaces, indentSize),
                                 IndentWindow.tabEdit(doc, end, caret, language, tabSize, shift, unit),
                                 where + ".." + end + " block tab shift=" + shift);
+                        compared++;
                     }
-                    compared += 1 + TYPED.length + 4;
                 }
+                closers = false;
             }
         }
         return compared;
