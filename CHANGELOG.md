@@ -40,8 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keyboard is in: Previous and Next Declaration in Card, Smaller and Larger Text in Card, Pin or Unpin Card,
   Show or Hide Card Structure, Show or Hide Card Notes and Close Card, plus Turn Hierarchy Around and Hide
   Trail Stop Note. Diff: Undo Last Applied Change, Save Result, Export as Patch and Leave Diff-Only Window.
-  Git Log: Back to Branch Log, End Search and Refresh; GitHub: Refresh List; Local History: Back to File
-  History. Debug: Add Evaluated Expression to Watches, Close Ended Session, and Previous and Next Page of
+  Git Log: Back to Branch Log, End Search and Refresh; GitHub: Refresh List; Local History: Back to the
+  Current File. Debug: Add Evaluated Expression to Watches, Close Ended Session, and Previous and Next Page of
   Memory. Gradle, sbt and Mill: Load All Tasks. Test Results: Follow Newest Test Result and Show or Hide
   Passed, Failed and Skipped Tests. Also Agent: Open in Separate Window or Dock Back, Structure: Filter by
   Kind, Bookmarks and Notes: Show from All Projects, Markdown Lint: Most Severe First, Viewer: Previous Page,
