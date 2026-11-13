@@ -1566,6 +1566,23 @@ n: …` to the console and resumes. A session records at most `MAX_RECORDED_STOP
 off, the breakpoint stops and says why. *Debug: Toggle Recording Breakpoint* and the breakpoint form's *Record and
 continue* set it; the gutter draws it purple with a ring. `RecordingBreakpointsWindowFxTest` (a fake adapter) and the
 `…Recording` tests of `DebugHistoryProbeFxTest` cover it.
+**Breakpoint filters** (IntelliJ's thread, caller and instance filters; the Edit Breakpoint form's *Only in threads*,
+*Only when called from* and *Only on the object marked*) say where a breakpoint's hits count. They are a
+[`config/StopFilters`](../../src/main/java/com/editora/config/StopFilters.java) on the breakpoint (`Breakpoint.filters`,
+breakpoints.json 10) and on what is sent (`LineBreakpoint.filters`). No adapter knows them, so they are checked
+client-side and work with every adapter: `DapClient` sends a filtered breakpoint without its hit count and log message
+(the adapter would count and log hits the filters drop), and `DebugCoordinator.filteredStop`, at the top of
+`onStopped`, holds a stop on one quiet (`quietStop`) while it checks the caller (frame 1's name, as shown, without its
+arguments, or its function alone — `StopFilterCheck.callerNames`), then the thread's name (`threads`, java-debug's
+`Thread [x]` read as `x`), then the instance — `this` (`self` in Python, Ruby and Rust, `$this` in PHP) evaluated in the
+top frame and its Mark Object identity compared with the label's. A stop that passes counts toward the hit count
+(`StopFilterCheck.hitMatches`: `N`, `== N`, `>= N`, `> N`, `<= N`, `< N`, `% N`, per session in
+`DebugSession.filteredHits`) and is handled anew, shown (`filtersPassed`); one that fails resumes unseen. A filtered
+logpoint is written by Editora (`logpointToWrite`). Patterns are comma-separated globs, case ignored, `!` excluding.
+An instance filter whose label no object carries in the session passes, so the first stop can be marked and the next
+ones are that object's. `StopFilterCheckTest`, `BreakpointFiltersWindowFxTest` (the fake's scripted frames and
+`evaluateResults`) and the opt-in `BreakpointFiltersProbeFxTest` (debugpy and java-debug: a worker-thread filter, then a
+caller filter with an instance filter on an order marked at the first stop) cover it.
 **Triggered breakpoints** ([`ui/TriggeredBreakpoints`](../../src/main/java/com/editora/ui/TriggeredBreakpoints.java))
 wait, in each debug session, until another breakpoint is hit — VS Code's triggered breakpoints, IntelliJ's "Disable
 until hitting the following breakpoint", Visual Studio's "Only enable when the following breakpoint is hit". A

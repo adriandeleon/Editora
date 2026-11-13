@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Breakpoint filters.** A breakpoint can now stop only in some threads (`worker-*`), only when called from some
+  functions (`OrderService.save`), or only on one object, the one you marked with Mark Object, as IntelliJ's
+  breakpoint filters do. Set them in Edit Breakpoint; patterns are separated by commas, `*` and `?` are wildcards and
+  `!` excludes. Editora checks the filters at each stop and lets the program go on, unseen, when one fails, so they
+  work with every language, and a filtered breakpoint's hit count and log message count only the hits that pass. Mark
+  the object at the breakpoint's first stop, and the following stops are that object's.
+
 - **A command for 44 buttons only the mouse could press.** Each is in the command palette, can be given a key
   under Settings → Keymaps, and the button's tooltip shows that key. On the Project Map: Back, Forward and
   History (the list of places the Map has been), Mouse and Keyboard Help, Options, and for the card the

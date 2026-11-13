@@ -418,6 +418,16 @@ public final class BreakpointManager implements LineMarks.Carrier {
         }
     }
 
+    /** Sets where the hits of the breakpoint on {@code line} count: its thread, caller and instance filters. */
+    public void setFilters(int line, com.editora.config.StopFilters filters) {
+        Breakpoint bp = byLine.get(line);
+        com.editora.config.StopFilters value = com.editora.config.StopFilters.of(filters);
+        if (bp != null && !bp.filters().equals(value)) {
+            byLine.put(line, bp.withFilters(value));
+            fireChanged();
+        }
+    }
+
     /** Sets the hit condition of the breakpoint on {@code line} (blank: stop on every hit). */
     public void setHitCondition(int line, String hitCondition) {
         Breakpoint bp = byLine.get(line);

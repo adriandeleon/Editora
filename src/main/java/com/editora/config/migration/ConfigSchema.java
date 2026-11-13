@@ -544,6 +544,10 @@ public enum ConfigSchema {
                     // v8 → v9: + Breakpoint.group and MemberBreakpoint.group (breakpoints turned on and off as one).
                     // Additive: absent is a breakpoint in no group.
                     8,
+                    ConfigMigrations::identity,
+                    // v9 → v10: + Breakpoint.filters (a thread, a caller, a marked object where its hits count).
+                    // Additive: absent is a breakpoint with no filters.
+                    9,
                     ConfigMigrations::identity)),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),

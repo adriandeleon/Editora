@@ -36,7 +36,8 @@ public record Breakpoint(
         boolean recording,
         String id,
         String triggeredBy,
-        String group) {
+        String group,
+        com.editora.config.StopFilters filters) {
 
     /** Max stored length of the captured line snapshot. */
     public static final int MAX_LINE_TEXT = 200;
@@ -47,6 +48,7 @@ public record Breakpoint(
         lineText = lineText == null ? "" : lineText;
         hitCondition = hitCondition == null ? "" : hitCondition;
         group = groupName(group);
+        filters = com.editora.config.StopFilters.of(filters);
         id = id == null ? "" : id.strip();
         triggeredBy = triggeredBy == null || triggeredBy.strip().equals(id) ? "" : triggeredBy.strip();
         if (lineText.length() > MAX_LINE_TEXT) {
@@ -62,6 +64,38 @@ public record Breakpoint(
         }
         lambdas = List.copyOf(numbers);
         lambdasOnly = lambdasOnly && !lambdas.isEmpty(); // with no lambda it stops on the line
+    }
+
+    /** A breakpoint without filters. */
+    public Breakpoint(
+            int line,
+            String condition,
+            String logMessage,
+            boolean enabled,
+            String lineText,
+            String hitCondition,
+            boolean temporary,
+            List<Integer> lambdas,
+            boolean lambdasOnly,
+            boolean recording,
+            String id,
+            String triggeredBy,
+            String group) {
+        this(
+                line,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording,
+                id,
+                triggeredBy,
+                group,
+                com.editora.config.StopFilters.NONE);
     }
 
     /** A breakpoint in no group. */
@@ -91,7 +125,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                "");
+                "",
+                com.editora.config.StopFilters.NONE);
     }
 
     /** The longest group name kept. */
@@ -124,7 +159,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                newGroup);
+                newGroup,
+                filters);
     }
 
     /** A breakpoint with no id, that waits for no other one. */
@@ -231,7 +267,7 @@ public record Breakpoint(
 
     /** True if this carries a conditional expression or a hit condition (it does not stop on every hit). */
     public boolean isConditional() {
-        return !condition.isEmpty() || !hitCondition.isEmpty();
+        return !condition.isEmpty() || !hitCondition.isEmpty() || !filters.none();
     }
 
     public Breakpoint withLine(int newLine) {
@@ -248,7 +284,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     /** This breakpoint with a fresh snapshot of its line's text (the line was edited in place). */
@@ -266,7 +303,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     public Breakpoint withCondition(String newCondition) {
@@ -283,7 +321,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     public Breakpoint withLogMessage(String newLog) {
@@ -300,7 +339,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     public Breakpoint withEnabled(boolean newEnabled) {
@@ -317,7 +357,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     /**
@@ -338,7 +379,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     /**
@@ -359,7 +401,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     /**
@@ -380,7 +423,8 @@ public record Breakpoint(
                 recording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     /**
@@ -401,7 +445,8 @@ public record Breakpoint(
                 newRecording,
                 id,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     /**
@@ -422,7 +467,8 @@ public record Breakpoint(
                 recording,
                 newId,
                 triggeredBy,
-                group);
+                group,
+                filters);
     }
 
     /**
@@ -444,7 +490,36 @@ public record Breakpoint(
                 recording,
                 id,
                 trigger,
-                group);
+                group,
+                filters);
+    }
+
+    /**
+     * This breakpoint with {@code newFilters}: where a hit counts — a thread, a caller, a marked object (IntelliJ's
+     * breakpoint filters). Checked by Editora at the stop.
+     */
+    public Breakpoint withFilters(com.editora.config.StopFilters newFilters) {
+        return new Breakpoint(
+                line,
+                condition,
+                logMessage,
+                enabled,
+                lineText,
+                hitCondition,
+                temporary,
+                lambdas,
+                lambdasOnly,
+                recording,
+                id,
+                triggeredBy,
+                group,
+                newFilters);
+    }
+
+    /** Whether a filter says where its hits count. */
+    @JsonIgnore
+    public boolean isFiltered() {
+        return !filters.none();
     }
 
     /** Whether it waits for another breakpoint to be hit (when that one still exists). */
