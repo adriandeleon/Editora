@@ -201,6 +201,27 @@ editable area outside `EditorBuffer` needs the same call from its owner's close 
 `WindowReleasedOnCloseFxTest` holds a weak reference to a closed window's controller and fails if either
 route comes back.
 
+## A single-thread executor's thread factory must not reach the executor
+
+**Symptom:** every project window stayed in memory after it was closed, with its buffers, panels and services (and the
+No Project window, once it had shown the Project Map). A closed window's `MainController` stays reachable from the
+JDK's common `Cleaner`.
+
+**Cause:** `Executors.newSingleThreadExecutor` returns a wrapper registered with a `Cleaner` (so that an executor
+nobody shut down is shut down when collected). The cleaner's action holds the inner `ThreadPoolExecutor`, and that
+holds its `ThreadFactory`. The wrapper's `shutdown()` unregisters the action; **`shutdownNow()` does not** (JDK 25),
+so after `shutdownNow()` the factory stays reachable until the wrapper is collected. A factory lambda that uses an
+instance field or method captures `this`; when `this` also holds the executor in a field, the cleaner reaches the
+wrapper it is waiting for, and neither is ever collected. `MapFileReader`'s factory read `threadName` off the reader,
+and the reader's file source is the Project panel, which holds the window. The reader starts its worker when the
+Map is given a folder: at once in a project window.
+
+**Fix / rule:** a thread factory passed to `newSingleThreadExecutor` captures nothing of the object that owns the
+executor: name the thread with a literal, or copy the name into a local first (`MapFileReader.submit`). The other
+`Executors` factories register no cleaner. `WindowReleasedOnCloseFxTest.aClosedProjectWindowIsReleased` fails if this
+route comes back. To find the holder of a window that stays, take a heap dump after closing it
+(`HotSpotDiagnosticMXBean.dumpHeap`, live objects only) and follow the path from a GC root to its `MainController`.
+
 ## A RichTextFX area's default undo history is unlimited
 
 `GenericStyledArea` installs an unlimited undo manager that records programmatic `appendText` /

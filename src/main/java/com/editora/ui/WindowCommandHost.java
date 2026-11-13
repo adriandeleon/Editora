@@ -937,8 +937,13 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     public void importConfig() {
         if (mc.windowManager != null) {
             // The last dialog's "Restart now" quits and relaunches the way Settings' own Restart Now does.
-            ConfigImportFlow.restart = () -> mc.registry.run("app.restart");
-            new ConfigImportFlow(mc.stage, mc.config.shared(), mc.windowManager, mc::setStatus, mc.backgroundTasks())
+            new ConfigImportFlow(
+                            mc.stage,
+                            mc.config.shared(),
+                            mc.windowManager,
+                            mc::setStatus,
+                            mc.backgroundTasks(),
+                            () -> mc.registry.run("app.restart"))
                     .start();
         }
     }
