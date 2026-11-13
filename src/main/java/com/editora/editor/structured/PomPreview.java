@@ -12,7 +12,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.GridPane;
@@ -21,6 +20,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.i18n.Messages;
 import com.editora.maven.PomSummary;
 import org.jspecify.annotations.Nullable;
@@ -493,7 +493,7 @@ public final class PomPreview {
                 }
             });
             if (node instanceof javafx.scene.control.Control c) {
-                c.setTooltip(new Tooltip(Messages.tr("pom.gotoLine", line)));
+                c.setTooltip(ControlNames.tooltip(Messages.tr("pom.gotoLine", line)));
             }
             return node;
         }

@@ -29,7 +29,7 @@ final class ToolStatusRow {
     private final HBox node = UiZoom.spacing(new HBox(pill), 8);
     private @Nullable Button install;
     private @Nullable Hyperlink missingOnly;
-    private final javafx.scene.control.Tooltip tooltip = new javafx.scene.control.Tooltip();
+    private final javafx.scene.control.Tooltip tooltip = com.editora.editor.ControlNames.tooltip();
 
     ToolStatusRow(String tool) {
         this.tool = tool;

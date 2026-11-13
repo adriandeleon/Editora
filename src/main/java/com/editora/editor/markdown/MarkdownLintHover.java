@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
@@ -72,7 +73,7 @@ public final class MarkdownLintHover {
                 return;
             }
             if (tooltip == null) {
-                tooltip = new Tooltip();
+                tooltip = ControlNames.tooltip();
                 tooltip.getStyleClass().add("mermaid-lint-tooltip");
                 tooltip.setWrapText(true);
                 Tooltip made = tooltip;

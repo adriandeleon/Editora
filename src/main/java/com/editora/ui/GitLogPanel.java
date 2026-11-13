@@ -44,6 +44,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import com.editora.git.GitFileStatus;
@@ -870,7 +871,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             Hyperlink link = new Hyperlink(GitFormat.shortHash(parent));
             link.getStyleClass().add("git-log-parent");
             link.setFocusTraversable(false);
-            link.setTooltip(new Tooltip(parent));
+            link.setTooltip(ControlNames.tooltip(parent));
             link.setOnAction(e -> {
                 if (!selectCommit(parent)) {
                     actions.commitNotLoaded(parent);
@@ -1191,7 +1192,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         private final Label author = new Label();
         private final Label date = new Label();
         private final HBox row = UiZoom.spacing(new HBox(graphStrip, hash, refs, subject, author, date), 8);
-        private final Tooltip tooltip = new Tooltip();
+        private final Tooltip tooltip = ControlNames.tooltip();
 
         CommitCell() {
             setPrefWidth(0);
@@ -1408,7 +1409,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             getStyleClass().add(GitFileStatus.fromLetter(f.status()).cssClass());
             setText(f.status() + "  " + f.path());
             setGraphic(FileIcons.forFileName(f.path()));
-            setTooltip(new Tooltip(f.origPath() != null ? f.origPath() + " → " + f.path() : f.path()));
+            setTooltip(ControlNames.tooltip(f.origPath() != null ? f.origPath() + " → " + f.path() : f.path()));
             setContextMenu(buildMenu(f));
         }
 

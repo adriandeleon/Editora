@@ -25,7 +25,6 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -38,6 +37,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.CubicCurve;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -121,8 +121,8 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         back.setOnAction(event -> goBack());
         aroundButton.setToggleGroup(views);
         insideButton.setToggleGroup(views);
-        aroundButton.setTooltip(new Tooltip(tr("project.map.deps.aroundTip")));
-        insideButton.setTooltip(new Tooltip(tr("project.map.deps.insideTip")));
+        aroundButton.setTooltip(ControlNames.tooltip(tr("project.map.deps.aroundTip")));
+        insideButton.setTooltip(ControlNames.tooltip(tr("project.map.deps.insideTip")));
         views.selectedToggleProperty().addListener((obs, was, now) -> {
             if (now != null && !syncing) {
                 view = now == insideButton ? View.INSIDE : View.AROUND;
@@ -131,8 +131,8 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         });
         filesButton.setToggleGroup(groupings);
         foldersButton.setToggleGroup(groupings);
-        filesButton.setTooltip(new Tooltip(tr("project.map.deps.filesTip")));
-        foldersButton.setTooltip(new Tooltip(tr("project.map.deps.foldersTip")));
+        filesButton.setTooltip(ControlNames.tooltip(tr("project.map.deps.filesTip")));
+        foldersButton.setTooltip(ControlNames.tooltip(tr("project.map.deps.foldersTip")));
         groupings.selectedToggleProperty().addListener((obs, was, now) -> {
             if (now != null && !syncing) {
                 ProjectMapDependencies.Grouping chosen = now == foldersButton
@@ -277,7 +277,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         String name = displayName(subject, folder);
         String heading = tr("project.map.deps.title", name);
         title.setText(heading);
-        title.setTooltip(new Tooltip(subject.isEmpty() ? name : subject));
+        title.setTooltip(ControlNames.tooltip(subject.isEmpty() ? name : subject));
         setAccessibleText(heading);
         picked = null;
         why.getItems().clear();
@@ -374,7 +374,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         for (int c = 0; c < n; c++) {
             Label number = new Label(Integer.toString(c + 1));
             number.getStyleClass().add("project-map-deps-column");
-            number.setTooltip(new Tooltip(partName(found.folder(), parts.get(c))));
+            number.setTooltip(ControlNames.tooltip(partName(found.folder(), parts.get(c))));
             UiZoom.minWidth(number, CELL);
             number.setAlignment(Pos.CENTER);
             matrix.add(number, c + 1, 0);
@@ -386,7 +386,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             header.setMnemonicParsing(false);
             header.setMaxWidth(Double.MAX_VALUE);
             header.setAlignment(Pos.CENTER_LEFT);
-            header.setTooltip(new Tooltip(tr("project.map.deps.partTip", part.rel(), part.files())));
+            header.setTooltip(ControlNames.tooltip(tr("project.map.deps.partTip", part.rel(), part.files())));
             View look = part.folder() ? View.INSIDE : View.AROUND;
             header.setOnAction(event -> moveTo(root, new Place(part.rel(), part.folder(), look), true));
             header.setContextMenu(placeMenu(part.rel(), part.folder()));
@@ -430,7 +430,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         UiZoom.maxSize(cell, CELL, CELL);
         String tip =
                 tr(found.cycle()[r][c] ? "project.map.deps.cellCycleTip" : "project.map.deps.cellTip", from, to, count);
-        cell.setTooltip(new Tooltip(tip));
+        cell.setTooltip(ControlNames.tooltip(tip));
         cell.setAccessibleText(tip);
         ProjectMapDependencies known = Objects.requireNonNull(dependencies); // drawn from it
         cell.setOnAction(event -> pick(
@@ -685,7 +685,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
                             : node.mutual() ? "project.map.deps.usedMutualTip" : "project.map.deps.usedTip",
                     path,
                     node.count());
-            setTooltip(new Tooltip(tip));
+            setTooltip(ControlNames.tooltip(tip));
             setAccessibleText(tip);
             ProjectMapDependencies known = Objects.requireNonNull(dependencies); // drawn from it
             setOnAction(event -> pick(
@@ -759,7 +759,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             String name = displayName(found.subject(), found.folder());
             subject.setText(name);
             String tip = tr("project.map.deps.subjectTip", found.subject().isEmpty() ? name : found.subject());
-            subject.setTooltip(new Tooltip(tip));
+            subject.setTooltip(ControlNames.tooltip(tip));
             subject.setAccessibleText(tip);
             subject.setContextMenu(placeMenu(found.subject(), found.folder()));
             usersHeader.setText(tr("project.map.deps.usedBy", found.users().size()));
@@ -951,7 +951,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             where.setText(text);
             line.setText(item.text());
             setGraphic(box);
-            setTooltip(new Tooltip(item.from() + "\n" + item.to()));
+            setTooltip(ControlNames.tooltip(item.from() + "\n" + item.to()));
             setAccessibleText(text + ", " + item.text());
         }
     }

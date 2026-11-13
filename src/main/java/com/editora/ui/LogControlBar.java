@@ -17,6 +17,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.util.Duration;
 
+import com.editora.editor.ControlNames;
 import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
 import org.jspecify.annotations.Nullable;
@@ -52,7 +53,7 @@ public class LogControlBar extends HBox {
     private final ComboBox<String> level = new ComboBox<>();
     private final TextField pattern = new TextField();
     private final Label state = new Label();
-    private final Tooltip patternTip = new Tooltip(tr("tooltip.logFilter"));
+    private final Tooltip patternTip = ControlNames.tooltip(tr("tooltip.logFilter"));
     private final PauseTransition debounce = new PauseTransition(Duration.millis(300));
 
     private final BiConsumer<LogLevel, String> onFilter;
@@ -67,14 +68,14 @@ public class LogControlBar extends HBox {
 
         follow.setGraphic(Icons.arrowDown());
         follow.getStyleClass().addAll("log-follow", "flat");
-        follow.setTooltip(new Tooltip(tr("tooltip.logFollow")));
+        follow.setTooltip(ControlNames.tooltip(tr("tooltip.logFollow")));
         follow.setAccessibleHelp(tr("tooltip.logFollow"));
         follow.setOnAction(e -> onFollow.accept(follow.isSelected()));
 
         level.getItems().addAll(levelLabels());
         level.getSelectionModel().selectFirst();
         level.getStyleClass().add("log-level-combo");
-        level.setTooltip(new Tooltip(tr("tooltip.logLevel")));
+        level.setTooltip(ControlNames.tooltip(tr("tooltip.logLevel")));
         level.setAccessibleText(tr("tooltip.logLevel"));
         level.setOnAction(e -> {
             if (!showing) {

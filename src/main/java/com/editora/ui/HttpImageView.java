@@ -8,7 +8,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.image.PixelWriter;
@@ -23,6 +22,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.ImagePattern;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.http.HttpResponseFormat;
 import org.jspecify.annotations.Nullable;
@@ -158,7 +158,7 @@ final class HttpImageView extends VBox {
     private static ToggleButton segment(String label, String tip) {
         ToggleButton b = new ToggleButton(label);
         b.getStyleClass().addAll("md-viewmode-segment", "flat");
-        b.setTooltip(new Tooltip(tip));
+        b.setTooltip(ControlNames.tooltip(tip));
         b.setAccessibleHelp(tip);
         return b;
     }

@@ -47,6 +47,7 @@ import com.editora.diff.DiffModels.RowType;
 import com.editora.diff.DiffModels.UnifiedRow;
 import com.editora.diff.DiffText;
 import com.editora.diff.PatchWriter;
+import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
@@ -811,7 +812,7 @@ public final class DiffViewerPane implements TabContent {
         hunkButton(revertHunkButton, tr("diff.revertHunk"), GitHunkAction.REVERT);
         applyEofButton.setText(tr("diff.applyFinalNewline"));
         applyEofButton.setAccessibleText(tr("diff.applyFinalNewline"));
-        applyEofButton.setTooltip(new Tooltip(tr("diff.applyFinalNewline")));
+        applyEofButton.setTooltip(ControlNames.tooltip(tr("diff.applyFinalNewline")));
         applyEofButton.setFocusTraversable(false);
         applyEofButton.getStyleClass().addAll("flat", "diff-option-button");
         applyEofButton.setOnAction(e -> applyFinalNewline());
@@ -932,7 +933,7 @@ public final class DiffViewerPane implements TabContent {
     private void hunkButton(Button button, String label, GitHunkAction action) {
         button.setText(label);
         button.setAccessibleText(label);
-        button.setTooltip(new Tooltip(label));
+        button.setTooltip(ControlNames.tooltip(label));
         button.setFocusTraversable(false);
         button.getStyleClass().addAll("flat", "diff-option-button");
         button.setOnAction(e -> performGitAction(action, currentBlockStart(), false));
@@ -1143,10 +1144,9 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private static Tooltip descriptiveTooltip(String text) {
-        Tooltip tooltip = new Tooltip(text);
+        Tooltip tooltip = ControlNames.tooltip(text);
         tooltip.setWrapText(true);
         tooltip.setMaxWidth(UiZoom.px(360));
-        tooltip.setShowDelay(com.editora.editor.ControlNames.TOOLTIP_DELAY);
         return tooltip;
     }
 
@@ -2324,7 +2324,7 @@ public final class DiffViewerPane implements TabContent {
             slot.setAccessibleRole(AccessibleRole.BUTTON);
             slot.setAccessibleText(tip);
             slot.setFocusTraversable(true);
-            Tooltip.install(slot, new Tooltip(tip));
+            Tooltip.install(slot, ControlNames.tooltip(tip));
             slot.setOnMouseClicked(e -> {
                 onClick.run();
                 e.consume();

@@ -4,10 +4,10 @@ import javafx.scene.AccessibleAttribute;
 import javafx.scene.AccessibleRole;
 import javafx.scene.control.Label;
 import javafx.scene.control.OverrunStyle;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 
+import com.editora.editor.ControlNames;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -68,7 +68,7 @@ final class ProjectMapStatusLine extends HBox {
         }
         text.setText(value);
         // A long notice is cut to the window's width; the tooltip holds all of it.
-        text.setTooltip(value.isEmpty() ? null : new Tooltip(value));
+        text.setTooltip(value.isEmpty() ? null : ControlNames.tooltip(value));
         text.getStyleClass().removeAll("project-map-status-warn", "project-map-status-error");
         switch (StatusSeverity.of(value)) {
             case ERROR -> text.getStyleClass().add("project-map-status-error");

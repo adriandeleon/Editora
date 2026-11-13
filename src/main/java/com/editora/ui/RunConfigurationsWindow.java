@@ -245,10 +245,10 @@ public final class RunConfigurationsWindow {
         runOnRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(runOn, Priority.ALWAYS);
         runOn.setMaxWidth(Double.MAX_VALUE);
-        runOn.setTooltip(new javafx.scene.control.Tooltip(tr("settings.runConfig.runOn.hint")));
+        runOn.setTooltip(com.editora.editor.ControlNames.tooltip(tr("settings.runConfig.runOn.hint")));
         CheckBox inTerminal = new CheckBox(tr("settings.runConfig.runInTerminal"));
         inTerminal.setId("run-config-in-terminal");
-        inTerminal.setTooltip(new javafx.scene.control.Tooltip(tr("settings.runConfig.runInTerminal.hint")));
+        inTerminal.setTooltip(com.editora.editor.ControlNames.tooltip(tr("settings.runConfig.runInTerminal.hint")));
 
         GridPane form = new GridPane();
         UiZoom.gaps(form, 8, 8);

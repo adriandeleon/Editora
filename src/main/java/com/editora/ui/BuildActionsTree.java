@@ -12,7 +12,6 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -26,6 +25,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -242,7 +242,8 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             return;
         }
         rootLabel.setText(tr("buildtree.root", displayName(root, project)));
-        rootLabel.setTooltip(new Tooltip(root.toAbsolutePath().normalize().toString()));
+        rootLabel.setTooltip(
+                ControlNames.tooltip(root.toAbsolutePath().normalize().toString()));
         trustPill.setVisible(trust != TrustState.NOT_GATED);
         trustPill.setManaged(trust != TrustState.NOT_GATED);
         trustPill.getStyleClass().removeAll("build-tasks-trusted", "build-tasks-untrusted");
@@ -706,14 +707,14 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                     getStyleClass().add("build-tasks-section");
                     setGraphic(null);
                     setText(s.title());
-                    setTooltip(s.tooltip() == null || s.tooltip().isEmpty() ? null : new Tooltip(s.tooltip()));
+                    setTooltip(s.tooltip() == null || s.tooltip().isEmpty() ? null : ControlNames.tooltip(s.tooltip()));
                 }
                 case TaskItem t -> {
                     getStyleClass().add("build-tasks-task");
                     setGraphic(null);
                     setText(t.task().label());
                     String tip = t.task().tooltip();
-                    setTooltip(tip == null || tip.isEmpty() ? null : new Tooltip(tip));
+                    setTooltip(tip == null || tip.isEmpty() ? null : ControlNames.tooltip(tip));
                 }
                 case ToggleItem tg -> {
                     getStyleClass().add("build-tasks-toggle");
@@ -729,14 +730,17 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                     check.setIndeterminate(state == ToggleState.EXPLICIT_OFF);
                     check.setSelected(state == ToggleState.ON);
                     check.setTooltip(
-                            toggle.triState() && !toggle.locked() ? new Tooltip(tr("buildtree.triStateTip")) : null);
+                            toggle.triState() && !toggle.locked()
+                                    ? ControlNames.tooltip(tr("buildtree.triStateTip"))
+                                    : null);
                     setGraphic(check);
                 }
                 case ProjectItem p -> {
                     getStyleClass().add("build-tasks-project");
                     setGraphic(null);
                     setText(p.current() ? tr("buildtree.projectCurrent", p.label()) : p.label());
-                    setTooltip(new Tooltip(p.root().toAbsolutePath().normalize().toString()));
+                    setTooltip(ControlNames.tooltip(
+                            p.root().toAbsolutePath().normalize().toString()));
                 }
             }
         }

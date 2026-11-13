@@ -14,10 +14,10 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.OverrunStyle;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 
+import com.editora.editor.ControlNames;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -66,11 +66,11 @@ final class ProjectMapResultsStrip extends HBox {
         count.setAccessibleRole(AccessibleRole.TEXT);
         partial.getStyleClass().add("project-map-results-partial");
         partial.setMinWidth(Label.USE_PREF_SIZE);
-        partial.setTooltip(new Tooltip(tr("project.map.results.partialTooltip")));
+        partial.setTooltip(ControlNames.tooltip(tr("project.map.results.partialTooltip")));
         list.getStyleClass().add("project-map-results-list");
         list.setPromptText(tr("project.map.results.list"));
         list.setAccessibleText(tr("project.map.results.list"));
-        list.setTooltip(new Tooltip(tr("project.map.results.list")));
+        list.setTooltip(ControlNames.tooltip(tr("project.map.results.list")));
         list.setVisibleRowCount(16);
         list.setMaxWidth(Double.MAX_VALUE);
         list.setMinWidth(0);

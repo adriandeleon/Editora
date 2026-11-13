@@ -505,7 +505,7 @@ final class SnippetsEditor {
     /** Marks {@code field} red with {@code why} as its tooltip and accessible help, or clears that when null. */
     private static void flag(TextField field, @Nullable String why) {
         field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
-        field.setTooltip(why == null ? null : new javafx.scene.control.Tooltip(why));
+        field.setTooltip(why == null ? null : com.editora.editor.ControlNames.tooltip(why));
         field.setAccessibleHelp(why);
     }
 

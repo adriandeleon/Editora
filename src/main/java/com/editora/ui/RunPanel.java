@@ -281,7 +281,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         chip.setText(version != null ? version.label() : "");
         chip.setTooltip(
                 version != null && !version.detail().isBlank()
-                        ? new javafx.scene.control.Tooltip(version.detail())
+                        ? com.editora.editor.ControlNames.tooltip(version.detail())
                         : null);
         chip.setAccessibleText(version != null ? tr("run.runtime", version.label()) : null);
         chip.setVisible(shown);

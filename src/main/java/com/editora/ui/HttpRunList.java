@@ -17,7 +17,6 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.SelectionMode;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.skin.VirtualFlow;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -30,6 +29,7 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -407,7 +407,7 @@ final class HttpRunList extends VBox {
             String spoken = row.spoken();
             setAccessibleText(spoken);
             if (getTooltip() == null) {
-                setTooltip(new Tooltip());
+                setTooltip(ControlNames.tooltip());
             }
             getTooltip().setText(spoken);
         }

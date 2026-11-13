@@ -11,7 +11,6 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -19,6 +18,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
@@ -187,7 +187,7 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
             setText(null);
             setGraphic(row);
             String lastPath = c.lastPath() == null || c.lastPath().isBlank() ? "" : "\n" + c.lastPath();
-            setTooltip(new Tooltip("sftp://" + c.id() + lastPath));
+            setTooltip(ControlNames.tooltip("sftp://" + c.id() + lastPath));
         }
     }
 }

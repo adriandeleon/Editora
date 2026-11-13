@@ -27,7 +27,6 @@ import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -35,6 +34,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import com.editora.github.GitHubItemFilter;
@@ -286,7 +286,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         repository.setGraphic(Icons.github());
         repository.setMinWidth(0);
         repository.setTextOverrun(OverrunStyle.LEADING_ELLIPSIS);
-        repository.setTooltip(new Tooltip(tr("github.panel.repositoryTip")));
+        repository.setTooltip(ControlNames.tooltip(tr("github.panel.repositoryTip")));
         repository.setOnAction(e -> {
             repository.setVisited(false);
             if (!context.url().isBlank()) {
@@ -297,10 +297,10 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                 item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(context.url())),
                 item(tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(context.url()))));
         branch.setGraphic(Icons.git());
-        branch.setTooltip(new Tooltip(tr("github.panel.branchTip")));
+        branch.setTooltip(ControlNames.tooltip(tr("github.panel.branchTip")));
         branch.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
         account.setGraphic(Icons.account());
-        account.setTooltip(new Tooltip(tr("github.panel.accountTip")));
+        account.setTooltip(ControlNames.tooltip(tr("github.panel.accountTip")));
         account.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
         contextRow.getStyleClass().add("github-context");
         contextRow.setAlignment(Pos.CENTER_LEFT);
@@ -322,7 +322,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             }
         });
         stateFilter.setAccessibleText(tr("github.panel.stateTip"));
-        stateFilter.setTooltip(new Tooltip(tr("github.panel.stateTip")));
+        stateFilter.setTooltip(ControlNames.tooltip(tr("github.panel.stateTip")));
         stateFilter.getStyleClass().add("github-state-filter");
         // A fixed width: sized from its items it shrank below its own label when the segment's items changed.
         UiZoom.prefWidth(stateFilter, 112);
@@ -334,7 +334,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             }
         });
         mineToggle.getStyleClass().add("github-tab");
-        mineToggle.setTooltip(new Tooltip(tr("github.panel.mineTip")));
+        mineToggle.setTooltip(ControlNames.tooltip(tr("github.panel.mineTip")));
         mineToggle.setOnAction(e -> filterChanged());
         UiZoom.prefSize(busy, 14, 14);
         UiZoom.maxSize(busy, 14, 14);
@@ -855,7 +855,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             Label workflow = new Label(run.workflowName());
             workflow.getStyleClass().add("git-log-hash"); // the "key" column, like #123 for a PR
             setRow(new Label(run.displayTitle()), glyph, workflow);
-            setTooltip(new Tooltip(run.event() + " · " + run.headBranch() + "\n" + when(run.createdAt())));
+            setTooltip(ControlNames.tooltip(run.event() + " · " + run.headBranch() + "\n" + when(run.createdAt())));
 
             List<MenuItem> items = new java.util.ArrayList<>();
             if (state.failed()) {
@@ -898,8 +898,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                 title += "  [" + stateWord(state) + "]";
             }
             setRow(new Label(title), number);
-            setTooltip(new Tooltip(pr.authorLogin() + " · " + pr.headRefName() + " → " + pr.baseRefName() + "\n"
-                    + when(pr.updatedAt())));
+            setTooltip(ControlNames.tooltip(pr.authorLogin() + " · " + pr.headRefName() + " → " + pr.baseRefName()
+                    + "\n" + when(pr.updatedAt())));
             MenuItem checkout =
                     item(tr("github.panel.menu.checkout"), Icons.git(), () -> actions.checkoutPr(pr.number()));
             MenuItem review = item(tr("github.panel.menu.review"), Icons.diff(), () -> actions.reviewPr(pr.number()));
@@ -916,7 +916,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             String state = issue.state() == null ? "" : issue.state().toLowerCase(Locale.ROOT);
             String closed = !state.isEmpty() && !state.equals("open") ? "  [" + stateWord(state) + "]" : "";
             setRow(new Label(issue.title() + labels + closed), number);
-            setTooltip(new Tooltip(issue.authorLogin() + " · " + stateWord(state) + "\n" + when(issue.updatedAt())));
+            setTooltip(ControlNames.tooltip(
+                    issue.authorLogin() + " · " + stateWord(state) + "\n" + when(issue.updatedAt())));
             MenuItem open = item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(issue.url()));
             MenuItem copy = item(
                     tr("github.panel.menu.copyUrl"),

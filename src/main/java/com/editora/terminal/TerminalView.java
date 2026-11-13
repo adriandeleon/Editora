@@ -2013,7 +2013,7 @@ public final class TerminalView extends Region {
             return;
         }
         if (linkTip == null) {
-            linkTip = new javafx.scene.control.Tooltip();
+            linkTip = com.editora.editor.ControlNames.tooltip();
             linkTip.getStyleClass().add("terminal-link-tip");
         }
         linkTip.setText(target.match().target());

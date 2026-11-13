@@ -15,6 +15,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
@@ -162,7 +163,7 @@ public final class MarkwhenTimeline {
             mark = bar;
             labelX = x2 + 5;
         }
-        Tooltip.install(mark, new Tooltip(tooltipText(e)));
+        Tooltip.install(mark, ControlNames.tooltip(tooltipText(e)));
         pane.getChildren().add(mark);
 
         Label label = new Label(text);

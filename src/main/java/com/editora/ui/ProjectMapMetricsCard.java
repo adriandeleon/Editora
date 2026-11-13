@@ -21,7 +21,6 @@ import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -31,6 +30,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.git.GitRecentChanges;
 import org.jspecify.annotations.Nullable;
@@ -85,8 +85,8 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         back.setOnAction(event -> goBack());
         filesButton.setToggleGroup(groupings);
         partsButton.setToggleGroup(groupings);
-        filesButton.setTooltip(new Tooltip(tr("project.map.metrics.filesTip")));
-        partsButton.setTooltip(new Tooltip(tr("project.map.metrics.partsTip")));
+        filesButton.setTooltip(ControlNames.tooltip(tr("project.map.metrics.filesTip")));
+        partsButton.setTooltip(ControlNames.tooltip(tr("project.map.metrics.partsTip")));
         groupings.selectedToggleProperty().addListener((obs, was, now) -> {
             if (now != null && !syncing) {
                 parts = now == partsButton;
@@ -166,7 +166,7 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
             String key, String tip, Function<ProjectMapMetrics.Row, Integer> value) {
         TableColumn<ProjectMapMetrics.Row, Integer> column = new TableColumn<>();
         Label header = new Label(tr(key));
-        header.setTooltip(new Tooltip(tr(tip)));
+        header.setTooltip(ControlNames.tooltip(tr(tip)));
         column.setGraphic(header);
         column.setId(key);
         column.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(value.apply(cell.getValue())));
@@ -253,7 +253,7 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         String name = folderName(subject);
         String heading = tr("project.map.metrics.title", name);
         title.setText(heading);
-        title.setTooltip(new Tooltip(subject.isEmpty() ? name : subject));
+        title.setTooltip(ControlNames.tooltip(subject.isEmpty() ? name : subject));
         setAccessibleText(heading);
         ProjectMapMetrics known = metrics;
         if (known == null) {

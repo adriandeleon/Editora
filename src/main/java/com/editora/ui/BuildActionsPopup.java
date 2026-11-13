@@ -15,7 +15,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -26,6 +25,7 @@ import javafx.stage.Window;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -390,7 +390,7 @@ public final class BuildActionsPopup {
                 setDisable(false);
                 setText(null);
                 if (!t.task().tooltip().isEmpty()) {
-                    setTooltip(new Tooltip(t.task().tooltip()));
+                    setTooltip(ControlNames.tooltip(t.task().tooltip()));
                 }
                 setGraphic(taskRow(t.task()));
             } else if (item instanceof ToggleRow tg) {

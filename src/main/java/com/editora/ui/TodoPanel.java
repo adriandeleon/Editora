@@ -9,7 +9,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -22,6 +21,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.util.StringConverter;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.todo.TodoColors;
 import com.editora.todo.TodoGrouping;
@@ -183,7 +183,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     /** Sets the displayed scan-scope folder. */
     public void setScope(String display, @Nullable String fullPath) {
         scopeLabel.setText(display == null ? "" : display);
-        scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : new Tooltip(fullPath));
+        scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : ControlNames.tooltip(fullPath));
     }
 
     private void onKey(KeyEvent e) {

@@ -29,6 +29,7 @@ import javafx.scene.text.Text;
 import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -125,7 +126,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         // An info badge explaining that personal notes are scoped per project.
         Label info = new Label("ⓘ");
         info.getStyleClass().add("info-badge");
-        Tooltip infoTip = new Tooltip(SCOPE_HINT);
+        Tooltip infoTip = ControlNames.tooltip(SCOPE_HINT);
         infoTip.setWrapText(true);
         UiZoom.follow(info, () -> infoTip.setMaxWidth(UiZoom.px(320)));
         Tooltip.install(info, infoTip);
@@ -318,7 +319,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 setText(fileName(f.fileKey()));
                 getStyleClass().add("notes-file-row");
                 setGraphic(FileIcons.forProjectItem(fileName(f.fileKey()), f.folder()));
-                setTooltip(new Tooltip(f.fileKey()));
+                setTooltip(ControlNames.tooltip(f.fileKey()));
                 MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());
                 deleteAll.getStyleClass().add("danger"); // a destructive row reads red
