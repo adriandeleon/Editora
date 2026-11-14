@@ -486,8 +486,12 @@ class TestRunCoordinatorActionsFxTest {
             select("fails");
             assertFalse(coordinator.panel().runMenuRow("test.debugSelected"), "Debug is offered only while it can run");
             assertTrue(coordinator.panel().runMenuRow("test.goToSelected"));
+            select(null); // the class row
+            assertTrue(coordinator.panel().runMenuRow("test.goToSelected"));
+            tree().getSelectionModel().clearSelection();
+            assertFalse(coordinator.panel().runMenuRow("test.rerunSelected"), "nothing selected");
         });
-        assertEquals(List.of("jump GRADLE com.x.FooTest#fails"), calls);
+        assertEquals(List.of("jump GRADLE com.x.FooTest#fails", "jump GRADLE com.x.FooTest#null"), calls);
     }
 
     @Test

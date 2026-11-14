@@ -315,6 +315,139 @@ class DiffViewerUnifiedAndNavigationFxTest {
         }
     }
 
+    /**
+     * The line commands ({@code diff.stageLine}…) act on the changed line at the caret of the side that has the
+     * keyboard, as the menu's line rows act on the line clicked; a right-click puts the caret on the line clicked
+     * (outside a selection), so the two agree.
+     */
+    @Test
+    void theLineCommandsActOnTheChangedLineAtTheCaretOfTheFocusedSide() throws Exception {
+        DiffViewerPane pane = pane("same\nold\nsame two\n", "same\nnew\nsame two\n");
+        List<DiffViewerPane.GitHunkRequest> requests = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> pane.setGitHunkActions(
+                EnumSet.of(DiffViewerPane.GitHunkAction.STAGE, DiffViewerPane.GitHunkAction.OPEN), requests::add));
+        Stage stage = show(pane);
+        try {
+            CodeArea left = FxTestSupport.field(pane, "leftArea");
+            CodeArea right = FxTestSupport.field(pane, "rightArea");
+            FxTestSupport.runOnFx(() -> stage.getScene().getRoot().requestFocus());
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertFalse(left.isFocused() || right.isFocused());
+                left.moveTo(1, 0);
+                assertFalse(
+                        pane.caretLineAction(DiffViewerPane.GitHunkAction.STAGE), "the keyboard is in neither side");
+            });
+            FxTestSupport.runOnFx(left::requestFocus);
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(left.isFocused());
+                left.moveTo(0, 0);
+                assertFalse(pane.caretLineAction(DiffViewerPane.GitHunkAction.STAGE), "an unchanged line");
+                left.moveTo(1, 0);
+                assertFalse(pane.caretLineAction(DiffViewerPane.GitHunkAction.REVERT), "this diff offers no Revert");
+                assertTrue(pane.caretLineAction(DiffViewerPane.GitHunkAction.STAGE));
+            });
+            assertEquals(1, requests.size());
+            assertEquals(DiffViewerPane.GitHunkAction.STAGE, requests.get(0).action());
+            assertEquals("same\nnew\nsame two\n", requests.get(0).afterText(), "the one changed line");
+            FxTestSupport.runOnFx(right::requestFocus);
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                right.moveTo(1, 0);
+                assertTrue(pane.caretLineAction(DiffViewerPane.GitHunkAction.OPEN));
+            });
+            assertEquals(DiffViewerPane.GitHunkAction.OPEN, requests.get(1).action());
+            assertEquals(2, requests.get(1).targetLine(), "opened at the line, not the hunk's first");
+
+            // A right-click outside the selection moves the caret to the line clicked; inside it, it stays.
+            FxTestSupport.runOnFx(() -> {
+                right.moveTo(0, 0);
+                rightClickWithoutMoving(right, 1);
+                assertEquals(1, right.getCurrentParagraph(), "the caret went to the line clicked");
+                OverlayTestKit.openContextMenus().forEach(ContextMenu::hide);
+                right.selectRange(0, right.getLength());
+                rightClickWithoutMoving(right, 1);
+                assertEquals(right.getLength(), right.getSelection().getLength(), "a selection clicked in is kept");
+                OverlayTestKit.openContextMenus().forEach(ContextMenu::hide);
+            });
+
+            // A diff that cannot open the file has no Open row, and no command opens it.
+            FxTestSupport.runOnFx(
+                    () -> pane.setGitHunkActions(EnumSet.of(DiffViewerPane.GitHunkAction.STAGE), requests::add));
+            // The sides are built again: wait until the new right side shows its lines.
+            CodeArea rebuilt = null;
+            for (int i = 0; i < 200; i++) {
+                FxTestSupport.drainFx();
+                CodeArea now = FxTestSupport.field(pane, "rightArea");
+                boolean laidOut = FxTestSupport.callOnFx(() -> {
+                    stage.getScene().getRoot().applyCss();
+                    stage.getScene().getRoot().layout();
+                    return now.getScene() != null
+                            && now.getParagraphBoundsOnScreen(1).isPresent();
+                });
+                if (laidOut) {
+                    rebuilt = now;
+                    break;
+                }
+                Thread.sleep(10);
+            }
+            assertNotNull(rebuilt, "the rebuilt side is laid out");
+            CodeArea side = rebuilt;
+            FxTestSupport.runOnFx(side::requestFocus);
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                side.moveTo(1, 0);
+                assertFalse(pane.caretLineAction(DiffViewerPane.GitHunkAction.OPEN));
+            });
+            ContextMenu menu = contextMenuAt(side, 1);
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(
+                        List.of(
+                                tr("diff.stageHunk"),
+                                tr("diff.stageLine"),
+                                tr("diff.copyHunk"),
+                                tr("editmenu.copy"),
+                                tr("editmenu.selectAll")),
+                        OverlayTestKit.labels(menu.getItems()));
+                menu.hide();
+            });
+            assertEquals(2, requests.size(), "nothing more was asked of Git");
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
+    /** A right-click on {@code paragraph} of {@code area} that, unlike {@link #requestContextMenu}, leaves the caret. */
+    private static void rightClickWithoutMoving(CodeArea area, int paragraph) {
+        int caret = area.getCaretPosition();
+        javafx.scene.control.IndexRange selection = area.getSelection();
+        requestContextMenu(area, paragraph); // moves the caret first: put it back, then ask again
+        OverlayTestKit.openContextMenus().forEach(ContextMenu::hide);
+        if (selection.getLength() > 0) {
+            area.selectRange(selection.getStart(), selection.getEnd());
+        } else {
+            area.moveTo(caret);
+        }
+        javafx.geometry.Bounds bounds = area.getParagraphBoundsOnScreen(paragraph)
+                .map(area::screenToLocal)
+                .orElseThrow();
+        double x = bounds.getMaxX() - 4;
+        double y = (bounds.getMinY() + bounds.getMaxY()) / 2;
+        javafx.geometry.Point2D screen = area.localToScreen(x, y);
+        javafx.geometry.Point2D scene = area.localToScene(x, y);
+        javafx.event.Event.fireEvent(
+                area,
+                new ContextMenuEvent(
+                        ContextMenuEvent.CONTEXT_MENU_REQUESTED,
+                        scene.getX(),
+                        scene.getY(),
+                        screen.getX(),
+                        screen.getY(),
+                        false,
+                        null));
+    }
+
     @Test
     void thePaletteHunkCommandsActOnTheCurrentBlockOnlyWhenTheDiffOffersThem() throws Exception {
         DiffViewerPane pane = pane(LEFT, RIGHT);

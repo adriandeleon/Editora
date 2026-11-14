@@ -214,6 +214,26 @@ class DebugPanelThreadsFxTest {
         });
     }
 
+    /** Copy Call Stack ({@code debug.copyCallStack}) is offered once there are frames, and copies them. */
+    @Test
+    void copyCallStackRunsWhereTheCallStacksMenuOffersIt() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            DebugPanel idle = new DebugPanel(actions());
+            assertFalse(idle.runMenuRow("debug.copyCallStack"), "no frames: the menu has no Copy Call Stack");
+
+            DebugPanel panel = stopped(actions());
+            javafx.scene.input.ClipboardContent marker = new javafx.scene.input.ClipboardContent();
+            marker.putString("before");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(marker);
+            assertTrue(panel.runMenuRow("debug.copyCallStack"));
+            assertTrue(
+                    javafx.scene.input.Clipboard.getSystemClipboard()
+                            .getString()
+                            .contains("Main.main"),
+                    "the frames are on the clipboard");
+        });
+    }
+
     @Test
     void theShownThreadIsNotShownAgainAndARunningOneHasNoFrames() throws Exception {
         FxTestSupport.runOnFx(() -> {

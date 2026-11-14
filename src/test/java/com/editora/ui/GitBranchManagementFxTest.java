@@ -559,6 +559,130 @@ class GitBranchManagementFxTest {
         }
     }
 
+    /**
+     * The managers' commands ({@code git.renameRemote}, {@code git.setRemoteUrl}, {@code git.addRemote},
+     * {@code git.openWorktree}, {@code git.removeWorktree}, {@code git.pruneWorktrees}): on the row selected in the
+     * manager while it is up, which comes back after, as its button does; else on one picked from the repository's.
+     */
+    @Test
+    void theManagersCommandsActOnTheSelectedRowWhileUpAndOnAPickedOneOtherwise(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = repoWithCommit(dir);
+        repo.git("remote", "add", "origin", "https://example.invalid/team/app.git");
+        repo.git("remote", "add", "upstream", "https://example.invalid/up/app.git");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitBranchCoordinator branches = branches(fx, repo, "main", "");
+            javafx.scene.Scene scene = FxTestSupport.callOnFx(() -> fx.controller.stage.getScene());
+
+            // No manager up: a picker of the remotes, then the row's own prompt for the one picked.
+            FxTestSupport.runOnFx(branches::renameRemoteCommand);
+            OverlayTestKit.await(
+                    async,
+                    "the remotes picker",
+                    () -> OverlayTestKit.pickerItems(scene).size() == 2);
+            FxTestSupport.runOnFx(() -> assertTrue(OverlayTestKit.pick(scene, "upstream")));
+            OverlayTestKit.await(
+                    async, "the rename prompt", () -> tr("remotes.rename").equals(OverlayTestKit.formTitle(scene)));
+            FxTestSupport.runOnFx(() -> {
+                assertEquals("upstream", OverlayTestKit.formFields(scene).get(0).getText());
+                assertTrue(OverlayTestKit.submitForm(scene, "downstream"));
+            });
+            OverlayTestKit.await(
+                    async, "the rename", () -> repo.git("remote").text().contains("downstream"));
+            assertFalse(repo.git("remote").text().contains("upstream"));
+
+            // The manager up, a row selected: the command acts on it, then shows the manager again.
+            FxTestSupport.runOnFx(branches::manageRemotes);
+            // A Git refresh after the rename found no repository for this project-less window: apply it again.
+            FxTestSupport.runOnFx(() -> {
+                applyRepo(fx, repo, "main", "");
+                branches.manageRemotes();
+            });
+            GitManagerOverlay<GitRemotes.Remote> manager = awaitValue(async, () -> {
+                GitManagerOverlay<GitRemotes.Remote> m = branches.remotesManager;
+                return m != null && m.isShowing() ? m : null;
+            });
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.ListView<GitRemotes.Remote> list = FxTestSupport.field(manager, "list");
+                list.getSelectionModel()
+                        .select(list.getItems().stream()
+                                .filter(r -> r.name().equals("origin"))
+                                .findFirst()
+                                .orElseThrow());
+                branches.setRemoteUrlCommand();
+                assertFalse(manager.isShowing(), "the card goes down while its action asks, as its button does");
+                assertEquals(tr("remotes.setUrl"), OverlayTestKit.formTitle(scene));
+                assertTrue(OverlayTestKit.submitForm(scene, "https://example.invalid/moved/app.git"));
+            });
+            OverlayTestKit.await(async, "the URL change and the manager again", () -> {
+                GitManagerOverlay<GitRemotes.Remote> again = branches.remotesManager;
+                return again != null && again != manager && again.isShowing();
+            });
+            assertEquals(
+                    "https://example.invalid/moved/app.git",
+                    repo.git("remote", "get-url", "origin").text().strip());
+
+            // Add Remote… from the manager: its form, and the manager back with the new row.
+            FxTestSupport.runOnFx(() -> {
+                branches.addRemoteCommand();
+                assertEquals(tr("remotes.add"), OverlayTestKit.formTitle(scene));
+                assertTrue(OverlayTestKit.submitForm(scene, "mirror", "https://example.invalid/mirror.git"));
+            });
+            OverlayTestKit.await(async, "the new remote listed", () -> {
+                GitManagerOverlay<GitRemotes.Remote> again = branches.remotesManager;
+                return again != null
+                        && again.isShowing()
+                        && again.items().stream().anyMatch(r -> r.name().equals("mirror"));
+            });
+            FxTestSupport.runOnFx(() -> branches.remotesManager.hide());
+
+            // Work trees: Open through the picker of the repository's (cancelled here), Prune and Remove from the
+            // manager, on its selected row.
+            FxTestSupport.runOnFx(() -> {
+                applyRepo(fx, repo, "main", "");
+                branches.openWorktreeCommand();
+            });
+            OverlayTestKit.await(
+                    async,
+                    "the work-trees picker",
+                    () -> OverlayTestKit.pickerItems(scene).size() == 1);
+            FxTestSupport.runOnFx(() -> OverlayTestKit.cancelPicker(scene));
+            FxTestSupport.runOnFx(() -> {
+                applyRepo(fx, repo, "main", "");
+                branches.manageWorktrees();
+            });
+            GitManagerOverlay<GitWorktrees.Worktree> trees = awaitValue(async, () -> {
+                GitManagerOverlay<GitWorktrees.Worktree> m = branches.worktreesManager;
+                return m != null && m.isShowing() ? m : null;
+            });
+            CountDownLatch mainRefused = watchStatus(fx, tr("status.git.worktreeMain")::equals);
+            FxTestSupport.runOnFx(branches::removeWorktreeCommand); // the main work tree is the selected row
+            async.await(mainRefused, "the main work tree refused, as its button refuses it");
+            assertFalse(FxTestSupport.callOnFx(trees::isShowing), "the card went down first, as for its button");
+            FxTestSupport.runOnFx(() -> {
+                applyRepo(fx, repo, "main", "");
+                branches.manageWorktrees();
+            });
+            GitManagerOverlay<GitWorktrees.Worktree> shown = awaitValue(async, () -> {
+                GitManagerOverlay<GitWorktrees.Worktree> m = branches.worktreesManager;
+                return m != null && m != trees && m.isShowing() ? m : null;
+            });
+            FxTestSupport.runOnFx(branches::pruneWorktreesCommand);
+            OverlayTestKit.await(async, "the manager after Prune", () -> {
+                GitManagerOverlay<GitWorktrees.Worktree> again = branches.worktreesManager;
+                return again != null && again != shown && again.isShowing();
+            });
+            FxTestSupport.runOnFx(() -> branches.worktreesManager.hide());
+            // Add Worktree… with no manager up: its form, for the active repository.
+            FxTestSupport.runOnFx(() -> {
+                applyRepo(fx, repo, "main", "");
+                branches.addWorktreeCommand();
+                assertTrue(OverlayTestKit.form(scene) != null, "the Add Worktree form");
+            });
+        }
+    }
+
     // --- work trees --------------------------------------------------------------------------------
 
     @Test

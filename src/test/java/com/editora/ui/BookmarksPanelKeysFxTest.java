@@ -357,6 +357,42 @@ class BookmarksPanelKeysFxTest {
         assertEquals(2, calls.size());
     }
 
+    /**
+     * The commands behind the rows ({@code bookmarks.moveSelectedDown}…) run the selected row's menu row, as choosing
+     * it would, and nothing where its menu has the row grayed out or not at all.
+     */
+    @Test
+    void theRowCommandsRunTheSelectedRowsMenuRow() throws Exception {
+        List<String> asked = new ArrayList<>();
+        Confirm.answerWith(question -> {
+            asked.add(question.title());
+            return true;
+        });
+        FxTestSupport.runOnFx(() -> {
+            tree().getSelectionModel().clearSelection();
+            assertFalse(panel.runMenuRow("bookmarks.deleteSelected"), "nothing selected");
+        });
+        select("note=one");
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(panel.runMenuRow("bookmarks.moveSelectedDown"));
+            assertFalse(panel.runMenuRow("bookmarks.deleteAllInSelectedFile"), "a bookmark's menu has no file row");
+            assertTrue(panel.runMenuRow("bookmarks.deleteSelected"));
+        });
+        select("FileRow[projectKey=p1, file=" + Path.of(B));
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(panel.runMenuRow("bookmarks.deleteAllInSelectedFile"));
+            assertFalse(panel.runMenuRow("bookmarks.editSelectedNote"), "a file header has no note");
+        });
+        // Another project's group cannot be reordered: its Move rows are grayed out, so the commands refuse.
+        select("note=general");
+        FxTestSupport.runOnFx(() -> assertFalse(panel.runMenuRow("bookmarks.moveSelectedUp")));
+        assertEquals(List.of("moveBookmark A.java 0->1", "delete p1 A.java:1", "deleteAll p1 B.java"), calls);
+        assertEquals(
+                List.of(tr("dialog.removeBookmark.title"), tr("bookmarks.deleteFileTitle")),
+                asked,
+                "each asked first, as its row does");
+    }
+
     @Test
     void altArrowsMoveAFileGroupAmongItsSiblings() throws Exception {
         select("FileRow[projectKey=p1, file=" + Path.of(A));
