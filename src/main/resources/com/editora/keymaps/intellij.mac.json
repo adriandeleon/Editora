@@ -124,5 +124,6 @@
   "Cmd-S-subtract": "view.foldAll",
   "Cmd-S-add": "view.unfoldAll",
   "Cmd-S-1": "project.toggleMapView",
-  "M-f1": "projectMap.revealActiveFile"
+  "M-f1": "projectMap.revealActiveFile",
+  "f10": "view.focusMenuBar"
 }

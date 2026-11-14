@@ -203,6 +203,47 @@ class MenuBarModelTest {
     }
 
     /**
+     * The Help menu's rows run in Pauta's order: Command Palette, Documentation, the keyboard reference, Welcome
+     * Page, Check for Updates, Message Log, Debug Log, Report a Problem, Pauta Conformance, About. Simple mode
+     * keeps the palette, the documentation, the Welcome page and About. The Welcome page is a row of Help, so
+     * it is not one of View any more.
+     */
+    @Test
+    void theHelpMenuFollowsTheOrderEveryPautaAppUses() {
+        assertEquals(
+                List.of(
+                        "palette.show",
+                        "help.documentation",
+                        "help.keyboardShortcuts",
+                        "view.welcome",
+                        "help.checkForUpdates",
+                        "view.messageLog",
+                        "view.debugLog",
+                        "help.reportProblem",
+                        "help.pauta",
+                        "help.about"),
+                rowsOf("menubar.help", false));
+        assertEquals(
+                List.of("palette.show", "help.documentation", "view.welcome", "help.about"),
+                rowsOf("menubar.help", true));
+        for (boolean simple : new boolean[] {false, true}) {
+            assertFalse(rowsOf("menubar.view", simple).contains("view.welcome"), "simple=" + simple);
+        }
+    }
+
+    /** A menu's command rows in order, separators and submenus left out. */
+    private static List<String> rowsOf(String menu, boolean simple) {
+        return MenuBarModel.menus(simple).stream()
+                .filter(m -> menu.equals(m.titleKey()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no " + menu + ", simple=" + simple))
+                .entries()
+                .stream()
+                .filter(e -> e.contains(".") && !e.startsWith("menubar."))
+                .toList();
+    }
+
+    /**
      * The documentation link is in Help, in <b>both</b> menu tables.
      *
      * <p>Simple UI mode's Help is a deliberately short list, and this is the one entry that most belongs
