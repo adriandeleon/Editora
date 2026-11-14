@@ -48,6 +48,7 @@
   "C-0": "view.textZoomReset",
   "S-f9": "debug.start",
   "S-f10": "run.rerun",
+  "f10": "view.focusMenuBar",
   "f9": "debug.continue",
   "f8": "debug.stepOver",
   "f7": "debug.stepInto",

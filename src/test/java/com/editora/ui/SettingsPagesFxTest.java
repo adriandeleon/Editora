@@ -123,6 +123,8 @@ class SettingsPagesFxTest {
             assertEquals("TEMPLATES", rig.openPage());
             rig.window.showWorkspace(rig.owner);
             assertEquals("WORKSPACE", rig.openPage());
+            rig.window.showKeymaps(rig.owner);
+            assertEquals("KEYMAPS", rig.openPage());
         });
     }
 

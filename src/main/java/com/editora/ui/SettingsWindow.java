@@ -517,6 +517,11 @@ public class SettingsWindow {
         showAt(Category.TOOLBAR, owner);
     }
 
+    /** Opens Settings on the Keymaps page, the searchable list of every key (the {@code help.keyboardShortcuts} command). */
+    public void showKeymaps(Window owner) {
+        showAt(Category.KEYMAPS, owner);
+    }
+
     /** Layout read/write the Toolbar page drives, backed by {@code ToolbarCoordinator} in the controller. */
     public interface ToolbarActions {
         /** The current effective layout (item ids + {@code "|"} separators). */

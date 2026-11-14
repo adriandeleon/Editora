@@ -72,6 +72,7 @@
   "f9": "debug.toggleBreakpoint",
   "S-f9": "debug.toggleLambdaBreakpoint",
   "f10": "debug.stepOver",
+  "C-S-f10": "view.focusMenuBar",
   "f11": "debug.stepIntoOrFullScreen",
   "S-f11": "debug.stepOut",
   "Cmd-S-f5": "debug.restart",

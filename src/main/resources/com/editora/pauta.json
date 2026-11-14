@@ -65,22 +65,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
-      "rule": "DOCS-07",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-07",
-      "kind": "pending",
-      "reason": "Welcome Page is in the View menu rather than the Help menu.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
-    },
-    {
-      "rule": "DOCS-08",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-08",
-      "kind": "pending",
-      "reason": "The Help menu has no row that opens a keyboard reference.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
-    },
-    {
       "rule": "DOCS-14",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-14",
@@ -401,14 +385,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {
-      "rule": "MENU-17",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/menus/#menu-17",
-      "kind": "pending",
-      "reason": "In the CUA, VS Code and Sublime keymaps F10 steps the debugger, and no command focuses the menu bar instead.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1566"
-    },
-    {
       "rule": "MENU-05",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/menus/#menu-05",
@@ -495,14 +471,6 @@
       "kind": "pending",
       "reason": "A few pickers open empty when they have nothing to list, Bookmarks and Recent Files among them.",
       "link": "https://github.com/adriandeleon/Editora/issues/1572"
-    },
-    {
-      "rule": "WELC-03",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/welcome/#welc-03",
-      "kind": "pending",
-      "reason": "The Help menu has no Welcome Page row, since the row is in the View menu.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1573"
     },
     {
       "rule": "ABOUT-01",
