@@ -433,14 +433,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {
-      "rule": "DIAG-06",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/diagnostics/#diag-06",
-      "kind": "pending",
-      "reason": "A problem report does not include a summary of your settings.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1569"
-    },
-    {
       "rule": "CLI-11",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/command-line/#cli-11",
@@ -511,14 +503,6 @@
       "kind": "pending",
       "reason": "The find bars of consoles and of Project Map cards highlight only the current match.",
       "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
-      "rule": "MLOG-05",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/message-log/#mlog-05",
-      "kind": "pending",
-      "reason": "Three status messages whose names suggest a failure are not shown as errors.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1577"
     },
     {
       "rule": "REL-04",

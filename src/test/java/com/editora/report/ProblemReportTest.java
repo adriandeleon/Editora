@@ -55,6 +55,9 @@ class ProblemReportTest {
         assertTrue(details.contains("\nOS: " + System.getProperty("os.name")), details);
         assertTrue(details.endsWith("\nPlugins: a 1.0, b 2.0 (disabled)"), details);
         assertTrue(ProblemReport.systemDetails(List.of()).endsWith("\nPlugins: none"));
+        // The report's block ends with the summary of the settings, under the same Label: value shape.
+        assertTrue(ProblemReport.systemDetails(List.of(), "Settings: theme=dark\n")
+                .endsWith("\nPlugins: none\nSettings: theme=dark"));
     }
 
     @Test
@@ -88,8 +91,8 @@ class ProblemReportTest {
         Files.writeString(previous, "crash in /home/jdoe/proj/App.java\n");
         Redactor redactor = new Redactor("/home/jdoe", "jdoe");
 
-        ProblemReport.Assembled report =
-                ProblemReport.assemble(latest, previous, List.of(), "captured in memory", redactor);
+        ProblemReport.Assembled report = ProblemReport.assemble(
+                latest, previous, List.of(), "Settings: keymap=emacs", "captured in memory", redactor);
 
         assertTrue(report.text().contains("--- editora-session.log (the latest session) ---\ncaptured in memory\n"));
         assertTrue(report.text()
@@ -97,9 +100,10 @@ class ProblemReportTest {
         assertEquals(1, report.redacted());
         assertTrue(report.text().startsWith("Editora problem report\n"));
         assertTrue(report.text().contains(report.systemDetails()));
+        assertTrue(report.systemDetails().endsWith("\nSettings: keymap=emacs"), report.systemDetails());
 
         Files.writeString(latest, "from the file");
-        assertTrue(ProblemReport.assemble(latest, previous, List.of(), "captured", redactor)
+        assertTrue(ProblemReport.assemble(latest, previous, List.of(), "Settings: keymap=emacs", "captured", redactor)
                 .text()
                 .contains("(the latest session) ---\nfrom the file\n"));
     }

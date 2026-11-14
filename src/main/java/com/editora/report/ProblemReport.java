@@ -44,11 +44,17 @@ public final class ProblemReport {
     private ProblemReport() {}
 
     /**
-     * The system block: version, Java, JavaFX, OS, locale, how Editora was installed, and its plugins. Each
-     * line is {@code Label: value}, the same shape as About → Copy details.
+     * The system block: version, Java, JavaFX, OS, locale, how Editora was installed, its plugins, and the
+     * summary of its settings. Each line is {@code Label: value}, the same shape as About → Copy details.
      *
      * @param plugins one entry per plugin ({@code "id 1.2.0"}, {@code "id 1.2.0 (disabled)"}); empty for none
+     * @param settings the {@link SettingsSummary} line
      */
+    public static String systemDetails(List<String> plugins, String settings) {
+        return systemDetails(plugins) + "\n" + settings.strip();
+    }
+
+    /** The system block without the settings line: what About → Copy details shows. */
     public static String systemDetails(List<String> plugins) {
         List<String> lines = new ArrayList<>();
         lines.add(AppInfo.versionLine());
@@ -79,14 +85,20 @@ public final class ProblemReport {
     /**
      * The report over two session logs — {@code latestLog} ({@code fallbackLog}, the in-memory capture, when that
      * file cannot be read) and {@code previousLog}, the session before it — redacted by {@code redactor}.
+     * {@code settings} is the {@link SettingsSummary} line, the last of the system block.
      */
     public static Assembled assemble(
-            Path latestLog, Path previousLog, List<String> plugins, @Nullable String fallbackLog, Redactor redactor) {
+            Path latestLog,
+            Path previousLog,
+            List<String> plugins,
+            String settings,
+            @Nullable String fallbackLog,
+            Redactor redactor) {
         String latest = readLog(latestLog);
         List<Log> logs = List.of(
                 new Log(latestLog.getFileName() + " (the latest session)", latest != null ? latest : fallbackLog),
                 new Log(previousLog.getFileName() + " (the session before it)", readLog(previousLog)));
-        Redactor.Result details = redactor.redact(systemDetails(plugins));
+        Redactor.Result details = redactor.redact(systemDetails(plugins, settings));
         Redactor.Result body = redactor.redact(logSections(logs));
         return new Assembled(
                 details.text(), header(details.text()) + body.text(), details.replaced() + body.replaced());

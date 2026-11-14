@@ -248,7 +248,7 @@ class LogViewerCommandsFxTest {
 
         EditorBuffer quiet = log("2024-01-01 10:00:00 INFO  all is well\n");
         fx(logs::jumpToNextError);
-        assertEquals(tr("status.log.noError"), host.last());
+        assertEquals(tr("status.log.noProblemLines"), host.last());
         assertEquals(0, FxTestSupport.callOnFx(() -> quiet.getArea().getCurrentParagraph()));
     }
 

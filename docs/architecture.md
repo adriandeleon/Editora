@@ -24,7 +24,10 @@ themed by AtlantaFX.
    `--version`/`--help`/`--report` before the toolkit starts. `--report` (`com.editora.report`) writes the
    redacted problem report from the session logs — `editora-session.log` and the
    `editora-session.prev.log` that `DebugLog.attachFile` keeps from the launch before — so it works when the
-   editor itself will not start; Help → Report a Problem shows the same report in `ReportProblemWindow`. It then starts the `config-prefetch` thread,
+   editor itself will not start; Help → Report a Problem shows the same report in `ReportProblemWindow`. The
+   report's system block ends with a `Settings:` line (`report/SettingsSummary`): the choices and switches that
+   change what the editor does, and never a path, an address or a key. `--report` reads it from
+   `settings.json` without loading the config. It then starts the `config-prefetch` thread,
    probes the single-instance endpoint (a launch may be handed to a running editor and exit), opens
    the prefetch's gate and starts the toolkit. The prefetch only warms (read-only) until the gate
    opens; after it, it loads the shared config, the message catalog, the plugin manifests, the

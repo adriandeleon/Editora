@@ -561,6 +561,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A problem report says how Editora is set up.** Help → Report a Problem and `editora --report` now end
+  the system details with one line of settings: the theme, the language, the keymap, the interface zoom, and
+  which features are on (language servers, debugging, Git, plugins, AI and so on). It holds no path, address
+  or key. `--report` reads it from the settings file, and says so when that file cannot be read.
 - **Welcome Page is in the Help menu.** It moved from the View menu, in the full menu bar and in Simple
   mode, and the Help menu's rows now run in one order: Command Palette, Documentation, Keyboard Shortcuts,
   Welcome Page, Check for Updates, Message Log, Debug Log, Report a Problem, Pauta Conformance, About.
