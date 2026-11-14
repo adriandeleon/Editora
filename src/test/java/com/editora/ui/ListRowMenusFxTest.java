@@ -181,20 +181,23 @@ class ListRowMenusFxTest {
                 ListView<String> rows = view.rowList();
                 rows.requestFocus();
                 rows.getSelectionModel().clearSelection();
-                assertNotNull(ListRowCommands.actionFor(ListRowCommands.COPY), "the list the keyboard is in");
-                assertNull(ListRowCommands.actionFor(ListRowCommands.REMOVE), "it has no Remove");
+                // Over this window alone: the commands look in every showing window, and a window another
+                // test left open must not answer for this one.
+                List<Stage> here = List.of(stage[0]);
+                assertNotNull(ListRowCommands.targetFor(ListRowCommands.COPY, here), "the list the keyboard is in");
+                assertNull(ListRowCommands.targetFor(ListRowCommands.REMOVE, here), "it has no Remove");
 
-                ListRowCommands.run(ListRowCommands.COPY, said::add);
+                ListRowCommands.run(ListRowCommands.COPY, said::add, here);
                 assertEquals(List.of(tr("status.list.selectRow")), said, "a list, but no row selected");
 
                 rows.getSelectionModel().select(0);
                 Clipboard.getSystemClipboard().clear();
-                ListRowCommands.run(ListRowCommands.COPY, said::add);
+                ListRowCommands.run(ListRowCommands.COPY, said::add, here);
                 assertEquals(
                         rows.getItems().getFirst(),
                         Clipboard.getSystemClipboard().getString());
 
-                ListRowCommands.run(ListRowCommands.REMOVE, said::add);
+                ListRowCommands.run(ListRowCommands.REMOVE, said::add, here);
                 assertEquals(tr("status.list.noTarget"), said.getLast(), "no list here takes Remove");
             });
         } finally {
