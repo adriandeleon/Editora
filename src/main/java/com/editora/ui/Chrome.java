@@ -602,7 +602,8 @@ final class Chrome {
             "debug.applyCodeChanges",
             "debug.loadedSources",
             "debug.modules",
-            "debug.threadDump");
+            "debug.threadDump",
+            "debug.parallelStacks");
 
     /**
      * Git commands that must stay enabled <b>outside</b> a repository, because that is where they are

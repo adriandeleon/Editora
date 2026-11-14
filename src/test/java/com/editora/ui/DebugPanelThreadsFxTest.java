@@ -156,9 +156,13 @@ class DebugPanelThreadsFxTest {
             ListView<DapModels.ThreadStatus> list = panel.threadList();
 
             list.getSelectionModel().select(1); // worker, running
-            // Every thread's menu ends with Thread Dump, after a separator (a null text).
+            // Every thread's menu ends with Thread Dump and Parallel Stacks, after a separator (a null text).
             assertEquals(
-                    java.util.Arrays.asList(tr("debugpanel.pauseThread"), null, tr("debugpanel.threadDump")),
+                    java.util.Arrays.asList(
+                            tr("debugpanel.pauseThread"),
+                            null,
+                            tr("debugpanel.threadDump"),
+                            tr("debugpanel.parallelStacks")),
                     menu(panel));
             item(panel, tr("debugpanel.pauseThread")).fire();
 
@@ -168,7 +172,8 @@ class DebugPanelThreadsFxTest {
                             tr("debugpanel.showFrames"),
                             tr("debugpanel.resumeThread"),
                             null,
-                            tr("debugpanel.threadDump")),
+                            tr("debugpanel.threadDump"),
+                            tr("debugpanel.parallelStacks")),
                     menu(panel));
             item(panel, tr("debugpanel.resumeThread")).fire();
             item(panel, tr("debugpanel.showFrames")).fire();

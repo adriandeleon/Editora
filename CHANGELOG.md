@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parallel Stacks in the debugger.** Debug: Parallel Stacks draws every thread's call stack as one tree, as
+  Visual Studio's Parallel Stacks window does: threads that went through the same calls share a box, and the box
+  branches where they went different ways, so twenty workers waiting in one place are one box of twenty threads. The
+  thread you are looking at is highlighted all the way up, a click on a frame opens its line, and Copy puts the tree
+  on the clipboard as text. A running program is paused for a moment and goes on, as with Thread Dump. It is in Run →
+  Debugger and in the Threads view's and call stack's menus. Checked with Python, Java and Go.
+
 - **A find command for each console.** *Output: Find*, *Run: Find in Output*, *External Tools: Find in
   Output*, *Debug: Find in Console*, *Find in Test Output* and *Application Log: Find* are in the Command
   Palette and can be given a key under Settings → Keymaps. Each shows its panel and opens the find bar, and

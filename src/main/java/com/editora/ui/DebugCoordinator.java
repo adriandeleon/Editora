@@ -2088,10 +2088,14 @@ final class DebugCoordinator {
                 if (threadDumpWindow != null) {
                     threadDumpWindow.sessionChanged(); // Take Again needs a live session
                 }
+                if (parallelStacksWindow != null) {
+                    parallelStacksWindow.sessionChanged();
+                }
                 tableWindows.removeIf(w -> !w.isShowing());
                 tableWindows.forEach(DebugTableWindow::sessionChanged); // Refresh needs a paused program
                 if (state != DapManager.State.RUNNING && state != DapManager.State.SUSPENDED) {
                     s().dumpPause = false; // the pause it waited for will not come
+                    s().dumpForParallel = false;
                 }
                 if (state == DapManager.State.STARTING) {
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
@@ -2661,6 +2665,11 @@ final class DebugCoordinator {
             @Override
             public void threadDump() {
                 DebugCoordinator.this.threadDump();
+            }
+
+            @Override
+            public void parallelStacks() {
+                DebugCoordinator.this.parallelStacks();
             }
 
             @Override
@@ -8502,7 +8511,22 @@ final class DebugCoordinator {
      * editor left where it is — the way to see what a program that hangs is doing.
      */
     void threadDump() {
+        takeStacks(false);
+    }
+
+    /**
+     * Debug: Parallel Stacks ({@code debug.parallelStacks}): every thread's call stack merged into one tree, in the
+     * Parallel Stacks window ({@link ParallelStacks}). The stacks are taken as Thread Dump takes them: a running
+     * program is paused for them and goes on after.
+     */
+    void parallelStacks() {
+        takeStacks(true);
+    }
+
+    /** Takes every thread's stack for Parallel Stacks ({@code parallel}) or Thread Dump. */
+    private void takeStacks(boolean parallel) {
         DebugSession session = s();
+        session.dumpForParallel = parallel && session.dap.state() != DapManager.State.INACTIVE;
         switch (session.dap.state()) {
             case SUSPENDED -> takeThreadDump(session, false, null);
             case RUNNING -> {
@@ -8532,6 +8556,8 @@ final class DebugCoordinator {
      */
     private void takeThreadDump(DebugSession session, boolean pausedForIt, @Nullable Runnable afterwards) {
         String name = session.sessionLabel.isEmpty() ? dumpSessionName(session) : session.sessionLabel;
+        boolean parallel = session.dumpForParallel;
+        session.dumpForParallel = false;
         session.dap.threadStacks(stacks -> {
             if (afterwards != null) {
                 afterwards.run();
@@ -8541,6 +8567,11 @@ final class DebugCoordinator {
                 return;
             }
             ThreadDump dump = new ThreadDump(name, java.time.LocalTime.now(), pausedForIt, stacks);
+            if (parallel) {
+                parallelStacksWindow().show(host.window(), new ParallelStacks(dump));
+                host.setStatus(tr("status.debug.parallelStacksTaken", stacks.size()));
+                return;
+            }
             threadDumpWindow().show(host.window(), dump);
             host.setStatus(tr("status.debug.threadDumpTaken", stacks.size()));
         });
@@ -8580,6 +8611,39 @@ final class DebugCoordinator {
             threadDumpWindow = window;
         }
         return window;
+    }
+
+    private @Nullable DebugParallelStacksWindow parallelStacksWindow;
+
+    private DebugParallelStacksWindow parallelStacksWindow() {
+        DebugParallelStacksWindow window = parallelStacksWindow;
+        if (window == null) {
+            window = new DebugParallelStacksWindow(new DebugParallelStacksWindow.Actions() {
+                @Override
+                public void openFrame(DapModels.StackFrameInfo frame) {
+                    openDumpFrame(frame);
+                }
+
+                @Override
+                public void takeAgain() {
+                    parallelStacks();
+                }
+
+                @Override
+                public boolean canTakeAgain() {
+                    DapManager.State state = dap().state();
+                    return state == DapManager.State.SUSPENDED || state == DapManager.State.RUNNING;
+                }
+            });
+            parallelStacksWindow = window;
+        }
+        return window;
+    }
+
+    /** The Parallel Stacks window, when one was opened (test read). */
+    @Nullable
+    DebugParallelStacksWindow parallelStacksWindowIfOpen() {
+        return parallelStacksWindow;
     }
 
     /** The Thread Dump window, when one was opened (test read). */

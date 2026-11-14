@@ -1784,6 +1784,23 @@ a breakpoint in the main thread): debugpy and Delve walk every thread at a stop 
 (Delve's goroutines are named `[Go 33] main.work`; the runtime's own parked goroutines stay apart, their stacks
 differ); java-debug at a stop gives the breakpoint's thread alone, and paused for the dump gives every thread, the
 workers merged. `DebugThreadDumpWindowFxTest` covers the window against `FakeDebugAdapter`'s `idleThreads`.
+**Parallel Stacks** (`debug.parallelStacks`, beside Thread Dump in Run → Debugger and the Threads view's and call
+stack's menus; Visual Studio's Parallel Stacks window) draws every thread's stack as one tree. The stacks are taken as
+Thread Dump takes them (`DebugCoordinator.takeStacks`; `DebugSession.dumpForParallel` says which window they are for):
+at a stop they are that stop's, and a running program is paused for them and goes on. [`ui/ParallelStacks`](../../src/main/java/com/editora/ui/ParallelStacks.java)
+(pure) merges them into a trie from the outermost frame up, frames being the same when they are the same function in
+the same file (`key`: name and file, not line), then cuts it into boxes: a box goes on up while one way leads on and
+every thread in it takes it, so it ends where the threads part or where a thread's stack ends. A box frame whose
+threads are on different lines says *several lines*; a click opens the shown thread's own line there, else the first
+thread's. `layout` (pure) places each box over the middle of those above it, the boxes above side by side and one gap
+up, the roots side by side at the bottom. [`ui/DebugParallelStacksWindow`](../../src/main/java/com/editora/ui/DebugParallelStacksWindow.java)
+draws them on a pannable canvas with a line from each box to the box below; the boxes the shown thread passes through,
+their lines, and its own top frame are drawn in the accent. Frames are focusable (Enter or a click opens their code
+through `openDumpFrame`, as Thread Dump's do); Copy gives the tree as indented text; Take Again takes it anew; threads
+without a stack (running ones at a stop) are counted in a note. `DebugParallelStacksWindowFxTest` covers it against
+`FakeDebugAdapter`'s new per-thread `threadFrames`; `ParallelStacksProbeFxTest` pauses a running program on debugpy,
+java-debug and Delve whose three workers block in one place: they are one box (java-debug's `3 threads: worker-0, …`
+from `Thread.run` up to `CountDownLatch.await`), and the program goes on.
 **View as Table** (the Variables menu on an expandable value — a variable, a watch, the evaluate result; IntelliJ's
 and Visual Studio's table view of a collection) shows a list, array, slice, set or map as a table: a row per element,
 a column per field. [`ui/ValueTable`](../../src/main/java/com/editora/ui/ValueTable.java) (pure) decides what is a row

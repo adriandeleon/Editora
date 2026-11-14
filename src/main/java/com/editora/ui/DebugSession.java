@@ -177,6 +177,9 @@ final class DebugSession {
      */
     boolean dumpPause;
 
+    /** The stacks being taken are for Parallel Stacks, not Thread Dump: they are drawn as a tree. */
+    boolean dumpForParallel;
+
     /** Stops recorded by recording breakpoints this session. */
     int recordedStops;
 

@@ -5482,6 +5482,28 @@
 .thread-dump-window .thread-dump-note { -fx-text-fill: -color-fg-muted; }
 .thread-dump-window .thread-dump-frames .list-cell.thread-dump-no-source { -fx-text-fill: -color-fg-subtle; }
 .thread-dump-window .thread-dump-frames .list-cell.thread-dump-no-source:selected { -fx-text-fill: -color-fg-emphasis; }
+/* Parallel Stacks: a box per set of threads that share frames, the shown thread's way drawn in the accent. */
+.parallel-stacks-window .thread-dump-note { -fx-text-fill: -color-fg-muted; }
+.parallel-stacks-canvas { -fx-background-color: -color-bg-subtle; }
+.parallel-stacks-box {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+}
+.parallel-stacks-box.parallel-stacks-shown { -fx-border-color: -color-accent-emphasis; -fx-border-width: 1.5; }
+.parallel-stacks-heading {
+    -fx-padding: 0 8 0 8;
+    -fx-font-weight: bold;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 4 4 0 0;
+}
+.parallel-stacks-frame { -fx-padding: 0 8 0 8; -fx-cursor: hand; }
+.parallel-stacks-frame:hover { -fx-background-color: -color-bg-subtle; }
+.parallel-stacks-frame:focused { -fx-background-color: -color-accent-subtle; }
+.parallel-stacks-frame.parallel-stacks-current { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; }
+.parallel-stacks-edge { -fx-stroke: -color-border-default; -fx-stroke-width: 1.5; }
+.parallel-stacks-edge.parallel-stacks-shown { -fx-stroke: -color-accent-emphasis; }
 /* Stopped on an exception: the execution line in red (review C13). */
 .editor-area .paragraph-text.exec-line.exec-exception { -fx-background-color: rgba(229, 20, 0, 0.22); }
 /* An earlier stop's line, gone back to in the Debug window's history: grey, not the live amber. */
