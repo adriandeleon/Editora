@@ -44,6 +44,7 @@ final class FxTestSupport {
             FXMLLoader.setDefaultClassLoader(FxTestSupport.class.getClassLoader());
             Thread.currentThread().setContextClassLoader(FxTestSupport.class.getClassLoader());
             ContextMenuDismissal.install();
+            MenuRowLayout.install(); // as App.start: every menu keeps the icon column
         });
         booted = true;
     }

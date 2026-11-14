@@ -146,6 +146,22 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
                 event.consume();
             }
         });
+        // The three lists' right-click menus: what Enter, a double-click and Open Commit do, and Copy (MENU-05).
+        ListRowCommands.install(
+                commits,
+                ListRowCommands.buttonRow(commits, ListRowCommands.OPEN, openCommit, Icons.openInTab()),
+                ListRowCommands.copyRow(
+                        commits, () -> ListRowCommands.selectedText(commits, c -> c.hash() + " " + c.subject())));
+        ListRowCommands.install(diff, ListRowCommands.copyRow(diff, () -> ListRowCommands.selectedText(diff, l -> l)));
+        ListRowCommands.install(
+                blame,
+                ListRowCommands.row(
+                        blame,
+                        ListRowCommands.OPEN,
+                        null,
+                        Icons.openInTab(),
+                        () -> openBlamed(blame.getSelectionModel().getSelectedItem())),
+                ListRowCommands.copyRow(blame, () -> ListRowCommands.selectedText(blame, BlameRow::text)));
         lower.getChildren().setAll(diff, blame);
         blame.setVisible(false);
         VBox lowerBox = new VBox(bar, lower);

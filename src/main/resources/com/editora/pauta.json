@@ -297,19 +297,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {
-      "rule": "MENU-18",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/menus/#menu-18",
-      "kind": "pending",
-      "reason": "Rows of right-click menus are laid out by the theme rather than with the menu bar's icon column and spacing.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1566"
-    },
-    {
       "rule": "MENU-05",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/menus/#menu-05",
       "kind": "pending",
-      "reason": "Some lists and trees still have no right-click menu, among them those on the Settings pages, in several Project Map cards and in the debugger's memory and disassembly views, and many right-click rows do something no command does.",
+      "reason": "The Git remotes and work trees manager, the hex viewer and the unified diff view still have no right-click menu, and many right-click rows do something no command does.",
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {

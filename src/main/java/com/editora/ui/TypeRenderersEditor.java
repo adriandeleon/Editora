@@ -82,6 +82,13 @@ final class TypeRenderersEditor {
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
+        // Its right-click menu: Edit… and Remove, as the buttons, Enter and Delete do, and Copy (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.buttonRow(list, ListRowCommands.OPEN, edit, null),
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, TypeRenderers::label)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
         for (Button b : List.of(add, edit, remove)) {
             b.setMaxWidth(Double.MAX_VALUE);
         }

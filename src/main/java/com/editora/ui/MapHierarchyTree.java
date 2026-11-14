@@ -109,6 +109,19 @@ final class MapHierarchyTree extends MapSideColumn {
                 }
             }
         });
+        // Its right-click menu: what Enter and a double-click do, and Copy (MENU-05).
+        ListRowCommands.install(
+                tree,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(tree, ListRowCommands.OPEN, null, Icons.openInTab(), this::openSelected),
+                        () -> {
+                            TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+                            return item != null
+                                    && item.getValue() != null
+                                    && item.getValue().group() != null;
+                        }),
+                ListRowCommands.copyRow(
+                        tree, () -> ListRowCommands.selectedText(tree, row -> row.message() ? null : row.text())));
         relabel();
         root();
     }

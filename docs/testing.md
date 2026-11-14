@@ -37,7 +37,7 @@ They carry `@Tag("guard")`. Run them before every push:
 mvn test -Dgroups=guard
 ```
 
-That is 23 classes and 99 tests, about half a minute once the project is compiled, most of it Maven
+That is 24 classes and 100 tests, about half a minute once the project is compiled, most of it Maven
 starting.
 
 A new test of this kind gets the tag. It qualifies when it is pure (no toolkit), reads source files,

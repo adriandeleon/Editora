@@ -192,6 +192,16 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
                 event.consume();
             }
         });
+        // Its right-click menu: what Enter and a double-click do, and Copy (MENU-05).
+        ListRowCommands.install(
+                why,
+                ListRowCommands.row(
+                        why,
+                        ListRowCommands.OPEN,
+                        null,
+                        Icons.openInTab(),
+                        () -> openEdge(why.getSelectionModel().getSelectedItem())),
+                ListRowCommands.copyRow(why, () -> ListRowCommands.selectedText(why, ProjectMapImports.Edge::text)));
         VBox whyBox = new VBox(whyTitle, why);
         VBox.setVgrow(why, Priority.ALWAYS);
         SplitPane split = new SplitPane(content, whyBox);

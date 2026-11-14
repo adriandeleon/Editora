@@ -133,6 +133,11 @@ final class DebugTableWindow {
         Button copy = new Button(tr("valuetable.copy"));
         copy.setGraphic(Icons.copy());
         copy.setOnAction(e -> copy());
+        // The table's right-click menu: Copy, as the button and Shortcut+C do (MENU-05).
+        RowMenus.install(
+                table,
+                () -> !table.getItems().isEmpty(),
+                ListRowCommands.buttonRow(table, ListRowCommands.COPY, copy, Icons.copy()));
         Button asCsv = new Button(tr("valuetable.openAsCsv"));
         asCsv.setOnAction(e -> actions.openText(tr("valuetable.csvTitle", name), model.csv(shownRows()), "csv"));
         refresh.setOnAction(e -> refresh());

@@ -168,6 +168,15 @@ final class RecoveryOfferWindow {
         restoreAll.setOnAction(e -> onRestore.accept(List.copyOf(list.getItems())));
         discardAll.setOnAction(e -> onDiscard.accept(List.copyOf(list.getItems())));
         later.setOnAction(e -> stage.hide());
+        // The list's right-click menu: the two buttons that act on the selected rows, and Copy (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.buttonRow(list, ListRowCommands.OPEN, restoreSelected, null),
+                ListRowCommands.copyRow(
+                        list,
+                        () -> ListRowCommands.selectedText(list, e -> e.record().title())),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, discardSelected, null)));
         // Enter takes the action that cannot lose anything; Escape keeps everything exactly as it is.
         restoreAll.setDefaultButton(true);
         later.setCancelButton(true);

@@ -222,6 +222,19 @@ final class MacroSettingsPane extends HBox {
         delete.disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
         delete.setOnAction(e -> deleteSelected());
+        // The right-click menus of the two lists: Copy, and their buttons' actions on the selected row (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, MacroCoordinator::displayName)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, delete, null)));
+        ListRowCommands.install(
+                stepList,
+                ListRowCommands.buttonRow(stepList, ListRowCommands.MOVE_UP, up, null),
+                ListRowCommands.buttonRow(stepList, ListRowCommands.MOVE_DOWN, down, null),
+                ListRowCommands.copyRow(stepList, () -> ListRowCommands.selectedText(stepList, this::stepLabel)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(stepList, ListRowCommands.REMOVE, remove, null)));
         Region gap = new Region();
         fitToLabel(save, revert, delete, unsaved);
         WrapRow formButtons = new WrapRow(8, 6, delete, WrapRow.setGrow(gap), unsaved, revert, save);

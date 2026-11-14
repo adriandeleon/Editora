@@ -61,6 +61,8 @@ final class DebugMemoryView extends VBox {
         placeholder.setWrapText(true);
         placeholder.getStyleClass().add("debug-empty-note");
         rows.setPlaceholder(placeholder);
+        // Its right-click menu: Copy, the one thing to do to a row (MENU-05).
+        ListRowCommands.install(rows, ListRowCommands.copyRow(rows, () -> ListRowCommands.selectedText(rows, r -> r)));
         VBox.setVgrow(rows, Priority.ALWAYS);
         UiZoom.spacing(this, 2);
         getChildren().addAll(top, rows);

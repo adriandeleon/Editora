@@ -205,6 +205,13 @@ final class ExternalToolsEditor {
             persist();
             hooks.unbind().accept(id); // drop its key binding, as deleting a macro does
         });
+        // Its right-click menu: Copy, and the Remove button's action (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.copyRow(
+                        list, () -> ListRowCommands.selectedText(list, ExternalToolsEditor::displayName)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
 
         VBox left = UiZoom.spacing(new VBox(list), 6);
         VBox.setVgrow(list, Priority.ALWAYS);

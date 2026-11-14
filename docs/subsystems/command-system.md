@@ -514,6 +514,34 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   the command (`registerRowCommands` in `WindowCommandRegistrar`) on the same panel method the row calls,
   which answers false when no row is selected so the command can say so. A Copy row whose control answers
   the keymap's Copy chord (`RowMenus.onCopyKey`) shows that chord.
+- **The lists' shared row commands.** Lists whose rows had no menu (the Settings pages', the Project Map's cards
+  and columns, the debugger's views and windows, Backlinks, a build tool's task tree) do a handful of things to a
+  row, each the same everywhere, so they share seven commands rather than one each:
+  [`ListRowCommands`](../../src/main/java/com/editora/ui/ListRowCommands.java) registers `list.open` (what Enter, a
+  double-click or the page's button for the row does), `list.copy`, `list.rename`, `list.toggle` (a tick),
+  `list.remove`, `list.moveUp` and `list.moveDown`. A list binds what each does to it (`ListRowCommands.row`, kept
+  in the control's own properties, never in a static map); the command looks for that binding from the focus owner
+  of the focused window up, then in every other window's focus owner, so the palette reaches a Settings or Map list
+  too (that window is brought forward first, so a row is never removed in a window the user is not looking at),
+  and says so on the status line when there is no such list (`status.list.noTarget`) or no row is selected
+  (`status.list.selectRow`). `buttonRow` makes a row out of a page's button: the row keeps the button's own words
+  (it follows them: Disable becomes Enable), is disabled while the button is (`enabledWhen`, which
+  `RowMenus.install` honours), and fires it, so the button's own handler, confirmation included, is what runs.
+  `copyRow` is the Copy row and the Copy key together. A Project Map card's button that is not one of these verbs
+  gets a card command of its own (`MapButtonCommands`, `ListRowCommands.mapButtonRow`): Open Changed File in
+  Editor, Compare Changed File, Edit Trail Stop Note…. `RowMenuCoverageTest` (guard) reads every `ListView`,
+  `TreeView` and `TableView` in the source and fails on one with no menu that is not left out with a reason
+  (pickers, lists that only navigate).
+- **Every menu row has the menu bar's layout** (MENU-18). A right-click or drop-down row is a stock `MenuItem`;
+  `app.css` (`.context-menu .menu-item > .graphic-container`, `> .left-container`, `> .label`) gives it a 22 px icon
+  column with 8 px to the title, a check or radio row's tick in the same column, and 18 px before the chord, as
+  `MainMenuBar.rowContent` lays out a menu bar row. JavaFX gives a menu's graphics one column as wide as the widest,
+  so a row without a glyph keeps it; a menu where no row has a glyph or a tick is marked `menu-blank-column` as it
+  shows ([`MenuRowLayout`](../../src/main/java/com/editora/ui/MenuRowLayout.java), installed in `App` with
+  `ContextMenuDismissal`), and its titles get the column as padding. The skin lays ticks and glyphs out in two
+  columns, one after the other; a menu with both kinds of row is marked `menu-shared-column`, and the stylesheet
+  gives the ticks' column no width and moves the tick to the middle of the glyphs' column. (A tick row with a glyph
+  of its own needs both columns, so such a menu keeps them.) `MenuRowLayoutFxTest` measures the rows.
 - **Naming a button**: an icon-only button gets its tooltip and its accessible text in one call, from one
   string: `Icons.button` / `Icons.toolbarButton` when it is built, `Icons.name(control, name)` afterwards and
   again whenever the name changes (`com.editora.editor.ControlNames.name` is the same call for the editor

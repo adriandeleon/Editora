@@ -153,6 +153,8 @@ public class App extends Application {
         // A press anywhere outside an open right-click menu closes it, including inside the control it was
         // opened on, which JavaFX's own auto-hide leaves alone. See ContextMenuDismissal.
         com.editora.ui.ContextMenuDismissal.install();
+        // Every menu keeps the menu bar's icon column, even one whose rows have no glyph. See MenuRowLayout.
+        com.editora.ui.MenuRowLayout.install();
 
         // Hold back the probes nothing on screen needs (login-shell PATH, rg, gh, the release check, the spell
         // dictionary) until the first content has painted; see AfterFirstPaint. Only a real launch holds —

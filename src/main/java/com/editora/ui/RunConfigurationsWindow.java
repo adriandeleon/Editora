@@ -510,6 +510,12 @@ public final class RunConfigurationsWindow {
         save.getStyleClass().add("success");
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> commit.run());
+        // The list's right-click menu: Remove, as the button does, and Copy (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, RunConfiguration::name)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
         Button close = new Button(tr("settings.close"));
         close.getStyleClass().add("accent");
         close.setOnAction(e -> stage.close());

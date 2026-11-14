@@ -679,6 +679,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         PanelViewerButtonCommands.register(this);
         HelpCommands.register(this);
         FindBarCommands.register(this);
+        ListRowCommands.register(this); // the rows of the lists' right-click menus
         recovery.registerCommands(registry);
         setupToolbar();
         runConfigurations.refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set

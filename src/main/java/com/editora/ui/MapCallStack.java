@@ -60,8 +60,29 @@ final class MapCallStack extends MapSideColumn {
                 event.consume();
             }
         });
+        // Its right-click menu: what a click and Enter do, and Copy (MENU-05).
+        ListRowCommands.install(
+                frames,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(frames, ListRowCommands.OPEN, null, Icons.openInTab(), this::pickSelected),
+                        () -> {
+                            DapModels.StackFrameInfo frame =
+                                    frames.getSelectionModel().getSelectedItem();
+                            return frame != null && !onlyLabels(frame);
+                        }),
+                ListRowCommands.copyRow(frames, () -> ListRowCommands.selectedText(frames, DebugPanelText::frameText)));
         setBody(frames);
         setTitle(tr("project.map.debug.stackTitle"), frames);
+    }
+
+    /** Shows the selected frame in the debugger, as a click does; false when none, or one with no place, is. */
+    boolean pickSelected() {
+        DapModels.StackFrameInfo frame = frames.getSelectionModel().getSelectedItem();
+        if (frame == null || onlyLabels(frame)) {
+            return false;
+        }
+        pick(frame);
+        return true;
     }
 
     /** Lists {@code stack}, top first, marking and selecting the frame {@code shown} (its id). */

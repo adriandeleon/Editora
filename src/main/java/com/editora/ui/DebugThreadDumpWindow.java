@@ -125,6 +125,20 @@ final class DebugThreadDumpWindow {
                 e.consume();
             }
         });
+        // The two lists' right-click menus: what their keys and a double-click do (MENU-05). Shortcut+C copies the
+        // selected thread's stack in both, and so does their Copy row; a frame's own row copies that frame.
+        ListRowCommands.install(
+                threadList,
+                ListRowCommands.row(threadList, ListRowCommands.COPY, null, Icons.copy(), this::copySelectedStack));
+        ListRowCommands.install(
+                frameList,
+                ListRowCommands.row(frameList, ListRowCommands.OPEN, null, Icons.openInTab(), this::openSelectedFrame),
+                ListRowCommands.row(
+                        frameList,
+                        ListRowCommands.COPY,
+                        null,
+                        Icons.copy(),
+                        () -> RowMenus.copy(ListRowCommands.selectedText(frameList, DebugPanelText::frameText))));
         threadList.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.RIGHT) {
                 frameList.requestFocus();
@@ -258,25 +272,28 @@ final class DebugThreadDumpWindow {
         frameList.getItems().setAll(group == null ? List.of() : group.frames());
     }
 
-    private void openSelectedFrame() {
+    private boolean openSelectedFrame() {
         DapModels.StackFrameInfo frame = frameList.getSelectionModel().getSelectedItem();
-        if (frame != null) {
-            actions.openFrame(frame);
+        if (frame == null) {
+            return false;
         }
+        actions.openFrame(frame);
+        return true;
     }
 
-    /** Copies the selected row's stack, as Copy Call Stack copies the Debug window's. */
-    private void copySelectedStack() {
+    /** Copies the selected row's stack, as Copy Call Stack copies the Debug window's; false with no row selected. */
+    private boolean copySelectedStack() {
         ThreadDump d = dump;
         ThreadDump.Group g = threadList.getSelectionModel().getSelectedItem();
         if (d == null || g == null) {
-            return;
+            return false;
         }
         StringBuilder out = new StringBuilder(d.rowHeading(g)).append('\n');
         for (DapModels.StackFrameInfo f : g.frames()) {
             out.append("    at ").append(DebugPanelText.frameText(f)).append('\n');
         }
         DebugPanel.copyToClipboard(out.toString());
+        return true;
     }
 
     /** A thread row: its name (merged: the names and how many), muted what it was doing and its depth. */

@@ -57,19 +57,28 @@ final class SpellFileTypesEditor extends VBox {
         list.setAccessibleText(tr("settings.spell.fileTypes.title"));
         // A tick box inside a list cell answers the mouse only; Space on the selected row does the same.
         list.setOnKeyPressed(e -> {
-            String selected = list.getSelectionModel().getSelectedItem();
-            if (e.getCode() == KeyCode.SPACE && selected != null) {
-                BooleanProperty on = ticked.get(selected); // every listed row has one
-                if (on != null) {
-                    on.set(!on.get());
-                }
+            if (e.getCode() == KeyCode.SPACE && toggleSelected()) {
                 e.consume();
             }
         });
+        // Its right-click menu: what Space and the tick do (MENU-05).
+        ListRowCommands.install(
+                list, ListRowCommands.row(list, ListRowCommands.TOGGLE, null, null, this::toggleSelected));
         getChildren().addAll(filter, list);
         UiZoom.maxWidth(this, 440);
         sync();
         showMatching("");
+    }
+
+    /** Ticks or unticks the selected language, as Space does; false when none is selected. */
+    boolean toggleSelected() {
+        String selected = list.getSelectionModel().getSelectedItem();
+        BooleanProperty on = selected == null ? null : ticked.get(selected); // every listed row has one
+        if (on == null) {
+            return false;
+        }
+        on.set(!on.get());
+        return true;
     }
 
     /** Every language a buffer can have: the grammars, the file-name rules, and whatever is already listed. */

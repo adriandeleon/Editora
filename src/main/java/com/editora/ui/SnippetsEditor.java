@@ -437,6 +437,13 @@ final class SnippetsEditor {
         }
         // The buttons wrap onto a second line rather than hold the list column wider than a narrow window
         // allows (German at the 900 px minimum scrolled the whole page sideways).
+        // Its right-click menu: Copy, and the Disable / Enable and Remove buttons' actions (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, Entry::name)),
+                ListRowCommands.buttonRow(list, ListRowCommands.TOGGLE, toggle, null),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
         WrapRow buttons = new WrapRow(6, 6, add, remove, toggle);
         // The picker shares the list's width: boxed with a 130px label column it was squeezed to an arrow.
         Label languageLabel = new Label(tr("settings.snippet.language"));

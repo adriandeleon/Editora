@@ -129,6 +129,14 @@ final class MapResultsList extends MapSideColumn {
         tree.setCellFactory(view -> new RowCell());
         tree.setAccessibleHelp(tr("project.map.places.help"));
         setBody(filters, tree);
+        // Its right-click menu: what Enter and a double-click do, and Copy (MENU-05).
+        ListRowCommands.install(
+                tree,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(tree, ListRowCommands.OPEN, null, Icons.openInTab(), this::openSelected),
+                        () -> selectedPlace() != null),
+                ListRowCommands.copyRow(
+                        tree, () -> ListRowCommands.selectedText(tree, row -> row.message() ? null : row.text())));
         filter.textProperty().addListener((obs, was, now) -> refill());
         tests.selectedProperty().addListener((obs, was, now) -> refill());
         // Down from the filter goes to the list, as a finder's does.

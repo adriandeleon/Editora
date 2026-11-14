@@ -3627,6 +3627,14 @@ public class SettingsWindow {
             }
         });
         revokeAll.disableProperty().bind(Bindings.isEmpty(trustedFoldersList.getItems()));
+        // The list's right-click menu: Copy, and the Revoke button's action (MENU-05).
+        ListRowCommands.install(
+                trustedFoldersList,
+                ListRowCommands.copyRow(
+                        trustedFoldersList, () -> ListRowCommands.selectedText(trustedFoldersList, path -> path)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(
+                        ListRowCommands.buttonRow(trustedFoldersList, ListRowCommands.REMOVE, revoke, null)));
         cardRow(trust, Category.ADVANCED, trustedFoldersList, "workspace trust trusted folders list revoke");
         cardRow(
                 trust,

@@ -225,6 +225,12 @@ final class AbbreviationsEditor {
                 persist();
             }
         });
+        // Its right-click menu: Copy, and the Remove button's action (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, Abbreviation::getAbbreviation)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
 
         VBox left = UiZoom.spacing(new VBox(list), 6);
         VBox.setVgrow(list, Priority.ALWAYS);

@@ -41,14 +41,39 @@ final class DebugDisassemblyView extends VBox {
         list.setPlaceholder(placeholder);
         list.setCellFactory(v -> new InstructionCell());
         list.setOnMouseClicked(e -> {
-            DapModels.Instruction i = list.getSelectionModel().getSelectedItem();
-            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2 && i != null && i.file() != null) {
-                onOpenSource.accept(i.file(), i.line());
+            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
+                openSelected();
             }
         });
+        // Its right-click menu: what a double-click does, and Copy (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(list, ListRowCommands.OPEN, null, Icons.openInTab(), this::openSelected),
+                        () -> {
+                            DapModels.Instruction i = list.getSelectionModel().getSelectedItem();
+                            return i != null && i.file() != null;
+                        }),
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, DebugDisassemblyView::rowText)));
         VBox.setVgrow(list, Priority.ALWAYS);
         getChildren().add(list);
         setMessage(tr("debugpanel.disassembly.idle"));
+    }
+
+    /** Opens the selected instruction's source line, as a double-click does; false when it has none. */
+    boolean openSelected() {
+        DapModels.Instruction i = list.getSelectionModel().getSelectedItem();
+        if (i == null || i.file() == null) {
+            return false;
+        }
+        onOpenSource.accept(i.file(), i.line());
+        return true;
+    }
+
+    /** An instruction as Copy gives it: its address, its text and its symbol. Pure. */
+    static String rowText(DapModels.Instruction i) {
+        String symbol = i.symbol().isBlank() ? "" : "  " + i.symbol();
+        return i.address() + "  " + i.text() + symbol;
     }
 
     /** Where double-clicking an instruction goes: its source file and 0-based line. */

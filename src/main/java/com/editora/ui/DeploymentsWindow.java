@@ -373,6 +373,13 @@ public final class DeploymentsWindow {
             commit.run();
             stage.close();
         });
+        // The list's right-click menu: Deploy Now and Remove, as the buttons do, and Copy (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.buttonRow(list, ListRowCommands.OPEN, deploy, null),
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, Deployment::name)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
 
         VBox left = UiZoom.spacing(new VBox(list), 8);
         VBox.setVgrow(list, Priority.ALWAYS);
