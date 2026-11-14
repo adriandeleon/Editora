@@ -36,7 +36,7 @@ class StatusSeverityTest {
         List<String> warnings = new ArrayList<>();
         for (String key : new TreeSet<>(Messages.keys())) {
             String last = key.substring(key.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT);
-            boolean status = key.startsWith("status.") && !StatusSeverity.NOT_FAILURES.contains(key);
+            boolean status = key.startsWith("status."); // the name decides: no key is exempt
             MessageLog.Severity expected = !status
                     ? MessageLog.Severity.INFO
                     : last.contains("fail") || last.contains("error")
@@ -59,9 +59,11 @@ class StatusSeverityTest {
                 "status.failedOpen",
                 "status.debug.error")));
         assertTrue(warnings.containsAll(List.of("status.narrow.cannot", "status.gotoInvalid")), warnings.toString());
-        // Mentions of failure that are not failures, and other namespaces, stay ordinary messages.
-        assertEquals(MessageLog.Severity.INFO, StatusSeverity.ofKey("status.testrunner.filterFailed"));
-        assertEquals(MessageLog.Severity.INFO, StatusSeverity.ofKey("status.log.noError"));
+        // A message that mentions a failure without being one is named for what it says, and other
+        // namespaces stay ordinary messages.
+        assertEquals(MessageLog.Severity.INFO, StatusSeverity.ofKey("status.testrunner.filterNotPassed"));
+        assertEquals(MessageLog.Severity.INFO, StatusSeverity.ofKey("status.testrunner.rerunsAllInstead"));
+        assertEquals(MessageLog.Severity.INFO, StatusSeverity.ofKey("status.log.noProblemLines"));
         assertEquals(MessageLog.Severity.INFO, StatusSeverity.ofKey("status.saved"));
         assertEquals(MessageLog.Severity.INFO, StatusSeverity.ofKey("testrunner.failed"));
         assertEquals(MessageLog.Severity.INFO, StatusSeverity.ofKey(null));
@@ -76,7 +78,7 @@ class StatusSeverityTest {
         assertEquals(MessageLog.Severity.WARN, StatusSeverity.of(tr("status.narrow.cannot")));
         assertEquals(MessageLog.Severity.WARN, StatusSeverity.of(tr("status.gotoInvalid", "12:x")));
         assertEquals(MessageLog.Severity.INFO, StatusSeverity.of(tr("status.saved", "notes.md")));
-        assertEquals(MessageLog.Severity.INFO, StatusSeverity.of(tr("status.testrunner.filterFailed")));
+        assertEquals(MessageLog.Severity.INFO, StatusSeverity.of(tr("status.testrunner.filterNotPassed")));
         assertEquals(MessageLog.Severity.INFO, StatusSeverity.of("Quit"));
         assertEquals(MessageLog.Severity.INFO, StatusSeverity.of(""));
         assertEquals(MessageLog.Severity.INFO, StatusSeverity.of(null));

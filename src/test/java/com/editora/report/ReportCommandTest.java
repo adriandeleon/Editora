@@ -43,6 +43,7 @@ class ReportCommandTest {
         assertTrue(report.getFileName().toString().matches("editora-report-\\d{8}-\\d{6}\\.txt"), report.toString());
         String text = Files.readString(report);
         assertTrue(text.contains("latest session line"));
+        assertTrue(text.contains("\nSettings: theme="), "the settings are summarised even with no settings file");
         assertTrue(text.contains("SEVERE crash"));
         String console = printed.toString(StandardCharsets.UTF_8);
         assertTrue(console.contains("Wrote the problem report to " + report), console);

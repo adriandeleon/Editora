@@ -32,7 +32,12 @@ public final class ReportCommand {
     public static int run(
             Path configDir, Path latestLog, Path previousLog, Path outDir, boolean open, PrintStream out) {
         ProblemReport.Assembled report = ProblemReport.assemble(
-                latestLog, previousLog, pluginFolders(configDir.resolve("plugins")), null, Redactor.forThisMachine());
+                latestLog,
+                previousLog,
+                pluginFolders(configDir.resolve("plugins")),
+                SettingsSummary.ofFile(configDir.resolve("settings.json")),
+                null,
+                Redactor.forThisMachine());
         Path file = write(report.text(), outDir, ProblemReport.fileName(LocalDateTime.now()));
         if (file == null) {
             out.println("Could not write the problem report to " + outDir + " or the temp folder.");
