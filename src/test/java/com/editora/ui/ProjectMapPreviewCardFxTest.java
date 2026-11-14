@@ -436,6 +436,89 @@ class ProjectMapPreviewCardFxTest {
     }
 
     @Test
+    void theMenuGroupsTheCodeQuestionsAndEnablesOnlyWhatTheFileCanAnswer(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("pom.xml"), "<project>\n  <groupId>x</groupId>\n</project>\n");
+        try (Rig r = new Rig()) {
+            java.util.Set<MapCardLinks.Kind> answered = java.util.EnumSet.of(MapCardLinks.Kind.DEFINITION);
+            boolean[] documents = {false};
+            FxTestSupport.runOnFx(() -> {
+                r.card.setFollowActions(new ProjectMapPreview.FollowActions() {
+                    @Override
+                    public void follow(Path at, int line, int column, String commandId) {}
+
+                    @Override
+                    public void related(Path at) {}
+
+                    @Override
+                    public void fileHistory(Path at) {}
+                });
+                r.card.setLinkActions(new ProjectMapPreview.LinkActions() {
+                    @Override
+                    public void show(
+                            ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column, boolean atPlace) {}
+
+                    @Override
+                    public boolean offers(Path at, MapCardLinks.Kind kind) {
+                        return answered.contains(kind);
+                    }
+
+                    @Override
+                    public boolean documents(Path at) {
+                        return documents[0];
+                    }
+
+                    @Override
+                    public boolean editorOffers(Path at, String commandId) {
+                        return "lsp.gotoDefinition".equals(commandId);
+                    }
+                });
+                r.card.showFile(file, new Content("<project>\n  <groupId>x</groupId>\n</project>\n", false), null);
+                r.rebuildMenu(1);
+                // The common questions on the menu itself, the rest one submenu away.
+                assertNotNull(r.item("project.map.links.definition.show"));
+                assertNotNull(r.item("project.map.links.showReferences"));
+                assertNull(r.item("project.map.links.showCallers"), "Callers is in the Hierarchy submenu");
+                assertNull(r.item("project.map.preview.pin.menu"), "Pin is in the Card submenu");
+
+                // A pom.xml's server answers Go to Definition and nothing else here: the rest are greyed out.
+                assertFalse(r.item("project.map.links.definition.show").isDisable());
+                assertTrue(r.item("project.map.links.showReferences").isDisable());
+                assertTrue(r.item("project.map.preview.menu.navigate").isDisable(), "nothing in it fits");
+                assertTrue(r.item("project.map.preview.menu.hierarchy").isDisable(), "a pom has no callers");
+                assertTrue(r.item("project.map.links.hover.show").isDisable(), "no documentation to show");
+                javafx.scene.control.Menu inEditor = (javafx.scene.control.Menu) r.item("project.map.follow.inEditor");
+                assertFalse(inEditor.isDisable(), "the editor's Go to Definition fits");
+                assertEquals(
+                        List.of(false, true, true, true, true),
+                        inEditor.getItems().stream().map(MenuItem::isDisable).toList());
+                assertFalse(r.item("project.map.preview.menu.card").isDisable());
+                assertFalse(r.item("project.map.preview.menu.git").isDisable());
+
+                // A file whose server answers more: those items, and their submenus, come back.
+                answered.addAll(java.util.EnumSet.of(MapCardLinks.Kind.CALLERS, MapCardLinks.Kind.IMPLEMENTATIONS));
+                documents[0] = true;
+                r.rebuildMenu(1);
+                javafx.scene.control.Menu hierarchy =
+                        (javafx.scene.control.Menu) r.item("project.map.preview.menu.hierarchy");
+                assertFalse(hierarchy.isDisable());
+                List<String> enabled = hierarchy.getItems().stream()
+                        .filter(item -> !(item instanceof javafx.scene.control.SeparatorMenuItem) && !item.isDisable())
+                        .map(MenuItem::getText)
+                        .toList();
+                assertEquals(
+                        List.of(
+                                tr("project.map.links.showCallers"),
+                                tr("project.map.hierarchy.showCalls"),
+                                tr("project.map.graph.menu")),
+                        enabled,
+                        "callers, the call hierarchy and the graph — no types");
+                assertFalse(r.item("project.map.preview.menu.navigate").isDisable());
+                assertFalse(r.item("project.map.links.hover.show").isDisable());
+            });
+        }
+    }
+
+    @Test
     void aRightClickOpensTheMenuAndAClickInTheTextDismissesIt(@TempDir Path dir) throws Exception {
         Path file = Files.writeString(dir.resolve("a.txt"), "x");
         try (Rig r = new Rig()) {

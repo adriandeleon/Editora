@@ -529,6 +529,24 @@ final class MapCards {
         }
 
         @Override
+        public boolean offers(Path file, MapCardLinks.Kind kind) {
+            MapCardLinks.Source source = links.source();
+            return source == null || source.offers(file, kind);
+        }
+
+        @Override
+        public boolean documents(Path file) {
+            MapCardLinks.Source source = links.source();
+            return source == null || source.documents(file);
+        }
+
+        @Override
+        public boolean editorOffers(Path file, String commandId) {
+            MapCardLinks.Source source = links.source();
+            return source == null || source.editorOffers(file, commandId);
+        }
+
+        @Override
         public boolean step(ProjectMapPreview card, boolean back) {
             return host.historyStep(card, back);
         }

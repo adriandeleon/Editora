@@ -489,6 +489,22 @@ found the status says the result is in a library, as before.
 A card a hierarchy tree's row opened is kept while the card the tree was asked from is open, as an answer's result
 cards are (`MapCardLinks.treeOpened`, `isResult`), so a folder of the map closing does not close it.
 
+**The card menu's layout.** A code card's menu keeps the common items on the menu itself and the rest one submenu
+away (`ProjectMapPreview.rebuildEditorContextMenu`): Copy, Select All, Find in Card, Go to Line; **Go to Definition**,
+**Show References as Cards**, a **Navigate** submenu (Declaration, Type Definition, Implementations as Cards, Super
+Method), a **Hierarchy** submenu (Callers, Callees, Supertypes and Subtypes as Cards, Show Call / Type Hierarchy,
+Symbol Graph), **Quick Documentation** and **In the Editor**; Related Test / Subject, Dependencies and a **Git**
+submenu (Declaration History, Show Git History, Annotate, Copy Permalink); Add Bookmark and Add Personal Note; and a
+**Card** submenu (Show / Hide Structure, Previous / Next Declaration, Show in Structure, Pin, Move to Free Space).
+Each code question is enabled only when the file can answer it now (`MapCardLinks.Source.offers`, `documents`,
+`editorOffers`, from `ProjectMapLinkSearch`): the running server's advertised capabilities
+(`LspManager.runningCapabilities`, the session that holds the file or would on a loan; nothing is started), else the
+by-name answer for References, Callers, Definition and Declaration in a language with declaration rules
+(`DeclarationScanner.supports`). A `pom.xml` with lemminx running offers Go to Definition and References and greys
+out the Hierarchy and Navigate submenus; with no server it offers none. A submenu none of whose items fits is itself
+disabled (`ProjectMapPreview.submenu`). The **In the Editor** items follow the running server's capabilities, else
+whether the language has a server to start, or (Go to Definition, Find Usages) declaration rules.
+
 **In the editor.** The card menu's **In the Editor** submenu keeps Go to Definition, Find Usages, Go to
 Implementation, Type Hierarchy and Call Hierarchy that open the card's file in the editor at the place right-clicked
 and run the command there (`ProjectMapPreview.FOLLOW_COMMANDS`, `FileActions.followCode` →

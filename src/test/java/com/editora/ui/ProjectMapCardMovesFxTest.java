@@ -122,13 +122,13 @@ class ProjectMapCardMovesFxTest {
         FxTestSupport.runOnFx(() -> {
             FxTestSupport.call(card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
             javafx.scene.control.ContextMenu menu = FxTestSupport.field(card, "editorContextMenu");
-            List<String> labels = menu.getItems().stream()
+            List<String> labels = ProjectMapPreview.flatten(menu.getItems()).stream()
                     .map(MenuItem::getText)
                     .filter(text -> text != null)
                     .toList();
             assertTrue(labels.contains(tr("project.map.preview.goToLine.menu")), labels.toString());
             assertTrue(labels.contains(tr("project.map.preview.nextDeclaration.menu")), labels.toString());
-            menu.getItems().stream()
+            ProjectMapPreview.flatten(menu.getItems()).stream()
                     .filter(item -> tr("project.map.preview.goToLine.menu").equals(item.getText()))
                     .findFirst()
                     .orElseThrow()

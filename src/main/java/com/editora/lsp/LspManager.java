@@ -1599,6 +1599,21 @@ public final class LspManager {
         return file != null && servable(file) && (sessionFor(file) != null || runningSessionFor(file) != null);
     }
 
+    /**
+     * What the started server that holds {@code file} — or would hold it on a {@linkplain #lendDocument loan} — says it
+     * answers; null when none runs for it. Starts nothing: what a menu asks before offering a question about the file.
+     */
+    public org.eclipse.lsp4j.@Nullable ServerCapabilities runningCapabilities(@Nullable Path file) {
+        if (closed || !enabled || file == null || !servable(file)) {
+            return null;
+        }
+        LanguageServerSession session = sessionFor(file);
+        if (session == null) {
+            session = runningSessionFor(file);
+        }
+        return session == null || !session.isInitialized() ? null : session.capabilities();
+    }
+
     /** See {@link LspNavigationRequests#supportsReferences}. */
     public boolean supportsReferences(Path file) {
         return navigation.supportsReferences(file);
