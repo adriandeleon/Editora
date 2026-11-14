@@ -50,9 +50,7 @@ class RowMenuCoverageTest {
             Map.entry("PatchReviewPane.files", "navigation: picks the file whose diff is shown"),
             // The tree previews answer the right-click on their holder (BufferPreview.showTreePreviewContextMenu).
             Map.entry("StructuredTree.tree", "the preview holder's menu (Export PDF, Print); no row actions"),
-            Map.entry("XmlTree.tree", "the preview holder's menu (Export PDF, Print); no row actions"),
-            // Not done yet: its rows' Set URL, Fetch and Prune have no command to run.
-            Map.entry("GitManagerOverlay.list", "pending: Git remotes and work trees manager"));
+            Map.entry("XmlTree.tree", "the preview holder's menu (Export PDF, Print); no row actions"));
 
     private static final Pattern DECLARATION =
             Pattern.compile("(?:ListView|TreeView|TableView|TreeTableView)<[^=;]*?>\\s+(\\w+)\\s*=\\s*new\\s+"

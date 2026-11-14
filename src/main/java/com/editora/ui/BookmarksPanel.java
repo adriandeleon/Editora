@@ -599,6 +599,67 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         return prefix + "line " + (bm.line() + 1);
     }
 
+    /**
+     * The menu of {@code item}: a file's Delete All in File, a bookmark's Edit Note and Delete, then Move Up and Move
+     * Down (only in the current project's group). Each row is a command's on the selected row
+     * ({@link PanelRowCommands}); a right-click selects the row first.
+     */
+    private List<MenuItem> menuRows(@Nullable TreeItem<Row> item, Row value) {
+        List<MenuItem> rows = new ArrayList<>();
+        if (value instanceof FileRow f) {
+            MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
+            deleteAll.setGraphic(Icons.trash());
+            deleteAll.getStyleClass().add("danger"); // a destructive row reads red
+            deleteAll.setOnAction(e -> deleteFile(f));
+            rows.add(com.editora.editor.MenuChords.tag(deleteAll, "bookmarks.deleteAllInSelectedFile"));
+        } else if (value instanceof MarkRow m) {
+            MenuItem edit = new MenuItem(tr("bookmarks.editNoteItem"));
+            edit.setGraphic(Icons.edit());
+            edit.setOnAction(e -> editNote(m));
+            MenuItem delete = new MenuItem(tr("bookmarks.deleteItem"));
+            delete.setGraphic(Icons.trash());
+            delete.getStyleClass().add("danger");
+            delete.setOnAction(e -> deleteMark(m));
+            rows.add(com.editora.editor.MenuChords.tag(edit, "bookmarks.editSelectedNote"));
+            rows.add(com.editora.editor.MenuChords.tag(delete, "bookmarks.deleteSelected"));
+        } else {
+            return rows;
+        }
+        // "Move Up"/"Move Down" act on this row (only for the current project's group).
+        boolean can = item != null && reorderEnabled() && inCurrentGroup(item);
+        MenuItem up = new MenuItem(tr("bookmarks.moveUp"));
+        up.setGraphic(Icons.arrowUp());
+        up.setOnAction(e -> {
+            if (item != null) {
+                tree.getSelectionModel().select(item);
+            }
+            moveSelected(-1);
+        });
+        MenuItem down = new MenuItem(tr("bookmarks.moveDown"));
+        down.setGraphic(Icons.arrowDown());
+        down.setOnAction(e -> {
+            if (item != null) {
+                tree.getSelectionModel().select(item);
+            }
+            moveSelected(1);
+        });
+        up.setDisable(!can);
+        down.setDisable(!can);
+        rows.add(new SeparatorMenuItem());
+        rows.add(com.editora.editor.MenuChords.tag(up, "bookmarks.moveSelectedUp"));
+        rows.add(com.editora.editor.MenuChords.tag(down, "bookmarks.moveSelectedDown"));
+        return rows;
+    }
+
+    /**
+     * Runs the row of the selected row's menu that command {@code commandId} stands for, as choosing it would
+     * ({@link PanelRowCommands}); false when nothing is selected, or its menu has no such row or has it grayed out.
+     */
+    boolean runMenuRow(String commandId) {
+        TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+        return item != null && item.getValue() != null && MenuRows.fire(menuRows(item, item.getValue()), commandId);
+    }
+
     private final class BookmarkCell extends TreeCell<Row> {
         BookmarkCell() {
             // Drag-and-drop reordering (mirrors the tab strip's visuals): a translucent ghost follows
@@ -647,26 +708,6 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             getStyleClass().removeAll("bookmark-drop-above", "bookmark-drop-below");
         }
 
-        /** "Move Up"/"Move Down" items that act on this row (only for the current project's group). */
-        private void addMoveItems(ContextMenu menu) {
-            boolean can = reorderEnabled() && inCurrentGroup(getTreeItem());
-            MenuItem up = new MenuItem(tr("bookmarks.moveUp"));
-            up.setGraphic(Icons.arrowUp());
-            up.setOnAction(e -> {
-                tree.getSelectionModel().select(getTreeItem());
-                moveSelected(-1);
-            });
-            MenuItem down = new MenuItem(tr("bookmarks.moveDown"));
-            down.setGraphic(Icons.arrowDown());
-            down.setOnAction(e -> {
-                tree.getSelectionModel().select(getTreeItem());
-                moveSelected(1);
-            });
-            up.setDisable(!can);
-            down.setDisable(!can);
-            menu.getItems().addAll(new SeparatorMenuItem(), up, down);
-        }
-
         @Override
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
@@ -695,13 +736,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 getStyleClass().add("bookmark-file-row");
                 setGraphic(FileIcons.forProjectItem(PathDisplay.fileName(f.file()), f.folder()));
                 setTooltip(ControlNames.tooltip(f.file().toString()));
-                MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
-                deleteAll.setGraphic(Icons.trash());
-                deleteAll.getStyleClass().add("danger"); // a destructive row reads red
-                deleteAll.setOnAction(e -> deleteFile(f));
-                ContextMenu menu = new ContextMenu(deleteAll);
-                addMoveItems(menu);
-                setContextMenu(menu);
+                setContextMenu(new ContextMenu(menuRows(getTreeItem(), item).toArray(MenuItem[]::new)));
             } else if (item instanceof MarkRow m) {
                 setText(null);
                 HBox row = UiZoom.spacing(new HBox(), 4);
@@ -717,16 +752,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setGraphic(row);
                 setTooltip(ControlNames.tooltip(
                         m.bm().isFolder() ? m.file().toString() : m.file() + ":" + (m.bm().line() + 1)));
-                MenuItem edit = new MenuItem(tr("bookmarks.editNoteItem"));
-                edit.setGraphic(Icons.edit());
-                edit.setOnAction(e -> editNote(m));
-                MenuItem delete = new MenuItem(tr("bookmarks.deleteItem"));
-                delete.setGraphic(Icons.trash());
-                delete.getStyleClass().add("danger");
-                delete.setOnAction(e -> deleteMark(m));
-                ContextMenu menu = new ContextMenu(edit, delete);
-                addMoveItems(menu);
-                setContextMenu(menu);
+                setContextMenu(new ContextMenu(menuRows(getTreeItem(), item).toArray(MenuItem[]::new)));
             }
         }
     }

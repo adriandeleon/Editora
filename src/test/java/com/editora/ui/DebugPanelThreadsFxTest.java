@@ -183,6 +183,37 @@ class DebugPanelThreadsFxTest {
         });
     }
 
+    /**
+     * The commands behind the rows ({@link DebugRowCommands}) run the row the selected thread's menu offers, and
+     * nothing where it offers none: Resume on a running thread is not there to run.
+     */
+    @Test
+    void theThreadCommandsRunTheRowTheSelectedThreadOffers() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            DebugPanel panel = stopped(actions());
+            panel.showThreadsView(true);
+            ListView<DapModels.ThreadStatus> list = panel.threadList();
+            calls.clear();
+
+            list.getSelectionModel().select(1); // worker, running
+            assertFalse(panel.runMenuRow("debug.resumeSelectedThread"), "not offered for a running thread");
+            assertTrue(panel.runMenuRow("debug.pauseSelectedThread"));
+
+            list.getSelectionModel().select(2); // pool thread, suspended
+            assertTrue(panel.runMenuRow("debug.resumeSelectedThread"));
+            assertFalse(panel.runMenuRow("debug.historyLive"), "no earlier stop is shown");
+            assertEquals(List.of("pause 2", "resume 4"), calls);
+
+            // Each row of the menu names the command that runs it.
+            menu(panel);
+            for (MenuItem row : list.getContextMenu().getItems()) {
+                if (!(row instanceof javafx.scene.control.SeparatorMenuItem)) {
+                    assertTrue(com.editora.editor.MenuChords.commandOf(row) != null, row.getText() + " has a command");
+                }
+            }
+        });
+    }
+
     @Test
     void theShownThreadIsNotShownAgainAndARunningOneHasNoFrames() throws Exception {
         FxTestSupport.runOnFx(() -> {

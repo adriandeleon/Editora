@@ -561,6 +561,32 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   Editor, Compare Changed File, Edit Trail Stop Note…. `RowMenuCoverageTest` (guard) reads every `ListView`,
   `TreeView` and `TableView` in the source and fails on one with no menu that is not left out with a reason
   (pickers, lists that only navigate).
+- **A panel's right-click rows are its family's commands.** A row whose action no command ran gets a command in
+  its panel's family, acting on the selected row (a right-click selects the row first), and the row is tagged with
+  it (`MenuChords.tag`) so it shows the chord. The row and the command call one method; the command answers with a
+  status line when there is no row, or the row's menu would not offer it there. They live in small classes beside
+  the button ones, each a `static void register(MainController)`:
+  [`ProjectRowCommands`](../../src/main/java/com/editora/ui/ProjectRowCommands.java) (the Project tree's file menu,
+  `project.renameSelected`, `project.stageSelected`…: `ProjectPanel.runRowCommand` runs a `Row` on the tree's
+  selection, or on the Map's selected row while the Map's rows have the keyboard, with the menu's own rules in
+  `refusal`), [`GitRowCommands`](../../src/main/java/com/editora/ui/GitRowCommands.java) (the Commit window's
+  `git.openSelected`…, the Git Log's changed files `git.log.showFileDiff`…, and the Stash list's rows, reached by a
+  picker of the stashes as `git.unstash` reaches Apply), [`PanelRowCommands`](../../src/main/java/com/editora/ui/PanelRowCommands.java)
+  (Local History, Bookmarks, Personal Notes, Test Results) and
+  [`DebugRowCommands`](../../src/main/java/com/editora/ui/DebugRowCommands.java). A menu built for its selection
+  under rules of its own (the Debug window's Variables view, a Bookmarks row) gives its commands the menu itself: the
+  panel's `runMenuRow` builds the menu as a right-click would and fires the row tagged with the command
+  ([`MenuRows.fire`](../../src/main/java/com/editora/ui/MenuRows.java)), so the command runs exactly the row, and only
+  where it is offered. A command acts on a window that is open: never on a selection nobody can see.
+- **The Git managers' buttons.** A [`GitManagerOverlay.Action`](../../src/main/java/com/editora/ui/GitManagerOverlay.java)
+  names its command (`git.addRemote`, `git.removeWorktree`…); the card's list has a right-click menu of the same
+  actions, tagged with those commands. A command acts on the row selected in the card while it is up (and shows the
+  card again after, as the button does), and on one picked from the repository's otherwise.
+- **Read-only text views: Copy and Select All.** A console, a diff's sides and its unified view, the hex viewer and the
+  HTTP response are marked with their own Copy and Select All (`ConsoleContextMenu.mark`); `edit.copy` and
+  `edit.selectAll` run those while the focused window's keyboard is in such a view (`ConsoleContextMenu.runInFocusedView`)
+  and act on the editor otherwise, so a view's Copy row, tagged `edit.copy`, does what the command does there. A
+  console's keys go through `ConsoleNav` as before, whose Copy copies the selection only.
 - **Every menu row has the menu bar's layout** (MENU-18). A right-click or drop-down row is a stock `MenuItem`;
   `app.css` (`.context-menu .menu-item > .graphic-container`, `> .left-container`, `> .label`) gives it a 22 px icon
   column with 8 px to the title, a check or radio row's tick in the same column, and 18 px before the chord, as

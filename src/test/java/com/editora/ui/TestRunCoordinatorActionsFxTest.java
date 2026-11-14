@@ -477,6 +477,19 @@ class TestRunCoordinatorActionsFxTest {
         assertEquals("attach com.x.FooTest localhost:5005", calls.get(calls.size() - 1));
     }
 
+    /** The commands behind the rows run the selected test's row, as choosing it would. */
+    @Test
+    void theRowCommandsRunTheSelectedTestsRow() throws Exception {
+        finishedGradleRun();
+        showWindow();
+        FxTestSupport.runOnFx(() -> {
+            select("fails");
+            assertFalse(coordinator.panel().runMenuRow("test.debugSelected"), "Debug is offered only while it can run");
+            assertTrue(coordinator.panel().runMenuRow("test.goToSelected"));
+        });
+        assertEquals(List.of("jump GRADLE com.x.FooTest#fails"), calls);
+    }
+
     @Test
     void goToJumpsToTheTestAndRerunRunsOnlyThatTest() throws Exception {
         finishedGradleRun();

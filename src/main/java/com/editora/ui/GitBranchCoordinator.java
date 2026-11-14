@@ -248,11 +248,16 @@ final class GitBranchCoordinator {
      * picker. With none there is nothing to push to or fetch from, and that is reported.
      */
     private void withRemote(Path root, String title, Consumer<String> onPick) {
+        withRemoteEntry(root, title, remote -> onPick.accept(remote.name()));
+    }
+
+    /** As {@link #withRemote}, handing on the remote itself. */
+    private void withRemoteEntry(Path root, String title, Consumer<GitRemotes.Remote> onPick) {
         service().remotes(root, remotes -> {
             if (remotes.isEmpty()) {
                 ui().setStatus(tr("status.git.noRemotes"));
             } else if (remotes.size() == 1) {
-                onPick.accept(remotes.get(0).name());
+                onPick.accept(remotes.get(0));
             } else {
                 QuickOpen<GitRemotes.Remote> picker = new QuickOpen<>(
                         title,
@@ -260,7 +265,7 @@ final class GitBranchCoordinator {
                         () -> remotes,
                         GitRemotes.Remote::name,
                         GitBranchCoordinator::remoteDetail,
-                        remote -> onPick.accept(remote.name()));
+                        onPick);
                 picker.setOverlayHost(ui().overlayHost());
                 picker.show(ui().window());
             }
@@ -881,10 +886,7 @@ final class GitBranchCoordinator {
 
     /** {@code git.fetchRemote}: fetches (and prunes) one remote — the only one, or a picked one. */
     void fetchRemote() {
-        Path root = rootOrReport();
-        if (root != null) {
-            withRemote(root, tr("remotes.pick.fetch"), remote -> fetchRemote(root, remote, () -> {}));
-        }
+        onRemote(tr("remotes.pick.fetch"), (root, remote, after) -> fetchRemote(root, remote.name(), after));
     }
 
     /** {@code git fetch --prune <remote>}; {@code after} runs once it has finished, whatever the outcome. */
@@ -922,6 +924,7 @@ final class GitBranchCoordinator {
     private void showRemotes(Path root) {
         Runnable reopen = () -> showRemotes(root);
         service().remotes(root, remotes -> {
+            remotesRoot = root;
             remotesManager = new GitManagerOverlay<>(
                     tr("remotes.title"),
                     tr("remotes.empty"),
@@ -929,31 +932,110 @@ final class GitBranchCoordinator {
                     GitBranchCoordinator::remoteDetail,
                     List.of(
                             new GitManagerOverlay.Action<>(
-                                    tr("remotes.add"), false, false, none -> promptAddRemote(root, reopen)),
+                                    tr("remotes.add"),
+                                    false,
+                                    false,
+                                    "git.addRemote",
+                                    none -> promptAddRemote(root, reopen)),
                             new GitManagerOverlay.Action<>(
                                     tr("remotes.rename"),
                                     true,
                                     false,
+                                    "git.renameRemote",
                                     remote -> promptRenameRemote(root, remote.name(), reopen)),
                             new GitManagerOverlay.Action<>(
-                                    tr("remotes.setUrl"), true, false, remote -> promptRemoteUrl(root, remote, reopen)),
+                                    tr("remotes.setUrl"),
+                                    true,
+                                    false,
+                                    "git.setRemoteUrl",
+                                    remote -> promptRemoteUrl(root, remote, reopen)),
                             new GitManagerOverlay.Action<>(
                                     tr("remotes.fetch"),
                                     true,
                                     false,
+                                    "git.fetchRemote",
                                     remote -> fetchRemote(root, remote.name(), reopen)),
                             new GitManagerOverlay.Action<>(
                                     tr("remotes.prune"),
                                     true,
                                     false,
+                                    "git.pruneRemote",
                                     remote -> pruneRemote(root, remote.name(), reopen)),
                             new GitManagerOverlay.Action<>(
                                     tr("remotes.remove"),
                                     true,
                                     true,
+                                    "git.removeRemote",
                                     remote -> removeRemote(root, remote.name(), reopen))));
             remotesManager.show(ui().overlayHost(), remotes);
         });
+    }
+
+    /** The repository the remotes manager shows, while it shows one. */
+    private @Nullable Path remotesRoot;
+
+    /** The repository the work-trees manager shows, while it shows one. */
+    private @Nullable Path worktreesRoot;
+
+    /** A remotes-manager action: on {@code remote} of {@code root}; {@code after} shows the manager again, if it was up. */
+    @FunctionalInterface
+    private interface RemoteAction {
+        void run(Path root, GitRemotes.Remote remote, Runnable after);
+    }
+
+    /**
+     * The commands behind the remotes manager's buttons and menu rows ({@code git.renameRemote}…): on the remote the
+     * manager has selected while it is up, which is then shown again afterwards, as its button does; else on a remote
+     * picked from the active repository's (the only one, when there is one).
+     */
+    private void onRemote(String pickTitle, RemoteAction action) {
+        GitManagerOverlay<GitRemotes.Remote> manager = remotesManager;
+        GitRemotes.Remote chosen = manager == null ? null : manager.selectedWhileShowing();
+        Path shownRoot = remotesRoot;
+        if (manager != null && chosen != null && shownRoot != null) {
+            manager.hide();
+            action.run(shownRoot, chosen, () -> showRemotes(shownRoot));
+            return;
+        }
+        Path root = rootOrReport();
+        if (root != null) {
+            withRemoteEntry(root, pickTitle, remote -> action.run(root, remote, () -> {}));
+        }
+    }
+
+    /** {@code git.addRemote}: Add Remote…, from the manager (shown again after) or anywhere. */
+    void addRemoteCommand() {
+        GitManagerOverlay<GitRemotes.Remote> manager = remotesManager;
+        Path shownRoot = remotesRoot;
+        if (manager != null && manager.isShowing() && shownRoot != null) {
+            manager.hide();
+            promptAddRemote(shownRoot, () -> showRemotes(shownRoot));
+            return;
+        }
+        Path root = rootOrReport();
+        if (root != null) {
+            promptAddRemote(root, () -> {});
+        }
+    }
+
+    /** {@code git.renameRemote}: Rename… on the manager's selected remote, or on one picked. */
+    void renameRemoteCommand() {
+        onRemote(tr("remotes.pick.rename"), (root, remote, after) -> promptRenameRemote(root, remote.name(), after));
+    }
+
+    /** {@code git.setRemoteUrl}: Set URL… on the manager's selected remote, or on one picked. */
+    void setRemoteUrlCommand() {
+        onRemote(tr("remotes.pick.setUrl"), this::promptRemoteUrl);
+    }
+
+    /** {@code git.pruneRemote}: Prune on the manager's selected remote, or on one picked. */
+    void pruneRemoteCommand() {
+        onRemote(tr("remotes.pick.prune"), (root, remote, after) -> pruneRemote(root, remote.name(), after));
+    }
+
+    /** {@code git.removeRemote}: Remove Remote… on the manager's selected remote, or on one picked. */
+    void removeRemoteCommand() {
+        onRemote(tr("remotes.pick.remove"), (root, remote, after) -> removeRemote(root, remote.name(), after));
     }
 
     /** Runs a {@code git remote …} configuration command and reports it; {@code after} runs on success. */
@@ -1135,6 +1217,7 @@ final class GitBranchCoordinator {
     private void showWorktrees(Path root) {
         Runnable reopen = () -> showWorktrees(root);
         service().worktrees(root, trees -> {
+            worktreesRoot = root;
             worktreesManager = new GitManagerOverlay<>(
                     tr("worktrees.title"),
                     tr("worktrees.empty"),
@@ -1142,15 +1225,109 @@ final class GitBranchCoordinator {
                     GitBranchCoordinator::worktreeDetail,
                     List.of(
                             new GitManagerOverlay.Action<>(
-                                    tr("worktrees.add"), false, false, none -> promptAddWorktree(root, reopen)),
+                                    tr("worktrees.add"),
+                                    false,
+                                    false,
+                                    "git.addWorktree",
+                                    none -> promptAddWorktree(root, reopen)),
                             new GitManagerOverlay.Action<>(
-                                    tr("worktrees.open"), true, false, tree -> openWorktree(tree.path())),
+                                    tr("worktrees.open"),
+                                    true,
+                                    false,
+                                    "git.openWorktree",
+                                    tree -> openWorktree(tree.path())),
                             new GitManagerOverlay.Action<>(
-                                    tr("worktrees.prune"), false, false, none -> pruneWorktrees(root, reopen)),
+                                    tr("worktrees.prune"),
+                                    false,
+                                    false,
+                                    "git.pruneWorktrees",
+                                    none -> pruneWorktrees(root, reopen)),
                             new GitManagerOverlay.Action<>(
-                                    tr("worktrees.remove"), true, true, tree -> removeWorktree(root, tree, reopen))));
+                                    tr("worktrees.remove"),
+                                    true,
+                                    true,
+                                    "git.removeWorktree",
+                                    tree -> removeWorktree(root, tree, reopen))));
             worktreesManager.show(ui().overlayHost(), trees);
         });
+    }
+
+    /**
+     * {@code git.addWorktree} / {@code git.pruneWorktrees}: {@code action} on the manager's repository while it is up
+     * (shown again after, as its button does), else on the active repository.
+     */
+    private void onWorktrees(java.util.function.BiConsumer<Path, Runnable> action) {
+        GitManagerOverlay<GitWorktrees.Worktree> manager = worktreesManager;
+        Path shownRoot = worktreesRoot;
+        if (manager != null && manager.isShowing() && shownRoot != null) {
+            manager.hide();
+            action.accept(shownRoot, () -> showWorktrees(shownRoot));
+            return;
+        }
+        Path root = rootOrReport();
+        if (root != null) {
+            action.accept(root, () -> {});
+        }
+    }
+
+    /**
+     * {@code git.openWorktree} / {@code git.removeWorktree}: {@code action} on the work tree the manager has selected
+     * while it is up, else on one picked from the active repository's.
+     */
+    private void onWorktree(String pickTitle, WorktreeAction action) {
+        GitManagerOverlay<GitWorktrees.Worktree> manager = worktreesManager;
+        GitWorktrees.Worktree chosen = manager == null ? null : manager.selectedWhileShowing();
+        Path shownRoot = worktreesRoot;
+        if (manager != null && chosen != null && shownRoot != null) {
+            manager.hide();
+            action.run(shownRoot, chosen, () -> showWorktrees(shownRoot));
+            return;
+        }
+        Path root = rootOrReport();
+        if (root == null) {
+            return;
+        }
+        service().worktrees(root, trees -> {
+            if (trees.isEmpty()) {
+                ui().setStatus(tr("worktrees.empty"));
+                return;
+            }
+            QuickOpen<GitWorktrees.Worktree> picker = new QuickOpen<>(
+                    pickTitle,
+                    tr("worktrees.pickPrompt"),
+                    () -> trees,
+                    GitWorktrees.Worktree::path,
+                    GitBranchCoordinator::worktreeDetail,
+                    tree -> action.run(root, tree, () -> {}));
+            picker.setOverlayHost(ui().overlayHost());
+            picker.show(ui().window());
+        });
+    }
+
+    /** A work-trees-manager action on {@code tree} of {@code root}; {@code after} shows the manager again, if it was up. */
+    @FunctionalInterface
+    private interface WorktreeAction {
+        void run(Path root, GitWorktrees.Worktree tree, Runnable after);
+    }
+
+    /** {@code git.addWorktree}: Add Worktree…, from the manager (shown again after) or anywhere. */
+    void addWorktreeCommand() {
+        onWorktrees(this::promptAddWorktree);
+    }
+
+    /** {@code git.pruneWorktrees}: Prune, from the manager (shown again after) or anywhere. */
+    void pruneWorktreesCommand() {
+        onWorktrees(this::pruneWorktrees);
+    }
+
+    /** {@code git.openWorktree}: Open in New Window on the manager's selected work tree, or on one picked. */
+    void openWorktreeCommand() {
+        onWorktree(tr("worktrees.pick.open"), (root, tree, after) -> openWorktree(tree.path()));
+    }
+
+    /** {@code git.removeWorktree}: Remove Worktree… on the manager's selected work tree, or on one picked. */
+    void removeWorktreeCommand() {
+        onWorktree(tr("worktrees.pick.remove"), this::removeWorktree);
     }
 
     /** Opens the work tree's folder as a project in its own window. */

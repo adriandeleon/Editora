@@ -43,6 +43,7 @@ import com.editora.config.Settings;
 import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels.DiffModel;
 import com.editora.editor.ControlNames;
+import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import com.editora.git.RelativeTime;
 import com.editora.history.HistoryBlobStore;
@@ -668,6 +669,47 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /** The selected revision of the view that shows (the folder's tree, or the file's list); null when none is. */
+    private @Nullable HistoryRevision selectedRevision() {
+        if (folderTree.isManaged()) {
+            TreeItem<Object> sel = folderTree.getSelectionModel().getSelectedItem();
+            return sel != null && sel.getValue() instanceof HistoryRevision r ? r : null;
+        }
+        return revisions.getSelectionModel().getSelectedItem();
+    }
+
+    /** Restore This Version on the selected revision ({@code history.restoreSelected}); false when none is. */
+    boolean restoreSelected() {
+        HistoryRevision r = selectedRevision();
+        if (r == null) {
+            return false;
+        }
+        restoreRevision(r);
+        return true;
+    }
+
+    /** Set / Edit Label… on the selected revision of a file's history ({@code history.labelSelected}). */
+    boolean labelSelected() {
+        HistoryRevision r =
+                folderTree.isManaged() ? null : revisions.getSelectionModel().getSelectedItem();
+        if (r == null) {
+            return false;
+        }
+        actions.editLabel(r);
+        return true;
+    }
+
+    /** Delete History… on the file selected in a folder's history ({@code localHistory.purgeSelectedFile}). */
+    boolean purgeSelectedFile() {
+        TreeItem<Object> sel =
+                folderTree.isManaged() ? folderTree.getSelectionModel().getSelectedItem() : null;
+        if (sel == null || !(sel.getValue() instanceof FileGroup g)) {
+            return false;
+        }
+        actions.purgeFile(g.path());
+        return true;
+    }
+
     /** Restore from the button, a row's menu or Enter — one path, so they ask and behave alike. */
     private void restoreRevision(HistoryRevision revision) {
         if (revision == null) {
@@ -875,7 +917,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 }
                 setGraphic(box);
                 setTooltip(ControlNames.tooltip(g.path()));
-                MenuItem purge = item(tr("history.menu.purge"), Icons.trash(), () -> actions.purgeFile(g.path()));
+                MenuItem purge = MenuChords.tag(
+                        item(tr("history.menu.purge"), Icons.trash(), () -> actions.purgeFile(g.path())),
+                        "localHistory.purgeSelectedFile");
                 purge.getStyleClass().add("danger"); // a destructive row reads red
                 setContextMenu(new ContextMenu(purge));
             } else if (value instanceof HistoryRevision r) {
@@ -888,7 +932,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 setGraphic(box);
                 setTooltip(ControlNames.tooltip(tooltipText(r)));
                 setAccessibleText(fullTime(r.timestamp()) + ", " + what);
-                MenuItem restoreItem = item(tr("history.menu.restore"), Icons.undo(), () -> restoreRevision(r));
+                MenuItem restoreItem = MenuChords.tag(
+                        item(tr("history.menu.restore"), Icons.undo(), () -> restoreRevision(r)),
+                        "history.restoreSelected");
                 setContextMenu(new ContextMenu(restoreItem));
             }
         }
@@ -959,9 +1005,12 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             }
             setTooltip(ControlNames.tooltip(tooltipText(r)));
             setAccessibleText(accessibleText(r, tag));
-            MenuItem restoreItem = item(tr("history.menu.restore"), Icons.undo(), () -> restoreRevision(r));
+            MenuItem restoreItem = MenuChords.tag(
+                    item(tr("history.menu.restore"), Icons.undo(), () -> restoreRevision(r)),
+                    "history.restoreSelected");
             String labelText = labelled ? tr("history.menu.editLabel") : tr("history.menu.setLabel");
-            MenuItem editLabel = item(labelText, Icons.edit(), () -> actions.editLabel(r));
+            MenuItem editLabel =
+                    MenuChords.tag(item(labelText, Icons.edit(), () -> actions.editLabel(r)), "history.labelSelected");
             setContextMenu(new ContextMenu(restoreItem, editLabel));
         }
     }

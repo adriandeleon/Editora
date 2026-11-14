@@ -9493,18 +9493,22 @@ final class DebugCoordinator {
         boolean enabled = bp.enabled();
         javafx.scene.control.MenuItem flip =
                 new javafx.scene.control.MenuItem(tr(enabled ? "debug.gutter.disable" : "debug.gutter.enable"));
+        // As Edit…: the caret goes to the line, and the command for the breakpoint there runs.
         flip.setOnAction(ev -> {
-            mgr.setEnabled(line, !enabled);
-            b.refreshGutterLine(line);
+            b.getFocusedArea().moveTo(line, 0);
+            toggleBreakpointEnabledAtCaret();
         });
+        com.editora.editor.MenuChords.tag(flip, "debug.toggleBreakpointEnabled");
         javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(tr("debug.gutter.remove"));
         remove.setGraphic(Icons.remove());
         remove.getStyleClass().add("danger"); // a destructive row reads red
         remove.setOnAction(ev -> {
             if (mgr.isBreakpoint(line)) {
-                b.toggleBreakpoint(line);
+                b.getFocusedArea().moveTo(line, 0);
+                toggleBreakpointAtCaret();
             }
         });
+        com.editora.editor.MenuChords.tag(remove, "debug.toggleBreakpoint");
         javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
         javafx.scene.control.MenuItem waitFor = menuItem("debug.addTriggeredBreakpoint", null, () -> {
             b.getFocusedArea().moveTo(line, 0);
@@ -9580,10 +9584,7 @@ final class DebugCoordinator {
         }
         Path menuPath = b.getPath();
         if (menuPath != null
-                && offersOwnDebugFile(
-                        b.getLanguage(),
-                        b.isRunnable(),
-                        "java".equals(b.getLanguage()) && JavaProjectRoot.find(menuPath) != null)
+                && offersDebugFile(b)
                 // Not while this file is being debugged or built for it: it offered a second launch of it (review 2
                 // C110). Another file's live launch is replaced only after asking (review 3, C202).
                 && !launchLiveFor(menuPath)) {
@@ -9592,7 +9593,7 @@ final class DebugCoordinator {
             javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
             debugFile.setGraphic(Icons.debug());
             debugFile.setOnAction(e -> debugFile(b));
-            items.add(debugFile);
+            items.add(com.editora.editor.MenuChords.tag(debugFile, "debug.debugFile"));
         }
         items.add(breakpointsMenu(b));
         if (dap().state() == DapManager.State.SUSPENDED) {
@@ -9600,23 +9601,96 @@ final class DebugCoordinator {
             items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));
             items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));
             items.add(menuItem("debug.evaluate", Icons.debug(), this::evaluateExpression));
-            var area = b.getFocusedArea();
-            String selected = area.getSelectedText();
-            String expression = selected != null && !selected.isBlank() && !selected.contains("\n")
-                    ? selected.strip()
-                    : com.editora.editor.debug.DebugExpressions.atCaret(area);
+            String expression = watchExpression(b);
             if (expression != null) {
                 javafx.scene.control.MenuItem watch =
                         new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
                 watch.setGraphic(Icons.newFile()); // as Add to Watches in the Variables menu
-                watch.setOnAction(ev -> {
-                    ops.openToolWindow();
-                    panel().addWatchPrompt(expression);
-                });
-                items.add(watch);
+                watch.setOnAction(ev -> addWatch(expression));
+                items.add(com.editora.editor.MenuChords.tag(watch, "debug.addWatchAtCaret"));
             }
         }
         return items;
+    }
+
+    /**
+     * The commands behind the Debug window's right-click rows ({@link DebugRowCommands}): runs the row that
+     * {@code commandId} stands for on the window's selection, as choosing it would; says so when the window is closed
+     * (its selection is not something the user can see) or the row is not offered for the selection.
+     */
+    void runPanelRow(String commandId) {
+        if (!ops.isToolWindowOpen() || !panel().runMenuRow(commandId)) {
+            host.setStatus(tr("status.debug.rowNotOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
+        }
+    }
+
+    /** Whether the editor menu offers Debug File for {@code b}: a file Debug can launch on its own. */
+    private boolean offersDebugFile(EditorBuffer b) {
+        Path path = b.getPath();
+        return path != null
+                && offersOwnDebugFile(
+                        b.getLanguage(),
+                        b.isRunnable(),
+                        "java".equals(b.getLanguage()) && JavaProjectRoot.find(path) != null);
+    }
+
+    /**
+     * Debug: Debug Current File ({@code debug.debugFile}): what the editor menu's Debug File row does, for the active
+     * file; says so when Debug File is not offered for it.
+     */
+    void debugActiveFile() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || !isDebuggableBuffer(b) || !offersDebugFile(b)) {
+            host.setStatus(tr("status.debug.noDebugFile"));
+            return;
+        }
+        debugFile(b);
+    }
+
+    /**
+     * Debug: Debug Main Class at Caret ({@code debug.mainClassAtCaret}): what the editor menu's Debug row on a
+     * {@code main} method does; says so when the caret is on none.
+     */
+    void debugMainClassAtCaret() {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null) {
+            b.settleRunScan(); // the load's scan runs off FX; the answer is needed now
+        }
+        var main = b == null ? null : b.mainTargetAtCaret();
+        if (main == null) {
+            host.setStatus(tr("status.debug.noMainAtCaret"));
+            return;
+        }
+        debugMainClassNamed(main.fqn());
+    }
+
+    /** The expression the editor menu offers to watch in {@code b}: a one-line selection, else the one at the caret. */
+    private static @Nullable String watchExpression(EditorBuffer b) {
+        var area = b.getFocusedArea();
+        String selected = area.getSelectedText();
+        return selected != null && !selected.isBlank() && !selected.contains("\n")
+                ? selected.strip()
+                : com.editora.editor.debug.DebugExpressions.atCaret(area);
+    }
+
+    /** Opens the Debug window and asks to add {@code expression} to the watches, as Add to Watches rows do. */
+    private void addWatch(String expression) {
+        ops.openToolWindow();
+        panel().addWatchPrompt(expression);
+    }
+
+    /**
+     * Debug: Add Expression at Caret to Watches… ({@code debug.addWatchAtCaret}): what the editor menu's Add to
+     * Watches row does while the program is paused; says so when it is not, or the caret is on no expression.
+     */
+    void addWatchAtCaret() {
+        EditorBuffer b = host.activeBuffer();
+        String expression = b == null || dap().state() != DapManager.State.SUSPENDED ? null : watchExpression(b);
+        if (expression == null) {
+            host.setStatus(tr("status.debug.noWatchAtCaret"));
+            return;
+        }
+        addWatch(expression);
     }
 
     /**

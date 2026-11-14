@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import javafx.geometry.Pos;
@@ -1167,12 +1168,105 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     public boolean stageSelected() {
         LinkedHashSet<String> all = new LinkedHashSet<>(conflictPaths(selectedFileRows())); // = mark resolved
         all.addAll(paths(selectedFileRows(), false));
+        Group group = selectedGroup(); // a Changes or Untracked header stands for its files, as its Stage row says
+        if (group != null && group != Group.STAGED && group != Group.CONFLICTS && lastStatus != null) {
+            allIn(lastStatus, group).forEach(e -> all.add(e.path()));
+        }
         List<String> paths = List.copyOf(all);
         if (paths.isEmpty()) {
             return false;
         }
         actions.stage(paths);
         return true;
+    }
+
+    /** The group whose header is the one selected row; null when a file, or several rows, are selected. */
+    private @Nullable Group selectedGroup() {
+        List<TreeItem<Row>> selected = tree.getSelectionModel().getSelectedItems();
+        return selected.size() == 1
+                        && selected.get(0) != null
+                        && selected.get(0).getValue() instanceof GroupRow g
+                ? g.group()
+                : null;
+    }
+
+    /** The one selected file row; null when none, or several, are selected. */
+    private @Nullable FileRow onlySelectedRow() {
+        List<FileRow> rows = selectedFileRows();
+        return rows.size() == 1 && tree.getSelectionModel().getSelectedItems().size() == 1 ? rows.get(0) : null;
+    }
+
+    /** Resolve Conflicts… on the selected conflicted file ({@code git.resolveSelected}); false when none is. */
+    boolean resolveSelected() {
+        FileRow row = onlySelectedRow();
+        if (row == null || row.group() != Group.CONFLICTS) {
+            return false;
+        }
+        actions.resolve(row.entry().path());
+        return true;
+    }
+
+    /** Open on the selected file ({@code git.openSelected}); false when not exactly one file is selected. */
+    boolean openSelectedFile() {
+        FileRow row = onlySelectedRow();
+        if (row == null) {
+            return false;
+        }
+        actions.open(row.entry().path());
+        return true;
+    }
+
+    /**
+     * Show Diff on the selected file ({@code git.diffSelected}): against the index, or HEAD for a staged row; false
+     * when not exactly one file is selected, or it is untracked or conflicted (nothing to diff against).
+     */
+    boolean diffSelected() {
+        FileRow row = onlySelectedRow();
+        if (row == null || row.entry().untracked() || row.entry().unmerged()) {
+            return false;
+        }
+        actions.diff(row.entry().path(), row.group() == Group.STAGED);
+        return true;
+    }
+
+    /** Accept Ours / Theirs on the selected conflicted files ({@code git.acceptOursSelected}…); false: none. */
+    boolean acceptSideOfSelected(boolean ours) {
+        List<String> conflicted = conflictPaths(selectedFileRows());
+        if (conflicted.isEmpty()) {
+            return false;
+        }
+        actions.acceptSide(conflicted, ours);
+        return true;
+    }
+
+    /**
+     * Discard / Delete on the selected rows ({@code git.discardSelected}): the changes of the selected tracked files
+     * that are not staged, and the selected untracked files, after asking; a selected Changes or Untracked header
+     * stands for its files. False when the selection has nothing to discard.
+     */
+    boolean discardSelected() {
+        LinkedHashSet<String> tracked = new LinkedHashSet<>();
+        LinkedHashSet<String> untracked = new LinkedHashSet<>();
+        Group group = selectedGroup();
+        if (group != null && group != Group.STAGED && group != Group.CONFLICTS && lastStatus != null) {
+            allIn(lastStatus, group).forEach(e -> (group == Group.UNTRACKED ? untracked : tracked).add(e.path()));
+        }
+        discardable(selectedFileRows(), tracked, untracked);
+        if (tracked.isEmpty() && untracked.isEmpty()) {
+            return false;
+        }
+        actions.discard(List.copyOf(tracked), List.copyOf(untracked));
+        return true;
+    }
+
+    /** Sorts the rows of {@code rows} that can be discarded into {@code tracked} and {@code untracked}. */
+    private static void discardable(List<FileRow> rows, Set<String> tracked, Set<String> untracked) {
+        for (FileRow r : rows) {
+            if (r.group() == Group.STAGED || r.entry().unmerged()) {
+                continue; // git refuses to check out an unmerged path: it is resolved, not discarded
+            }
+            (r.entry().untracked() ? untracked : tracked).add(r.entry().path());
+        }
     }
 
     /** Unstages every selected staged row; mirrors {@link #stageSelected}. */
@@ -1254,7 +1348,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             menu.getItems().add(unstage);
             return menu;
         }
-        MenuItem stage = new MenuItem(tr("gitpanel.menu.stageGroup"));
+        MenuItem stage = MenuChords.tag(new MenuItem(tr("gitpanel.menu.stageGroup")), "git.stageSelected");
         stage.setGraphic(Icons.stageAll());
         stage.setOnAction(a -> actions.stage(all));
         boolean untracked = group == Group.UNTRACKED;
@@ -1262,6 +1356,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         discard.setGraphic(Icons.trash());
         discard.getStyleClass().add("danger"); // a destructive row reads red
         discard.setOnAction(a -> actions.discard(untracked ? List.of() : all, untracked ? all : List.of()));
+        MenuChords.tag(discard, "git.discardSelected");
         menu.getItems().addAll(stage, discard);
         return menu;
     }
@@ -1317,17 +1412,20 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 MenuItem resolve = new MenuItem(tr("gitpanel.menu.resolve"));
                 resolve.setGraphic(Icons.merge());
                 resolve.setOnAction(a -> actions.resolve(e.path()));
+                MenuChords.tag(resolve, "git.resolveSelected");
                 menu.getItems().add(resolve);
             }
             MenuItem open = new MenuItem(tr("gitpanel.menu.open"));
             open.setGraphic(Icons.fileSheet());
             open.setOnAction(a -> actions.open(e.path()));
+            MenuChords.tag(open, "git.openSelected");
             menu.getItems().add(open);
             if (!e.untracked() && !e.unmerged()) { // an untracked file has no committed/index version to diff against
                 MenuItem showDiff = new MenuItem(tr("gitpanel.menu.showDiff"));
                 showDiff.setGraphic(Icons.diff());
                 boolean staged = only.group() == Group.STAGED;
                 showDiff.setOnAction(a -> actions.diff(e.path(), staged));
+                MenuChords.tag(showDiff, "git.diffSelected");
                 menu.getItems().add(showDiff);
             }
         }
@@ -1337,8 +1435,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             // branch being rebased onto, so the labels say that and carry git's term in parentheses.
             MenuItem ours = new MenuItem(tr(GitCoordinator.acceptSideKey(operation.kind(), true)));
             ours.setOnAction(a -> actions.acceptSide(conflicted, true));
+            MenuChords.tag(ours, "git.acceptOursSelected");
             MenuItem theirs = new MenuItem(tr(GitCoordinator.acceptSideKey(operation.kind(), false)));
             theirs.setOnAction(a -> actions.acceptSide(conflicted, false));
+            MenuChords.tag(theirs, "git.acceptTheirsSelected");
             // Either one discards the other side of the conflict for good: destructive rows read red.
             ours.getStyleClass().add("danger");
             theirs.getStyleClass().add("danger");
@@ -1382,12 +1482,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private void addDiscardItem(ContextMenu menu, List<FileRow> targets) {
         LinkedHashSet<String> tracked = new LinkedHashSet<>();
         LinkedHashSet<String> untracked = new LinkedHashSet<>();
-        for (FileRow r : targets) {
-            if (r.group() == Group.STAGED || r.entry().unmerged()) {
-                continue; // git refuses to check out an unmerged path: it is resolved, not discarded
-            }
-            (r.entry().untracked() ? untracked : tracked).add(r.entry().path());
-        }
+        discardable(targets, tracked, untracked);
         int total = tracked.size() + untracked.size();
         if (total == 0) {
             return;
@@ -1406,7 +1501,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         discard.setGraphic(Icons.trash());
         discard.getStyleClass().add("danger"); // a destructive row reads red
         discard.setOnAction(a -> actions.discard(trackedPaths, untrackedPaths));
-        menu.getItems().add(discard);
+        menu.getItems().add(MenuChords.tag(discard, "git.discardSelected"));
     }
 
     // --- ToolWindowContent ---

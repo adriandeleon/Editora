@@ -238,13 +238,18 @@ final class TemplateCoordinator {
      * palette has no folder context.
      */
     void newFileOfTypePicker() {
+        pickNewFileType(t -> newFileOfType(defaultNewDir(), t));
+    }
+
+    /** The picker of every file type the catalog knows, handing the chosen one to {@code chosen}. */
+    void pickNewFileType(java.util.function.Consumer<NewFileType> chosen) {
         QuickOpen<NewFileType> picker = new QuickOpen<>(
                 tr("newfile.picker.title"),
                 tr("newfile.picker.prompt"),
                 () -> new ArrayList<>(NewFileCatalog.all()),
                 ProjectPanel::labelFor,
                 t -> newFileTypeDetail(t),
-                t -> newFileOfType(defaultNewDir(), t));
+                chosen);
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.stage());
     }

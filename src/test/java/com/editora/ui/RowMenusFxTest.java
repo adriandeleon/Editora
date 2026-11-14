@@ -273,7 +273,10 @@ class RowMenusFxTest {
                         .map(MenuItem::getText)
                         .toList();
                 assertEquals(List.of(tr("editmenu.selectAll"), tr("editmenu.copy"), tr("find.prompt")), rows);
-                assertEquals("find.show", MenuChords.commandOf(menu.getItems().get(3)));
+                // The command that opens this window's find bar from anywhere: find.show, run from the palette, opens
+                // the editor's.
+                assertEquals(
+                        "debugLog.find", MenuChords.commandOf(menu.getItems().get(3)));
 
                 area.selectRange(4, 8);
                 menu.getItems().get(1).fire();

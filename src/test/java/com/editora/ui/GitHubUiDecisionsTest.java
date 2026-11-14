@@ -72,6 +72,22 @@ class GitHubUiDecisionsTest {
         assertEquals("status.github.noUrl", RowAnswer.NO_URL.messageKey(), "not the 'No file to open' message");
     }
 
+    @Test
+    void theOtherRowCommandsFollowTheirRowsRules() {
+        Issue blank = new Issue(3, "t", "a", "OPEN", List.of(), "", "");
+        assertEquals(RowAnswer.RUN, GitHubPanel.decide(RowAction.OPEN_URL, true, PR));
+        assertEquals(RowAnswer.NO_URL, GitHubPanel.decide(RowAction.OPEN_URL, true, blank));
+
+        assertEquals(RowAnswer.RUN, GitHubPanel.decide(RowAction.VIEW_LOG, true, run("completed", "failure")));
+        assertEquals(RowAnswer.NOT_FAILED, GitHubPanel.decide(RowAction.VIEW_LOG, true, run("completed", "success")));
+        assertEquals(RowAnswer.NOT_A_RUN, GitHubPanel.decide(RowAction.VIEW_LOG, true, PR));
+
+        assertEquals(RowAnswer.RUN, GitHubPanel.decide(RowAction.CHECKOUT_PR, true, PR));
+        assertEquals(RowAnswer.RUN, GitHubPanel.decide(RowAction.REVIEW_PR, true, PR));
+        assertEquals(RowAnswer.NOT_A_PR, GitHubPanel.decide(RowAction.CHECKOUT_PR, true, run("completed", "success")));
+        assertEquals(RowAnswer.NOT_A_PR, GitHubPanel.decide(RowAction.REVIEW_PR, true, blank));
+    }
+
     // --- G19: times --------------------------------------------------------------------------------
 
     @Test

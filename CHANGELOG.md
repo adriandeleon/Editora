@@ -34,6 +34,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The right-click rows of the Project tree, the Git windows and the Debug window are commands.** What they do can
+  now be run from the Command Palette, and given a key, on the selected row: in the Project tree (and on the Project
+  Map's rows) Rename, Delete, Stage, Revert, Compare with Branch, Show Git History, Find in Folder and the rest of the
+  file menu; in the Commit window Open, Show Diff, Discard, Resolve and Accept Ours / Theirs; in the Git Log the
+  changed files' rows; in the GitHub window Open on GitHub, Check Out and Review a pull request and View Failure Log;
+  in Local History Restore and Label a version; in Bookmarks, Personal Notes and Test Results every row of their
+  menus; and in the Debug window every row of the Variables, Threads, call stack and console menus. A row shows the
+  key of its command when it has one. Run with nothing selected, or on a row its menu would not offer it for, a
+  command says so in the status bar and does nothing; Delete, Revert and Discard still ask first.
+- **Commands for the editor menu's run and debug rows, the diff's line rows and the tab menu's last two rows.** Debug
+  Current File, Debug Main Class at Caret, Debug Test Class at Caret, Add Expression at Caret to Watches, Stage,
+  Unstage and Revert Line at Caret and Open Line at Caret in Editor in a diff, Local History: Show History of Current
+  File and Git: Annotate Current File. A right-click in a diff now puts the caret on the line clicked, as in the editor.
+- **The Git remotes and worktrees managers have a right-click menu, and their buttons are commands.** Add, Rename,
+  Set URL, Prune and Remove a remote, and Add, Open, Prune and Remove a worktree are commands of their own: on the row
+  selected in the manager while it is open, and on one picked from a list otherwise. The Stash list's Show Changes,
+  Pop, Branch and Copy Name are commands that pick a stash, as Unstash and Drop Stash were.
+- **The hex viewer, the unified diff and an unchanged line of a diff have a right-click menu.** Copy and Select All;
+  Edit → Copy and Select All, and their keys, now act on such a view, and on a console (Run, Build, External Tools,
+  Test Results, the HTTP response), when it has the keyboard, instead of on the editor behind it.
 - **After a prefix key, the window lists the keys that can follow.** Press `C-x` in the Emacs keymap (or `Ctrl+K`
   in the VS Code one) and wait a moment: a card at the bottom of the window lists every key that can come next,
   with the command it runs, and for a key that leads further, such as `C-x v`, how many commands lie behind it.

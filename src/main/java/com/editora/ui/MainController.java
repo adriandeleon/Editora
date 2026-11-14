@@ -695,6 +695,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         HelpCommands.register(this);
         FindBarCommands.register(this);
         ListRowCommands.register(this); // the rows of the lists' right-click menus
+        ProjectRowCommands.register(this); // the rows of the Project tree's file menu
+        GitRowCommands.register(this); // the rows of the Git windows' menus
+        PanelRowCommands.register(this); // the rows of the smaller tool windows' menus
+        DebugRowCommands.register(this); // the rows of the Debug window's menus
         recovery.registerCommands(registry);
         setupToolbar();
         runConfigurations.refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set
@@ -1261,6 +1265,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
         panel.setDeletePreparation(projectDeletes);
         panel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
+        panel.setNewFileTypePicker(templateActions::pickNewFileType); // Project: New File in Selected Folder…
         panel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
         panel.setRenameParticipant(lspCoordinator.treeParticipant()); // a class goes with its file (B15)
         lspCoordinator.setOnTreeMoveUndone(panel::forgetLastMove);

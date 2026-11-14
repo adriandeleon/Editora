@@ -317,6 +317,47 @@ class GitPanelMenusAndKeysFxTest {
         assertEquals(List.of("stage [changed.txt, src/other.txt]"), recorder.take());
     }
 
+    /**
+     * The commands behind the rows ({@code git.openSelected}, {@code git.diffSelected}, {@code git.discardSelected},
+     * {@code git.stageSelected} on a header) do to the selection what the rows do to the row right-clicked, and the
+     * rows show those commands.
+     */
+    @Test
+    void theRowCommandsDoToTheSelectionWhatTheRowsDo() throws Exception {
+        Recorder recorder = new Recorder();
+        GitPanel panel = shown(recorder);
+
+        ContextMenu changed = menuKey(panel, FxTestSupport.callOnFx(() -> fileRow(panel, "MODIFIED", "changed.txt")));
+        assertEquals(
+                List.of("git.openSelected", "git.diffSelected", "git.stageSelected", "git.discardSelected"),
+                changed.getItems().stream()
+                        .map(com.editora.editor.MenuChords::commandOf)
+                        .toList());
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(panel.openSelectedFile());
+            assertTrue(panel.diffSelected());
+            assertTrue(panel.discardSelected());
+            assertFalse(panel.resolveSelected(), "not a conflict");
+            assertFalse(panel.acceptSideOfSelected(true), "not a conflict");
+        });
+        assertEquals(
+                List.of(
+                        "open changed.txt",
+                        "diff changed.txt staged=false",
+                        "discard tracked=[changed.txt] untracked=[]"),
+                recorder.take());
+
+        menuKey(panel, FxTestSupport.callOnFx(() -> groupRow(panel, "UNTRACKED")));
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(panel.openSelectedFile(), "a header is not a file");
+            assertTrue(panel.stageSelected());
+            assertTrue(panel.discardSelected());
+        });
+        assertEquals(
+                List.of("stage [new.txt, scratch.txt]", "discard tracked=[] untracked=[new.txt, scratch.txt]"),
+                recorder.take());
+    }
+
     @Test
     void theConflictsHeaderHasNoMenuOfItsOwn() throws Exception {
         Recorder recorder = new Recorder();

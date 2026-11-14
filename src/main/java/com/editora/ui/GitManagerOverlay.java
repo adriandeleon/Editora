@@ -10,10 +10,12 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.MenuItem;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -25,15 +27,20 @@ import static com.editora.i18n.Messages.tr;
  * hides the card before its action runs: the actions open a prompt, a confirmation or start a git command,
  * and the owner shows the card again with a fresh list when that finishes.
  *
+ * <p>Each button is also a row of the list's right-click menu, and each is a command's
+ * ({@link Action#commandId}): the command acts on the row selected here while the card is up, and on a row picked
+ * from a list otherwise (KBD-01 and MENU-05, Pauta 6.0.1).
+ *
  * <p>Pure view: the owner supplies the rows and the actions.
  */
 final class GitManagerOverlay<T> {
 
     /**
-     * One button. {@code needsSelection} disables it while no row is selected (its action then never sees
-     * {@code null}); {@code danger} styles it as destructive.
+     * One button, and the row of the list's menu that does the same. {@code needsSelection} disables both while no
+     * row is selected (its action then never sees {@code null}); {@code danger} styles them as destructive;
+     * {@code commandId} is the command that does the same, whose chord the row shows.
      */
-    record Action<T>(String label, boolean needsSelection, boolean danger, Consumer<T> run) {}
+    record Action<T>(String label, boolean needsSelection, boolean danger, String commandId, Consumer<T> run) {}
 
     private final String title;
     private final String emptyText;
@@ -43,6 +50,7 @@ final class GitManagerOverlay<T> {
     private final ListView<T> list = new ListView<>();
     private final List<Button> buttons = new ArrayList<>();
     private @Nullable OverlayHost overlayHost;
+    private boolean showing;
 
     GitManagerOverlay(
             String title,
@@ -107,6 +115,18 @@ final class GitManagerOverlay<T> {
         Button close = new Button(tr("dialog.close"));
         close.setOnAction(e -> host.hide());
         bar.getChildren().add(close);
+        List<MenuItem> rows = new ArrayList<>();
+        for (Action<T> action : actions) {
+            MenuItem row = MenuChords.tag(new MenuItem(action.label()), action.commandId());
+            if (action.danger()) {
+                row.getStyleClass().add("danger");
+            }
+            row.setOnAction(e -> fire(action));
+            rows.add(ListRowCommands.enabledWhen(
+                    row,
+                    () -> !action.needsSelection() || list.getSelectionModel().getSelectedItem() != null));
+        }
+        RowMenus.install(list, () -> true, rows.toArray(MenuItem[]::new));
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> syncButtons());
         if (!items.isEmpty()) {
             list.getSelectionModel().select(0);
@@ -119,7 +139,27 @@ final class GitManagerOverlay<T> {
         UiZoom.prefWidth(card, 560);
         UiZoom.maxSize(card, 560, Region.USE_PREF_SIZE);
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        host.show(card, true, list::requestFocus, () -> {});
+        showing = true;
+        host.show(card, true, list::requestFocus, () -> showing = false);
+    }
+
+    /** The row selected while the card is up; null when it is not up, or no row is selected. */
+    @Nullable
+    T selectedWhileShowing() {
+        return showing ? list.getSelectionModel().getSelectedItem() : null;
+    }
+
+    /** Whether the card is up. */
+    boolean isShowing() {
+        return showing;
+    }
+
+    /** Takes the card down, as a button does before its action runs. */
+    void hide() {
+        OverlayHost shownIn = overlayHost;
+        if (showing && shownIn != null) {
+            shownIn.hide();
+        }
     }
 
     private void syncButtons() {

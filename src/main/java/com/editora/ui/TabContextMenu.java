@@ -156,6 +156,7 @@ final class TabContextMenu {
                 tr("project.menu.localHistory"),
                 Icons.history(),
                 () -> c.historyCoordinator.showForPath(buffer.getPath()));
+        MenuChords.tag(localHistory, "history.showActiveFile");
         // Git submenu — mirrors the Project tree's cell "Git" submenu, acting on this tab's file.
         Menu gitMenu = new Menu(tr("project.menu.git"));
         gitMenu.setGraphic(Icons.git());
@@ -224,6 +225,7 @@ final class TabContextMenu {
             c.fileWorkflows.openPath(buffer.getPath());
             c.git.annotateActive();
         }));
+        MenuChords.tag(annotate, "git.annotate");
         MenuItem history = LazyContextMenu.item(
                 tr("project.menu.git.fileHistory"),
                 Icons.gitLog(),

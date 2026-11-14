@@ -171,6 +171,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         detail.setWrapText(false);
         detail.getStyleClass().addAll("editor-area", "test-detail");
         RunPanel.installLinkClicks(detail, () -> onLink);
+        ConsoleNav.installShared(detail); // the keymap's Copy and Select All, as in the other consoles
         ConsoleContextMenu.install(detail); // right-click Select All / Copy
 
         // The keymap's find chord, pressed in the output, opens a find bar over it (Escape closes it).
@@ -525,48 +526,65 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     private void installContextMenu() {
         ContextMenu menu = new ContextMenu();
         tree.setOnContextMenuRequested(e -> {
-            TreeItem<TestNode> sel = tree.getSelectionModel().getSelectedItem();
-            TestNode node = sel == null ? null : sel.getValue();
-            if (node == null || node.className() == null) {
+            List<MenuItem> rows = menuRows();
+            if (rows.isEmpty()) {
                 menu.hide();
                 return;
             }
-            boolean isTest = node.kind() == TestNodeKind.TEST;
-            menu.getItems().clear();
-
-            MenuItem goTo = new MenuItem(isTest ? tr("testrunner.menu.goToTest") : tr("testrunner.menu.goToClass"));
-            goTo.setGraphic(Icons.find());
-            goTo.setOnAction(a -> {
-                if (onActivate != null) {
-                    onActivate.accept(node);
-                }
-            });
-
-            MenuItem rerun = new MenuItem(isTest ? tr("testrunner.menu.rerunTest") : tr("testrunner.menu.rerunClass"));
-            rerun.setGraphic(Icons.run());
-            rerun.setOnAction(a -> {
-                if (onRerunOne != null) {
-                    onRerunOne.accept(node);
-                }
-            });
-
-            menu.getItems().addAll(goTo, rerun);
-            if (debugAvailable.getAsBoolean()) {
-                MenuItem debug =
-                        new MenuItem(isTest ? tr("testrunner.menu.debugTest") : tr("testrunner.menu.debugClass"));
-                debug.setGraphic(Icons.debug());
-                debug.setOnAction(a -> {
-                    if (onDebugOne != null) {
-                        onDebugOne.accept(node);
-                    }
-                });
-                menu.getItems().add(debug);
-            }
+            menu.getItems().setAll(rows);
             // The Menu key / Shift+F10 open it under the selected row (scrolled into view first), not mid-tree.
             javafx.geometry.Point2D at = RowContextMenu.menuPoint(tree, e);
             menu.show(tree, at.getX(), at.getY());
             e.consume();
         });
+    }
+
+    /**
+     * Runs the row of the selected test's menu that command {@code commandId} stands for, as choosing it would
+     * ({@link PanelRowCommands}); false when no test or class is selected, or its menu has no such row.
+     */
+    boolean runMenuRow(String commandId) {
+        return MenuRows.fire(menuRows(), commandId);
+    }
+
+    /** The selected test's or class's menu: Go to, Rerun and (when debugging is on) Debug it; empty for no test. */
+    private List<MenuItem> menuRows() {
+        TreeItem<TestNode> sel = tree.getSelectionModel().getSelectedItem();
+        TestNode node = sel == null ? null : sel.getValue();
+        if (node == null || node.className() == null) {
+            return List.of();
+        }
+        boolean isTest = node.kind() == TestNodeKind.TEST;
+        List<MenuItem> rows = new java.util.ArrayList<>();
+        MenuItem goTo = new MenuItem(isTest ? tr("testrunner.menu.goToTest") : tr("testrunner.menu.goToClass"));
+        goTo.setGraphic(Icons.find());
+        goTo.setOnAction(a -> {
+            if (onActivate != null) {
+                onActivate.accept(node);
+            }
+        });
+
+        MenuItem rerun = new MenuItem(isTest ? tr("testrunner.menu.rerunTest") : tr("testrunner.menu.rerunClass"));
+        rerun.setGraphic(Icons.run());
+        rerun.setOnAction(a -> {
+            if (onRerunOne != null) {
+                onRerunOne.accept(node);
+            }
+        });
+
+        rows.add(com.editora.editor.MenuChords.tag(goTo, "test.goToSelected"));
+        rows.add(com.editora.editor.MenuChords.tag(rerun, "test.rerunSelected"));
+        if (debugAvailable.getAsBoolean()) {
+            MenuItem debug = new MenuItem(isTest ? tr("testrunner.menu.debugTest") : tr("testrunner.menu.debugClass"));
+            debug.setGraphic(Icons.debug());
+            debug.setOnAction(a -> {
+                if (onDebugOne != null) {
+                    onDebugOne.accept(node);
+                }
+            });
+            rows.add(com.editora.editor.MenuChords.tag(debug, "test.debugSelected"));
+        }
+        return rows;
     }
 
     private void activateSelected() {

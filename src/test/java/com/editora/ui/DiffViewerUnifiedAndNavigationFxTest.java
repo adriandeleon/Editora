@@ -73,6 +73,13 @@ class DiffViewerUnifiedAndNavigationFxTest {
                 FxTestSupport.callOnFx(() -> List.copyOf(unified.getParagraph(5).getParagraphStyle())));
         assertTrue(FxTestSupport.callOnFx(
                 () -> unified.getParagraph(0).getParagraphStyle().isEmpty()));
+        // A read-only text view with a right-click menu (MENU-05, Pauta 6.0.1): Copy and Select All of its text,
+        // which edit.copy and edit.selectAll also do while it has the keyboard.
+        assertEquals(
+                List.of(tr("editmenu.copy"), tr("editmenu.selectAll")),
+                FxTestSupport.callOnFx(
+                        () -> OverlayTestKit.labels(unified.getContextMenu().getItems())));
+        assertNotNull(FxTestSupport.callOnFx(() -> ConsoleContextMenu.actionsAt(unified)));
         assertSame(
                 unified.getParent(),
                 FxTestSupport.callOnFx(() -> ((javafx.scene.layout.BorderPane) pane.node()).getCenter()),
@@ -262,9 +269,15 @@ class DiffViewerUnifiedAndNavigationFxTest {
             CodeArea left = FxTestSupport.field(pane, "leftArea");
             ContextMenu menu = contextMenuAt(left, 0);
             assertEquals(
-                    List.of(tr("diff.stageHunk"), tr("diff.stageLine"), tr("diff.copyHunk"), tr("diff.openInEditor")),
+                    List.of(
+                            tr("diff.stageHunk"),
+                            tr("diff.stageLine"),
+                            tr("diff.copyHunk"),
+                            tr("diff.openInEditor"),
+                            tr("editmenu.copy"),
+                            tr("editmenu.selectAll")),
                     OverlayTestKit.labels(menu.getItems()),
-                    "no Unstage or Revert on a diff that cannot do them");
+                    "no Unstage or Revert on a diff that cannot do them; Copy and Select All of the side's text");
             Label nav = FxTestSupport.field(pane, "changeNav");
             assertEquals(tr("diff.changePos", 1, 1), FxTestSupport.callOnFx(nav::getText), "the block is current");
 
@@ -288,9 +301,15 @@ class DiffViewerUnifiedAndNavigationFxTest {
                     "-old first\n+new first\n",
                     FxTestSupport.callOnFx(() -> Clipboard.getSystemClipboard().getString()));
 
-            // An unchanged line has no hunk to act on: no menu.
+            // An unchanged line has no hunk to act on: only the text's Copy and Select All (MENU-05, Pauta 6.0.1:
+            // a read-only text view has a right-click menu).
             FxTestSupport.runOnFx(() -> requestContextMenu(left, 1));
-            assertEquals(List.of(), FxTestSupport.callOnFx(OverlayTestKit::openContextMenus));
+            List<ContextMenu> open1 = FxTestSupport.callOnFx(OverlayTestKit::openContextMenus);
+            assertEquals(1, open1.size());
+            assertEquals(
+                    List.of(tr("editmenu.copy"), tr("editmenu.selectAll")),
+                    OverlayTestKit.labels(open1.get(0).getItems()));
+            FxTestSupport.runOnFx(() -> open1.get(0).hide());
         } finally {
             FxTestSupport.runOnFx(stage::close);
         }

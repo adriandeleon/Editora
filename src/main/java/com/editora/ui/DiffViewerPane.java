@@ -28,6 +28,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.Separator;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
@@ -1741,43 +1742,92 @@ public final class DiffViewerPane implements TabContent {
         private record VisibleBand(double top, double bottom) {}
     }
 
+    /**
+     * The right-click menu of a side of the comparison: on a changed line, the rows for its change and for the line
+     * (the caret goes to the line clicked, as in the editor, so the line commands act where the rows do); then, on
+     * any line, Copy and Select All of the side's text, which {@code edit.copy} and {@code edit.selectAll} also do
+     * while the keyboard is in it.
+     */
     private void installContextMenu(CodeArea area, int[] sourceRows) {
+        ConsoleContextMenu.mark(area, () -> ConsoleContextMenu.copySelectionOrAll(area), () -> area.selectAll());
         area.setOnContextMenuRequested(e -> {
             int clicked;
+            int offset = -1;
             try {
-                int offset = area.hit(e.getX(), e.getY()).getInsertionIndex();
+                offset = area.hit(e.getX(), e.getY()).getInsertionIndex();
                 clicked = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                         .getMajor();
             } catch (RuntimeException ignored) {
                 clicked = area.getCurrentParagraph();
             }
+            javafx.scene.control.IndexRange selection = area.getSelection();
+            if (offset >= 0 && (offset < selection.getStart() || offset > selection.getEnd())) {
+                area.moveTo(offset); // a right-click outside the selection puts the caret there
+            }
             int displayRow = Math.max(0, Math.min(clicked, sourceRows.length - 1));
             int sourceRow = sourceRows.length == 0 ? -1 : sourceRows[displayRow];
-            if (sourceRow < 0
-                    || sourceRow >= model.rows().size()
-                    || model.rows().get(sourceRow).type() == RowType.EQUAL) {
-                return;
-            }
-            changeCursor = changeBlockIndexContaining(sourceRow);
-            updateChangeNav();
             ContextMenu menu = new ContextMenu();
-            addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageHunk"), "diff.stageHunk", sourceRow, false);
-            addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageLine"), null, sourceRow, true);
-            addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageHunk"), "diff.unstageHunk", sourceRow, false);
-            addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageLine"), null, sourceRow, true);
-            addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertHunk"), "diff.revertHunk", sourceRow, false);
-            addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertLine"), null, sourceRow, true);
-            MenuItem copy = new MenuItem(tr("diff.copyHunk"));
-            copy.setOnAction(a -> copyHunk(sourceRow));
-            menu.getItems().add(copy);
-            if (gitHunkActions.contains(GitHunkAction.OPEN)) {
-                MenuItem open = new MenuItem(tr("diff.openInEditor"));
-                open.setOnAction(a -> performGitAction(GitHunkAction.OPEN, sourceRow, true));
-                menu.getItems().add(open);
+            if (sourceRow >= 0
+                    && sourceRow < model.rows().size()
+                    && model.rows().get(sourceRow).type() != RowType.EQUAL) {
+                changeCursor = changeBlockIndexContaining(sourceRow);
+                updateChangeNav();
+                addHunkRows(menu, sourceRow);
+                menu.getItems().add(new SeparatorMenuItem());
             }
+            menu.getItems().addAll(ConsoleContextMenu.copyRow(area), ConsoleContextMenu.selectAllRow(area));
             menu.show(area, e.getScreenX(), e.getScreenY());
             e.consume();
         });
+    }
+
+    /** The rows for the change at {@code sourceRow}: stage, unstage and revert it or its line, copy it, open it. */
+    private void addHunkRows(ContextMenu menu, int sourceRow) {
+        addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageHunk"), "diff.stageHunk", sourceRow, false);
+        addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageLine"), "diff.stageLine", sourceRow, true);
+        addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageHunk"), "diff.unstageHunk", sourceRow, false);
+        addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageLine"), "diff.unstageLine", sourceRow, true);
+        addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertHunk"), "diff.revertHunk", sourceRow, false);
+        addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertLine"), "diff.revertLine", sourceRow, true);
+        MenuItem copy = MenuChords.tag(new MenuItem(tr("diff.copyHunk")), "diff.copyHunk");
+        copy.setOnAction(a -> copyHunk(sourceRow));
+        menu.getItems().add(copy);
+        if (gitHunkActions.contains(GitHunkAction.OPEN)) {
+            MenuItem open = MenuChords.tag(new MenuItem(tr("diff.openInEditor")), "diff.openLineInEditor");
+            open.setOnAction(a -> performGitAction(GitHunkAction.OPEN, sourceRow, true));
+            menu.getItems().add(open);
+        }
+    }
+
+    /**
+     * The diff row of the caret's line in the side of the comparison the keyboard is in; -1 when the keyboard is in
+     * neither side, or the line is unchanged.
+     */
+    private int caretSourceRow() {
+        CodeArea area = leftArea != null && leftArea.isFocused()
+                ? leftArea
+                : rightArea != null && rightArea.isFocused() ? rightArea : null;
+        if (area == null || sideSourceRows.length == 0) {
+            return -1;
+        }
+        int row = sideSourceRows[Math.max(0, Math.min(area.getCurrentParagraph(), sideSourceRows.length - 1))];
+        return row >= 0 && row < model.rows().size() && model.rows().get(row).type() != RowType.EQUAL ? row : -1;
+    }
+
+    /**
+     * Runs {@code action} on the line at the caret alone, as the Stage / Unstage / Revert Line and Open in Editor
+     * rows do on the line clicked ({@code diff.stageLine}…); false when that is not offered here or the caret is on
+     * no changed line.
+     */
+    boolean caretLineAction(GitHunkAction action) {
+        int row = caretSourceRow();
+        if (row < 0 || !gitHunkActions.contains(action)) {
+            return false;
+        }
+        changeCursor = changeBlockIndexContaining(row);
+        updateChangeNav();
+        performGitAction(action, row, true);
+        return true;
     }
 
     /**
@@ -2075,7 +2125,19 @@ public final class DiffViewerPane implements TabContent {
             }
         }
         installUnifiedGutter(unifiedArea, nos, signs);
+        installTextMenu(unifiedArea);
         unifiedNode = new org.fxmisc.flowless.VirtualizedScrollPane<>(unifiedArea);
+    }
+
+    /**
+     * The unified view's right-click menu: Copy and Select All of its text, which {@code edit.copy} and
+     * {@code edit.selectAll} also do while the keyboard is in it. Its rows have no hunk actions: the unified view
+     * offers none.
+     */
+    private static void installTextMenu(CodeArea area) {
+        ConsoleContextMenu.mark(area, () -> ConsoleContextMenu.copySelectionOrAll(area), () -> area.selectAll());
+        ContextMenu menu = new ContextMenu(ConsoleContextMenu.copyRow(area), ConsoleContextMenu.selectAllRow(area));
+        area.setContextMenu(menu);
     }
 
     private List<DisplayUnified> unifiedDisplayRows() {
