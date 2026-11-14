@@ -481,46 +481,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1570"
     },
     {
-      "rule": "INTL-07",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-07",
-      "kind": "pending",
-      "reason": "A few labels are not translated, such as the line label in the Bookmarks panel.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1571"
-    },
-    {
-      "rule": "INTL-10",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-10",
-      "kind": "pending",
-      "reason": "A few messages can show a line number with a thousands separator.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1571"
-    },
-    {
-      "rule": "INTL-12",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-12",
-      "kind": "pending",
-      "reason": "Some messages write a plural as (s) instead of choosing the right form.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1571"
-    },
-    {
-      "rule": "INTL-13",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-13",
-      "kind": "pending",
-      "reason": "Some translations translate the names of modifier keys.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1571"
-    },
-    {
-      "rule": "INTL-14",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/i18n/#intl-14",
-      "kind": "pending",
-      "reason": "Dates and numbers follow the interface language alone, not your system's region.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1571"
-    },
-    {
       "rule": "QOPEN-01",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/templates/quick-open/#qopen-01",

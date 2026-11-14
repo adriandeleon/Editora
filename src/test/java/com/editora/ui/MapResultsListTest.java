@@ -75,7 +75,7 @@ class MapResultsListTest {
         assertFalse(MapResultsList.keeps(place, "src/Use.java", "circle", true));
         assertTrue(MapResultsList.keeps(place, "src/test/UseTest.java", "", true));
         assertFalse(MapResultsList.keeps(place, "src/test/UseTest.java", "", false), "a test left out");
-        assertEquals(tr("project.map.places.place", "5", "return Shape.area();"), MapResultsList.placeText(place));
+        assertEquals(tr("project.map.places.place", 5, "return Shape.area();"), MapResultsList.placeText(place));
     }
 
     @Test

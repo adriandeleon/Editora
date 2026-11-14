@@ -320,11 +320,7 @@ final class ProjectMapTrailEditor extends VBox {
             Label name = new Label((getIndex() + 1) + ". " + ProjectMapTrails.stopTitle(item));
             name.getStyleClass().add("project-map-trail-editor-stop");
             String where = item.startLine() > 0
-                    ? tr(
-                            "project.map.trails.stop.lines",
-                            item.file(),
-                            Integer.toString(item.startLine()),
-                            Integer.toString(item.endLine()))
+                    ? tr("project.map.trails.stop.lines", item.file(), item.startLine(), item.endLine())
                     : item.file();
             Label at = new Label(where);
             at.getStyleClass().add("project-map-trail-editor-where");

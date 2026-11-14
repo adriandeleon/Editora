@@ -567,7 +567,7 @@ class PluginContextFxTest {
             FxTestSupport.runOnFx(() -> commands.run("plugin.probe.fails"));
             assertEquals(tr("status.plugins.running", "Probe: fails"), rig.host.await(s -> true));
             String failedRun = rig.host.await(s -> true);
-            assertTrue(failedRun.startsWith(tr("status.plugins.cmdFailedOutput", "Probe: fails", "1", "")), failedRun);
+            assertTrue(failedRun.startsWith(tr("status.plugins.cmdFailedOutput", "Probe: fails", 1, "")), failedRun);
 
             // A program that is not installed is a failure too, not a silent nothing.
             FxTestSupport.runOnFx(() -> commands.run("plugin.probe.missing"));
@@ -575,7 +575,7 @@ class PluginContextFxTest {
             String failed = rig.host.await(s -> true);
             assertTrue(
                     failed.startsWith(tr("status.plugins.cmdFailed", "").strip())
-                            || failed.startsWith(tr("status.plugins.cmdFailedOutput", "Probe: missing", "-1", "")),
+                            || failed.startsWith(tr("status.plugins.cmdFailedOutput", "Probe: missing", -1, "")),
                     failed);
 
             // A command that declares nothing to run does nothing.

@@ -571,10 +571,10 @@ class ProjectMapTrailsCoverageFxTest {
                 ProjectMapTrailEditor editor = h.trails().editor();
                 List<String> rows = cellTexts(editor);
                 assertEquals(
-                        "1. One, " + tr("project.map.trails.stop.lines", "a/f1.txt", "2", "3") + ", first note",
+                        "1. One, " + tr("project.map.trails.stop.lines", "a/f1.txt", 2, 3) + ", first note",
                         rows.get(0));
                 assertEquals("2. f2.txt, a/f2.txt, a note with no lines", rows.get(1), "no lines: just the file");
-                assertEquals("3. Three, " + tr("project.map.trails.stop.lines", "a/f3.txt", "1", "1"), rows.get(2));
+                assertEquals("3. Three, " + tr("project.map.trails.stop.lines", "a/f3.txt", 1, 1), rows.get(2));
 
                 var list = editor.list();
                 list.getSelectionModel().select(0);

@@ -570,8 +570,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     }
 
     private static String when(String iso) {
-        return when(
-                iso, Instant.now(), ZoneId.systemDefault(), Locale.forLanguageTag(com.editora.i18n.Messages.current()));
+        return when(iso, Instant.now(), ZoneId.systemDefault(), Locale.getDefault(Locale.Category.FORMAT));
     }
 
     /**

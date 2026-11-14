@@ -123,10 +123,14 @@ public class App extends Application {
         if (!language.equals(boot.language())) {
             com.editora.i18n.Messages.init(language);
         }
-        // Align the JVM default locale with the chosen UI language so JavaFX localizes its own
-        // built-in dialog buttons (OK/Cancel/Yes/No) to match. Resolved above first, so this doesn't
-        // affect the system-language fallback.
-        java.util.Locale.setDefault(java.util.Locale.forLanguageTag(com.editora.i18n.Messages.current()));
+        // Dates and numbers keep the system's region (Messages.locale): the JVM's default changes only when a
+        // language other than the system's own was chosen, and then to that bare language, which also makes
+        // JavaFX word its own controls in it.
+        java.util.Locale locale =
+                com.editora.i18n.Messages.locale(settings.getUiLanguage(), SYSTEM_LOCALE, SYSTEM_FORMAT_LOCALE);
+        if (!locale.equals(java.util.Locale.getDefault(java.util.Locale.Category.FORMAT))) {
+            java.util.Locale.setDefault(locale);
+        }
 
         // Discover user-defined themes from <configDir>/themes + /editor-themes before the theme is applied,
         // so a user theme saved as the active one resolves on launch (see ui/UserThemes).
@@ -511,10 +515,15 @@ public class App extends Application {
     /** The UI language to load: the explicit setting, else the system language, else English. */
     private static String uiLanguage(Settings settings) {
         return com.editora.i18n.Messages.resolve(
-                settings.getUiLanguage(),
-                com.editora.i18n.Messages.available().keySet(),
-                java.util.Locale.getDefault().getLanguage());
+                settings.getUiLanguage(), com.editora.i18n.Messages.available().keySet(), SYSTEM_LOCALE.getLanguage());
     }
+
+    /** The locale the JVM started with, read before {@link #start} can change the default. */
+    private static final java.util.Locale SYSTEM_LOCALE = java.util.Locale.getDefault();
+
+    /** The locale the JVM started with for dates and numbers, which the system can set apart from its language. */
+    private static final java.util.Locale SYSTEM_FORMAT_LOCALE =
+            java.util.Locale.getDefault(java.util.Locale.Category.FORMAT);
 
     private static volatile @Nullable CompletableFuture<Bootstrap> configPrefetch;
 
