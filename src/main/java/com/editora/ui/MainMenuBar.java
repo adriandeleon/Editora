@@ -343,6 +343,29 @@ final class MainMenuBar {
         return bar;
     }
 
+    /** Whether the menus are on the system's menu bar (macOS) rather than in the window. */
+    boolean onSystemMenuBar() {
+        return systemMenu;
+    }
+
+    /**
+     * Opens the bar's first menu with the keyboard on it, so the arrow keys walk the menus: what F10 does in a
+     * JavaFX window, for a keymap that gives F10 to something else. False when there is no bar in the window to
+     * open (it is hidden, or it is the system's).
+     */
+    boolean openFirstMenu() {
+        javafx.scene.Scene scene = bar.getScene();
+        if (systemMenu || !bar.isVisible() || bar.getMenus().isEmpty()) {
+            return false;
+        }
+        if (scene == null || scene.getWindow() == null || !scene.getWindow().isShowing()) {
+            return false; // a menu's popup needs a window on screen to open in
+        }
+        bar.requestFocus();
+        bar.getMenus().get(0).show();
+        return true;
+    }
+
     /**
      * Re-labels every item with its current title and keybinding, and enables or disables it for the current
      * state. Called after a keymap switch (chords move) and after any settings apply (features come and go),
