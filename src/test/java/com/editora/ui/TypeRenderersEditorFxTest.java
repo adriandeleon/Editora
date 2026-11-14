@@ -10,12 +10,14 @@ import javafx.scene.layout.Pane;
 
 import com.editora.dap.TypeRenderer;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Settings → Debugging's Type renderers list: Add…, Edit… and Remove, each saved at once. */
+@Tag("fx")
 class TypeRenderersEditorFxTest {
 
     @BeforeAll

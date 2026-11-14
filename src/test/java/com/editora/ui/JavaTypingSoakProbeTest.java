@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Opt-in sustained real-project typing. Only disposable project copies are opened by the server. */
 @Tag("probe")
+@Tag("fx")
 class JavaTypingSoakProbeTest {
     private final Map<String, List<Double>> timings = new ConcurrentHashMap<>();
     private final Map<String, List<Integer>> ranks = new LinkedHashMap<>();

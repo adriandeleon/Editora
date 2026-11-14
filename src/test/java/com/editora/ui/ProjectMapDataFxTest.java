@@ -27,6 +27,7 @@ import javafx.scene.layout.Region;
 
 import com.editora.config.WorkspaceState;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Loading, search, expansion state and Project-panel integration of the Project Map. */
+@Tag("fx")
 class ProjectMapDataFxTest {
 
     @TempDir

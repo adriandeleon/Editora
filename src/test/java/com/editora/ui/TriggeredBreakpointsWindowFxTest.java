@@ -16,6 +16,7 @@ import org.eclipse.lsp4j.debug.SetBreakpointsArguments;
 import org.eclipse.lsp4j.debug.SourceBreakpoint;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -34,6 +35,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * adapter.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class TriggeredBreakpointsWindowFxTest {
 
     private FxWindowFixture fx;

@@ -15,6 +15,7 @@ import javafx.stage.Window;
 import javafx.stage.WindowEvent;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static com.editora.i18n.Messages.tr;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * said in another open window instead — its status line and message log, as an unread error naming the window it came
  * from — or, with none open, in the Debug Log (HTML review 3, A204).
  */
+@Tag("fx")
 class GitErrorClosedWindowFxTest {
 
     @BeforeAll

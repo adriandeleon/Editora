@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code -Dgroups=probe -Dlsp.probe=true -Dlsp.probe.jdtls=PATH}).
  */
 @Tag("probe")
+@Tag("fx")
 class JdtlsSharedServerProbeTest {
 
     @BeforeAll

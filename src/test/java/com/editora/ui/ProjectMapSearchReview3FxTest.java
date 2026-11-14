@@ -15,6 +15,7 @@ import com.editora.ui.ProjectMapSearchResult.Kind;
 import com.editora.ui.ProjectMapSearchResult.Match;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * declaration match lands on its row in the file's Structure column and can open its card.
  */
 @ExtendWith(DisposedPanels.class)
+@Tag("fx")
 class ProjectMapSearchReview3FxTest {
 
     private static final String APP = String.join(

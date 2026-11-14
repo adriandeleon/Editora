@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
  * <p>Run: {@code ./mvnw test -Dtest=MenuShadowCostProbeTest -Dgroups=probe -Dui.probe=true}
  */
 @Tag("probe")
+@Tag("fx")
 class MenuShadowCostProbeTest {
 
     /** Roughly Editora's widest menu: ~24 rows of title + chord. */
