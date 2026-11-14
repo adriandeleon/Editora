@@ -454,8 +454,12 @@ final class ProjectMapPreview extends StackPane {
     private final NoteHighlightOverlay noteMarks = new NoteHighlightOverlay(editor);
     /** The wavy underlines an editor tab draws under its server's diagnostics, here for the card's lines. */
     private final LspDiagnosticOverlay problemMarks = new LspDiagnosticOverlay(editor);
-    /** The text with its note and problem marks over it: what the card shows for anything but an image. */
-    private final StackPane textPane = new StackPane(editorScroll, noteMarks, problemMarks);
+    /** Paints every match of the card's find bar over its text, the one the find is on more strongly. */
+    private final com.editora.editor.search.SearchHighlightOverlay findMarks =
+            new com.editora.editor.search.SearchHighlightOverlay(editor);
+
+    /** The text with its note, problem and find marks over it: what the card shows for anything but an image. */
+    private final StackPane textPane = new StackPane(editorScroll, noteMarks, problemMarks, findMarks);
     /** Go to Line, the matching bracket, definitions and the wash of a name's other uses, in the card's text. */
     private final MapCardMoves moves = new MapCardMoves(editor, header, new MapCardMoves.Card() {
         @Override
@@ -3779,6 +3783,7 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         header.getChildren().remove(findBar);
+        findMarks.setMatches(com.editora.text.SearchMatches.EMPTY, -1); // the selected match stays; the rest go
         editor.requestFocus();
     }
 
@@ -3833,12 +3838,14 @@ final class ProjectMapPreview extends StackPane {
         if (query == null || query.isEmpty()) {
             findCount.setText("");
             findField.pseudoClassStateChanged(FIND_MISSING, false);
+            findMarks.setMatches(com.editora.text.SearchMatches.EMPTY, -1);
             return;
         }
         int[] starts = findMatches(text, query, findCase.isSelected(), MAX_FIND_MATCHES);
         if (starts.length == 0) {
             findCount.setText(tr("project.map.preview.find.none"));
             findField.pseudoClassStateChanged(FIND_MISSING, true);
+            findMarks.setMatches(com.editora.text.SearchMatches.EMPTY, -1);
             return;
         }
         findField.pseudoClassStateChanged(FIND_MISSING, false);
@@ -3848,6 +3855,7 @@ final class ProjectMapPreview extends StackPane {
         int start = starts[index];
         editor.selectRange(start, start + query.length());
         editor.requestFollowCaret();
+        findMarks.setMatches(findSpans(starts, query.length()), index);
         findCount.setText(
                 starts.length >= MAX_FIND_MATCHES
                         ? tr("project.map.preview.find.countMore", index + 1, starts.length)
@@ -3855,6 +3863,15 @@ final class ProjectMapPreview extends StackPane {
     }
 
     private static final javafx.css.PseudoClass FIND_MISSING = javafx.css.PseudoClass.getPseudoClass("missing");
+
+    /** The matches that start at {@code starts}, each {@code length} long, for the layer that paints them. Pure. */
+    static com.editora.text.SearchMatches findSpans(int[] starts, int length) {
+        java.util.List<int[]> spans = new java.util.ArrayList<>(starts.length);
+        for (int start : starts) {
+            spans.add(new int[] {start, start + length});
+        }
+        return com.editora.text.SearchMatches.ofPairs(spans);
+    }
 
     /** Where {@code query} starts in {@code text}, in order, at most {@code max} of them; overlaps count. Pure. */
     static int[] findMatches(String text, String query, boolean matchCase, int max) {

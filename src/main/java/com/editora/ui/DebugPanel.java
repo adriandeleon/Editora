@@ -332,6 +332,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final ListView<DapModels.StackFrameInfo> stack = new ListView<>();
     private final TreeView<VarRow> variables = new TreeView<>();
     private final CodeArea console = AreaUndo.none(new CodeArea());
+
+    private final ConsoleFindBar consoleFindBar;
+
+    /** Shows the console and opens its find bar, or steps to the next match when it is open ({@code debug.findInConsole}). */
+    void openConsoleFind() {
+        consoleTab.setSelected(true);
+        consoleFindBar.openOrNext(console.getSelectedText());
+    }
+
     private final ConsoleAppender appender = new ConsoleAppender(console, MAX_CONSOLE_CHARS);
     private final TextField evalInput = new TextField();
 
@@ -937,7 +946,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         VBox varsBox = UiZoom.spacing(new VBox(varsHeaderRow, evaluateBar(), variables), 2);
         VBox.setVgrow(variables, Priority.ALWAYS);
 
-        VirtualizedScrollPane<CodeArea> consoleScroll = new VirtualizedScrollPane<>(console);
+        // The console under the layer that paints every match of its find bar.
+        javafx.scene.Node consoleScroll = ConsoleFindBar.withMarks(console, new VirtualizedScrollPane<>(console));
         VBox consoleContent = UiZoom.spacing(new VBox(consoleScroll, evalInput), 2);
         VBox.setVgrow(consoleScroll, Priority.ALWAYS);
         // Console | Disassembly | Memory share the third area, as tabs (VS Code and IntelliJ show them as views).
@@ -963,7 +973,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         HBox consoleHeader = UiZoom.spacing(new HBox(consoleTab, disassemblyTab, memoryTab), 4);
         consoleHeader.setAlignment(Pos.CENTER_LEFT);
         // The keymap's find chord, pressed in the console, opens a find bar over it (Escape closes it).
-        VBox consoleBox = UiZoom.spacing(new VBox(consoleHeader, ConsoleFindBar.install(console), consoleArea), 2);
+        consoleFindBar = ConsoleFindBar.install(console);
+        VBox consoleBox = UiZoom.spacing(new VBox(consoleHeader, consoleFindBar, consoleArea), 2);
         VBox.setVgrow(consoleArea, Priority.ALWAYS);
         javafx.scene.control.ContextMenu consoleMenu = new javafx.scene.control.ContextMenu();
         javafx.scene.control.MenuItem clear = new javafx.scene.control.MenuItem(tr("debugpanel.clearConsole"));

@@ -168,11 +168,20 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             }
         });
 
-        VirtualizedScrollPane<CodeArea> scroll = new VirtualizedScrollPane<>(output);
+        // The console under the layer that paints every match of its find bar.
+        javafx.scene.Node scroll = ConsoleFindBar.withMarks(output, new VirtualizedScrollPane<>(output));
         VBox.setVgrow(scroll, Priority.ALWAYS);
         // The keymap's find chord, pressed in the console, opens a find bar over it (Escape closes it).
-        getChildren().addAll(header, ConsoleFindBar.install(output), scroll, input);
+        findBar = ConsoleFindBar.install(output);
+        getChildren().addAll(header, findBar, scroll, input);
         idle();
+    }
+
+    private final ConsoleFindBar findBar;
+
+    /** Opens the find bar over the console, or steps to the next match when it is open ({@code run.findInOutput}). */
+    void openFind() {
+        findBar.openOrNext(output.getSelectedText());
     }
 
     public void setOnInput(Consumer<String> onInput) {

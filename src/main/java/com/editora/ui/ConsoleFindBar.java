@@ -32,7 +32,9 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>Stateless between steps: every search scans the console's current text (a console is capped at a few
  * hundred thousand characters, which a quoted-pattern scan covers in well under a frame), so output that
- * arrives while the bar is open is searched too and no stale match index is kept. Enter goes to the next
+ * arrives while the bar is open is searched too and no stale match index is kept. Every match is painted
+ * while the bar is open, the active one more strongly, over a console that was given the layer for it
+ * ({@link #withMarks}); a plain text control draws one selection and nothing else. Enter goes to the next
  * match after the selection, Shift+Enter to the previous one, Escape closes the bar and gives the keyboard
  * back to the text. Typing refines from where the caret was when the bar opened, so narrowing the query does
  * not run away down the text. The chord the keymap binds to {@code find.show}, pressed again while the bar is
@@ -51,6 +53,36 @@ final class ConsoleFindBar extends HBox {
     /** Where the caret was when the bar opened: typing searches from here, not from the last match. */
     private int anchor;
 
+    /** The text whose matches are painted now, so that they can be taken off it when the bar closes or moves. */
+    private @Nullable Target painted;
+
+    /** Stops listening to the text for output that arrives while the bar is open. */
+    private Runnable unwatch = () -> {};
+
+    private boolean repaintQueued;
+
+    /** Where the match the find is on starts, or -1: output that arrives can take the selection off it. */
+    private int activeStart = -1;
+
+    /** The key under which a console keeps the layer that paints its matches ({@link #marks}). */
+    private static final Object MARKS = new Object();
+
+    /**
+     * The layer that paints every match of {@code area}, for the caller to lay over the console's scroll pane
+     * (a panel that already stacks things over its console adds it to that stack).
+     */
+    static com.editora.editor.search.SearchHighlightOverlay marks(CodeArea area) {
+        com.editora.editor.search.SearchHighlightOverlay marks =
+                new com.editora.editor.search.SearchHighlightOverlay(area);
+        area.getProperties().put(MARKS, marks);
+        return marks;
+    }
+
+    /** {@code scroll}, the console's scroll pane, under the layer that paints its matches: laid out in its place. */
+    static javafx.scene.layout.StackPane withMarks(CodeArea area, Node scroll) {
+        return new javafx.scene.layout.StackPane(scroll, marks(area));
+    }
+
     /** The text a bar searches: what it reads, where its selection is, and how it selects and takes focus. */
     interface Target {
         String text();
@@ -60,6 +92,14 @@ final class ConsoleFindBar extends HBox {
         void select(int start, int end);
 
         void focus();
+
+        /** Paints every one of {@code matches}, {@code active} more strongly; none clears them. */
+        default void paint(List<int[]> matches, int active) {}
+
+        /** Calls {@code changed} whenever the text changes; the returned action stops that. */
+        default Runnable watch(Runnable changed) {
+            return () -> {};
+        }
 
         static @Nullable Target of(@Nullable CodeArea area) {
             if (area == null) {
@@ -85,6 +125,19 @@ final class ConsoleFindBar extends HBox {
                 @Override
                 public void focus() {
                     area.requestFocus();
+                }
+
+                @Override
+                public void paint(List<int[]> matches, int active) {
+                    if (area.getProperties().get(MARKS)
+                            instanceof com.editora.editor.search.SearchHighlightOverlay marks) {
+                        marks.setMatches(com.editora.text.SearchMatches.ofPairs(matches), active);
+                    }
+                }
+
+                @Override
+                public Runnable watch(Runnable changed) {
+                    return area.multiPlainChanges().subscribe(change -> changed.run())::unsubscribe;
                 }
             };
         }
@@ -200,9 +253,52 @@ final class ConsoleFindBar extends HBox {
         }
         setVisible(true);
         setManaged(true);
+        watch(text);
         refine();
         query.requestFocus();
         query.selectAll();
+    }
+
+    /** Follows {@code text} for output that arrives while the bar is open: its matches are painted too. */
+    private void watch(@Nullable Target text) {
+        unwatch.run();
+        unwatch = text == null ? () -> {} : text.watch(this::repaintSoon);
+    }
+
+    /** The text changed under an open bar: paint its matches again, once for a burst of output. */
+    private void repaintSoon() {
+        if (repaintQueued) {
+            return;
+        }
+        repaintQueued = true;
+        javafx.application.Platform.runLater(() -> {
+            repaintQueued = false;
+            Target text = target.get();
+            if (text == null || !isShowing()) {
+                return;
+            }
+            List<int[]> matches = matches(text.text());
+            int at = -1;
+            for (int i = 0; i < matches.size() && at < 0; i++) {
+                at = matches.get(i)[0] == activeStart ? i : -1;
+            }
+            if (at >= 0 || matches.isEmpty()) {
+                show(text, matches, at); // the count grows with the output, the find staying on its match
+            } else {
+                paint(text, matches, -1); // its match was trimmed away: the count stays until the next step
+            }
+        });
+    }
+
+    private void paint(@Nullable Target text, List<int[]> matches, int at) {
+        Target before = painted;
+        if (before != null && before != text) {
+            before.paint(List.of(), -1);
+        }
+        painted = matches.isEmpty() ? null : text;
+        if (text != null) {
+            text.paint(matches, at);
+        }
     }
 
     /** Find, asked for again: opens the bar, or with the bar already open steps to the next match. */
@@ -223,6 +319,9 @@ final class ConsoleFindBar extends HBox {
     void close() {
         setVisible(false);
         setManaged(false);
+        unwatch.run();
+        unwatch = () -> {};
+        paint(null, List.of(), -1);
         Runnable after = onClose;
         if (after != null) {
             after.run();
@@ -237,6 +336,8 @@ final class ConsoleFindBar extends HBox {
     /** The console shown changed (the previous run's buffer, say): search it instead. */
     void retarget() {
         if (isShowing()) {
+            paint(null, List.of(), -1); // off the console that was showing
+            watch(target.get());
             refine();
         }
     }
@@ -257,7 +358,7 @@ final class ConsoleFindBar extends HBox {
         }
         List<int[]> matches = matches(area.text());
         if (matches.isEmpty()) {
-            show(matches, -1);
+            show(area, matches, -1);
             return;
         }
         int from = Math.min(anchor, area.text().length());
@@ -279,7 +380,7 @@ final class ConsoleFindBar extends HBox {
         }
         List<int[]> matches = matches(area.text());
         if (matches.isEmpty()) {
-            show(matches, -1);
+            show(area, matches, -1);
             return;
         }
         int selectionStart = area.selectionStart();
@@ -307,10 +408,15 @@ final class ConsoleFindBar extends HBox {
     private void select(Target area, List<int[]> matches, int at) {
         int[] match = matches.get(at);
         area.select(match[0], match[1]);
-        show(matches, at);
+        activeStart = match[0];
+        show(area, matches, at);
     }
 
-    private void show(List<int[]> matches, int at) {
+    private void show(Target area, List<int[]> matches, int at) {
+        if (at < 0) {
+            activeStart = -1;
+        }
+        paint(area, matches, at);
         if (query.getText().isEmpty()) {
             count.setText("");
         } else if (matches.isEmpty()) {

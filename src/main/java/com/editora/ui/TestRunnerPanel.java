@@ -82,6 +82,13 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     private final TreeView<TestNode> tree = new TreeView<>(rootItem);
     private final CodeArea detail = AreaUndo.none(new CodeArea());
 
+    private final ConsoleFindBar findBar;
+
+    /** Opens the find bar over the test's output, or steps to the next match when it is open ({@code test.findInOutput}). */
+    void openFind() {
+        findBar.openOrNext(detail.getSelectedText());
+    }
+
     /** Same-instance {@link TestNode} → its tree item, so live updates never rebuild or duplicate the tree. */
     private final Map<TestNode, TreeItem<TestNode>> items = new IdentityHashMap<>();
 
@@ -167,8 +174,10 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         ConsoleContextMenu.install(detail); // right-click Select All / Copy
 
         // The keymap's find chord, pressed in the output, opens a find bar over it (Escape closes it).
-        VirtualizedScrollPane<CodeArea> detailScroll = new VirtualizedScrollPane<>(detail);
-        VBox detailBox = new VBox(ConsoleFindBar.install(detail), detailScroll);
+        // The output under the layer that paints every match of its find bar.
+        javafx.scene.Node detailScroll = ConsoleFindBar.withMarks(detail, new VirtualizedScrollPane<>(detail));
+        findBar = ConsoleFindBar.install(detail);
+        VBox detailBox = new VBox(findBar, detailScroll);
         VBox.setVgrow(detailScroll, Priority.ALWAYS);
         SplitPane split = new SplitPane(tree, detailBox);
         split.setDividerPositions(0.5);
