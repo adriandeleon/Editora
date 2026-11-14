@@ -453,6 +453,16 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   `PickerKeys.legend(...)` builds the hint line from the live keymap out of the `pickerKeys.*`
   catalog entries, each time the card is shown. A picker-local key (the palette's "docs") is chosen
   with `PickerKeys.freeChord`, so it is one the keymap leaves unbound.
+- **One picker for every list choice.** A choice among a list is a
+  [`QuickOpen`](../../src/main/java/com/editora/ui/QuickOpen.java), never a `ChoiceDialog`
+  (`QuickOpenPlaceholderFxTest` scans for one): the Git reset mode, the mainline parent of a merge to revert
+  and the settings backup to restore are pickers like the rest. A window other than the editor's gets an
+  `OverlayHost` of its own for it, as Settings and the Project Map have. A choice that has a usual answer
+  opens on it (`setCurrentItem`), and a cancel that must be reported uses `setOnCancelled`.
+- **A picker is never a blank card.** With nothing to choose from the list says so: the picker's own sentence
+  where it sets one (`setPlaceholder`, "No bookmarks in this project") and a general one otherwise; with a
+  query that matches nothing it says "No matches". A picker may instead say so in the status bar and not
+  open.
 - **`OverlayHost`** dismisses on Esc or the keymap's cancel chord and keeps keyboard focus inside the
   card while it is up (a focus listener, so cards that use Tab themselves are unaffected).
   **`OverlayInput`** runs the primary action on Enter unless a button has the focus, in which case

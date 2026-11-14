@@ -31,6 +31,11 @@ final class GitWindowHost implements GitWindowCoordinator.Host {
     }
 
     @Override
+    public OverlayHost overlayHost() {
+        return mc.overlayHost;
+    }
+
+    @Override
     public StatusBar statusBar() {
         return mc.statusBar;
     }

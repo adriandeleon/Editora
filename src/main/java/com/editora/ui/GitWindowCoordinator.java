@@ -21,6 +21,8 @@ final class GitWindowCoordinator {
 
         Stage stage();
 
+        OverlayHost overlayHost();
+
         StatusBar statusBar();
 
         ToolWindowManager toolWindows();
@@ -104,7 +106,12 @@ final class GitWindowCoordinator {
      * Asks which parent a merge is reverted against: given the merge and its parents, the 1-based mainline,
      * or null to cancel. A field so a test can answer without a dialog.
      */
-    java.util.function.BiFunction<String, List<String>, Integer> mainlineChooser = this::chooseMainline;
+    MainlineChooser mainlineChooser = this::chooseMainline;
+
+    /** Asks which parent of a merge commit is the mainline to keep: its 1-based number, or null when cancelled. */
+    interface MainlineChooser {
+        void choose(String hash, List<String> parents, java.util.function.Consumer<@Nullable Integer> onChosen);
+    }
 
     /** Confirms deleting a tag (tag, repository); a field for the same reason. */
     java.util.function.BiPredicate<String, String> tagDeleteConfirmer = this::confirmTagDelete;
@@ -687,17 +694,20 @@ final class GitWindowCoordinator {
 
     /** Asks for the reset mode (soft/mixed/hard) then resets the selected commit (the {@code git.log.reset} command). */
     void promptGitReset(String hash) {
-        // Both dialogs below run a nested event loop in which the active repository can change; the commit
-        // was selected in the log's repository, so that is captured first.
+        // The active repository can change while the picker is up and during the confirmation after it; the
+        // commit was selected in the log's repository, so that is captured first.
         Path root = gitLogRoot;
         String branch = gitLogBranch;
-        javafx.scene.control.ChoiceDialog<String> d = Dialogs.styled(
-                new javafx.scene.control.ChoiceDialog<>("mixed", java.util.List.of("soft", "mixed", "hard")));
-        d.initOwner(host.stage());
-        d.setTitle(tr("dialog.gitReset.title"));
-        d.setHeaderText(null);
-        d.setContentText(tr("dialog.gitReset.content"));
-        d.showAndWait().ifPresent(mode -> resetIn(root, branch, hash, mode));
+        QuickOpen<String> modes = new QuickOpen<>(
+                tr("dialog.gitReset.title"),
+                tr("dialog.gitReset.prompt"),
+                () -> List.of("soft", "mixed", "hard"),
+                mode -> mode,
+                mode -> tr("dialog.gitReset.mode." + mode),
+                mode -> resetIn(root, branch, hash, mode));
+        modes.setCurrentItem(() -> "mixed"); // git's own default, and the one that loses nothing
+        modes.setOverlayHost(host.overlayHost());
+        modes.show(host.stage());
     }
 
     /**
@@ -1126,36 +1136,44 @@ final class GitWindowCoordinator {
     }
 
     private void revertWithParents(Path root, String hash, List<String> parents, String done) {
-        int mainline = 0;
-        if (parents.size() > 1) {
-            Integer chosen = mainlineChooser.apply(hash, parents);
+        if (parents.size() <= 1) {
+            gitMutateIn(root, done, revertArgs(hash, 0));
+            return;
+        }
+        mainlineChooser.choose(hash, parents, chosen -> {
             if (chosen == null) {
                 host.setStatus(tr("status.git.revertMergeCancelled"));
-                return;
+            } else {
+                gitMutateIn(root, done, revertArgs(hash, chosen));
             }
-            mainline = chosen;
-        }
-        gitMutateIn(root, done, revertArgs(hash, mainline));
+        });
     }
 
-    /** The mainline dialog: one choice per parent, named by its short hash and, when loaded, its subject. */
-    private @Nullable Integer chooseMainline(String hash, List<String> parents) {
-        List<String> choices = new java.util.ArrayList<>();
-        for (int i = 0; i < parents.size(); i++) {
-            com.editora.git.GitLog.Entry parent = host.gitLogPanel().entry(parents.get(i));
-            choices.add(tr(
-                    "dialog.revertMerge.parent",
-                    i + 1,
-                    com.editora.git.GitFormat.shortHash(parents.get(i)),
-                    parent == null ? "" : parent.subject()));
-        }
-        javafx.scene.control.ChoiceDialog<String> d =
-                Dialogs.styled(new javafx.scene.control.ChoiceDialog<>(choices.get(0), choices));
-        d.initOwner(host.stage());
-        d.setTitle(tr("dialog.revertMerge.title"));
-        d.setHeaderText(null);
-        d.setContentText(tr("dialog.revertMerge.content", com.editora.git.GitFormat.shortHash(hash)));
-        return d.showAndWait().map(choice -> choices.indexOf(choice) + 1).orElse(null);
+    /** The mainline picker: one row per parent, named by its short hash and, when loaded, its subject. */
+    private void chooseMainline(
+            String hash, List<String> parents, java.util.function.Consumer<@Nullable Integer> onChosen) {
+        List<Integer> numbers = java.util.stream.IntStream.rangeClosed(1, parents.size())
+                .boxed()
+                .toList();
+        QuickOpen<Integer> picker = new QuickOpen<>(
+                tr("dialog.revertMerge.title"),
+                tr("dialog.revertMerge.prompt", com.editora.git.GitFormat.shortHash(hash)),
+                () -> numbers,
+                number -> mainlineLabel(number, parents.get(number - 1)),
+                number -> tr(number == 1 ? "dialog.revertMerge.first" : "dialog.revertMerge.other"),
+                onChosen::accept);
+        picker.setOnCancelled(() -> onChosen.accept(null));
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.stage());
+    }
+
+    private String mainlineLabel(int number, String parentHash) {
+        com.editora.git.GitLog.Entry parent = host.gitLogPanel().entry(parentHash);
+        return tr(
+                "dialog.revertMerge.parent",
+                number,
+                com.editora.git.GitFormat.shortHash(parentHash),
+                parent == null ? "" : parent.subject());
     }
 
     // --- tags --------------------------------------------------------------------------------------

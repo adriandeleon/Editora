@@ -177,6 +177,8 @@ final class NotesCoordinator {
                 NotesCoordinator::noteSearchText,
                 // The jump/search pickers are scoped to the active project's notes, so they open in this window.
                 e -> noteActivate(ops.currentProjectKey(), e.fileKey(), e.note()));
+        jumpPalette.setPlaceholder(tr("notes.placeholder"));
+        searchPalette.setPlaceholder(tr("notes.placeholder"));
     }
 
     NotesPanel panel() {
