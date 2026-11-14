@@ -20,6 +20,7 @@ import javafx.scene.input.PickResult;
 import javafx.scene.layout.Region;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * its declarations past the cap open (C2), the card says how much of the file it holds and where its text stops,
  * a big buffer's re-outline waits for its text to settle, and the main language is warmed (C16).
  */
+@Tag("fx")
 class ProjectMapStructureReview3Test {
 
     @TempDir

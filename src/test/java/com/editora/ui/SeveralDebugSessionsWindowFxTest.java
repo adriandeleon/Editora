@@ -12,6 +12,7 @@ import com.editora.dap.FakeDebugAdapter;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * and an ended session's tab can be closed. {@code SeveralSessionsProbeFxTest} drives real debugpy.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class SeveralDebugSessionsWindowFxTest {
 
     private FxWindowFixture fx;

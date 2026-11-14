@@ -9,6 +9,7 @@ import com.editora.dap.DapTestSettings;
 import com.editora.dap.FakeDebugAdapter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * it, and its tab goes once it has ended. {@code SeveralSessionsProbeFxTest} drives real debugpy subprocesses.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class PythonSubprocessSessionsWindowFxTest {
 
     private FxWindowFixture fx;

@@ -25,7 +25,8 @@ Some tests check the repository, not the program: no Javadoc comment stacked on 
 (`StackedJavadocTest`), a store's shape pinned to its schema version (`StoreShapeGuardTest`), the six
 message catalogs in step (`MessagesTest`), every shipped dependency named in `NOTICE`
 (`NoticeCoverageTest`), every place that starts a process classified by locale
-(`ChildLocalePolicyTest`), the workflows' pinned actions (`ReleaseSupplyChainTest`). A change anywhere can
+(`ChildLocalePolicyTest`), the workflows' pinned actions (`ReleaseSupplyChainTest`), the `fx` tag on every
+test class that starts the toolkit (`FxTestTagsTest`). A change anywhere can
 break one, and the narrow tests for the change never run them, so they failed first in CI: in the week to
 12 November 2026 they were the only failure in 17 of the 35 pull-request runs that failed, each a
 fifteen-minute run spent on something that takes seconds to check.
@@ -36,7 +37,7 @@ They carry `@Tag("guard")`. Run them before every push:
 mvn test -Dgroups=guard
 ```
 
-That is 22 classes and 95 tests, about half a minute once the project is compiled, most of it Maven
+That is 23 classes and 99 tests, about half a minute once the project is compiled, most of it Maven
 starting.
 
 A new test of this kind gets the tag. It qualifies when it is pure (no toolkit), reads source files,
@@ -54,7 +55,10 @@ vendored. The harness only uses `FxToolkit` to boot the toolkit; it never drives
 prototype platform's input/rendering limitations don't apply.
 
 - All FX tests are tagged `@Tag("fx")`. Run the pure suite alone with
-  `mvn test -DexcludedGroups=fx`.
+  `mvn test -DexcludedGroups=fx`. `FxTestTagsTest` holds it: a test class that boots the toolkit, uses
+  `FxWindowFixture` or calls `runOnFx` / `callOnFx` / `drainFx` without the tag fails it. An untagged FX test
+  ran in the pure lanes with a toolkit they are not meant to have, and in no FX lane. An opt-in probe that
+  needs the toolkit carries both tags, `probe` and `fx`.
 - **`FxTestSupport`** boots the toolkit once (the Headless platform + `Fonts.load`/`Messages.init`
   + the AtlantaFX UA sheet + the classloader pin) and exposes `runOnFx`/`callOnFx` + reflection
   helpers (`field`/`invoke`/`call`) to read private `@FXML` nodes and call private methods. Tests

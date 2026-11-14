@@ -18,6 +18,7 @@ import com.editora.dap.DapManager;
 import com.editora.dap.FakeDebugAdapter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * starts with none. {@code MarkObjectProbeFxTest} drives java-debug and debugpy.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class MarkObjectWindowFxTest {
 
     private FxWindowFixture fx;

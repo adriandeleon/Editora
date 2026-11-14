@@ -11,6 +11,7 @@ import com.editora.editor.EditorBuffer;
 import org.eclipse.lsp4j.debug.StackFrame;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * the user's frame; the breakpoints go with the session. {@code SourcelessFramesProbeFxTest} drives js-debug.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class SourcelessFramesWindowFxTest {
 
     private FxWindowFixture fx;

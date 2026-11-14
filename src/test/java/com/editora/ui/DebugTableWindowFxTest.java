@@ -19,6 +19,7 @@ import org.eclipse.lsp4j.debug.VariablesArguments;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * on what is shown, and Refresh needs a paused program. {@code DebugTableProbeFxTest} drives real adapters.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class DebugTableWindowFxTest {
 
     private FxWindowFixture fx;

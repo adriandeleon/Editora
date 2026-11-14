@@ -20,6 +20,7 @@ import javafx.scene.layout.Region;
 import com.editora.git.GitFileStatus;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Project Map review's data fixes, in a live view: reloads, cards across renames, matching, the watcher. */
 @ExtendWith(DisposedPanels.class)
+@Tag("fx")
 class ProjectMapDataReviewFxTest {
 
     private static final String APP = String.join(

@@ -11,6 +11,7 @@ import com.editora.dap.LaunchJson;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * {@code stopAll}, Stop in one ends both. A configuration started while a session runs is debugged beside it.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class LaunchCompoundWindowFxTest {
 
     private FxWindowFixture fx;
