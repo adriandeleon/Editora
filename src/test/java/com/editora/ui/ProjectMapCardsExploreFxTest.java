@@ -90,9 +90,17 @@ class ProjectMapCardsExploreFxTest {
             card.findField().setText("return a");
             assertEquals(tr("project.map.preview.find.count", 1, 12), card.findCountText());
             assertEquals("return a", card.editor().getSelectedText());
+            // Every match is painted over the text, not only the selected one, the one the find is on more strongly.
+            Object findMarks = FxTestSupport.field(card, "findMarks");
+            assertEquals(
+                    12,
+                    FxTestSupport.<com.editora.text.SearchMatches>field(findMarks, "matches")
+                            .size());
+            assertEquals(0, (int) FxTestSupport.<Integer>field(findMarks, "activeIndex"));
             int first = card.editor().getSelection().getStart();
             key(card.findField(), KeyCode.ENTER, false, false);
             assertEquals(tr("project.map.preview.find.count", 2, 12), card.findCountText(), "Enter: the next");
+            assertEquals(1, (int) FxTestSupport.<Integer>field(findMarks, "activeIndex"));
             assertTrue(card.editor().getSelection().getStart() > first);
             key(card.findField(), KeyCode.ENTER, true, false);
             assertEquals(tr("project.map.preview.find.count", 1, 12), card.findCountText(), "Shift+Enter: back");
@@ -106,12 +114,18 @@ class ProjectMapCardsExploreFxTest {
             javafx.scene.control.ToggleButton matchCase = FxTestSupport.field(card, "findCase");
             matchCase.fire();
             assertEquals(tr("project.map.preview.find.none"), card.findCountText(), "Match case finds none");
+            assertTrue(FxTestSupport.<com.editora.text.SearchMatches>field(findMarks, "matches")
+                    .isEmpty());
             matchCase.fire();
             card.findField().setText("return a");
             int at = card.editor().getSelection().getStart();
 
             key(card.findField(), KeyCode.ESCAPE, false, false);
             assertFalse(card.findShown(), "Escape closes the bar");
+            assertTrue(
+                    FxTestSupport.<com.editora.text.SearchMatches>field(findMarks, "matches")
+                            .isEmpty(),
+                    "and takes the paint off the other matches");
             assertTrue(previews().containsValue(card), "and not the card");
             assertEquals(at, card.editor().getSelection().getStart(), "the match stays selected");
             assertEquals("return a", card.editor().getSelectedText());

@@ -192,7 +192,9 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         }
         findBar.setOnClose(() -> shownArea().requestFocus());
 
-        StackPane body = new StackPane(outputScroll, previousScroll);
+        // Over both consoles, the layers that paint every match of the find bar on the one that is showing.
+        StackPane body = new StackPane(
+                outputScroll, previousScroll, ConsoleFindBar.marks(output), ConsoleFindBar.marks(previous));
         previousScroll.setVisible(false);
         previousScroll.setManaged(false);
         VBox.setVgrow(body, Priority.ALWAYS);

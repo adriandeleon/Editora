@@ -477,6 +477,18 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   where it sets one (`setPlaceholder`, "No bookmarks in this project") and a general one otherwise; with a
   query that matches nothing it says "No matches". A picker may instead say so in the status bar and not
   open.
+- **Find bars other than the editor's.** A console (Output, Run, External Tools, Debug, a test's output) and
+  the Application Log each carry a [`ConsoleFindBar`](../../src/main/java/com/editora/ui/ConsoleFindBar.java),
+  and each has a command of its own ([`FindBarCommands`](../../src/main/java/com/editora/ui/FindBarCommands.java):
+  `buildOutput.find`, `run.findInOutput`, `externalTool.findInOutput`, `debug.findInConsole`,
+  `test.findInOutput`, `debugLog.find`) that shows the panel and opens the bar, and steps to the next match
+  when the bar is open. The keymap's `find.show` chord pressed in the view reaches the same bar. A console
+  paints every match while its bar is open, the active one more strongly: the panel lays
+  `ConsoleFindBar.withMarks(area, scroll)` in place of the scroll pane (or adds `ConsoleFindBar.marks(area)` to
+  a stack it already has), which is the editor's `SearchHighlightOverlay` over that console. Output that
+  arrives under an open bar is searched and painted too. A Project Map card does the same for its own find.
+  A plain `TextArea` (the Application Log) draws one selection and nothing else, so its bar shows the active
+  match alone.
 - **`OverlayHost`** dismisses on Esc or the keymap's cancel chord and keeps keyboard focus inside the
   card while it is up (a focus listener, so cards that use Tab themselves are unaffected).
   **`OverlayInput`** runs the primary action on Enter unless a button has the focus, in which case

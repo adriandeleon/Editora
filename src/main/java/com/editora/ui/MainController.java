@@ -678,6 +678,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         DebugBuildTestButtonCommands.register(this);
         PanelViewerButtonCommands.register(this);
         HelpCommands.register(this);
+        FindBarCommands.register(this);
         recovery.registerCommands(registry);
         setupToolbar();
         runConfigurations.refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set
@@ -5448,6 +5449,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         VBox body = UiZoom.spacing(new VBox(promptLabel, field), 6);
         OverlayInput.show(
                 host, title, body, field, tr("dialog.ok"), null, () -> onAccept.accept(field.getText()), null, false);
+    }
+
+    /** Opens the Application Log's find bar, showing the window first ({@code debugLog.find}). */
+    void findInDebugLog() {
+        debugLogWindow.find(stage);
     }
 
     /** Opens the Application Log window: {@code view.debugLog} and Settings → Advanced's "Show Application Log". */

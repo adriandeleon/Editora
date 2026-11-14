@@ -236,6 +236,16 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
         return selected != null && selected.getContent() instanceof BuildToolPanel console ? console : null;
     }
 
+    /** Opens the shown console's find bar, or steps to its next match when it is open; false when there is no console. */
+    boolean findInShownOutput() {
+        BuildToolPanel console = shownConsole();
+        if (console == null) {
+            return false;
+        }
+        console.openFind();
+        return true;
+    }
+
     /** Saves the shown console's output to a file the user picks; false when there is no console. */
     boolean saveShownOutput() {
         BuildToolPanel console = shownConsole();

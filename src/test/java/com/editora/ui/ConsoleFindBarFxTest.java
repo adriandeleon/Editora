@@ -154,4 +154,61 @@ class ConsoleFindBarFxTest {
             }
         });
     }
+
+    private static com.editora.text.SearchMatches painted(Object marks) {
+        return FxTestSupport.field(marks, "matches");
+    }
+
+    /**
+     * Over a console every match is painted while the bar is open, the one the find is on more strongly, and
+     * output that arrives is searched and painted too; closing the bar takes the paint off.
+     */
+    @Test
+    void overAConsoleEveryMatchIsPaintedAndNewOutputIsPaintedToo() throws Exception {
+        Object[] kept = new Object[2];
+        FxTestSupport.runOnFx(() -> {
+            CodeArea console = new CodeArea("warn one\nok\nwarn two\n");
+            javafx.scene.layout.StackPane body = ConsoleFindBar.withMarks(console, console);
+            Object marks = body.getChildren().get(1);
+            ConsoleFindBar bar = ConsoleFindBar.install(console);
+            Stage stage = new Stage();
+            stage.setScene(new Scene(new VBox(bar, body), 400, 300));
+            stage.show();
+            kept[0] = stage;
+            kept[1] = bar;
+
+            bar.open(null);
+            assertTrue(painted(marks).isEmpty(), "nothing typed: nothing painted");
+            bar.field().setText("warn");
+            assertEquals(2, painted(marks).size(), "both matches, not only the selected one");
+            assertEquals(0, (int) FxTestSupport.<Integer>field(marks, "activeIndex"));
+            bar.field().fireEvent(key(KeyCode.ENTER, false));
+            assertEquals(
+                    1, (int) FxTestSupport.<Integer>field(marks, "activeIndex"), "the active one follows the find");
+
+            console.appendText("warn three\n"); // output arriving under the open bar
+        });
+        FxTestSupport.runOnFx(() -> {}); // the repaint is queued behind the change
+        FxTestSupport.runOnFx(() -> {
+            Stage stage = (Stage) kept[0];
+            ConsoleFindBar bar = (ConsoleFindBar) kept[1];
+            try {
+                Object marks = ((javafx.scene.layout.StackPane)
+                                ((VBox) stage.getScene().getRoot())
+                                        .getChildren()
+                                        .get(1))
+                        .getChildren()
+                        .get(1);
+                assertEquals(3, painted(marks).size(), "the new line's match is painted");
+                assertEquals(tr("find.count", 2, "3"), bar.countText(), "and counted, the find still on its match");
+                bar.field().setText("nothing like this");
+                assertTrue(painted(marks).isEmpty());
+                bar.field().setText("warn");
+                bar.close();
+                assertTrue(painted(marks).isEmpty(), "a closed bar leaves no paint behind");
+            } finally {
+                stage.hide();
+            }
+        });
+    }
 }
