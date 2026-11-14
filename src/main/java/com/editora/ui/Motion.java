@@ -1,6 +1,8 @@
 package com.editora.ui;
 
-import java.util.Map;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 import java.util.WeakHashMap;
 
 import javafx.animation.AnimationTimer;
@@ -19,8 +21,20 @@ import org.jspecify.annotations.Nullable;
  */
 final class Motion {
 
-    /** The animations running now, each with the action that shows its end state. */
-    private static final Map<AnimationTimer, Runnable> RUNNING = new WeakHashMap<>();
+    /**
+     * An animation that moves, fades or flashes part of the window: a timer that also knows the state it
+     * leaves behind, which is what is shown in its place under reduced motion.
+     */
+    abstract static class Animation extends AnimationTimer {
+        /** Shows the state the animation ends in, as if it had run. */
+        protected abstract void atEnd();
+    }
+
+    /**
+     * The animations running now. Held weakly, and nothing but the animation itself: a registry that kept an
+     * end action for each would keep the animation's window alive through it for as long as the editor runs.
+     */
+    private static final Set<Animation> RUNNING = Collections.newSetFromMap(new WeakHashMap<>());
 
     private static boolean listening;
 
@@ -47,22 +61,22 @@ final class Motion {
     }
 
     /**
-     * Starts {@code animation}, or with reduced motion runs {@code atEnd} in its place: the state the animation
-     * would leave behind. {@code atEnd} is also what stops it if the setting is turned on while it runs. FX thread.
+     * Starts {@code animation}, or with reduced motion shows its end state in its place. The end state is also
+     * what is shown if the setting is turned on while it runs. FX thread.
      */
-    static void start(AnimationTimer animation, Runnable atEnd) {
+    static void start(Animation animation) {
         if (reduced()) {
             animation.stop();
-            atEnd.run();
+            animation.atEnd();
             return;
         }
         listen();
-        RUNNING.put(animation, atEnd);
+        RUNNING.add(animation);
         animation.start();
     }
 
-    /** {@code animation} ended on its own: there is nothing left to stop. */
-    static void ended(AnimationTimer animation) {
+    /** {@code animation} ended on its own, or its owner stopped it: there is nothing left to stop. */
+    static void ended(Animation animation) {
         RUNNING.remove(animation);
     }
 
@@ -84,11 +98,11 @@ final class Motion {
 
     /** Stops every running animation and shows its end state: the setting applies at once. */
     static void stopAll() {
-        Map<AnimationTimer, Runnable> running = Map.copyOf(RUNNING);
+        List<Animation> running = List.copyOf(RUNNING);
         RUNNING.clear();
-        running.forEach((animation, atEnd) -> {
+        for (Animation animation : running) {
             animation.stop();
-            atEnd.run();
-        });
+            animation.atEnd();
+        }
     }
 }

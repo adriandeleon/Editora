@@ -1009,7 +1009,12 @@ final class MapSurface extends Region {
     private @Nullable Path layoutFlashPath;
 
     private long layoutFlashStart;
-    private final AnimationTimer layoutFlashTimer = new AnimationTimer() {
+    private final Motion.Animation layoutFlashTimer = new Motion.Animation() {
+        @Override
+        protected void atEnd() {
+            endLayoutFlash(); // the flash's end state: no ring
+        }
+
         @Override
         public void handle(long now) {
             if (layoutFlashPath == null || !view.active || (now - layoutFlashStart) / 1e6 > FLASH_MILLIS) {
@@ -1107,7 +1112,7 @@ final class MapSurface extends Region {
         layoutFlashStart = System.nanoTime();
         // Through Motion: with reduced motion the ring does not fade in and out; its end state, no ring, is
         // shown at once (the revealed row is still the selected one).
-        Motion.start(layoutFlashTimer, this::endLayoutFlash);
+        Motion.start(layoutFlashTimer);
     }
 
     /** The flash's end state: no ring. */
@@ -1281,6 +1286,7 @@ final class MapSurface extends Region {
         boxesStale = false;
         viewportRepaintTimer.stop();
         layoutFlashTimer.stop();
+        Motion.ended(layoutFlashTimer);
         dismissContextMenu();
         clearNodeTooltip();
         Tooltip.uninstall(this, nodeTooltip);

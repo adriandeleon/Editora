@@ -39,12 +39,18 @@ class MotionFxTest {
         Motion.setReducedForTest(null);
     }
 
-    private static final class Counting extends AnimationTimer {
+    private static final class Counting extends Motion.Animation {
         int frames;
+        int ended;
 
         @Override
         public void handle(long now) {
             frames++;
+        }
+
+        @Override
+        protected void atEnd() {
+            ended++;
         }
     }
 
@@ -53,12 +59,11 @@ class MotionFxTest {
         FxTestSupport.runOnFx(() -> {
             Motion.setReducedForTest(true);
             Counting animation = new Counting();
-            int[] ended = {0};
-            Motion.start(animation, () -> ended[0]++);
-            assertEquals(1, ended[0], "the end state, at once");
+            Motion.start(animation);
+            assertEquals(1, animation.ended, "the end state, at once");
             assertEquals(0, animation.frames);
             Motion.stopAll();
-            assertEquals(1, ended[0], "it never started: there is nothing to stop");
+            assertEquals(1, animation.ended, "it never started: there is nothing to stop");
         });
     }
 
@@ -68,30 +73,50 @@ class MotionFxTest {
             Motion.setReducedForTest(false);
             Counting running = new Counting();
             Counting finished = new Counting();
-            int[] ended = {0, 0};
-            Motion.start(running, () -> ended[0]++);
-            Motion.start(finished, () -> ended[1]++);
-            assertEquals(0, ended[0] + ended[1], "motion is allowed: both run");
+            Motion.start(running);
+            Motion.start(finished);
+            assertEquals(0, running.ended + finished.ended, "motion is allowed: both run");
             finished.stop();
             Motion.ended(finished); // ran to its own end
 
             Motion.stopAll(); // what the setting's listener does when it turns on
-            assertEquals(1, ended[0], "the running one is stopped at its end state");
-            assertEquals(0, ended[1], "the finished one is left alone");
+            assertEquals(1, running.ended, "the running one is stopped at its end state");
+            assertEquals(0, finished.ended, "the finished one is left alone");
             Motion.stopAll();
-            assertEquals(1, ended[0], "once");
+            assertEquals(1, running.ended, "once");
         });
+    }
+
+    /**
+     * The registry of running animations keeps none of them alive: an animation whose window is gone is
+     * collected, running or not, and with it everything it points at.
+     */
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void aRunningAnimationIsNotKeptAliveByTheRegistry() throws Exception {
+        java.lang.ref.WeakReference<Counting>[] ref = new java.lang.ref.WeakReference[1];
+        FxTestSupport.runOnFx(() -> {
+            Motion.setReducedForTest(false);
+            Counting animation = new Counting();
+            Motion.start(animation);
+            animation.stop(); // its owner closed without telling Motion
+            ref[0] = new java.lang.ref.WeakReference<>(animation);
+        });
+        for (int i = 0; i < 50 && ref[0].get() != null; i++) {
+            System.gc();
+            Thread.sleep(20);
+        }
+        assertTrue(ref[0].get() == null, "the registry holds its animations weakly");
     }
 
     /** The files that hold an {@link AnimationTimer}, with how many, and what each is. */
     private static final Map<String, Integer> ANIMATION_TIMERS = Map.of(
-            // The flash of a revealed row starts through Motion; the other two coalesce repaints and warm icons.
-            "ui/MapSurface.java", 3,
+            // These two coalesce repaints and warm icons; the flash of a revealed row is a Motion.Animation.
+            "ui/MapSurface.java", 2,
             // Draws the terminal once a frame while it has something new: a repaint, not an animation.
             "terminal/TerminalView.java", 1,
             // Waits two frames before a first render: a delay, not an animation.
-            "editor/minimap/Minimap.java", 1,
-            "ui/Motion.java", 0);
+            "editor/minimap/Minimap.java", 1);
 
     private static final Pattern TRANSITION = Pattern.compile(
             "new\\s+(?:javafx\\.animation\\.)?(Fade|Translate|Scale|Rotate|Fill|Stroke|Path|Parallel|Sequential)Transition\\b");
@@ -124,9 +149,10 @@ class MotionFxTest {
             }
         }
         assertTrue(transitions.isEmpty(), "start a transition through Motion and list it here: " + transitions);
-        Map<String, Integer> expected = new TreeMap<>(ANIMATION_TIMERS);
-        expected.values().removeIf(count -> count == 0);
-        assertEquals(expected, timers, "an AnimationTimer that moves, fades or flashes starts through Motion.start");
+        assertEquals(
+                new TreeMap<>(ANIMATION_TIMERS),
+                timers,
+                "an AnimationTimer that moves, fades or flashes is a Motion.Animation, started with Motion.start");
         assertTrue(
                 Files.readString(root.resolve("ui/MapSurface.java")).contains("Motion.start(layoutFlashTimer"),
                 "the Project Map's flash starts through Motion");
