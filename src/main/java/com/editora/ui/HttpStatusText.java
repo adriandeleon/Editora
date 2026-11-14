@@ -159,9 +159,9 @@ final class HttpStatusText {
         return t.passed() + "/" + t.tests().size();
     }
 
-    /** The UI language's locale, for numbers in the response view ({@code 1,4 s} in German). */
+    /** The locale for numbers in the response view ({@code 1,4 s} in German): the one every date and number uses. */
     static Locale uiLocale() {
-        return Locale.forLanguageTag(com.editora.i18n.Messages.current());
+        return Locale.getDefault(Locale.Category.FORMAT);
     }
 
     /** Seconds with one decimal in the UI language ({@code 1.4} / {@code 1,4}). */

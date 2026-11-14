@@ -192,7 +192,7 @@ class ProjectMapGotoFxTest {
             assertEquals(List.of(source), view.history.cardsBack());
             assertEquals(use, view.historyPlaces().get(at - 1), "Use.java's card stands on its row's place: one stop");
             assertEquals(shape, view.historyPlaces().get(at));
-            String sourceLabel = tr("project.map.history.cardEntry", view.historyLabel(use), "4");
+            String sourceLabel = tr("project.map.history.cardEntry", view.historyLabel(use), 4);
             assertTrue(
                     view.historyMenu().getItems().stream().anyMatch(item -> sourceLabel.equals(item.getText())),
                     "the menu says the line a card's stop is at");

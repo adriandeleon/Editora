@@ -61,7 +61,10 @@ button on a page (Macros' Save/Revert is the one exception).
 
 Never hand a raw English literal to a JavaFX control. Use
 `import static com.editora.i18n.Messages.tr;` then `tr("some.key")` (or `tr("key", args…)` for
-`MessageFormat` parameters like `Saved {0}`).
+`MessageFormat` parameters like `Saved {0}`). `NoLiteralUiTextTest` scans the sources for a literal in a
+control's constructor, a text setter or a tooltip, and fails on one with two letters side by side. A literal
+that is not a word of a language (a program's name as a prompt, the `Aa` glyph, a sample URL) goes in that
+test's `NOT_LANGUAGE` list with its reason.
 
 - **Add the key to all six** `resources/com/editora/i18n/messages[_<lang>].properties` files
   (English base + `it/es/fr/pt/de`) with a real translation in each. `MessagesTest`'s
@@ -78,6 +81,24 @@ Never hand a raw English literal to a JavaFX control. Use
 - **Identifiers are not quantities.** A plain `{0}` groups an integer's digits by locale
   ("Line 12,345"). For a line or column, a port, a pull-request number or an exit code write
   `{0,number,#}` and add the key to `MessagesTest.IDENTIFIER_ARGUMENTS`.
+- **A count picks its words.** Write a message with a count as a `{0,choice,…}` pattern with a limb for
+  each form the language needs, never "file(s)", "Datei(en)" or "immagine/i":
+  `{0,choice,0#{0} files|1#{0} file|1<{0} files}`. French says "0 fichier", so its limbs are
+  `0#{0} fichier|2#{0} fichiers`. The caller passes the count as a number, not as text: a `choice` cannot
+  read a string. A word that does not change (`{0} Vorkommen`, `{1} file` in Italian) needs no limbs.
+  `MessagesTest` fails a value with a placeholder and a bracketed ending in any catalog.
+- **Modifier keys keep their names.** `Ctrl`, `Alt`, `Shift`, and on a Mac `Control`, `Option` and the
+  glyphs, read the same in every language: "Shift+Entrée", never "Maj+Entrée" or "Strg+D". The key caps, the
+  keymaps and the docs use one spelling. Other keys (Enter, Esc, Home) may be translated. `MessagesTest`
+  looks for the translated names.
+- **Dates and numbers follow the system's region, not the bare language.** `Messages.locale` decides the
+  locale that formats them, and `App.start` makes it the JVM's default: the system's locale whole when no
+  language is chosen or the chosen one is the system's own (an Austrian keeps `de-AT`, and an English
+  interface on a French system keeps French dates), and the bare language only when another language is
+  chosen. Format with `Locale.getDefault(Locale.Category.FORMAT)` or a formatter that uses it by default
+  (`MessageFormat.format`, `DateTimeFormatter.ofLocalizedDate`); never build a locale from
+  `Messages.current()`. Since the default can now be any locale, text a program reads (an id, a number in
+  a file) is made with `Locale.ROOT`.
 - A key used by literal (`tr("some.key")`) must exist: `tr` falls back to the key itself, so a
   missing one ships as visible gibberish. `MessagesTest` scans `src/main/java` for them.
 

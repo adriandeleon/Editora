@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -131,6 +132,24 @@ public final class Messages {
     /** The endonym for a language code (e.g. {@code "es"} → {@code "Español"}); the code itself if unknown. */
     public static String languageName(String code) {
         return LANGUAGES.getOrDefault(code, code);
+    }
+
+    /**
+     * The locale that writes dates and numbers, which is the JVM's default once the editor has started. It keeps
+     * the system's region: with no language chosen ({@code pref} is not a bundled code) it is the system's
+     * locale whole, whatever language the menus end up in; with the system's own language chosen, it is still
+     * the system's locale; only with another language chosen is it that bare language. {@code system} is the
+     * locale the JVM started with and {@code systemFormat} its locale for formats, which the operating system
+     * can set apart (an English system with German dates). Pure, for unit testing.
+     */
+    public static Locale locale(@Nullable String pref, Locale system, Locale systemFormat) {
+        if (pref == null || !LANGUAGES.containsKey(pref)) {
+            return systemFormat;
+        }
+        if (pref.equals(system.getLanguage()) || pref.equals(systemFormat.getLanguage())) {
+            return systemFormat;
+        }
+        return Locale.of(pref);
     }
 
     /**

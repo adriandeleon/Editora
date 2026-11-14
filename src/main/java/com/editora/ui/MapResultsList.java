@@ -313,7 +313,7 @@ final class MapResultsList extends MapSideColumn {
 
     /** A place's row: its line number and text. */
     static String placeText(Place place) {
-        return tr("project.map.places.place", String.valueOf(place.line() + 1), place.text());
+        return tr("project.map.places.place", place.line() + 1, place.text());
     }
 
     private String relative(Path file) {

@@ -135,9 +135,7 @@ public final class HttpEnv {
             String what = e.getOriginalMessage() == null
                     ? ""
                     : e.getOriginalMessage().lines().findFirst().orElse("");
-            return at == null
-                    ? what
-                    : tr("http.env.parseError", String.valueOf(at.getLineNr()), String.valueOf(at.getColumnNr()), what);
+            return at == null ? what : tr("http.env.parseError", at.getLineNr(), at.getColumnNr(), what);
         } catch (Exception e) {
             return String.valueOf(e.getMessage());
         }

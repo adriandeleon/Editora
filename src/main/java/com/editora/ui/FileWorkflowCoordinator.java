@@ -2640,11 +2640,7 @@ final class FileWorkflowCoordinator {
             SaveEncoding.Unencodable first = payload.encoding().refused();
             host.setStatus(
                     first != null && first.unpairedSurrogate()
-                            ? tr(
-                                    "status.save.cannotEncodeSurrogate",
-                                    buffer.getTitle(),
-                                    String.valueOf(first.line()),
-                                    first.display())
+                            ? tr("status.save.cannotEncodeSurrogate", buffer.getTitle(), first.line(), first.display())
                             : buffer.getUserCharset() != null && !buffer.isCharsetAssumed()
                                     ? tr(
                                             "status.save.cannotEncodeChosen",

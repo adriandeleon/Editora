@@ -91,7 +91,17 @@ class StatusSeverityTest {
                 if (expected == MessageLog.Severity.INFO) {
                     continue;
                 }
-                String shown = tr(key, "alpha", "beta", "gamma", "delta");
+                // Text for each argument, and a number where the pattern formats one ({1,number,#}): given
+                // text there, tr hands back the pattern itself.
+                String pattern = tr(key);
+                Object[] args = {"alpha", "beta", "gamma", "delta"};
+                for (int i = 0; i < args.length; i++) {
+                    if (pattern.matches("(?s).*\\{" + i + "\\s*,.*")) {
+                        args[i] = 7 + i;
+                    }
+                }
+                String shown = tr(key, args);
+                assertTrue(!shown.equals(pattern) || pattern.indexOf('{') < 0, lang + " " + key + " was not formatted");
                 assertEquals(expected, StatusSeverity.of(shown), lang + " " + key + " → " + shown);
             }
         }

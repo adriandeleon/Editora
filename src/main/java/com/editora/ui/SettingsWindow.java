@@ -947,7 +947,7 @@ public class SettingsWindow {
         });
         // No dialog per change (the arrow keys change a closed combo one language at a time): the row says
         // it, for as long as the choice resolves to another language than the one this run uses. (The system
-        // language is user.language: the app aligns the default Locale with the UI language at startup.)
+        // language is user.language: start-up can change the default Locale, so that is not asked.)
         Label restartNote = new Label(tr("dialog.language.restart"));
         restartNote.getStyleClass().addAll("settings-row-desc", "settings-restart-note");
         restartNote
@@ -2306,10 +2306,7 @@ public class SettingsWindow {
         }
         return switch (problem.kind()) {
             case NOT_A_COLUMN ->
-                tr(
-                        "settings.rulers.notAColumn",
-                        problem.part(),
-                        String.valueOf(com.editora.config.RulerColumns.MAX_COLUMN));
+                tr("settings.rulers.notAColumn", problem.part(), com.editora.config.RulerColumns.MAX_COLUMN);
             case NO_LANGUAGE -> tr("settings.rulers.noLanguage", problem.part());
             case UNKNOWN_LANGUAGE -> tr("settings.rulers.unknownLanguage", problem.part());
         };

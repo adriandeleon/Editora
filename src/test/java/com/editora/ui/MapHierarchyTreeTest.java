@@ -73,13 +73,10 @@ class MapHierarchyTreeTest {
     @Test
     void aRowSaysItsDeclarationFileLineAndCalls() {
         MapCardLinks.Group once = new MapCardLinks.Group(file, null, "total()", 3, 1);
-        assertEquals(tr("project.map.hierarchy.row", "total()", "Use.java", "4"), MapHierarchyTree.rowText(once));
+        assertEquals(tr("project.map.hierarchy.row", "total()", "Use.java", 4), MapHierarchyTree.rowText(once));
         MapCardLinks.Group often = new MapCardLinks.Group(file, null, "total()", 1233, 3);
         assertEquals(
-                tr(
-                        "project.map.hierarchy.rowCalls",
-                        tr("project.map.hierarchy.row", "total()", "Use.java", "1234"),
-                        "3"),
+                tr("project.map.hierarchy.rowCalls", tr("project.map.hierarchy.row", "total()", "Use.java", 1234), "3"),
                 MapHierarchyTree.rowText(often));
         assertEquals(List.of(MapCardLinks.Kind.CALLERS, MapCardLinks.Kind.SUBTYPES), MapCardLinks.HIERARCHY_MENU_KINDS);
         assertEquals(tr("project.map.hierarchy.showCalls"), MapCardLinks.hierarchyMenuLabel(MapCardLinks.Kind.CALLEES));

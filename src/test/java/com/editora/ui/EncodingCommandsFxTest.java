@@ -104,7 +104,7 @@ class EncodingCommandsFxTest {
             assertEquals(before, FxTestSupport.callOnFx(buffer::getContent));
             assertTrue(FxTestSupport.callOnFx(buffer::isCharsetAssumed));
             assertNull(remembered(fx, file));
-            assertEquals(tr("status.encoding.notValid", "bytes.txt", "UTF-8", "2", "2"), echo(fx));
+            assertEquals(tr("status.encoding.notValid", "bytes.txt", "UTF-8", 2, 2), echo(fx));
         }
     }
 

@@ -1022,18 +1022,11 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     // --- Text -------------------------------------------------------------------------------------------
 
     /**
-     * The locale dates and numbers are written in: the interface language — with the system's own region
-     * when the two are the same language, so an English interface on a British machine keeps British dates.
+     * The locale dates and numbers are written in: the JVM's default for formats, which start-up sets once
+     * ({@code Messages.locale}) and which keeps the system's region, so a British machine keeps British dates.
      */
     static Locale locale() {
-        String lang = com.editora.i18n.Messages.current();
-        Locale system = Locale.getDefault(Locale.Category.FORMAT);
-        if (lang == null
-                || lang.isBlank()
-                || system.getLanguage().equals(Locale.forLanguageTag(lang).getLanguage())) {
-            return system;
-        }
-        return Locale.forLanguageTag(lang);
+        return Locale.getDefault(Locale.Category.FORMAT);
     }
 
     private static String rowTime(long epochMillis) {
