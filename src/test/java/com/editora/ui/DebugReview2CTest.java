@@ -23,11 +23,11 @@ class DebugReview2CTest {
     @Test
     void theFormTitleNamesTheFileAndTheOneBasedLine() {
         assertEquals(
-                tr("dialog.debug.breakpointTitleAt", "Main.java", "27"),
+                tr("dialog.debug.breakpointTitleAt", "Main.java", 27),
                 BreakpointFormText.title(Path.of("/p/src/Main.java"), 26));
         assertEquals(tr("dialog.debug.breakpointTitle"), BreakpointFormText.title(null, 3));
         assertEquals(
-                tr("dialog.debug.breakpointTitleAt", "Big.java", "12345"),
+                tr("dialog.debug.breakpointTitleAt", "Big.java", 12345),
                 BreakpointFormText.title(Path.of("Big.java"), 12344),
                 "a line number is never digit-grouped");
     }

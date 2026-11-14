@@ -218,7 +218,7 @@ final class PomServerSupport {
         if (culprit == null) {
             return tr("status.maven.completionOff", folderName(root));
         }
-        String line = String.valueOf(Math.max(1, culprit.line()));
+        int line = Math.max(1, culprit.line());
         String why = switch (culprit.why()) {
             case ENTITIES -> tr("status.maven.whyEntities", line);
             case DUPLICATE -> tr("status.maven.whyDuplicate", "<" + culprit.element() + ">", line);
@@ -320,7 +320,7 @@ final class PomServerSupport {
                         .findFirst()
                         .orElse(fresh.get(0));
                 String where = displayPath(root, first.file());
-                String line = String.valueOf(Math.max(1, first.line()));
+                int line = Math.max(1, first.line());
                 status.accept(
                         out.size() == 1
                                 ? tr("status.maven.completionLeftOut", where, line)

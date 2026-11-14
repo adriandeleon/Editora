@@ -283,7 +283,7 @@ public final class MarkdownPdfWriter {
                         text.append(c.getLiteral());
                     }
                 });
-                ids.put(heading, generator.generateId(text.toString().trim().toLowerCase()));
+                ids.put(heading, generator.generateId(text.toString().trim().toLowerCase(java.util.Locale.ROOT)));
             }
         });
         return ids;
@@ -708,7 +708,7 @@ public final class MarkdownPdfWriter {
                     String decoded = URLDecoder.decode(fragment, StandardCharsets.UTF_8);
                     m = anchors.get(decoded);
                     if (m == null) {
-                        m = anchors.get(decoded.toLowerCase());
+                        m = anchors.get(decoded.toLowerCase(java.util.Locale.ROOT));
                     }
                 } catch (IllegalArgumentException e) {
                     // a stray % in the fragment: no such heading

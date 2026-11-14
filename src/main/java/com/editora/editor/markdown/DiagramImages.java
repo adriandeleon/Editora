@@ -201,8 +201,8 @@ public final class DiagramImages {
             if (c.extra() > 0) {
                 // The tool wrote more than one diagram (a multi-@startuml PlantUML file); show the first + a
                 // note so the rest aren't silently dropped (#459).
-                javafx.scene.control.Label note = new javafx.scene.control.Label(
-                        Messages.tr("diagram.moreDiagrams", Integer.toString(c.extra())));
+                javafx.scene.control.Label note =
+                        new javafx.scene.control.Label(Messages.tr("diagram.moreDiagrams", c.extra()));
                 note.getStyleClass().add("diagram-extra-note");
                 javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(6, view, note);
                 box.setAlignment(javafx.geometry.Pos.CENTER);

@@ -6797,7 +6797,7 @@ final class DebugCoordinator {
                 tr("debug.attachProcess.title"),
                 tr("debug.attachProcess.prompt"),
                 () -> targets,
-                t -> tr("debug.attachProcess.row", t.name(), String.valueOf(t.pid())),
+                t -> tr("debug.attachProcess.row", t.name(), t.pid()),
                 DebugCoordinator::processDetail,
                 t -> {
                     if (t != null) {

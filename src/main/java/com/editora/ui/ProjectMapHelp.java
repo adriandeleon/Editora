@@ -165,7 +165,10 @@ final class ProjectMapHelp {
         return tr("project.map.help.key." + id);
     }
 
-    /** A modifier as the platform writes it: ⌘ ⌥ ⇧ ⌃ on macOS, the localised name ("Strg", "Umschalt") elsewhere. */
+    /**
+     * A modifier as the platform writes it: ⌘ ⌥ ⇧ ⌃ on macOS, Ctrl, Alt and Shift elsewhere. The names are
+     * the same in every language, as on the key caps and in the keymaps, so they are not in the catalog.
+     */
     static String modifier(String id) {
         if (com.editora.command.KeymapManager.isMac()) {
             return switch (id) {
@@ -175,10 +178,14 @@ final class ProjectMapHelp {
                 default -> "⌃";
             };
         }
-        return key(id.equals("shortcut") ? "control" : id);
+        return switch (id) {
+            case "alt" -> "Alt";
+            case "shift" -> "Shift";
+            default -> "Ctrl";
+        };
     }
 
-    /** {@code modifier} with {@code key}: "Strg+N", "⌃N". */
+    /** {@code modifier} with {@code key}: "Ctrl+N", "⌃N". */
     static String chord(String modifier, String key) {
         String name = modifier(modifier);
         return com.editora.command.KeymapManager.isMac() ? name + key : name + "+" + key;

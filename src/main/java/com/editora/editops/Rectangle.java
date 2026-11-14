@@ -245,7 +245,7 @@ public final class Rectangle {
         return rewrite(text, b, line -> {
             String head = head(line, b.leftCol());
             String tail = line.substring(cut(line, b.leftCol(), false));
-            return head + String.format("%" + width + "d ", n[0]++) + tail;
+            return head + String.format(java.util.Locale.ROOT, "%" + width + "d ", n[0]++) + tail;
         });
     }
 

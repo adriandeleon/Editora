@@ -4747,7 +4747,7 @@ final class ProjectMapView extends VBox {
             return label;
         }
         int caret = stop.caret() >= 0 ? stop.caret() : card.caretOffset();
-        return tr("project.map.history.cardEntry", label, String.valueOf(card.fileLineAt(caret) + 1));
+        return tr("project.map.history.cardEntry", label, card.fileLineAt(caret) + 1);
     }
 
     /** A history entry's label: its name, then the project-relative folder it is in ("name — folder"). */

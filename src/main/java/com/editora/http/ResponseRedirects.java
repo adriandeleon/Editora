@@ -194,7 +194,7 @@ public final class ResponseRedirects {
             return Line.skipped(tr("http.redirect.notReplacedIncomplete", shown));
         }
         if (status < 200 || status > 299) {
-            return Line.skipped(tr("http.redirect.notReplacedError", shown, String.valueOf(status)));
+            return Line.skipped(tr("http.redirect.notReplacedError", shown, status));
         }
         Decision decision = guard.beforeOverwrite(target);
         if (decision == null) {

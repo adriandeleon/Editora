@@ -479,7 +479,7 @@ final class PluginCoordinator {
                                             ? tr("status.plugins.cmdDone", title)
                                             : tr("status.plugins.cmdOutput", title, shown));
                         } else {
-                            host.setError(tr("status.plugins.cmdFailedOutput", title, String.valueOf(r.exit()), shown));
+                            host.setError(tr("status.plugins.cmdFailedOutput", title, r.exit(), shown));
                         }
                     });
                 },

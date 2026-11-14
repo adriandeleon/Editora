@@ -415,7 +415,7 @@ class ExternalRenderFxTest {
             VBox box = assertInstanceOf(VBox.class, host.getChildren().get(0));
             assertInstanceOf(ImageView.class, box.getChildren().get(0));
             Label note = assertInstanceOf(Label.class, box.getChildren().get(1));
-            assertEquals(Messages.tr("diagram.moreDiagrams", "2"), note.getText());
+            assertEquals(Messages.tr("diagram.moreDiagrams", 2), note.getText());
         });
     }
 

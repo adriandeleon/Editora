@@ -19,7 +19,7 @@ final class BreakpointFormText {
         if (file == null || file.getFileName() == null) {
             return tr("dialog.debug.breakpointTitle");
         }
-        return tr("dialog.debug.breakpointTitleAt", file.getFileName().toString(), String.valueOf(line0 + 1));
+        return tr("dialog.debug.breakpointTitleAt", file.getFileName().toString(), line0 + 1);
     }
 
     /** The Add Logpoint form's title: the file and 1-based line, or a bare title for an unsaved buffer. */
@@ -27,7 +27,7 @@ final class BreakpointFormText {
         if (file == null || file.getFileName() == null) {
             return tr("dialog.debug.logpointTitle");
         }
-        return tr("dialog.debug.logpointTitleAt", file.getFileName().toString(), String.valueOf(line0 + 1));
+        return tr("dialog.debug.logpointTitleAt", file.getFileName().toString(), line0 + 1);
     }
 
     /**
