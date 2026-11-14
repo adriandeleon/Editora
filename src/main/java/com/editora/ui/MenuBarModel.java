@@ -396,7 +396,11 @@ final class MenuBarModel {
                                                 SEPARATOR,
                                                 "debug.runToCursor",
                                                 "debug.forceRunToCursor",
-                                                "debug.restartFrame")),
+                                                "debug.restartFrame",
+                                                SEPARATOR,
+                                                "debug.toggleRecording",
+                                                "debug.stepBack",
+                                                "debug.reverseContinue")),
                                 // One breakpoint's kinds and settings, then the list and its groups, then the
                                 // exception breakpoints.
                                 new MenuSpec(

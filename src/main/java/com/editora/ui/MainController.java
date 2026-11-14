@@ -943,7 +943,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 projectPanel != null && projectPanel.isMapOutputAvailable(),
                 terminalCoordinator != null && terminalCoordinator.hasTerminals(),
                 debugCoordinator != null && debugCoordinator.programRunning(),
-                focusedDap().isPostMortem());
+                focusedDap().isPostMortem(),
+                focusedDap().canRunBackward(),
+                focusedDap().isGdbSession());
     }
 
     private void setupRecentFiles() {

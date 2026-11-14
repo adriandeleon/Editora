@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It follows the keymap in force and your own bindings, flows a long list into columns, and goes away as soon as
   the sequence runs or is cancelled. It never takes the keyboard: the next key does what it always did, and a
   sequence typed at speed never shows it.
+- **Step Back and Reverse Continue in the debugger.** Where the program can run backward, the Debug window has Step
+  Back (B) and Reverse Continue (Shift+C), also under Run → Stepping. For C and C++ on GDB (Settings → Debugging →
+  C and C++ debugger), turn on **Record Execution** at a stop: GDB records the program from there, and Step Back goes
+  back over a statement with the variables as they were, Reverse Continue back to the previous breakpoint or to where
+  recording began. Recording slows the program a lot, so turn it on just before the part you want to replay. A
+  debugger that steps back by itself (Delve or CodeLLDB on rr) is used as it is. Nothing to install for GDB.
+
 - **Move between the editor and the tool windows from the keyboard, both ways, in every keymap.** *Window:
   Other* already cycled forward but was bound in the Emacs keymap only, and nothing went back. There is now
   *Window: Other, Reverse*, and both are bound everywhere: `C-x o` and `C-x S-o` in Emacs, Alt+Page Down and

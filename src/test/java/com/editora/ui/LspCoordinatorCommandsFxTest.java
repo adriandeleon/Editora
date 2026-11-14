@@ -681,6 +681,23 @@ class LspCoordinatorCommandsFxTest {
         return FxTestSupport.field(fx.coordinator.popups, "hoverPopup");
     }
 
+    /**
+     * The hover popup once it shows {@code text}, or what is there after 10 seconds: a hover's answer can take more
+     * hops to reach the FX thread than {@code settle} drains on a slow runner (macOS CI read it before it came).
+     */
+    private Popup awaitHoverPopup(String text) throws Exception {
+        long end = System.nanoTime() + 10_000_000_000L;
+        while (System.nanoTime() < end) {
+            Popup p = hoverPopup();
+            if (p != null && popupText(p).contains(text)) {
+                return p;
+            }
+            fx.settle();
+            Thread.sleep(20);
+        }
+        return hoverPopup();
+    }
+
     @Test
     void hoverShowsAPopupThatEscapeAndCaretMovementDismiss() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
@@ -1469,19 +1486,19 @@ class LspCoordinatorCommandsFxTest {
 
         fx.caret(b, 1, 12);
         fx.run(() -> fx.coordinator.problemAtCaret());
-        Popup shown = hoverPopup();
+        Popup shown = awaitHoverPopup("One of the following");
         assertNotNull(shown, "Show Problem at Caret shows the whole message, not only the cut status line");
         assertTrue(popupText(shown).contains("One of the following is expected:\n - to [cvc-complex-type.2.4.a]"));
 
         fx.server().hoverResponse = null; // lemminx has no documentation on an invalid element
         fx.run(() -> fx.coordinator.showHover());
-        Popup hover = hoverPopup();
+        Popup hover = awaitHoverPopup(tr("lsp.problem.severity.error"));
         assertNotNull(hover, "a problem here is something to show");
         assertTrue(popupText(hover).contains(tr("lsp.problem.severity.error") + ": Invalid element name:"));
 
         fx.server().hoverResponse = new Hover(new MarkupContent("markdown", "The `to` element"));
         fx.run(() -> fx.coordinator.showHover());
-        String both = popupText(hoverPopup());
+        String both = popupText(awaitHoverPopup("The"));
         assertTrue(both.contains("The"), "and the documentation: " + both);
         assertTrue(both.indexOf("Invalid element name") < both.indexOf("The"), "the problem first: " + both);
 
