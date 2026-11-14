@@ -288,6 +288,28 @@ final class MapCardLinks {
         /** Answers {@code request} about a file under {@code root} by calling {@code answer} once, on the FX thread. */
         void find(Path root, Request request, Consumer<Answer> answer);
 
+        /**
+         * Whether asking {@code kind} about {@code file} can find anything now — its running server answers it, or
+         * the name is matched in a language with declarations — so a menu offers only what fits the file: a
+         * {@code pom.xml} has no callers. Starts nothing. Every kind by default.
+         */
+        default boolean offers(Path file, Kind kind) {
+            return true;
+        }
+
+        /** Whether Quick Documentation of {@code file} can answer now: its running server documents. Yes by default. */
+        default boolean documents(Path file) {
+            return true;
+        }
+
+        /**
+         * Whether the editor's {@code commandId} (Go to Definition, Call Hierarchy, …) fits {@code file}: what its
+         * running server answers, else whether the editor would have a server or a name match for its language.
+         */
+        default boolean editorOffers(Path file, String commandId) {
+            return true;
+        }
+
         /** Quick Documentation at {@code request}'s place, answered once on the FX thread; none by default. */
         default void hover(Path root, Request request, Consumer<Hover> answer) {
             answer.accept(new Hover(null, tr("project.map.links.hover.noServer"), request.name()));

@@ -318,6 +318,21 @@ final class ProjectMapPreview extends StackPane {
         /** Quick Documentation at the file's 0-based {@code line} and {@code column}. */
         default void hover(ProjectMapPreview card, int line, int column) {}
 
+        /** Whether {@code kind} fits {@code file} now, so the card menu enables it ({@link MapCardLinks.Source#offers}). */
+        default boolean offers(Path file, MapCardLinks.Kind kind) {
+            return true;
+        }
+
+        /** Whether Quick Documentation fits {@code file} now ({@link MapCardLinks.Source#documents}). */
+        default boolean documents(Path file) {
+            return true;
+        }
+
+        /** Whether the editor's {@code commandId} fits {@code file} ({@link MapCardLinks.Source#editorOffers}). */
+        default boolean editorOffers(Path file, String commandId) {
+            return true;
+        }
+
         /**
          * {@code kind}'s hierarchy (Call or Type Hierarchy) of what stands at the file's 0-based {@code line} and
          * {@code column} — with {@code atPlace} false, a declaration card's declaration — as a tree beside the card.
@@ -2833,10 +2848,13 @@ final class ProjectMapPreview extends StackPane {
             items.add(0, openNarrowed);
             items.add(1, new SeparatorMenuItem());
         }
-        java.util.List<MenuItem> links = linkMenuItems();
-        if (!links.isEmpty()) {
+        // The code questions — the common ones first, the rest one submenu away — each enabled only where the file's
+        // language can answer it: a pom.xml has no callers.
+        java.util.List<MenuItem> code = new java.util.ArrayList<>(linkMenuItems());
+        code.addAll(editorFollowItems());
+        if (!code.isEmpty()) {
             items.add(new SeparatorMenuItem());
-            items.addAll(links);
+            items.addAll(code);
         }
         java.util.List<MenuItem> follow = followMenuItems();
         if (!follow.isEmpty()) {
@@ -2860,7 +2878,8 @@ final class ProjectMapPreview extends StackPane {
             note.setOnAction(ignored -> requestNote(actions, selected, draft));
             items.add(note);
         }
-        items.add(new SeparatorMenuItem());
+        // The card itself — its Structure column, its declarations, pinning, placing — in a submenu of its own.
+        java.util.List<MenuItem> card = new java.util.ArrayList<>();
         if (structure.isVisible()) {
             // The keyboard way to the card's Structure column (review 3, D7); Hide takes it off again.
             boolean out = structure.isSelected();
@@ -2879,7 +2898,7 @@ final class ProjectMapPreview extends StackPane {
                     focusStructure();
                 }
             });
-            items.add(column);
+            card.add(column);
             if (shown == null) {
                 // A file card's caret to the declaration before or after it (Alt+Page Up / Alt+Page Down).
                 MenuItem previous =
@@ -2889,8 +2908,8 @@ final class ProjectMapPreview extends StackPane {
                 MenuItem next = new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight());
                 next.setDisable(empty);
                 next.setOnAction(ignored -> stepDeclaration(1));
-                items.add(previous);
-                items.add(next);
+                card.add(previous);
+                card.add(next);
             }
         }
         if (shown != null) {
@@ -2901,30 +2920,58 @@ final class ProjectMapPreview extends StackPane {
             MenuItem next = new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight());
             next.setDisable(!stepForward);
             next.setOnAction(ignored -> stepDeclaration(1));
-            items.add(previous);
-            items.add(next);
+            card.add(previous);
+            card.add(next);
             Runnable inStructure = onShowInStructure;
             if (inStructure != null) {
                 MenuItem showInStructure = new MenuItem(tr("project.map.preview.showInStructure"), Icons.structure());
                 showInStructure.setDisable(symbolMissing);
                 showInStructure.setOnAction(ignored -> inStructure.run());
-                items.add(showInStructure);
+                card.add(showInStructure);
             }
+        }
+        if (!card.isEmpty()) {
+            card.add(new SeparatorMenuItem());
         }
         MenuItem pinItem =
                 new MenuItem(tr(pin.isSelected() ? "project.map.preview.unpin.menu" : "project.map.preview.pin.menu"));
         pinItem.setGraphic(Icons.pin());
         pinItem.setOnAction(ignored -> setPinned(!pin.isSelected()));
-        items.add(pinItem);
+        card.add(pinItem);
         MenuItem freeSpace = new MenuItem(tr("project.map.preview.moveToFreeSpace"));
         freeSpace.setOnAction(ignored -> onMoveToFreeSpace.run());
-        items.add(freeSpace);
+        card.add(freeSpace);
+        items.add(new SeparatorMenuItem());
+        items.add(submenu(tr("project.map.preview.menu.card"), card));
         java.util.List<MenuItem> views = viewsMenu.get();
         if (!views.isEmpty()) {
             items.add(new SeparatorMenuItem());
             items.addAll(views);
         }
         editorContextMenu.getItems().setAll(items);
+    }
+
+    /**
+     * A submenu of {@code items}, disabled when none of them can be chosen — so a group that does not fit the file
+     * (a pom.xml's Hierarchy) says so without being opened.
+     */
+    static javafx.scene.control.Menu submenu(String label, java.util.List<MenuItem> items) {
+        javafx.scene.control.Menu menu = new javafx.scene.control.Menu(label);
+        menu.getItems().setAll(items);
+        menu.setDisable(items.stream().allMatch(item -> item instanceof SeparatorMenuItem || item.isDisable()));
+        return menu;
+    }
+
+    /** {@code items} with every submenu's items in its place, in menu order: what a reader can reach. */
+    static java.util.List<MenuItem> flatten(java.util.List<MenuItem> items) {
+        java.util.List<MenuItem> all = new java.util.ArrayList<>();
+        for (MenuItem item : items) {
+            all.add(item);
+            if (item instanceof javafx.scene.control.Menu menu) {
+                all.addAll(flatten(menu.getItems()));
+            }
+        }
+        return all;
     }
 
     // --- views: trails (Map explore, views group) -------------------------------------------------------------
@@ -3187,7 +3234,39 @@ final class ProjectMapPreview extends StackPane {
         }
     }
 
-    /** The card menu's follow-the-code items (review 3 C12), acting at {@link #followAt}; empty without actions. */
+    /**
+     * The editor's own code navigation on the card's place (review 3 C12), acting at {@link #followAt}: a submenu
+     * when the Map answers the same questions as cards, else the items themselves; empty without actions.
+     */
+    private java.util.List<MenuItem> editorFollowItems() {
+        FollowActions actions = followActions;
+        Path file = path;
+        if (actions == null || file == null || missing) {
+            return java.util.List.of();
+        }
+        boolean text = !symbolMissing && frame.getCenter() == textPane && editor.getLength() > 0;
+        int line = fileLine(followAt[0]);
+        int column = followAt[1];
+        LinkActions links = linkActions;
+        java.util.List<MenuItem> inEditor = new java.util.ArrayList<>();
+        for (String commandId : FOLLOW_COMMANDS) {
+            MenuItem item = new MenuItem(followLabel(commandId));
+            item.setDisable(!text || links != null && !links.editorOffers(file, commandId));
+            item.setOnAction(ignored -> actions.follow(file, line, column, commandId));
+            if (links == null) {
+                // Typed in the card the command does this only when the Map does not answer it as cards itself.
+                MenuChords.tag(item, commandId);
+            }
+            inEditor.add(item);
+        }
+        if (links != null) {
+            // The Map answers them as cards (above): the editor's own run stays one submenu away.
+            return java.util.List.of(submenu(tr("project.map.follow.inEditor"), inEditor));
+        }
+        return inEditor;
+    }
+
+    /** The card menu's file items: Related Test / Subject, its dependencies, and its Git submenu; empty without actions. */
     private java.util.List<MenuItem> followMenuItems() {
         FollowActions actions = followActions;
         Path file = path;
@@ -3195,61 +3274,9 @@ final class ProjectMapPreview extends StackPane {
             return java.util.List.of();
         }
         java.util.List<MenuItem> items = new java.util.ArrayList<>();
-        boolean text = !symbolMissing && frame.getCenter() == textPane && editor.getLength() > 0;
-        int line = fileLine(followAt[0]);
-        int column = followAt[1];
-        java.util.List<MenuItem> inEditor = new java.util.ArrayList<>();
-        for (String commandId : FOLLOW_COMMANDS) {
-            MenuItem item = new MenuItem(followLabel(commandId));
-            item.setDisable(!text);
-            item.setOnAction(ignored -> actions.follow(file, line, column, commandId));
-            if (linkActions == null) {
-                // Typed in the card the command does this only when the Map does not answer it as cards itself.
-                MenuChords.tag(item, commandId);
-            }
-            inEditor.add(item);
-        }
-        if (linkActions != null) {
-            // The Map answers them as cards (above): the editor's own run stays one submenu away.
-            javafx.scene.control.Menu editorMenu = new javafx.scene.control.Menu(tr("project.map.follow.inEditor"));
-            editorMenu.getItems().setAll(inEditor);
-            items.add(editorMenu);
-        } else {
-            items.addAll(inEditor);
-        }
-        items.add(new SeparatorMenuItem());
         MenuItem related = MenuChords.tag(new MenuItem(tr("project.map.follow.related")), RELATED_COMMAND);
         related.setOnAction(ignored -> actions.related(file));
-        MenuItem history =
-                MenuChords.tag(new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog()), "git.fileHistory");
-        history.setOnAction(ignored -> actions.fileHistory(file));
-        // Annotate: the editor's blame, on the card's file — a declaration card's opens at its declaration (position
-        // 9).
-        MenuItem annotate = new MenuItem(tr("project.map.preview.annotate"));
-        Range shown = range;
-        java.util.function.BiConsumer<Path, Integer> openAt = onOpenAt;
-        annotate.setOnAction(ignored -> {
-            if (shown != null && openAt != null && !symbolMissing) {
-                openAt.accept(file, shown.line());
-            }
-            actions.annotate(file);
-        });
         items.add(related);
-        Runnable declarationHistory = onHistory;
-        if (shown != null && declarationHistory != null) {
-            // The declaration's own commits and blame, as a card on the Map beside this one (gap 12).
-            MenuItem lines = new MenuItem(tr("project.map.history.menu"), Icons.gitLog());
-            lines.setDisable(symbolMissing);
-            lines.setOnAction(ignored -> declarationHistory.run());
-            items.add(lines);
-        }
-        items.add(history);
-        items.add(annotate);
-        // The web address of what the card shows, at HEAD: its selected lines, else its declaration, else the caret's.
-        MenuItem permalink = new MenuItem(tr("project.map.permalink.copy"));
-        int[] lines = permalinkLines();
-        permalink.setOnAction(ignored -> actions.copyPermalink(file, lines[0], lines[1]));
-        items.add(permalink);
         Runnable dependencies = onDependencies;
         if (dependencies != null && ProjectMapImports.languageOf(file.toString()) != null) {
             // What uses the file and what it uses, as a card on the Map beside this one (gap 14).
@@ -3257,6 +3284,37 @@ final class ProjectMapPreview extends StackPane {
             uses.setOnAction(ignored -> dependencies.run());
             items.add(uses);
         }
+        java.util.List<MenuItem> git = new java.util.ArrayList<>();
+        Range shown = range;
+        Runnable declarationHistory = onHistory;
+        if (shown != null && declarationHistory != null) {
+            // The declaration's own commits and blame, as a card on the Map beside this one (gap 12).
+            MenuItem lines = new MenuItem(tr("project.map.history.menu"), Icons.gitLog());
+            lines.setDisable(symbolMissing);
+            lines.setOnAction(ignored -> declarationHistory.run());
+            git.add(lines);
+        }
+        MenuItem history =
+                MenuChords.tag(new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog()), "git.fileHistory");
+        history.setOnAction(ignored -> actions.fileHistory(file));
+        git.add(history);
+        // Annotate: the editor's blame, on the card's file — a declaration card's opens at its declaration (position
+        // 9).
+        MenuItem annotate = new MenuItem(tr("project.map.preview.annotate"));
+        java.util.function.BiConsumer<Path, Integer> openAt = onOpenAt;
+        annotate.setOnAction(ignored -> {
+            if (shown != null && openAt != null && !symbolMissing) {
+                openAt.accept(file, shown.line());
+            }
+            actions.annotate(file);
+        });
+        git.add(annotate);
+        // The web address of what the card shows, at HEAD: its selected lines, else its declaration, else the caret's.
+        MenuItem permalink = new MenuItem(tr("project.map.permalink.copy"));
+        int[] lines = permalinkLines();
+        permalink.setOnAction(ignored -> actions.copyPermalink(file, lines[0], lines[1]));
+        git.add(permalink);
+        items.add(submenu(tr("project.map.preview.menu.git"), git));
         return items;
     }
 
@@ -3277,19 +3335,30 @@ final class ProjectMapPreview extends StackPane {
         return new int[] {caret, caret};
     }
 
-    /** Show References as Cards and Show Callers as Cards, at {@link #followAt} (Project Map linked cards). */
+    /**
+     * The Map's code navigation at {@link #followAt} (Project Map linked cards): Go to Definition and Show References
+     * as Cards, a Navigate and a Hierarchy submenu, and Quick Documentation — each enabled only when the file's
+     * language can answer it ({@link LinkActions#offers}).
+     */
     private java.util.List<MenuItem> linkMenuItems() {
         LinkActions actions = linkActions;
-        if (actions == null || path == null || missing) {
+        Path file = path;
+        if (actions == null || file == null || missing) {
             return java.util.List.of();
         }
         boolean text = !symbolMissing && frame.getCenter() == textPane && editor.getLength() > 0;
         int line = fileLine(followAt[0]);
         int column = followAt[1];
-        java.util.List<MenuItem> items = new java.util.ArrayList<>();
+        java.util.Set<MapCardLinks.Kind> offered = java.util.EnumSet.noneOf(MapCardLinks.Kind.class);
+        for (MapCardLinks.Kind kind : MapCardLinks.Kind.values()) {
+            if (text && actions.offers(file, kind)) {
+                offered.add(kind);
+            }
+        }
+        java.util.Map<MapCardLinks.Kind, MenuItem> asCards = new java.util.EnumMap<>(MapCardLinks.Kind.class);
         for (MapCardLinks.Kind kind : MapCardLinks.MENU_KINDS) {
             MenuItem item = new MenuItem(MapCardLinks.menuLabel(kind));
-            item.setDisable(!text);
+            item.setDisable(!offered.contains(kind));
             // References, Callers and Callees of a declaration card are its declaration's (explore position 5); the
             // rest go from where the menu was opened, as the editor's commands do.
             boolean atPlace = kind != MapCardLinks.Kind.REFERENCES
@@ -3302,11 +3371,12 @@ final class ProjectMapPreview extends StackPane {
             if (command != null && (atPlace || range == null)) {
                 MenuChords.tag(item, command);
             }
-            items.add(item);
+            asCards.put(kind, item);
         }
+        java.util.List<MenuItem> trees = new java.util.ArrayList<>();
         for (MapCardLinks.Kind kind : MapCardLinks.HIERARCHY_MENU_KINDS) {
             MenuItem item = new MenuItem(MapCardLinks.hierarchyMenuLabel(kind));
-            item.setDisable(!text);
+            item.setDisable(!offered.contains(kind));
             // A call hierarchy of a declaration card is its declaration's, as its callers are; a type's from the place.
             boolean atPlace = kind != MapCardLinks.Kind.CALLERS;
             item.setOnAction(ignored -> actions.hierarchy(this, kind, line, column, atPlace));
@@ -3314,20 +3384,41 @@ final class ProjectMapPreview extends StackPane {
             if (command != null && (atPlace || range == null)) {
                 MenuChords.tag(item, command);
             }
-            items.add(item);
+            trees.add(item);
         }
         // Its callers, callees, supertypes and subtypes around it, walked as in a code browser (round 2).
         MenuItem graph = new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph());
-        graph.setDisable(!text);
+        graph.setDisable(!(offered.contains(MapCardLinks.Kind.CALLERS)
+                || offered.contains(MapCardLinks.Kind.CALLEES)
+                || offered.contains(MapCardLinks.Kind.SUPERTYPES)
+                || offered.contains(MapCardLinks.Kind.SUBTYPES)));
         graph.setOnAction(ignored -> actions.symbolGraph(this, line, column));
-        items.add(graph);
         MenuItem hover = MenuChords.tag(new MenuItem(tr("project.map.links.hover.show")), "lsp.hover");
-        hover.setDisable(!text);
+        hover.setDisable(!text || !actions.documents(file));
         int[] at = followAt.clone();
         hover.setOnAction(ignored -> {
             moveCaretTo(at[0], at[1]); // the popup stands at the caret: where the menu was opened
             actions.hover(this, line, column);
         });
+
+        java.util.List<MenuItem> items = new java.util.ArrayList<>();
+        items.add(asCards.get(MapCardLinks.Kind.DEFINITION));
+        items.add(asCards.get(MapCardLinks.Kind.REFERENCES));
+        java.util.List<MenuItem> navigate = new java.util.ArrayList<>();
+        java.util.List<MenuItem> hierarchy = new java.util.ArrayList<>();
+        for (MapCardLinks.Kind kind : MapCardLinks.MENU_KINDS) {
+            switch (kind) {
+                case DEFINITION, REFERENCES -> {} // above, on the menu itself
+                case CALLERS, CALLEES, SUPERTYPES, SUBTYPES -> hierarchy.add(asCards.get(kind));
+                default -> navigate.add(asCards.get(kind));
+            }
+        }
+        hierarchy.add(new SeparatorMenuItem());
+        hierarchy.addAll(trees);
+        hierarchy.add(new SeparatorMenuItem());
+        hierarchy.add(graph);
+        items.add(submenu(tr("project.map.preview.menu.navigate"), navigate));
+        items.add(submenu(tr("project.map.preview.menu.hierarchy"), hierarchy));
         items.add(hover);
         return items;
     }

@@ -162,7 +162,7 @@ class MenuBarFxTest {
         assertNotNull(commit, "Git > Commit is present regardless of whether Git is on");
 
         setFlag(s -> s.setGitSupport(false));
-        assertTrue(commit.isDisable(), "with Git off the item is disabled, not hidden");
+        assertTrue(MainMenuBar.showsUnavailable(commit), "with Git off the item is grayed, not hidden");
 
         setFlag(s -> s.setGitSupport(true));
     }

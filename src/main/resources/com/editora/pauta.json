@@ -149,15 +149,7 @@
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-04",
       "kind": "pending",
-      "reason": "A disabled menu row does not say why it is unavailable.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1560"
-    },
-    {
-      "rule": "KBD-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-14",
-      "kind": "pending",
-      "reason": "After a prefix key, nothing lists the keys that can follow.",
+      "reason": "The menu bar and the Command Palette say why a command cannot run, but a grayed row of a right-click menu does not yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1560"
     },
     {

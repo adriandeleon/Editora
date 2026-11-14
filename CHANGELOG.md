@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **After a prefix key, the window lists the keys that can follow.** Press `C-x` in the Emacs keymap (or `Ctrl+K`
+  in the VS Code one) and wait a moment: a card at the bottom of the window lists every key that can come next,
+  with the command it runs, and for a key that leads further, such as `C-x v`, how many commands lie behind it.
+  It follows the keymap in force and your own bindings, flows a long list into columns, and goes away as soon as
+  the sequence runs or is cancelled. It never takes the keyboard: the next key does what it always did, and a
+  sequence typed at speed never shows it.
 - **Step Back and Reverse Continue in the debugger.** Where the program can run backward, the Debug window has Step
   Back (B) and Reverse Continue (Shift+C), also under Run → Stepping. For C and C++ on GDB (Settings → Debugging →
   C and C++ debugger), turn on **Record Execution** at a stop: GDB records the program from there, and Step Back goes
@@ -598,6 +604,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A menu bar row that cannot run says why.** A command with nothing to act on, or whose feature is switched
+  off, stays grayed in its menu as before, but hovering it now shows the reason, the same sentence the Command
+  Palette gives ("the active file is not inside a Git repository"), a screen reader hears it with the row, and
+  choosing it says it in the status bar instead of doing nothing. On macOS, where the menus are the system's,
+  such a row is still only disabled.
 - **Every menu's rows line up like the menu bar's.** Right-click menus and drop-downs drew their rows the
   theme's way, with the glyph 6 px from the title, no column when a row had no glyph, and the keys 14 px after the
   title. Their rows now have the menu bar's layout: a 22 px column for the glyph, kept on a row without one, 8 px

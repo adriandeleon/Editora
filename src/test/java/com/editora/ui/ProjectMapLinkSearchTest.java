@@ -224,4 +224,51 @@ class ProjectMapLinkSearchTest {
         assertNull(hits.getFirst().name());
         assertEquals(4, hits.get(1).column());
     }
+
+    // --- what the card menu offers (only what fits the file) ---------------------------------------------------
+
+    @Test
+    void withoutAServerOnlyWhatANameMatchAnswersIsOfferedAndOnlyForCode() {
+        ProjectMapLinkSearch search = search(listed(false));
+        Path java = root.resolve("src/A.java");
+        for (MapCardLinks.Kind kind : MapCardLinks.Kind.values()) {
+            assertEquals(ProjectMapLinkSearch.byNameKinds(kind), search.offers(java, kind), kind.toString());
+            // A pom.xml has no declarations to match a name against: nothing a name match finds fits it.
+            assertFalse(search.offers(root.resolve("pom.xml"), kind), "pom.xml " + kind);
+        }
+        assertFalse(search.documents(java), "Quick Documentation needs a server");
+        assertTrue(search.editorOffers(java, "lsp.gotoDefinition"), "the editor has the index for Java");
+        assertFalse(search.editorOffers(root.resolve("notes.txt"), "lsp.gotoDefinition"), "nothing for plain text");
+        assertFalse(search.editorOffers(java, "lsp.callHierarchy"), "no server, no call hierarchy");
+    }
+
+    @Test
+    void aServersCapabilitiesSayWhichQuestionsItAnswers() {
+        org.eclipse.lsp4j.ServerCapabilities xml = new org.eclipse.lsp4j.ServerCapabilities();
+        xml.setDefinitionProvider(true);
+        xml.setReferencesProvider(true);
+        xml.setHoverProvider(true);
+        assertTrue(ProjectMapLinkSearch.provides(xml, MapCardLinks.Kind.DEFINITION));
+        assertTrue(ProjectMapLinkSearch.provides(xml, MapCardLinks.Kind.REFERENCES));
+        for (MapCardLinks.Kind kind : List.of(
+                MapCardLinks.Kind.CALLERS,
+                MapCardLinks.Kind.CALLEES,
+                MapCardLinks.Kind.SUPERTYPES,
+                MapCardLinks.Kind.SUBTYPES,
+                MapCardLinks.Kind.IMPLEMENTATIONS,
+                MapCardLinks.Kind.TYPE_DEFINITION,
+                MapCardLinks.Kind.DECLARATION,
+                MapCardLinks.Kind.SUPER_METHOD)) {
+            assertFalse(ProjectMapLinkSearch.provides(xml, kind), kind.toString());
+        }
+        org.eclipse.lsp4j.ServerCapabilities java = new org.eclipse.lsp4j.ServerCapabilities();
+        java.setCallHierarchyProvider(true);
+        java.setTypeHierarchyProvider(org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(
+                new org.eclipse.lsp4j.TypeHierarchyRegistrationOptions()));
+        java.setImplementationProvider(true);
+        assertTrue(ProjectMapLinkSearch.provides(java, MapCardLinks.Kind.CALLEES));
+        assertTrue(ProjectMapLinkSearch.provides(java, MapCardLinks.Kind.SUBTYPES), "options count as yes");
+        assertTrue(ProjectMapLinkSearch.provides(java, MapCardLinks.Kind.IMPLEMENTATIONS));
+        assertFalse(ProjectMapLinkSearch.provides(java, MapCardLinks.Kind.REFERENCES), "not advertised");
+    }
 }
