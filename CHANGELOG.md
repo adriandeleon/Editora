@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **View as Table in the debugger.** Right-click a list, array, slice, set or map in Variables or a watch and choose
+  View as Table: each element is a row and each of its fields a column, as in IntelliJ and Visual Studio. Columns sort
+  (numbers by value), a filter keeps the rows that mention some text, Copy puts the rows on the clipboard ready for a
+  spreadsheet, and Open as CSV opens them in a CSV tab. The table keeps the values of the stop it was opened at;
+  Refresh reads them again at the current stop. Large collections show their first 1,000 elements. Checked with
+  Python, Java and Go.
+
 - **Keyboard Shortcuts in the Help menu.** Help → Keyboard Shortcuts opens the list of every command's keys
   in Settings, where you can search it and change a key. It is in the Command Palette as *Keyboard Shortcuts*.
 - **Focus Menu Bar.** *View: Focus Menu Bar* opens the first menu so the arrow keys can walk the menu bar.

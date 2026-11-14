@@ -1784,6 +1784,28 @@ a breakpoint in the main thread): debugpy and Delve walk every thread at a stop 
 (Delve's goroutines are named `[Go 33] main.work`; the runtime's own parked goroutines stay apart, their stacks
 differ); java-debug at a stop gives the breakpoint's thread alone, and paused for the dump gives every thread, the
 workers merged. `DebugThreadDumpWindowFxTest` covers the window against `FakeDebugAdapter`'s `idleThreads`.
+**View as Table** (the Variables menu on an expandable value — a variable, a watch, the evaluate result; IntelliJ's
+and Visual Studio's table view of a collection) shows a list, array, slice, set or map as a table: a row per element,
+a column per field. [`ui/ValueTable`](../../src/main/java/com/editora/ui/ValueTable.java) (pure) decides what is a row
+and what a column. A debugger lists more than the elements under a collection — debugpy its `special variables`,
+`function variables` and `len()`, Delve a map's `len()`, js-debug an array's `length` and `[[Prototype]]` — so
+`elements` drops those and, when some children are indexes (`0`, `[0]`), keeps only them; `fields` drops the same rows
+under an element; a pointer's fields are a level down, under its one unnamed child (Delve's `*o`), which `pointee`
+finds and the window follows once. `of` lays the columns out: `#` (the index, or a map's key), the element's own value
+when one has no fields, then each field name in the order first seen, at most `MAX_COLUMNS` (60). `compare` sorts
+numbers by value (`[10]` after `[9]`) before text; `csv` and `tsv` write what is shown.
+[`ui/DebugTableWindow`](../../src/main/java/com/editora/ui/DebugTableWindow.java) loads the collection through the
+coordinator's `renderedVariables` (type renderers apply): a collection that reported its size (`indexedVariables`) is
+asked for one page of at most `MAX_ROWS` (1000) — plus its named children, where a map's keys may be — and one that did
+not is asked for everything and cut there; then each element's fields, all at once, the rows filling in as they come
+(the columns are laid out again every 50 rows and at the end, keeping the sort). The note says how many elements there
+are, or which first ones are shown. A filter keeps the rows with the text in a cell; Copy (Ctrl+C) puts the selected
+rows, or all shown, on the clipboard as tab-separated text; Open as CSV opens them in a CSV tab; Refresh evaluates the
+expression again in the shown frame (`watch` context) and loads what it is now, and needs a paused program. The table
+is the stop's: it keeps its values after the program goes on. One window per collection asked for
+(`DebugCoordinator.tableWindows`). `DebugTableWindowFxTest` covers it against `FakeDebugAdapter`;
+`DebugTableProbeFxTest` opens a list of two objects on debugpy (a Python list), java-debug (a `List<Order>`) and Delve
+(a `[]*Order`): two rows, the fields as columns, none of the debuggers' own rows.
 **Core dumps** (`debug.openCoreDump`, Run → Launch after Reattach; GoLand's and CLion's Open Core Dump) open the
 memory of a program that crashed, or that `gcore` dumped, to look at its threads, stacks and variables.
 [`dap/CoreDumps`](../../src/main/java/com/editora/dap/CoreDumps.java) reads a Linux (ELF) core's notes: `NT_FILE`

@@ -2088,6 +2088,8 @@ final class DebugCoordinator {
                 if (threadDumpWindow != null) {
                     threadDumpWindow.sessionChanged(); // Take Again needs a live session
                 }
+                tableWindows.removeIf(w -> !w.isShowing());
+                tableWindows.forEach(DebugTableWindow::sessionChanged); // Refresh needs a paused program
                 if (state != DapManager.State.RUNNING && state != DapManager.State.SUSPENDED) {
                     s().dumpPause = false; // the pause it waited for will not come
                 }
@@ -2584,6 +2586,11 @@ final class DebugCoordinator {
             @Override
             public void customizeRendering(String type, String value) {
                 DebugCoordinator.this.customizeRendering(type, value);
+            }
+
+            @Override
+            public void viewAsTable(String name, String expression, int ref, int named, int indexed) {
+                DebugCoordinator.this.viewAsTable(name, expression, ref, named, indexed);
             }
 
             @Override
@@ -8438,6 +8445,56 @@ final class DebugCoordinator {
 
     /** The Thread Dump window, built on the first dump; one for all sessions, showing the last dump taken. */
     private @Nullable DebugThreadDumpWindow threadDumpWindow;
+
+    /** The View as Table windows open: one per collection asked for. */
+    private final List<DebugTableWindow> tableWindows = new ArrayList<>();
+
+    /**
+     * View as Table: opens a window showing the collection {@code ref} (named {@code name}, given by {@code
+     * expression}) as a table of its elements and their fields ({@link DebugTableWindow}).
+     */
+    void viewAsTable(String name, String expression, int ref, int named, int indexed) {
+        DebugSession session = s();
+        DebugTableWindow window = new DebugTableWindow(new DebugTableWindow.Actions() {
+            @Override
+            public void children(
+                    int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
+                if (session != s()) {
+                    cb.accept(List.of()); // another session is shown: this one's references are not its
+                    return;
+                }
+                renderedVariables(ref, filter, start, count, cb);
+            }
+
+            @Override
+            public void openText(String title, String text, String language) {
+                ops.openReadOnlyDoc(title, text, language);
+            }
+
+            @Override
+            public void evaluate(String expression, Consumer<DapModels.@Nullable EvalResult> cb) {
+                if (!canRefresh()) {
+                    cb.accept(null);
+                    return;
+                }
+                renderedEvaluate(expression, panel().selectedFrameId(), "watch", cb::accept);
+            }
+
+            @Override
+            public boolean canRefresh() {
+                return session == s() && dap().state() == DapManager.State.SUSPENDED;
+            }
+        });
+        tableWindows.removeIf(w -> !w.isShowing());
+        tableWindows.add(window);
+        window.show(host.window(), name, expression, ref, named, indexed);
+    }
+
+    /** The View as Table windows open (tests). */
+    List<DebugTableWindow> tableWindows() {
+        tableWindows.removeIf(w -> !w.isShowing());
+        return List.copyOf(tableWindows);
+    }
 
     /**
      * Debug: Thread Dump ({@code debug.threadDump}): every thread of the program with its call stack, in the Thread
