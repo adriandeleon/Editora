@@ -610,6 +610,13 @@
 .menu-item.danger .menu-item-title {
     -fx-text-fill: -color-danger-fg;
 }
+/* A menu bar row whose command cannot run now (MainMenuBar.showAvailability): grayed as a disabled row is, but
+   still a row, so its tooltip can say why. The palette dims its grayed rows the same way. */
+.menu-item.unavailable .menu-item-icon,
+.menu-item.unavailable .menu-item-title,
+.menu-item.unavailable .menu-item-chord {
+    -fx-opacity: 0.4;
+}
 /* Git remotes / work trees managers (GitManagerOverlay). */
 .git-manager .list-view {
     -fx-pref-height: 220px;
@@ -3863,6 +3870,34 @@
     -fx-font-size: 12px;
     -fx-background-color: -color-bg-overlay;
     -fx-text-fill: -color-fg-default;
+}
+
+/* The keys that can follow a pending prefix (PrefixKeyHint): the palette's card chrome at the bottom of the
+   window, each key in the keyboard's periwinkle beside what it runs. */
+.prefix-key-hint {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 12;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-border-radius: 12;
+    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
+}
+.prefix-key-hint .prefix-key-hint-prefix {
+    -fx-text-fill: -state-key;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+.prefix-key-hint .prefix-key-hint-key {
+    -fx-text-fill: -state-key;
+    -fx-font-size: 12px;
+}
+.prefix-key-hint .prefix-key-hint-title {
+    -fx-text-fill: -color-fg-default;
+    -fx-font-size: 12px;
+}
+.prefix-key-hint .prefix-key-hint-group {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
 }
 
 /* Small "ⓘ" info badge (e.g. next to the Enable-projects setting); hover shows a tooltip. */

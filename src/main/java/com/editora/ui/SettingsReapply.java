@@ -121,6 +121,9 @@ final class SettingsReapply {
         if (w.palette != null) {
             w.palette.refreshBindings();
         }
+        if (w.prefixHint != null) {
+            w.prefixHint.refresh(); // a prefix's keys listed while the keymap switched under it
+        }
         if (w.toolWindows != null) {
             w.toolWindows.refreshTooltips();
         }

@@ -95,6 +95,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The window's menu bar — a browsable map over the command registry (#763). */
     MainMenuBar menuBar;
 
+    /** The keys that can follow a pending multi-key prefix, listed after a moment (KBD-14); null before install. */
+    @Nullable
+    PrefixKeyHint prefixHint;
+
     /** Replaces where the Run Configurations page is opened. Tests only. */
     void setRunConfigEditorForTest(java.util.function.Consumer<String> editor) {
         runConfigurations.runConfigEditor = editor == null ? runConfigurations::openRunConfigEditor : editor;
@@ -405,6 +409,17 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     public void installZenOverlay(StackPane sceneRoot) {
         chrome.installZenOverlay(sceneRoot);
+    }
+
+    /**
+     * Puts the prefix hint into the window's scene-root stack, kept clear of the status bar. The key dispatcher
+     * tells it the pending prefix ({@link #setKeyDispatcher}); see {@link PrefixKeyHint}.
+     */
+    public void installPrefixHint(StackPane sceneRoot) {
+        PrefixKeyHint hint = new PrefixKeyHint(
+                registry, keymap, () -> bottomBox.isVisible() && bottomBox.isManaged() ? bottomBox.getHeight() : 0);
+        hint.install(sceneRoot);
+        prefixHint = hint;
     }
 
     @Override
@@ -857,12 +872,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (reason == null) {
             return jumpPossible(commandId) ? null : tr("status.debug.jumpUnsupported");
         }
-        if (reason.commandArg() == null) {
-            return tr(reason.messageKey());
-        }
-        // The argument is a command id; show its localized title so the tooltip names what the user would
-        // actually type into this very palette.
-        return tr(reason.messageKey(), tr("command." + reason.commandArg()));
+        // A command id in the reason is named by its localized title, so the tooltip names what the user would
+        // actually type into this very palette. The menu bar says the same sentence for the same command.
+        return MainMenuBar.reasonSentence(reason);
     }
 
     /**
@@ -1466,6 +1478,10 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
         toolWindows.setFloatingSceneSetup(dispatcher::install);
+        PrefixKeyHint hint = prefixHint;
+        if (hint != null) {
+            dispatcher.setPrefixListener(hint::prefixChanged); // C-x and a moment: the keys that can follow
+        }
         // Keyboard macros: the coordinator is told what was typed and which keys were left to the focused
         // control while recording, and the dispatcher stands aside for the keys a replay sends.
         if (macroCoordinator != null) {
@@ -2119,6 +2135,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 registry.run(id);
             }
         });
+        menuBar.setOnUnavailable(this::setStatus); // a grayed row chosen says why instead of running (KBD-04)
         // An extended window has no system title bar, so the menu bar takes its place; asking the stage
         // rather than re-reading the setting means the two can never disagree for a window already built.
         topBox.getChildren()

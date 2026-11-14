@@ -261,6 +261,35 @@ forms the sequence (`pending + " " + token` when a prefix is buffered). With `co
 
 `pending` is the **multi-key chord buffer** for Emacs-style sequences (`C-x C-s`).
 
+### The prefix hint (which-key)
+
+Each time `pending` starts, grows or ends, the dispatcher tells its prefix listener
+(`setPrefixListener`): the sequence so far (`C-x`, then `C-x v`), or `""` when it completed, was
+undefined or was cancelled. The window's [`PrefixKeyHint`](../../src/main/java/com/editora/ui/PrefixKeyHint.java)
+listens (wired in `MainController.setKeyDispatcher`) and, after `PrefixKeyHint.DELAY` (600 ms) with the
+prefix still pending, lists every key that can follow — KBD-14 in Pauta 6.0.1:
+
+- **What it lists** comes from `KeymapManager.continuations(prefix, known)`
+  ([`KeymapContinuations`](../../src/main/java/com/editora/command/KeymapContinuations.java), pure): the live
+  bindings, user overrides and plugin chords included, one entry per next key, a key that leads further
+  (`C-x v`) counted rather than expanded, and a key whose command is not registered left out. Keys sort as
+  which-key sorts them, by the key itself with its modifiers ignored, so `f` sits beside `C-f`. Keys are
+  written with `KeymapManager.display`, titles come from the registry (without their category, as the menu
+  bar shows them, unless two would then read the same).
+- **Where**: a node added to the window's scene-root stack (`MainController.installPrefixHint`, from
+  `WindowManager.buildWindow`), at the bottom centre and clear of the status bar. It is mouse-transparent and
+  takes no focus, so the next key reaches the dispatcher's scene filter exactly as it would without it. It is
+  not an `OverlayHost` card: those take the keyboard.
+- **When**: a sequence typed faster than the delay never shows it; a prefix that grows while it shows is
+  listed at once; it goes when the listener hears `""`. The dispatcher has no prefix timeout, so neither does
+  the hint. A keymap switch while it shows lists the new keymap's keys (`SettingsReapply` calls `refresh`).
+- **A long list** flows into columns, top to bottom then left to right, as many as the window is wide enough
+  for, no taller than `MAX_HEIGHT_SHARE` of the window; what still does not fit ends in an "…and N more" cell
+  (`PrefixKeyHint.fit`, pure). The fonts and gaps follow the interface zoom (`app.css` and `UiZoom`).
+- **A screen reader** gets the whole list as the card's accessible text (`keyhint.accessible`), and is
+  notified when it changes. JavaFX has no live region, so whether it is read out unasked depends on the
+  screen reader.
+
 When a press is consumed, `consumedPress` is set so the paired `KEY_TYPED` is swallowed in
 `handleTyped` — this matters when a command opens a modal dialog, whose deferred `KEY_TYPED`
 would otherwise reach the editor after the dialog closes. That is the **only** reason a typed
@@ -551,6 +580,16 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   `setShowDelay`: `TooltipDelayTest` fails on either outside `ControlNames`, and on a tooltip declared in
   FXML. The delay cannot live in the stylesheet: `-fx-show-delay` does not survive the precompiled `.bss`
   form (`StylesheetBinaryTest`).
+- **A menu bar row whose command cannot run stays, grayed, and says why** (KBD-04 in Pauta 6.0.1).
+  `MainMenuBar.refreshEnablement` asks `Chrome.disabledReason` for every row and `MainMenuBar.showAvailability`
+  shows the answer: the row keeps working as a row (a disabled node gets no mouse events, so no tooltip, and
+  the keyboard skips it), carries the `unavailable` style class (dimmed in `app.css`), a tooltip with the
+  sentence the Command Palette shows for the same command (`MainMenuBar.reasonSentence`, which
+  `MainController.disabledCommandReason` also uses), and that sentence in its accessible text. Choosing it says
+  the reason in the status bar (`status.commandUnavailable`) instead of running. On the macOS system menu bar
+  a row is a plain item AppKit draws, so there it is only disabled. Tests ask `MainMenuBar.showsUnavailable`,
+  which holds for either drawing. Right-click menu rows are disabled by their own code for reasons of their
+  own (no selection, nothing to undo, the first tab) and do not yet say why.
 - **A main toolbar button is disabled while its command cannot act.** `WindowToolbar.refreshCommandState`
   gives every toolbar button, one added from the catalog included (`track`), the answer the menus and the
   palette give for its command (`Chrome.paletteEnabled`); `MainController.refreshMenuEnablement` pushes both

@@ -69,6 +69,18 @@ public class KeyDispatcher {
         this.statusListener = statusListener != null ? statusListener : s -> {};
     }
 
+    /**
+     * Told the pending multi-key prefix each time it changes: the sequence typed so far ({@code C-x},
+     * {@code C-x v}) when a prefix starts or grows, and {@code ""} when it ends, because the sequence completed,
+     * was undefined or was cancelled. The window's prefix hint listens here (KBD-14 in Pauta 6.0.1).
+     */
+    private Consumer<String> prefixListener = sequence -> {};
+
+    /** Sets the listener {@link #prefixListener} describes; null clears it. */
+    public void setPrefixListener(@Nullable Consumer<String> listener) {
+        this.prefixListener = listener != null ? listener : sequence -> {};
+    }
+
     /** Installs a first-look hook (see {@link #preDispatch}); may be null to clear. */
     public void setPreDispatch(java.util.function.BiPredicate<String, EventTarget> hook) {
         this.preDispatch = hook;
@@ -428,6 +440,7 @@ public class KeyDispatcher {
             consumedPress = true;
             pending = sequence;
             statusListener.accept(keymap.display(sequence) + " -");
+            prefixListener.accept(sequence);
             return;
         }
 
@@ -781,6 +794,7 @@ public class KeyDispatcher {
     private void reset() {
         if (!pending.isEmpty()) {
             pending = "";
+            prefixListener.accept("");
         }
     }
 

@@ -190,6 +190,16 @@ public class KeymapManager {
     }
 
     /**
+     * The keys that can follow {@code prefix} in the bindings as they stand now, the user's own included, for
+     * the prefix hint (see {@link KeymapContinuations#after}). Read afresh on every call, so a keymap switch or a
+     * rebinding shows the next time it is asked.
+     */
+    public java.util.List<KeymapContinuations.Continuation> continuations(
+            String prefix, java.util.function.Predicate<String> known) {
+        return KeymapContinuations.after(bindings, prefix, known);
+    }
+
+    /**
      * A snapshot of the current bindings in keymap order — the file's order, then overrides in the order
      * they were applied. The order is part of the contract: "the first chord bound to a command" must mean
      * the same chord on every launch, which {@code Map.copyOf} (unspecified iteration order) did not give.

@@ -183,7 +183,7 @@ final class MainMenuBar {
                 continue;
             }
             Row row = newRow(entry);
-            row.item().setOnAction(e -> run.accept(entry));
+            row.item().setOnAction(e -> choose(entry));
             items.put(entry, row);
             group.add(row);
             menu.getItems().add(row.item());
@@ -286,12 +286,15 @@ final class MainMenuBar {
         // hug its content and every chord would sit at a different x.
         box.setMaxWidth(Double.MAX_VALUE);
         // A row drawn from nodes has no text of its own: a screen reader reads a CustomMenuItem from its
-        // content's accessible text, so the row says its title and its chord, and follows both.
+        // content's accessible text, so the row says its title and its chord, and follows both. A row whose
+        // command cannot run says why there too (showAvailability puts the reason in the accessible help):
+        // JavaFX reads a menu row's text from its content, but not the content's help.
         box.accessibleTextProperty()
                 .bind(javafx.beans.binding.Bindings.createStringBinding(
-                        () -> accessibleRowText(title.getText(), chord.getText()),
+                        () -> accessibleRowText(title.getText(), chord.getText(), box.getAccessibleHelp()),
                         title.textProperty(),
-                        chord.textProperty()));
+                        chord.textProperty(),
+                        box.accessibleHelpProperty()));
         return box;
     }
 
@@ -299,6 +302,15 @@ final class MainMenuBar {
     static String accessibleRowText(@Nullable String title, @Nullable String chord) {
         String name = title == null ? "" : title;
         return chord == null || chord.isBlank() ? name : name + ", " + chord;
+    }
+
+    /**
+     * What a screen reader says for a row that may not run now: its title and chord, then why it cannot, as the
+     * Command Palette says it for its grayed rows. Pure.
+     */
+    static String accessibleRowText(@Nullable String title, @Nullable String chord, @Nullable String reason) {
+        String spoken = accessibleRowText(title, chord);
+        return reason == null || reason.isBlank() ? spoken : spoken + ". " + reason;
     }
 
     /**
@@ -425,17 +437,107 @@ final class MainMenuBar {
      * stayed that way until some unrelated settings apply happened to call {@link #refresh()}. The status bar
      * beside it showed the branch the whole time.
      *
-     * <p>A command whose feature is switched off, or that has nothing to act on, is shown disabled rather
+     * <p>A command whose feature is switched off, or that has nothing to act on, is shown grayed rather
      * than hidden: the point of a menu is to be a stable map, and an entry that vanishes teaches nothing
-     * about why.
+     * about why. It also says why, with the sentence the Command Palette shows for the same command
+     * ({@link #showAvailability}, KBD-04 in Pauta 6.0.1). The sentences are made once per reason per pass:
+     * a feature switched off grays a whole menu with one.
      */
     void refreshEnablement() {
         Chrome.PaletteGates g = gates.get();
         Chrome.PaletteContext ctx = context.get();
+        Map<Chrome.DisabledReason, String> sentences = new java.util.HashMap<>();
         for (Map.Entry<String, Row> e : items.entrySet()) {
-            e.getValue().item().setDisable(!Chrome.paletteEnabled(e.getKey(), g, ctx));
+            Chrome.DisabledReason reason = Chrome.disabledReason(e.getKey(), g, ctx);
+            showAvailability(
+                    e.getValue().item(),
+                    reason == null ? null : sentences.computeIfAbsent(reason, MainMenuBar::reasonSentence));
             showCheck(e.getKey(), e.getValue());
         }
+    }
+
+    /**
+     * The sentence that says why a command cannot run, as the Command Palette, the menu bar and the status bar
+     * show it: the reason's message, naming by its localized title the command that would switch a feature back
+     * on.
+     */
+    static String reasonSentence(Chrome.DisabledReason reason) {
+        String commandArg = reason.commandArg();
+        return commandArg == null ? tr(reason.messageKey()) : tr(reason.messageKey(), tr("command." + commandArg));
+    }
+
+    /** Where a row that cannot run says why when it is chosen: the window's status bar. */
+    private Consumer<String> sayUnavailable = message -> {};
+
+    /** Sets where a row that cannot run says why when it is chosen (the status bar). */
+    void setOnUnavailable(Consumer<String> say) {
+        this.sayUnavailable = say;
+    }
+
+    /**
+     * Runs the command of a chosen row, or, when it cannot run now, says why in the status bar instead. The
+     * answer is taken afresh: the state may have moved since the menu opened.
+     */
+    private void choose(String id) {
+        Chrome.DisabledReason reason = Chrome.disabledReason(id, gates.get(), context.get());
+        if (reason == null) {
+            run.accept(id);
+            return;
+        }
+        String title = registry.get(id).map(Command::title).orElse(id);
+        sayUnavailable.accept(tr("status.commandUnavailable", title, reasonSentence(reason)));
+    }
+
+    /** The style class of a row whose command cannot run now: grayed, but still a row (app.css). */
+    static final String UNAVAILABLE = "unavailable";
+
+    /** The content property that holds the tooltip {@link #showAvailability} installed, so it can be taken off. */
+    private static final String REASON_TIP = MainMenuBar.class.getName() + ".reasonTip";
+
+    /**
+     * Shows whether a row's command can run now (KBD-04 in Pauta 6.0.1). A row that cannot stays in its menu,
+     * grayed, and keeps working as a row: its tooltip says why, a screen reader hears why, and choosing it says
+     * why in the status bar ({@link #choose}) instead of running. A disabled row could do none of that: JavaFX
+     * gives a disabled node no mouse events, so no tooltip, and the keyboard skips it.
+     *
+     * <p>On the macOS system menu bar a row is a plain item that AppKit draws, with no node to carry a tooltip,
+     * so there it can only be disabled.
+     */
+    static void showAvailability(MenuItem item, @Nullable String reason) {
+        if (!(item instanceof CustomMenuItem custom)) {
+            item.setDisable(reason != null);
+            return;
+        }
+        item.setDisable(false);
+        Node content = custom.getContent();
+        Object shown = content.getProperties().get(REASON_TIP);
+        if (shown instanceof javafx.scene.control.Tooltip tip && tip.getText().equals(reason)) {
+            return; // the same reason as the last pass: no new tooltip on every menu open
+        }
+        if (shown instanceof javafx.scene.control.Tooltip tip) {
+            javafx.scene.control.Tooltip.uninstall(content, tip);
+            content.getProperties().remove(REASON_TIP);
+        }
+        item.getStyleClass().remove(UNAVAILABLE);
+        content.setAccessibleHelp(reason);
+        if (reason == null) {
+            return;
+        }
+        item.getStyleClass().add(UNAVAILABLE);
+        javafx.scene.control.Tooltip tip = com.editora.editor.ControlNames.tooltip(reason);
+        tip.setWrapText(true);
+        tip.setMaxWidth(UiZoom.px(380));
+        tip.getStyleClass().add("palette-disabled-tooltip"); // the palette's grayed rows explain themselves alike
+        javafx.scene.control.Tooltip.install(content, tip);
+        content.getProperties().put(REASON_TIP, tip);
+    }
+
+    /**
+     * Whether a row shows its command as unable to run: grayed with a reason in the window, disabled on the macOS
+     * system menu bar. What a test asks of a row, whichever way it is drawn.
+     */
+    static boolean showsUnavailable(MenuItem item) {
+        return item.isDisable() || item.getStyleClass().contains(UNAVAILABLE);
     }
 
     /** Each row's title as {@link #refresh} chose it: without its category prefix unless another row's would match. */
