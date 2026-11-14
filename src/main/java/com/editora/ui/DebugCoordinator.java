@@ -2082,6 +2082,7 @@ final class DebugCoordinator {
                                                             ? "status.debug.cannotRestartSubprocess"
                                                             : "status.debug.cannotRestartAttached"));
                     panel().setPostMortem(dap().isPostMortem());
+                    panel().setBackward(dap().isGdbSession(), dap().isRecording(), dap().canRunBackward());
                     panel().setState(state);
                 }
                 evaluateWindows.forEach(DebugEvaluateWindow::sessionChanged); // their results were that stop's
@@ -2670,6 +2671,21 @@ final class DebugCoordinator {
             @Override
             public void parallelStacks() {
                 DebugCoordinator.this.parallelStacks();
+            }
+
+            @Override
+            public void stepBack() {
+                DebugCoordinator.this.stepBack();
+            }
+
+            @Override
+            public void reverseContinue() {
+                DebugCoordinator.this.reverseContinue();
+            }
+
+            @Override
+            public void toggleRecording() {
+                DebugCoordinator.this.toggleRecording();
             }
 
             @Override
@@ -8521,6 +8537,31 @@ final class DebugCoordinator {
      */
     void parallelStacks() {
         takeStacks(true);
+    }
+
+    /**
+     * Debug: Step Back ({@code debug.stepBack}): the program goes back over the last statement — where it can run
+     * backward: an adapter on rr (Delve, CodeLLDB), or GDB recording it (Record Execution). Else it says how.
+     */
+    void stepBack() {
+        dap().stepBack();
+    }
+
+    /** Debug: Reverse Continue ({@code debug.reverseContinue}): back to the previous breakpoint, or the record's start. */
+    void reverseContinue() {
+        dap().reverseContinue();
+    }
+
+    /**
+     * Debug: Record Execution ({@code debug.toggleRecording}), in a GDB session paused at a stop: GDB records the
+     * program from here so Step Back and Reverse Continue can go back over it; again, it stops recording.
+     */
+    void toggleRecording() {
+        DapManager manager = dap();
+        manager.toggleRecording(failure -> host.setStatus(
+                failure != null
+                        ? tr("status.debug.recordFailed", failure)
+                        : tr(manager.isRecording() ? "status.debug.recordingOn" : "status.debug.recordingOff")));
     }
 
     /** Takes every thread's stack for Parallel Stacks ({@code parallel}) or Thread Dump. */

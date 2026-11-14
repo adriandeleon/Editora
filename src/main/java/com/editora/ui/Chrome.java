@@ -332,7 +332,55 @@ final class Chrome {
             boolean projectMap,
             boolean terminalOpen,
             boolean debugRunning,
-            boolean debugPostMortem) {
+            boolean debugPostMortem,
+            boolean debugBackward,
+            boolean debugRecordable) {
+
+        /**
+         * A context whose session cannot run backward nor record: the neutral value for callers that are not asking
+         * about Step Back or Record Execution.
+         */
+        PaletteContext(
+                boolean hasBuffer,
+                boolean inRepo,
+                boolean markdownLike,
+                boolean csvFile,
+                boolean httpFile,
+                boolean typstFile,
+                boolean hasPreview,
+                boolean debugActive,
+                boolean debugSuspended,
+                boolean debugRestartable,
+                boolean gitOperation,
+                boolean exportablePreview,
+                boolean printableTab,
+                boolean selection,
+                boolean projectMap,
+                boolean terminalOpen,
+                boolean debugRunning,
+                boolean debugPostMortem) {
+            this(
+                    hasBuffer,
+                    inRepo,
+                    markdownLike,
+                    csvFile,
+                    httpFile,
+                    typstFile,
+                    hasPreview,
+                    debugActive,
+                    debugSuspended,
+                    debugRestartable,
+                    gitOperation,
+                    exportablePreview,
+                    printableTab,
+                    selection,
+                    projectMap,
+                    terminalOpen,
+                    debugRunning,
+                    debugPostMortem,
+                    false,
+                    false);
+        }
 
         /**
          * A context whose session, if any, runs a program rather than showing a core dump: the neutral value for
@@ -657,7 +705,9 @@ final class Chrome {
             "debug.forceRunToCursor",
             "debug.jumpToLine",
             "debug.smartStepInto",
-            "debug.restartFrame");
+            "debug.restartFrame",
+            "debug.stepBack",
+            "debug.reverseContinue");
 
     /** Debug commands that only mean anything while a thread is suspended at a stop. */
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
@@ -675,7 +725,10 @@ final class Chrome {
             "debug.setValue",
             "debug.showValue",
             "debug.smartStepInto",
-            "debug.restartFrame");
+            "debug.restartFrame",
+            "debug.stepBack",
+            "debug.reverseContinue",
+            "debug.toggleRecording");
 
     /**
      * Why {@code id} has nothing to act on, or null when it does. See {@link PaletteContext} for why this
@@ -721,6 +774,14 @@ final class Chrome {
         }
         if (c.debugPostMortem() && DEBUG_RUNS_PROGRAM.contains(id)) {
             return new DisabledReason("status.debug.coreCannotRun", null);
+        }
+        if ((id.equals("debug.stepBack") || id.equals("debug.reverseContinue"))
+                && c.debugSuspended()
+                && !c.debugBackward()) {
+            return new DisabledReason("palette.disabled.needsBackward", null);
+        }
+        if (id.equals("debug.toggleRecording") && c.debugSuspended() && !c.debugRecordable()) {
+            return new DisabledReason("palette.disabled.needsGdbSession", null);
         }
         if (DEBUG_NEEDS_SUSPENDED.contains(id)) {
             return c.debugSuspended() ? null : new DisabledReason("palette.disabled.needsSuspended", null);

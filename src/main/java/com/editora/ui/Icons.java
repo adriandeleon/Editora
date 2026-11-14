@@ -424,6 +424,22 @@ final class Icons {
         return of("M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z");
     }
 
+    /** Debug "step back" — a backward arc arrow (Material "undo"), Step Over's mirror. */
+    static Node debugStepBack() {
+        return of("M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 "
+                + "2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z");
+    }
+
+    /** Debug "reverse continue" — a play triangle pointing back, against a bar (Material "skip_previous"). */
+    static Node debugReverseContinue() {
+        return of("M6 6h2v12H6zm3.5 6 8.5 6V6z");
+    }
+
+    /** Debug "record execution" — a filled circle (Material "fiber_manual_record"). */
+    static Node debugRecord() {
+        return of("M12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12z");
+    }
+
     /** Debug "step out" — an upward arrow (Material "arrow_upward"). */
     static Node debugStepOut() {
         return of("M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z");

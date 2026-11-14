@@ -206,6 +206,12 @@ public final class DapManager {
     /** The session opened a core dump ({@link CoreDumps}): it is looked at, never run. */
     private volatile boolean postMortem;
 
+    /**
+     * GDB records the program's run ({@code record full}): it can go back over what it recorded. Only a GDB session
+     * records; a new session starts without.
+     */
+    private volatile boolean recording;
+
     private volatile @Nullable Future<?> startupTask;
     private final Object sessionLock = new Object();
     private State state = State.INACTIVE;
@@ -5568,6 +5574,7 @@ public final class DapManager {
     private long beginSession() {
         jsNoise = new JsLaunch.InspectorNoise();
         postMortem = false;
+        recording = false;
         Future<?> startup = startupTask;
         startupTask = null;
         if (startup != null) {
@@ -5957,6 +5964,92 @@ public final class DapManager {
      */
     public void restartFrame(int frameId) {
         step((c, threadId) -> c.restartFrame(frameId));
+    }
+
+    // --- running backward ------------------------------------------------------------------------------------
+
+    /** Whether the session is on GDB ({@code gdb -i dap}), which can record the program to go back over it. */
+    public boolean isGdbSession() {
+        return client != null
+                && state != State.INACTIVE
+                && DebugLanguages.GDB.id().equals(sessionLanguage);
+    }
+
+    /** Whether GDB is recording the program (Record Execution). */
+    public boolean isRecording() {
+        return recording && isGdbSession();
+    }
+
+    /**
+     * Whether the program can run backward now: its adapter steps back (Delve on rr, CodeLLDB on rr), or GDB is
+     * recording it. A core dump's session never runs.
+     */
+    public boolean canRunBackward() {
+        DapClient c = client;
+        return c != null && !isPostMortem() && (c.supportsStepBack() || isRecording());
+    }
+
+    /**
+     * Record Execution, for a GDB session paused at a stop: GDB records every instruction from here ({@code record
+     * full}), so Step Back and Reverse Continue can go back over them; again, it stops recording and forgets them.
+     * {@code done} gets null when it worked, else what GDB said.
+     */
+    public void toggleRecording(Consumer<@Nullable String> done) {
+        DapClient c = client;
+        if (c == null || !isGdbSession() || state != State.SUSPENDED) {
+            done.accept(tr("status.debug.recordNeedsGdbStop"));
+            return;
+        }
+        boolean start = !recording;
+        long epoch = sessionEpoch;
+        c.consoleCommand(start ? "record full" : "record stop")
+                .whenComplete((v, e) -> fx(() -> {
+                    if (!isCurrent(epoch, c)) {
+                        return;
+                    }
+                    if (e != null) {
+                        done.accept(msg(
+                                e instanceof java.util.concurrent.CompletionException && e.getCause() != null
+                                        ? e.getCause()
+                                        : e));
+                        return;
+                    }
+                    recording = start;
+                    listener.onState(state); // the controls that run backward appear (or go)
+                    done.accept(null);
+                }));
+    }
+
+    /** Step Back: back over the last statement — the adapter's {@code stepBack}, or GDB's {@code reverse-next}. */
+    public void stepBack() {
+        backward(DapClient::stepBack, "reverse-next");
+    }
+
+    /** Reverse Continue: back to the previous breakpoint, or as far as the recording goes. */
+    public void reverseContinue() {
+        backward(DapClient::reverseContinue, "reverse-continue");
+    }
+
+    private void backward(
+            java.util.function.BiFunction<DapClient, Integer, java.util.concurrent.CompletableFuture<Void>> request,
+            String gdbCommand) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED) {
+            return;
+        }
+        if (refusePostMortem()) {
+            return;
+        }
+        if (!canRunBackward()) {
+            listener.onStatus(tr(isGdbSession() ? "status.debug.recordFirst" : "status.debug.cannotRunBackward"));
+            return;
+        }
+        if (c.supportsStepBack()) {
+            step(request);
+        } else {
+            // GDB's DAP mode has no stepBack request: its own command, through its console, stops as a step does.
+            step((client, threadId) -> client.consoleCommand(gdbCommand).thenApply(r -> null));
+        }
     }
 
     /** Whether the session's adapter can list the calls on a line ({@code stepInTargets}). */

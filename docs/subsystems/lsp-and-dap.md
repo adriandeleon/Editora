@@ -1784,6 +1784,26 @@ a breakpoint in the main thread): debugpy and Delve walk every thread at a stop 
 (Delve's goroutines are named `[Go 33] main.work`; the runtime's own parked goroutines stay apart, their stacks
 differ); java-debug at a stop gives the breakpoint's thread alone, and paused for the dump gives every thread, the
 workers merged. `DebugThreadDumpWindowFxTest` covers the window against `FakeDebugAdapter`'s `idleThreads`.
+**Step Back and Reverse Continue** (`debug.stepBack`, `debug.reverseContinue`; the Debug window's B and Shift+C;
+Run → Stepping) run the program backward where its debugger can, and `debug.toggleRecording` (**Record Execution**)
+makes GDB able to. `DapClient.supportsStepBack` is the adapter's `supportsStepBack` — from `initialize`, or from a
+later `capabilities` event (`DapClient.capabilities`), which is how Delve says it once its launch is on rr — and
+`stepBack` / `reverseContinue` send those requests. GDB's DAP mode (`DebugLanguages.GDB`, GDB 16 here) has neither
+request nor capability, but its own recorder works through its console: `DapManager.toggleRecording` sends `record
+full` (again: `record stop`) with `DapClient.consoleCommand` — `evaluate` in the `repl` context with no frame — and,
+while it records (`isRecording`), Step Back and Reverse Continue send `reverse-next` and `reverse-continue` the same
+way. GDB answers them with ordinary `stopped` events carrying the values as they were, so the stop is shown like any
+other. Both go through `DapManager.step`, so a backward step is refused while an evaluation runs, and a core dump's
+session refuses them (`DEBUG_RUNS_PROGRAM`). `canRunBackward` (the adapter steps back, or GDB records) decides the
+Debug window's two buttons (`DebugPanel.setBackward`, shown in a session that can have them: GDB's, or an adapter that
+steps back) and the palette (`PaletteContext.debugBackward`, `palette.disabled.needsBackward`); Record Execution's
+toggle shows in a GDB session only (`debugRecordable`), and the state line says *recording* while GDB records.
+Measured on GDB 16.3: recording a loop, three Step Overs and a Step Back put the line and the total back as they were,
+and Reverse Continue went back to where recording began; GDB's recorder handles glibc's AVX `memset`/`memcpy` and keeps
+200,000 instructions by default. Recording slows the program a great deal, so it is turned on at a stop, not at launch.
+rr (Delve's `backend: "rr"`, CodeLLDB's `reverseDebugging`) is not wired yet: it needs `rr` installed and
+`kernel.perf_event_paranoid` at 1 or less. `StepBackWindowFxTest` covers it against `FakeDebugAdapter` (`stepBack`,
+`announceStepBack`, a stand-in `gdb`); `StepBackProbeFxTest` drives the real GDB.
 **Parallel Stacks** (`debug.parallelStacks`, beside Thread Dump in Run → Debugger and the Threads view's and call
 stack's menus; Visual Studio's Parallel Stacks window) draws every thread's stack as one tree. The stacks are taken as
 Thread Dump takes them (`DebugCoordinator.takeStacks`; `DebugSession.dumpForParallel` says which window they are for):

@@ -2254,6 +2254,17 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::threadDump)));
         host.registry()
                 .register(Command.of(
+                        "debug.stepBack", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepBack)));
+        host.registry()
+                .register(Command.of(
+                        "debug.reverseContinue",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::reverseContinue)));
+        host.registry()
+                .register(Command.of(
+                        "debug.toggleRecording",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleRecording)));
+        host.registry()
+                .register(Command.of(
                         "debug.parallelStacks",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::parallelStacks)));
         host.registry()
