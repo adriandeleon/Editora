@@ -489,22 +489,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {
-      "rule": "FIND-04",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-04",
-      "kind": "pending",
-      "reason": "The find bars of consoles and of the Debug Log open from the Find key in the view, not from a command of their own in the Command Palette.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
-      "rule": "FIND-05",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/find-bar/#find-05",
-      "kind": "pending",
-      "reason": "The find bars of consoles and of Project Map cards highlight only the current match.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1576"
-    },
-    {
       "rule": "REL-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/release/#rel-04",

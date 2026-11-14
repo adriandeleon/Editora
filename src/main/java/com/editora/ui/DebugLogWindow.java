@@ -146,6 +146,21 @@ public final class DebugLogWindow {
         return stage;
     }
 
+    /** Shows the log and opens its find bar, or steps to the next match when the bar is open ({@code debugLog.find}). */
+    public void find(Window owner) {
+        Stage s = stage;
+        if (s == null || !s.isShowing()) {
+            show(owner);
+        } else {
+            s.toFront();
+        }
+        ConsoleFindBar bar = findBar;
+        TextArea text = area;
+        if (bar != null && text != null) {
+            bar.openOrNext(text.getSelectedText());
+        }
+    }
+
     private void refresh() {
         TextArea area = this.area;
         Label fileLabel = this.fileLabel;

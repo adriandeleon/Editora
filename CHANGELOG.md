@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on the clipboard as text. A running program is paused for a moment and goes on, as with Thread Dump. It is in Run →
   Debugger and in the Threads view's and call stack's menus. Checked with Python, Java and Go.
 
+- **A find command for each console.** *Output: Find*, *Run: Find in Output*, *External Tools: Find in
+  Output*, *Debug: Find in Console*, *Find in Test Output* and *Application Log: Find* are in the Command
+  Palette and can be given a key under Settings → Keymaps. Each shows its panel and opens the find bar, and
+  run again it goes to the next match. The Find key pressed inside a console still works as before.
 - **View as Table in the debugger.** Right-click a list, array, slice, set or map in Variables or a watch and choose
   View as Table: each element is a row and each of its fields a column, as in IntelliJ and Visual Studio. Columns sort
   (numbers by value), a filter keeps the rows that mention some text, Copy puts the rows on the clipboard ready for a
@@ -568,6 +572,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Find in a console or a Project Map card highlights every match.** Only the current match was selected;
+  now all of them are highlighted while the find bar is open, the current one more strongly, as in the
+  editor. Output that arrives while the bar is open is highlighted and counted too.
 - **A problem report says how Editora is set up.** Help → Report a Problem and `editora --report` now end
   the system details with one line of settings: the theme, the language, the keymap, the interface zoom, and
   which features are on (language servers, debugging, Git, plugins, AI and so on). It holds no path, address
