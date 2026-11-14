@@ -537,6 +537,72 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         };
     }
 
+    @Override
+    public boolean offers(Path file, MapCardLinks.Kind kind) {
+        LspManager servers = lsp;
+        org.eclipse.lsp4j.ServerCapabilities caps = servers == null ? null : servers.runningCapabilities(file);
+        if (servers != null && caps != null) {
+            // Go to Super Method is jdtls's own command, not a capability it advertises.
+            boolean answered =
+                    kind == MapCardLinks.Kind.SUPER_METHOD ? servers.supportsSuperMethod(file) : provides(caps, kind);
+            if (answered) {
+                return true;
+            }
+        }
+        // What the server does not answer is matched by name (see located), where the language has declarations.
+        return byNameKinds(kind) && com.editora.index.DeclarationScanner.supports(languageOf(file));
+    }
+
+    @Override
+    public boolean documents(Path file) {
+        LspManager servers = lsp;
+        org.eclipse.lsp4j.ServerCapabilities caps = servers == null ? null : servers.runningCapabilities(file);
+        return caps != null && on(caps.getHoverProvider());
+    }
+
+    @Override
+    public boolean editorOffers(Path file, String commandId) {
+        LspManager servers = lsp;
+        org.eclipse.lsp4j.ServerCapabilities caps = servers == null ? null : servers.runningCapabilities(file);
+        if (caps != null) {
+            return switch (commandId) {
+                case "lsp.findReferences" -> on(caps.getReferencesProvider());
+                case "lsp.gotoImplementation" -> on(caps.getImplementationProvider());
+                case "lsp.typeHierarchy" -> on(caps.getTypeHierarchyProvider());
+                case "lsp.callHierarchy" -> on(caps.getCallHierarchyProvider());
+                default -> true;
+            };
+        }
+        // No server runs for it yet: the editor starts its language's own, if it has one; Go to Definition and
+        // Find References also have the index for a language with declarations.
+        String language = languageOf(file);
+        boolean server = servers != null
+                && servers.isEnabled()
+                && com.editora.lsp.LspServerRegistry.serverIdFor(language) != null;
+        boolean byName = ("lsp.gotoDefinition".equals(commandId) || "lsp.findReferences".equals(commandId))
+                && com.editora.index.DeclarationScanner.supports(language);
+        return server || byName;
+    }
+
+    /** Whether a server of {@code caps} answers {@code kind} (a definition: every server does). Pure. */
+    static boolean provides(org.eclipse.lsp4j.ServerCapabilities caps, MapCardLinks.Kind kind) {
+        return switch (kind) {
+            case REFERENCES -> on(caps.getReferencesProvider());
+            case CALLERS, CALLEES -> on(caps.getCallHierarchyProvider());
+            case DEFINITION -> true;
+            case DECLARATION -> on(caps.getDeclarationProvider());
+            case TYPE_DEFINITION -> on(caps.getTypeDefinitionProvider());
+            case IMPLEMENTATIONS -> on(caps.getImplementationProvider());
+            case SUPER_METHOD -> false; // jdtls's own command: asked of the manager
+            case SUPERTYPES, SUBTYPES -> on(caps.getTypeHierarchyProvider());
+        };
+    }
+
+    /** An LSP capability that is either {@code true} or options. */
+    private static boolean on(org.eclipse.lsp4j.jsonrpc.messages.@Nullable Either<Boolean, ?> capability) {
+        return capability != null && (capability.isRight() || Boolean.TRUE.equals(capability.getLeft()));
+    }
+
     /** The name matched as a whole word in the project's files of {@code language}, off the FX thread. */
     private void byName(
             Path root, MapCardLinks.Request at, String language, String note, Consumer<MapCardLinks.Answer> answer) {

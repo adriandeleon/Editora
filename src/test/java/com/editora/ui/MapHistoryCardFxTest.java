@@ -645,7 +645,7 @@ class MapHistoryCardFxTest {
     }
 
     private static MenuItem menuItem(ContextMenu menu, String text) {
-        for (MenuItem item : menu.getItems()) {
+        for (MenuItem item : ProjectMapPreview.flatten(menu.getItems())) { // submenus' items too (the Git one)
             if (text.equals(item.getText())) {
                 return item;
             }

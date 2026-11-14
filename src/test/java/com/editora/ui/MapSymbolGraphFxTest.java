@@ -263,7 +263,7 @@ class MapSymbolGraphFxTest {
             FxTestSupport.runOnFx(() -> {
                 @SuppressWarnings("unchecked")
                 List<MenuItem> items = (List<MenuItem>) FxTestSupport.call(card, "linkMenuItems", new Class<?>[0]);
-                MenuItem graph = items.stream()
+                MenuItem graph = ProjectMapPreview.flatten(items).stream() // in the Hierarchy submenu
                         .filter(item -> tr("project.map.graph.menu").equals(item.getText()))
                         .findFirst()
                         .orElseThrow();

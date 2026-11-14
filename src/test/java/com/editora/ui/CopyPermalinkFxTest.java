@@ -188,7 +188,8 @@ class CopyPermalinkFxTest {
 
     private static MenuItem menuItem(ProjectMapPreview card, String text) {
         @SuppressWarnings("unchecked")
-        List<MenuItem> items = (List<MenuItem>) FxTestSupport.call(card, "followMenuItems", new Class<?>[0]);
+        List<MenuItem> items = ProjectMapPreview.flatten(
+                (List<MenuItem>) FxTestSupport.call(card, "followMenuItems", new Class<?>[0]));
         return items.stream()
                 .filter(item -> text.equals(item.getText()))
                 .findFirst()

@@ -209,7 +209,7 @@ class ProjectMapCardsReview3FxTest {
 
             FxTestSupport.call(card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
             javafx.scene.control.ContextMenu menu = FxTestSupport.field(card, "editorContextMenu");
-            javafx.scene.control.MenuItem hide = menu.getItems().stream()
+            javafx.scene.control.MenuItem hide = ProjectMapPreview.flatten(menu.getItems()).stream()
                     .filter(item -> com.editora.i18n.Messages.tr("project.map.preview.hideStructure")
                             .equals(item.getText()))
                     .findFirst()
@@ -217,7 +217,7 @@ class ProjectMapCardsReview3FxTest {
             hide.fire();
             assertFalse(card.structureShown(), "the card menu takes it off");
             FxTestSupport.call(card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
-            menu.getItems().stream()
+            ProjectMapPreview.flatten(menu.getItems()).stream()
                     .filter(item -> com.editora.i18n.Messages.tr("project.map.preview.showStructure")
                             .equals(item.getText()))
                     .findFirst()

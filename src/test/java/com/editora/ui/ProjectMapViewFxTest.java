@@ -1424,9 +1424,10 @@ class ProjectMapViewFxTest {
                                 tr("project.map.preview.goToLine.menu"), // and go to a line in it
                                 tr("editmenu.addBookmark"),
                                 tr("editmenu.addNote"),
-                                tr("project.map.preview.pin.menu"), // and pin it
+                                tr("project.map.preview.menu.card"), // the card's own items, one submenu away:
+                                tr("project.map.preview.pin.menu"), // pin it
                                 tr("project.map.preview.moveToFreeSpace")),
-                        menu.getItems().stream()
+                        ProjectMapPreview.flatten(menu.getItems()).stream()
                                 .filter(item -> !(item instanceof javafx.scene.control.SeparatorMenuItem))
                                 .map(MenuItem::getText)
                                 .toList());
