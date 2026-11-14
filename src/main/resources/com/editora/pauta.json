@@ -113,46 +113,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {
-      "rule": "PERF-03",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-03",
-      "kind": "pending",
-      "reason": "The debugger tool checks in Settings can show an older answer over a newer one when a path is changed quickly.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
-      "rule": "PERF-04",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-04",
-      "kind": "pending",
-      "reason": "A few background threads are unnamed or can keep Editora from exiting promptly.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
-      "rule": "PERF-06",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-06",
-      "kind": "pending",
-      "reason": "The commit graph in the Git Log is repainted more than once for a single change.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
-      "rule": "PERF-23",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-23",
-      "kind": "pending",
-      "reason": "The debugger's completion list and the file finder start their work on every keystroke instead of after a short pause.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
-      "rule": "PERF-07",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-07",
-      "kind": "pending",
-      "reason": "Output from the AI agent and from Git commands is handed to the window as it arrives rather than in timed batches.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
       "rule": "PERF-08",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-08",
@@ -166,14 +126,6 @@
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-10",
       "kind": "pending",
       "reason": "Two places recompute styles for a large part of the window more often than needed, the shortcut list in Settings among them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
-      "rule": "PERF-12",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-12",
-      "kind": "pending",
-      "reason": "Importing breakpoints reads the chosen file whole, whatever its size.",
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {

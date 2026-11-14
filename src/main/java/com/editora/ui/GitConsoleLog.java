@@ -47,24 +47,29 @@ final class GitConsoleLog implements CommandLog {
 
     @Override
     public void record(Entry entry) {
-        Platform.runLater(() -> onRecord.accept(entry));
+        Platform.runLater(() -> {
+            drain(); // the command's last progress lines come before its result
+            onRecord.accept(entry);
+        });
     }
 
     @Override
     public void started(List<String> argv) {
-        Platform.runLater(() -> onStarted.accept(argv));
+        Platform.runLater(() -> {
+            drain(); // what the command before this one still had to say comes first
+            onStarted.accept(argv);
+        });
     }
+
+    /** Hands the progress lines over a frame apart at most, however fast Git prints them. */
+    private final com.editora.process.PacedDrain progressDrain = new com.editora.process.PacedDrain(this::drain);
 
     @Override
     public void progress(String line, boolean transientLine) {
-        boolean schedule;
         synchronized (pending) {
-            schedule = pending.isEmpty();
             pending.add(Map.entry(line, transientLine));
         }
-        if (schedule) {
-            Platform.runLater(this::drain);
-        }
+        progressDrain.request();
     }
 
     private void drain() {

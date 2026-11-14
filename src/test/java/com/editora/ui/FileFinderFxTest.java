@@ -488,4 +488,30 @@ class FileFinderFxTest {
                 true,
                 null);
     }
+
+    /**
+     * A path typed through several folders reads the one it ends in, not each one it passed: the read waits
+     * for typing to pause. The folder the finder opens on is read at once.
+     */
+    @Test
+    void aPathTypedThroughSeveralFoldersReadsOnlyTheOneItEndsIn(@TempDir Path root) throws Exception {
+        Path a = Files.createDirectories(root.resolve("a"));
+        Path b = Files.createDirectories(a.resolve("b"));
+        Files.writeString(b.resolve("deep.txt"), "x");
+        try (Shown s = new Shown(root, false, 1)) {
+            List<Path> read = new java.util.concurrent.CopyOnWriteArrayList<>();
+            FxTestSupport.runOnFx(() -> {
+                s.finder.directoryReader = (dir, directoriesOnly) -> {
+                    read.add(dir);
+                    return DirectoryListing.read(dir, directoriesOnly);
+                };
+                // Three keystrokes' worth of folders in one go, as fast typing delivers them.
+                s.input.setText(a + SEP);
+                s.input.setText(b + SEP);
+            });
+            s.awaitRows(1);
+            assertEquals(List.of(b), read, "only the folder the path ended in was read");
+            assertEquals(List.of("deep.txt"), s.names());
+        }
+    }
 }

@@ -387,7 +387,8 @@ final class FileWorkflowCoordinator {
     }
 
     /** Disk reads/charset decoding for file opens. Virtual threads also keep remote-provider waits cheap. */
-    final ExecutorService fileLoadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    final ExecutorService fileLoadExecutor = Executors.newThreadPerTaskExecutor(
+            Thread.ofVirtual().name("file-load-", 0).factory());
 
     /**
      * A paragraph this wide makes RichTextFX layout pathological even when the file itself is small, so the file
@@ -1920,27 +1921,24 @@ final class FileWorkflowCoordinator {
             pushAdminEditAvailable();
             return;
         }
-        new Thread(
-                        () -> {
-                            boolean ok;
-                            try {
-                                ok = elevationProcess
-                                                .run(
-                                                        java.time.Duration.ofSeconds(5),
-                                                        List.of(com.editora.process.ElevatedSave.PKEXEC, "--version"))
-                                                .exit()
-                                        == 0;
-                            } catch (RuntimeException e) {
-                                ok = false;
-                            }
-                            boolean available = ok;
-                            Platform.runLater(() -> {
-                                adminToolAvailable = available;
-                                pushAdminEditAvailable();
-                            });
-                        },
-                        "pkexec-detect")
-                .start();
+        Thread.ofPlatform().daemon().name("pkexec-detect").start(() -> {
+            boolean ok;
+            try {
+                ok = elevationProcess
+                                .run(
+                                        java.time.Duration.ofSeconds(5),
+                                        List.of(com.editora.process.ElevatedSave.PKEXEC, "--version"))
+                                .exit()
+                        == 0;
+            } catch (RuntimeException e) {
+                ok = false;
+            }
+            boolean available = ok;
+            Platform.runLater(() -> {
+                adminToolAvailable = available;
+                pushAdminEditAvailable();
+            });
+        });
     }
 
     /** Pushes the current "Edit as Administrator" availability to every open buffer's banner. */
@@ -2203,42 +2201,37 @@ final class FileWorkflowCoordinator {
             return;
         }
         host.setStatus(tr("status.admin.saving", com.editora.config.PathDisplay.of(target)));
-        new Thread(
-                        () -> {
-                            try {
-                                var outcome = request.ticket().runIfCurrent(() -> {
-                                    if (request.seal() != null) {
-                                        request.seal().seal(request.bytes());
-                                    }
-                                    // The same preimage check as an ordinary save: the elevated copy truncates
-                                    // in place, so an external edit would otherwise be overwritten unasked.
-                                    if (Files.exists(target)
-                                            && !prepareRemoteWrite(request, false, false, null)
-                                                    .proceed()) {
-                                        return new AdminResult(-2, "conflict", -1, -1);
-                                    }
-                                    if (!mayNormaliseBinary(request, true)) {
-                                        return new AdminResult(-2, "refused", -1, -1);
-                                    }
-                                    keepMixedOriginal(request);
-                                    return elevatedWriter.write(request.target(), request.diskBytes());
-                                });
-                                AdminResult written = outcome.value();
-                                AdminResult result = outcome.executed() && written != null
-                                        ? written
-                                        : new AdminResult(-2, "superseded", -1, -1);
-                                if (result.exit() == 0) {
-                                    publishCommit(request, new DiskWrite(result.modifiedMillis(), result.size()));
-                                }
-                                Platform.runLater(() -> onAdminSaveDone(request, result));
-                            } catch (IOException | RuntimeException e) {
-                                String message = e.getMessage();
-                                AdminResult result = new AdminResult(-1, message == null ? "" : message, -1, -1);
-                                Platform.runLater(() -> onAdminSaveDone(request, result));
-                            }
-                        },
-                        "admin-save")
-                .start();
+        Thread.ofPlatform().daemon().name("admin-save").start(() -> {
+            try {
+                var outcome = request.ticket().runIfCurrent(() -> {
+                    if (request.seal() != null) {
+                        request.seal().seal(request.bytes());
+                    }
+                    // The same preimage check as an ordinary save: the elevated copy truncates
+                    // in place, so an external edit would otherwise be overwritten unasked.
+                    if (Files.exists(target)
+                            && !prepareRemoteWrite(request, false, false, null).proceed()) {
+                        return new AdminResult(-2, "conflict", -1, -1);
+                    }
+                    if (!mayNormaliseBinary(request, true)) {
+                        return new AdminResult(-2, "refused", -1, -1);
+                    }
+                    keepMixedOriginal(request);
+                    return elevatedWriter.write(request.target(), request.diskBytes());
+                });
+                AdminResult written = outcome.value();
+                AdminResult result =
+                        outcome.executed() && written != null ? written : new AdminResult(-2, "superseded", -1, -1);
+                if (result.exit() == 0) {
+                    publishCommit(request, new DiskWrite(result.modifiedMillis(), result.size()));
+                }
+                Platform.runLater(() -> onAdminSaveDone(request, result));
+            } catch (IOException | RuntimeException e) {
+                String message = e.getMessage();
+                AdminResult result = new AdminResult(-1, message == null ? "" : message, -1, -1);
+                Platform.runLater(() -> onAdminSaveDone(request, result));
+            }
+        });
     }
 
     private AdminResult runElevatedWrite(Path target, byte[] bytes) throws IOException {

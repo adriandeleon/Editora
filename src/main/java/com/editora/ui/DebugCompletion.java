@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import javafx.animation.PauseTransition;
-import javafx.application.Platform;
 import javafx.event.EventHandler;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
@@ -80,6 +79,19 @@ final class DebugCompletion {
 
     private final EventHandler<KeyEvent> keys = this::onKey;
 
+    /** How long typing must pause before the adapter is asked again. */
+    static final javafx.util.Duration ASK_PAUSE = javafx.util.Duration.millis(120);
+
+    private final javafx.animation.PauseTransition askPause = new javafx.animation.PauseTransition(ASK_PAUSE);
+
+    /** Asks now if a question is waiting for typing to pause. For tests, which do not wait. */
+    void askPendingNow() {
+        if (askPause.getStatus() == javafx.animation.Animation.Status.RUNNING) {
+            askPause.stop();
+            ask(false);
+        }
+    }
+
     private DebugCompletion(Input field, Source source) {
         this.field = field;
         this.node = field.node();
@@ -88,12 +100,15 @@ final class DebugCompletion {
         noteTimer.setOnFinished(e -> note.hide());
         popup.setOnAccept(this::accept);
         node.addEventFilter(KeyEvent.KEY_TYPED, e -> typedDot = ".".equals(e.getCharacter()));
+        askPause.setOnFinished(e -> ask(false));
         field.textProperty().addListener((o, was, now) -> {
+            // The adapter is asked when typing pauses, not at every character: each question is a round trip
+            // to the debugger, and only the last one's answer is shown.
             if (typedDot) {
                 typedDot = false;
-                Platform.runLater(() -> ask(false));
+                askPause.playFromStart();
             } else if (popup.isShowing()) {
-                Platform.runLater(() -> ask(false));
+                askPause.playFromStart();
             }
         });
         node.focusedProperty().addListener((o, was, now) -> {
@@ -336,6 +351,7 @@ final class DebugCompletion {
 
     void hide() {
         request++;
+        askPause.stop();
         popup.hide();
     }
 

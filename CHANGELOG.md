@@ -822,6 +822,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Six small stalls and wrong answers under load.**
+  - The debugger checks in Settings could show an older answer over a newer one when a path was changed
+    quickly; an answer is now shown only while it is the newest.
+  - The commit graph in the Git Log was painted more than once for one change; it is painted once a frame.
+  - The debugger's completion list asked the debugger at every character, and Open File read a folder at every
+    folder typed through; both now wait for typing to pause.
+  - A fast AI agent reply and the progress of a Git command were handed to the window as they arrived; they
+    now arrive in batches a frame apart, as program output does.
+  - Import Breakpoints read the chosen file whole, whatever its size; a file over 16 MB is refused.
+  - A few background threads had no name or could delay exit; every thread is now named and a daemon.
 - **A picker with nothing to list says so.** Jump to Bookmark, Recent Files and the two notes pickers opened
   as a blank card when there was nothing to choose from. Every picker now shows a sentence there, its own
   where it has one ("No bookmarks in this project"), and "No matches" when what you typed matches nothing.
