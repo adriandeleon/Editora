@@ -254,5 +254,6 @@
   "C-M-,": "nav.forward",
   "C-c o m": "project.toggleMapView",
   "C-c o r": "projectMap.revealActiveFile",
-  "f10": "view.focusMenuBar"
+  "f10": "view.focusMenuBar",
+  "C-x S-o": "window.otherReverse"
 }

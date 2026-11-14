@@ -1892,6 +1892,7 @@ final class WindowCommandRegistrar {
                         EncodingCommands.CHOOSE, () -> host.encodings().choose()));
         registerEncryptionCommands();
         host.registry().register(Command.of("window.other", host.chrome()::otherWindow));
+        host.registry().register(Command.of("window.otherReverse", host.chrome()::otherWindowReverse));
         // Cross-platform via JavaFX Stage (handles the per-OS window manager specifics on macOS/Linux/Windows).
         host.registry()
                 .register(Command.of(

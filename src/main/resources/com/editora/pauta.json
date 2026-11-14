@@ -233,35 +233,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1561"
     },
     {
-      "rule": "ACC-04",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-04",
-      "kind": "pending",
-      "reason": "Animations do not stop when the system asks for reduced motion.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "ACC-06",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-06",
-      "kind": "pending",
-      "reason": "There is no pair of commands in every keymap for moving between the regions of the window.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
       "rule": "ACC-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-07",
       "kind": "pending",
       "reason": "The release steps do not include a pass with a screen reader.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "ACC-08",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-08",
-      "kind": "pending",
-      "reason": "The Command Palette does not tell a screen reader which row is selected.",
       "link": "https://github.com/adriandeleon/Editora/issues/1561"
     },
     {
