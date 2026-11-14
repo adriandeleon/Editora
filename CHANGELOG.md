@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **After a prefix key, the window lists the keys that can follow.** Press `C-x` in the Emacs keymap (or `Ctrl+K`
+  in the VS Code one) and wait a moment: a card at the bottom of the window lists every key that can come next,
+  with the command it runs, and for a key that leads further, such as `C-x v`, how many commands lie behind it.
+  It follows the keymap in force and your own bindings, flows a long list into columns, and goes away as soon as
+  the sequence runs or is cancelled. It never takes the keyboard: the next key does what it always did, and a
+  sequence typed at speed never shows it.
 - **Move between the editor and the tool windows from the keyboard, both ways, in every keymap.** *Window:
   Other* already cycled forward but was bound in the Emacs keymap only, and nothing went back. There is now
   *Window: Other, Reverse*, and both are bound everywhere: `C-x o` and `C-x S-o` in Emacs, Alt+Page Down and
@@ -576,6 +582,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A menu bar row that cannot run says why.** A command with nothing to act on, or whose feature is switched
+  off, stays grayed in its menu as before, but hovering it now shows the reason, the same sentence the Command
+  Palette gives ("the active file is not inside a Git repository"), a screen reader hears it with the row, and
+  choosing it says it in the status bar instead of doing nothing. On macOS, where the menus are the system's,
+  such a row is still only disabled.
 - **The Command Palette and the pickers tell a screen reader which row is selected.** The arrow keys move
   a highlight while the keyboard stays in the text field, so a screen reader said nothing. The list now
   announces the row, each palette row has a spoken name (its title and its keys), and a command that cannot

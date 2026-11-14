@@ -1697,6 +1697,7 @@ public class WindowManager {
 
             StackPane sceneRoot = new StackPane(root);
             controller.installZenOverlay(sceneRoot);
+            controller.installPrefixHint(sceneRoot);
             Scene scene = new Scene(sceneRoot, UiZoom.px(1000), UiZoom.px(700));
             Settings settings = shared.getSettings();
             scene.setFill(Themes.backgroundFor(settings.getTheme()));
