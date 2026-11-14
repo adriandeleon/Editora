@@ -146,6 +146,8 @@ class DebugReviewFollowupFxTest {
                 eval.appendText("names"); // as typing does: the caret follows
                 eval.fireEvent(
                         new KeyEvent(KeyEvent.KEY_TYPED, ".", ".", KeyCode.UNDEFINED, false, false, false, false));
+                // The question waits for typing to pause; the test does not.
+                FxTestSupport.<DebugCompletion>field(panel, "evalCompletion").askPendingNow();
             });
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {

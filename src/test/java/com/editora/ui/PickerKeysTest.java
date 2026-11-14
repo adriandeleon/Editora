@@ -172,4 +172,15 @@ class PickerKeysTest {
         assertEquals("C-d", PickerKeys.reachingChord(null, "C-d"));
         assertEquals("C-y", PickerKeys.reachingChord(km, "C-d", "C-y"), "the next candidate stands in");
     }
+
+    /** The region after or before the one with the focus, wrapping; the first when none has it. */
+    @Test
+    void theRegionCommandsStepForwardAndBackAndWrap() {
+        assertEquals(1, WindowChromeCoordinator.nextRegion(0, 1, 3));
+        assertEquals(0, WindowChromeCoordinator.nextRegion(2, 1, 3), "past the last: the first");
+        assertEquals(2, WindowChromeCoordinator.nextRegion(0, -1, 3), "before the first: the last");
+        assertEquals(1, WindowChromeCoordinator.nextRegion(2, -1, 3));
+        assertEquals(0, WindowChromeCoordinator.nextRegion(-1, 1, 3), "the focus is in no region: the editor");
+        assertEquals(0, WindowChromeCoordinator.nextRegion(-1, -1, 3));
+    }
 }

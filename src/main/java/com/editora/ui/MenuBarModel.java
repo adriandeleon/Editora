@@ -659,6 +659,7 @@ final class MenuBarModel {
                         List.of(
                                 "window.new",
                                 "window.other",
+                                "window.otherReverse",
                                 SEPARATOR,
                                 "buffer.next",
                                 "buffer.previous",

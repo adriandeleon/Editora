@@ -52,4 +52,41 @@ class CommandPaletteDisabledFxTest {
         Command selected = FxTestSupport.callOnFx(() -> list.getSelectionModel().getSelectedItem());
         assertEquals("edit.enabled", selected.id(), "the cursor never rests on a grayed-out command");
     }
+
+    /**
+     * A screen reader is told each row: its title, and for a row that cannot run, that it cannot and why. The
+     * rows are drawn from nodes, so without this a row says nothing, and the gray that marks an unavailable
+     * command cannot be heard.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aRowSaysItsTitleAndAnUnavailableRowSaysWhy() throws Exception {
+        CommandRegistry reg = new CommandRegistry();
+        Command off = Command.of("git.disabled", "Git Thing", () -> {});
+        Command on = Command.of("edit.enabled", "Edit Thing", () -> {});
+        reg.register(off);
+        reg.register(on);
+        CommandPalette palette = FxTestSupport.callOnFx(
+                () -> new CommandPalette(reg, new KeymapManager(), c -> !c.id().startsWith("git.")));
+        FxTestSupport.runOnFx(() -> {
+            FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, ""); // one pass: what can run now
+            ListView<Command> list = FxTestSupport.field(palette, "list");
+            javafx.scene.control.ListCell<Command> cell = list.getCellFactory().call(list);
+            Class<?>[] types = {Object.class, boolean.class};
+
+            FxTestSupport.call(cell, "updateItem", types, on, false);
+            assertEquals("Edit Thing", cell.getAccessibleText());
+
+            palette.setDisabledReason(c -> "Unavailable: Git is turned off.");
+            FxTestSupport.call(cell, "updateItem", types, off, false);
+            assertEquals("Git Thing. Unavailable: Git is turned off.", cell.getAccessibleText());
+
+            palette.setDisabledReason(c -> null);
+            FxTestSupport.call(cell, "updateItem", types, off, false);
+            assertEquals(
+                    "Git Thing. " + com.editora.i18n.Messages.tr("palette.unavailable"),
+                    cell.getAccessibleText(),
+                    "with no reason to give, it still says the row cannot run");
+        });
+    }
 }

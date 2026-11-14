@@ -421,6 +421,7 @@ public class CommandPalette {
             if (isEnabled(items.get(i))) {
                 list.getSelectionModel().select(i);
                 list.scrollTo(i);
+                PickerKeys.announce(list); // typing changed the row in front
                 return;
             }
         }
@@ -495,11 +496,16 @@ public class CommandPalette {
             key.setText(commandToKey.getOrDefault(item.id(), ""));
             box.getStyleClass().remove("palette-disabled");
             setTooltip(null); // cells are recycled — never leave a previous row's explanation behind
+            // A row drawn from nodes has no text of its own: a screen reader is told its title and its keys.
+            String spoken = MainMenuBar.accessibleRowText(item.title(), key.getText());
+            setAccessibleText(spoken);
             if (!isEnabled(item)) {
                 box.getStyleClass().add("palette-disabled"); // grayed + non-actionable (#532)
                 // Say why it's grayed, and which command would fix it — a gray row with no explanation
                 // reads as a bug rather than a state.
                 String why = disabledReason.apply(item);
+                // And say it to a screen reader, which cannot see the gray: the row cannot run, and why.
+                setAccessibleText(spoken + ". " + (why == null || why.isBlank() ? tr("palette.unavailable") : why));
                 if (why != null && !why.isBlank()) {
                     Tooltip tip = ControlNames.tooltip(why);
                     tip.setWrapText(true);

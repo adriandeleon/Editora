@@ -251,7 +251,7 @@ public class FileBreadcrumb extends StackPane {
     private void showCrumbMenu(Path crumbPath, Node anchor) {
         long generation = ++menuGeneration;
         java.util.function.BiFunction<Path, Boolean, DirectoryListing> reader = directoryReader;
-        Thread.startVirtualThread(() -> {
+        Thread.ofVirtual().name("breadcrumb-list").start(() -> {
             boolean isDir = Files.isDirectory(crumbPath);
             Path dir = isDir ? crumbPath : crumbPath.getParent();
             DirectoryListing listing = dir == null ? DirectoryListing.UNREADABLE : reader.apply(dir, false);

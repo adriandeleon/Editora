@@ -83,5 +83,7 @@
   "M--": "nav.back",
   "M-S--": "nav.forward",
   "M-S-1": "project.toggleMapView",
-  "M-f1": "projectMap.revealActiveFile"
+  "M-f1": "projectMap.revealActiveFile",
+  "M-pagedown": "window.other",
+  "M-pageup": "window.otherReverse"
 }
