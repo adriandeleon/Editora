@@ -190,6 +190,25 @@ final class DebugCompoundsWindow {
             commit();
             stage.close();
         });
+        // The lists' right-click menus: Debug and Remove, as the buttons do, and Copy; a member's tick (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.buttonRow(list, ListRowCommands.OPEN, debugButton, null),
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, RunCompound::name)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
+        ListRowCommands.install(
+                members,
+                ListRowCommands.row(members, ListRowCommands.TOGGLE, null, null, () -> {
+                    String member = members.getSelectionModel().getSelectedItem();
+                    if (member == null || members.isDisabled()) {
+                        return false;
+                    }
+                    BooleanProperty on = tickedProperty(member);
+                    on.set(!on.get());
+                    return true;
+                }),
+                ListRowCommands.copyRow(members, () -> ListRowCommands.selectedText(members, member -> member)));
 
         VBox left = UiZoom.spacing(new VBox(list), 8);
         VBox.setVgrow(list, Priority.ALWAYS);

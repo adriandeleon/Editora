@@ -103,6 +103,19 @@ final class ProjectMapTrailEditor extends VBox {
         note.setOnAction(event -> noteSelected());
         play.setOnAction(event -> playSelected());
         renameTrail.setOnAction(event -> askRenameTrail());
+        // Its right-click menu: the stop buttons' actions, which Enter, a double-click and its keys do too, and
+        // Copy (MENU-05).
+        ListRowCommands.install(
+                stops,
+                ListRowCommands.buttonRow(stops, ListRowCommands.OPEN, play, null),
+                ListRowCommands.buttonRow(stops, ListRowCommands.RENAME, rename, null),
+                ListRowCommands.mapButtonRow(this, "projectMap.trailStopNote", note),
+                ListRowCommands.copyRow(stops, () -> ListRowCommands.selectedText(stops, ProjectMapTrails::stopTitle)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.buttonRow(stops, ListRowCommands.MOVE_UP, up, null),
+                ListRowCommands.buttonRow(stops, ListRowCommands.MOVE_DOWN, down, null),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(stops, ListRowCommands.REMOVE, remove, null)));
         javafx.scene.layout.FlowPane buttons = new javafx.scene.layout.FlowPane(up, down, remove, rename, note, play);
         UiZoom.follow(buttons, () -> {
             buttons.setHgap(UiZoom.px(4));

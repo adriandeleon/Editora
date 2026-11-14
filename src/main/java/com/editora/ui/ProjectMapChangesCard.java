@@ -146,6 +146,27 @@ final class ProjectMapChangesCard extends MapFloatingCard {
             }
         });
         refresh.setOnAction(event -> onRefresh.run());
+        // The two lists' right-click menus: what Enter, a double-click and the bar's buttons do, and Copy (MENU-05).
+        ListRowCommands.install(
+                files,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(files, ListRowCommands.OPEN, null, Icons.openInTab(), this::openPickedFile),
+                        () -> {
+                            GitChanges.FileDiff file = files.getSelectionModel().getSelectedItem();
+                            return file != null
+                                    && file.status() != 'D'
+                                    && !file.hunks().isEmpty();
+                        }),
+                ListRowCommands.mapButtonRow(this, "projectMap.changesOpenInEditor", openInEditor),
+                ListRowCommands.mapButtonRow(this, "projectMap.changesCompare", compare),
+                ListRowCommands.copyRow(files, () -> ListRowCommands.selectedText(files, GitChanges.FileDiff::path)));
+        ListRowCommands.install(
+                diff,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(diff, ListRowCommands.OPEN, null, Icons.openInTab(), this::openPickedLine),
+                        () -> !openInEditor.isDisabled()),
+                ListRowCommands.mapButtonRow(this, "projectMap.changesOpenInEditor", openInEditor),
+                ListRowCommands.copyRow(diff, () -> ListRowCommands.selectedText(diff, GitChanges.Line::text)));
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
         HBox bar = UiZoom.spacing(new HBox(previous, next, gap, openInEditor, compare, refresh), 4);
@@ -466,6 +487,27 @@ final class ProjectMapChangesCard extends MapFloatingCard {
                 ? (hunk >= 0 ? picked.hunkLine(hunk) : 1)
                 : header >= 0 ? picked.hunkLine(header) : picked.nearestNewLine(index);
         (inEditor ? onOpenInEditor : onOpenLine).accept(file, line - 1);
+    }
+
+    /** Opens the picked file's card at its first change, as a double-click on it does; false when it has none. */
+    boolean openPickedFile() {
+        GitChanges.FileDiff file = files.getSelectionModel().getSelectedItem();
+        if (file == null || file.status() == 'D' || file.hunks().isEmpty()) {
+            return false;
+        }
+        showHunk(0);
+        openLine(diff.getSelectionModel().getSelectedIndex(), false);
+        return true;
+    }
+
+    /** Opens the picked file's card at the selected diff line, as Enter on it does; false with no file picked. */
+    boolean openPickedLine() {
+        GitChanges.FileDiff file = files.getSelectionModel().getSelectedItem();
+        if (file == null || file.status() == 'D' || diff.getSelectionModel().getSelectedIndex() < 0) {
+            return false;
+        }
+        openLine(diff.getSelectionModel().getSelectedIndex(), false);
+        return true;
     }
 
     /** The picked file's path, or null. */

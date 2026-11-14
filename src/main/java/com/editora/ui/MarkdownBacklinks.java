@@ -212,6 +212,15 @@ final class MarkdownBacklinks {
                     e.consume();
                 }
             });
+            // Its right-click menu: what Enter and a double-click do, and Copy (MENU-05).
+            ListRowCommands.install(
+                    list,
+                    ListRowCommands.row(list, ListRowCommands.OPEN, null, Icons.openInTab(), () -> {
+                        boolean any = list.getSelectionModel().getSelectedItem() != null;
+                        activate();
+                        return any;
+                    }),
+                    ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, Row::label)));
             VBox.setVgrow(list, Priority.ALWAYS);
             getChildren().addAll(title, list);
         }

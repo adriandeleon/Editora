@@ -162,6 +162,28 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             }
         });
         tree.addEventFilter(KeyEvent.KEY_PRESSED, this::onTreeKey);
+        // Its right-click menu: what Run, a double-click and Enter do to a task, a toggle's tick, and Copy (MENU-05).
+        ListRowCommands.install(
+                tree,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(tree, ListRowCommands.OPEN, tr("buildtree.run"), Icons.run(), () -> {
+                            TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
+                            if (running.get() || selected == null || !(selected.getValue() instanceof TaskItem)) {
+                                return false;
+                            }
+                            runSelected();
+                            return true;
+                        }),
+                        () -> {
+                            TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
+                            return !running.get() && selected != null && selected.getValue() instanceof TaskItem;
+                        }),
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(tree, ListRowCommands.TOGGLE, null, null, this::toggleSelected), () -> {
+                            TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
+                            return selected != null && selected.getValue() instanceof ToggleItem;
+                        }),
+                ListRowCommands.copyRow(tree, () -> ListRowCommands.selectedText(tree, BuildActionsTree::rowText)));
 
         placeholder.getStyleClass().add("tool-window-placeholder");
         placeholder.setWrapText(true);
@@ -528,6 +550,30 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         } else if (selected.getValue() instanceof ProjectItem p) {
             onSelectProject.accept(p.root());
         }
+    }
+
+    /** Turns the selected toggle row on or off, as its tick does; false when the selection is no toggle. */
+    private boolean toggleSelected() {
+        TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
+        if (selected == null || !(selected.getValue() instanceof ToggleItem t)) {
+            return false;
+        }
+        if (t.toggle().triState()) {
+            cycle(t.toggle());
+        } else {
+            toggle(t.toggle(), !activeToggles.contains(t.toggle().id()));
+        }
+        return true;
+    }
+
+    /** A row as Copy gives it: a task's label, a toggle's, a project's, a section's title. Pure. */
+    private static String rowText(Item item) {
+        return switch (item) {
+            case SectionItem section -> section.title();
+            case TaskItem task -> task.task().label();
+            case ToggleItem toggle -> toggle.toggle().label();
+            case ProjectItem project -> project.label();
+        };
     }
 
     private void toggle(BuildAction.Toggle toggle, boolean on) {

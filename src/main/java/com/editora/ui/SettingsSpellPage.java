@@ -220,6 +220,13 @@ final class SettingsSpellPage {
             }
         });
 
+        // Its right-click menu: Copy, and the Remove button's action (MENU-05).
+        ListRowCommands.install(
+                words,
+                ListRowCommands.copyRow(words, () -> ListRowCommands.selectedText(words, word -> word)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(words, ListRowCommands.REMOVE, remove, null)));
+
         HBox addRow = UiZoom.spacing(new HBox(input, add), 6);
         addRow.setAlignment(Pos.CENTER_LEFT);
         VBox box = UiZoom.spacing(new VBox(dictionaryList, addRow, UiZoom.spacing(new HBox(remove), 6)), 6);

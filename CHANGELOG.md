@@ -165,6 +165,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Undo History: Restore This State, and Message Log: Copy. Each acts on the row selected in its panel.
 - **The Copy key copies the selected row** in the References, Hierarchy and Find in Files trees: Ctrl+C (Cmd+C
   on macOS), or the Copy chord of the active keymap (M-w in Emacs).
+- **Right-click menus on the lists that had none.** The lists on the Settings pages (Abbreviations, External
+  Tools, Macros and their steps, Templates, Snippets, the personal dictionary and the spell-checked file types,
+  Trusted Folders, the two toolbar lists, Remote sites, type renderers), the Project Map's Changes, History and
+  Dependencies cards, its call stack, hierarchy and results columns and its trail editor, the debugger's Memory
+  and Disassembly views, the Thread Dump, View as Table, Debug Compounds, Deployments, Run Configurations and
+  Recovery windows, the Backlinks tool window and a build tool's task tree now have one. Each holds what the list
+  already did to a row through its buttons, a double-click or its keys (Open, Edit…, Connect, Deploy Now, Run,
+  Play from Here, Rename…, Move Up and Down, Remove, Disable or Enable), and Copy where the row has text. The Menu
+  key and Shift+F10 open it at the selected row.
+- **Seven List commands for those rows**: List: Open, Copy, Rename…, Turn On or Off, Remove, Move Up and Move
+  Down. Each does to the selected row of the list the keyboard is in what that list's menu row does, so the
+  palette and a key binding of your own reach them, and says so on the status line when no list there can. A list
+  in another window, such as Settings, is brought forward before the command acts in it. Three
+  Project Map commands do the same for buttons of a card: Open Changed File in Editor, Compare Changed File, and
+  Edit Trail Stop Note….
 - **Settings…, Zen Mode, TODO and Bookmarks have menu rows** (Tools, View and Window), so no toolbar button is
   the only way to its action.
 - **Five commands for buttons that had none**: Run: Run Selected Configuration and Debug: Debug Selected
@@ -594,6 +609,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Palette gives ("the active file is not inside a Git repository"), a screen reader hears it with the row, and
   choosing it says it in the status bar instead of doing nothing. On macOS, where the menus are the system's,
   such a row is still only disabled.
+- **Every menu's rows line up like the menu bar's.** Right-click menus and drop-downs drew their rows the
+  theme's way, with the glyph 6 px from the title, no column when a row had no glyph, and the keys 14 px after the
+  title. Their rows now have the menu bar's layout: a 22 px column for the glyph, kept on a row without one, 8 px
+  to the title, and the keys 18 px or more after the titles. A check or radio row's tick sits in that same column,
+  also in a menu that has both ticks and glyphs. The sizes follow the interface zoom.
 - **The Command Palette and the pickers tell a screen reader which row is selected.** The arrow keys move
   a highlight while the keyboard stays in the text field, so a screen reader said nothing. The list now
   announces the row, each palette row has a spoken name (its title and its keys), and a command that cannot

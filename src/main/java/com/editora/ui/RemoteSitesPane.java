@@ -317,6 +317,15 @@ final class RemoteSitesPane {
             }
         });
         connectButton.setVisible(connect != null);
+        // The list's right-click menu: Connect and Remove, as the buttons do, and Copy (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.buttonRow(list, ListRowCommands.OPEN, connectButton, null),
+                        () -> connectButton.isVisible() && !connectButton.isDisabled()),
+                ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, RemoteConnection::displayLabel)),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
         HBox connectRow = new HBox(connectButton);
         connectRow.setAlignment(Pos.CENTER_RIGHT);
         VBox right = UiZoom.spacing(new VBox(form, connectRow, hostBox), 8);

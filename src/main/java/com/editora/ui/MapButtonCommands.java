@@ -36,7 +36,10 @@ final class MapButtonCommands {
             "projectMap.cardStructure",
             "projectMap.cardNotes",
             "projectMap.cardClose",
-            HIERARCHY_FLIP);
+            HIERARCHY_FLIP,
+            "projectMap.changesOpenInEditor",
+            "projectMap.changesCompare",
+            "projectMap.trailStopNote");
 
     /** The node property a column or a note stuck on a card keeps its card under (see {@link #stuckOn}). */
     private static final String CARD = "editora.mapCard";

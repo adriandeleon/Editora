@@ -158,6 +158,15 @@ final class ToolbarSettingsPane {
             refresh();
         });
 
+        // The two lists' right-click menus: what their buttons, double-click and keys do (MENU-05).
+        ListRowCommands.install(available, ListRowCommands.buttonRow(available, ListRowCommands.OPEN, add, null));
+        ListRowCommands.install(
+                current,
+                ListRowCommands.commandButtonRow(current, ListRowCommands.MOVE_UP, up, null),
+                ListRowCommands.commandButtonRow(current, ListRowCommands.MOVE_DOWN, down, null),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.buttonRow(current, ListRowCommands.REMOVE, remove, null));
+
         available.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 addSelected();

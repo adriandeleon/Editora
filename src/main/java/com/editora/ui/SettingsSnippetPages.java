@@ -479,6 +479,15 @@ final class SettingsSnippetPages {
             templateItems.remove(t);
             loadTemplates.run(); // re-derive: a removed override reverts to its bundled template
         });
+        // Its right-click menu: Copy, and the Remove button's action (MENU-05).
+        ListRowCommands.install(
+                list,
+                ListRowCommands.copyRow(
+                        list,
+                        () -> ListRowCommands.selectedText(
+                                list, t -> t.name() == null || t.name().isBlank() ? t.id() : t.name())),
+                new javafx.scene.control.SeparatorMenuItem(),
+                ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));
         HBox buttons = UiZoom.spacing(new HBox(add, remove), 6);
         VBox left = UiZoom.spacing(new VBox(list, buttons), 6);
         SettingsWindow.keepWidth(add, remove, left);
