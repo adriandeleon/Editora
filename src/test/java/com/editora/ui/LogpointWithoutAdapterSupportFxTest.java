@@ -11,6 +11,7 @@ import com.editora.dap.FakeDebugAdapter;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * Debug History. An adapter that logs them itself is left to do so.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class LogpointWithoutAdapterSupportFxTest {
 
     private FxWindowFixture fx;

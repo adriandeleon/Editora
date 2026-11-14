@@ -23,6 +23,7 @@ import org.eclipse.lsp4j.debug.StackFrame;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * the program's own code, and nothing runs. {@code CoreDumpProbeFxTest} opens real cores.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class CoreDumpWindowFxTest {
 
     private FxWindowFixture fx;

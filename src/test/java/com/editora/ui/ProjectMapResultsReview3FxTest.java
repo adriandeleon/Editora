@@ -20,6 +20,7 @@ import javafx.scene.layout.Region;
 import com.editora.ui.ProjectMapSearchResult.Match;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * screen reader hears (B11) and clearing a search that keeps the place (B2).
  */
 @ExtendWith(DisposedPanels.class)
+@Tag("fx")
 class ProjectMapResultsReview3FxTest {
 
     @TempDir

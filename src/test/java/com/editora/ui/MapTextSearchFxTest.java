@@ -23,6 +23,7 @@ import com.editora.ui.ProjectMapSearchResult.Match;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the lines found opens each in a card on the Map — a preview the next replaces, kept with Ctrl+Enter.
  */
 @ExtendWith(DisposedPanels.class)
+@Tag("fx")
 class MapTextSearchFxTest {
 
     @TempDir

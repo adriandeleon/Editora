@@ -97,14 +97,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1558"
     },
     {
-      "rule": "QUAL-06",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/quality/#qual-06",
-      "kind": "pending",
-      "reason": "Some tests that start the user interface are not marked as such, so the fast test run cannot leave them out.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1558"
-    },
-    {
       "rule": "QUAL-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/quality/#qual-07",

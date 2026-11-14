@@ -44,6 +44,7 @@ import javafx.stage.Stage;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -62,6 +63,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * one Canvas draw per pulse (D5), the cached layout (D8) and the breadcrumb that changes only its tail (D15).
  * Keys and clicks are fired at the shown scene, so they take the route real input does.
  */
+@Tag("fx")
 class ProjectMapLayoutReviewFxTest {
 
     private static final String STYLES = "/com/editora/styles/";

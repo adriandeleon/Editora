@@ -14,6 +14,7 @@ import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -31,6 +32,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * {@code PhpDebugProbeFxTest} drive the real ones.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class PresetDebugWindowFxTest {
 
     private FxWindowFixture fx;

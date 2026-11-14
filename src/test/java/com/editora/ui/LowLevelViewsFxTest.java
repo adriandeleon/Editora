@@ -12,6 +12,7 @@ import com.editora.editor.EditorBuffer;
 import org.eclipse.lsp4j.debug.SteppingGranularity;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * and what each view says when there is nothing to show. {@code DisassemblyMemoryProbeFxTest} drives the real CodeLLDB.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class LowLevelViewsFxTest {
 
     private FxWindowFixture fx;

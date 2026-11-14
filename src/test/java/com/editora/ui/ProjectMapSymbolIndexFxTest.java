@@ -11,6 +11,7 @@ import javafx.scene.layout.Region;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * review-3 test used a fake source.
  */
 @ExtendWith(DisposedPanels.class)
+@Tag("fx")
 class ProjectMapSymbolIndexFxTest {
 
     private static final String APP = String.join(

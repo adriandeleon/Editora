@@ -29,6 +29,7 @@ import com.editora.lsp.SymbolNode;
 import com.editora.text.FoldRegions;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Project Map's structure columns: the Structure icon, declaration rows and declaration cards. */
+@Tag("fx")
 class ProjectMapStructureFxTest {
 
     private static final String APP = String.join(

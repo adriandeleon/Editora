@@ -32,6 +32,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -50,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the Map's own {@code @name} search. A command a card does not run reaches the Map window's own handler.
  */
 @ExtendWith(DisposedPanels.class)
+@Tag("fx")
 class ProjectMapGotoFxTest {
 
     private static final String SHAPE =

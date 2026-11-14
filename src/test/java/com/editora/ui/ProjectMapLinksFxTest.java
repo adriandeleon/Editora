@@ -26,6 +26,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -42,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the edges are dashed and say "by name", and the groups past six are listed by a "+N more" chip.
  */
 @ExtendWith(DisposedPanels.class)
+@Tag("fx")
 class ProjectMapLinksFxTest {
 
     private static final String APP = String.join(

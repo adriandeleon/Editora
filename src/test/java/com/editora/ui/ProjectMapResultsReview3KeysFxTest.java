@@ -19,6 +19,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
  * though the CUA keymap binds F3 to Find, and no tab opens.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class ProjectMapResultsReview3KeysFxTest {
 
     @TempDir

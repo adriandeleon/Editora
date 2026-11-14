@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Component costs, without JSON transport or server time; run outside coverage instrumentation. */
 @Tag("probe")
+@Tag("fx")
 class JavaEditingCostProbeTest {
     public static void main(String[] args) throws Exception {
         try {

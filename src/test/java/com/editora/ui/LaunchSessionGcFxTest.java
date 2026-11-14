@@ -10,6 +10,7 @@ import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.SharedConfig;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * untitled window its tabs, layout, run configurations, program arguments and debug watches.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("fx")
 class LaunchSessionGcFxTest {
 
     private static final String GOOD = "{\"schemaVersion\":2,\"projects\":[],\"activeProjectId\":\"\","

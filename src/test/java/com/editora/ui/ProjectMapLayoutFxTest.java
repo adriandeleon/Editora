@@ -40,6 +40,7 @@ import com.editora.git.GitFileStatus;
 import com.editora.i18n.Messages;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -55,6 +56,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Layout, painting and toolbar of the Project Map: what is on screen at the first view and after Fit, how
  * columns are placed, what the rows and headers show, and whether the controls around the canvas fit.
  */
+@Tag("fx")
 class ProjectMapLayoutFxTest {
 
     private static final String STYLES = "/com/editora/styles/";
