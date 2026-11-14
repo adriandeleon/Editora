@@ -165,9 +165,14 @@ public class FileFinder {
                         "openProject",
                         projectChord == null || keymap == null ? projectChord : keymap.display(projectChord))));
         // Pre-fill with the start directory + separator so the user types a name straight away.
-        input.setText(dir.toString().endsWith(SEP) ? dir.toString() : dir + SEP);
-        input.positionCaret(input.getText().length());
-        refresh(input.getText());
+        listNow = true;
+        try {
+            input.setText(dir.toString().endsWith(SEP) ? dir.toString() : dir + SEP);
+            input.positionCaret(input.getText().length());
+            refresh(input.getText());
+        } finally {
+            listNow = false;
+        }
         showing = true;
         overlayHost.show(
                 content,
@@ -184,6 +189,7 @@ public class FileFinder {
     }
 
     public void hide() {
+        listPause.stop();
         if (overlayHost != null) {
             overlayHost.hide();
         }
@@ -217,19 +223,40 @@ public class FileFinder {
             currentDir = dir;
             listing = DirectoryListing.UNREADABLE;
             long generation = ++listGeneration;
-            java.util.function.BiFunction<Path, Boolean, DirectoryListing> reader = directoryReader;
-            Thread.startVirtualThread(() -> {
-                DirectoryListing read = reader.apply(dir, pickDirectory);
-                Platform.runLater(() -> {
-                    if (generation != listGeneration) {
-                        return; // the path field names another directory by now
-                    }
-                    listing = read;
-                    applyFilter(input.getText());
-                });
-            });
+            if (listNow) {
+                listPause.stop();
+                list(dir, generation);
+            } else {
+                // Typed: the read waits for typing to pause, so a path typed through several folders reads the
+                // one it ends in and not each one it passed.
+                listPause.setOnFinished(e -> list(dir, generation));
+                listPause.playFromStart();
+            }
         }
         applyFilter(text);
+    }
+
+    /** How long typing must pause before a directory the path now names is read. */
+    static final javafx.util.Duration LIST_PAUSE = javafx.util.Duration.millis(100);
+
+    private final javafx.animation.PauseTransition listPause = new javafx.animation.PauseTransition(LIST_PAUSE);
+
+    /** True while the finder opens: its start directory is read at once, with no typing to wait for. */
+    private boolean listNow;
+
+    /** Reads {@code dir} on a worker and shows it, unless the path field names another directory by then. */
+    private void list(Path dir, long generation) {
+        java.util.function.BiFunction<Path, Boolean, DirectoryListing> reader = directoryReader;
+        Thread.ofVirtual().name("file-finder-list").start(() -> {
+            DirectoryListing read = reader.apply(dir, pickDirectory);
+            Platform.runLater(() -> {
+                if (generation != listGeneration) {
+                    return; // the path field names another directory by now
+                }
+                listing = read;
+                applyFilter(input.getText());
+            });
+        });
     }
 
     private void applyFilter(String text) {

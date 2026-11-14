@@ -624,15 +624,25 @@ final class SettingsDebugPage {
                 });
     }
 
+    /** The newest round of adapter probes; an answer from an earlier round is dropped (FX thread only). */
+    private long debugStatusRound;
+
     /** Re-checks each debug adapter's availability (java plugin jar / debugpy / js-debug+node) and colors
      *  its status label green/red, like the LSP/Mermaid status. java locate is cheap; python/js probe a
      *  subprocess off-thread and call back on the FX thread. */
     void refreshDebugStatus() {
+        // Each probe answers later, and a path field asks again at every commit: an answer is shown only while
+        // its round of questions is still the newest, so an older probe never overwrites a newer one.
+        long round = ++debugStatusRound;
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             ToolStatusRow status = debugStatusLabels.get(dbg.id());
             if (status != null) {
                 status.checking();
-                dbg.detect().accept((found, detail) -> status.show(found, detail, debugCheck.isSelected()));
+                dbg.detect().accept((found, detail) -> {
+                    if (round == debugStatusRound) {
+                        status.show(found, detail, debugCheck.isSelected());
+                    }
+                });
             }
         }
         if (javaDebugLspNote != null) {

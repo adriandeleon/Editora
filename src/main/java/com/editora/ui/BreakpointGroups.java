@@ -282,6 +282,9 @@ final class BreakpointGroups {
     /** What an import did: breakpoints set, ones whose place had one already, ones whose file is not there. */
     record Imported(int added, int existing, int missing) {}
 
+    /** The largest file Import Breakpoints reads: far more than an export of every breakpoint anyone sets. */
+    static final long MAX_IMPORT_BYTES = 16L * 1024 * 1024;
+
     /** Debug: Import Breakpoints… — asks for a file Export wrote, then sets its breakpoints. */
     void importBreakpoints() {
         FileChooser chooser = new FileChooser();
@@ -297,6 +300,14 @@ final class BreakpointGroups {
         }
         BreakpointExport.Document doc;
         try {
+            // The size is asked before the content is read: a file picked by mistake is not read into memory.
+            if (Files.size(chosen.toPath()) > MAX_IMPORT_BYTES) {
+                host.setStatus(tr(
+                        "status.debug.breakpointsImportFailed",
+                        chosen.getName(),
+                        tr("debug.import.tooLarge", MAX_IMPORT_BYTES / (1024 * 1024))));
+                return;
+            }
             doc = BreakpointExport.read(Files.readString(chosen.toPath()));
         } catch (IOException | RuntimeException e) {
             host.setStatus(

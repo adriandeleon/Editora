@@ -1070,6 +1070,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         private final ListCell<?> cell;
         private GitGraph.@Nullable Row row;
         private boolean merge;
+        /** A repaint is asked for and the next layout pass makes it: one paint a pulse, whatever asked. */
+        private boolean drawPending;
 
         GraphStrip(ListCell<?> cell) {
             this.cell = cell;
@@ -1078,14 +1080,22 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             setMaxHeight(Double.MAX_VALUE);
             setMouseTransparent(true);
             UiZoom.follow(this, this::requestLayout);
-            UiZoom.follow(canvas, this::draw);
+            UiZoom.follow(canvas, this::requestDraw);
         }
 
         void show(GitGraph.Row row, boolean merge) {
             this.row = row;
             this.merge = merge;
+            requestDraw();
+        }
+
+        /**
+         * Asks for one repaint at the next layout pass. A row shown, a size change and a zoom change in the same
+         * pulse used to paint the strip once each; a request that finds one pending adds nothing.
+         */
+        private void requestDraw() {
+            drawPending = true;
             requestLayout();
-            draw();
         }
 
         @Override
@@ -1110,9 +1120,13 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             double top = getLayoutY() + (getParent() == null ? 0 : getParent().getLayoutY());
             double height = cell.getHeight() > 0 ? cell.getHeight() : getHeight();
             canvas.setLayoutY(-top);
-            if (canvas.getWidth() != getWidth() || canvas.getHeight() != height) {
+            boolean resized = canvas.getWidth() != getWidth() || canvas.getHeight() != height;
+            if (resized) {
                 canvas.setWidth(getWidth());
                 canvas.setHeight(height);
+            }
+            if (resized || drawPending) {
+                drawPending = false;
                 draw();
             }
         }
