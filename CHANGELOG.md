@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Move between the editor and the tool windows from the keyboard, both ways, in every keymap.** *Window:
+  Other* already cycled forward but was bound in the Emacs keymap only, and nothing went back. There is now
+  *Window: Other, Reverse*, and both are bound everywhere: `C-x o` and `C-x S-o` in Emacs, Alt+Page Down and
+  Alt+Page Up in the CUA, VS Code, Sublime and IntelliJ keymaps. Both are in the Window menu.
 - **Parallel Stacks in the debugger.** Debug: Parallel Stacks draws every thread's call stack as one tree, as
   Visual Studio's Parallel Stacks window does: threads that went through the same calls share a box, and the box
   branches where they went different ways, so twenty workers waiting in one place are one box of twenty threads. The
@@ -572,6 +576,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Command Palette and the pickers tell a screen reader which row is selected.** The arrow keys move
+  a highlight while the keyboard stays in the text field, so a screen reader said nothing. The list now
+  announces the row, each palette row has a spoken name (its title and its keys), and a command that cannot
+  run says so with the reason.
+- **Editora follows the system's reduced-motion setting.** With it on, the ring that fades around a row
+  revealed in the Project Map is not shown; turning the setting on while it fades removes it at once.
 - **Your templates and snippet files say which format they are in.** A template you save and a snippet
   file Editora writes now carry `"schemaVersion": 1`; files from before load as they always did, and the
   marker is added the next time Editora saves them. If a newer Editora ever changes the format, an older one

@@ -1015,6 +1015,7 @@ final class MapSurface extends Region {
             if (layoutFlashPath == null || !view.active || (now - layoutFlashStart) / 1e6 > FLASH_MILLIS) {
                 layoutFlashPath = null;
                 stop();
+                Motion.ended(this);
             }
             scheduleDraw();
         }
@@ -1104,7 +1105,15 @@ final class MapSurface extends Region {
         }
         layoutFlashPath = path;
         layoutFlashStart = System.nanoTime();
-        layoutFlashTimer.start();
+        // Through Motion: with reduced motion the ring does not fade in and out; its end state, no ring, is
+        // shown at once (the revealed row is still the selected one).
+        Motion.start(layoutFlashTimer, this::endLayoutFlash);
+    }
+
+    /** The flash's end state: no ring. */
+    private void endLayoutFlash() {
+        layoutFlashPath = null;
+        scheduleDraw();
     }
 
     /** The revealed row's flash: an accent ring that fades out. */

@@ -114,6 +114,17 @@ A control that works with the mouse but cannot be reached, seen or named from th
 - **Keyboard focus** is drawn by the one `:focus-visible` block at the end of `app.css`. `app.css` is an
   author sheet: a base-state `-fx-background-color` there erases the theme's `:focused` variant of the same
   control, so restate the states you override and keep that block last.
+- **Motion follows the system.** An animation that moves, fades or flashes part of the window starts
+  through `Motion.start(timer, atEnd)`: with the system's reduced-motion setting on it does not run and
+  `atEnd` shows its end state at once, and turning the setting on stops what is running the same way. A
+  timer that only measures time or coalesces repaints moves nothing and does not go through it.
+  `MotionFxTest` lists every `AnimationTimer` and fails on a transition built anywhere else.
+- **A picker announces the row it is on.** A picker keeps the keyboard in its text field and moves a
+  highlight, so `PickerKeys.navigate` (and a filter that changes the row in front) calls
+  `PickerKeys.announce(list)`, which tells a screen reader the list's item changed. A row drawn from nodes
+  sets its accessible text, and a row that cannot run says so there with the reason.
+- **Two commands move between the regions of the window**, `window.other` and `window.otherReverse` (the
+  editor, then each open tool window), and every keymap binds both (`KeymapsTest`).
 - **Colour**: text people must read uses `-color-fg-muted` or stronger (`-color-fg-subtle` is ~3:1 —
   disabled/decorative only); ink on an `-emphasis` fill is `-color-fg-emphasis`, never `white`; state
   colours come from the `-state-*` tokens, never a hex. `StyleContrastTest` pins the ratios.

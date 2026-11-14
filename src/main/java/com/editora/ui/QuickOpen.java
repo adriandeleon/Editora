@@ -373,6 +373,7 @@ public class QuickOpen<T> {
         }
         list.getSelectionModel().select(start);
         list.scrollTo(start);
+        PickerKeys.announce(list); // typing changed the row in front
     }
 
     /** Shows the picker as a centered in-scene overlay. {@code owner} is unused (kept for call-site

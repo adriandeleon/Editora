@@ -515,4 +515,17 @@ class KeymapsTest {
             org.junit.jupiter.api.Assertions.assertEquals("edit.completion", cua.commandFor("C-space"));
         }
     }
+
+    /**
+     * Every keymap binds a command for the next region of the window and one for the previous: with several
+     * panels open, Tab alone walks every control of each before it reaches the next.
+     */
+    @Test
+    void everyKeymapBindsTheNextAndThePreviousRegion() {
+        for (String resource : allKeymapResources()) {
+            java.util.Collection<String> commands = load(resource).values();
+            assertTrue(commands.contains("window.other"), resource + " binds window.other");
+            assertTrue(commands.contains("window.otherReverse"), resource + " binds window.otherReverse");
+        }
+    }
 }

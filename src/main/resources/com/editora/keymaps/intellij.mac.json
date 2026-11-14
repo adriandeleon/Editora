@@ -125,5 +125,7 @@
   "Cmd-S-add": "view.unfoldAll",
   "Cmd-S-1": "project.toggleMapView",
   "M-f1": "projectMap.revealActiveFile",
-  "f10": "view.focusMenuBar"
+  "f10": "view.focusMenuBar",
+  "M-pagedown": "window.other",
+  "M-pageup": "window.otherReverse"
 }

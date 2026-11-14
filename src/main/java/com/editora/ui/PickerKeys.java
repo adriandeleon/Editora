@@ -184,8 +184,18 @@ final class PickerKeys {
         if (idx >= 0) {
             list.getSelectionModel().select(idx);
             list.scrollTo(idx);
+            announce(list);
         }
         return true;
+    }
+
+    /**
+     * Tells a screen reader that the list's row changed. A picker keeps the keyboard in its text field and
+     * moves a highlight, not the focus, so without this the reader stays on the field and says nothing as
+     * the user walks the list. The list answers which row it is from its selection.
+     */
+    static void announce(ListView<?> list) {
+        list.notifyAccessibleAttributeChanged(javafx.scene.AccessibleAttribute.FOCUS_ITEM);
     }
 
     private static <T> int seek(List<T> items, int from, int dir, Predicate<? super T> selectable) {

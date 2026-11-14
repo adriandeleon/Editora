@@ -596,6 +596,15 @@ final class WindowChromeCoordinator {
      * Order: editor, then each open tool window (by side); wraps back to the editor.
      */
     void otherWindow() {
+        otherWindow(1);
+    }
+
+    /** {@code window.otherReverse}: the same cycle the other way round. */
+    void otherWindowReverse() {
+        otherWindow(-1);
+    }
+
+    private void otherWindow(int step) {
         List<Node> targets = new ArrayList<>();
         CodeArea area = host.activeArea();
         if (area != null) {
@@ -610,8 +619,12 @@ final class WindowChromeCoordinator {
         Node focusOwner =
                 host.root().getScene() == null ? null : host.root().getScene().getFocusOwner();
         int current = indexOfContaining(targets, focusOwner);
-        int next = current < 0 ? 0 : (current + 1) % targets.size();
-        focusWindow(targets.get(next));
+        focusWindow(targets.get(nextRegion(current, step, targets.size())));
+    }
+
+    /** The region after ({@code step} 1) or before (-1) {@code current} of {@code size}, wrapping; the first when none has the focus. Pure. */
+    static int nextRegion(int current, int step, int size) {
+        return current < 0 ? 0 : Math.floorMod(current + step, size);
     }
 
     /** Index of the target that contains (or is) the focus owner, or -1 if none. */
