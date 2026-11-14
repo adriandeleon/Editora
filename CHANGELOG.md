@@ -565,6 +565,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Your templates and snippet files say which format they are in.** A template you save and a snippet
+  file Editora writes now carry `"schemaVersion": 1`; files from before load as they always did, and the
+  marker is added the next time Editora saves them. If a newer Editora ever changes the format, an older one
+  no longer misreads its files: a template or snippet file from a newer version is not loaded, is left
+  exactly as it is, and a copy is kept beside it (`<name>.v<n>.bak`). Saving into such a snippet file is
+  refused, and Settings Sync does not merge one.
 - **Find in a console or a Project Map card highlights every match.** Only the current match was selected;
   now all of them are highlighted while the find bar is open, the current one more strongly, as in the
   editor. Output that arrives while the bar is open is highlighted and counted too.

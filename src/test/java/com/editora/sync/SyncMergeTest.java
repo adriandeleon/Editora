@@ -309,4 +309,35 @@ class SyncMergeTest {
         SyncMerge.FileResult r = keybindings(null, keyFile("some.cmd", "C-c a"), "{\"formatVersion\":99}");
         assertEquals(SyncMerge.Skip.REMOTE_NEWER, r.skip());
     }
+
+    /** A snippet file or a template another machine's newer Editora wrote is not merged into this one's. */
+    @Test
+    void aSnippetFileOrATemplateFromANewerEditoraIsLeftAlone() {
+        String mine = "{ \"schemaVersion\": 1, \"Mine\": { \"prefix\": \"zm\", \"body\": \"x\" } }";
+        SyncMerge.FileResult snippets = SyncMerge.merge(
+                SyncCategory.SNIPPETS,
+                "snippets/java.json",
+                null,
+                mine,
+                "{ \"schemaVersion\": 99, \"Theirs\": { \"when\": \"zt\" } }");
+        assertEquals(SyncMerge.Skip.REMOTE_NEWER, snippets.skip());
+
+        SyncMerge.FileResult template = SyncMerge.merge(
+                SyncCategory.TEMPLATES,
+                "templates/class.json",
+                null,
+                "{\"schemaVersion\": 1, \"name\": \"Class\", \"body\": \"x\"}",
+                "{\"schemaVersion\": 99, \"title\": \"Class\"}");
+        assertEquals(SyncMerge.Skip.REMOTE_NEWER, template.skip());
+
+        // The marker is one more entry to a merge: a file that has it and one that does not yet still merge.
+        SyncMerge.FileResult merged = SyncMerge.merge(
+                SyncCategory.SNIPPETS,
+                "snippets/java.json",
+                null,
+                "{ \"Mine\": { \"prefix\": \"zm\", \"body\": \"x\" } }",
+                "{ \"schemaVersion\": 1, \"Theirs\": { \"prefix\": \"zt\", \"body\": \"y\" } }");
+        assertTrue(merged.text().contains("\"schemaVersion\": 1"), merged.text());
+        assertTrue(merged.text().contains("\"Mine\"") && merged.text().contains("\"Theirs\""), merged.text());
+    }
 }

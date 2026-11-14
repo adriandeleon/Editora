@@ -52,6 +52,7 @@ final class SnippetCoordinator {
 
     private static final String USER_SNIPPET_TEMPLATE = """
             {
+              "schemaVersion": 1,
               // Each entry is a snippet: "prefix" is what you type before Tab, "body" what it expands to.
               // $1, $2 are tab stops, ${1:default} a placeholder, $0 where the caret ends up.
               // Saving this file reloads your snippets.
@@ -251,6 +252,10 @@ final class SnippetCoordinator {
             case BAD_ENTRY -> tr("status.snippetEntryError", p.fileName(), p.entry(), p.line());
             case NOT_AN_OBJECT -> tr("status.snippetFileShapeError", p.fileName());
             case UNREADABLE -> tr("status.snippetFileReadError", p.fileName(), p.detail());
+            case NEWER_VERSION ->
+                p.detail().isEmpty()
+                        ? tr("status.snippetFileNewerErrorNoCopy", p.fileName())
+                        : tr("status.snippetFileNewerError", p.fileName(), p.detail());
             case SYNTAX ->
                 p.line() > 0
                         ? tr("status.snippetFileSyntaxError", p.fileName(), p.detail(), p.line())

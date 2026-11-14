@@ -64,8 +64,23 @@ public final class TemplateRegistry {
         /** The file is called {@code index.json}, which is reserved. */
         RESERVED_ID,
         /** The file could not be read ({@code detail} = the IO error). */
-        UNREADABLE
+        UNREADABLE,
+        /**
+         * A newer Editora wrote the file, in a format this one does not know. It is left where it is and not
+         * loaded; {@code detail} is the name of the copy kept beside it, or empty when none could be made.
+         */
+        NEWER_VERSION
     }
+
+    /**
+     * The format of a user template file, written into it as {@code schemaVersion}. A file without one is
+     * version 1, the format before versions were written. To change the format: raise this and add the step
+     * from the old version to {@link #MIGRATIONS}.
+     */
+    public static final int SCHEMA_VERSION = 1;
+
+    /** One step for every version below {@link #SCHEMA_VERSION}: step {@code i} takes {@code i + 1} to {@code i + 2}. */
+    static final List<java.util.function.UnaryOperator<com.fasterxml.jackson.databind.JsonNode>> MIGRATIONS = List.of();
 
     /** A template file that was skipped: which, why, and (for a syntax error) on which line. */
     public record Problem(Path file, ProblemKind kind, String detail, int line) {}
@@ -189,6 +204,7 @@ public final class TemplateRegistry {
         }
         Files.createDirectories(userDir());
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        m.put(com.editora.config.migration.UserFileVersion.KEY, SCHEMA_VERSION);
         m.put("name", t.name() == null || t.name().isBlank() ? t.id() : t.name());
         if (t.description() != null && !t.description().isBlank()) {
             m.put("description", t.description());
@@ -299,7 +315,22 @@ public final class TemplateRegistry {
                 continue; // a plugin may ship its own index.json the way the bundled set does
             }
             try (InputStream in = Files.newInputStream(p)) {
-                Template t = parse(mapper.readTree(in), id, origin, source, p, problems);
+                com.fasterxml.jackson.databind.JsonNode tree = mapper.readTree(in);
+                if (origin == Template.Origin.USER) {
+                    int stored = com.editora.config.migration.UserFileVersion.of(tree);
+                    if (stored > SCHEMA_VERSION) {
+                        // A newer Editora's file: not loaded, left in place for it, a copy kept beside it.
+                        Path copy = com.editora.config.migration.UserFileVersion.keepCopyOfNewer(p, stored);
+                        problems.add(new Problem(
+                                p,
+                                ProblemKind.NEWER_VERSION,
+                                copy == null ? "" : copy.getFileName().toString(),
+                                0));
+                        continue;
+                    }
+                    tree = com.editora.config.migration.UserFileVersion.migrate(tree, stored, MIGRATIONS);
+                }
+                Template t = parse(tree, id, origin, source, p, problems);
                 if (t != null) {
                     byId.remove(id); // re-insert, so an override takes the later source's position
                     byId.put(id, t);

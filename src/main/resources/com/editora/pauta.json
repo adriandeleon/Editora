@@ -401,22 +401,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {
-      "rule": "SET-09",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/settings/#set-09",
-      "kind": "pending",
-      "reason": "Your own templates and snippets are saved without a format version.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1568"
-    },
-    {
-      "rule": "SET-10",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/settings/#set-10",
-      "kind": "pending",
-      "reason": "A template or snippet file written by a newer Editora is not recognized as newer or backed up before it is read.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1568"
-    },
-    {
       "rule": "SET-13",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/settings/#set-13",

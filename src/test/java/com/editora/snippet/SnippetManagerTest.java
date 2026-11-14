@@ -673,4 +673,73 @@ class SnippetManagerTest {
             assertNotNull(m.byPrefix("xml", prefix), prefix);
         }
     }
+
+    /**
+     * A snippet file the editor writes says which format it is in, with a marker beside the snippets that is not
+     * one of them and survives every later save; a file from before the marker loads as it always did.
+     */
+    @Test
+    void aSavedSnippetFileCarriesItsFormatVersionWhichIsNotASnippet(@TempDir Path dir) throws Exception {
+        Path snippets = Files.createDirectories(dir.resolve("snippets"));
+        Path file = Files.writeString(snippets.resolve("go.json"), """
+                {
+                  // my own
+                  "Old": { "prefix": "zold", "body": "old" }
+                }
+                """);
+        SnippetManager m = manager(dir);
+        assertEquals(
+                java.util.List.of("Old"),
+                m.userSnippets("go").stream().map(Snippet::name).toList());
+
+        m.saveUserEntry("go", null, SnippetManager.Entry.user("New", java.util.List.of("znew"), "x", ""));
+        String saved = Files.readString(file);
+        assertTrue(saved.contains("\"schemaVersion\": " + SnippetManager.SCHEMA_VERSION), saved);
+        assertTrue(saved.contains("// my own"), "the comment is kept: " + saved);
+        assertEquals(
+                java.util.List.of("Old", "New"),
+                m.userSnippets("go").stream().map(Snippet::name).toList(),
+                "the marker is not a snippet");
+        assertTrue(m.checkUserFiles().isEmpty(), "and is not reported as a bad entry: " + m.checkUserFiles());
+
+        // Replacing the whole list keeps the marker, once.
+        m.saveUserSnippets("go", m.userSnippets("go").subList(0, 1));
+        saved = Files.readString(file);
+        assertEquals(1, saved.split("schemaVersion", -1).length - 1, saved);
+        assertEquals(
+                java.util.List.of("Old"),
+                m.userSnippets("go").stream().map(Snippet::name).toList());
+    }
+
+    /**
+     * A snippet file written by a newer Editora is not loaded and never rewritten from here: it stays where it
+     * is, a copy is kept beside it, and a save into it is refused.
+     */
+    @Test
+    void aSnippetFileFromANewerEditoraIsNotLoadedNotRewrittenAndCopiedOnce(@TempDir Path dir) throws Exception {
+        Path snippets = Files.createDirectories(dir.resolve("snippets"));
+        String newer = "{ \"schemaVersion\": 99, \"Future\": { \"when\": \"zf\", \"gives\": \"x\" } }";
+        Path file = Files.writeString(snippets.resolve("go.json"), newer);
+
+        SnippetManager m = manager(dir);
+        assertTrue(m.userSnippets("go").isEmpty(), "nothing is loaded from a format this build does not know");
+        SnippetManager.Problem problem = m.wholeFileProblem("go");
+        assertNotNull(problem);
+        assertEquals(SnippetManager.Problem.Kind.NEWER_VERSION, problem.kind());
+        assertEquals("go.json.v99.bak", problem.detail());
+        assertEquals(newer, Files.readString(snippets.resolve("go.json.v99.bak")));
+
+        java.io.IOException refused = org.junit.jupiter.api.Assertions.assertThrows(
+                java.io.IOException.class,
+                () -> m.saveUserEntry(
+                        "go", null, SnippetManager.Entry.user("New", java.util.List.of("znew"), "x", "")));
+        assertTrue(refused.getMessage().contains("newer version"), refused.getMessage());
+        assertEquals(newer, Files.readString(file), "the newer file is untouched");
+
+        m.reload();
+        m.userSnippets("go");
+        try (var files = Files.list(snippets)) {
+            assertEquals(2, files.count(), "read again: still one copy");
+        }
+    }
 }
