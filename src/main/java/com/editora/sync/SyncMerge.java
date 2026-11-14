@@ -276,7 +276,15 @@ public final class SyncMerge {
                 return new Parsed(pretty(tree), entries, tree);
             }
             case SNIPPETS -> {
-                return new Parsed(text, SnippetFileMerge.entries(text), null);
+                Map<String, String> entries = SnippetFileMerge.entries(text);
+                // The file's format version sits among its entries, as a number.
+                String version = entries.get(com.editora.config.migration.UserFileVersion.KEY);
+                if (version != null
+                        && version.matches("\\d{1,9}")
+                        && Integer.parseInt(version) > com.editora.snippet.SnippetManager.SCHEMA_VERSION) {
+                    throw new NewerFormatException();
+                }
+                return new Parsed(text, entries, null);
             }
             case TEMPLATES -> {
                 if (text.isBlank()) {
@@ -285,6 +293,10 @@ public final class SyncMerge {
                 JsonNode tree = MAPPER.readTree(text);
                 if (tree == null || !tree.isObject()) {
                     throw new IOException("not an object");
+                }
+                if (com.editora.config.migration.UserFileVersion.of(tree)
+                        > com.editora.template.TemplateRegistry.SCHEMA_VERSION) {
+                    throw new NewerFormatException();
                 }
                 return new Parsed(text, Map.of("", MAPPER.writeValueAsString(tree)), null);
             }

@@ -1046,6 +1046,10 @@ final class TemplateCoordinator {
             case BAD_FILES -> tr("template.problem.badFiles");
             case RESERVED_ID -> tr("template.problem.reservedId");
             case UNREADABLE -> tr("template.problem.unreadable", p.detail());
+            case NEWER_VERSION ->
+                p.detail().isEmpty()
+                        ? tr("template.problem.newerVersionNoCopy")
+                        : tr("template.problem.newerVersion", p.detail());
         };
     }
 

@@ -361,4 +361,46 @@ class TemplateRegistryTest {
                 java.util.Map.of("issueTitle", "Titel des Tickets"),
                 byId(r, "issue").labels());
     }
+
+    /** A saved template says which format it is in, and a file from before versions were written still loads. */
+    @Test
+    void aSavedTemplateCarriesItsFormatVersionAndAFileWithoutOneStillLoads(@TempDir Path dir) throws Exception {
+        TemplateRegistry r = registry(dir);
+        r.saveUserTemplate(new Template("mine", "Mine", "", "java", "${n}.java", "// x", null));
+        String saved = Files.readString(dir.resolve("templates/mine.json"));
+        assertTrue(saved.contains("\"schemaVersion\" : " + TemplateRegistry.SCHEMA_VERSION), saved);
+        r.reload();
+        assertEquals("Mine", byId(r, "mine").name());
+
+        Files.writeString(dir.resolve("templates/old.json"), "{\"name\": \"Old\", \"body\": \"text\"}");
+        r.reload();
+        assertEquals("Old", byId(r, "old").name(), "no marker: the format before versions");
+        assertTrue(r.problems().isEmpty(), r.problems().toString());
+    }
+
+    /**
+     * A template written by a newer Editora, in a format this one does not know, is not loaded: it stays where
+     * it is for that Editora, a copy is kept beside it, and the user is told. Reading again copies nothing more.
+     */
+    @Test
+    void aTemplateFromANewerEditoraIsNotLoadedLeftInPlaceAndCopiedOnce(@TempDir Path dir) throws Exception {
+        Path templates = Files.createDirectories(dir.resolve("templates"));
+        String newer = "{\"schemaVersion\": 99, \"title\": \"A shape from the future\"}";
+        Path file = Files.writeString(templates.resolve("future.json"), newer);
+
+        TemplateRegistry r = registry(dir);
+        assertNull(byId(r, "future"));
+        TemplateRegistry.Problem problem = problem(r, "future.json");
+        assertEquals(TemplateRegistry.ProblemKind.NEWER_VERSION, problem.kind());
+        assertEquals("future.json.v99.bak", problem.detail());
+        assertEquals(newer, Files.readString(file), "the newer file is untouched");
+        assertEquals(newer, Files.readString(templates.resolve("future.json.v99.bak")));
+
+        r.reload();
+        r.all();
+        try (var files = Files.list(templates)) {
+            assertEquals(2, files.count(), "read again: still one copy");
+        }
+        assertNull(byId(r, "future.json.v99"), "the copy is not a template");
+    }
 }

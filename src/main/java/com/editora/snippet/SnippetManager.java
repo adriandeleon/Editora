@@ -168,7 +168,12 @@ public final class SnippetManager {
             /** {@code entry} is not an object; only that entry was skipped. */
             BAD_ENTRY,
             /** The file could not be read; {@code detail} is the I/O reason. */
-            UNREADABLE
+            UNREADABLE,
+            /**
+             * A newer Editora wrote the file, in a format this one does not know. Nothing was loaded from it and
+             * it is never rewritten; {@code detail} is the name of the copy kept beside it, or empty.
+             */
+            NEWER_VERSION
         }
 
         /** True when the whole file is unusable (so it must not be rewritten). */
@@ -588,7 +593,7 @@ public final class SnippetManager {
         }
         String text = doc.text;
         for (JsoncObject.Member m : doc.members) {
-            if (!keep.contains(m.name())) {
+            if (!keep.contains(m.name()) && !isVersionMember(doc, m)) {
                 text = JsoncObject.parse(text, mapper.getFactory()).without(m.name());
             }
         }
@@ -628,16 +633,59 @@ public final class SnippetManager {
         writeUserDocument(lang, text);
     }
 
+    /**
+     * The format of a user snippet file, written into it as the member {@code schemaVersion} beside its
+     * snippets. A file without one is version 1, the format before versions were written. To change the format:
+     * raise this and convert an older file's text where it is read.
+     */
+    public static final int SCHEMA_VERSION = 1;
+
+    /** The version {@code doc} carries: its numeric {@code schemaVersion} member, else the one before versions. */
+    private int versionOf(JsoncObject doc) {
+        JsoncObject.Member m = doc.member(com.editora.config.migration.UserFileVersion.KEY);
+        if (m == null) {
+            return com.editora.config.migration.UserFileVersion.BEFORE_VERSIONS;
+        }
+        String value = doc.valueText(m).strip();
+        return value.matches("\\d{1,9}")
+                ? Integer.parseInt(value)
+                : com.editora.config.migration.UserFileVersion.BEFORE_VERSIONS;
+    }
+
+    /** Whether {@code m} is the file's version marker and not a snippet: a member of that name holding a number. */
+    private static boolean isVersionMember(JsoncObject doc, JsoncObject.Member m) {
+        return com.editora.config.migration.UserFileVersion.KEY.equals(m.name())
+                && doc.valueText(m).strip().matches("\\d+");
+    }
+
+    /** {@code text} with the version marker added when it has none: every file the editor writes carries it. */
+    private String stamped(String text) throws IOException {
+        JsoncObject doc = JsoncObject.parse(text, mapper.getFactory());
+        return doc.member(com.editora.config.migration.UserFileVersion.KEY) != null
+                ? text
+                : doc.with(
+                        null,
+                        mapper.writeValueAsString(com.editora.config.migration.UserFileVersion.KEY),
+                        String.valueOf(SCHEMA_VERSION));
+    }
+
     private JsoncObject readUserDocument(String lang) throws IOException {
         Path file = userFile(lang);
         if (!Files.exists(file)) {
             return JsoncObject.parse("", mapper.getFactory());
         }
+        JsoncObject doc;
         try {
-            return JsoncObject.parse(Files.readString(file, StandardCharsets.UTF_8), mapper.getFactory());
+            doc = JsoncObject.parse(Files.readString(file, StandardCharsets.UTF_8), mapper.getFactory());
         } catch (IOException e) {
             throw new IOException(file.getFileName() + " could not be read and was left untouched: " + describe(e), e);
         }
+        if (versionOf(doc) > SCHEMA_VERSION) {
+            // A change made here would be written in this build's format over a file it does not understand.
+            throw new IOException(
+                    file.getFileName() + " was written by a newer version of Editora and was left untouched");
+        }
+        return doc;
     }
 
     private Map<String, Object> valueMap(JsoncObject doc, JsoncObject.Member m) {
@@ -679,7 +727,7 @@ public final class SnippetManager {
         Path file = userFile(lang);
         Files.createDirectories(file.getParent());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        Files.writeString(tmp, text, StandardCharsets.UTF_8);
+        Files.writeString(tmp, stamped(text), StandardCharsets.UTF_8);
         Files.move(
                 tmp,
                 file,
@@ -806,7 +854,25 @@ public final class SnippetManager {
             report(file, Problem.Kind.SYNTAX, "", describe(e), line);
             return out;
         }
+        int stored = versionOf(doc);
+        if (stored > SCHEMA_VERSION) {
+            // A newer Editora's file: nothing is loaded from it. The user's own file stays where it is, for
+            // that newer Editora, with a copy beside it; a plugin's is only passed over.
+            Path copy = file != null && userFileLanguage(file) != null
+                    ? com.editora.config.migration.UserFileVersion.keepCopyOfNewer(file, stored)
+                    : null;
+            report(
+                    file,
+                    Problem.Kind.NEWER_VERSION,
+                    "",
+                    copy == null ? "" : copy.getFileName().toString(),
+                    0);
+            return out;
+        }
         for (JsoncObject.Member m : doc.members) {
+            if (isVersionMember(doc, m)) {
+                continue; // the file's format version, not a snippet
+            }
             JsonNode node;
             try {
                 node = mapper.readTree(doc.valueText(m));
