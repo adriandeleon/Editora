@@ -74,6 +74,13 @@ public class QuickOpen<T> {
     private java.util.function.@Nullable Supplier<T> currentItem;
 
     private final ObservableList<T> items = FXCollections.observableArrayList();
+
+    /** The picker's own sentence for an empty source ({@link #setPlaceholder}); null: the general one. */
+    private @Nullable String emptyText;
+
+    /** Shown in place of the rows while there are none. */
+    private final Label emptyLabel = new Label();
+
     private List<T> all = List.of();
 
     /** The live query, so a recycled cell can embolden the characters responsible for its row's rank. */
@@ -147,12 +154,21 @@ public class QuickOpen<T> {
         this.itemIcon = itemIcon;
     }
 
-    /** What the list says while it has no rows at all (the breakpoints list with no breakpoints, review 2 C107). */
+    /**
+     * What the list says while its source has no rows at all, in this picker's own words ("No bookmarks in this
+     * project"). A picker that sets none says a general sentence: the card is never blank.
+     */
     public void setPlaceholder(String text) {
-        Label empty = new Label(text);
-        empty.getStyleClass().add("palette-hint");
-        empty.setWrapText(true);
-        list.setPlaceholder(empty);
+        emptyText = text;
+        emptyLabel.setText(placeholderText());
+    }
+
+    /** The sentence for a list with no rows: nothing to choose from at all, or nothing that matches what was typed. */
+    private String placeholderText() {
+        if (!all.isEmpty()) {
+            return com.editora.i18n.Messages.tr("search.none");
+        }
+        return emptyText != null ? emptyText : com.editora.i18n.Messages.tr("picker.empty");
     }
 
     /** The title over the list: one picker serves two commands (Insert Snippet, Surround With — ET2). */
@@ -228,6 +244,9 @@ public class QuickOpen<T> {
     private void build(String title, String prompt) {
         input.setPromptText(prompt);
         list.setItems(items);
+        emptyLabel.getStyleClass().add("palette-hint");
+        emptyLabel.setWrapText(true);
+        list.setPlaceholder(emptyLabel);
         // Hug the result count: a fixed cell size lets the list size to its rows, capped at MAX_VISIBLE
         // (then it scrolls), so the popup isn't a fixed-tall box with empty space for a few matches.
         UiZoom.follow(list, "cellSize", () -> list.setFixedCellSize(UiZoom.px(CELL_HEIGHT)));
@@ -340,6 +359,7 @@ public class QuickOpen<T> {
         }
         items.setAll(matches);
         if (items.isEmpty()) {
+            emptyLabel.setText(placeholderText());
             return;
         }
         // With no query, start on the value in force when one was supplied; otherwise the first row.

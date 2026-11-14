@@ -6,13 +6,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.ChoiceDialog;
 import javafx.stage.Window;
 
 import com.editora.config.ConfigManager;
@@ -34,12 +32,22 @@ final class SettingsResetFlow {
     private final ConfigManager config;
     private final Runnable commit;
     private final Consumer<String> status;
+    private final BackupChooser chooser;
 
-    /** {@code commit} persists and applies the settings now in memory (re-themes, re-reads every control). */
-    SettingsResetFlow(ConfigManager config, Runnable commit, Consumer<String> status) {
+    /** Lets the user choose one of {@code backups}, newest first; {@code onChosen} is not called on a cancel. */
+    interface BackupChooser {
+        void choose(List<Path> backups, Consumer<Path> onChosen);
+    }
+
+    /**
+     * {@code commit} persists and applies the settings now in memory (re-themes, re-reads every control);
+     * {@code chooser} is the picker a restore asks with.
+     */
+    SettingsResetFlow(ConfigManager config, Runnable commit, Consumer<String> status, BackupChooser chooser) {
         this.config = config;
         this.commit = commit;
         this.status = status;
+        this.chooser = chooser;
     }
 
     /**
@@ -119,18 +127,12 @@ final class SettingsResetFlow {
             none.showAndWait();
             return;
         }
-        ChoiceDialog<String> pick = Dialogs.styled(new ChoiceDialog<>(
-                backups.get(0).getFileName().toString(),
-                backups.stream().map(p -> p.getFileName().toString()).toList()));
-        pick.initOwner(owner);
-        pick.setTitle(tr("settings.restore.title"));
-        pick.setHeaderText(tr("settings.restore.header"));
-        pick.setContentText(tr("settings.restore.label"));
-        Optional<String> chosen = pick.showAndWait();
-        if (chosen.isEmpty()) {
-            return;
-        }
-        Path source = config.getSettingsFile().resolveSibling(chosen.get());
+        chooser.choose(backups, source -> restoreFrom(owner, source));
+    }
+
+    /** Puts the backup {@code source} back, after saving the settings in force as a backup of their own. */
+    private void restoreFrom(Window owner, Path source) {
+        String chosen = source.getFileName().toString();
         Path backup = backUp(owner, LocalDateTime.now());
         if (backup == null) {
             return;
@@ -142,12 +144,12 @@ final class SettingsResetFlow {
             return;
         }
         if (config.shared().reloadSettings() == null) {
-            failed(owner, tr("settings.restore.failed", chosen.get()));
+            failed(owner, tr("settings.restore.failed", chosen));
             return;
         }
         commit.run();
-        status.accept(tr(
-                "status.settings.restored", chosen.get(), backup.getFileName().toString()));
+        status.accept(
+                tr("status.settings.restored", chosen, backup.getFileName().toString()));
     }
 
     /** The reset backups beside {@code settingsFile}, newest first (their names sort by date). */

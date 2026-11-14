@@ -457,22 +457,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1570"
     },
     {
-      "rule": "QOPEN-01",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/quick-open/#qopen-01",
-      "kind": "pending",
-      "reason": "Three choices still use a plain system dialog instead of the picker: the Git reset mode, the merge parent to revert against and the settings backup to restore.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1572"
-    },
-    {
-      "rule": "QOPEN-10",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/quick-open/#qopen-10",
-      "kind": "pending",
-      "reason": "A few pickers open empty when they have nothing to list, Bookmarks and Recent Files among them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1572"
-    },
-    {
       "rule": "ABOUT-01",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/templates/about/#about-01",

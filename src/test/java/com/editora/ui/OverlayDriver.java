@@ -27,7 +27,11 @@ final class OverlayDriver {
 
     /** The card the overlay is showing. */
     static Node card(MainController controller) {
-        OverlayHost overlay = FxTestSupport.field(controller, "overlayHost");
+        return card(FxTestSupport.<OverlayHost>field(controller, "overlayHost"));
+    }
+
+    /** The card {@code overlay} is showing: for a window with a card host of its own, as Settings has. */
+    static Node card(OverlayHost overlay) {
         if (!overlay.isShowing()) {
             throw new IllegalStateException("nothing is showing in the overlay");
         }
@@ -50,9 +54,13 @@ final class OverlayDriver {
     }
 
     /** Selects {@code item} in the picker on screen and presses Enter. */
-    @SuppressWarnings("unchecked")
     static <T> void pick(MainController controller, T item) {
-        Node card = card(controller);
+        pick(card(controller), item);
+    }
+
+    /** Selects {@code item} in the picker that is {@code card} and presses Enter. */
+    @SuppressWarnings("unchecked")
+    static <T> void pick(Node card, T item) {
         ListView<T> list = (ListView<T>) card.lookup(".list-view");
         if (!list.getItems().contains(item)) {
             throw new IllegalStateException(item + " is not offered: " + list.getItems());

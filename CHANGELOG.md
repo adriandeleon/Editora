@@ -557,6 +557,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Welcome Page is in the Help menu.** It moved from the View menu, in the full menu bar and in Simple
   mode, and the Help menu's rows now run in one order: Command Palette, Documentation, Keyboard Shortcuts,
   Welcome Page, Check for Updates, Message Log, Debug Log, Report a Problem, Pauta Conformance, About.
+- **Three choices are asked in the picker instead of a system dialog.** The mode of a Git reset (soft,
+  mixed, hard, each with what it keeps), the parent to keep when reverting a merge commit, and the settings
+  backup to restore now open the same picker every other list choice uses: type to filter, Enter to choose,
+  Esc to cancel. The reset opens on mixed, as before.
 - **Dates and numbers keep your system's region.** Editora wrote them the way the bare interface language
   does: an Austrian system got German formats, and choosing English on a French system changed every date.
   They now follow the system: its region is kept when no language is chosen in Settings or the chosen one
@@ -777,6 +781,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A picker with nothing to list says so.** Jump to Bookmark, Recent Files and the two notes pickers opened
+  as a blank card when there was nothing to choose from. Every picker now shows a sentence there, its own
+  where it has one ("No bookmarks in this project"), and "No matches" when what you typed matches nothing.
 - **Messages with a count say one or several.** "Replaced 1 occurrence(s)", "Updated 3 link(s) in 1 file(s)"
   and 20 more messages now word the count in each of the six languages: "Replaced 1 occurrence", "3 liens
   mis à jour dans 1 fichier". The translations had each invented a notation for it ("Datei(en)",

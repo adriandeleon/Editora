@@ -101,6 +101,7 @@ final class BookmarkCoordinator {
                 e -> e.bm().isFolder() ? e.file().toString() : e.file().getFileName() + ":" + (e.bm().line() + 1),
                 // The jump picker is scoped to the active project's bookmarks, so they open in this window.
                 e -> bookmarkActivate(ops.currentProjectKey(), e.file(), e.bm().line()));
+        jumpPalette.setPlaceholder(tr("bookmarks.placeholder"));
     }
 
     BookmarksPanel panel() {

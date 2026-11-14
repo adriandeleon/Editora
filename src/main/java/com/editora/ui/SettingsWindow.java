@@ -875,7 +875,10 @@ public class SettingsWindow {
         root.setPrefWidth(size.getWidth());
         root.setPrefHeight(size.getHeight());
 
-        Scene scene = new Scene(root, size.getWidth(), size.getHeight());
+        // The window has a card host of its own, so a picker it asks with is shown over Settings itself.
+        javafx.scene.layout.StackPane sceneRoot = new javafx.scene.layout.StackPane(root);
+        overlay.install(sceneRoot);
+        Scene scene = new Scene(sceneRoot, size.getWidth(), size.getHeight());
         // The live preview needs the editor surface + token colors; the dialog controls keep AtlantaFX.
         scene.getStylesheets()
                 .addAll(
@@ -4129,11 +4132,31 @@ public class SettingsWindow {
 
     /** Reset to Defaults and Restore from backup, applied through {@link #commitReset}. */
     private SettingsResetFlow resetFlow() {
-        return new SettingsResetFlow(config, this::commitReset, text -> {
-            if (onStatus != null) {
-                onStatus.accept(text);
-            }
-        });
+        return new SettingsResetFlow(
+                config,
+                this::commitReset,
+                text -> {
+                    if (onStatus != null) {
+                        onStatus.accept(text);
+                    }
+                },
+                this::chooseBackup);
+    }
+
+    /** This window's in-scene card host: a picker Settings asks with opens over Settings, not over the editor. */
+    private final OverlayHost overlay = new OverlayHost();
+
+    /** The picker for the settings backup to put back, newest first, each named by its dated file. */
+    private void chooseBackup(java.util.List<java.nio.file.Path> backups, Consumer<java.nio.file.Path> onChosen) {
+        QuickOpen<java.nio.file.Path> picker = new QuickOpen<>(
+                tr("settings.restore.title"),
+                tr("settings.restore.prompt"),
+                () -> backups,
+                backup -> backup.getFileName().toString(),
+                backup -> "",
+                onChosen);
+        picker.setOverlayHost(overlay);
+        picker.show(stage);
     }
 
     /** Persists + applies a reset, re-themes the app, and reloads the controls + preview. */

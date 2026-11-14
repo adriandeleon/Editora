@@ -575,11 +575,22 @@ class GitLogHistoryFxTest {
             assertTrue(FxTestSupport.callOnFx(() -> log.panel.entry(merge).isMerge()));
             List<List<String>> asked = new ArrayList<>();
 
+            // The question is the picker, over the window: one row per parent, the first one in front.
+            // Dismissed, nothing is reverted and the status says so.
+            log.onFx(() -> {
+                log.windows.revertIn(repo.root, merge);
+                assertEquals(List.of(1, 2), OverlayDriver.<Integer>choices(log.fx.controller));
+                assertEquals(Integer.valueOf(1), OverlayDriver.<Integer>preselected(log.fx.controller));
+                OverlayDriver.dismiss(log.fx.controller);
+            });
+            assertEquals(merge, repo.git("rev-parse", "HEAD").text().strip());
+            assertEquals(tr("status.git.revertMergeCancelled"), log.echo());
+
             // Cancelling the choice reverts nothing and says so.
             log.onFx(() -> {
-                log.windows.mainlineChooser = (hash, parents) -> {
+                log.windows.mainlineChooser = (hash, parents, then) -> {
                     asked.add(parents);
-                    return null;
+                    then.accept(null);
                 };
                 log.windows.revertIn(repo.root, merge);
             });
@@ -589,7 +600,7 @@ class GitLogHistoryFxTest {
 
             // Parent 1 as the mainline: what the side branch brought in is taken out again.
             log.onFx(() -> {
-                log.windows.mainlineChooser = (hash, parents) -> 1;
+                log.windows.mainlineChooser = (hash, parents, then) -> then.accept(1);
                 log.windows.revertIn(repo.root, merge);
             });
             assertEquals(merge, repo.git("rev-parse", "HEAD~1").text().strip(), "a revert commit was added");

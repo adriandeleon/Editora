@@ -559,18 +559,17 @@ class GitDestructiveOperationsFxTest {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             GitCoordinator coordinator = applyRepo(fx, t.repo(), "main");
             GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
-            CountDownLatch chosen = new CountDownLatch(1);
             CountDownLatch done = watchStatus(
                     fx, tr("status.git.reset", "mixed", com.editora.git.GitFormat.shortHash(t.first()))::equals);
 
             FxTestSupport.runOnFx(() -> {
-                Platform.runLater(() -> {
-                    coordinator.applyState(repoState(t.worktree(), "task")); // while the mode prompt is up
-                    pressDialog(ButtonBar.ButtonData.OK_DONE, chosen); // accepts the default, "mixed"
-                });
                 windows.promptGitReset(t.first());
+                // The mode is asked in the picker: the three modes, git's default in front.
+                assertEquals(List.of("soft", "mixed", "hard"), OverlayDriver.<String>choices(fx.controller));
+                assertEquals("mixed", OverlayDriver.<String>preselected(fx.controller));
+                coordinator.applyState(repoState(t.worktree(), "task")); // while the mode picker is up
+                OverlayDriver.pick(fx.controller, "mixed");
             });
-            async.await(chosen, "reset mode choice");
             // "third" would be left on no branch: a mixed reset that strands a commit is confirmed too.
             String confirmation = GitHeadMoveWarning.resetPrompt(
                     "mixed",

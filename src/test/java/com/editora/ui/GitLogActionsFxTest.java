@@ -398,19 +398,23 @@ class GitLogActionsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             Window win = window(async, f);
 
-            AtomicReference<OverlayTestKit.Shown> question = new AtomicReference<>();
-            CountDownLatch cancelled =
-                    OverlayTestKit.answerAnyDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE, question);
+            // The question is the picker, over the window: one row per parent, the first one in front.
+            MainController c = win.w().fx.controller;
             FxTestSupport.runOnFx(() -> win.actions().revert(merge));
-            async.await(cancelled, "the mainline question");
+            OverlayTestKit.await(async, "the mainline picker", () -> OverlayDriver.showing(c));
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(List.of(1, 2), OverlayDriver.<Integer>choices(c));
+                assertEquals(Integer.valueOf(1), OverlayDriver.<Integer>preselected(c));
+                OverlayDriver.dismiss(c);
+            });
             async.awaitFx();
             assertEquals(tr("status.git.revertMergeCancelled"), win.w().status());
             assertEquals(merge, rev(f.repo(), "HEAD"), "nothing was reverted");
 
-            // The first choice is parent 1 — main as it was — so the revert takes the side branch's file away.
-            CountDownLatch accepted = OverlayTestKit.answerAnyDialog(async, ButtonBar.ButtonData.OK_DONE, null);
+            // The row in front is parent 1 — main as it was — so the revert takes the side branch's file away.
             FxTestSupport.runOnFx(() -> win.actions().revert(merge));
-            async.await(accepted, "the mainline question, accepted");
+            OverlayTestKit.await(async, "the mainline picker, again", () -> OverlayDriver.showing(c));
+            FxTestSupport.runOnFx(() -> OverlayDriver.pick(c, OverlayDriver.<Integer>preselected(c)));
             awaitMessage(async, win, tr("status.git.reverted", shortHash(merge)));
             assertFalse(Files.exists(f.repo().root.resolve("side.txt")), "the merged-in change is undone");
             assertEquals("one\ntwo\n", Files.readString(f.file()), "main's own work is kept");
@@ -422,7 +426,7 @@ class GitLogActionsFxTest {
         Fixture f = fixture(dir);
         try (AsyncTestScope async = new AsyncTestScope()) {
             Window win = window(async, f);
-            FxTestSupport.runOnFx(() -> win.windows().mainlineChooser = (hash, parents) -> {
+            FxTestSupport.runOnFx(() -> win.windows().mainlineChooser = (hash, parents, then) -> {
                 throw new AssertionError("a commit with one parent has no mainline to choose");
             });
 

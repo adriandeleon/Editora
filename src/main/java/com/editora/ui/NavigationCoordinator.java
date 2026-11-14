@@ -156,6 +156,7 @@ final class NavigationCoordinator {
                 p -> p.getFileName() == null ? p.toString() : p.getFileName().toString(),
                 p -> p.getParent() == null ? "" : p.getParent().toString(),
                 host::openRecent);
+        recentPalette.setPlaceholder(tr("menu.noRecentFiles"));
         recentPalette.setItemIcon(p -> FileIcons.forFileName(
                 p.getFileName() == null ? p.toString() : p.getFileName().toString()));
         structurePalette = new QuickOpen<>(
