@@ -429,7 +429,7 @@ final class LogViewerCoordinator {
                     forward,
                     LogLevel.WARN);
             if (target < 0) {
-                host.setStatus(tr("status.log.noError"));
+                host.setStatus(tr("status.log.noProblemLines"));
                 return;
             }
             b.jumpToLine(target);

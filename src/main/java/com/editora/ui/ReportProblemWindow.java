@@ -71,16 +71,20 @@ public final class ReportProblemWindow {
 
     /**
      * The window for one editor window: the report over {@code configDir}'s session logs ({@link DebugLog}'s
-     * in-memory capture standing in when this session's file cannot be read) and the plugins {@code plugins}
-     * has found.
+     * in-memory capture standing in when this session's file cannot be read), the plugins {@code plugins}
+     * has found and a summary of {@code settings} as they are when the report is made.
      */
     static ReportProblemWindow forConfigDir(
-            Path configDir, Supplier<@Nullable PluginManager> plugins, Consumer<String> openUrl) {
+            Path configDir,
+            Supplier<@Nullable PluginManager> plugins,
+            Supplier<com.editora.config.Settings> settings,
+            Consumer<String> openUrl) {
         return new ReportProblemWindow(
                 () -> ProblemReport.assemble(
                         Objects.requireNonNull(DebugLog.sessionFile(configDir)),
                         Objects.requireNonNull(DebugLog.previousSessionFile(configDir)),
                         pluginLines(plugins.get()),
+                        com.editora.report.SettingsSummary.of(settings.get()),
                         DebugLog.snapshot(),
                         Redactor.forThisMachine()),
                 openUrl);

@@ -609,7 +609,7 @@ class TestRunCoordinatorActionsFxTest {
 
         FxTestSupport.runOnFx(coordinator::rerunFailed);
 
-        assertEquals(List.of(tr("status.testrunner.rerunFailedUnsupported")), statuses);
+        assertEquals(List.of(tr("status.testrunner.rerunsAllInstead")), statuses);
         assertEquals(
                 List.of("run GO [test, ./...] []"),
                 calls.stream().filter(c -> c.startsWith("run")).toList());
@@ -863,6 +863,6 @@ class TestRunCoordinatorActionsFxTest {
         FxTestSupport.runOnFx(coordinator::focusFilter);
 
         assertEquals(List.of("open", "open", "open"), calls);
-        assertEquals(List.of(tr("status.testrunner.filterFailed"), tr("status.testrunner.filterCleared")), statuses);
+        assertEquals(List.of(tr("status.testrunner.filterNotPassed"), tr("status.testrunner.filterCleared")), statuses);
     }
 }

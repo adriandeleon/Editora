@@ -927,7 +927,7 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
         ReportProblemWindow window = reportProblem;
         if (window == null) {
             window = ReportProblemWindow.forConfigDir(
-                    mc.config.getConfigDir(), () -> mc.pluginManager, mc::openExternalUrl);
+                    mc.config.getConfigDir(), () -> mc.pluginManager, mc.config::getSettings, mc::openExternalUrl);
             reportProblem = window;
         }
         window.show(mc.stage);

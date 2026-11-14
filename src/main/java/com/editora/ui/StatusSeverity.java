@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 import com.editora.i18n.Messages;
@@ -22,19 +21,17 @@ import org.jspecify.annotations.Nullable;
  *   <li>a {@code status.*} key whose last segment contains {@code fail} or {@code error} is an
  *       <b>error</b> ({@code status.pdf.exportFailed}, {@code status.debug.error}, {@code status.failedOpen});
  *   <li>one containing {@code cannot} or {@code invalid} is a <b>warning</b> — the user asked for something
- *       that is not possible here ({@code status.narrow.cannot}, {@code status.gotoInvalid});
- *   <li>the keys in {@link #NOT_FAILURES} merely mention failure and stay ordinary messages.
+ *       that is not possible here ({@code status.narrow.cannot}, {@code status.gotoInvalid}).
  * </ul>
+ *
+ * <p>The key's name decides, with no list of exceptions: a message that mentions a failure without being one
+ * is named for what it says ({@code status.testrunner.filterNotPassed}, "Showing failed tests only").
  *
  * <p>Name a new failure message accordingly and it is routed for free. The message text is mapped back to
  * its key through the active catalog (placeholders become wildcards), so the rule holds in every language
  * and for messages that reach the status bar through a callback rather than a direct call.
  */
 final class StatusSeverity {
-
-    /** {@code status.*} keys that contain a failure word without reporting a failure. */
-    static final Set<String> NOT_FAILURES =
-            Set.of("status.testrunner.filterFailed", "status.testrunner.rerunFailedUnsupported", "status.log.noError");
 
     private static final Pattern ERROR_WORD = Pattern.compile("(?i)fail|error");
     private static final Pattern WARN_WORD = Pattern.compile("(?i)cannot|invalid");
@@ -52,7 +49,7 @@ final class StatusSeverity {
 
     /** The severity a catalog key implies (see the class comment). Pure. */
     static MessageLog.Severity ofKey(String key) {
-        if (key == null || !key.startsWith("status.") || NOT_FAILURES.contains(key)) {
+        if (key == null || !key.startsWith("status.")) {
             return MessageLog.Severity.INFO;
         }
         String last = key.substring(key.lastIndexOf('.') + 1);

@@ -119,7 +119,9 @@ A control that works with the mouse but cannot be reached, seen or named from th
   colours come from the `-state-*` tokens, never a hex. `StyleContrastTest` pins the ratios.
 - **Failures** go to the error channel. A message whose key is `status.…Failed` / `…Error` is routed
   there automatically wherever it is reported (`StatusSeverity`); `…cannot…` / `…invalid…` are warnings.
-  Name new failure keys accordingly, or call `setError`.
+  Name new failure keys accordingly, or call `setError`. The name decides, with no list of exceptions: a
+  message that mentions a failure without being one is named for what it says
+  (`status.testrunner.filterNotPassed` for "Showing failed tests only").
 - **Native dialogs** are created through `Dialogs.styled(new Alert(…))`, at the point they are built
   (`DialogsSourceTest` scans for one that is not): a dialog has its own scene and does not inherit `app.css`.
   `styled` also gives every dialog one button order on every OS, Cancel left of every action, and words the

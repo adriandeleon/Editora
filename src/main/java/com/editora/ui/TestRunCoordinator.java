@@ -1047,7 +1047,7 @@ final class TestRunCoordinator implements TestRunHook {
     void showOnlyFailed() {
         ops.openTestResults();
         panel().showOnlyFailed();
-        host.setStatus(tr("status.testrunner.filterFailed"));
+        host.setStatus(tr("status.testrunner.filterNotPassed"));
     }
 
     /** {@code test.showAllTests}: open the window and drop every status/name filter. */
@@ -1098,7 +1098,7 @@ final class TestRunCoordinator implements TestRunHook {
         }
         List<String> failed = currentRun.failedTestFilters();
         if (failed.isEmpty()) {
-            host.setStatus(tr("status.testrunner.rerunFailedUnsupported"));
+            host.setStatus(tr("status.testrunner.rerunsAllInstead"));
             ops.runTest(currentRun.tool(), currentRun.workingDir(), currentRun.taskArgs(), currentRun.toggleArgs());
             return;
         }
