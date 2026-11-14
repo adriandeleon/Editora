@@ -103,6 +103,14 @@ class ValueTableTest {
     }
 
     @Test
+    void aCountPicksItsWords() {
+        com.editora.i18n.Messages.init("en");
+        assertEquals("1 element, as at this stop.", com.editora.i18n.Messages.tr("valuetable.count", 1));
+        assertEquals("2 elements, as at this stop.", com.editora.i18n.Messages.tr("valuetable.count", 2));
+        assertEquals("Loading fields: 0 of 1 element…", com.editora.i18n.Messages.tr("valuetable.loadingFields", 0, 1));
+    }
+
+    @Test
     void columnsSortNumbersByValueThenText() {
         List<String> cells = new ArrayList<>(List.of("[10]", "bob", "[9]", "Ann", "-3", "2.5", ""));
         cells.sort(ValueTable::compare);
