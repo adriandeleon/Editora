@@ -61,6 +61,24 @@ captured output, failure message and stack trace keep their head and tail around
 1,000,000 in all, oldest entries first (`AgentPanel`). Pipe and socket writes to language servers, debug adapters and the ACP
 agent all go through `AsyncPipeWriter`, never the FX thread.
 
+A stream that is not a process's output is paced the same way with `process/PacedDrain`: the receiving
+thread adds to a buffer of its own and calls `request()`, and the FX thread drains it at once after a quiet
+spell and otherwise no sooner than 16 ms after the drain before. The agent's reply (`AgentCoordinator`'s
+inbox) and a Git command's progress lines (`GitConsoleLog`) go through it. An event that must come after the
+stream (the end of the agent's turn, a command's result) drains the buffer first, in the same FX task, so the
+pacing never reorders what the user reads.
+
+Work started by typing waits for typing to pause when it leaves the FX thread: the debugger's completion
+asks the adapter 120 ms after the last character (`DebugCompletion.ASK_PAUSE`), and the file finder reads a
+directory 100 ms after the path last named a new one (`FileFinder.LIST_PAUSE`; the folder it opens on is read
+at once). Filtering a list already in memory needs no pause.
+
+A picked file is measured before it is read: Import Breakpoints refuses a file over
+`BreakpointGroups.MAX_IMPORT_BYTES` by its size.
+
+Every thread is named and a daemon: `Thread.ofPlatform().daemon().name(…)` for a platform thread, and a
+virtual thread or a virtual-thread executor is given a name too (`Thread.ofVirtual().name(…)`).
+
 ### 2. Debounce and coalesce
 
 Re-highlighting is debounced; overlay/ruler/minimap redraws coalesce to **one per pulse** with

@@ -440,6 +440,7 @@ final class AgentCoordinator implements AcpClient.Host {
                             : CompletableFuture.<String>failedFuture(new IOException(tr("status.agent.noSession")));
                 })
                 .whenComplete((stopReason, error) -> Platform.runLater(() -> {
+                    drainInbox(); // what the agent wrote before the turn ended is shown before its end
                     panel().setBusy(false);
                     if (error != null) {
                         String message = String.valueOf(rootCause(error).getMessage());
@@ -813,14 +814,12 @@ final class AgentCoordinator implements AcpClient.Host {
      */
     private final java.util.Queue<Object> inbox = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
-    private final java.util.concurrent.atomic.AtomicBoolean inboxScheduled =
-            new java.util.concurrent.atomic.AtomicBoolean();
+    /** Applies the inbox a frame apart at most: a reply written fast does not own the FX thread. */
+    private final com.editora.process.PacedDrain inboxDrain = new com.editora.process.PacedDrain(this::drainInbox);
 
     private void post(Object event) {
         inbox.add(event);
-        if (inboxScheduled.compareAndSet(false, true)) {
-            Platform.runLater(this::drainInbox);
-        }
+        inboxDrain.request();
     }
 
     private int inboxDrains;
@@ -833,7 +832,6 @@ final class AgentCoordinator implements AcpClient.Host {
     /** FX thread: applies everything received so far, in order. */
     private void drainInbox() {
         inboxDrains++;
-        inboxScheduled.set(false); // before polling: an event added from here on schedules its own drain
         StringBuilder text = null;
         for (Object event = inbox.poll(); event != null; event = inbox.poll()) {
             if (event instanceof AcpJson.Update update && update.kind() == AcpJson.UpdateKind.AGENT_MESSAGE) {
@@ -897,6 +895,7 @@ final class AgentCoordinator implements AcpClient.Host {
     @Override
     public void onExit(int code) {
         Platform.runLater(() -> {
+            drainInbox(); // the last of what it wrote, before the line that says it stopped
             client = null;
             sessionId = null;
             if (panel != null) {
@@ -1139,6 +1138,7 @@ final class AgentCoordinator implements AcpClient.Host {
     public CompletableFuture<String> requestPermission(String title, List<AcpJson.PermissionOption> options) {
         CompletableFuture<String> f = new CompletableFuture<>();
         Platform.runLater(() -> {
+            drainInbox(); // the request is asked after the text that led up to it
             ops.openToolWindow(false); // make sure the user sees what the request belongs to
             Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
             alert.initOwner(host.window());

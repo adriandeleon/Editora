@@ -667,55 +667,50 @@ final class EditingCoordinator {
         CodeArea view = b.getFocusedArea();
         int at = view.getCaretPosition();
         host.setStatus(tr("status.markdown.imageDownloading"));
-        new Thread(
-                        () -> {
-                            WebImage found = resolveWebImage(url, inlinePng, u -> {
-                                try {
-                                    return com.editora.editor.markdown.PreviewImageLoader.fetchBytes(u);
-                                } catch (Exception e) {
-                                    return null; // fall back to the encoded image / a remote reference
-                                }
-                            });
-                            String snippet;
-                            byte[] bytes = found.bytes();
-                            String ext = found.ext(); // set whenever bytes are
-                            try {
-                                if (bytes != null && ext != null) {
-                                    java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
-                                            baseDir, host.config().getSettings().getMarkdownAssetsFolder());
-                                    java.nio.file.Files.createDirectories(assets);
-                                    String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                                            n -> java.nio.file.Files.exists(assets.resolve(n)),
-                                            webImageBaseName(url),
-                                            ext);
-                                    java.nio.file.Path target = assets.resolve(name);
-                                    java.nio.file.Files.write(target, bytes);
-                                    javafx.application.Platform.runLater(
-                                            () -> b.markdown().sessionImages().add(target));
-                                    snippet = markupImageSnippet(
-                                            b,
-                                            com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target),
-                                            stripExtension(name));
-                                } else if (found.remote()) {
-                                    snippet = markupImageSnippet(b, url, "");
-                                } else {
-                                    snippet = found.link();
-                                }
-                            } catch (Exception ex) {
-                                javafx.application.Platform.runLater(() -> host.setStatus(
-                                        tr("status.markdown.imageFailed", String.valueOf(ex.getMessage()))));
-                                return;
-                            }
-                            javafx.application.Platform.runLater(() -> {
-                                if (snippet == null) {
-                                    host.setStatus(tr("status.markdown.imageFailed", ""));
-                                } else if (insertAtDrop(view, at, snippet)) {
-                                    host.setStatus(tr("status.markdown.imageDropped", 1));
-                                }
-                            });
-                        },
-                        "md-web-image")
-                .start();
+        Thread.ofPlatform().daemon().name("md-web-image").start(() -> {
+            WebImage found = resolveWebImage(url, inlinePng, u -> {
+                try {
+                    return com.editora.editor.markdown.PreviewImageLoader.fetchBytes(u);
+                } catch (Exception e) {
+                    return null; // fall back to the encoded image / a remote reference
+                }
+            });
+            String snippet;
+            byte[] bytes = found.bytes();
+            String ext = found.ext(); // set whenever bytes are
+            try {
+                if (bytes != null && ext != null) {
+                    java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
+                            baseDir, host.config().getSettings().getMarkdownAssetsFolder());
+                    java.nio.file.Files.createDirectories(assets);
+                    String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
+                            n -> java.nio.file.Files.exists(assets.resolve(n)), webImageBaseName(url), ext);
+                    java.nio.file.Path target = assets.resolve(name);
+                    java.nio.file.Files.write(target, bytes);
+                    javafx.application.Platform.runLater(
+                            () -> b.markdown().sessionImages().add(target));
+                    snippet = markupImageSnippet(
+                            b,
+                            com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target),
+                            stripExtension(name));
+                } else if (found.remote()) {
+                    snippet = markupImageSnippet(b, url, "");
+                } else {
+                    snippet = found.link();
+                }
+            } catch (Exception ex) {
+                javafx.application.Platform.runLater(
+                        () -> host.setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage()))));
+                return;
+            }
+            javafx.application.Platform.runLater(() -> {
+                if (snippet == null) {
+                    host.setStatus(tr("status.markdown.imageFailed", ""));
+                } else if (insertAtDrop(view, at, snippet)) {
+                    host.setStatus(tr("status.markdown.imageDropped", 1));
+                }
+            });
+        });
     }
 
     /**

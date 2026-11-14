@@ -347,5 +347,15 @@ class BreakpointGroupsWindowFxTest {
                 status().startsWith(tr("status.debug.breakpointsImportFailed", "broken.json", "")
                         .strip()),
                 status());
+
+        // A file far too large to be an export is refused by its size, before any of it is read.
+        Path huge = fx.configDir.resolve("huge.json");
+        try (java.io.RandomAccessFile sparse = new java.io.RandomAccessFile(huge.toFile(), "rw")) {
+            sparse.setLength(BreakpointGroups.MAX_IMPORT_BYTES + 1);
+        }
+        groups.chooseOpen = chooser -> huge.toFile();
+        run("debug.importBreakpoints");
+        assertEquals(
+                tr("status.debug.breakpointsImportFailed", "huge.json", tr("debug.import.tooLarge", 16)), status());
     }
 }
