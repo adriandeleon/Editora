@@ -149,6 +149,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Thread Dump (Threads view and call stack menus): every thread's stack, in the Thread Dump window. */
         default void threadDump() {}
 
+        /** Parallel Stacks (Threads view and call stack menus): every thread's stack merged into one tree. */
+        default void parallelStacks() {}
+
         /** Threads view → Show Frames: shows suspended thread {@code thread}'s call stack and variables. */
         default void showThread(DapModels.ThreadStatus thread) {
             selectThread(thread.id());
@@ -740,6 +743,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 copy.setOnAction(ev -> copyCallStack());
                 items.add(copy);
                 items.add(threadDumpItem());
+                items.add(parallelStacksItem());
             }
             stackMenu.getItems().setAll(items);
             if (!items.isEmpty()) {
@@ -1733,7 +1737,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             pause.setOnAction(e -> actions.pauseThread(t.id()));
             menu.getItems().add(pause);
         }
-        menu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), threadDumpItem());
+        menu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), threadDumpItem(), parallelStacksItem());
     }
 
     /** Thread Dump…, in the Threads view's menu and the call stack's. */
@@ -1741,6 +1745,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         javafx.scene.control.MenuItem dump = new javafx.scene.control.MenuItem(tr("debugpanel.threadDump"));
         dump.setOnAction(e -> actions.threadDump());
         return dump;
+    }
+
+    /** Parallel Stacks…, beside Thread Dump in the Threads view's menu and the call stack's. */
+    private javafx.scene.control.MenuItem parallelStacksItem() {
+        javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(tr("debugpanel.parallelStacks"));
+        item.setOnAction(e -> actions.parallelStacks());
+        return item;
     }
 
     /** Shows the frames of the selected thread when it is suspended (Enter, a double-click, Show Frames). */

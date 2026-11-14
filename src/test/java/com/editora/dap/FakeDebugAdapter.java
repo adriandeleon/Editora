@@ -822,7 +822,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 return refused("Thread " + args.getThreadId() + " is not suspended");
             }
             StackTraceResponse response = new StackTraceResponse();
-            List<StackFrame> scripted = frames;
+            List<StackFrame> scripted = threadFrames.getOrDefault(args.getThreadId(), frames);
             if (scripted != null) {
                 // An adapter that pages returns the window asked for and says how many there are in all.
                 int from = args.getStartFrame() == null ? 0 : Math.min(args.getStartFrame(), scripted.size());
@@ -925,6 +925,8 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public final List<StackTraceArguments> stackTraceRequests = new CopyOnWriteArrayList<>();
         /** When set, {@code stackTrace} answers these frames instead of the single default one. */
         public volatile List<StackFrame> frames;
+        /** A thread's own frames, in place of {@link #frames} (or the default one) for that thread. */
+        public final Map<Integer, List<StackFrame>> threadFrames = new java.util.concurrent.ConcurrentHashMap<>();
         /** Extra threads that are listed but not suspended: their {@code stackTrace} is refused. */
         public final List<Integer> runningThreads = new CopyOnWriteArrayList<>();
         /** Extra threads that are listed and suspended, named {@code pool-<id>}: their stack is the main thread's. */

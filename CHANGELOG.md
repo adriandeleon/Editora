@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parallel Stacks in the debugger.** Debug: Parallel Stacks draws every thread's call stack as one tree, as
+  Visual Studio's Parallel Stacks window does: threads that went through the same calls share a box, and the box
+  branches where they went different ways, so twenty workers waiting in one place are one box of twenty threads. The
+  thread you are looking at is highlighted all the way up, a click on a frame opens its line, and Copy puts the tree
+  on the clipboard as text. A running program is paused for a moment and goes on, as with Thread Dump. It is in Run →
+  Debugger and in the Threads view's and call stack's menus. Checked with Python, Java and Go.
+
 - **View as Table in the debugger.** Right-click a list, array, slice, set or map in Variables or a watch and choose
   View as Table: each element is a row and each of its fields a column, as in IntelliJ and Visual Studio. Columns sort
   (numbers by value), a filter keeps the rows that mention some text, Copy puts the rows on the clipboard ready for a
