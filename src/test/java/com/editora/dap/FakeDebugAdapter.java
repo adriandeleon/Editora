@@ -102,6 +102,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set (before the client connects), sessions advertise {@code supportsRestartFrame}, as java-debug. */
     public volatile boolean restartFrame;
 
+    /** When set (before the client connects), sessions advertise {@code supportsStepBack} in {@code initialize}. */
+    public volatile boolean stepBack;
+
     /**
      * When set (before the client connects), sessions advertise {@code disassemble}, {@code readMemory} and stepping
      * by instruction, as CodeLLDB and Delve: the default frame has instruction pointer {@link #LOW_LEVEL_IP}, each
@@ -604,6 +607,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             if (restartFrame) {
                 capabilities.setSupportsRestartFrame(true);
+            }
+            if (stepBack) {
+                capabilities.setSupportsStepBack(true);
             }
             if (lowLevel) {
                 capabilities.setSupportsDisassembleRequest(true);
@@ -1233,6 +1239,28 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         /** The frame id of every {@code restartFrame}. */
         public final List<Integer> restartedFrames = new CopyOnWriteArrayList<>();
+
+        @Override
+        public CompletableFuture<Void> stepBack(org.eclipse.lsp4j.debug.StepBackArguments args) {
+            record("stepBack");
+            return stepResult();
+        }
+
+        @Override
+        public CompletableFuture<Void> reverseContinue(org.eclipse.lsp4j.debug.ReverseContinueArguments args) {
+            record("reverseContinue");
+            return stepResult();
+        }
+
+        /** Says, after {@code initialize}, that the session now steps back (a {@code capabilities} event, as Delve on rr). */
+        public void announceStepBack() {
+            org.eclipse.lsp4j.debug.Capabilities c = new org.eclipse.lsp4j.debug.Capabilities();
+            c.setSupportsStepBack(true);
+            org.eclipse.lsp4j.debug.CapabilitiesEventArguments args =
+                    new org.eclipse.lsp4j.debug.CapabilitiesEventArguments();
+            args.setCapabilities(c);
+            client.capabilities(args);
+        }
 
         @Override
         public CompletableFuture<Void> restartFrame(org.eclipse.lsp4j.debug.RestartFrameArguments args) {

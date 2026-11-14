@@ -30,7 +30,11 @@ final class DebugPanelText {
         STEP_OVER("debug.stepOver", "N", false),
         STEP_INTO("debug.stepInto", "S", false),
         STEP_OUT("debug.stepOut", "F", false),
-        RUN_TO_CURSOR("debug.runToCursor", "U", false);
+        RUN_TO_CURSOR("debug.runToCursor", "U", false),
+        /** Back over the last statement, where the program can run backward. */
+        STEP_BACK("debug.stepBack", "B", false),
+        /** Back to the previous breakpoint: Continue's key, with Shift. */
+        REVERSE_CONTINUE("debug.reverseContinue", "C", true);
 
         final String commandId;
         final String letter;

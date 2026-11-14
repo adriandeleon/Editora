@@ -2498,6 +2498,69 @@ public final class DapClient implements IDebugProtocolClient {
         return timed(server().restartFrame(a));
     }
 
+    /**
+     * The adapter said, after {@code initialize}, that it can now run backward (a {@code capabilities} event with
+     * {@code supportsStepBack}): Delve does once its launch is on rr.
+     */
+    private volatile boolean stepBackAnnounced;
+
+    @Override
+    public void capabilities(org.eclipse.lsp4j.debug.CapabilitiesEventArguments args) {
+        Capabilities c = args == null ? null : args.getCapabilities();
+        if (c != null && c.getSupportsStepBack() != null) {
+            stepBackAnnounced = c.getSupportsStepBack();
+        }
+    }
+
+    /**
+     * Whether the adapter steps and continues backward ({@code stepBack}, {@code reverseContinue}): said in its
+     * {@code initialize} answer or in a later {@code capabilities} event.
+     */
+    public boolean supportsStepBack() {
+        DapClient session = target();
+        Capabilities caps = session.capabilities;
+        return session.stepBackAnnounced
+                || this.stepBackAnnounced
+                || (caps != null && Boolean.TRUE.equals(caps.getSupportsStepBack()));
+    }
+
+    /**
+     * Runs {@code command} in the adapter's own console ({@code evaluate} in the {@code repl} context, in no frame):
+     * a GDB command, for one GDB's DAP mode has no request of its own for ({@code record full}, {@code reverse-next}).
+     */
+    public CompletableFuture<@Nullable String> consoleCommand(String command) {
+        DapClient session = target();
+        if (session != this) {
+            return session.consoleCommand(command);
+        }
+        EvaluateArguments a = new EvaluateArguments();
+        a.setExpression(command);
+        a.setContext("repl");
+        return timed(server().evaluate(a)).thenApply(r -> r == null ? null : r.getResult());
+    }
+
+    /** Step Back: the thread goes back over the last statement ({@code stepBack}). */
+    public CompletableFuture<Void> stepBack(int threadId) {
+        DapClient session = target(threadId);
+        if (session != this) {
+            return session.stepBack(threadId);
+        }
+        org.eclipse.lsp4j.debug.StepBackArguments a = new org.eclipse.lsp4j.debug.StepBackArguments();
+        a.setThreadId(threadId);
+        return timed(server().stepBack(a));
+    }
+
+    /** Reverse Continue: the program runs backward to the previous breakpoint, or to where it can go back no more. */
+    public CompletableFuture<Void> reverseContinue(int threadId) {
+        DapClient session = target(threadId);
+        if (session != this) {
+            return session.reverseContinue(threadId);
+        }
+        org.eclipse.lsp4j.debug.ReverseContinueArguments a = new org.eclipse.lsp4j.debug.ReverseContinueArguments();
+        a.setThreadId(threadId);
+        return timed(server().reverseContinue(a));
+    }
+
     /** Whether the adapter can list the calls on a line to step into ({@code stepInTargets}). */
     public boolean supportsStepInTargets() {
         Capabilities caps = target().capabilities;

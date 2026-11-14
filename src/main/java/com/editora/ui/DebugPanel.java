@@ -125,6 +125,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         void stepOut();
 
+        /** Step Back, where the program can run backward (an adapter on rr, GDB recording). */
+        default void stepBack() {}
+
+        /** Reverse Continue: back to the previous breakpoint, or as far as the recording goes. */
+        default void reverseContinue() {}
+
+        /** Record Execution, in a GDB session: GDB records from here, so the program can go back over it. */
+        default void toggleRecording() {}
+
         /** Resume and stop at the editor caret's line (temporary breakpoint). */
         void runToCursor();
 
@@ -313,6 +322,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final Button stepInto = new Button();
     private final Button stepOut = new Button();
     private final Button runToCursor = new Button();
+    private final Button stepBack = new Button();
+    private final Button reverseContinue = new Button();
+    private final javafx.scene.control.ToggleButton record = new javafx.scene.control.ToggleButton();
+
+    /** The session is GDB's, which records the program when asked (Record Execution). */
+    private boolean recordable;
+
+    /** The program can run backward now: its adapter steps back, or GDB records it. */
+    private boolean reversible;
+
     private final ComboBox<DapModels.ThreadInfo> threads = new ComboBox<>();
 
     /**
@@ -617,6 +636,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                                 DebugPanelText.Control.RUN_TO_CURSOR,
                                 actions::runToCursor,
                                 Icons.debugRunToCursor()),
+                        recordButton(),
+                        btn(stepBack, DebugPanelText.Control.STEP_BACK, actions::stepBack, Icons.debugStepBack()),
+                        btn(
+                                reverseContinue,
+                                DebugPanelText.Control.REVERSE_CONTINUE,
+                                actions::reverseContinue,
+                                Icons.debugReverseContinue()),
                         groupSeparator(),
                         exceptionsButton(),
                         groupSeparator(),
@@ -630,6 +656,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         status),
                 2);
         start.getStyleClass().add("debug-start"); // green play accent
+        refreshBackward(); // the backward controls only in a session that can have them
         UiZoom.follow(
                 busy, () -> HBox.setMargin(busy, UiZoom.insets(0, 4, 0, 0))); // the toolbar packs its buttons 2px apart
         UiZoom.follow(runtime, () -> HBox.setMargin(runtime, UiZoom.insets(0, 6, 0, 0)));
@@ -1268,7 +1295,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** The toolbar's names, tooltip and accessible text as one string, from the keymap and the state. */
     private void refreshTooltips() {
-        for (Button b : List.of(start, pause, stop, restart, stepOver, stepInto, stepOut, runToCursor)) {
+        for (Button b : List.of(
+                start, pause, stop, restart, stepOver, stepInto, stepOut, runToCursor, stepBack, reverseContinue)) {
             if (!(b.getProperties().get(DebugPanelText.Control.class) instanceof DebugPanelText.Control c)) {
                 continue; // every toolbar button is made by btn(), which records its control
             }
@@ -1341,6 +1369,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             case STEP_INTO -> stepInto;
             case STEP_OUT -> stepOut;
             case RUN_TO_CURSOR -> runToCursor;
+            case STEP_BACK -> stepBack;
+            case REVERSE_CONTINUE -> reverseContinue;
         };
         if (!target.isDisabled()) {
             target.fire();
@@ -1425,6 +1455,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         stepOver.setDisable(!drives);
         stepInto.setDisable(!drives);
         stepOut.setDisable(!drives);
+        refreshBackward();
         runToCursor.setDisable(!drives);
         stop.setDisable(!active && !preparing);
         restart.setDisable(!active || restartBlocked != null);
@@ -1523,6 +1554,48 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** The session opened a core dump: nothing runs, so Continue, the steps and Run to Cursor stay disabled. */
     private boolean postMortem;
 
+    /**
+     * What the session can do backward, set before {@link #setState}: {@code recordable}, it is GDB's and Record
+     * Execution is offered; {@code recording}, GDB is recording; {@code reversible}, Step Back and Reverse Continue
+     * work. Their buttons are there only in a session that can have them.
+     */
+    public void setBackward(boolean recordable, boolean recording, boolean reversible) {
+        this.recordable = recordable;
+        this.reversible = reversible;
+        record.setSelected(recording);
+        refreshBackward();
+        refreshStatus();
+    }
+
+    private void refreshBackward() {
+        boolean suspended = lastState == DapManager.State.SUSPENDED;
+        boolean shown = recordable || reversible;
+        for (javafx.scene.control.ButtonBase b : List.of(stepBack, reverseContinue)) {
+            b.setVisible(shown);
+            b.setManaged(shown);
+        }
+        record.setVisible(recordable);
+        record.setManaged(recordable);
+        stepBack.setDisable(!suspended || !reversible || postMortem);
+        reverseContinue.setDisable(!suspended || !reversible || postMortem);
+        record.setDisable(!suspended);
+    }
+
+    /** Record Execution's toggle: shown in a GDB session, selected while GDB records. */
+    private javafx.scene.control.ToggleButton recordButton() {
+        record.getStyleClass().addAll("flat", "debug-record");
+        record.setGraphic(Icons.debugRecord());
+        record.setFocusTraversable(false);
+        Icons.name(record, tr("command.debug.toggleRecording"));
+        record.setOnAction(e -> {
+            record.setSelected(!record.isSelected()); // the session says when it records: setBackward
+            actions.toggleRecording();
+        });
+        record.setVisible(false);
+        record.setManaged(false);
+        return record;
+    }
+
     /** Whether the session is a core dump's ({@link #postMortem}); set before {@link #setState}. */
     public void setPostMortem(boolean postMortem) {
         this.postMortem = postMortem;
@@ -1540,6 +1613,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         String state = stateText();
         if (breakpointsMuted) {
             state = state + " · " + tr("debugpanel.muted");
+        }
+        if (record.isVisible() && record.isSelected() && lastState != DapManager.State.INACTIVE) {
+            state = state + " · " + tr("debugpanel.recording"); // GDB records: the program can go back over it
         }
         // The console keeps only its last characters; say so, as the Run console does (review E107).
         String trimNote = appender.trimmed() ? " " + tr("run.outputTrimmed", MAX_CONSOLE_CHARS) : "";

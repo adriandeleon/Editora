@@ -69,6 +69,7 @@ com.editora.ui.BreakpointFiltersProbeFxTest
 com.editora.ui.CoreDumpProbeFxTest
 com.editora.ui.DebugTableProbeFxTest
 com.editora.ui.ParallelStacksProbeFxTest
+com.editora.ui.StepBackProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Step Back and Reverse Continue in the debugger.** Where the program can run backward, the Debug window has Step
+  Back (B) and Reverse Continue (Shift+C), also under Run → Stepping. For C and C++ on GDB (Settings → Debugging →
+  C and C++ debugger), turn on **Record Execution** at a stop: GDB records the program from there, and Step Back goes
+  back over a statement with the variables as they were, Reverse Continue back to the previous breakpoint or to where
+  recording began. Recording slows the program a lot, so turn it on just before the part you want to replay. A
+  debugger that steps back by itself (Delve or CodeLLDB on rr) is used as it is. Nothing to install for GDB.
+
 - **Parallel Stacks in the debugger.** Debug: Parallel Stacks draws every thread's call stack as one tree, as
   Visual Studio's Parallel Stacks window does: threads that went through the same calls share a box, and the box
   branches where they went different ways, so twenty workers waiting in one place are one box of twenty threads. The
