@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Set Value on a watch.** Right-click a watch while the program is paused and choose Set Value… to give its
+  expression a new value — a variable, a field, an element — as IntelliJ and Visual Studio allow. Python and
+  JavaScript set the expression directly; Java, Go and C/C++ set the variable a watch names, or (Java) evaluate the
+  assignment. The other watches are evaluated again at once.
 - **Don't step into.** Name the code Step Into should go over — a class or package (`com.shop.util.*`), a module
   (`requests`), a function (`fmt.*`, `std::*`) or a file (`**/vendor/**`) — in Settings → Debugging, or right-click a
   frame in the call stack and choose Don't Step Into This…, which offers its class, file, package or namespace. Java,

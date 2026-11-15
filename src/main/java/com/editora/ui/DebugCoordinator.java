@@ -2655,6 +2655,12 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void setExpression(
+                    String expression, String value, int variableRef, int frameId, Consumer<String> cb) {
+                dap().setExpression(expression, value, frameId, variableRef, cb);
+            }
+
+            @Override
             public void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
                 dap().loadValue(row, cb);
             }

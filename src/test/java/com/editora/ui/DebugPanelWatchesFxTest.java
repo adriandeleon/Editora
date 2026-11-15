@@ -154,6 +154,12 @@ class DebugPanelWatchesFxTest {
         }
 
         @Override
+        public void setExpression(String expression, String value, int variableRef, int frameId, Consumer<String> cb) {
+            calls.add("setExpression " + expression + "=" + value + " in " + variableRef + " @" + frameId);
+            cb.accept("<" + value + ">");
+        }
+
+        @Override
         public void sendInput(String line) {
             calls.add("input " + line);
         }
@@ -339,6 +345,7 @@ class DebugPanelWatchesFxTest {
                             tr("debugpanel.editWatch"),
                             tr("debugpanel.removeWatch"),
                             tr("debugpanel.pauseWatch"),
+                            tr("debugpanel.setValue"),
                             tr("debugpanel.copyValue"),
                             tr("debugpanel.copyName"),
                             tr("debugpanel.history.valueHistory"), // the stop is kept: its values can be followed
@@ -433,6 +440,49 @@ class DebugPanelWatchesFxTest {
     }
 
     // --- setting a value --------------------------------------------------------------------------------
+
+    @Test
+    void aWatchsValueIsSetThroughItsExpressionAndTheWatchesAreEvaluatedAgain() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            panel.setWatches(List.of("count", "count + 1"));
+            stopWithLocals();
+            adapter.calls.clear();
+            promptAnswer = "41";
+            tree().getSelectionModel().select(row(tr("debugpanel.watches"), "count"));
+            panel.setSelectedValue();
+        });
+        assertEquals(tr("debugpanel.setValueTitle") + "|count|w(count)", prompts.getLast());
+        assertTrue(
+                adapter.calls.contains("setExpression count=41 in " + LOCALS + " @1"),
+                "a watch naming a local: its scope goes too, for a debugger that can only set variables: "
+                        + adapter.calls);
+        assertTrue(adapter.calls.contains("watch count + 1"), "every watch evaluated again: " + adapter.calls);
+
+        FxTestSupport.runOnFx(() -> {
+            adapter.calls.clear();
+            List<MenuItem> rows = menuFor(row(tr("debugpanel.watches"), "count + 1"));
+            MenuItem set = rows.stream()
+                    .filter(i -> tr("debugpanel.setValue").equals(i.getText()))
+                    .findFirst()
+                    .orElseThrow();
+            promptAnswer = "5";
+            set.fire();
+        });
+        assertTrue(adapter.calls.contains("setExpression count + 1=5 in 0 @1"), adapter.calls.toString());
+
+        FxTestSupport.runOnFx(() -> {
+            panel.setWatchPaused("count", true);
+            assertTrue(
+                    menuFor(row(tr("debugpanel.watches"), "count")).stream()
+                            .noneMatch(i -> tr("debugpanel.setValue").equals(i.getText())),
+                    "a paused watch has no value to set");
+            panel.setState(DapManager.State.RUNNING);
+            assertTrue(
+                    menuFor(row(tr("debugpanel.watches"), "count + 1")).stream()
+                            .noneMatch(i -> tr("debugpanel.setValue").equals(i.getText())),
+                    "running: nothing to set");
+        });
+    }
 
     @Test
     void aLeafVariableIsSetByDoubleClickOrF2AndShowsWhatTheAdapterAnswered() throws Exception {

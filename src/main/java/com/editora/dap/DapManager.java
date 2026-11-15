@@ -5019,6 +5019,37 @@ public final class DapManager {
     }
 
     /**
+     * Set Value on a watch: assigns {@code value} to {@code expression} in frame {@code frameId}. Where the adapter
+     * assigns to an expression ({@code setExpression}: debugpy, js-debug) it is asked to; else, when the watch names a
+     * variable of the frame's scopes ({@code variableRef}, that scope's reference; 0 when none), that variable is set
+     * ({@code setVariable}: Delve, CodeLLDB); else the assignment is evaluated ({@code expression = value}: java-debug).
+     * {@code cb} gets the value it has now; a failure goes to {@link Listener#onError}.
+     */
+    public void setExpression(String expression, String value, int frameId, int variableRef, Consumer<String> cb) {
+        DapClient c = client;
+        if (c == null) {
+            return;
+        }
+        if (c.supportsSetExpression()) {
+            c.setExpression(expression, value, frameId)
+                    .whenComplete((r, e) -> fx(() -> {
+                        if (client != c) {
+                            return;
+                        }
+                        if (e == null) {
+                            cb.accept(r);
+                        } else {
+                            listener.onError(tr("debug.setValue.failed", expression, msg(e)));
+                        }
+                    }));
+        } else if (variableRef > 0) {
+            setVariable(variableRef, expression.strip(), value, expression, frameId, cb);
+        } else {
+            assign(c, expression, SetValueText.assignment(expression, value), frameId, cb);
+        }
+    }
+
+    /**
      * Sets a value no container of the debugger's holds (a type renderer's child) by evaluating {@code assignTo =
      * value} in frame {@code frameId}; {@code cb} gets the new value, a failure goes to {@link Listener#onError}.
      */
