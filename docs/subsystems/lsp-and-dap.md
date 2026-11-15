@@ -1566,6 +1566,29 @@ n: …` to the console and resumes. A session records at most `MAX_RECORDED_STOP
 off, the breakpoint stops and says why. *Debug: Toggle Recording Breakpoint* and the breakpoint form's *Record and
 continue* set it; the gutter draws it purple with a ring. `RecordingBreakpointsWindowFxTest` (a fake adapter) and the
 `…Recording` tests of `DebugHistoryProbeFxTest` cover it.
+**Exception breakpoints** (IntelliJ's Java Exception Breakpoints, Visual Studio's Exception Settings; Debug: Add
+Exception Breakpoint…, and rows of Debug: Exception Breakpoints… after the adapter's filters) stop on an exception
+of a named type, when a condition holds. A [`config/ExceptionBreakpoint`](../../src/main/java/com/editora/config/ExceptionBreakpoint.java)
+is a debug language, a type pattern (comma-separated globs with `!` exclusions, as breakpoint filters'), a condition
+and an enabled flag, kept per project in `breakpoints.json` (schema 11, `exceptionBreakpoints`). Editora checks them
+itself, so they work with every adapter that stops on exceptions. For a language whose adapter has an "every thrown
+exception" filter (`ExceptionFilterCatalog.caughtFilter`: java-debug `caught`, debugpy `raised`, js-debug `all`),
+`ExceptionBreakpoints.extras` turns that filter on besides the user's choice (`DapManager.setExceptionExtras` →
+`DapClient.setExtraExceptionFilters`, merged in the adapter's order by `withExtras`; none while breakpoints are muted);
+other adapters' exception stops (C++ on throw, Go panics) are narrowed as they come. At an `exception` stop
+(`ExceptionBreakpointCommands.stop`, called from `DebugCoordinator.onStopped` after breakpoint filters), unless the user's Caught choice already stops on every
+thrown one, the stop is held quiet and `DapManager.exceptionInfo` asked which exception it is: an uncaught one
+(`breakMode` `unhandled`, as debugpy and java-debug mark the uncaught stop) is the user's choice and shown; otherwise
+the enabled breakpoints of the session's language whose pattern names the type — whole or by its last part after `.`,
+`::` or `/` (`ExceptionBreakpoints.typeNames`) — are taken, their conditions evaluated in the frame that threw
+(`watch` context; a value that is not false, zero or nothing holds; one that cannot be evaluated stops and says so),
+and the stop is shown (re-entering `onStopped`, then `showException`) or the program resumed. debugpy stops a raised
+exception again in each frame it passes up through: the stop after a shown one, same type, its stack the shown one's
+outer frames, is passed over (`propagating`). Subclasses are not matched (no adapter says a type's ancestors); a
+pattern such as `*IOException` reaches them by name. Measured (`ExceptionBreakpointsProbeFxTest`, three caught
+throws, one breakpoint on the first type with a condition true only the third time): debugpy and java-debug stop once,
+at the third throw, and run to the end. `ExceptionBreakpointsWindowFxTest` covers the decisions against
+`FakeDebugAdapter` reached as rdbg (no thrown-exception filter), and Add's offer of the type of the exception shown.
 **Breakpoint filters** (IntelliJ's thread, caller and instance filters; the Edit Breakpoint form's *Only in threads*,
 *Only when called from* and *Only on the object marked*) say where a breakpoint's hits count. They are a
 [`config/StopFilters`](../../src/main/java/com/editora/config/StopFilters.java) on the breakpoint (`Breakpoint.filters`,

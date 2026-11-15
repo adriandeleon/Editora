@@ -319,6 +319,19 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public List<com.editora.config.ExceptionBreakpoint> exceptionBreakpoints() {
+        return List.copyOf(mc.config.getExceptionBreakpoints());
+    }
+
+    @Override
+    public void persistExceptionBreakpoints(List<com.editora.config.ExceptionBreakpoint> breakpoints) {
+        List<com.editora.config.ExceptionBreakpoint> stored = mc.config.getExceptionBreakpoints();
+        stored.clear();
+        stored.addAll(breakpoints);
+        mc.config.saveBreakpoints();
+    }
+
+    @Override
     public void breakpointsStored(java.util.Map<String, ?> bucket, @Nullable String fileKey) {
         mc.marksStored(MarkMerge.Kind.BREAKPOINTS, bucket, fileKey);
     }

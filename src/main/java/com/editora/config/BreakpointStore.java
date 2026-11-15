@@ -20,7 +20,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class BreakpointStore {
 
     /** Current on-disk schema version of {@code breakpoints.json}. */
-    public static final int SCHEMA_VERSION = 10;
+    public static final int SCHEMA_VERSION = 11;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -29,6 +29,9 @@ public class BreakpointStore {
 
     /** Project key -> its method breakpoints and field watchpoints (schema 4), in the order they were added. */
     private Map<String, List<MemberBreakpoint>> memberBreakpoints = new LinkedHashMap<>();
+
+    /** Project key -> its exception breakpoints (schema 11), in the order they were added. */
+    private Map<String, List<ExceptionBreakpoint>> exceptionBreakpoints = new LinkedHashMap<>();
 
     /** Project key -> (file key -> the values pinned to its lines) (schema 5). */
     private Map<String, Map<String, List<PinnedLine>>> pins = new LinkedHashMap<>();
@@ -55,6 +58,19 @@ public class BreakpointStore {
 
     public void setMemberBreakpoints(Map<String, List<MemberBreakpoint>> memberBreakpoints) {
         this.memberBreakpoints = memberBreakpoints == null ? new LinkedHashMap<>() : memberBreakpoints;
+    }
+
+    public Map<String, List<ExceptionBreakpoint>> getExceptionBreakpoints() {
+        return exceptionBreakpoints;
+    }
+
+    public void setExceptionBreakpoints(Map<String, List<ExceptionBreakpoint>> exceptionBreakpoints) {
+        this.exceptionBreakpoints = exceptionBreakpoints == null ? new LinkedHashMap<>() : exceptionBreakpoints;
+    }
+
+    /** One project's exception breakpoints, creating an empty list if absent. */
+    public List<ExceptionBreakpoint> exceptions(String projectKey) {
+        return exceptionBreakpoints.computeIfAbsent(projectKey == null ? "" : projectKey, k -> new ArrayList<>());
     }
 
     public Map<String, Map<String, List<PinnedLine>>> getPins() {

@@ -426,7 +426,8 @@ final class MenuBarModel {
                                                 SEPARATOR,
                                                 "debug.exceptions.caught",
                                                 "debug.exceptions.uncaught",
-                                                "debug.toggleExceptionBreakpoints")),
+                                                "debug.toggleExceptionBreakpoints",
+                                                "debug.addExceptionBreakpoint")),
                                 // What is left is the stopped program itself: its values, the stops before
                                 // this one, and the views onto its threads, code and memory.
                                 new MenuSpec(

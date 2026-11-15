@@ -180,6 +180,12 @@ public final class DapClient implements IDebugProtocolClient {
     private volatile List<DapModels.FileBreakpoints> initialBreakpoints = List.of();
     /** The chosen exception filters; null for the adapter's own defaults ({@link #defaultExceptionFilters}). */
     private volatile @Nullable List<String> exceptionFilters;
+
+    /**
+     * Filters the session sends besides the chosen ones: those exception breakpoints need (the adapter must stop on a
+     * thrown exception for Editora to check its type). Not the user's choice, so not in {@link #exceptionFilters}.
+     */
+    private volatile List<String> extraExceptionFilters = List.of();
     /** True once the adapter's {@code initialized} event installed the configuration (breakpoints +
      *  exception filters). Before that, a filter change only updates the field — {@link #initialized}
      *  will read it. After it, a change must be sent on the wire itself. */
@@ -295,7 +301,47 @@ public final class DapClient implements IDebugProtocolClient {
      */
     public List<String> effectiveExceptionFilters() {
         List<String> chosen = exceptionFilters;
-        return chosen != null ? chosen : defaultExceptionFilters(exceptionFilterOptions());
+        List<String> base = chosen != null ? chosen : defaultExceptionFilters(exceptionFilterOptions());
+        return withExtras(base, extraExceptionFilters, exceptionFilterOptions());
+    }
+
+    /** {@code base} and {@code extras} together, in the order the adapter lists its filters. Pure. */
+    static List<String> withExtras(
+            List<String> base, List<String> extras, List<DapModels.ExceptionFilterOption> options) {
+        if (extras.isEmpty() || base.containsAll(extras)) {
+            return base;
+        }
+        java.util.Set<String> on = new java.util.LinkedHashSet<>(base);
+        on.addAll(extras);
+        List<String> out = new ArrayList<>();
+        for (DapModels.ExceptionFilterOption o : options) {
+            if (on.remove(o.filter())) {
+                out.add(o.filter());
+            }
+        }
+        out.addAll(on); // any the adapter did not list (it had not answered yet)
+        return List.copyOf(out);
+    }
+
+    /** Sets {@link #extraExceptionFilters}, and sends the filters again when the session is running. */
+    public void setExtraExceptionFilters(List<String> extras) {
+        List<String> next = extras == null ? List.of() : List.copyOf(extras);
+        if (next.equals(extraExceptionFilters)) {
+            return;
+        }
+        this.extraExceptionFilters = next;
+        for (DapClient child : children) {
+            child.setExtraExceptionFilters(next);
+        }
+        if (server != null && configured) {
+            try {
+                SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
+                ex.setFilters(effectiveExceptionFilters().toArray(new String[0]));
+                ignore(timed(server.setExceptionBreakpoints(ex)));
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "live setExceptionBreakpoints failed", e);
+            }
+        }
     }
 
     /** The exception filters the adapter offers ({@code exceptionBreakpointFilters}); empty before it answered. */
@@ -1244,6 +1290,7 @@ public final class DapClient implements IDebugProtocolClient {
         DapClient child = new DapClient(this);
         child.initialBreakpoints = initialBreakpoints;
         child.exceptionFilters = exceptionFilters;
+        child.extraExceptionFilters = extraExceptionFilters;
         child.memberBreakpoints = memberBreakpoints;
         child.terminateOnDisconnect = terminateOnDisconnect; // js-debug's program runs in the child sessions
         children.add(child);

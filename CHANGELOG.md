@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Exception breakpoints by type and condition.** Stop only when an exception of a type you name is thrown, as
+  IntelliJ's exception breakpoints do: Debug: Add Exception Breakpoint… (offering the type of the exception the
+  debugger is stopped on), or the new rows of Debug: Exception Breakpoints…. A type can be a pattern
+  (`java.io.*`, `*Error`, `!InterruptedException`), and an optional condition is evaluated where the exception was
+  thrown, so `KeyError` with `order.id == 42` stops on that one order's error and lets the rest go by. They are
+  kept per project and work with every language whose debugger stops on exceptions. Checked with Python and Java.
+
 - **The right-click rows of the Project tree, the Git windows and the Debug window are commands.** What they do can
   now be run from the Command Palette, and given a key, on the selected row: in the Project tree (and on the Project
   Map's rows) Rename, Delete, Stage, Revert, Compare with Branch, Show Git History, Find in Folder and the rest of the
