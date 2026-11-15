@@ -180,7 +180,11 @@ final class MapMenuCommands {
         }
         java.util.function.BooleanSupplier action = found.action();
         if (action == null || !action.getAsBoolean()) {
-            status.accept(tr("status.projectMap.rowUnavailable", CommandTips.title(id)));
+            String reason = found.reason(); // a grayed row says why, as its tooltip does (KBD-04)
+            status.accept(
+                    reason == null
+                            ? tr("status.projectMap.rowUnavailable", CommandTips.title(id))
+                            : tr("status.commandUnavailable", CommandTips.title(id), reason));
         }
         return true;
     }

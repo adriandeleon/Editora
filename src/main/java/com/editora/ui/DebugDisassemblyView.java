@@ -53,7 +53,8 @@ final class DebugDisassemblyView extends VBox {
                         () -> {
                             DapModels.Instruction i = list.getSelectionModel().getSelectedItem();
                             return i != null && i.file() != null;
-                        }),
+                        },
+                        "row.unavailable.noSourceFile"),
                 ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, DebugDisassemblyView::rowText)));
         VBox.setVgrow(list, Priority.ALWAYS);
         getChildren().add(list);

@@ -627,7 +627,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             return rows;
         }
         // "Move Up"/"Move Down" act on this row (only for the current project's group).
-        boolean can = item != null && reorderEnabled() && inCurrentGroup(item);
+        String cannot =
+                item == null ? "row.unavailable.noSelection" : moveReason(reorderEnabled(), inCurrentGroup(item));
         MenuItem up = new MenuItem(tr("bookmarks.moveUp"));
         up.setGraphic(Icons.arrowUp());
         up.setOnAction(e -> {
@@ -644,8 +645,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             }
             moveSelected(1);
         });
-        up.setDisable(!can);
-        down.setDisable(!can);
+        com.editora.editor.RowReasons.because(up, cannot);
+        com.editora.editor.RowReasons.because(down, cannot);
         rows.add(new SeparatorMenuItem());
         rows.add(com.editora.editor.MenuChords.tag(up, "bookmarks.moveSelectedUp"));
         rows.add(com.editora.editor.MenuChords.tag(down, "bookmarks.moveSelectedDown"));
@@ -659,6 +660,15 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     boolean runMenuRow(String commandId) {
         TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
         return item != null && item.getValue() != null && MenuRows.fire(menuRows(item, item.getValue()), commandId);
+    }
+
+    /** Why the selected row's menu grays the row {@code commandId} stands for, as it says it; null otherwise. */
+    @Nullable
+    String menuRowReason(String commandId) {
+        TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+        return item == null || item.getValue() == null
+                ? null
+                : MenuRows.reason(menuRows(item, item.getValue()), commandId);
     }
 
     private final class BookmarkCell extends TreeCell<Row> {
@@ -756,5 +766,16 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setContextMenu(new ContextMenu(menuRows(getTreeItem(), item).toArray(MenuItem[]::new)));
             }
         }
+    }
+
+    /**
+     * Why Move Up / Move Down cannot move the selected bookmark (the key of its sentence), or null when they can: the
+     * list is filtered, or the row is another project's. Pure.
+     */
+    static @Nullable String moveReason(boolean unfiltered, boolean currentProject) {
+        if (!unfiltered) {
+            return "row.unavailable.bookmarksFiltered";
+        }
+        return currentProject ? null : "row.unavailable.otherProjectsBookmark";
     }
 }

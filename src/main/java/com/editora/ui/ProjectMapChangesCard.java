@@ -151,17 +151,18 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         MapButtonCommands.press(this, "projectMap.changesNext", next);
         MapButtonCommands.press(this, "projectMap.cardRefresh", refresh);
         MapButtonCommands.bindIf(this, "projectMap.changesAgainst", this::showAgainst);
+        // A deleted file has no copy in the working tree: its rows say so (KBD-04).
+        ListRowCommands.because(openInEditor, () -> {
+            GitChanges.FileDiff picked = files.getSelectionModel().getSelectedItem();
+            return picked != null && picked.status() == 'D' ? "row.unavailable.fileDeleted" : null;
+        });
         // The two lists' right-click menus: what Enter, a double-click and the bar's buttons do, and Copy (MENU-05).
         ListRowCommands.install(
                 files,
                 ListRowCommands.enabledWhen(
                         ListRowCommands.row(files, ListRowCommands.OPEN, null, Icons.openInTab(), this::openPickedFile),
-                        () -> {
-                            GitChanges.FileDiff file = files.getSelectionModel().getSelectedItem();
-                            return file != null
-                                    && file.status() != 'D'
-                                    && !file.hunks().isEmpty();
-                        }),
+                        () -> openFileReason() == null,
+                        this::openFileReason),
                 ListRowCommands.mapButtonRow(this, "projectMap.changesOpenInEditor", openInEditor),
                 ListRowCommands.mapButtonRow(this, "projectMap.changesCompare", compare),
                 ListRowCommands.copyRow(files, () -> ListRowCommands.selectedText(files, GitChanges.FileDiff::path)));
@@ -169,7 +170,8 @@ final class ProjectMapChangesCard extends MapFloatingCard {
                 diff,
                 ListRowCommands.enabledWhen(
                         ListRowCommands.row(diff, ListRowCommands.OPEN, null, Icons.openInTab(), this::openPickedLine),
-                        () -> !openInEditor.isDisabled()),
+                        () -> !openInEditor.isDisabled(),
+                        () -> ListRowCommands.buttonReason(openInEditor, ListRowCommands.OPEN)),
                 ListRowCommands.mapButtonRow(this, "projectMap.changesOpenInEditor", openInEditor),
                 ListRowCommands.copyRow(diff, () -> ListRowCommands.selectedText(diff, GitChanges.Line::text)));
         Region gap = new Region();
@@ -487,6 +489,20 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         GitChanges.FileDiff picked = files.getSelectionModel().getSelectedItem();
         openInEditor.setDisable(picked == null || picked.status() == 'D');
         compare.setDisable(picked == null);
+    }
+
+    /**
+     * Why the files list's Open row cannot open the picked file (the key of its sentence), or null when it can: none
+     * is picked, it was deleted, or it has no changed lines to show.
+     */
+    private @Nullable String openFileReason() {
+        GitChanges.FileDiff file = files.getSelectionModel().getSelectedItem();
+        if (file == null) {
+            return "row.unavailable.noSelection";
+        }
+        return file.status() == 'D'
+                ? "row.unavailable.fileDeleted"
+                : file.hunks().isEmpty() ? "row.unavailable.noHunks" : null;
     }
 
     /** Opens the picked file's card (or, with {@code inEditor}, the file in the editor) at the diff's line {@code index}. */

@@ -1470,10 +1470,11 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             toEditor.setVisible(editorHost != null);
             int at = tabs.getTabs().indexOf(tab);
             int count = tabs.getTabs().size();
-            closeOthers.setDisable(count < 2);
-            closeRight.setDisable(at < 0 || at >= count - 1);
-            moveLeft.setDisable(at <= 0);
-            moveRight.setDisable(at < 0 || at >= count - 1);
+            com.editora.editor.RowReasons.because(closeOthers, count >= 2 ? null : "row.unavailable.onlyTerminal");
+            com.editora.editor.RowReasons.because(
+                    closeRight, afterReason(at, count, "row.unavailable.noTerminalsRight"));
+            com.editora.editor.RowReasons.because(moveLeft, at > 0 ? null : "row.unavailable.firstRow");
+            com.editora.editor.RowReasons.because(moveRight, afterReason(at, count, "row.unavailable.lastRow"));
         });
         return menu;
     }
@@ -1644,5 +1645,13 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 Math.round(c.getRed() * 255),
                 Math.round(c.getGreen() * 255),
                 Math.round(c.getBlue() * 255));
+    }
+
+    /**
+     * {@code key}, the sentence a tab row says when there is no tab after tab {@code at} of {@code count} (Close to
+     * the Right, Move Right), or null when there is one. Pure.
+     */
+    static @Nullable String afterReason(int at, int count, String key) {
+        return at >= 0 && at < count - 1 ? null : key;
     }
 }

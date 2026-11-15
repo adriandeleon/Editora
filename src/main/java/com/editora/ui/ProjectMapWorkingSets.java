@@ -91,7 +91,7 @@ final class ProjectMapWorkingSets {
         boolean local = root != null && com.editora.vfs.Vfs.isLocal(root);
         MenuItem save =
                 MapButtonCommands.row(new MenuItem(tr("project.map.workingSets.save")), "projectMap.saveWorkingSet");
-        save.setDisable(!local);
+        com.editora.editor.RowReasons.when(save, local, "row.unavailable.needsLocalFolder");
         save.setOnAction(event -> askAndSave());
         items.add(save);
         items.add(new SeparatorMenuItem());
@@ -121,10 +121,9 @@ final class ProjectMapWorkingSets {
         menu.getItems().setAll(items);
     }
 
+    /** A row that says something about the list (none here, a remote folder): a label, not a command. */
     private static MenuItem disabled(String text) {
-        MenuItem item = new MenuItem(text);
-        item.setDisable(true);
-        return item;
+        return com.editora.editor.RowReasons.placeholder(new MenuItem(text));
     }
 
     /** Save current as…: asks for a name (the current set's offered), then {@link #save}. */

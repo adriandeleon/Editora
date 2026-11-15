@@ -340,7 +340,7 @@ public class ToolWindowManager {
         ContextMenu menu = new ContextMenu(split, hide);
         // Enablement is decided as the menu opens, not when it is built: whether a side can take a second
         // window depends on what is open there, which changes constantly after this runs.
-        menu.setOnShowing(e -> split.setDisable(!canSplitWith(tw)));
+        menu.setOnShowing(e -> com.editora.editor.RowReasons.because(split, splitReason(tw)));
         button.setContextMenu(menu);
         enableReorderDrag(tw, button);
         // A retitle (the Project window's "Current Folder" swap) must reach a labeled bottom button.
@@ -986,8 +986,23 @@ public class ToolWindowManager {
 
     /** True when {@code tw} could join its side's current occupant rather than replace it. */
     public boolean canSplitWith(ToolWindow tw) {
+        return splitReason(tw) == null;
+    }
+
+    /**
+     * Why {@code tw} cannot open in a split beside what its side shows (the key of the sentence its row says), or
+     * null when it can: nothing is open there, it is open there already, or the side is full.
+     */
+    @Nullable
+    String splitReason(ToolWindow tw) {
         List<ToolWindow> open = openOn(currentSide(tw));
-        return !open.isEmpty() && !open.contains(tw) && open.size() < MAX_PER_SIDE;
+        if (open.isEmpty()) {
+            return "row.unavailable.nothingToSplitWith";
+        }
+        if (open.contains(tw)) {
+            return "row.unavailable.alreadyOpenOnSide";
+        }
+        return open.size() < MAX_PER_SIDE ? null : "row.unavailable.sideFull";
     }
 
     /**

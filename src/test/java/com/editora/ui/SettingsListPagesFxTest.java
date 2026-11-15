@@ -122,6 +122,18 @@ class SettingsListPagesFxTest {
                 answer(w, true);
                 button(pg, tr("settings.snippet.remove")).fire();
                 assertEquals(0, manager.userSnippets("global").size());
+                // Removed, the snippet is the bundled one again (or none is selected): the row says why (KBD-04).
+                javafx.scene.control.Button remove = button(pg, tr("settings.snippet.remove"));
+                if (remove.isDisabled()) {
+                    String why = ListRowCommands.buttonReason(remove, ListRowCommands.REMOVE);
+                    assertTrue(
+                            why.equals("row.unavailable.bundledSnippet") || why.equals("row.unavailable.noSelection"),
+                            why);
+                }
+                assertEquals(
+                        "row.unavailable.noSelection",
+                        ListRowCommands.buttonReason(button(pg, tr("settings.snippet.add")), ListRowCommands.TOGGLE),
+                        "a button that says nothing of its own: no row is selected");
 
                 fx.shared.setAbbreviations(new ArrayList<>(List.of(new Abbreviation("btw", "by the way"))));
                 fx.shared.saveAbbreviations();

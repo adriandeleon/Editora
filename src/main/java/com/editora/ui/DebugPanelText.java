@@ -69,6 +69,32 @@ final class DebugPanelText {
         return null;
     }
 
+    /**
+     * Why the call stack's Restart Frame row cannot restart {@code frame} (the key of its sentence), or null when it
+     * can: the session is not paused, its debugger cannot restart a frame, or the frame is the bottom one, which has
+     * no caller to restart it from. Pure.
+     */
+    static @Nullable String restartFrameReason(
+            boolean suspended,
+            boolean supported,
+            DapModels.@Nullable StackFrameInfo frame,
+            @Nullable List<DapModels.StackFrameInfo> frames) {
+        if (!suspended) {
+            return "palette.disabled.needsSuspended";
+        }
+        if (!supported) {
+            return "row.unavailable.cannotRestartFrame";
+        }
+        return frame != null && frames != null && DebugCoordinator.canRestartFrame(true, true, frame, frames)
+                ? null
+                : "row.unavailable.bottomFrame";
+    }
+
+    /** Whether the caret's line of {@code b} has a breakpoint, for the editor menu's breakpoint rows. */
+    static boolean hasBreakpointAtCaret(com.editora.editor.EditorBuffer b) {
+        return b.getBreakpointManager().get(b.getFocusedArea().getCurrentParagraph()) != null;
+    }
+
     /** A command title without its palette category: "Debug: Step Over" → "Step Over". */
     static String bareTitle(String title) {
         int colon = title == null ? -1 : title.indexOf(": ");

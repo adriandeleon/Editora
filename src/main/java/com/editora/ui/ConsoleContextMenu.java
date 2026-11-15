@@ -135,10 +135,10 @@ final class ConsoleContextMenu {
         return copy;
     }
 
-    /** Disables every row of {@code rows} while the view is {@code empty}; enables them otherwise. */
+    /** Makes every row of {@code rows} unavailable while the view is {@code empty}, saying so; available otherwise. */
     private static void refresh(List<MenuItem> rows, boolean empty) {
         for (MenuItem row : rows) {
-            row.setDisable(empty);
+            com.editora.editor.RowReasons.when(row, !empty, "row.unavailable.emptyView");
         }
     }
 

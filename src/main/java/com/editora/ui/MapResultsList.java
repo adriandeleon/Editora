@@ -134,7 +134,8 @@ final class MapResultsList extends MapSideColumn {
                 tree,
                 ListRowCommands.enabledWhen(
                         ListRowCommands.row(tree, ListRowCommands.OPEN, null, Icons.openInTab(), this::openSelected),
-                        () -> selectedPlace() != null),
+                        () -> selectedPlace() != null,
+                        "row.unavailable.heading"),
                 ListRowCommands.copyRow(
                         tree, () -> ListRowCommands.selectedText(tree, row -> row.message() ? null : row.text())));
         filter.textProperty().addListener((obs, was, now) -> refill());

@@ -21,6 +21,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.editor.MenuChords;
+import com.editora.editor.RowReasons;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -199,10 +200,19 @@ class FocusCommands {
 
     /**
      * What a command finds where the keyboard is: the action to run, which answers false when it did not apply, or (a
-     * null action) a row of the menu there that is disabled by the menu's own rule, so the command says so instead;
-     * and, for an action {@linkplain #bind bound} as a {@code Runnable}, that very action.
+     * null action) a row of the menu there that is disabled by the menu's own rule, so the command says so instead,
+     * with the row's {@code reason} when it has one ({@link RowReasons}); and, for an action {@linkplain #bind bound}
+     * as a {@code Runnable}, that very action.
      */
-    record Found(@Nullable BooleanSupplier action, @Nullable Runnable bound, List<MenuItem> choices) {
+    record Found(
+            @Nullable BooleanSupplier action,
+            @Nullable Runnable bound,
+            List<MenuItem> choices,
+            @Nullable String reason) {
+
+        Found(@Nullable BooleanSupplier action, @Nullable Runnable bound, List<MenuItem> choices) {
+            this(action, bound, choices, null);
+        }
 
         Found(@Nullable BooleanSupplier action, @Nullable Runnable bound) {
             this(action, bound, List.of());
@@ -288,7 +298,8 @@ class FocusCommands {
     static @Nullable Found rowIn(List<?> items, String commandId, boolean under) {
         List<MenuItem> all = new ArrayList<>();
         List<Boolean> off = new ArrayList<>();
-        collect(items, commandId, under, all, off);
+        List<@Nullable String> reasons = new ArrayList<>();
+        collect(items, commandId, under ? "" : null, all, off, reasons);
         if (all.isEmpty()) {
             return null;
         }
@@ -299,27 +310,52 @@ class FocusCommands {
             }
         }
         MenuItem first = all.get(0);
-        return new Found(off.get(0) ? null : () -> choose(first), null, choices);
+        String reason = off.get(0) ? reasons.get(0) : null;
+        return new Found(off.get(0) ? null : () -> choose(first), null, choices, reason);
     }
 
-    private static void collect(List<?> items, String commandId, boolean under, List<MenuItem> all, List<Boolean> off) {
+    /**
+     * Collects the rows of {@code items} marked with {@code commandId}, whether each is off, and why. {@code under} is
+     * null outside a disabled submenu, and inside one the submenu's reason ("" when it has none).
+     */
+    private static void collect(
+            List<?> items,
+            String commandId,
+            @Nullable String under,
+            List<MenuItem> all,
+            List<Boolean> off,
+            List<@Nullable String> reasons) {
         for (Object entry : items) {
             if (!(entry instanceof MenuItem item)) {
                 continue;
             }
-            boolean disabled = under || item.isDisable() || !item.isVisible();
+            boolean disabled = under != null || item.isDisable() || !item.isVisible();
+            String reason = under != null ? under : item.isVisible() ? RowReasons.reasonOf(item) : null;
             if (commandId.equals(MenuChords.commandOf(item))
                     || commandId.equals(item.getProperties().get(ALSO))) {
                 all.add(item);
                 off.add(disabled);
+                reasons.add(reason == null || reason.isEmpty() ? null : reason);
             } else if (item instanceof Menu menu) {
-                collect(menu.getItems(), commandId, disabled, all, off);
+                collect(
+                        menu.getItems(),
+                        commandId,
+                        disabled ? (reason == null ? "" : reason) : null,
+                        all,
+                        off,
+                        reasons);
             }
         }
     }
 
-    /** Chooses {@code item} as a click on it would: a check row turns over, a radio row is chosen, then it fires. */
+    /**
+     * Chooses {@code item} as a click on it would: a check row turns over, a radio row is chosen, then it fires. A
+     * disabled row is refused, as a click refuses it: false, and nothing turned over or run.
+     */
     static boolean choose(MenuItem item) {
+        if (item.isDisable()) {
+            return false;
+        }
         if (item instanceof CheckMenuItem check) {
             check.setSelected(!check.isSelected());
         } else if (item instanceof RadioMenuItem radio) {
@@ -364,7 +400,7 @@ class FocusCommands {
             if (found != null) {
                 BooleanSupplier action = found.action();
                 if (action == null || !action.getAsBoolean()) {
-                    status.accept(tr("status.rows.notOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
+                    status.accept(refusal(commandId, found));
                 }
                 return true;
             }
@@ -418,7 +454,18 @@ class FocusCommands {
         if (action != null && action.getAsBoolean()) {
             return true;
         }
-        status.accept(tr("status.rows.notOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
+        status.accept(refusal(commandId, found));
         return false;
+    }
+
+    /**
+     * What the status line says when {@code commandId} did not run: why its row cannot run now, as the row's tooltip
+     * says it ({@code status.commandUnavailable}), or, when nothing offers it or the row says nothing, that it is not
+     * offered here.
+     */
+    static String refusal(String commandId, @Nullable Found found) {
+        String title = DebugPanelText.bareTitle(tr("command." + commandId));
+        String reason = found == null ? null : found.reason();
+        return reason == null ? tr("status.rows.notOffered", title) : tr("status.commandUnavailable", title, reason);
     }
 }

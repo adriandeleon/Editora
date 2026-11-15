@@ -678,8 +678,40 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   `MainController.disabledCommandReason` also uses), and that sentence in its accessible text. Choosing it says
   the reason in the status bar (`status.commandUnavailable`) instead of running. On the macOS system menu bar
   a row is a plain item AppKit draws, so there it is only disabled. Tests ask `MainMenuBar.showsUnavailable`,
-  which holds for either drawing. Right-click menu rows are disabled by their own code for reasons of their
-  own (no selection, nothing to undo, the first tab) and do not yet say why.
+  which holds for either drawing.
+- **A right-click or drop-down row that cannot run says why too** (KBD-04), with
+  [`editor/RowReasons`](../../src/main/java/com/editora/editor/RowReasons.java). A row is grayed by its own code
+  for a reason of its own (no selection, nothing to undo, the first tab), so its code names the reason: where it
+  said `item.setDisable(cond)` it says `RowReasons.when(item, ok, "row.unavailable.…")`, `because(item, key)` (a key
+  or null), `featureOn(item, on, toggleId)` (the palette's "turned off" sentence) or `bind(item, value, key)`. The
+  sentence is one sentence ending in a period, from the `row.unavailable.*` keys or an existing
+  `palette.disabled.*` one. A row that is a label rather than a command ("No recent files", "(none)") is a
+  `RowReasons.placeholder`: disabled with no reason, as it always was. Helpers carry it: `RowMenus.install` says
+  `row.unavailable.noSelection` (or the key it is given), `ListRowCommands.enabledWhen` takes the row's key, and a
+  row that fires a page's button says what `ListRowCommands.because(button, …)` gives, else the end of the list for
+  Move Up / Down, else that nothing is selected.
+  - **The row stays disabled.** Unlike the menu bar's `CustomMenuItem`s, a context menu draws a plain row with a node
+    of its own (`ContextMenuContent.MenuItemContainer`) that is never itself disabled, only marked `:disabled` for the
+    stylesheet: it still gets the pointer, the keyboard's focus and the arrow keys (verified on JavaFX 27). So the
+    row keeps `setDisable(true)`, and JavaFX refuses it on every path it owns: a click, Enter and Space
+    (`doSelect`, which also flips a check or radio row only when enabled), an accelerator, a screen reader's press, a
+    submenu's opening. The one path JavaFX leaves open, `MenuItem.fire()`, is closed by an `ActionEvent` filter
+    `RowReasons` puts on the row: it consumes a disabled row's action before any handler runs, and a disabled
+    submenu's filter refuses its rows' actions too. A grayed row looks as it always did.
+  - **As the menu shows** (`RowReasons.install`, from `MenuRowLayout.install`), each row with a reason gets on its
+    node a tooltip (as the palette's), the reason as the node's accessible help and in its title's spoken text, and
+    a click / Enter / Space filter that says `status.commandUnavailable` in the status line of the window the menu
+    belongs to (each editor window puts its status line on its stage, `RowReasons.sayIn`; a secondary window's goes
+    to the editor window that owns it) and closes the menu, as a menu bar row does. A submenu's rows are drawn in a
+    popup of their own, where `MenuItem.getStyleableNode()` does not look: `RowReasons.rowNode` finds them among the
+    showing menus' row nodes, which the skin marks with their item (the `MenuItem.class` property). JavaFX's own
+    menu of a text field or text area is explained the same way as it shows (`explainTextInputMenu`): Undo, Redo,
+    Cut, Copy, Paste and Delete get the reason JavaFX grayed them for; none is made available.
+  - **The commands say the same.** `FocusCommands` (and so the Map's commands, `PanelRowCommands`, `ProjectRowCommands`)
+    finds a grayed row's reason with the row (`Found.reason`, a disabled submenu's for the rows under it) and says
+    `status.commandUnavailable` with it; `status.rows.notOffered` stays for "nothing here offers it". `FocusCommands.choose`
+    refuses a disabled row. Tests ask `RowReasons.showsUnavailable` / `reasonOf`; `MenuRowReasonCoverageTest` (guard)
+    fails on a menu row grayed with `setDisable` or `disableProperty` outside `RowReasons`.
 - **A main toolbar button is disabled while its command cannot act.** `WindowToolbar.refreshCommandState`
   gives every toolbar button, one added from the catalog included (`track`), the answer the menus and the
   palette give for its command (`Chrome.paletteEnabled`); `MainController.refreshMenuEnablement` pushes both

@@ -103,7 +103,18 @@ class DebugEvaluateWindowFxTest {
             assertEquals("Point@1", root.getValue().value());
             assertTrue(root.isExpanded());
             assertEquals(2, root.getChildren().size(), "its fields");
+            // Its rows say why while no row is selected (KBD-04), and nothing once one is.
+            javafx.scene.control.ContextMenu menu = window.resultTree().getContextMenu();
+            window.resultTree().getSelectionModel().clearSelection();
+            menu.getOnShowing().handle(new javafx.stage.WindowEvent(menu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+            for (javafx.scene.control.MenuItem row : menu.getItems()) {
+                assertEquals(tr("row.unavailable.noSelection"), com.editora.editor.RowReasons.reasonOf(row));
+            }
             window.resultTree().getSelectionModel().select(root.getChildren().get(1));
+            menu.getOnShowing().handle(new javafx.stage.WindowEvent(menu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+            for (javafx.scene.control.MenuItem row : menu.getItems()) {
+                assertEquals(null, com.editora.editor.RowReasons.reasonOf(row), row.getText());
+            }
             assertEquals("point.y", window.selectedExpression());
 
             window.evaluate("missing");

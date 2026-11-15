@@ -507,6 +507,10 @@ class EditorInteractionFxTest {
             assertTrue(titles.containsAll(List.of("Bulleted List", "Task List", "Promote Heading", "Reformat")));
             assertFalse(EditorFx.menuItem(menu.getItems(), "Add Row").isDisable(), "the caret is in a table");
             assertTrue(EditorFx.menuItem(menu.getItems(), "Open Link").isDisable(), "no link under the caret");
+            assertEquals(
+                    tr("row.unavailable.notOnLink"),
+                    RowReasons.reasonOf(EditorFx.menuItem(menu.getItems(), "Open Link")),
+                    "and says why (KBD-04)");
             assertTrue(titles.contains(tr("editmenu.addBookmark")));
             assertTrue(titles.contains(tr("editmenu.addNote")));
             assertTrue(
@@ -517,6 +521,7 @@ class EditorInteractionFxTest {
             assertTrue(explain.isDisable(), "nothing is selected");
             assertTrue(EditorFx.menuItem(menu.getItems(), tr("editmenu.cut")).isDisable());
             assertTrue(EditorFx.menuItem(menu.getItems(), tr("editmenu.copy")).isDisable());
+            assertEquals(tr("palette.disabled.needsSelection"), RowReasons.reasonOf(explain));
 
             EditorFx.menuItem(menu.getItems(), MarkdownMenus.label(tr("command.markdown.tableAlignRight")))
                     .fire();
@@ -554,12 +559,19 @@ class EditorInteractionFxTest {
             EditorFx.menuItem(menu.getItems(), tr("editmenu.cut")).fire();
             String withCell = area.getText();
             assertEquals(-1, area.getText().indexOf('a'), "the selected cell text was cut");
+            // Each row is chosen from the menu as it shows now: a row grayed when this one opened never runs.
+            menu.hide();
+            menu = rightClick(buffer, cell);
             EditorFx.menuItem(menu.getItems(), tr("editmenu.paste")).fire();
             assertEquals(withCell.replace("a", ""), area.getText().replace("a", ""));
             assertEquals(cell, area.getText().indexOf('a'), "and pasted back where it was");
             String pasted = area.getText();
+            menu.hide();
+            menu = rightClick(buffer, cell);
             EditorFx.menuItem(menu.getItems(), tr("editmenu.undo")).fire();
             assertFalse(pasted.equals(area.getText()), "Undo took the last edit back");
+            menu.hide();
+            menu = rightClick(buffer, cell);
             EditorFx.menuItem(menu.getItems(), tr("editmenu.redo")).fire();
             assertEquals(pasted, area.getText(), "and Redo restored it");
             EditorFx.menuItem(menu.getItems(), tr("editmenu.selectAll")).fire();
@@ -573,6 +585,9 @@ class EditorInteractionFxTest {
             assertFalse(EditorFx.menuItem(menu.getItems(), tr("editmenu.copy")).isDisable());
             assertTrue(EditorFx.menuItem(menu.getItems(), tr("editmenu.cut")).isDisable());
             assertTrue(EditorFx.menuItem(menu.getItems(), tr("editmenu.paste")).isDisable());
+            assertEquals(
+                    tr("row.unavailable.readOnly"),
+                    RowReasons.reasonOf(EditorFx.menuItem(menu.getItems(), tr("editmenu.cut"))));
             assertTrue(EditorFx.menuItem(menu.getItems(), tr("command.ai.rewriteSelection"))
                     .isDisable());
             assertFalse(EditorFx.menuItem(menu.getItems(), tr("command.ai.explainSelection"))

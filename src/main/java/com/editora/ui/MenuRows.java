@@ -6,6 +6,7 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 
 import com.editora.editor.MenuChords;
+import com.editora.editor.RowReasons;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -45,5 +46,14 @@ final class MenuRows {
         }
         row.fire();
         return true;
+    }
+
+    /**
+     * Why the row of {@code items} tagged with {@code commandId} cannot run, as its tooltip says it ({@link
+     * RowReasons}); null when there is no such row or it can run, or says nothing.
+     */
+    static @Nullable String reason(List<MenuItem> items, String commandId) {
+        MenuItem row = find(items, commandId);
+        return row == null || !row.isDisable() ? null : RowReasons.reasonOf(row);
     }
 }

@@ -390,12 +390,19 @@ class ProjectMapPreviewCardFxTest {
                 r.rebuildMenu(0);
                 assertTrue(r.item("project.map.preview.copyAll").isDisable(), "nothing to copy from an empty card");
                 assertTrue(r.item("editmenu.selectAll").isDisable());
+                assertEquals(
+                        tr("row.unavailable.emptyView"),
+                        com.editora.editor.RowReasons.reasonOf(r.item("project.map.preview.copyAll")));
                 assertNull(r.item("editmenu.addBookmark"), "and no line to mark");
 
                 r.card.refresh(new Content("first line\nsecond line\nthird\n", false));
                 r.rebuildMenu(1);
                 assertFalse(r.item("project.map.preview.copyAll").isDisable());
                 assertTrue(r.item("editmenu.addNote").isDisable(), "Personal Notes are switched off");
+                assertEquals(
+                        tr("palette.disabled.featureOff", tr("command.view.toggleNotes")),
+                        com.editora.editor.RowReasons.reasonOf(r.item("editmenu.addNote")));
+                assertNull(com.editora.editor.RowReasons.reasonOf(r.item("project.map.preview.copyAll")));
                 r.item("editmenu.addBookmark").fire();
                 assertEquals(List.of("a.txt:1"), marks);
 
@@ -486,6 +493,13 @@ class ProjectMapPreviewCardFxTest {
                 assertTrue(r.item("project.map.preview.menu.navigate").isDisable(), "nothing in it fits");
                 assertTrue(r.item("project.map.preview.menu.hierarchy").isDisable(), "a pom has no callers");
                 assertTrue(r.item("project.map.links.hover.show").isDisable(), "no documentation to show");
+                assertEquals(
+                        tr("row.unavailable.languageCannotAnswer"),
+                        com.editora.editor.RowReasons.reasonOf(r.item("project.map.links.showReferences")));
+                assertEquals(
+                        tr("row.unavailable.languageCannotAnswer"),
+                        com.editora.editor.RowReasons.reasonOf(r.item("project.map.preview.menu.hierarchy")),
+                        "a submenu none of whose rows fit says their shared reason");
                 javafx.scene.control.Menu inEditor = (javafx.scene.control.Menu) r.item("project.map.follow.inEditor");
                 assertFalse(inEditor.isDisable(), "the editor's Go to Definition fits");
                 assertEquals(

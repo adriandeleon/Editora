@@ -69,7 +69,8 @@ final class MapCallStack extends MapSideColumn {
                             DapModels.StackFrameInfo frame =
                                     frames.getSelectionModel().getSelectedItem();
                             return frame != null && !onlyLabels(frame);
-                        }),
+                        },
+                        "row.unavailable.noSourceFile"),
                 ListRowCommands.copyRow(frames, () -> ListRowCommands.selectedText(frames, DebugPanelText::frameText)));
         setBody(frames);
         setTitle(tr("project.map.debug.stackTitle"), frames);

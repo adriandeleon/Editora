@@ -117,7 +117,8 @@ final class LambdaBreakpoints {
         var mgr = b.getBreakpointManager();
         CheckMenuItem onLine = new CheckMenuItem(tr("debug.gutter.stopOnLine"));
         onLine.setSelected(bp.stopsOnLine());
-        onLine.setDisable(!bp.hasLambdas()); // it has to stop somewhere
+        com.editora.editor.RowReasons.when(
+                onLine, bp.hasLambdas(), "row.unavailable.mustStopOnLine"); // it has to stop somewhere
         onLine.setOnAction(ev -> {
             // As the menu's other rows: the caret goes to the line, and the command for the breakpoint there runs.
             b.getFocusedArea().moveTo(line, 0);

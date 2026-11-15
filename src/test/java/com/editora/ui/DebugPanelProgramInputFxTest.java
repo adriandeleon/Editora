@@ -181,6 +181,57 @@ class DebugPanelProgramInputFxTest {
         assertEquals(tr("debugpanel.evalPrompt"), seen[2]);
     }
 
+    /**
+     * A grayed row of the Debug window says why (KBD-04): End Program Input while the program does not read from the
+     * console, and a command that fires a grayed row (Restart Frame on the bottom frame) says the row's reason.
+     */
+    @Test
+    void itsGrayedRowsAndTheirCommandsSayWhy() throws Exception {
+        List<String> calls = new ArrayList<>();
+        String[] seen = FxTestSupport.callOnFx(() -> {
+            DebugPanel.Actions base = recording(calls);
+            DebugPanel panel = new DebugPanel((DebugPanel.Actions) java.lang.reflect.Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class<?>[] {DebugPanel.Actions.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("stackMenuItems")) {
+                            javafx.scene.control.MenuItem restart = new javafx.scene.control.MenuItem("Restart");
+                            com.editora.editor.MenuChords.tag(restart, "debug.restartFrame");
+                            return List.of(
+                                    com.editora.editor.RowReasons.because(restart, "row.unavailable.bottomFrame"));
+                        }
+                        if (method.isDefault()) {
+                            return java.lang.reflect.InvocationHandler.invokeDefault(proxy, method, args);
+                        }
+                        method.setAccessible(true);
+                        return method.invoke(base, args);
+                    }));
+            CodeArea console = FxTestSupport.field(panel, "console");
+            javafx.scene.control.ContextMenu menu = console.getContextMenu();
+            menu.getOnShowing().handle(new javafx.stage.WindowEvent(menu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+            String endInput =
+                    com.editora.editor.RowReasons.reasonOf(menu.getItems().get(1));
+            panel.setCallStack(List.of(new DapModels.StackFrameInfo(1, "main", null, 3, 0)), 0);
+            boolean ran = panel.runMenuRow("debug.restartFrame");
+            return new String[] {
+                endInput,
+                String.valueOf(ran),
+                panel.rowRefusal("debug.restartFrame"),
+                panel.rowRefusal("debug.copyCallStackNowhere")
+            };
+        });
+        assertEquals(tr("row.unavailable.notReadingInput"), seen[0]);
+        assertEquals("false", seen[1], "a grayed row does not run");
+        assertEquals(
+                tr(
+                        "status.commandUnavailable",
+                        DebugPanelText.bareTitle(tr("command.debug.restartFrame")),
+                        tr("row.unavailable.bottomFrame")),
+                seen[2]);
+        assertEquals(
+                tr("status.debug.rowNotOffered", DebugPanelText.bareTitle(tr("command.debug.copyCallStackNowhere"))),
+                seen[3]);
+        assertEquals(List.of(), calls);
+    }
+
     /** A prompt ends without a newline; what Editora itself says must not read as part of it. */
     @Test
     void aNoticeStartsOnItsOwnLineAfterAnUnfinishedLineOfOutput() throws Exception {

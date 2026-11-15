@@ -520,7 +520,7 @@ final class ProjectMapView extends VBox {
                         canvasExportMenu);
         canvasCollapseAllItem.setOnAction(event -> canvasCloseOthers(null, false));
         canvasExportMenu.getItems().setAll(canvasExportPngItem, canvasExportSvgItem);
-        canvasExportMenu.setDisable(true);
+        setOutputEnabled(false); // nothing is drawn yet
         canvasExportPngItem.setOnAction(event -> canvasExport(true));
         canvasExportSvgItem.setOnAction(event -> canvasExport(false));
         // Each row is a command's (MapMenuCommands), which fires the row: the row shows the command's chord.
@@ -549,8 +549,6 @@ final class ProjectMapView extends VBox {
         MapButtonCommands.bind(this, "projectMap.breadcrumb", this::pickBreadcrumb); // the crumbs, one pick
         openCardsMenu.setOnShowing(event -> fillOpenCardsMenu());
         fillOpenCardsMenu(); // never empty: a submenu with no items does not open
-        printButton.setDisable(true);
-        exportPdfButton.setDisable(true);
         printButton.setOnAction(event -> onPrint.accept(mapOutput()));
         exportPdfButton.setOnAction(event -> onExportPdf.accept(mapOutput()));
         MenuChords.tag(printButton, "projectMap.print"); // the commands fire these two items
@@ -628,13 +626,13 @@ final class ProjectMapView extends VBox {
             String label = card.note() ? tr("project.map.openCards.notes", card.label()) : card.label();
             MenuItem item = new MenuItem(label, card.note() ? Icons.notes() : null);
             item.setMnemonicParsing(false);
-            item.setDisable(!card.node().isVisible()); // hidden by "Hide unmatched" or "Hide all open Personal Notes"
+            // Hidden by "Hide unmatched" or "Hide all open Personal Notes".
+            com.editora.editor.RowReasons.when(item, card.node().isVisible(), "row.unavailable.cardHidden");
             item.setOnAction(event -> cards.bringIntoView(card.node()));
             items.add(item);
         }
         if (items.isEmpty()) {
-            MenuItem none = new MenuItem(tr("project.map.openCards.none"));
-            none.setDisable(true);
+            MenuItem none = com.editora.editor.RowReasons.placeholder(new MenuItem(tr("project.map.openCards.none")));
             items.add(none);
         }
         openCardsMenu.getItems().setAll(items);
@@ -3850,10 +3848,11 @@ final class ProjectMapView extends VBox {
         };
     }
 
+    /** Makes the Map's print and export rows available, or unavailable while it shows nothing to print. */
     private void setOutputEnabled(boolean enabled) {
-        printButton.setDisable(!enabled);
-        exportPdfButton.setDisable(!enabled);
-        canvasExportMenu.setDisable(!enabled);
+        com.editora.editor.RowReasons.when(printButton, enabled, "row.unavailable.mapEmpty");
+        com.editora.editor.RowReasons.when(exportPdfButton, enabled, "row.unavailable.mapEmpty");
+        com.editora.editor.RowReasons.when(canvasExportMenu, enabled, "row.unavailable.mapEmpty");
     }
 
     /** Pixels per point of the PNG export: the current view at twice its size, as a sharp screenshot is. */

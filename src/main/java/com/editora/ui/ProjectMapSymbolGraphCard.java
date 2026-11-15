@@ -322,7 +322,9 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             });
             MenuItem graphHere =
                     MapButtonCommands.row(new MenuItem(tr("project.map.graph.walk")), "projectMap.graphFromHere");
-            graphHere.setDisable(!walkable);
+            com.editora.editor.RowReasons.because(
+                    graphHere,
+                    self ? "row.unavailable.graphCentre" : !walkable ? "row.unavailable.noSymbolHere" : null);
             graphHere.setOnAction(event -> walk(group, side, via));
             MenuItem card =
                     MapButtonCommands.row(new MenuItem(tr("project.map.graph.openCard")), "projectMap.openCard");

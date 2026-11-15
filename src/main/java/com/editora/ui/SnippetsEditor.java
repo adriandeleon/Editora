@@ -400,6 +400,12 @@ final class SnippetsEditor {
                         },
                         list.getSelectionModel().selectedItemProperty(),
                         problem.visibleProperty()));
+        ListRowCommands.because(remove, () -> {
+            Entry s = list.getSelectionModel().getSelectedItem();
+            return fileProblem != null
+                    ? "row.unavailable.snippetsFileBroken"
+                    : s != null && s.source() != Source.USER ? "row.unavailable.bundledSnippet" : null;
+        });
         remove.setOnAction(e -> {
             Entry s = list.getSelectionModel().getSelectedItem();
             if (s != null
@@ -424,6 +430,7 @@ final class SnippetsEditor {
                 load.accept(s.name());
             }
         });
+        ListRowCommands.because(toggle, () -> fileProblem != null ? "row.unavailable.snippetsFileBroken" : null);
         for (Button b : List.of(add, toggle)) { // a file that cannot be parsed is never written: say so by state
             if (b == add) {
                 b.disableProperty().bind(fileBroken(problem));

@@ -178,12 +178,15 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                         () -> {
                             TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
                             return !running.get() && selected != null && selected.getValue() instanceof TaskItem;
-                        }),
+                        },
+                        () -> running.get() ? "row.unavailable.taskRunning" : "row.unavailable.notATask"),
                 ListRowCommands.enabledWhen(
-                        ListRowCommands.row(tree, ListRowCommands.TOGGLE, null, null, this::toggleSelected), () -> {
+                        ListRowCommands.row(tree, ListRowCommands.TOGGLE, null, null, this::toggleSelected),
+                        () -> {
                             TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
                             return selected != null && selected.getValue() instanceof ToggleItem;
-                        }),
+                        },
+                        "row.unavailable.notAToggle"),
                 ListRowCommands.copyRow(tree, () -> ListRowCommands.selectedText(tree, BuildActionsTree::rowText)));
 
         placeholder.getStyleClass().add("tool-window-placeholder");

@@ -325,11 +325,49 @@ class MapChangesCardFxTest {
                 assertEquals(before, opened.size());
                 Button openInEditor = FxTestSupport.field(card, "openInEditor");
                 assertTrue(openInEditor.isDisabled());
+                // Its rows say why (KBD-04): the files list's Open, and the diff's, which follow the button.
+                javafx.scene.control.ContextMenu filesMenu = list.getContextMenu();
+                filesMenu
+                        .getOnShowing()
+                        .handle(new javafx.stage.WindowEvent(filesMenu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+                assertEquals(
+                        tr("row.unavailable.fileDeleted"),
+                        com.editora.editor.RowReasons.reasonOf(
+                                filesMenu.getItems().get(0)));
+                assertEquals(
+                        tr("row.unavailable.fileDeleted"),
+                        com.editora.editor.RowReasons.reasonOf(
+                                filesMenu.getItems().get(1)),
+                        "Open in Editor");
+                javafx.scene.control.ContextMenu diffMenu = diff.getContextMenu();
+                diffMenu.getOnShowing()
+                        .handle(new javafx.stage.WindowEvent(diffMenu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+                assertEquals(
+                        tr("row.unavailable.fileDeleted"),
+                        com.editora.editor.RowReasons.reasonOf(
+                                diffMenu.getItems().get(0)));
                 for (String path : List.of("b.png", "c.txt", "d.sh")) {
                     card.pickFile(indexOf(result, path));
                     javafx.scene.control.Label shown = (javafx.scene.control.Label) diff.getPlaceholder();
                     assertFalse(shown.getText().isEmpty(), path);
+                    filesMenu
+                            .getOnShowing()
+                            .handle(new javafx.stage.WindowEvent(filesMenu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+                    assertEquals(
+                            tr("row.unavailable.noHunks"),
+                            com.editora.editor.RowReasons.reasonOf(
+                                    filesMenu.getItems().get(0)),
+                            path);
                 }
+                card.pickFile(indexOf(result, "src/A.java"));
+                filesMenu
+                        .getOnShowing()
+                        .handle(new javafx.stage.WindowEvent(filesMenu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+                assertNull(
+                        com.editora.editor.RowReasons.reasonOf(
+                                filesMenu.getItems().get(0)),
+                        "a changed file opens");
+                card.pickFile(indexOf(result, "d.sh")); // back to the last file the loop picked
                 list.fireEvent(key(KeyCode.ENTER, false)); // no hunks: stays in the list
                 assertEquals(-1, card.hunk());
             });

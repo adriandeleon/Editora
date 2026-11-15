@@ -462,6 +462,9 @@ class StructurePanelKeysFxTest {
             ContextMenu menu = cell.getContextMenu();
             MenuItem note = menu.getItems().get(1);
             assertTrue(note.isDisable(), "Personal Notes are switched off");
+            assertEquals(
+                    tr("palette.disabled.featureOff", tr("command.view.toggleNotes")),
+                    com.editora.editor.RowReasons.reasonOf(note));
             notesEnabled[0] = true;
             menu.getOnShowing().handle(new WindowEvent(menu, WindowEvent.WINDOW_SHOWING));
             assertFalse(note.isDisable(), "the menu re-reads the setting each time it opens");
