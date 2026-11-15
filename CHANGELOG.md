@@ -43,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   menus; and in the Debug window every row of the Variables, Threads, call stack and console menus. A row shows the
   key of its command when it has one. Run with nothing selected, or on a row its menu would not offer it for, a
   command says so in the status bar and does nothing; Delete, Revert and Discard still ask first.
+- **Every right-click row and button of the Project Map is a command.** The ⋯ menu's options (Compact rows, Follow
+  the debugger, the four flow directions and the rest), Project Overview, Dependencies, Code Metrics, Review Changes,
+  Collapse All and Export; the filters, Clear, the zoom bar and the search results' arrows and list; a column's Show
+  hidden, lock and Close; the rows of the map's menu and of a declaration's (Preview, Related Test / Subject, Show
+  Callers as Cards, Symbol Graph, the In the Editor rows, Declaration History…); a card's menu, Open, find bar,
+  gutter marks and Go to Line ×; and the bars and menus of the Dependencies, Code Metrics, Symbol Graph, History and
+  Changes cards. Each acts on what the Map's keyboard is on: the selected row, the card, the place in a card. Working
+  sets, trails, the breadcrumb's places and the open cards are picked from a list. Where the row or button would do
+  nothing, the Map's status line says why.
 - **Commands for the editor menu's run and debug rows, the diff's line rows and the tab menu's last two rows.** Debug
   Current File, Debug Main Class at Caret, Debug Test Class at Caret, Add Expression at Caret to Watches, Stage,
   Unstage and Revert Line at Caret and Open Line at Caret in Editor in a diff, Local History: Show History of Current

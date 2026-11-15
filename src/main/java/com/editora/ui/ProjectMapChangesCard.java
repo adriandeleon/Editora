@@ -146,6 +146,11 @@ final class ProjectMapChangesCard extends MapFloatingCard {
             }
         });
         refresh.setOnAction(event -> onRefresh.run());
+        // The bar's buttons and Against are commands too (KBD-01), while the keyboard is in the card.
+        MapButtonCommands.press(this, "projectMap.changesPrevious", previous);
+        MapButtonCommands.press(this, "projectMap.changesNext", next);
+        MapButtonCommands.press(this, "projectMap.cardRefresh", refresh);
+        MapButtonCommands.bindIf(this, "projectMap.changesAgainst", this::showAgainst);
         // The two lists' right-click menus: what Enter, a double-click and the bar's buttons do, and Copy (MENU-05).
         ListRowCommands.install(
                 files,
@@ -249,6 +254,15 @@ final class ProjectMapChangesCard extends MapFloatingCard {
             items.add(since);
         }
         against.getItems().setAll(items);
+    }
+
+    /** {@code projectMap.changesAgainst}: opens Against's list, as a click on it does; false while it is not shown. */
+    private boolean showAgainst() {
+        if (!against.isVisible() || against.isDisabled() || against.getScene() == null) {
+            return false;
+        }
+        against.show();
+        return true;
     }
 
     private MenuItem baseItem(String text, GitService.ChangesBase to) {

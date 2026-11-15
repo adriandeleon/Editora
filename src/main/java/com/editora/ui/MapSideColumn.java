@@ -137,6 +137,11 @@ abstract class MapSideColumn implements CardAttachment {
         MapButtonCommands.bind(column, button, id, title, action);
     }
 
+    /** Has card command {@code id} press {@code control} as a click would, while the keyboard is in the column. */
+    protected final void pressedBy(String id, javafx.scene.control.ButtonBase control) {
+        MapButtonCommands.press(column, id, control);
+    }
+
     /** Puts {@code parts} under the header, the last one taking the height left. */
     protected final void setBody(Node... parts) {
         content.getChildren().setAll(header);

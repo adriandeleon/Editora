@@ -823,6 +823,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // Everything the Map says goes to its own window's status line, never the editor's (A2).
         mapView.setOnStatus(mapStatusLine::show);
         mapView.setOnSwitchCard(this::mapSwitchCard);
+        mapView.setPicker(this::mapPick); // the lists the Map's commands pick from: working sets, trails, crumbs
         mapView.setOnSearchNotice(mapStatusLine::showSearch);
         VBox content = new VBox(filterRow, strip, mapView, mapStatusLine);
         content.getStyleClass().add("project-map-window");
@@ -967,6 +968,26 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         switcher.show(owner);
         cardSwitcher = switcher;
         return true;
+    }
+
+    /**
+     * A list to pick from over the Map window, for the Map's commands ({@link ProjectMapView.Picker}): {@code rows}
+     * under {@code title}, starting on row {@code current}, the one picked handed to {@code chosen} by its index.
+     */
+    private void mapPick(String title, List<String> rows, int current, java.util.function.IntConsumer chosen) {
+        javafx.stage.Stage owner = mapWindow.stage();
+        if (owner == null) {
+            return;
+        }
+        List<Integer> indexes =
+                java.util.stream.IntStream.range(0, rows.size()).boxed().toList();
+        QuickOpen<Integer> picker = new QuickOpen<>(
+                title, tr("project.map.pick.prompt"), () -> indexes, rows::get, index -> "", chosen::accept);
+        if (current >= 0 && current < rows.size()) {
+            picker.setCurrentItem(() -> current);
+        }
+        picker.setOverlayHost(mapWindow.overlayHost());
+        picker.show(owner);
     }
 
     /** The last card switcher shown, or null. For tests. */
@@ -3106,11 +3127,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * {@code projectMap.showCallees} from the command palette (Map code navigation): asked in the Map's card the
-     * keyboard was last in, else of its selected declaration row. False when the Map is not showing or has neither.
+     * {@code projectMap.showCallees} from the command palette (Map code navigation): the Callees row of the menu where
+     * the Map's keyboard is ({@link MapMenuCommands}: a card's, a declaration row's, a card's Structure column's), else
+     * asked in the Map's card the keyboard was last in, else of its selected declaration row. False when the Map is not
+     * showing or has none of them.
      */
     public boolean mapNavigationCommand(String commandId) {
-        return isMapShowing() && mapView.runNavigation(commandId);
+        return isMapShowing()
+                && (MapMenuCommands.runOffered(mapView, commandId, mapView.onStatus)
+                        || mapView.runNavigation(commandId));
     }
 
     /** One filesystem watcher event: what happened to which path (#677). */

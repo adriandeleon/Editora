@@ -141,7 +141,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-01",
       "kind": "pending",
-      "reason": "Many buttons inside panels (the Project Map's, the diff and merge views', the find bars' options, the debugger's windows and others) and the right-click rows of the Project Map, the terminal and several tool windows still do their work with no command behind them, so the palette cannot run them.",
+      "reason": "Many buttons inside panels (the diff and merge views', the find bars' options, the debugger's windows and others) and the right-click rows of the terminal and several tool windows still do their work with no command behind them, so the palette cannot run them.",
       "link": "https://github.com/adriandeleon/Editora/issues/1560"
     },
     {
@@ -293,7 +293,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/menus/#menu-05",
       "kind": "pending",
-      "reason": "Many right-click rows still do something no command does: those of the Project Map, the terminal, the Markdown preview, the Structure, Problems, Markdown Lint, CSV, HTTP, Remote, TODO and Doctor windows, the debugger's value popup and Evaluate window, among others.",
+      "reason": "Many right-click rows still do something no command does: those of the terminal, the Markdown preview, the Structure, Problems, Markdown Lint, CSV, HTTP, Remote, TODO and Doctor windows, the debugger's value popup and Evaluate window, among others.",
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {

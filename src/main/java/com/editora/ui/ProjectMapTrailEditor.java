@@ -102,7 +102,8 @@ final class ProjectMapTrailEditor extends VBox {
         rename.setOnAction(event -> renameSelected());
         note.setOnAction(event -> noteSelected());
         play.setOnAction(event -> playSelected());
-        renameTrail.setOnAction(event -> askRenameTrail());
+        // The one button no list row runs: a command of its own while the keyboard is in the editor (KBD-01).
+        MapButtonCommands.runs(this, renameTrail, "projectMap.trailRename", this::askRenameTrail);
         // Its right-click menu: the stop buttons' actions, which Enter, a double-click and its keys do too, and
         // Copy (MENU-05).
         ListRowCommands.install(

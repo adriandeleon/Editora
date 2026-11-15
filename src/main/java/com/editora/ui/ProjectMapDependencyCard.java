@@ -150,6 +150,13 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         refresh.setGraphic(Icons.refresh());
         Icons.name(refresh, tr("project.map.deps.refreshTip"));
         refresh.setOnAction(event -> onRefresh.run());
+        // The bar's buttons are commands too (KBD-01): each presses its button while the keyboard is in the card.
+        MapButtonCommands.press(this, "projectMap.cardBack", back);
+        MapButtonCommands.press(this, "projectMap.depsAround", aroundButton);
+        MapButtonCommands.press(this, "projectMap.depsInside", insideButton);
+        MapButtonCommands.press(this, "projectMap.cardFiles", filesButton);
+        MapButtonCommands.press(this, "projectMap.cardFolders", foldersButton);
+        MapButtonCommands.press(this, "projectMap.cardRefresh", refresh);
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
         Region divider = new Region();
@@ -400,6 +407,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             View look = part.folder() ? View.INSIDE : View.AROUND;
             header.setOnAction(event -> moveTo(root, new Place(part.rel(), part.folder(), look), true));
             header.setContextMenu(placeMenu(part.rel(), part.folder()));
+            MapButtonCommands.ownMenu(header); // its menu's commands act on it while it has the keyboard
             matrix.add(header, 0, r + 1);
             rowButtons.add(header);
             for (int c = 0; c < n; c++) {
@@ -515,19 +523,20 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
     /** The menu of a file or folder on the card: move onto it, show it on the map, open it. */
     private ContextMenu placeMenu(String rel, boolean isFolder) {
         List<MenuItem> items = new ArrayList<>();
-        MenuItem focus = new MenuItem(tr("project.map.deps.focusHere"));
+        MenuItem focus = MapButtonCommands.row(new MenuItem(tr("project.map.deps.focusHere")), "projectMap.focusHere");
         focus.setOnAction(event -> moveTo(root, new Place(rel, isFolder, View.AROUND), true));
         items.add(focus);
         if (isFolder) {
-            MenuItem inside = new MenuItem(tr("project.map.deps.insideHere"));
+            MenuItem inside =
+                    MapButtonCommands.row(new MenuItem(tr("project.map.deps.insideHere")), "projectMap.lookInside");
             inside.setOnAction(event -> moveTo(root, new Place(rel, true, View.INSIDE), true));
             items.add(inside);
         }
-        MenuItem show = new MenuItem(tr("project.map.deps.showOnMap"));
+        MenuItem show = MapButtonCommands.row(new MenuItem(tr("project.map.deps.showOnMap")), "projectMap.showOnMap");
         show.setOnAction(event -> reveal(rel));
         items.add(show);
         if (!isFolder) {
-            MenuItem open = new MenuItem(tr("project.map.deps.openCard"));
+            MenuItem open = MapButtonCommands.row(new MenuItem(tr("project.map.deps.openCard")), "projectMap.openCard");
             open.setOnAction(event -> onOpen.accept(root.resolve(rel), -1));
             items.add(open);
         }
@@ -715,6 +724,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
                 }
             });
             setContextMenu(placeMenu(node.rel(), node.folder()));
+            MapButtonCommands.ownMenu(this); // its menu's commands act on it while it has the keyboard
         }
     }
 
@@ -744,6 +754,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             subject.setMnemonicParsing(false);
             subject.setWrapText(true);
             subject.setOnAction(event -> reveal(ProjectMapDependencyCard.this.subject));
+            MapButtonCommands.ownMenu(subject); // its menu's commands act on it while it has the keyboard
             for (Label header : List.of(usersHeader, usesHeader)) {
                 header.getStyleClass().add("project-map-deps-side");
             }

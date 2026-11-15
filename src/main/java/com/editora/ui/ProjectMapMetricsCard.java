@@ -97,6 +97,11 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         refresh.setGraphic(Icons.refresh());
         Icons.name(refresh, tr("project.map.metrics.refreshTip"));
         refresh.setOnAction(event -> onRefresh.run());
+        // The bar's buttons are commands too (KBD-01): each presses its button while the keyboard is in the card.
+        MapButtonCommands.press(this, "projectMap.cardBack", back);
+        MapButtonCommands.press(this, "projectMap.cardFiles", filesButton);
+        MapButtonCommands.press(this, "projectMap.cardParts", partsButton);
+        MapButtonCommands.press(this, "projectMap.cardRefresh", refresh);
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
         HBox bar = UiZoom.spacing(new HBox(back, filesButton, partsButton, gap, refresh), 4);
@@ -144,6 +149,11 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
                         ProjectMapMetrics.Row::hotspot));
         table.setRowFactory(view -> new MetricsRow());
         RowContextMenu.install(table); // the rows carry the menus; the Menu key / Shift+F10 arrive at the table
+        // The Map's row commands fire the selected row's menu rows while the keyboard is in the table.
+        MapButtonCommands.menu(table, () -> {
+            ProjectMapMetrics.Row row = table.getSelectionModel().getSelectedItem();
+            return row == null ? null : rowMenu(row).getItems();
+        });
         table.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ENTER
                     && enter(table.getSelectionModel().getSelectedItem())) {
@@ -342,17 +352,21 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
     private ContextMenu rowMenu(ProjectMapMetrics.Row row) {
         List<MenuItem> items = new ArrayList<>();
         if (row.folder()) {
-            MenuItem inside = new MenuItem(tr("project.map.metrics.lookInside"));
+            MenuItem inside =
+                    MapButtonCommands.row(new MenuItem(tr("project.map.metrics.lookInside")), "projectMap.lookInside");
             inside.setOnAction(event -> enter(row));
             items.add(inside);
         } else {
-            MenuItem open = new MenuItem(tr("project.map.metrics.openCard"));
+            MenuItem open =
+                    MapButtonCommands.row(new MenuItem(tr("project.map.metrics.openCard")), "projectMap.openCard");
             open.setOnAction(event -> enter(row));
             items.add(open);
         }
-        MenuItem show = new MenuItem(tr("project.map.metrics.showOnMap"));
+        MenuItem show =
+                MapButtonCommands.row(new MenuItem(tr("project.map.metrics.showOnMap")), "projectMap.showOnMap");
         show.setOnAction(event -> onReveal.accept(root.resolve(row.rel())));
-        MenuItem dependencies = new MenuItem(tr("project.map.metrics.dependencies"));
+        MenuItem dependencies =
+                MapButtonCommands.row(new MenuItem(tr("project.map.metrics.dependencies")), "projectMap.dependencies");
         dependencies.setOnAction(event -> onDependencies.accept(root.resolve(row.rel())));
         items.add(show);
         items.add(dependencies);

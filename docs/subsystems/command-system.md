@@ -578,6 +578,17 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   panel's `runMenuRow` builds the menu as a right-click would and fires the row tagged with the command
   ([`MenuRows.fire`](../../src/main/java/com/editora/ui/MenuRows.java)), so the command runs exactly the row, and only
   where it is offered. A command acts on a window that is open: never on a selection nobody can see.
+- **The Project Map's rows and buttons** are the `projectMap.*` commands of
+  [`MapMenuCommands`](../../src/main/java/com/editora/ui/MapMenuCommands.java) (the options menu, the filters, the
+  zoom bar, the results strip, a column's header, the map's and a declaration's row menu, a card's menu and buttons,
+  the other cards' bars and menus). One mechanism serves them all: walking up from the Map scene's focus owner,
+  `MapButtonCommands.find` takes the first action bound to the command or the first menu (`MapButtonCommands.menu`,
+  built for the selection or the caret as a right-click builds it) with a row marked with it
+  (`MapButtonCommands.row`, which keeps a chord the row already shows), and chooses that row as a click does. A row
+  the menu shows disabled, or a bound action that answers false, is refused with `status.projectMap.rowUnavailable`;
+  nothing that offers it, with `status.projectMap.notOffered`. Lists of named things (working sets, trails, the
+  breadcrumb) are picked from a `QuickOpen` over the Map window. See
+  [the Project Map's guide](project-map.md#every-row-and-button-is-a-command-kbd-01-menu-05).
 - **The Git managers' buttons.** A [`GitManagerOverlay.Action`](../../src/main/java/com/editora/ui/GitManagerOverlay.java)
   names its command (`git.addRemote`, `git.removeWorktree`…); the card's list has a right-click menu of the same
   actions, tagged with those commands. A command acts on the row selected in the card while it is up (and shows the

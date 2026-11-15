@@ -359,6 +359,15 @@ final class ProjectMapStickyNotes implements CardAttachment {
                 : notes.stream().filter(note -> !closed.contains(note.id())).toList();
     }
 
+    /** The "+K more notes" sheet's button, pressed: the file's note card; false while there is no such sheet. */
+    boolean openMore() {
+        if (more == null || hidden) {
+            return false;
+        }
+        onMore.run();
+        return true;
+    }
+
     /** Called by the "+K more notes" sheet: the owner opens the file's note card, which lists them all. */
     void setOnMore(Runnable callback) {
         onMore = callback == null ? () -> {} : callback;
