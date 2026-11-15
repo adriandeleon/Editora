@@ -455,6 +455,10 @@ final class SettingsSnippetPages {
                             return t == null || !templateUserIds.contains(t.id());
                         },
                         list.getSelectionModel().selectedItemProperty()));
+        ListRowCommands.because(remove, () -> {
+            com.editora.template.Template t = list.getSelectionModel().getSelectedItem();
+            return t != null && !templateUserIds.contains(t.id()) ? "row.unavailable.bundledTemplate" : null;
+        });
         remove.setOnAction(e -> {
             com.editora.template.Template t = list.getSelectionModel().getSelectedItem();
             if (t == null || !templateUserIds.contains(t.id()) || templateRegistry == null) {

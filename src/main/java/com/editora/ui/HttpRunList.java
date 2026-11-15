@@ -180,10 +180,14 @@ final class HttpRunList extends VBox {
         ContextMenu menu = new ContextMenu(runAgain, copy, jump);
         menu.setOnShowing(e -> {
             HttpRunRows.Row row = list.getSelectionModel().getSelectedItem();
-            runAgain.setDisable(row == null);
-            jump.setDisable(row == null);
+            com.editora.editor.RowReasons.when(runAgain, row != null, "row.unavailable.noSelection");
+            com.editora.editor.RowReasons.when(jump, row != null, "row.unavailable.noSelection");
             // A request that was never sent has no command to copy: its URL and headers may still be templates.
-            copy.setDisable(row == null || HttpStatusText.notSent(row.entry().result()));
+            com.editora.editor.RowReasons.because(
+                    copy,
+                    row == null
+                            ? "row.unavailable.noSelection"
+                            : HttpStatusText.notSent(row.entry().result()) ? "row.unavailable.notSent" : null);
         });
         return menu;
     }

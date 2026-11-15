@@ -306,6 +306,7 @@ class ProjectPanelCellsFxTest {
                 showing.run();
                 assertFalse(localHistory.isDisable() || git.isDisable());
                 assertTrue(revert.isDisable(), "nothing under the folder has changed: nothing to revert");
+                assertEquals(tr("row.unavailable.nothingToRevert"), com.editora.editor.RowReasons.reasonOf(revert));
 
                 r.panel.setGitStatus(Map.of(r.main, GitFileStatus.MODIFIED));
                 showing.run();
@@ -320,6 +321,10 @@ class ProjectPanelCellsFxTest {
                 history.set(false);
                 showing.run();
                 assertTrue(git.isDisable() && localHistory.isDisable());
+                assertEquals(tr("row.unavailable.notInRepo"), com.editora.editor.RowReasons.reasonOf(git));
+                assertEquals(
+                        tr("palette.disabled.featureOff", tr("command.view.toggleLocalHistory")),
+                        com.editora.editor.RowReasons.reasonOf(localHistory));
             });
         }
     }
@@ -352,6 +357,9 @@ class ProjectPanelCellsFxTest {
 
                 showing.run();
                 assertTrue(localHistory.isDisable(), "Local History switched off");
+                assertEquals(
+                        tr("palette.disabled.featureOff", tr("command.view.toggleLocalHistory")),
+                        com.editora.editor.RowReasons.reasonOf(localHistory));
                 assertFalse(git.isDisable());
                 assertTrue(revert.isDisable() && ignore.isDisable(), "a clean, tracked file");
 
@@ -363,6 +371,8 @@ class ProjectPanelCellsFxTest {
                 showing.run();
                 assertFalse(revert.isDisable());
                 assertTrue(ignore.isDisable(), "a tracked file cannot be ignored away");
+                assertEquals(tr("row.unavailable.notUntracked"), com.editora.editor.RowReasons.reasonOf(ignore));
+                assertNull(com.editora.editor.RowReasons.reasonOf(revert));
 
                 scope.set(GitPathScope.NONE);
                 history.set(true);
@@ -370,6 +380,9 @@ class ProjectPanelCellsFxTest {
                 assertTrue(git.isDisable());
                 assertFalse(localHistory.isDisable());
 
+                // Each row runs its action where the menu offers it: under a grayed submenu nothing runs (KBD-04).
+                scope.set(GitPathScope.OTHER);
+                showing.run();
                 for (String key : List.of(
                         "project.menu.localHistory",
                         "project.menu.git.stage",

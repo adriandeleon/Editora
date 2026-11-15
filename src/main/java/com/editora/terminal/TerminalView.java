@@ -30,6 +30,7 @@ import javafx.scene.text.FontSmoothingType;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 
+import com.editora.editor.RowReasons;
 import com.jediterm.core.compatibility.Point;
 import com.jediterm.terminal.CursorShape;
 import com.jediterm.terminal.StyledTextConsumer;
@@ -2383,10 +2384,10 @@ public final class TerminalView extends Region {
         // moves underneath it. Copy and Paste depend on the selection and the clipboard; the
         // menu-bar checkbox on a setting the View menu, its own chord and the settings window can
         // all change while this menu sits built and invisible.
-        m.copyItem().setDisable(!hasSelection());
+        RowReasons.when(m.copyItem(), hasSelection(), "palette.disabled.needsSelection");
         m.copyOutputItem().setVisible(hasPromptMarks());
-        m.copyOutputItem().setDisable(lastCommandOutput() == null);
-        m.pasteItem().setDisable(!Clipboard.getSystemClipboard().hasString());
+        RowReasons.when(m.copyOutputItem(), lastCommandOutput() != null, "row.unavailable.noCommandOutput");
+        RowReasons.when(m.pasteItem(), Clipboard.getSystemClipboard().hasString(), "row.unavailable.clipboardEmpty");
         // The link items are the menu's answer to a gesture nobody was told about: they need no
         // modifier and they say what is there. Computed for the right-clicked cell, not the last
         // hovered one — the menu can be raised from the keyboard, and the pointer may be elsewhere.

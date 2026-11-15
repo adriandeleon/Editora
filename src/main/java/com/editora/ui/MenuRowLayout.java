@@ -38,12 +38,16 @@ public final class MenuRowLayout {
 
     private MenuRowLayout() {}
 
-    /** Watches every menu as it shows, in every window, now and later. Idempotent; FX thread only. */
+    /**
+     * Watches every menu as it shows, in every window, now and later; a row that cannot run says why there too
+     * ({@link com.editora.editor.RowReasons}). Idempotent; FX thread only.
+     */
     public static void install() {
         if (installed) {
             return;
         }
         installed = true;
+        com.editora.editor.RowReasons.install(); // and a row that cannot run says why (KBD-04)
         // A popup joins the window list on every show, after its on-showing handlers have set the rows'
         // visibility and graphics and before it is sized: the column is decided for this showing.
         Window.getWindows().addListener((ListChangeListener<Window>) change -> {

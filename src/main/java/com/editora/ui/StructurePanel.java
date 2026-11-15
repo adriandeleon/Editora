@@ -486,7 +486,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         MenuItem note = new MenuItem(tr("editmenu.addNote"));
         note.setGraphic(Icons.notes());
-        note.setDisable(!actions.personalNotesEnabled());
+        com.editora.editor.RowReasons.featureOn(note, actions.personalNotesEnabled(), "view.toggleNotes");
         note.setOnAction(e -> {
             if (buffer != null) {
                 actions.addPersonalNote(buffer, areaLine);
@@ -495,7 +495,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         FocusCommands.row(bookmark, "structure.bookmarkSelected");
         FocusCommands.row(note, "structure.noteSelected");
         ContextMenu menu = new ContextMenu(bookmark, note);
-        menu.setOnShowing(e -> note.setDisable(!actions.personalNotesEnabled()));
+        menu.setOnShowing(
+                e -> com.editora.editor.RowReasons.featureOn(note, actions.personalNotesEnabled(), "view.toggleNotes"));
         return menu;
     }
 

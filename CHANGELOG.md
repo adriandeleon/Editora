@@ -672,6 +672,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Palette gives ("the active file is not inside a Git repository"), a screen reader hears it with the row, and
   choosing it says it in the status bar instead of doing nothing. On macOS, where the menus are the system's,
   such a row is still only disabled.
+- **A grayed row of a right-click menu or a drop-down says why, too.** Cut with nothing selected, Close Tabs to
+  the Left on the first tab, the Git submenu of a file outside any repository, Revert on a clean file, a Map card's
+  Hierarchy on a file whose language has no callers: each still looks as it did, but hovering it shows why
+  ("Nothing is selected.", "There are no changes to revert here."), a screen reader hears the reason with the row,
+  the arrow keys stop on it, and choosing it says it in the status bar and closes the menu instead of doing
+  nothing. The command behind such a row, run from the Command Palette or a key, says the same sentence. A text
+  field's own right-click menu explains its grayed Undo, Redo, Cut, Copy, Paste and Delete the same way. Rows that
+  only say something ("No recent files") are unchanged.
 - **Every menu's rows line up like the menu bar's.** Right-click menus and drop-downs drew their rows the
   theme's way, with the glyph 6 px from the title, no column when a row had no glyph, and the keys 14 px after the
   title. Their rows now have the menu bar's layout: a 22 px column for the glyph, kept on a row without one, 8 px

@@ -328,8 +328,24 @@ class HttpRunListFxTest {
         HttpRunList list = runAll(c, p);
         List<MenuItem> menu =
                 FxTestSupport.callOnFx(() -> list.listForTest().getContextMenu().getItems());
+        // With no row selected each row says so (KBD-04); with one, they can run.
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.ContextMenu shown = list.listForTest().getContextMenu();
+            list.listForTest().getSelectionModel().clearSelection();
+            shown.getOnShowing().handle(new javafx.stage.WindowEvent(shown, javafx.stage.WindowEvent.WINDOW_SHOWING));
+            for (MenuItem row : menu) {
+                assertEquals(tr("row.unavailable.noSelection"), com.editora.editor.RowReasons.reasonOf(row));
+            }
+        });
 
         select(list, "Boom");
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.ContextMenu shown = list.listForTest().getContextMenu();
+            shown.getOnShowing().handle(new javafx.stage.WindowEvent(shown, javafx.stage.WindowEvent.WINDOW_SHOWING));
+            for (MenuItem row : menu) {
+                assertNull(com.editora.editor.RowReasons.reasonOf(row), row.getText());
+            }
+        });
         FxTestSupport.runOnFx(() -> menu.get(1).fire()); // Copy as cURL
         String curl =
                 FxTestSupport.callOnFx(() -> Clipboard.getSystemClipboard().getString());

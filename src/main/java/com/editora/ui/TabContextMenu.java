@@ -8,6 +8,8 @@ import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.MenuChords;
+import com.editora.editor.RowReasons;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -96,16 +98,17 @@ final class TabContextMenu {
             boolean simple = c.chrome.simpleModeActive();
             java.nio.file.Path path = MainController.tabPath(tab);
             boolean hasPath = path != null;
-            close.setDisable(!tab.isClosable());
+            RowReasons.when(close, tab.isClosable(), "row.unavailable.tabNotClosable");
             closeUnmodified.setVisible(!simple);
             closeLeft.setVisible(!simple);
             closeRight.setVisible(!simple);
-            closeLeft.setDisable(c.eligibleToLeft(tab).isEmpty());
-            closeRight.setDisable(c.eligibleToRight(tab).isEmpty());
+            RowReasons.when(closeLeft, !c.eligibleToLeft(tab).isEmpty(), "row.unavailable.noTabsLeft");
+            RowReasons.when(closeRight, !c.eligibleToRight(tab).isEmpty(), "row.unavailable.noTabsRight");
             // The file rows are a viewer's: a diff, a terminal or the Welcome page shows no one file.
             revealInMap.setVisible(hasPath && c.projectsEnabled());
             reveal.setVisible(hasPath);
-            reveal.setDisable(!com.editora.vfs.Vfs.isLocal(path)); // a remote file has no place in this file manager
+            // A remote file has no place in this file manager.
+            RowReasons.when(reveal, com.editora.vfs.Vfs.isLocal(path), "row.unavailable.remoteFile");
             terminal.setVisible(hasPath && !simple);
             copyPath.setVisible(hasPath);
             // As on a file's tab, Unpin stays reachable in Simple mode for a tab pinned before it was turned on.
@@ -310,7 +313,8 @@ final class TabContextMenu {
             // The row is one of two commands, by the file's state: its chord follows the title.
             MenuChords.tag(
                     encryption, encrypted ? EncryptionCoordinator.LOCK_FILE : EncryptionCoordinator.ENCRYPT_FILE);
-            encryption.setDisable(encrypted && (buffer.encryption().isLocked() || buffer.getPath() == null));
+            RowReasons.because(
+                    encryption, encryptionReason(encrypted, buffer.encryption().isLocked(), buffer.getPath() != null));
             closeUnmodified.setVisible(!simple);
             closeLeft.setVisible(!simple);
             closeRight.setVisible(!simple);
@@ -318,23 +322,24 @@ final class TabContextMenu {
             // Unpin stays reachable for a tab pinned before the mode was turned on: a pinned tab survives
             // Close Others / Close All, and Simple mode must not leave it stuck.
             pin.setVisible(!simple || c.pinned.contains(tab));
-            closeLeft.setDisable(c.eligibleToLeft(tab).isEmpty());
-            closeRight.setDisable(c.eligibleToRight(tab).isEmpty());
+            RowReasons.when(closeLeft, !c.eligibleToLeft(tab).isEmpty(), "row.unavailable.noTabsLeft");
+            RowReasons.when(closeRight, !c.eligibleToRight(tab).isEmpty(), "row.unavailable.noTabsRight");
             java.nio.file.Path path = buffer.getPath();
             boolean hasPath = path != null;
             // Reveal only makes sense for a saved, local file; a terminal also opens on a remote file's host.
             boolean localPath = hasPath && c.isLocalBuffer(buffer);
-            reveal.setDisable(!localPath);
+            RowReasons.because(reveal, revealReason(hasPath, localPath));
             revealInMap.setVisible(c.projectsEnabled());
-            revealInMap.setDisable(!hasPath);
-            terminal.setDisable(!hasPath);
-            copyPath.setDisable(!hasPath);
-            rename.setDisable(!hasPath);
+            RowReasons.when(revealInMap, hasPath, "row.unavailable.unsaved");
+            RowReasons.when(terminal, hasPath, "row.unavailable.unsaved");
+            RowReasons.when(copyPath, hasPath, "row.unavailable.unsaved");
+            RowReasons.when(rename, hasPath, "row.unavailable.unsaved");
             compareWith.setVisible(!simple);
-            compareWith.setDisable(!hasPath); // not a Git action — works on any two files
+            // Not a Git action: it works on any two files.
+            RowReasons.when(compareWith, hasPath, "row.unavailable.unsaved");
             // Local History records saved local files only; greyed out while the feature is off.
             localHistory.setVisible(localPath && !simple);
-            localHistory.setDisable(!c.historyCoordinator.isEnabled());
+            RowReasons.featureOn(localHistory, c.historyCoordinator.isEnabled(), "view.toggleLocalHistory");
             // Only shown for a .patch/.diff file — parses the buffer's own (possibly unsaved) text.
             openPatch.setVisible(!simple
                     && path != null
@@ -343,16 +348,48 @@ final class TabContextMenu {
             // greyed out when there's no VCS (Git off / not inside a repo) — mirroring the Project tree.
             gitMenu.setVisible(hasPath && !simple);
             GitPathScope scope = hasPath ? c.git.scopeOf(buffer.getPath()) : GitPathScope.NONE;
-            gitMenu.setDisable(scope == GitPathScope.NONE);
+            RowReasons.when(gitMenu, scope != GitPathScope.NONE, "row.unavailable.notInRepo");
             // Nothing to revert on a clean file; ignore is for untracked ones. For a file of another
             // repository the status is unknown here, so both stay enabled.
             com.editora.git.GitFileStatus st = c.git.statusFor(buffer.getPath());
-            revert.setDisable(scope == GitPathScope.ACTIVE && st == null);
-            ignore.setDisable(scope == GitPathScope.ACTIVE && st != com.editora.git.GitFileStatus.UNTRACKED);
+            RowReasons.because(revert, revertReason(scope, st));
+            RowReasons.because(ignore, ignoreReason(scope, st));
             // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
-            save.setDisable(hasPath && !buffer.isDirty());
+            RowReasons.when(save, !hasPath || buffer.isDirty(), "row.unavailable.noChanges");
             pin.setText(tr(c.pinned.contains(tab) ? "menu.unpin" : "menu.pin"));
             LazyContextMenu.collapseSeparators(menu.getItems());
         });
+    }
+
+    /**
+     * Why a file tab's Lock File row cannot lock it (the key of its sentence), or null when it can, or when the row is
+     * Encrypt…, which any file can do. Pure.
+     */
+    static @Nullable String encryptionReason(boolean encrypted, boolean locked, boolean saved) {
+        if (!encrypted) {
+            return null;
+        }
+        return locked ? "row.unavailable.fileLocked" : saved ? null : "row.unavailable.unsaved";
+    }
+
+    /** Why Reveal in File Manager cannot show a file tab's file, or null when it can: unsaved, or remote. Pure. */
+    static @Nullable String revealReason(boolean saved, boolean local) {
+        return !saved ? "row.unavailable.unsaved" : local ? null : "row.unavailable.remoteFile";
+    }
+
+    /**
+     * Why Git ▸ Revert has nothing to do for a file of {@code scope} with status {@code status} (null: clean), or
+     * null: a clean file of the active repository has nothing to revert; another repository's file is left to Git.
+     * Pure.
+     */
+    static @Nullable String revertReason(GitPathScope scope, com.editora.git.@Nullable GitFileStatus status) {
+        return scope == GitPathScope.ACTIVE && status == null ? "row.unavailable.nothingToRevert" : null;
+    }
+
+    /** Why Git ▸ Add to .gitignore does not fit: only an untracked file of the active repository is ignored. Pure. */
+    static @Nullable String ignoreReason(GitPathScope scope, com.editora.git.@Nullable GitFileStatus status) {
+        return scope == GitPathScope.ACTIVE && status != com.editora.git.GitFileStatus.UNTRACKED
+                ? "row.unavailable.notUntracked"
+                : null;
     }
 }

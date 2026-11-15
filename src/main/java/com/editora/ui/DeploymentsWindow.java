@@ -282,8 +282,7 @@ public final class DeploymentsWindow {
                 fromSite.getItems().add(item);
             }
             if (fromSite.getItems().isEmpty()) {
-                MenuItem none = new MenuItem(tr("deploy.field.noSites"));
-                none.setDisable(true);
+                MenuItem none = com.editora.editor.RowReasons.placeholder(new MenuItem(tr("deploy.field.noSites")));
                 fromSite.getItems().add(none);
             }
         });

@@ -9225,8 +9225,10 @@ final class DebugCoordinator {
     List<javafx.scene.control.MenuItem> stackMenuItems(
             DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
         javafx.scene.control.MenuItem restart = new javafx.scene.control.MenuItem(tr("debugpanel.restartFrame"));
-        restart.setDisable(!canRestartFrame(
-                dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
+        com.editora.editor.RowReasons.because(
+                restart,
+                DebugPanelText.restartFrameReason(
+                        dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
         restart.setOnAction(e -> restartFrame(frame));
         com.editora.editor.MenuChords.tag(restart, "debug.restartFrame"); // the selected frame is the shown one
         return List.of(restart, stepFilters().menuItem(frame));
@@ -9698,7 +9700,10 @@ final class DebugCoordinator {
      */
     void runPanelRow(String commandId) {
         if (!ops.isToolWindowOpen() || !panel().runMenuRow(commandId)) {
-            host.setStatus(tr("status.debug.rowNotOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
+            host.setStatus(
+                    ops.isToolWindowOpen()
+                            ? panel().rowRefusal(commandId)
+                            : tr("status.debug.rowNotOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
         }
     }
 
@@ -9793,11 +9798,13 @@ final class DebugCoordinator {
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
         javafx.scene.control.MenuItem toGroup =
                 menuItem("debug.moveBreakpointToGroup", null, this::moveBreakpointToGroupAtCaret);
-        toGroup.setDisable(b.getBreakpointManager().get(b.getFocusedArea().getCurrentParagraph()) == null);
+        com.editora.editor.RowReasons.when(
+                toGroup, DebugPanelText.hasBreakpointAtCaret(b), "row.unavailable.noBreakpointHere");
         items.add(toGroup);
         javafx.scene.control.MenuItem flip =
                 menuItem("debug.toggleBreakpointEnabled", Icons.check(), this::toggleBreakpointEnabledAtCaret);
-        flip.setDisable(b.getBreakpointManager().get(b.getFocusedArea().getCurrentParagraph()) == null);
+        com.editora.editor.RowReasons.when(
+                flip, DebugPanelText.hasBreakpointAtCaret(b), "row.unavailable.noBreakpointHere");
         items.add(flip);
         items.add(new javafx.scene.control.SeparatorMenuItem());
         items.add(menuItem("debug.breakpoints", Icons.outline(), this::showBreakpoints));

@@ -2022,8 +2022,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         recentButton.getItems().clear();
         List<Path> shown = showableRecentFiles();
         if (shown.isEmpty()) {
-            MenuItem empty = new MenuItem(tr("menu.noRecentFiles"));
-            empty.setDisable(true);
+            MenuItem empty = com.editora.editor.RowReasons.placeholder(new MenuItem(tr("menu.noRecentFiles")));
             recentButton.getItems().add(empty);
             return;
         }
@@ -2142,6 +2141,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         menuBar.setOnUnavailable(this::setStatus); // a grayed row chosen says why instead of running (KBD-04)
+        if (stage != null) {
+            com.editora.editor.RowReasons.sayIn(stage, this::setStatus); // and so does a right-click menu's row
+        }
         // An extended window has no system title bar, so the menu bar takes its place; asking the stage
         // rather than re-reading the setting means the two can never disagree for a window already built.
         topBox.getChildren()

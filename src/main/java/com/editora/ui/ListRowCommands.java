@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -55,6 +56,9 @@ final class ListRowCommands {
 
     /** The menu item property holding when a row is enabled beyond "a row is selected" (its button's state). */
     private static final String ENABLED = "editora.listRow.enabled";
+
+    /** The button property that says why a button is grayed out, for the rows that fire it (see {@link #because}). */
+    private static final String BUTTON_REASON = "editora.listRow.buttonReason";
 
     private ListRowCommands() {}
 
@@ -167,7 +171,33 @@ final class ListRowCommands {
             button.fire();
             return true;
         });
-        return enabledWhen(item, () -> !button.isDisabled());
+        return enabledWhen(item, () -> !button.isDisabled(), () -> buttonReason(button, id));
+    }
+
+    /**
+     * Says why {@code button} is grayed out, for the rows that fire it ({@link #buttonRow}, {@link #mapButtonRow}):
+     * {@code reasonKey} gives the key of the sentence while it is, beyond a selected row (a bundled snippet cannot be
+     * removed). Kept in the button's own properties.
+     */
+    static <B extends ButtonBase> B because(B button, Supplier<@Nullable String> reasonKey) {
+        button.getProperties().put(BUTTON_REASON, reasonKey);
+        return button;
+    }
+
+    /**
+     * Why the row firing {@code button} for command {@code id} cannot run while the button is grayed: what the button
+     * says ({@link #because}), else what a move up or down says at the end of its list, else that no row is selected,
+     * which is what grays most of these buttons.
+     */
+    static String buttonReason(ButtonBase button, String id) {
+        if (button.getProperties().get(BUTTON_REASON) instanceof Supplier<?> said && said.get() instanceof String key) {
+            return key;
+        }
+        return switch (id) {
+            case MOVE_UP -> "row.unavailable.firstRow";
+            case MOVE_DOWN -> "row.unavailable.lastRow";
+            default -> "row.unavailable.noSelection";
+        };
     }
 
     /**
@@ -179,14 +209,14 @@ final class ListRowCommands {
         MapButtonCommands.bind(owner, commandId, button::fire);
         MenuItem item = RowMenus.row(commandId, null, button::fire);
         item.textProperty().bind(button.textProperty());
-        return enabledWhen(item, () -> !button.isDisabled());
+        return enabledWhen(item, () -> !button.isDisabled(), () -> buttonReason(button, commandId));
     }
 
     /**
      * The Copy row of {@code control}: copies what {@code selectedText} gives for the selected rows, and the
      * keymap's Copy chord pressed in the control does the same, so the row shows that chord.
      */
-    static MenuItem copyRow(Control control, java.util.function.Supplier<@Nullable String> selectedText) {
+    static MenuItem copyRow(Control control, Supplier<@Nullable String> selectedText) {
         BooleanSupplier copy = () -> RowMenus.copy(selectedText.get());
         bind(control, COPY, copy);
         RowMenus.onCopyKey(control, copy::getAsBoolean);
@@ -199,15 +229,34 @@ final class ListRowCommands {
         return item;
     }
 
-    /** Disables {@code item} on each showing while {@code enabled} is false, beside the menu's own rule. */
-    static MenuItem enabledWhen(MenuItem item, BooleanSupplier enabled) {
-        item.getProperties().put(ENABLED, enabled);
+    /**
+     * Makes {@code item} unavailable on each showing while {@code enabled} is false, beside the menu's own rule,
+     * saying {@code reasonKey}'s sentence (KBD-04).
+     */
+    static MenuItem enabledWhen(MenuItem item, BooleanSupplier enabled, String reasonKey) {
+        return enabledWhen(item, enabled, () -> reasonKey);
+    }
+
+    /** {@link #enabledWhen(MenuItem, BooleanSupplier, String)} with a sentence that depends on why (its key). */
+    static MenuItem enabledWhen(MenuItem item, BooleanSupplier enabled, Supplier<@Nullable String> reasonKey) {
+        item.getProperties().put(ENABLED, new Rule(enabled, reasonKey));
         return item;
     }
 
-    /** Whether {@code item} may be enabled now, as far as its own rule goes ({@link #enabledWhen}). */
-    static boolean enabledNow(MenuItem item) {
-        return !(item.getProperties().get(ENABLED) instanceof BooleanSupplier enabled) || enabled.getAsBoolean();
+    /** A row's own rule: whether it can run now, and the key of the sentence that says why not. */
+    private record Rule(BooleanSupplier enabled, Supplier<@Nullable String> reason) {}
+
+    /**
+     * The key of the sentence that says why {@code item}'s own rule grays it now, or null when it does not. A rule
+     * that grays the row without saying why says the row does not fit the selected row.
+     */
+    static @Nullable String reasonNow(MenuItem item) {
+        if (!(item.getProperties().get(ENABLED) instanceof Rule rule)
+                || rule.enabled().getAsBoolean()) {
+            return null;
+        }
+        String key = rule.reason().get();
+        return key != null ? key : "row.unavailable.notForThisRow";
     }
 
     /** Gives {@code list} its menu of {@code rows}, disabled while no row is selected. */

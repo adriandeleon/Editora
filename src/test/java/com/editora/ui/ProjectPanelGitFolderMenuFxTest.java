@@ -25,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -156,16 +157,23 @@ class ProjectPanelGitFolderMenuFxTest {
         assertFalse(git.isDisable());
         assertTrue(revert.isDisable(), "active repository, no change recorded for the file: nothing to revert");
         assertTrue(ignore.isDisable());
+        assertEquals(
+                tr("row.unavailable.nothingToRevert"),
+                com.editora.editor.RowReasons.reasonOf(revert),
+                "and says why (KBD-04)");
+        assertEquals(tr("row.unavailable.notUntracked"), com.editora.editor.RowReasons.reasonOf(ignore));
 
         scope.set(GitPathScope.OTHER);
         FxTestSupport.runOnFx(() -> context.getOnShowing().handle(null));
         assertFalse(git.isDisable());
         assertFalse(revert.isDisable(), "its status is unknown here; the action asks git and reports");
         assertFalse(ignore.isDisable());
+        assertNull(com.editora.editor.RowReasons.reasonOf(revert), "a row that can run says nothing");
 
         scope.set(GitPathScope.NONE);
         FxTestSupport.runOnFx(() -> context.getOnShowing().handle(null));
         assertTrue(git.isDisable(), "no repository at all: the submenu is greyed");
+        assertEquals(tr("row.unavailable.notInRepo"), com.editora.editor.RowReasons.reasonOf(git));
     }
 
     private static MenuItem item(Menu menu, String key) {

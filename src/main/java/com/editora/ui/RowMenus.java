@@ -15,6 +15,7 @@ import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.editor.MenuChords;
+import com.editora.editor.RowReasons;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -52,15 +53,24 @@ final class RowMenus {
     /**
      * Gives {@code control} one menu of {@code rows} that act on its selected row. A right-click selects the
      * row under the pointer first; the Menu key and Shift+F10 open the menu at the selected row. The rows are
-     * disabled while {@code hasRow} is false: nothing is selected, or the selection is a heading; a row given a
-     * rule of its own ({@link ListRowCommands#enabledWhen}) is disabled while that rule says so too.
+     * unavailable, saying so, while {@code hasRow} is false: nothing is selected, or the selection is a heading; a
+     * row given a rule of its own ({@link ListRowCommands#enabledWhen}) is unavailable while that rule says so too,
+     * with the rule's sentence (KBD-04).
      */
     static ContextMenu install(Control control, BooleanSupplier hasRow, MenuItem... rows) {
+        return install(control, hasRow, "row.unavailable.noSelection", rows);
+    }
+
+    /**
+     * {@link #install(Control, BooleanSupplier, MenuItem...)} for a control whose rows need something else than a
+     * selected row: {@code noRowKey} is the key of the sentence they say while {@code hasRow} is false.
+     */
+    static ContextMenu install(Control control, BooleanSupplier hasRow, String noRowKey, MenuItem... rows) {
         ContextMenu menu = new ContextMenu(rows);
         menu.setOnShowing(e -> {
             boolean none = !hasRow.getAsBoolean();
             for (MenuItem row : rows) {
-                row.setDisable(none || !ListRowCommands.enabledNow(row));
+                RowReasons.because(row, none ? noRowKey : ListRowCommands.reasonNow(row));
             }
         });
         control.setContextMenu(menu);

@@ -240,7 +240,7 @@ public final class PreviewMenu {
             m.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWING, ev -> {
                 MarkdownPreview p = preview.get();
                 copy.setVisible(p != null && p.selection().isActive());
-                selectAll.setDisable(p == null);
+                com.editora.editor.RowReasons.when(selectAll, p != null, "row.unavailable.noPreview");
                 Node picture = MarkdownPreview.enlargeableAt(hit);
                 enlarge.setVisible(p != null && picture != null && PreviewLightbox.imageOf(picture) != null);
                 toSource.setVisible(p != null && p.sourceLineAt(hit, hitY) >= 0);

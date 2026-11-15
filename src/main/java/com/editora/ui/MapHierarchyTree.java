@@ -119,7 +119,8 @@ final class MapHierarchyTree extends MapSideColumn {
                             return item != null
                                     && item.getValue() != null
                                     && item.getValue().group() != null;
-                        }),
+                        },
+                        "row.unavailable.heading"),
                 ListRowCommands.copyRow(
                         tree, () -> ListRowCommands.selectedText(tree, row -> row.message() ? null : row.text())));
         relabel();

@@ -22,6 +22,7 @@ import javafx.scene.control.SeparatorMenuItem;
 
 import com.editora.editor.MenuChords;
 import com.editora.editor.MenuIcons;
+import com.editora.editor.RowReasons;
 import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
@@ -412,7 +413,7 @@ public final class BufferSpell {
         } else {
             MenuItem pending = new MenuItem(tr("editmenu.spell.searching"));
             pending.setGraphic(MenuIcons.spellcheck());
-            pending.setDisable(true);
+            RowReasons.placeholder(pending);
             items.add(pending);
             search.thenAccept(found -> Platform.runLater(() -> {
                 int at = menuItems.indexOf(pending);
@@ -440,7 +441,7 @@ public final class BufferSpell {
         if (suggestions.isEmpty()) {
             MenuItem none = new MenuItem(tr("editmenu.noSuggestions"));
             none.setGraphic(MenuIcons.spellcheck());
-            none.setDisable(true);
+            RowReasons.placeholder(none);
             items.add(none);
             return items;
         }
@@ -449,7 +450,8 @@ public final class BufferSpell {
             MenuItem mi = new MenuItem(s);
             mi.setGraphic(MenuIcons.spellcheck());
             mi.getStyleClass().add("spell-suggestion");
-            mi.setDisable(!canEdit); // a read-only buffer: the item used to look live and do nothing
+            // A read-only buffer: the item used to look live and do nothing.
+            RowReasons.when(mi, canEdit, "row.unavailable.readOnly");
             mi.setOnAction(e -> replace(hit, s));
             items.add(mi);
         }

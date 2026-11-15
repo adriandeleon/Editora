@@ -121,6 +121,22 @@ class ProjectMapCardsReviewFxTest {
         }
     }
 
+    /** The row titled {@code key} in {@code items} or one of their submenus; null when there is none. */
+    private static MenuItem deep(List<MenuItem> items, String key) {
+        for (MenuItem item : items) {
+            if (tr(key).equals(item.getText())) {
+                return item;
+            }
+            if (item instanceof javafx.scene.control.Menu menu) {
+                MenuItem inner = deep(menu.getItems(), key);
+                if (inner != null) {
+                    return inner;
+                }
+            }
+        }
+        return null;
+    }
+
     private static void key(javafx.scene.Node target, KeyCode code, boolean control) {
         Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, false, control, false, false));
     }
@@ -326,6 +342,22 @@ class ProjectMapCardsReviewFxTest {
                 FxTestSupport.call(r.card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
                 assertTrue(r.item("editmenu.addBookmark").isDisable(), "its lines are no longer the file's");
                 assertTrue(r.item("editmenu.addNote").isDisable());
+                // Each grayed row says why (KBD-04), the code questions too: there is no declaration to ask about.
+                for (String key : List.of(
+                        "editmenu.addBookmark",
+                        "editmenu.addNote",
+                        "project.map.history.menu",
+                        "project.map.preview.showInStructure",
+                        "project.map.preview.openNarrowed",
+                        "project.map.links.hover.show")) {
+                    MenuItem row = deep(r.menu().getItems(), key);
+                    if (row != null) {
+                        assertEquals(
+                                tr("row.unavailable.declarationGone"),
+                                com.editora.editor.RowReasons.reasonOf(row),
+                                key);
+                    }
+                }
                 assertTrue(r.card.runMarkerCommand("bookmarks.toggle"));
                 assertEquals(List.of(), r.markers.bookmarks);
 
