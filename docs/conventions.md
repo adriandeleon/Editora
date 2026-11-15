@@ -147,7 +147,11 @@ A control that works with the mouse but cannot be reached, seen or named from th
   Use `Dialogs.cancel()`, not `ButtonType.CANCEL`, beside a named action. A removal that can be taken back
   (a plain bookmark toggle) asks nothing. In a test, `Confirm.answerWith(question -> true)` answers without
   showing a dialog (reset it with `null` afterwards), and a shown dialog is answered by button role
-  (`FxDialogs`), never by looking up a stock `ButtonType`.
+  (`FxDialogs`), never by looking up a stock `ButtonType`. `ConfirmAnswers.cancelling()` /
+  `ConfirmAnswers.confirming()` do the same for a `try` block and keep what was asked, so a test asserts the
+  words and that one removal asked once. A question whose words have a count, a choice or a name is built by a
+  static function that returns the `Confirm.Question` (`DebugPanel.removeAllWatchesQuestion(int)`), asked only
+  when something would be lost, from the one method every entry point of the removal shares.
 - A row that can run out of width **wraps** (`WrapRow`, `SettingRowPane`) rather than ellipsizing a label
   or a button to "…"; check German at 1024 px.
 

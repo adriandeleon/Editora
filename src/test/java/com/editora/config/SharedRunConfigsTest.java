@@ -55,6 +55,63 @@ class SharedRunConfigsTest {
         assertEquals("Fresh", merged.get(2).name(), "genuinely new ones are appended");
     }
 
+    /** What an import would overwrite: a name both sides have, with different content. Never what is only added. */
+    @Test
+    void replacedIsWhatAMergeWouldOverwriteWithDifferentContent() {
+        List<RunConfiguration> existing = List.of(cfg("Server", "old"), cfg("Local only", ""), cfg("Same", "x"));
+        List<RunConfiguration> incoming = List.of(cfg("Server", "new"), cfg("Fresh", ""), cfg("Same", "x"));
+
+        assertEquals(
+                List.of(cfg("Server", "old")),
+                SharedRunConfigs.replaced(existing, incoming),
+                "the window's own version of the one that differs");
+        assertEquals(List.of(), SharedRunConfigs.replaced(existing, List.of(cfg("Fresh", ""))), "only adds");
+        assertEquals(List.of(), SharedRunConfigs.replaced(existing, existing), "unchanged: nothing is lost");
+        assertEquals(List.of(), SharedRunConfigs.replaced(List.of(), incoming));
+        assertEquals(List.of(), SharedRunConfigs.replaced(existing, List.of()));
+        // The file names it twice: the last one is what the merge keeps, so that is the one compared.
+        assertEquals(
+                List.of(),
+                SharedRunConfigs.replaced(
+                        List.of(cfg("Server", "old")), List.of(cfg("Server", "new"), cfg("Server", "old"))));
+    }
+
+    @Test
+    void replacedDeploymentsIsWhatAMergeWouldOverwriteWithDifferentContent() {
+        Deployment staging = Deployment.named("staging");
+        Deployment prod = Deployment.named("prod");
+        Deployment renamedHost = Deployment.named("other").withName("staging"); // the same content as staging
+
+        assertEquals(List.of(), SharedRunConfigs.replacedDeployments(List.of(staging, prod), List.of(renamedHost)));
+        assertEquals(List.of(), SharedRunConfigs.replacedDeployments(List.of(staging), List.of(prod)), "only adds");
+        Deployment changed = new Deployment(
+                "prod",
+                "example.org",
+                2222,
+                prod.user(),
+                prod.auth(),
+                prod.keyPath(),
+                prod.remoteRoot(),
+                prod.excludes(),
+                prod.useGitignore(),
+                prod.deleteRemoved(),
+                prod.uploadOnSave());
+        assertEquals(List.of(prod), SharedRunConfigs.replacedDeployments(List.of(staging, prod), List.of(changed)));
+    }
+
+    /** What is exported and read back equals what was exported, so importing one's own export replaces nothing. */
+    @Test
+    void anExportReadBackReplacesNothing(@org.junit.jupiter.api.io.TempDir Path root) throws Exception {
+        List<RunConfiguration> configs = List.of(cfg("Server", "--port 80"), cfg("Client", ""));
+        List<Deployment> deployments = List.of(Deployment.named("staging"));
+        SharedRunConfigs.save(MAPPER, root, configs, deployments);
+
+        assertEquals(List.of(), SharedRunConfigs.replaced(configs, SharedRunConfigs.load(MAPPER, root)));
+        assertEquals(
+                List.of(),
+                SharedRunConfigs.replacedDeployments(deployments, SharedRunConfigs.loadDeployments(MAPPER, root)));
+    }
+
     @Test
     void mergingIntoNothingIsJustTheIncomingSet() {
         assertEquals(1, SharedRunConfigs.merge(List.of(), List.of(cfg("A", ""))).size());

@@ -317,10 +317,18 @@ class MapMenuCommandsFxTest {
                 shown.chosen().accept(0);
                 assertEquals(tr("project.map.status.workingSet.shown", "Alpha"), h.last());
 
+                // The pick is asked about first, as the menu's row is: Cancel keeps the set.
                 h.run("projectMap.deleteWorkingSet");
                 Picked deleted = h.picks().getLast();
                 assertEquals(List.of("Alpha"), deleted.rows());
-                deleted.chosen().accept(0);
+                try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                    deleted.chosen().accept(0);
+                    assertEquals(List.of(ProjectMapWorkingSets.deleteQuestion("Alpha")), questions.asked());
+                    assertEquals(tr("project.map.status.workingSet.shown", "Alpha"), h.last(), "Cancel: kept");
+                    questions.answer(true);
+                    deleted.chosen().accept(0);
+                    assertEquals(2, questions.asked().size());
+                }
                 assertEquals(tr("project.map.status.workingSet.deleted", "Alpha"), h.last());
 
                 // Nothing left: no picker, the status line says so.

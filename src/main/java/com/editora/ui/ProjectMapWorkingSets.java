@@ -55,7 +55,7 @@ final class ProjectMapWorkingSets {
                 -1,
                 index -> {
                     if (delete) {
-                        delete(mine.get(index).getName());
+                        askAndDelete(mine.get(index).getName());
                     } else {
                         show(mine.get(index).getName());
                     }
@@ -111,7 +111,7 @@ final class ProjectMapWorkingSets {
             MenuItem remove = new MenuItem(set.getName());
             remove.setMnemonicParsing(false);
             remove.getStyleClass().add("danger");
-            remove.setOnAction(event -> delete(set.getName()));
+            remove.setOnAction(event -> askAndDelete(set.getName()));
             delete.getItems().add(remove);
         }
         if (!mine.isEmpty()) {
@@ -183,7 +183,30 @@ final class ProjectMapWorkingSets {
         return true;
     }
 
-    /** Deletes the set {@code name} of the folder the Map shows. */
+    /**
+     * Delete Working Set… and the Delete submenu's row: asks, naming the set, then deletes it. False when the user
+     * kept it, or there is no such set.
+     */
+    boolean askAndDelete(String name) {
+        int index = indexOf(name);
+        if (index < 0) {
+            return false;
+        }
+        javafx.stage.Window owner =
+                view.getScene() == null ? null : view.getScene().getWindow();
+        return Confirm.ask(owner, deleteQuestion(sets.get(index).getName())) && delete(name);
+    }
+
+    /** The question before the working set {@code name} is deleted. Pure. */
+    static Confirm.Question deleteQuestion(String name) {
+        return new Confirm.Question(
+                tr("project.map.workingSets.deleteTitle"),
+                null,
+                tr("project.map.workingSets.deleteConfirm", name),
+                tr("confirm.action.delete"));
+    }
+
+    /** Deletes the set {@code name} of the folder the Map shows, with no question. */
     boolean delete(String name) {
         int index = indexOf(name);
         if (index < 0) {

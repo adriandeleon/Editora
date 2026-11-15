@@ -662,6 +662,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Editora asks before more removals that used to happen at once.** Each of these now asks first, names what
+  goes, and keeps it when you press Cancel or Enter: deleting a Git branch that is fully merged (a branch with
+  unmerged commits is still asked about once, with the count); Remove All for the trusted folders; Reset draft
+  in a diff's result editor, when the draft has edits; Remove All Watches and Unmark All Objects in the debugger;
+  deleting a run configuration, and removing one, a deployment, a compound or a type renderer from its list;
+  removing a stop from a Project Map trail and deleting a working set; Restore Default Layout for the tool
+  windows and for the toolbar, unless the layout already is the default one; Remove from URL and Disconnect on the
+  Sync page; New Token for the MCP server; Revert on the Macros page, when the macro has unsaved changes; Remove
+  Manual Fold Ranges, when the file has any; and Clear in the HTTP panel, when it keeps responses. Importing run configurations from the project asks only when
+  it would replace a configuration or a deployment of this window with a different one, and says how many.
 - **A menu bar row that cannot run says why.** A command with nothing to act on, or whose feature is switched
   off, stays grayed in its menu as before, but hovering it now shows the reason, the same sentence the Command
   Palette gives ("the active file is not inside a Git repository"), a screen reader hears it with the row, and

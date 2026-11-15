@@ -132,6 +132,50 @@ public final class SharedRunConfigs {
         return new ArrayList<>(byName.values());
     }
 
+    /**
+     * What {@link #merge} would overwrite: the {@code existing} configurations that {@code incoming} has under
+     * the same name with different content, in their order. One that comes back unchanged is not among them,
+     * and neither is anything new. Empty when the merge only adds.
+     */
+    public static List<RunConfiguration> replaced(List<RunConfiguration> existing, List<RunConfiguration> incoming) {
+        Map<String, RunConfiguration> last = new LinkedHashMap<>();
+        for (RunConfiguration c : incoming) {
+            last.put(c.name(), c);
+        }
+        Map<String, RunConfiguration> kept = new LinkedHashMap<>();
+        for (RunConfiguration c : existing) {
+            kept.put(c.name(), c); // as merge does: the last of a name is the one this window has
+        }
+        List<RunConfiguration> out = new ArrayList<>();
+        for (RunConfiguration c : kept.values()) {
+            RunConfiguration other = last.get(c.name());
+            if (other != null && !other.equals(c)) {
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    /** {@link #replaced} for deployments: what {@link #mergeDeployments} would overwrite. */
+    public static List<Deployment> replacedDeployments(List<Deployment> existing, List<Deployment> incoming) {
+        Map<String, Deployment> last = new LinkedHashMap<>();
+        for (Deployment d : incoming) {
+            last.put(d.name(), d);
+        }
+        Map<String, Deployment> kept = new LinkedHashMap<>();
+        for (Deployment d : existing) {
+            kept.put(d.name(), d);
+        }
+        List<Deployment> out = new ArrayList<>();
+        for (Deployment d : kept.values()) {
+            Deployment other = last.get(d.name());
+            if (other != null && !other.equals(d)) {
+                out.add(d);
+            }
+        }
+        return out;
+    }
+
     /** On-disk shape: an object rather than a bare array, so a version or other keys can be added later. */
     @JsonIgnoreProperties(ignoreUnknown = true) // or one added key reads as "no shared configurations"
     static final class Stored {

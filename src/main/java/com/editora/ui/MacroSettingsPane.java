@@ -213,7 +213,7 @@ final class MacroSettingsPane extends HBox {
         save.setOnAction(e -> save());
         Button revert = FocusCommands.press(new Button(tr("settings.macro.revert")), "macro.revertEdits");
         revert.disableProperty().bind(dirty.not());
-        revert.setOnAction(e -> load(selectedStored()));
+        revert.setOnAction(e -> revertEdits());
         Label unsaved = new Label(tr("settings.macro.unsaved"));
         unsaved.getStyleClass().add("settings-hint");
         unsaved.visibleProperty().bind(dirty);
@@ -385,6 +385,27 @@ final class MacroSettingsPane extends HBox {
         }
         showStepDetail();
         refreshKeybinding();
+    }
+
+    /** Revert: the form goes back to the stored macro. Unsaved edits would be lost, so it asks when there are any. */
+    private void revertEdits() {
+        Macro stored = selectedStored();
+        if (dirty.get()
+                && !Confirm.ask(
+                        getScene() == null ? null : getScene().getWindow(),
+                        revertQuestion(stored == null ? "" : MacroCoordinator.displayName(stored)))) {
+            return;
+        }
+        load(stored);
+    }
+
+    /** The question before the unsaved edits to the macro {@code name} are discarded. Pure. */
+    static Confirm.Question revertQuestion(String name) {
+        return new Confirm.Question(
+                tr("settings.macro.revertConfirmTitle"),
+                null,
+                tr("settings.macro.revertConfirm", name),
+                tr("confirm.action.revert"));
     }
 
     private void touched() {

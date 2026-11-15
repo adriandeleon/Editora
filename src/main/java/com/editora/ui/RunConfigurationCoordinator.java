@@ -629,18 +629,48 @@ final class RunConfigurationCoordinator {
                             com.editora.config.SharedRunConfigs.fileFor(root).toString())));
             return;
         }
+        List<com.editora.config.Deployment> incomingDeployments = com.editora.config.SharedRunConfigs.loadDeployments(
+                new com.fasterxml.jackson.databind.ObjectMapper(), root);
+        // An import that only adds asks nothing; one that would change what this window has says how much.
+        int replacedConfigs = com.editora.config.SharedRunConfigs.replaced(
+                        host.config().getWorkspaceState().getRunConfigurations(), incoming)
+                .size();
+        int replacedDeployments = com.editora.config.SharedRunConfigs.replacedDeployments(
+                        host.config().getWorkspaceState().getDeployments(), incomingDeployments)
+                .size();
+        if (replacedConfigs + replacedDeployments > 0
+                && !Confirm.ask(host.stage(), importReplaceQuestion(replacedConfigs, replacedDeployments))) {
+            return;
+        }
         List<com.editora.config.RunConfiguration> merged = com.editora.config.SharedRunConfigs.merge(
                 host.config().getWorkspaceState().getRunConfigurations(), incoming);
         host.config().getWorkspaceState().setRunConfigurations(merged);
         host.config()
                 .getWorkspaceState()
                 .setDeployments(com.editora.config.SharedRunConfigs.mergeDeployments(
-                        host.config().getWorkspaceState().getDeployments(),
-                        com.editora.config.SharedRunConfigs.loadDeployments(
-                                new com.fasterxml.jackson.databind.ObjectMapper(), root)));
+                        host.config().getWorkspaceState().getDeployments(), incomingDeployments));
         host.config().save();
         refreshRunConfigs();
         host.setStatus(tr("status.run.configsImported", incoming.size()));
+    }
+
+    /**
+     * The question before an import replaces what this window has: how many run configurations and how many
+     * deployments of the same name would be overwritten with the project's. Pure.
+     */
+    static Confirm.Question importReplaceQuestion(int configs, int deployments) {
+        String message = deployments <= 0
+                ? tr("run.config.importReplace.configs", configs)
+                : configs <= 0
+                        ? tr("run.config.importReplace.deployments", deployments)
+                        : tr("run.config.importReplace.both", configs, deployments);
+        return new Confirm.Question(tr("run.config.importReplace.title"), null, message, tr("confirm.action.replace"));
+    }
+
+    /** The question before the saved run configuration {@code name} is deleted. Pure. */
+    static Confirm.Question deleteConfigQuestion(String name) {
+        return new Confirm.Question(
+                tr("run.config.deleteTitle"), null, tr("run.config.deleteConfirm", name), tr("confirm.action.delete"));
     }
 
     /** {@code run.deleteConfig}: pick a saved run configuration and remove it. */
@@ -659,7 +689,7 @@ final class RunConfigurationCoordinator {
                 com.editora.config.RunConfiguration::name,
                 RunConfigurationCoordinator::runConfigDetail,
                 cfg -> {
-                    if (cfg == null) {
+                    if (cfg == null || !Confirm.ask(host.stage(), deleteConfigQuestion(cfg.name()))) {
                         return;
                     }
                     List<com.editora.config.RunConfiguration> list = new java.util.ArrayList<>(

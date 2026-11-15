@@ -287,7 +287,15 @@ class ToolbarCustomizeModeFxTest {
             menu.getItems().get(0).fire();
             assertFalse(bar.getStyleClass().contains("toolbar-customizing"));
 
-            menu.getItems().get(3).fire();
+            // Restore Default Layout asks first: Cancel keeps the user's toolbar.
+            try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                menu.getItems().get(3).fire();
+                assertEquals(List.of(ToolbarCoordinator.restoreDefaultQuestion()), questions.asked());
+                assertEquals(List.of(A, B, C), settings.getToolbarLayout(), "Cancel changes nothing");
+                questions.answer(true);
+                menu.getItems().get(3).fire();
+                assertEquals(2, questions.asked().size());
+            }
             assertEquals(List.of(), settings.getToolbarLayout(), "an empty layout is the shipped default");
             assertEquals(tr("status.toolbar.restored"), echo());
             assertEquals(ToolbarCatalog.defaultLayout(), toolbar.effectiveLayout());

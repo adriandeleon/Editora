@@ -565,8 +565,26 @@ class RunConfigurationCommandsFxTest {
         assertTrue(registry.get(RunConfiguration.commandIdFor("Deploy")).isPresent());
         assertTrue(registry.get(RunConfiguration.debugCommandIdFor("Deploy")).isPresent());
 
-        FxTestSupport.runOnFx(coordinator::deleteRunConfig);
-        answerPicker(0, KeyCode.ENTER);
+        // The pick is asked about first, by name: Cancel keeps the configuration and says nothing.
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(coordinator::deleteRunConfig);
+            answerPicker(0, KeyCode.ENTER);
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Delete Run Configuration",
+                            null,
+                            "Delete the run configuration “Deploy”? This cannot be undone.",
+                            "Delete")),
+                    questions.asked());
+            assertEquals(List.of("Deploy", "Report"), names(), "Cancel deletes nothing");
+            assertEquals(List.of(), statuses);
+            assertTrue(registry.get(RunConfiguration.commandIdFor("Deploy")).isPresent());
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(coordinator::deleteRunConfig);
+            answerPicker(0, KeyCode.ENTER);
+            assertEquals(2, questions.asked().size(), "asked once for the deletion");
+        }
 
         assertEquals(List.of("Report"), names());
         assertEquals(List.of(tr("status.run.configDeleted", "Deploy")), statuses);
@@ -706,10 +724,33 @@ class RunConfigurationCommandsFxTest {
                         "~/proj/" + SharedRunConfigs.DIR + "/" + SharedRunConfigs.FILE)),
                 statuses);
 
-        // A colleague's window: one configuration of its own, and an older "Report".
+        // A colleague's window: one configuration of its own, and an older "Report". The import would overwrite
+        // that one, so it asks first and says how many: Cancel imports nothing.
         statuses.clear();
         configurations(script("Mine"), python("Report", "old-report.py"));
-        FxTestSupport.runOnFx(coordinator::importRunConfigs);
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(coordinator::importRunConfigs);
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Import Run Configurations",
+                            null,
+                            "The project has a different version of 1 run configuration of this window. Importing"
+                                    + " replaces it. This cannot be undone.",
+                            "Replace")),
+                    questions.asked());
+            assertEquals(List.of("Mine", "Report"), names(), "Cancel imports nothing");
+            assertEquals(
+                    "old-report.py",
+                    FxTestSupport.callOnFx(() -> config.getWorkspaceState()
+                            .getRunConfigurations()
+                            .get(1)
+                            .target()));
+            assertEquals(List.of(), statuses);
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(coordinator::importRunConfigs);
+            assertEquals(2, questions.asked().size());
+        }
 
         assertEquals(List.of("Mine", "Report", "Deploy"), names());
         assertEquals(
@@ -719,6 +760,47 @@ class RunConfigurationCommandsFxTest {
                 "the shared one replaces the same name");
         assertEquals(List.of(tr("status.run.configsImported", 2)), statuses);
         assertTrue(registry.get(RunConfiguration.commandIdFor("Deploy")).isPresent());
+    }
+
+    /** An import that only adds, or brings back what the window already has, replaces nothing and asks nothing. */
+    @Test
+    void anImportThatReplacesNothingAsksNothing() throws Exception {
+        projectRoot = Files.createDirectories(dir.resolve("proj"));
+        configurations(script("Deploy"), python("Report", "report.py"));
+        FxTestSupport.runOnFx(coordinator::exportRunConfigs);
+        statuses.clear();
+
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(coordinator::importRunConfigs); // the same two, unchanged
+            assertEquals(List.of("Deploy", "Report"), names());
+
+            configurations(script("Mine")); // none of the shared names: the import only adds
+            FxTestSupport.runOnFx(coordinator::importRunConfigs);
+            assertEquals(List.of("Mine", "Deploy", "Report"), names());
+
+            assertEquals(List.of(), questions.asked());
+        }
+        assertEquals(List.of(tr("status.run.configsImported", 2), tr("status.run.configsImported", 2)), statuses);
+    }
+
+    @Test
+    void theImportQuestionCountsWhatWouldBeReplaced() {
+        assertEquals(
+                "The project has a different version of 3 run configurations of this window. Importing replaces them."
+                        + " This cannot be undone.",
+                RunConfigurationCoordinator.importReplaceQuestion(3, 0).message());
+        assertEquals(
+                "The project has a different version of 1 deployment of this window. Importing replaces it. This"
+                        + " cannot be undone.",
+                RunConfigurationCoordinator.importReplaceQuestion(0, 1).message());
+        assertEquals(
+                new Confirm.Question(
+                        "Import Run Configurations",
+                        null,
+                        "The project has a different version of 1 run configuration and 2 deployments of this"
+                                + " window. Importing replaces them. This cannot be undone.",
+                        "Replace"),
+                RunConfigurationCoordinator.importReplaceQuestion(1, 2));
     }
 
     @Test

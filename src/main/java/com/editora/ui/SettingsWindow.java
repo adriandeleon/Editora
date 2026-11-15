@@ -3538,7 +3538,7 @@ public class SettingsWindow {
                 new Button(tr("settings.toolbar.restoreDefault")), "settings.restoreToolWindowLayout");
         restore.setOnAction(e -> {
             if (toolWindowSettings != null) { // made below, before the page shows
-                toolWindowSettings.restoreDefaultLayout();
+                toolWindowSettings.restoreDefaultLayout(stage);
             }
         });
         cardRow(
@@ -3629,7 +3629,8 @@ public class SettingsWindow {
             }
         });
         revokeAll.setOnAction(e -> {
-            if (trustActions != null) {
+            int folders = trustedFoldersList.getItems().size();
+            if (trustActions != null && folders > 0 && Confirm.ask(stage, revokeAllTrustQuestion(folders))) {
                 trustActions.revokeAll();
                 refreshTrustedFolders();
             }
@@ -3649,6 +3650,15 @@ public class SettingsWindow {
                 Category.ADVANCED,
                 UiZoom.spacing(new HBox(revoke, revokeAll), 8),
                 "workspace trust revoke remove trusted folder");
+    }
+
+    /** The question before every trusted folder is taken off the list, naming how many there are. Pure. */
+    static Confirm.Question revokeAllTrustQuestion(int folders) {
+        return new Confirm.Question(
+                tr("settings.trustedFolders.revokeAll.title"),
+                null,
+                tr("settings.trustedFolders.revokeAll.confirm", folders),
+                tr("confirm.action.remove"));
     }
 
     private VBox advancedPage() {

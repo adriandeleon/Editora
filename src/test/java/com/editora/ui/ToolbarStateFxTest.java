@@ -90,7 +90,10 @@ class ToolbarStateFxTest {
                     !Chrome.paletteEnabled("git.commit", c.paletteGates(), c.paletteContext()),
                     commit.isDisabled(),
                     "the menus' answer");
-            c.toolbarCoordinator.restoreDefault();
+            try (ConfirmAnswers questions = ConfirmAnswers.confirming()) { // the customized toolbar is asked about
+                c.toolbarCoordinator.restoreDefault();
+                assertEquals(1, questions.asked().size());
+            }
             c.closeAllTabs();
         });
     }

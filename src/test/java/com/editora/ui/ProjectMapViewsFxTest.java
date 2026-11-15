@@ -497,9 +497,30 @@ class ProjectMapViewsFxTest {
                 assertEquals(1, editor.list().getSelectionModel().getSelectedIndex(), "the moved stop stays selected");
                 editor.retitle(0, "Start here");
                 editor.renote(0, "  first  ");
+                // Removing a stop is written at once, so it asks first, by the stop's title: Cancel keeps it.
                 editor.list().getSelectionModel().select(2);
-                editor.removeSelected();
+                try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                    editor.removeSelected();
+                    assertEquals(
+                            List.of(new Confirm.Question(
+                                    "Remove Stop",
+                                    null,
+                                    "Remove the stop “Two” from the trail? This cannot be undone.",
+                                    "Remove")),
+                            questions.asked());
+                    assertEquals(
+                            List.of("Start here", "Three", "Two"),
+                            titles(project, "edit-me"),
+                            "Cancel removes nothing");
+                    questions.answer(true);
+                    editor.removeSelected();
+                    assertEquals(2, questions.asked().size(), "asked once for the removal");
+                }
                 assertEquals(List.of("Start here", "Three"), titles(project, "edit-me"));
+                // A stop that has a note says the note goes with it.
+                assertEquals(
+                        "Remove the stop “Three” and its note from the trail? This cannot be undone.",
+                        ProjectMapTrailEditor.removeStopQuestion("Three", true).message());
                 assertEquals(
                         "first", read(project, "edit-me").stops().getFirst().note());
 

@@ -236,7 +236,8 @@ final class SettingsAiPages {
         });
         mcpNewTokenButton = FocusCommands.press(new Button(tr("settings.mcp.newToken")), "mcp.newToken");
         mcpNewTokenButton.setOnAction(e -> {
-            if (mcpActions != null) {
+            // Every agent set up with the current token is locked out: asked first.
+            if (mcpActions != null && Confirm.ask(w.stage, newTokenQuestion())) {
                 mcpActions.newToken().run();
             }
             refreshMcpStatus();
@@ -253,6 +254,15 @@ final class SettingsAiPages {
                 "mcp status running port endpoint url copy command token new rotate claude mcp add");
         refreshMcpStatus();
         return p;
+    }
+
+    /** The question before the MCP server's token is replaced: what stops working until it is set up again. Pure. */
+    static Confirm.Question newTokenQuestion() {
+        return new Confirm.Question(
+                tr("settings.mcp.newToken.title"),
+                null,
+                tr("settings.mcp.newToken.confirm"),
+                tr("confirm.action.replace"));
     }
 
     private @Nullable McpActions mcpActions;
