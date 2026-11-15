@@ -343,6 +343,13 @@ final class PrintPreview {
         // The window's width, not the bar's: the bar never gets narrower than its one-row minimum.
         root.widthProperty().addListener((obs, old, width) -> arrangeBar(width.doubleValue()));
 
+        // The bar's commands, while the preview has the keyboard (its keys turn pages and zoom too).
+        FocusCommands.press(root, "print.previousPage", prev);
+        FocusCommands.press(root, "print.nextPage", next);
+        FocusCommands.press(root, "print.zoomOut", zoomOut);
+        FocusCommands.press(root, "print.zoomIn", zoomIn);
+        FocusCommands.press(root, "print.pageSetup", setup);
+        FocusCommands.bind(root, "print.zoom", zoomMenu::show); // the zoom choices, chosen in their own drop-down
         Scene scene = new Scene(root);
         addStylesheet(scene, "/com/editora/styles/app.css");
         addStylesheet(scene, "/com/editora/styles/syntax.css");

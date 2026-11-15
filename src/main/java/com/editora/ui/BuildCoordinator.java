@@ -1176,11 +1176,20 @@ final class BuildCoordinator {
     void registerCommands(CommandRegistry registry) {
         String id = tool.id();
         registry.register(Command.of("tool." + id, ops::toggleTasks)); // shows the tasks window, or hides it
-        registry.register(Command.of(id + ".showActions", this::showActionsPopup));
-        registry.register(Command.of(id + ".runCustom", this::runCustom));
+        // A pom's Maven submenu (the Project tree's or the Map's row) tags its rows with these: where the keyboard is
+        // on such a row, the command runs that row, for that pom; elsewhere it acts on the active module.
+        registry.register(Command.of(id + ".showActions", () -> rowOr(id + ".showActions", this::showActionsPopup)));
+        registry.register(Command.of(id + ".runCustom", () -> rowOr(id + ".runCustom", this::runCustom)));
         registry.register(Command.of(id + ".stop", this::stop));
         registry.register(Command.of(id + ".rerunLast", this::rerunLast));
         registry.register(Command.of(id + ".refresh", this::refreshMarker));
+    }
+
+    /** Fires the row tagged {@code commandId} where the keyboard is, or runs {@code otherwise}. */
+    private void rowOr(String commandId, Runnable otherwise) {
+        if (!FocusCommands.runWhereFocused(commandId, host::setStatus, javafx.stage.Window.getWindows())) {
+            otherwise.run();
+        }
     }
 
     void shutdown() {

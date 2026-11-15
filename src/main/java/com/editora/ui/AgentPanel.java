@@ -228,6 +228,16 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         // The Send button doubles as Stop while a turn runs (ChatGPT/Claude convention — far more visible
         // than the header ■), so it's never disabled; it just switches action + label + danger styling.
         sendButton.getStyleClass().add("agent-send-button");
+        FocusCommands.bindIf(
+                this,
+                "agent.send",
+                () -> { // Send; while a turn runs the button is Stop (agent.stop)
+                    if (busy) {
+                        return false;
+                    }
+                    sendButton.fire();
+                    return true;
+                });
         sendButton.setOnAction(e -> {
             if (busy) {
                 onStop.run();

@@ -170,6 +170,7 @@ public final class MessageLogPopup {
 
         root = UiZoom.spacing(new VBox(header, filter, list, footer), 6);
         root.getStyleClass().add("message-log");
+        FocusCommands.press(root, "messageLog.copyMessages", copy); // the selected messages, or all of them
         UiZoom.maxSize(root, WIDTH, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         root.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep nav/copy keys for the popup
         root.addEventFilter(KeyEvent.KEY_PRESSED, e -> {

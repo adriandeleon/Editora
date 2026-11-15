@@ -53,6 +53,8 @@ final class HttpImageView extends VBox {
         fit.setToggleGroup(group);
         actual.setToggleGroup(group);
         fit.setSelected(true);
+        FocusCommands.bind(this, "http.imageFit", () -> fit.setSelected(true)); // one command per choice
+        FocusCommands.bind(this, "http.imageActualSize", () -> actual.setSelected(true));
         // A toggle group lets the selected button be clicked off; one of the two is always on.
         group.selectedToggleProperty().addListener((o, was, now) -> {
             if (now == null && was != null) {

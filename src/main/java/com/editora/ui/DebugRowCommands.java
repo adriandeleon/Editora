@@ -8,7 +8,9 @@ import com.editora.command.Command;
  * The commands behind the Debug window's right-click rows that no command reached (KBD-01 and MENU-05, Pauta 6.0.1):
  * the Variables view's (watches, values, marks, View As), the Threads view's, the call stack's and the console's.
  * Each runs its row for the window's selection, as choosing it would ({@link DebugPanel#runMenuRow}), so it is
- * offered exactly where the row is; elsewhere the status line says so.
+ * offered exactly where the row is; elsewhere the status line says so. Copy Value, Copy Name and Add to Watches act
+ * first on a row of the Evaluate window or of a value popup that has the keyboard ({@link FocusCommands#runWhereFocused}),
+ * whose rows are tagged with them.
  */
 final class DebugRowCommands {
 
@@ -49,8 +51,13 @@ final class DebugRowCommands {
     /** Registers the Debug window's row commands on {@code mc}'s registry. */
     static void register(MainController mc) {
         for (String id : IDS) {
-            mc.registry.register(
-                    Command.of(id, () -> mc.debugCoordinator.ifDebug(() -> mc.debugCoordinator.runPanelRow(id))));
+            // A row tagged with the command where the keyboard is (the Evaluate window's tree, a value popup's rows)
+            // is the one it fires; elsewhere the Debug window's.
+            mc.registry.register(Command.of(id, () -> {
+                if (!FocusCommands.runWhereFocused(id, mc::setStatus, javafx.stage.Window.getWindows())) {
+                    mc.debugCoordinator.ifDebug(() -> mc.debugCoordinator.runPanelRow(id));
+                }
+            }));
         }
     }
 }

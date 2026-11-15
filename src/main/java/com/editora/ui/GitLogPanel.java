@@ -319,6 +319,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(filterField, Priority.ALWAYS);
         Button clearFilter = ClearableField.clearButton(filterField);
         Button search = iconButton(Icons.find(), tr("gitlog.searchTip"), this::searchHistory);
+        FocusCommands.press(this, "git.log.searchHistory", search);
         HBox filterRow = UiZoom.spacing(new HBox(filterField, clearFilter, search), 4);
         filterRow.getStyleClass().add("project-filter-bar");
         filterRow.setAlignment(Pos.CENTER_LEFT);

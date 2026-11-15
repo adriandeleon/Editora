@@ -204,7 +204,13 @@ final class MavenProjectCoordinator {
         this.registry = registry;
         registry.register(Command.of("maven.newProject", () -> newProject(null)));
         registry.register(Command.of("maven.newProjectHere", this::newProjectHere));
-        registry.register(Command.of("maven.updateVersions", this::updateVersions));
+        registry.register(Command.of("maven.updateVersions", () -> {
+            // A pom's Maven submenu tags its row with this: where the keyboard is on one, the row runs, for that pom.
+            if (!FocusCommands.runWhereFocused(
+                    "maven.updateVersions", host::setStatus, javafx.stage.Window.getWindows())) {
+                updateVersions();
+            }
+        }));
     }
 
     /**
@@ -618,9 +624,15 @@ final class MavenProjectCoordinator {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("menu.maven"), Icons.maven());
         menu.getItems()
                 .addAll(
-                        item("command.maven.updateVersions", Icons.refresh(), () -> updateVersions(pom)),
-                        item("command.maven.showActions", Icons.run(), () -> ops.showActionsAt(root)),
-                        item("command.maven.runCustom", Icons.terminal(), () -> ops.runCustomAt(root)));
+                        com.editora.editor.MenuChords.tag(
+                                item("command.maven.updateVersions", Icons.refresh(), () -> updateVersions(pom)),
+                                "maven.updateVersions"),
+                        com.editora.editor.MenuChords.tag(
+                                item("command.maven.showActions", Icons.run(), () -> ops.showActionsAt(root)),
+                                "maven.showActions"),
+                        com.editora.editor.MenuChords.tag(
+                                item("command.maven.runCustom", Icons.terminal(), () -> ops.runCustomAt(root)),
+                                "maven.runCustom"));
         return menu;
     }
 

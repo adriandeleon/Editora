@@ -110,6 +110,7 @@ final class DebugParallelStacksWindow {
         VBox root = UiZoom.spacing(new VBox(heading, note, scroll, buttons), 6);
         UiZoom.padding(root, 10);
         root.getStyleClass().addAll("debug-panel", "parallel-stacks-window");
+        FocusCommands.press(root, "debug.copyDump", copy); // its Copy's command, while it has the keyboard
         Scene scene = new Scene(root, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
         scene.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ESCAPE && !e.isConsumed()) {

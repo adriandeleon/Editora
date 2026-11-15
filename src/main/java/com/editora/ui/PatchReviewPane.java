@@ -53,6 +53,8 @@ final class PatchReviewPane implements TabContent {
 
         Button previous = button(Icons.arrowUp(), tr("diff.previousFile"), () -> selectRelative(-1));
         Button next = button(Icons.arrowDown(), tr("diff.nextFile"), () -> selectRelative(1));
+        FocusCommands.press(root, "diff.previousFile", previous); // the review's file list, from the keyboard
+        FocusCommands.press(root, "diff.nextFile", next);
         position.getStyleClass().add("diff-summary");
         HBox nav = UiZoom.spacing(new HBox(position, previous, next), 3);
         nav.setAlignment(Pos.CENTER_LEFT);
@@ -80,6 +82,8 @@ final class PatchReviewPane implements TabContent {
         worktree.setOnAction(e -> toWorkingTree.run());
         Button index = new Button(tr("diff.patch.applyIndex"));
         index.setOnAction(e -> toIndex.run());
+        FocusCommands.press(root, "diff.applyPatchToWorkingTree", worktree);
+        FocusCommands.press(root, "diff.applyPatchToIndex", index);
         applyBar = UiZoom.padding(UiZoom.spacing(new HBox(worktree, index), 8), 6, 8, 6, 8);
         applyBar.setAlignment(Pos.CENTER_LEFT);
         applyBar.getStyleClass().addAll("diff-toolbar", "patch-apply-bar");

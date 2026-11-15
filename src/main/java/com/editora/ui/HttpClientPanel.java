@@ -279,6 +279,14 @@ public final class HttpClientPanel extends VBox {
         runChord.setMinWidth(Region.USE_PREF_SIZE);
         runHost.setAlignment(Pos.CENTER_LEFT);
         runHost.setMinWidth(Region.USE_PREF_SIZE);
+        // Run with a past response shown sends that response's request again: no other command does that.
+        FocusCommands.bindIf(this, "http.runShownAgain", () -> {
+            if (running || selectedShown() == null) {
+                return false;
+            }
+            runButton.fire();
+            return true;
+        });
         runButton.setOnAction(e -> {
             if (running) {
                 if (onCancel != null) {
@@ -363,6 +371,25 @@ public final class HttpClientPanel extends VBox {
         for (Region r : List.of(copyCurlButton, openTabButton, saveButton)) {
             r.getStyleClass().addAll("flat", "http-action");
         }
+        // The "⋯" rows that had no command (KBD-01, MENU-05): the command does what the row or icon does here.
+        com.editora.editor.MenuChords.tag(wrapItem, "http.toggleResponseWrap");
+        com.editora.editor.MenuChords.tag(saveItem, "http.saveResponse");
+        com.editora.editor.MenuChords.tag(clearItem, "http.clearHistory");
+        FocusCommands.bind(this, "http.toggleResponseWrap", wrapToggle::fire);
+        FocusCommands.bindIf(this, "http.saveResponse", () -> {
+            if (saveButton.isDisabled()) {
+                return false;
+            }
+            saveButton.fire();
+            return true;
+        });
+        FocusCommands.bindIf(this, "http.clearHistory", () -> {
+            if (clearItem.isDisable()) {
+                return false;
+            }
+            clear();
+            return true;
+        });
         copyCurlItem.setOnAction(e -> copyCurlButton.fire());
         openTabItem.setOnAction(e -> openTabButton.fire());
         saveItem.setOnAction(e -> saveButton.fire());
@@ -555,6 +582,8 @@ public final class HttpClientPanel extends VBox {
         com.editora.editor.MenuChords.tag(copyLine, "edit.copy");
         MenuItem copyAll = new MenuItem(tr("httppanel.copyAllHeaders"));
         copyAll.setOnAction(e -> putOnClipboard(headersText()));
+        FocusCommands.row(copyValue, "http.copyHeaderValue");
+        FocusCommands.row(copyAll, "http.copyAllHeaders");
         ContextMenu menu = new ContextMenu(copyValue, copyLine, copyAll);
         menu.setOnShowing(e -> {
             boolean any = !headersTable.getSelectionModel().getSelectedItems().isEmpty();
@@ -562,6 +591,12 @@ public final class HttpClientPanel extends VBox {
             copyLine.setDisable(!any);
         });
         headersTable.setContextMenu(menu);
+        FocusCommands.shownMenu(headersTable);
+        // The editor's Copy and Select All, run while the table has the keyboard, do what its keys do.
+        ConsoleContextMenu.mark(
+                headersTable,
+                () -> copyHeaders(true),
+                () -> headersTable.getSelectionModel().selectAll());
         RowContextMenu.anchor(headersTable, menu); // the Menu key / Shift+F10: at the selected header's row
         // Copy by keyboard: the platform's copy chord, or the keymap's (Emacs M-w), copies the selected rows.
         headersTable.addEventFilter(KeyEvent.KEY_PRESSED, e -> {

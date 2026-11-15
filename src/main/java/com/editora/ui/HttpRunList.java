@@ -109,6 +109,7 @@ final class HttpRunList extends VBox {
         onlyFailures.getStyleClass().add("http-run-only-failures");
         onlyFailures.setMinWidth(Region.USE_PREF_SIZE);
         onlyFailures.selectedProperty().addListener((o, a, b) -> refill());
+        FocusCommands.bind(this, "http.toggleOnlyFailures", onlyFailures::fire);
         chevron = Icons.button(Icons.findPrevious(), tr("httppanel.runList.collapse"), this::toggleCollapsed);
         chevron.getStyleClass().addAll("flat", "http-action", "http-run-chevron");
         chevron.setMinWidth(Region.USE_PREF_SIZE);
@@ -151,6 +152,7 @@ final class HttpRunList extends VBox {
         });
         ContextMenu menu = buildMenu();
         list.setContextMenu(menu);
+        FocusCommands.shownMenu(list);
         RowContextMenu.anchor(list, menu); // the Menu key / Shift+F10: at the selected request's row
         VBox.setVgrow(list, Priority.ALWAYS);
         // Preview ↔ Split, a resize or a new run changes its height: the selected row stays in view.
@@ -172,6 +174,9 @@ final class HttpRunList extends VBox {
         copy.setOnAction(e -> withRow(onCopyAsCurl));
         MenuItem jump = new MenuItem(tr("httppanel.runList.goTo"));
         jump.setOnAction(e -> withRow(onJump));
+        FocusCommands.row(runAgain, "http.runSelectedAgain");
+        FocusCommands.row(copy, "http.copyAsCurl"); // the selected row is the entry the panel shows
+        FocusCommands.row(jump, "http.goToSelectedRequest");
         ContextMenu menu = new ContextMenu(runAgain, copy, jump);
         menu.setOnShowing(e -> {
             HttpRunRows.Row row = list.getSelectionModel().getSelectedItem();

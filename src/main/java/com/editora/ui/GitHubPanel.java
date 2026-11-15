@@ -354,6 +354,16 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         mineToggle.getStyleClass().add("github-tab");
         mineToggle.setTooltip(ControlNames.tooltip(tr("github.panel.mineTip")));
         mineToggle.setOnAction(e -> filterChanged());
+        FocusCommands.bind(this, "github.toggleMine", mineToggle::fire);
+        FocusCommands.bindIf(this, "github.loadMore", () -> {
+            for (Object item : list.getItems()) {
+                if (item instanceof MoreRow more) {
+                    loadMore(more);
+                    return true;
+                }
+            }
+            return false;
+        });
         UiZoom.prefSize(busy, 14, 14);
         UiZoom.maxSize(busy, 14, 14);
         busy.setVisible(false);

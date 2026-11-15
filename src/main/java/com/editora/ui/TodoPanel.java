@@ -156,6 +156,26 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         tree.setRoot(new TreeItem<>());
         tree.setCellFactory(t -> new RowCell(actions, this::reopenKeywords));
         RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
+        // The match menu's commands (todo.markSelectedDone…) fire its rows for the selected match.
+        FocusCommands.menu(tree, () -> {
+            TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+            Row row = item == null ? null : item.getValue();
+            TodoMatch match = row == null ? null : row.match();
+            com.editora.todo.TodoComment parsed = match == null ? null : match.parsed();
+            Path file = row == null ? null : row.file();
+            return match == null || parsed == null || file == null
+                    ? null
+                    : RowCell.buildMatchMenu(actions, this::reopenKeywords, file, match, parsed)
+                            .getItems();
+        });
+        ListRowCommands.bind(tree, ListRowCommands.OPEN, () -> {
+            TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+            if (item == null || item.getValue() == null || item.getValue().match() == null) {
+                return false;
+            }
+            activateSelected();
+            return true;
+        });
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 activateSelected();
@@ -394,13 +414,20 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                 renderMatch(row, match);
                 com.editora.todo.TodoComment parsed = match.parsed();
                 Path file = row.file(); // a match row always carries its file
-                setContextMenu(parsed == null || file == null ? null : buildMatchMenu(file, match, parsed));
+                setContextMenu(
+                        parsed == null || file == null
+                                ? null
+                                : buildMatchMenu(actions, reopenKeywords, file, match, parsed));
             }
         }
 
         /** Edit menu for a structured match: Mark Done / Reopen, set priority, edit description. */
-        private javafx.scene.control.ContextMenu buildMatchMenu(
-                Path file, TodoMatch m, com.editora.todo.TodoComment parsed) {
+        static javafx.scene.control.ContextMenu buildMatchMenu(
+                Actions actions,
+                java.util.function.Supplier<List<String>> reopenKeywords,
+                Path file,
+                TodoMatch m,
+                com.editora.todo.TodoComment parsed) {
             boolean done = com.editora.todo.TodoPatterns.DONE_KEYWORD.equals(parsed.keyword());
             javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
 
@@ -414,25 +441,30 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                 for (String k : reopenKeywords.get()) {
                     javafx.scene.control.MenuItem it = new javafx.scene.control.MenuItem(k);
                     it.setOnAction(e -> actions.setKeyword(file, m, k));
+                    FocusCommands.also(it, "todo.reopenSelected"); // the command asks which keyword
                     reopenMenu.getItems().add(it);
                 }
             } else {
                 doneItem = new javafx.scene.control.MenuItem(tr("todo.menu.markDone"));
                 doneItem.setOnAction(e -> actions.setKeyword(file, m, com.editora.todo.TodoPatterns.DONE_KEYWORD));
+                FocusCommands.row(doneItem, "todo.markSelectedDone");
             }
 
             javafx.scene.control.Menu priorityMenu = new javafx.scene.control.Menu(tr("todo.menu.priority"));
             for (String p : com.editora.todo.TodoComment.PRIORITY_ORDER) {
                 javafx.scene.control.MenuItem it = new javafx.scene.control.MenuItem(tr("todo.priority." + p));
                 it.setOnAction(e -> actions.setPriority(file, m, p));
+                FocusCommands.also(it, "todo.setSelectedPriority"); // the command asks which priority
                 priorityMenu.getItems().add(it);
             }
             javafx.scene.control.MenuItem none = new javafx.scene.control.MenuItem(tr("todo.priority.none"));
             none.setOnAction(e -> actions.setPriority(file, m, null));
+            FocusCommands.also(none, "todo.setSelectedPriority");
             priorityMenu.getItems().add(none);
 
             javafx.scene.control.MenuItem editDesc = new javafx.scene.control.MenuItem(tr("todo.menu.editDescription"));
             editDesc.setOnAction(e -> actions.editDescription(file, m));
+            FocusCommands.row(editDesc, "todo.editSelectedDescription");
 
             menu.getItems().add(done ? reopenMenu : doneItem);
             menu.getItems().addAll(priorityMenu, editDesc);

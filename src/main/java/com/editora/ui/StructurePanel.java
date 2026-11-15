@@ -249,6 +249,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             filterField.requestFocus();
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        ClearableField.command(filterField, clearFilter);
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
         // Narrow to fold region: one toggle at the end of the sort/kind row (the search field keeps its width). A
         // click turns fold mode on and narrows to the picked symbol's block; a second click widens. It is lit
@@ -307,6 +308,18 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         tree.getStyleClass().add("structure-tree");
         tree.setCellFactory(t -> new StructureCell());
         RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
+        // The symbol menu's commands (structure.bookmarkSelected…) fire its rows for the selected symbol.
+        FocusCommands.menu(tree, () -> {
+            TreeItem<StructureNode> item = tree.getSelectionModel().getSelectedItem();
+            StructureNode node = item == null ? null : item.getValue();
+            ContextMenu menu = node == null || node.kind() == null ? null : markerMenu(node);
+            if (menu == null) {
+                return null;
+            }
+            javafx.event.Event.fireEvent(
+                    menu, new javafx.stage.WindowEvent(menu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+            return menu.getItems();
+        });
         VBox.setVgrow(tree, Priority.ALWAYS);
 
         // Navigate as soon as the selection changes (keyboard, search, or single click), but only
@@ -478,6 +491,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 actions.addPersonalNote(buffer, areaLine);
             }
         });
+        FocusCommands.row(bookmark, "structure.bookmarkSelected");
+        FocusCommands.row(note, "structure.noteSelected");
         ContextMenu menu = new ContextMenu(bookmark, note);
         menu.setOnShowing(e -> note.setDisable(!actions.personalNotesEnabled()));
         return menu;

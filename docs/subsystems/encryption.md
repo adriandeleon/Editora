@@ -57,3 +57,9 @@ Plugins can ask `ActiveEditor.isEncrypted()`. A new feature that copies buffer t
 throwaway home: `GpgTestHome`, made under `/tmp` because gpg-agent's socket path is length-limited),
 `RetiredPluginsTest`. The FX test stands in for the picker (`EncryptionCoordinator.picker`) and the prompt
 (`passphraseAsker`); gpg is never mocked.
+
+## Commands behind the rows and buttons
+
+The locked view's, the banners' and the decrypted-block card's buttons are commands (`PanelCommands.CRYPTO`):
+`crypto.decryptLocked`, `crypto.cancelDecrypt`, `crypto.setGpgPath`, `crypto.showEncryptedText`,
+`crypto.trashOriginal`, `crypto.copyPeeked` and `crypto.replacePeeked`.

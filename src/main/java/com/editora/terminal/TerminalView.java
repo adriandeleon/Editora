@@ -2300,6 +2300,17 @@ public final class TerminalView extends Region {
         this.menuIcons = menuIcons == null ? key -> null : menuIcons;
     }
 
+    private java.util.function.BiConsumer<MenuItem, String> rowTagger = (item, row) -> {};
+
+    /**
+     * Has the window tie each of the menu's own rows to a command, by the row's name: {@code copy}, {@code paste},
+     * {@code openLink}, {@code copyLinkAddress}, {@code copyLastOutput}, {@code selectAll}, {@code clearScrollback}.
+     * Set before the menu is first shown.
+     */
+    public void setRowTagger(java.util.function.BiConsumer<MenuItem, String> rowTagger) {
+        this.rowTagger = rowTagger;
+    }
+
     /**
      * Items the window adds below the view's own, asked for each time the menu opens. A terminal knows nothing
      * about tabs, targets or settings — those belong to the window that owns it.
@@ -2337,6 +2348,32 @@ public final class TerminalView extends Region {
         // it — so shift is read from the press that triggered it.
         if (!shouldShowMenu(display.getMouseMode(), shiftOnLastPress, e.isKeyboardTrigger())) return;
 
+        Menu m = refreshMenu(linkAt(e.getX(), e.getY()));
+        m.menu().show(this, e.getScreenX(), e.getScreenY());
+        e.consume();
+    }
+
+    /**
+     * The right-click menu's rows as they would show now, for a command to fire one ({@code terminal.copy} and the
+     * others, each row tagged with its command): refreshed as a right-click refreshes them, with the link rows for
+     * the link the selection starts on (a right-click's are for the link under the pointer), absent without one.
+     */
+    public List<MenuItem> commandMenu() {
+        return refreshMenu(selectionLink()).menu().getItems();
+    }
+
+    /** The link the selection starts on, or null: what the link rows act on when a command, not a click, runs them. */
+    private @Nullable Hover selectionLink() {
+        TerminalSelection current = selection;
+        Point start = current == null ? null : current.getStart();
+        if (start == null) {
+            return null;
+        }
+        return linkAt((start.x + 0.5) * charWidth, (start.y - scrollOrigin + 0.5) * lineHeight);
+    }
+
+    /** Builds the menu on first use and sets its rows for now, the link rows for {@code link}. */
+    private Menu refreshMenu(@Nullable Hover link) {
         Menu m = contextMenu;
         if (m == null) {
             m = buildContextMenu();
@@ -2353,14 +2390,13 @@ public final class TerminalView extends Region {
         // The link items are the menu's answer to a gesture nobody was told about: they need no
         // modifier and they say what is there. Computed for the right-clicked cell, not the last
         // hovered one — the menu can be raised from the keyboard, and the pointer may be elsewhere.
-        menuLink = linkAt(e.getX(), e.getY());
+        menuLink = link;
         boolean onLink = menuLink != null;
         m.openLinkItem().setVisible(onLink);
         m.copyLinkItem().setVisible(onLink);
         m.linkSeparator().setVisible(onLink);
         refreshExtras(m.menu());
-        m.menu().show(this, e.getScreenX(), e.getScreenY());
-        e.consume();
+        return m;
     }
 
     private Menu buildContextMenu() {
@@ -2380,16 +2416,26 @@ public final class TerminalView extends Region {
         MenuItem copyOutputItem =
                 item(tr("terminal.menu.copyLastOutput"), menuIcons.apply("copy"), this::copyLastOutput);
 
+        // Each row is named for the window, which ties it to its command (MENU-05 in Pauta 6.0.1).
+        rowTagger.accept(copyItem, "copy");
+        rowTagger.accept(pasteItem, "paste");
+        rowTagger.accept(openLinkItem, "openLink");
+        rowTagger.accept(copyLinkItem, "copyLinkAddress");
+        rowTagger.accept(copyOutputItem, "copyLastOutput");
+        MenuItem selectAllItem = item(tr("terminal.menu.selectAll"), menuIcons.apply("selectAll"), this::selectAll);
+        rowTagger.accept(selectAllItem, "selectAll");
+        MenuItem clearItem = item(tr("terminal.menu.clearScrollback"), menuIcons.apply("clear"), this::clearScrollback);
+        rowTagger.accept(clearItem, "clearScrollback");
         ContextMenu menu = new ContextMenu(
                 openLinkItem,
                 copyLinkItem,
                 linkSeparator,
                 copyItem,
                 pasteItem,
-                item(tr("terminal.menu.selectAll"), menuIcons.apply("selectAll"), this::selectAll),
+                selectAllItem,
                 copyOutputItem,
                 new SeparatorMenuItem(),
-                item(tr("terminal.menu.clearScrollback"), menuIcons.apply("clear"), this::clearScrollback));
+                clearItem);
         menu.setAutoHide(true);
         ownItems = menu.getItems().size();
         // The terminal's own chords, shown where its commands are: nothing else in the UI said them. Display only —

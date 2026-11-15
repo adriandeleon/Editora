@@ -177,6 +177,7 @@ final class DebugEvaluateWindow {
         });
         ContextMenu rowMenu = rowMenu();
         tree.setContextMenu(rowMenu);
+        FocusCommands.ownMenu(tree); // the Variables view's row commands act on the row selected here
         RowContextMenu.anchor(tree, rowMenu); // the Menu key / Shift+F10: at the selected row
         VBox.setVgrow(tree, Priority.ALWAYS);
 
@@ -209,6 +210,9 @@ final class DebugEvaluateWindow {
         UiZoom.padding(root, 10);
         root.getStyleClass().addAll("debug-panel", "debug-evaluate-window");
         root.setMinSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+        // Add to Watches is what the Debug window's own Add to Watches does with its evaluated expression.
+        FocusCommands.press(root, "debug.watchEvaluated", toWatches);
+        FocusCommands.bind(root, "debug.evaluateHistory", historyButton::show); // its rows: the past expressions
         Scene scene = new Scene(root, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
         // Esc closes the window, unless the completion list is open (its own filter, on the scene, closes that).
         scene.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
@@ -249,6 +253,9 @@ final class DebugEvaluateWindow {
                 source.addWatch(expr);
             }
         });
+        FocusCommands.row(copyValue, "debug.copySelectedValue");
+        FocusCommands.row(copyName, "debug.copySelectedName");
+        FocusCommands.row(watch, "debug.watchSelected");
         ContextMenu menu = new ContextMenu(copyValue, copyName, watch);
         menu.setOnShowing(e -> {
             String expr = selectedExpression();

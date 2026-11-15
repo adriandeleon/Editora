@@ -162,6 +162,8 @@ public final class ReportProblemWindow {
         VBox root = UiZoom.spacing(new VBox(intro, summary, area, status, buttons), 8);
         UiZoom.padding(root, 10);
 
+        FocusCommands.press(root, "help.copyProblemReport", copy); // its Copy and Save, while it has the keyboard
+        FocusCommands.press(root, "help.saveProblemReport", save);
         Scene scene = new Scene(root, UiZoom.px(820), UiZoom.px(620));
         scene.getStylesheets()
                 .addAll(

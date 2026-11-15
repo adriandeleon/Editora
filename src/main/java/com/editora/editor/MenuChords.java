@@ -84,6 +84,34 @@ public final class MenuChords {
         return chords.get().get(commandId);
     }
 
+    /**
+     * Gives {@code owner} the rows of the right-click menu a right-click would open there now, built by {@code rows}
+     * for its selection (null: no menu), so that a command a row is {@linkplain #tag tagged} with can fire that row
+     * while the keyboard is in {@code owner} or the window shows it ({@code ui.FocusCommands}). Kept in the node's own
+     * properties, never in a static map.
+     */
+    public static void offerRows(javafx.scene.Node owner, Supplier<? extends @Nullable List<MenuItem>> rows) {
+        owner.getProperties().put(ROWS, rows);
+    }
+
+    /**
+     * Has command {@code commandId} press {@code button} as a click would while the keyboard is in {@code owner} or the
+     * window shows it ({@code ui.FocusCommands}, which binds a ui button the same way): refused while the button is
+     * hidden or disabled, when a click would do nothing. Kept in the node's own properties.
+     */
+    public static void offerButton(javafx.scene.Node owner, String commandId, javafx.scene.control.ButtonBase button) {
+        owner.getProperties().put(commandId, (java.util.function.BooleanSupplier) () -> {
+            if (!button.isVisible() || button.isDisabled()) {
+                return false;
+            }
+            button.fire();
+            return true;
+        });
+    }
+
+    /** The node property {@link #offerRows} keeps the builder under. */
+    public static final String ROWS = "editora.mapMenu";
+
     /** The command an item was {@linkplain #tag tagged} with, or null. */
     public static @Nullable String commandOf(MenuItem item) {
         return item.getProperties().get(KEY) instanceof String id ? id : null;

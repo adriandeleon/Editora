@@ -55,6 +55,21 @@ final class LambdaBreakpoints {
         toggle(b, line, LineFunctions.numberAt(found, area.getCaretColumn()));
     }
 
+    /**
+     * Debug: Toggle Stop on the Line — whether the breakpoint on the caret's line stops on the line itself as well as
+     * in its lambdas. Refused (it has to stop somewhere) on a breakpoint with no lambdas, and with none on the line.
+     */
+    void toggleStopOnLineAtCaret(EditorBuffer b) {
+        int line = b.getFocusedArea().getCurrentParagraph();
+        Breakpoint bp = b.getBreakpointManager().get(line);
+        if (bp == null || !bp.hasLambdas()) {
+            host.setStatus(tr("status.debug.noLambdaBreakpointHere", line + 1));
+            return;
+        }
+        b.getBreakpointManager().setLambdas(line, bp.lambdas(), !bp.lambdasOnly());
+        b.refreshGutterLine(line);
+    }
+
     /** Adds lambda {@code number} of {@code line} to its breakpoint (making one), or takes it away; says which. */
     void toggle(EditorBuffer b, int line, int number) {
         var mgr = b.getBreakpointManager();
@@ -104,9 +119,11 @@ final class LambdaBreakpoints {
         onLine.setSelected(bp.stopsOnLine());
         onLine.setDisable(!bp.hasLambdas()); // it has to stop somewhere
         onLine.setOnAction(ev -> {
-            mgr.setLambdas(line, bp.lambdas(), !onLine.isSelected());
-            b.refreshGutterLine(line);
+            // As the menu's other rows: the caret goes to the line, and the command for the breakpoint there runs.
+            b.getFocusedArea().moveTo(line, 0);
+            toggleStopOnLineAtCaret(b);
         });
+        com.editora.editor.MenuChords.tag(onLine, "debug.toggleStopOnLine");
         items.add(onLine);
         for (int i = 0; i < found.size(); i++) {
             int number = i + 1;

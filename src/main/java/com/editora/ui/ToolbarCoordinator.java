@@ -199,7 +199,20 @@ final class ToolbarCoordinator {
 
     // ---- Customize mode ------------------------------------------------------------------------------
 
-    /** Palette command: toggle the on-bar customize mode. */
+    /**
+     * Toolbar: Customize — turns the on-bar customize mode on or off, as the toolbar's right-click row does; false,
+     * having done nothing, while the toolbar is hidden (there is nothing to customize on it).
+     */
+    boolean toggleCustomizeIfShown() {
+        javafx.scene.Node bar = ops.toolBar();
+        if (bar.getScene() == null || !bar.isVisible()) {
+            return false;
+        }
+        toggleCustomizeMode();
+        return true;
+    }
+
+    /** The toolbar's right-click row: toggle the on-bar customize mode. */
     void toggleCustomizeMode() {
         if (customizing) {
             exitCustomizeMode();
@@ -254,6 +267,7 @@ final class ToolbarCoordinator {
         MenuItem toggle = new MenuItem(customizing ? tr("toolbar.menu.done") : tr("toolbar.menu.customize"));
         toggle.setGraphic(Icons.tools());
         toggle.setOnAction(e -> toggleCustomizeMode());
+        MenuChords.tag(toggle, "toolbar.toggleCustomize");
         MenuItem configure = new MenuItem(tr("toolbar.menu.configure"));
         configure.setGraphic(Icons.settings());
         configure.setOnAction(e -> ops.openSettingsToolbarPage());

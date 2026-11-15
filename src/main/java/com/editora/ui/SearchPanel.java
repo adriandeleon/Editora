@@ -106,8 +106,11 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         Button searchBtn = new Button(tr("search.run"));
         searchBtn.setDefaultButton(false);
         searchBtn.setOnAction(e -> runSearch());
+        FocusCommands.press(this, "search.run", searchBtn);
+        PanelCommands.bindFindOptions(this, caseBox, regexBox, wordBox);
         Button replaceBtn = new Button(tr("search.replaceAll"));
         replaceBtn.setOnAction(e -> runReplace());
+        FocusCommands.press(this, "search.replaceAll", replaceBtn);
 
         // Disable the search controls (case/regex/word toggles + Search) while the query is empty, and the
         // Replace All button while the replacement field is empty — nothing useful can run in those states.

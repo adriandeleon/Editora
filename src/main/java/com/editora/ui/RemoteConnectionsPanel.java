@@ -131,17 +131,27 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
     }
 
     private ContextMenu buildMenu() {
-        MenuItem connect = new MenuItem(tr("remotePanel.connect"));
-        connect.setGraphic(Icons.remote());
-        connect.setOnAction(e -> connectSelected());
+        // Connect and Remove are the lists' shared row commands (list.open, list.remove), as on the Settings page.
+        MenuItem connect =
+                ListRowCommands.row(list, ListRowCommands.OPEN, tr("remotePanel.connect"), Icons.remote(), () -> {
+                    if (list.getSelectionModel().getSelectedItem() == null) {
+                        return false;
+                    }
+                    connectSelected();
+                    return true;
+                });
         MenuItem add = new MenuItem(tr("remotePanel.new"));
         add.setGraphic(Icons.newFile());
         add.setOnAction(e -> actions.newConnection());
         MenuChords.tag(add, "remote.connect"); // the same fresh connection form (RemoteCoordinator.connect())
-        MenuItem remove = new MenuItem(tr("remotePanel.remove"));
-        remove.setGraphic(Icons.trash());
-        remove.getStyleClass().add("danger"); // a destructive row reads red
-        remove.setOnAction(e -> removeSelected());
+        MenuItem remove = ListRowCommands.danger(
+                ListRowCommands.row(list, ListRowCommands.REMOVE, tr("remotePanel.remove"), Icons.trash(), () -> {
+                    if (list.getSelectionModel().getSelectedItem() == null) {
+                        return false;
+                    }
+                    removeSelected();
+                    return true;
+                }));
         return new ContextMenu(connect, add, new SeparatorMenuItem(), remove);
     }
 

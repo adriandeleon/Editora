@@ -6,6 +6,7 @@ import java.util.List;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.BorderPane;
@@ -14,6 +15,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 
 import com.editora.editor.UiZoom;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -50,6 +52,24 @@ final class DebugSessionsView extends BorderPane {
         strip.setAlignment(Pos.CENTER_LEFT);
         showStrip(false);
         setTop(strip);
+        // debug.switchSession: which of the strip's sessions to show, asked as a list, as clicking its tab shows it.
+        FocusCommands.menu(this, this::sessionRows);
+    }
+
+    /** One row per session tab of the strip, each marked for {@code debug.switchSession}; null without a strip. */
+    private @Nullable List<MenuItem> sessionRows() {
+        if (!strip.isVisible()) {
+            return null;
+        }
+        List<MenuItem> rows = new ArrayList<>();
+        for (Node child : strip.getChildren()) {
+            if (child instanceof ToggleButton tab) {
+                MenuItem row = FocusCommands.also(new MenuItem(tab.getText()), "debug.switchSession");
+                row.setOnAction(e -> tab.fire());
+                rows.add(row);
+            }
+        }
+        return rows;
     }
 
     /** Shows {@code panel}: the focused session's. */

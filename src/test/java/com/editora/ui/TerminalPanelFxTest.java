@@ -1210,6 +1210,31 @@ class TerminalPanelFxTest {
     }
 
     @Test
+    void theTerminalRowCommandsFireTheSelectedTabsRows() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        java.util.List<String> status = new java.util.ArrayList<>();
+        assertFalse(
+                fx(() -> FocusCommands.run(
+                        "terminal.closeOthers", status::add, java.util.List.of(), java.util.List.of(panel), r -> {})),
+                "no terminal: no tab to close the others of");
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        assertTrue(fx(() -> FocusCommands.run(
+                "terminal.selectAll", status::add, java.util.List.of(), java.util.List.of(panel), r -> {})));
+        assertTrue(fx(() -> FocusCommands.run(
+                "terminal.closeOthers", status::add, java.util.List.of(), java.util.List.of(panel), r -> {})));
+        assertEquals(1, fx(panel::terminalCount), "the other terminal closed, as the tab's row closes it");
+        assertFalse(
+                fx(() -> FocusCommands.run(
+                        "terminal.closeRight", status::add, java.util.List.of(), java.util.List.of(panel), r -> {})),
+                "nothing to the right: the row is disabled");
+        assertEquals(2, status.size());
+    }
+
+    @Test
     void aShellStartedQuietlyLeavesTheKeyboardWhereItWas() throws Exception {
         // A terminal left open comes back at startup: the editor's keystrokes must not land in a shell.
         javafx.scene.control.TextField editor = fx(javafx.scene.control.TextField::new);

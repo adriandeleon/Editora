@@ -90,6 +90,15 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         tree.setRoot(new TreeItem<>());
         tree.setCellFactory(t -> new RowCell());
         RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
+        // The diagnostic menu's commands (problems.copySelectedCode…) fire its rows for the selected diagnostic.
+        FocusCommands.menu(tree, () -> {
+            TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+            LspDiagnostic d = item == null || item.getValue() == null
+                    ? null
+                    : item.getValue().diag();
+            ContextMenu menu = d == null ? null : contextMenuFor(d);
+            return menu == null ? null : menu.getItems();
+        });
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 activateSelected();
@@ -403,6 +412,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         if (href != null) {
             MenuItem docs = new MenuItem(tr("problems.menu.openRuleDocs"));
             docs.setOnAction(e -> actions.openUrl(href));
+            FocusCommands.row(docs, "problems.openSelectedRuleDocs");
             menu.getItems().add(docs);
         }
         String code = d.code();
@@ -413,6 +423,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
                 content.putString(code.strip());
                 Clipboard.getSystemClipboard().setContent(content);
             });
+            FocusCommands.row(copy, "problems.copySelectedCode");
             menu.getItems().add(copy);
         }
         return menu.getItems().isEmpty() ? null : menu;

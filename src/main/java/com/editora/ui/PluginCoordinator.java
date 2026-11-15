@@ -66,7 +66,8 @@ final class PluginCoordinator {
     static final long SLOW_START_MS = 250;
 
     /** A plugin-contributed editor menu item: a label + an action over the {@link ActiveEditor}. */
-    private record EditorMenuContribution(String pluginName, String label, Consumer<ActiveEditor> action) {}
+    private record EditorMenuContribution(
+            String pluginName, String label, Consumer<ActiveEditor> action, String commandId) {}
 
     /** Window hooks beyond the injected collaborators that the plugin flows need. */
     interface Ops {
@@ -247,6 +248,7 @@ final class PluginCoordinator {
             mi.setGraphic(Icons.plugin());
             mi.setOnAction(
                     e -> guarded(c.pluginName(), c.label(), () -> c.action().accept(new ActiveEditorImpl(buffer))));
+            com.editora.editor.MenuChords.tag(mi, c.commandId()); // its command does the same to the active editor
             items.add(mi);
         }
         return items;
@@ -1114,9 +1116,19 @@ final class PluginCoordinator {
         public void addEditorMenuItem(String label, Consumer<ActiveEditor> action) {
             if (label != null && action != null) {
                 fx(() -> {
-                    EditorMenuContribution item = new EditorMenuContribution(desc.displayName(), label, action);
+                    // The row is a command too (KBD-01 in Pauta 6.0.1), on the active editor as the row is.
+                    String cid = ownId(desc, "editorMenu." + (contributions.menuItems.size() + 1));
+                    EditorMenuContribution item = new EditorMenuContribution(desc.displayName(), label, action, cid);
                     pluginMenuItems.add(item);
                     contributions.menuItems.add(item);
+                    register(contributions, cid, desc.displayName() + ": " + label, () -> {
+                        EditorBuffer buffer = host.activeBuffer();
+                        if (buffer == null) {
+                            host.setStatus(tr("status.bookmarks.noFile"));
+                        } else {
+                            action.accept(new ActiveEditorImpl(buffer));
+                        }
+                    });
                 });
             }
         }

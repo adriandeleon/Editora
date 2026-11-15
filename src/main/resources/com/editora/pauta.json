@@ -137,14 +137,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {
-      "rule": "KBD-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-01",
-      "kind": "pending",
-      "reason": "Many buttons inside panels (the diff and merge views', the find bars' options, the debugger's windows and others) and the right-click rows of the terminal and several tool windows still do their work with no command behind them, so the palette cannot run them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1560"
-    },
-    {
       "rule": "KBD-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/keyboard/#kbd-04",
@@ -286,14 +278,6 @@
       "url": "https://pauta-project.dev/6.0.1/menus/#menu-14",
       "kind": "pending",
       "reason": "Some menu rows have no icon.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1566"
-    },
-    {
-      "rule": "MENU-05",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/menus/#menu-05",
-      "kind": "pending",
-      "reason": "Many right-click rows still do something no command does: those of the terminal, the Markdown preview, the Structure, Problems, Markdown Lint, CSV, HTTP, Remote, TODO and Doctor windows, the debugger's value popup and Evaluate window, among others.",
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {

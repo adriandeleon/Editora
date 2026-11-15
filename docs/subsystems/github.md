@@ -100,3 +100,9 @@ Three fake-`gh` shell scripts (POSIX only, skipped on Windows), each steered by 
 (gating, re-probe, Git-off, Stop, the spinner, an old gh), `GitHubUiFlowsFxTest` and
 `GitHubRepositoryBindingFxTest` (the flows). A fake must answer what the window asks at startup:
 `--version`, `auth status [--json hosts]`, the one-row activity lists, `pr view`, `repo view`.
+
+## Commands behind the rows and buttons
+
+The GitHub window's Only Mine toggle and its last row are `github.toggleMine` and `github.loadMore`; a pull
+request's review tab's links are `github.openReviewedPr`, `github.openReviewedFiles`, `github.submitReviewedPr` and
+`github.refreshReviewedPr`.

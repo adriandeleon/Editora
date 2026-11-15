@@ -152,6 +152,8 @@ final class DebugTableWindow {
         VBox root = UiZoom.spacing(new VBox(heading, note, filter, table, buttons), 6);
         UiZoom.padding(root, 10);
         root.getStyleClass().addAll("debug-panel", "value-table-window");
+        FocusCommands.press(root, "debug.openTableAsCsv", asCsv); // its buttons' commands, while it has the keyboard
+        FocusCommands.press(root, "debug.refreshTable", refresh);
         Scene scene = new Scene(root, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
         scene.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ESCAPE && !e.isConsumed()) {

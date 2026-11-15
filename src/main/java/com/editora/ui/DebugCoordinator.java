@@ -581,6 +581,10 @@ final class DebugCoordinator {
         return memberBreakpoints;
     }
 
+    LambdaBreakpoints lambdaBreakpoints() {
+        return lambdaBreakpoints;
+    }
+
     /** Debug: Toggle Method Breakpoint — on the method the caret is in (else asks which). */
     void toggleMethodBreakpoint() {
         if (debugSupportEnabled()) {
@@ -9480,7 +9484,7 @@ final class DebugCoordinator {
         if (bp == null) {
             var mark = mgr.memberMark(line);
             if (mark != null) {
-                showGutterMenu(memberGutterItems(mark), e);
+                showGutterMenu(memberGutterItems(b, line, mark), e);
             }
             return;
         }
@@ -9530,18 +9534,12 @@ final class DebugCoordinator {
 
     /** The gutter menu of a method breakpoint's or field watchpoint's mark: Enable / Disable, Remove, Breakpoints. */
     private List<javafx.scene.control.MenuItem> memberGutterItems(
-            com.editora.editor.debug.BreakpointManager.MemberMark mark) {
-        boolean enabled = mark.enabled();
-        javafx.scene.control.MenuItem flip =
-                new javafx.scene.control.MenuItem(tr(enabled ? "debug.gutter.disable" : "debug.gutter.enable"));
-        flip.setOnAction(ev -> mark.members().forEach(m -> memberBreakpoints.replace(m.withEnabled(!enabled))));
-        javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(
-                tr(mark.field() ? "debug.gutter.removeFieldWatchpoint" : "debug.gutter.removeMethodBreakpoint"));
-        remove.setGraphic(Icons.remove());
-        remove.getStyleClass().add("danger"); // a destructive row reads red
-        remove.setOnAction(ev -> mark.members().forEach(memberBreakpoints::remove));
-        javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
-        return List.of(flip, remove, new javafx.scene.control.SeparatorMenuItem(), list);
+            EditorBuffer b, int line, com.editora.editor.debug.BreakpointManager.MemberMark mark) {
+        List<javafx.scene.control.MenuItem> rows = new ArrayList<>(memberBreakpoints.gutterRows(b, line, mark));
+        rows.addAll(List.of(
+                new javafx.scene.control.SeparatorMenuItem(),
+                menuItem("debug.breakpoints", null, this::showBreakpoints)));
+        return rows;
     }
 
     private void showGutterMenu(List<javafx.scene.control.MenuItem> items, javafx.scene.input.ContextMenuEvent e) {

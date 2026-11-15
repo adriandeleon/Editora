@@ -321,6 +321,7 @@ public final class MarkdownPreview {
             load.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
             load.setOnAction(e -> grantRemote(true));
             remoteBar = new javafx.scene.layout.HBox(10, says, load);
+            com.editora.editor.MenuChords.offerButton(remoteBar, "markdown.loadRemoteImages", load);
             remoteBar.getStyleClass().add("md-remote-bar");
             remoteBar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             remoteBar.setMaxHeight(javafx.scene.layout.Region.USE_PREF_SIZE);

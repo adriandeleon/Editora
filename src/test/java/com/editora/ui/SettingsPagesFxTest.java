@@ -53,7 +53,7 @@ class SettingsPagesFxTest {
 
     private SettingsRig rig;
 
-    /** The command ids About's Pauta links ran, in order. */
+    /** The command ids About's links ran (the Pauta pages, the homepage, the releases), in order. */
     private final java.util.List<String> aboutCommands = new java.util.ArrayList<>();
 
     private Settings settings;
@@ -946,13 +946,9 @@ class SettingsPagesFxTest {
                         closedByUpdateRow[0] = !panel.isShowing();
                     });
             assertTrue(closedByUpdateRow[0]);
-            assertEquals(
-                    List.of(
-                            AppInfo.HOMEPAGE,
-                            AppInfo.HOMEPAGE,
-                            AppInfo.RELEASES_PAGE,
-                            "https://example.org/releases/9.9.9"),
-                    urls);
+            // The licence, homepage and releases links run the commands that open those pages (KBD-01).
+            assertEquals(List.of("help.homepage", "help.homepage", "help.releases"), aboutCommands);
+            assertEquals(List.of("https://example.org/releases/9.9.9"), urls);
             assertEquals(List.of(), files);
             assertNotNull(details[0]);
             assertTrue(details[0].startsWith(AppInfo.NAME + " " + AppInfo.VERSION), details[0]);

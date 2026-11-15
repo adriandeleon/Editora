@@ -111,6 +111,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             filterField.requestFocus();
         });
         clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        ClearableField.command(filterField, clear);
         clear.managedProperty().bind(clear.visibleProperty());
         HBox.setHgrow(filterField, Priority.ALWAYS);
 

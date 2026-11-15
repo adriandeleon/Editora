@@ -157,15 +157,17 @@ final class EncryptionViews {
                 ProgressIndicator spinner = new ProgressIndicator();
                 UiZoom.prefSize(spinner, 18, 18);
                 buttons.getChildren().add(spinner);
-                primary = add(buttons, tr("dialog.cancel"), actions.cancel(), false);
+                primary = add(buttons, tr("dialog.cancel"), actions.cancel(), false, "crypto.cancelDecrypt");
             }
             case RESTORED, CANCELLED, NO_PINENTRY ->
-                primary = add(buttons, tr("encryption.action.decrypt"), actions.decrypt(), true);
+                primary =
+                        add(buttons, tr("encryption.action.decrypt"), actions.decrypt(), true, "crypto.decryptLocked");
             case BAD_PASSPHRASE, FAILED ->
-                primary = add(buttons, tr("encryption.action.tryAgain"), actions.decrypt(), true);
+                primary =
+                        add(buttons, tr("encryption.action.tryAgain"), actions.decrypt(), true, "crypto.decryptLocked");
             case NOT_INSTALLED -> {
                 primary = add(buttons, tr("encryption.action.openDoctor"), actions.openDoctor(), true);
-                add(buttons, tr("encryption.action.setGpgPath"), actions.setGpgPath(), false);
+                add(buttons, tr("encryption.action.setGpgPath"), actions.setGpgPath(), false, "crypto.setGpgPath");
             }
             case NOT_TEXT, TOO_LARGE ->
                 primary = add(buttons, tr("encryption.action.decryptToFile"), actions.decryptToFile(), true);
@@ -174,7 +176,12 @@ final class EncryptionViews {
             }
         }
         if (lock != EncryptionState.Lock.DECRYPTING && actions.showEncryptedText() != null && encryptedText == null) {
-            Button show = add(buttons, tr("encryption.action.showEncrypted"), actions.showEncryptedText(), false);
+            Button show = add(
+                    buttons,
+                    tr("encryption.action.showEncrypted"),
+                    actions.showEncryptedText(),
+                    false,
+                    "crypto.showEncryptedText");
             if (primary == null) {
                 primary = show;
             }
@@ -254,6 +261,20 @@ final class EncryptionViews {
     }
 
     private static @Nullable Button add(HBox row, String label, Runnable action, boolean accent) {
+        return add(row, label, action, accent, null);
+    }
+
+    /** {@link #add(HBox, String, Runnable, boolean)}, and {@code commandId} presses the button while it shows. */
+    private static @Nullable Button add(
+            HBox row, String label, Runnable action, boolean accent, @Nullable String commandId) {
+        Button b = addButton(row, label, action, accent);
+        if (b != null && commandId != null) {
+            FocusCommands.press(row, commandId, b);
+        }
+        return b;
+    }
+
+    private static @Nullable Button addButton(HBox row, String label, Runnable action, boolean accent) {
         if (action == null) {
             return null;
         }

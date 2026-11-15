@@ -332,6 +332,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             filterField.requestFocus();
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        ClearableField.command(filterField, clearFilter);
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
         filterBar = UiZoom.spacing(new HBox(filterField, clearFilter), 6);
         filterBar.getStyleClass().add("project-filter-bar");
@@ -372,6 +373,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         signOffCheck.getStyleClass().add("git-commit-option");
         signOffCheck.setTooltip(ControlNames.tooltip(tr("gitpanel.signOffTip")));
         signOffCheck.setOnAction(e -> actions.setSignOff(signOffCheck.isSelected()));
+        FocusCommands.bind(this, "git.toggleSignOff", signOffCheck::fire); // the Commit window's own commands
+        FocusCommands.press(this, "git.commitNow", commitButton);
         guideLabel.getStyleClass().add("git-message-guide");
         guideLabel.setMinWidth(Region.USE_PREF_SIZE);
         guideLabel.setTooltip(ControlNames.tooltip(tr("gitpanel.guide.tip")));

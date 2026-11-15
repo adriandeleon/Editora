@@ -1746,6 +1746,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threadsToggle.setFocusTraversable(false);
         threadsToggle.setTooltip(com.editora.editor.ControlNames.tooltip(tr("debugpanel.threadsViewTip")));
         threadsToggle.selectedProperty().addListener((o, was, on) -> showThreadsView(on));
+        // The toggle's command, and the Console tab's (the Disassembly and Memory tabs have theirs).
+        FocusCommands.bind(this, "debug.toggleThreadsView", threadsToggle::fire);
+        FocusCommands.bind(this, "debug.showConsoleArea", () -> showArea(AREA_CONSOLE));
         threadList.getStyleClass().add("debug-stack");
         threadList.setVisible(false);
         Label empty = new Label(tr("debugpanel.noThreads"));

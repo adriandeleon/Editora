@@ -137,6 +137,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         headerToggle.setSelected(true);
         headerToggle.getStyleClass().add("csv-grid-header-toggle");
         headerToggle.selectedProperty().addListener((o, was, is) -> rebuild());
+        FocusCommands.bind(this, "csv.toggleHeaderRow", headerToggle::fire);
 
         filterField.setPromptText(tr("csvgrid.filterPrompt"));
         // The configured keymap's caret/editing chords act on this field (the KeyDispatcher leaves them to it).
@@ -207,6 +208,11 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
                 exportOds);
         table.setContextMenu(menu);
         RowContextMenu.anchor(table, menu); // the Menu key / Shift+F10: at the focused cell's row
+        FocusCommands.row(reveal, "csv.revealFocusedCell");
+        FocusCommands.row(sortAsc, "csv.sortAscending");
+        FocusCommands.row(sortDesc, "csv.sortDescending");
+        FocusCommands.row(clearSort, "csv.clearSort");
+        FocusCommands.ownMenu(table); // the rows' commands act on the grid's focused cell, as the rows do
     }
 
     private static Region spacer() {

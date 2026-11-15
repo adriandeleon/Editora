@@ -1134,17 +1134,19 @@ final class EncryptionCoordinator {
                                 EncryptionViews.readableBy(state),
                                 String.valueOf(original.getFileName()))
                         + (tracked ? " " + tr("encryption.original.git") : "");
+                Runnable trash = () -> {
+                    buffer.encryption().setNotice(null);
+                    trashOriginal(original);
+                };
                 List<EncryptionViews.BannerAction> actions = List.of(
-                        new EncryptionViews.BannerAction(tr("encryption.original.trash"), () -> {
-                            buffer.encryption().setNotice(null);
-                            trashOriginal(original);
-                        }),
+                        new EncryptionViews.BannerAction(tr("encryption.original.trash"), trash),
                         new EncryptionViews.BannerAction(
                                 tr("encryption.original.keep"),
                                 () -> buffer.encryption().setNotice(null)));
-                buffer.encryption()
-                        .setNotice(EncryptionViews.originalStillOnDiskBanner(
-                                message, actions, () -> buffer.encryption().setNotice(null)));
+                javafx.scene.Node banner = EncryptionViews.originalStillOnDiskBanner(
+                        message, actions, () -> buffer.encryption().setNotice(null));
+                FocusCommands.bind(banner, "crypto.trashOriginal", trash); // its Move to Trash, from the keyboard
+                buffer.encryption().setNotice(banner);
             });
         });
     }
@@ -1418,6 +1420,8 @@ final class EncryptionCoordinator {
         javafx.scene.layout.HBox footer = UiZoom.spacing(new javafx.scene.layout.HBox(replace, spacer, copy, close), 8);
         card.getChildren().addAll(area, footer);
         card.getStyleClass().addAll("command-palette", "overlay-form", "encryption-peek");
+        FocusCommands.press(card, "crypto.copyPeeked", copy);
+        FocusCommands.press(card, "crypto.replacePeeked", replace);
         UiZoom.padding(card, 14);
         UiZoom.prefWidth(card, 560);
         card.setMaxSize(javafx.scene.layout.Region.USE_PREF_SIZE, javafx.scene.layout.Region.USE_PREF_SIZE);
