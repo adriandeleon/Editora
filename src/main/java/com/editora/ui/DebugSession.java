@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -153,6 +154,11 @@ final class DebugSession {
 
     /** The exception of the stop shown, once the adapter has said which (else null). */
     DapModels.@Nullable ExceptionInfo stopException;
+
+    /** The stack and type of the last exception an exception breakpoint showed: the same one passing up is not shown again. */
+    List<DapModels.StackFrameInfo> lastExceptionFrames = List.of();
+
+    String lastExceptionType = "";
 
     /** The stop a recording breakpoint made, whose frame is not shown in the editor; -1 for none. */
     int quietStop = -1;

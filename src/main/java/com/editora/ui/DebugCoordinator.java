@@ -267,6 +267,14 @@ final class DebugCoordinator {
         /** Replaces this project's method breakpoints and field watchpoints, and writes {@code breakpoints.json}. */
         default void persistMemberBreakpoints(List<com.editora.config.MemberBreakpoint> breakpoints) {}
 
+        /** This project's exception breakpoints, in the order they were added. */
+        default List<com.editora.config.ExceptionBreakpoint> exceptionBreakpoints() {
+            return List.of();
+        }
+
+        /** Replaces this project's exception breakpoints, and writes {@code breakpoints.json}. */
+        default void persistExceptionBreakpoints(List<com.editora.config.ExceptionBreakpoint> breakpoints) {}
+
         /** Writes {@code breakpoints.json}. */
         void saveBreakpoints();
 
@@ -420,7 +428,7 @@ final class DebugCoordinator {
     }
 
     /** Runs {@code r} as each session's in turn, oldest first. */
-    private void forEachSession(Runnable r) {
+    void forEachSession(Runnable r) {
         for (DebugSession session : sessions.all()) {
             inSession(session, r);
         }
@@ -2105,6 +2113,8 @@ final class DebugCoordinator {
                 if (state == DapManager.State.STARTING) {
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
                     s().filteredHits.clear(); // and a filtered breakpoint's hit count
+                    s().lastExceptionFrames = List.of(); // and the exception an exception breakpoint last showed
+                    s().lastExceptionType = "";
                     nameSession(s().sessionLabel); // ending the replaced session cleared it
                     refreshExceptionToggles(); // the session's language decides what Caught / Uncaught mean
                     s().sessionAnnounced = !s().announceStart;
@@ -2194,6 +2204,8 @@ final class DebugCoordinator {
                     s().filtersPassed = false;
                 } else if (filteredStop(threadId, reason, frames, () -> onStopped(threadId, reason, stopFrames))) {
                     return; // a breakpoint with filters: Editora checks them before the stop is shown
+                } else if (exceptions().stop(threadId, reason, frames, () -> onStopped(threadId, reason, stopFrames))) {
+                    return; // an exception, where exception breakpoints decide whether it is shown
                 }
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
@@ -2331,12 +2343,10 @@ final class DebugCoordinator {
 
             @Override
             public void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {
-                // Which exception: the one thing an exception stop has to say, and the stop event does not.
-                panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
-                panel().setExceptionInfo(info);
-                s().stopException = info;
-                showExceptionCard(false); // under the line that threw, when it is the one shown
-                host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
+                if (s().quietStop == s().stopSerial) {
+                    return; // a stop not shown (or not yet: exception breakpoints are deciding)
+                }
+                showExceptionInfo(info);
             }
 
             @Override
@@ -8110,31 +8120,33 @@ final class DebugCoordinator {
 
     /**
      * Debug: Exception Breakpoints — a picker over the filters the adapter offers (the live session's
-     * {@code exceptionBreakpointFilters}, else those that language's adapter is known to offer), each marked
-     * when on; choosing one turns it on or off. A language starts with its adapter's defaults (debugpy: uncaught
-     * exceptions), and a choice holds for that language's sessions from then on.
+     * {@code exceptionBreakpointFilters}, else those that language's adapter is known to offer), each marked when on,
+     * then the language's exception breakpoints and Add ({@link ExceptionBreakpointCommands}).
      */
     void toggleExceptionBreakpoints() {
-        String language = exceptionLanguage();
-        List<DapModels.ExceptionFilterOption> options =
-                language == null ? List.of() : dap().exceptionFilterOptions(language);
-        if (language == null || options.isEmpty()) {
-            host.setStatus(tr("status.debug.exceptionsNoLanguage"));
-            return;
+        exceptions().pick();
+    }
+
+    /** Debug: Add Exception Breakpoint ({@code debug.addExceptionBreakpoint}). */
+    void addExceptionBreakpoint() {
+        exceptions().add();
+    }
+
+    /** Tells every session the exception filters this project's exception breakpoints need. */
+    void pushExceptionBreakpoints() {
+        exceptions().push();
+    }
+
+    private @Nullable ExceptionBreakpointCommands exceptionCommands;
+
+    /** Exception breakpoints: their stop check, picker rows and form. */
+    ExceptionBreakpointCommands exceptions() {
+        ExceptionBreakpointCommands e = exceptionCommands;
+        if (e == null) {
+            e = new ExceptionBreakpointCommands(this, host, ops);
+            exceptionCommands = e;
         }
-        QuickOpen<DapModels.ExceptionFilterOption> picker = new QuickOpen<>(
-                tr("command.debug.toggleExceptionBreakpoints"),
-                tr("debug.exceptions.prompt", debugAdapterLabel(language)),
-                () -> options,
-                o -> exceptionRow(language, o),
-                DapModels.ExceptionFilterOption::filter,
-                o -> {
-                    if (o != null) {
-                        toggleExceptionFilter(language, o.filter());
-                    }
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
+        return e;
     }
 
     /** A picker row: the filter's label, marked when it is on for {@code language}. */
@@ -8155,7 +8167,8 @@ final class DebugCoordinator {
     }
 
     /** The adapter language the exception picker is about: the live session's, else the active file's. */
-    private @Nullable String exceptionLanguage() {
+    @Nullable
+    String exceptionLanguage() {
         if (dap().isActive()) {
             return dap().sessionLanguage();
         }
@@ -8188,6 +8201,7 @@ final class DebugCoordinator {
             showBreakpointsMuted();
         }
         memberBreakpoints.push(); // the method breakpoints and field watchpoints this project keeps
+        pushExceptionBreakpoints(); // and the exception filters its exception breakpoints need
     }
 
     /**
@@ -8268,7 +8282,7 @@ final class DebugCoordinator {
 
     // --- adapter pickers ---------------------------------------------------------------------------
 
-    private static String debugAdapterLabel(String id) {
+    static String debugAdapterLabel(String id) {
         return DebugAdapterPickers.label(id);
     }
 
@@ -8620,6 +8634,16 @@ final class DebugCoordinator {
             threadDumpWindow().show(host.window(), dump);
             host.setStatus(tr("status.debug.threadDumpTaken", stacks.size()));
         });
+    }
+
+    /** Says which exception the stop is on: the Debug window's state line, the exception card and the status bar. */
+    void showExceptionInfo(DapModels.ExceptionInfo info) {
+        // Which exception: the one thing an exception stop has to say, and the stop event does not.
+        panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
+        panel().setExceptionInfo(info);
+        s().stopException = info;
+        showExceptionCard(false); // under the line that threw, when it is the one shown
+        host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
     }
 
     /** A session without a label is named by the file it debugs, else plainly. */

@@ -101,6 +101,9 @@ class JsColumnBreakpointsProbeFxTest {
                 if (x == 3) {
                     // Now a plain line breakpoint (the gutter menu's arrow unticked): it stops on the line once.
                     FxTestSupport.runOnFx(() -> b.getBreakpointManager().setLambdas(LINE, List.of(), false));
+                    // js-debug answers setBreakpoints in its own time, and the gutter looks the same before and
+                    // after (verified): a resume sent first could still stop in the arrow, in the next round.
+                    Thread.sleep(1000);
                 }
                 resume(dap, debug);
             }

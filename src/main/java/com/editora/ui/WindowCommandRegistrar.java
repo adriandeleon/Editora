@@ -2424,6 +2424,10 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "debug.toggleExceptionBreakpoints",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleExceptionBreakpoints)));
+        host.registry()
+                .register(Command.of(
+                        "debug.addExceptionBreakpoint",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addExceptionBreakpoint)));
         // Java code changes and frame control: hot code replace, restart frame, smart step into.
         host.registry()
                 .register(Command.of(
