@@ -2439,6 +2439,10 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restartFrame)));
         host.registry()
                 .register(Command.of(
+                        "debug.dontStepIntoFrame",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::dontStepIntoFrame)));
+        host.registry()
+                .register(Command.of(
                         "debug.smartStepInto",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::smartStepInto)));
         host.registry()

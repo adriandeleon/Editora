@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Don't step into.** Name the code Step Into should go over — a class or package (`com.shop.util.*`), a module
+  (`requests`), a function (`fmt.*`, `std::*`) or a file (`**/vendor/**`) — in Settings → Debugging, or right-click a
+  frame in the call stack and choose Don't Step Into This…, which offers its class, file, package or namespace. Java,
+  Python, JavaScript and the other JVM languages' debuggers skip it themselves; with Go, Rust, C/C++ and the rest,
+  Editora steps back out when a step lands there. A breakpoint inside it still stops.
 - **View as DataFrame and View as Array.** A pandas DataFrame or Series, or a numpy array, in a program you are
   debugging opens as a table of its rows, as PyCharm's data viewer does: right-click it in Variables, a watch or an
   evaluate result. The columns are named as in the data and show their dtype on hover, an array of more than two

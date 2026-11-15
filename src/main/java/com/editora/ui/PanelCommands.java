@@ -230,6 +230,7 @@ final class PanelCommands {
             "settings.addAbbreviation",
             "settings.addExternalTool",
             "settings.addTypeRenderer",
+            "settings.addStepFilter",
             "settings.addRemoteSite",
             "settings.addTodoPattern",
             "settings.removeTodoPattern",

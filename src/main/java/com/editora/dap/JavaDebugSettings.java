@@ -76,8 +76,22 @@ public record JavaDebugSettings(
 
     /** The JSON string the command takes: the fields of java-debug's {@code DebugSettings} that Editora sets. */
     public String toJson() {
+        return toJson(List.of());
+    }
+
+    /**
+     * As {@link #toJson()}, with {@code skipClasses} — the user's Don't step into classes ({@link StepFilters}) — skipped
+     * when stepping, besides the JDK's.
+     */
+    public String toJson(List<String> skipClasses) {
         Map<String, Object> filters = new LinkedHashMap<>();
-        filters.put("skipClasses", stepFilters ? JDK_CLASSES : List.of());
+        List<String> skip = new ArrayList<>(stepFilters ? JDK_CLASSES : List.of());
+        for (String c : skipClasses) {
+            if (!skip.contains(c)) {
+                skip.add(c);
+            }
+        }
+        filters.put("skipClasses", skip);
         filters.put("skipSynthetics", stepFilters);
         filters.put("skipStaticInitializers", false);
         filters.put("skipConstructors", false);

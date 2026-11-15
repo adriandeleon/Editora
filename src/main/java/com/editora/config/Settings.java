@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 172;
+    public static final int SCHEMA_VERSION = 173;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -901,6 +901,12 @@ public class Settings {
      * named expressions (IntelliJ's Java Type Renderers). See {@link com.editora.dap.TypeRenderer}.
      */
     private java.util.List<com.editora.dap.TypeRenderer> debugTypeRenderers = new java.util.ArrayList<>();
+
+    /**
+     * Don't step into: classes, modules, functions or files that Step Into goes over, for every language or one. See
+     * {@link com.editora.dap.StepFilters}.
+     */
+    private java.util.List<com.editora.dap.StepFilter> debugStepFilterList = new java.util.ArrayList<>();
     /**
      * Java debugging: the exception classes the exception breakpoints are limited to, separated by commas
      * (e.g. {@code java.lang.IllegalStateException}); blank = every exception.
@@ -3661,6 +3667,14 @@ public class Settings {
 
     public void setDebugTypeRenderers(java.util.List<com.editora.dap.TypeRenderer> debugTypeRenderers) {
         this.debugTypeRenderers = debugTypeRenderers == null ? new java.util.ArrayList<>() : debugTypeRenderers;
+    }
+
+    public java.util.List<com.editora.dap.StepFilter> getDebugStepFilterList() {
+        return debugStepFilterList == null ? java.util.List.of() : debugStepFilterList;
+    }
+
+    public void setDebugStepFilterList(java.util.List<com.editora.dap.StepFilter> debugStepFilterList) {
+        this.debugStepFilterList = debugStepFilterList == null ? new java.util.ArrayList<>() : debugStepFilterList;
     }
 
     public boolean isDebugPythonSubprocesses() {

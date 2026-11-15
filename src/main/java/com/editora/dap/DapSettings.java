@@ -79,6 +79,9 @@ final class DapSettings {
      */
     final Map<String, List<String>> exceptionExtras = new java.util.HashMap<>();
 
+    /** Don't step into: every language's filters, as Settings keeps them ({@link StepFilters}). */
+    volatile List<StepFilter> stepFilters = List.of();
+
     /**
      * Set when the running jdtls already advertises the java-debug commands — some distributions (e.g. Homebrew's
      * jdtls) ship and auto-load the plugin, so there is no jar to find and nothing to inject, yet debugging works.

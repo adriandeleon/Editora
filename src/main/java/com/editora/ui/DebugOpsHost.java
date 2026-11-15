@@ -279,6 +279,12 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public void persistDebugStepFilters(List<com.editora.dap.StepFilter> filters) {
+        mc.config.getSettings().setDebugStepFilterList(new java.util.ArrayList<>(filters));
+        mc.config.save();
+    }
+
+    @Override
     public java.util.Map<String, List<com.editora.config.Breakpoint>> breakpointMap() {
         return mc.config.getBreakpoints();
     }

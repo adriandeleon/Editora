@@ -397,6 +397,7 @@ final class MenuBarModel {
                                                 "debug.runToCursor",
                                                 "debug.forceRunToCursor",
                                                 "debug.restartFrame",
+                                                "debug.dontStepIntoFrame",
                                                 SEPARATOR,
                                                 "debug.toggleRecording",
                                                 "debug.stepBack",
