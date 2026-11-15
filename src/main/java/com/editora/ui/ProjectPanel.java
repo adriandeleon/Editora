@@ -4632,7 +4632,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     Icons.notes(),
                     treeItem,
                     isDir);
-            note.setDisable(!markerOps.personalNotesEnabled());
+            com.editora.editor.RowReasons.featureOn(note, markerOps.personalNotesEnabled(), "view.toggleNotes");
             menu.getItems().add(note);
         }
         boolean terminalShown = terminalOpener != null && !simple;
@@ -4742,11 +4742,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
             // Disable to match the live feature toggles + the file's actual status.
             menu.setOnShowing(e -> {
-                localHistory.setDisable(!fileOps.localHistoryEnabled());
+                com.editora.editor.RowReasons.featureOn(
+                        localHistory, fileOps.localHistoryEnabled(), "view.toggleLocalHistory");
                 GitPathScope scope = fileOps.gitScope(file);
-                git.setDisable(scope == GitPathScope.NONE); // grey out the Git submenu when there's no VCS
-                revert.setDisable(nothingToRevert(fileOps, file, false));
-                ignore.setDisable(notIgnorable(fileOps, file));
+                // Grey out the Git submenu when there's no VCS.
+                com.editora.editor.RowReasons.when(git, scope != GitPathScope.NONE, "row.unavailable.notInRepo");
+                com.editora.editor.RowReasons.when(
+                        revert, !nothingToRevert(fileOps, file, false), "row.unavailable.nothingToRevert");
+                com.editora.editor.RowReasons.when(
+                        ignore, !notIgnorable(fileOps, file), "row.unavailable.notUntracked");
             });
         }
         // On a folder: Local History plus subtree-wide Git mutation and comparison actions.
@@ -4821,10 +4825,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             menu.getItems().add(git);
 
             menu.setOnShowing(e -> {
-                folderHistory.setDisable(!fileOps.localHistoryEnabled());
+                com.editora.editor.RowReasons.featureOn(
+                        folderHistory, fileOps.localHistoryEnabled(), "view.toggleLocalHistory");
                 GitPathScope scope = fileOps.gitScope(dir);
-                git.setDisable(scope == GitPathScope.NONE);
-                revert.setDisable(nothingToRevert(fileOps, dir, true));
+                com.editora.editor.RowReasons.when(git, scope != GitPathScope.NONE, "row.unavailable.notInRepo");
+                com.editora.editor.RowReasons.when(
+                        revert, !nothingToRevert(fileOps, dir, true), "row.unavailable.nothingToRevert");
             });
         }
         return menu;
@@ -5055,12 +5061,18 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             case RENAME -> target.root() ? tr("status.project.rootCannotBeRenamed") : null;
             case ENCRYPT -> fileOps == null || encrypted(path) ? unavailable : null;
             case BOOKMARK -> markerOps == null || simple ? unavailable : null;
-            case NOTE -> markerOps == null || simple || !markerOps.personalNotesEnabled() ? unavailable : null;
+            case NOTE ->
+                markerOps == null || simple
+                        ? unavailable
+                        : !markerOps.personalNotesEnabled() ? featureOff(title, "view.toggleNotes") : null;
             case REVEAL_IN_MAP -> target.item() instanceof MapRowItem ? unavailable : null;
             case REVEAL_IN_FILE_MANAGER -> onReveal == null ? unavailable : null;
             case OPEN_TERMINAL -> onOpenTerminal == null || simple ? unavailable : null;
             case FIND_IN_FOLDER -> fileOps == null || simple ? unavailable : null;
-            case LOCAL_HISTORY -> fileOps == null || simple || !fileOps.localHistoryEnabled() ? unavailable : null;
+            case LOCAL_HISTORY ->
+                fileOps == null || simple
+                        ? unavailable
+                        : !fileOps.localHistoryEnabled() ? featureOff(title, "view.toggleLocalHistory") : null;
             case NEW_FOLDER, UNDO_MOVE, DELETE -> null;
             default -> gitRefusal(fileOps, row, path, target.dir(), simple, unavailable);
         };
@@ -5077,15 +5089,21 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (fileOps == null || simple) {
             return unavailable;
         }
+        String title = DebugPanelText.bareTitle(tr("command." + row.id()));
         if (fileOps.gitScope(path) == GitPathScope.NONE) {
-            return tr("status.project.notInGit");
+            return tr("status.commandUnavailable", title, tr("row.unavailable.notInRepo")); // as the Git submenu says
         }
         if (row == ProjectRowCommands.Row.GIT_REVERT && nothingToRevert(fileOps, path, dir)) {
-            return unavailable;
+            return tr("status.commandUnavailable", title, tr("row.unavailable.nothingToRevert"));
         }
         if (row == ProjectRowCommands.Row.GIT_IGNORE && notIgnorable(fileOps, path)) {
-            return unavailable;
+            return tr("status.commandUnavailable", title, tr("row.unavailable.notUntracked"));
         }
         return null;
+    }
+
+    /** What the status line says for row {@code title} while its feature is off: what its grayed row says. */
+    private static String featureOff(String title, String toggleId) {
+        return tr("status.commandUnavailable", title, tr("palette.disabled.featureOff", tr("command." + toggleId)));
     }
 }

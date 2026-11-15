@@ -262,9 +262,9 @@ final class DebugEvaluateWindow {
             watch.setText(tr("debugpanel.addToWatches", DebugPanelText.oneLine(expr, 60)));
             boolean row = tree.getSelectionModel().getSelectedItem() != null
                     && !(tree.getSelectionModel().getSelectedItem() instanceof DebugValueTree.More);
-            watch.setDisable(expr.isEmpty());
-            copyValue.setDisable(!row);
-            copyName.setDisable(!row);
+            com.editora.editor.RowReasons.when(watch, !expr.isEmpty(), "row.unavailable.noSelection");
+            com.editora.editor.RowReasons.when(copyValue, row, "row.unavailable.noSelection");
+            com.editora.editor.RowReasons.when(copyName, row, "row.unavailable.noSelection");
         });
         return menu;
     }
@@ -285,8 +285,7 @@ final class DebugEvaluateWindow {
         List<String> entries = field.historyEntries();
         historyButton.getItems().clear();
         if (entries.isEmpty()) {
-            MenuItem none = new MenuItem(tr("debugeval.historyEmpty"));
-            none.setDisable(true);
+            MenuItem none = com.editora.editor.RowReasons.placeholder(new MenuItem(tr("debugeval.historyEmpty")));
             historyButton.getItems().add(none);
             return;
         }

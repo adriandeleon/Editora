@@ -262,10 +262,14 @@ final class ProjectMapTrails {
         List<MenuItem> items = new ArrayList<>();
         Path root = root();
         MenuItem create = MapButtonCommands.row(new MenuItem(tr("project.map.trails.new")), "projectMap.newTrail");
-        create.setDisable(root == null);
+        com.editora.editor.RowReasons.when(create, root != null, "row.unavailable.needsLocalFolder");
         create.setOnAction(event -> askNew(null));
         MenuItem add = MapButtonCommands.row(new MenuItem(tr("project.map.trails.addStop")), "projectMap.addTrailStop");
-        add.setDisable(root == null || lastCodeCard() == null);
+        com.editora.editor.RowReasons.because(
+                add,
+                root == null
+                        ? "row.unavailable.needsLocalFolder"
+                        : lastCodeCard() == null ? "row.unavailable.noCodeCard" : null);
         add.setOnAction(event -> {
             ProjectMapPreview card = lastCodeCard();
             if (card != null) {
@@ -293,7 +297,7 @@ final class ProjectMapTrails {
             items.add(play);
             MenuItem change = new MenuItem(readOnlyLabel(trail));
             change.setMnemonicParsing(false);
-            change.setDisable(trail.readOnly());
+            com.editora.editor.RowReasons.when(change, !trail.readOnly(), "row.unavailable.trailReadOnly");
             change.setOnAction(event -> edit(trail.name()));
             edit.getItems().add(change);
         }
@@ -320,11 +324,11 @@ final class ProjectMapTrails {
         return String.valueOf(listed.problem());
     }
 
+    /** A row that says something about the list (none, unreadable): a label, not a command. */
     private static MenuItem disabled(String text) {
         MenuItem item = new MenuItem(text);
         item.setMnemonicParsing(false);
-        item.setDisable(true);
-        return item;
+        return com.editora.editor.RowReasons.placeholder(item);
     }
 
     /** What a code card's menu adds: Add this card as a stop. */

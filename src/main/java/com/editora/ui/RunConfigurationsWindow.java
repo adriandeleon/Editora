@@ -433,9 +433,8 @@ public final class RunConfigurationsWindow {
                     menu.getItems().add(item);
                 }
                 if (menu.getItems().isEmpty()) {
-                    javafx.scene.control.MenuItem none =
-                            new javafx.scene.control.MenuItem(tr("settings.runConfig.npmNoScripts"));
-                    none.setDisable(true);
+                    javafx.scene.control.MenuItem none = com.editora.editor.RowReasons.placeholder(
+                            new javafx.scene.control.MenuItem(tr("settings.runConfig.npmNoScripts")));
                     menu.getItems().add(none);
                 }
                 menu.show(browse, javafx.geometry.Side.BOTTOM, 0, 0);

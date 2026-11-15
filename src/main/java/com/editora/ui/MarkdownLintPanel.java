@@ -189,7 +189,7 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
         List<MenuItem> items = new java.util.ArrayList<>();
         if (issues != null && file != null && !project) {
             MenuItem fix = new MenuItem(tr("markdownLint.menu.fix"));
-            fix.setDisable(!MarkdownLint.fixable(d.code()));
+            com.editora.editor.RowReasons.when(fix, MarkdownLint.fixable(d.code()), "row.unavailable.notFixable");
             fix.setOnAction(e -> issues.fix(d));
             FocusCommands.row(fix, "markdownLint.fixSelected");
             MenuItem line = new MenuItem(tr("markdownLint.menu.disableLine"));

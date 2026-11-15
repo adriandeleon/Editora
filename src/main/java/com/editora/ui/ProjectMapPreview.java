@@ -54,6 +54,7 @@ import com.editora.config.TextAnchor;
 import com.editora.editops.LineEndings;
 import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
+import com.editora.editor.RowReasons;
 import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
@@ -2863,7 +2864,7 @@ final class ProjectMapPreview extends StackPane {
         // With nothing selected Copy takes the whole text, and says so.
         boolean selection = editor.getSelection().getLength() > 0;
         MenuItem copy = new MenuItem(tr(selection ? "editmenu.copy" : "project.map.preview.copyAll"), Icons.copy());
-        copy.setDisable(empty);
+        RowReasons.when(copy, !empty, "row.unavailable.emptyView");
         copy.setOnAction(ignored -> copySelectionOrAll());
         if (selection) {
             MenuChords.tag(copy, "edit.copy"); // the key copies the selection; it never copies the whole text
@@ -2871,17 +2872,17 @@ final class ProjectMapPreview extends StackPane {
         MapButtonCommands.row(copy, "projectMap.cardCopy"); // which copies what the row copies
         MenuItem selectAll =
                 MenuChords.tag(new MenuItem(tr("editmenu.selectAll"), Icons.selectAll()), "edit.selectAll");
-        selectAll.setDisable(empty);
+        RowReasons.when(selectAll, !empty, "row.unavailable.emptyView");
         selectAll.setOnAction(ignored -> {
             editor.selectAll();
             editor.requestFocus();
         });
 
         MenuItem find = MenuChords.tag(new MenuItem(tr("project.map.preview.find"), Icons.find()), "find.show");
-        find.setDisable(empty);
+        RowReasons.when(find, !empty, "row.unavailable.emptyView");
         find.setOnAction(ignored -> showFind());
         MenuItem goToLine = MenuChords.tag(new MenuItem(tr("project.map.preview.goToLine.menu")), "nav.goToLine");
-        goToLine.setDisable(empty);
+        RowReasons.when(goToLine, !empty, "row.unavailable.emptyView");
         goToLine.setOnAction(ignored -> moves.showLineBar());
         java.util.List<MenuItem> items = new java.util.ArrayList<>(java.util.List.of(copy, selectAll, find, goToLine));
         Path selected = path;
@@ -2890,7 +2891,7 @@ final class ProjectMapPreview extends StackPane {
         if (selected != null && shown != null && narrowed != null) {
             MenuItem openNarrowed = MapButtonCommands.row(
                     new MenuItem(tr("project.map.preview.openNarrowed")), "projectMap.openNarrowed");
-            openNarrowed.setDisable(symbolMissing || missing);
+            RowReasons.because(openNarrowed, goneReason(missing, symbolMissing));
             openNarrowed.setOnAction(ignored -> narrowed.run());
             items.add(0, openNarrowed);
             items.add(1, new SeparatorMenuItem());
@@ -2916,11 +2917,14 @@ final class ProjectMapPreview extends StackPane {
                     MenuChords.tag(new MenuItem(tr("editmenu.addBookmark"), Icons.bookmark()), "bookmarks.toggle");
             bookmark.setOnAction(ignored -> actions.addBookmark(selected, fileLine));
             // A declaration that is gone keeps its last lines on the card, but they are no longer the file's.
-            bookmark.setDisable(symbolMissing);
+            RowReasons.when(bookmark, !symbolMissing, "row.unavailable.declarationGone");
             items.add(bookmark);
 
             MenuItem note = MenuChords.tag(new MenuItem(tr("editmenu.addNote"), Icons.notes()), "notes.add");
-            note.setDisable(!actions.personalNotesEnabled() || symbolMissing);
+            RowReasons.featureOn(note, actions.personalNotesEnabled(), "view.toggleNotes");
+            if (actions.personalNotesEnabled()) {
+                RowReasons.when(note, !symbolMissing, "row.unavailable.declarationGone");
+            }
             NoteDraft draft = noteDraftAt(clickedLine);
             note.setOnAction(ignored -> requestNote(actions, selected, draft));
             items.add(note);
@@ -2953,12 +2957,12 @@ final class ProjectMapPreview extends StackPane {
                 MenuItem previous = MapButtonCommands.row(
                         new MenuItem(tr("project.map.preview.previousDeclaration.menu"), Icons.chevronLeft()),
                         "projectMap.cardPreviousDeclaration");
-                previous.setDisable(empty);
+                RowReasons.when(previous, !empty, "row.unavailable.emptyView");
                 previous.setOnAction(ignored -> stepDeclaration(-1));
                 MenuItem next = MapButtonCommands.row(
                         new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight()),
                         "projectMap.cardNextDeclaration");
-                next.setDisable(empty);
+                RowReasons.when(next, !empty, "row.unavailable.emptyView");
                 next.setOnAction(ignored -> stepDeclaration(1));
                 card.add(previous);
                 card.add(next);
@@ -2969,12 +2973,12 @@ final class ProjectMapPreview extends StackPane {
             MenuItem previous = MapButtonCommands.row(
                     new MenuItem(tr("project.map.preview.previousDeclaration.menu"), Icons.chevronLeft()),
                     "projectMap.cardPreviousDeclaration");
-            previous.setDisable(!stepBack);
+            RowReasons.when(previous, stepBack, "row.unavailable.firstDeclaration");
             previous.setOnAction(ignored -> stepDeclaration(-1));
             MenuItem next = MapButtonCommands.row(
                     new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight()),
                     "projectMap.cardNextDeclaration");
-            next.setDisable(!stepForward);
+            RowReasons.when(next, stepForward, "row.unavailable.lastDeclaration");
             next.setOnAction(ignored -> stepDeclaration(1));
             card.add(previous);
             card.add(next);
@@ -2983,7 +2987,7 @@ final class ProjectMapPreview extends StackPane {
                 MenuItem showInStructure = MapButtonCommands.row(
                         new MenuItem(tr("project.map.preview.showInStructure"), Icons.structure()),
                         "projectMap.showInStructure");
-                showInStructure.setDisable(symbolMissing);
+                RowReasons.when(showInStructure, !symbolMissing, "row.unavailable.declarationGone");
                 showInStructure.setOnAction(ignored -> inStructure.run());
                 card.add(showInStructure);
             }
@@ -3012,14 +3016,41 @@ final class ProjectMapPreview extends StackPane {
     }
 
     /**
-     * A submenu of {@code items}, disabled when none of them can be chosen — so a group that does not fit the file
-     * (a pom.xml's Hierarchy) says so without being opened.
+     * A submenu of {@code items}, unavailable when none of them can be chosen — so a group that does not fit the file
+     * (a pom.xml's Hierarchy) says so without being opened: with its rows' reason when they all give the same one.
      */
     static javafx.scene.control.Menu submenu(String label, java.util.List<MenuItem> items) {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu(label);
         menu.getItems().setAll(items);
-        menu.setDisable(items.stream().allMatch(item -> item instanceof SeparatorMenuItem || item.isDisable()));
+        boolean none = items.stream().allMatch(item -> item instanceof SeparatorMenuItem || item.isDisable());
+        java.util.Set<@Nullable String> reasons = new java.util.HashSet<>();
+        items.stream()
+                .filter(item -> !(item instanceof SeparatorMenuItem))
+                .forEach(item -> reasons.add(RowReasons.reasonOf(item)));
+        String shared = reasons.size() == 1 ? reasons.iterator().next() : null;
+        RowReasons.set(menu, !none ? null : shared != null ? shared : tr("row.unavailable.noRowFits"));
         return menu;
+    }
+
+    /**
+     * Why a code question cannot be asked on this card (the key of its sentence), or null when it can: the
+     * declaration is gone, the card shows no text, or the file's language cannot answer it ({@code answers}).
+     */
+    private @Nullable String answerReason(boolean text, boolean answers) {
+        return answerReason(symbolMissing, text, answers);
+    }
+
+    /** {@link #answerReason(boolean, boolean)} for a card whose declaration is {@code gone} or not. Pure. */
+    static @Nullable String answerReason(boolean gone, boolean text, boolean answers) {
+        if (!text) {
+            return gone ? "row.unavailable.declarationGone" : "row.unavailable.emptyView";
+        }
+        return answers ? null : "row.unavailable.languageCannotAnswer";
+    }
+
+    /** Why Open Narrowed cannot open a card's lines: the file is gone, or its declaration is. Pure. */
+    static @Nullable String goneReason(boolean fileGone, boolean declarationGone) {
+        return fileGone ? "row.unavailable.fileGone" : declarationGone ? "row.unavailable.declarationGone" : null;
     }
 
     /** {@code items} with every submenu's items in its place, in menu order: what a reader can reach. */
@@ -3311,7 +3342,8 @@ final class ProjectMapPreview extends StackPane {
         java.util.List<MenuItem> inEditor = new java.util.ArrayList<>();
         for (String commandId : FOLLOW_COMMANDS) {
             MenuItem item = new MenuItem(followLabel(commandId));
-            item.setDisable(!text || links != null && !links.editorOffers(file, commandId));
+            RowReasons.because(
+                    item, answerReason(text, text && (links == null || links.editorOffers(file, commandId))));
             item.setOnAction(ignored -> actions.follow(file, line, column, commandId));
             if (links == null) {
                 // Typed in the card the command does this only when the Map does not answer it as cards itself.
@@ -3353,7 +3385,7 @@ final class ProjectMapPreview extends StackPane {
             // The declaration's own commits and blame, as a card on the Map beside this one (gap 12).
             MenuItem lines = MapButtonCommands.row(
                     new MenuItem(tr("project.map.history.menu"), Icons.gitLog()), "projectMap.declarationHistory");
-            lines.setDisable(symbolMissing);
+            RowReasons.when(lines, !symbolMissing, "row.unavailable.declarationGone");
             lines.setOnAction(ignored -> declarationHistory.run());
             git.add(lines);
         }
@@ -3424,7 +3456,7 @@ final class ProjectMapPreview extends StackPane {
         java.util.Map<MapCardLinks.Kind, MenuItem> asCards = new java.util.EnumMap<>(MapCardLinks.Kind.class);
         for (MapCardLinks.Kind kind : MapCardLinks.MENU_KINDS) {
             MenuItem item = new MenuItem(MapCardLinks.menuLabel(kind));
-            item.setDisable(!offered.contains(kind));
+            RowReasons.because(item, answerReason(text, offered.contains(kind)));
             // References, Callers and Callees of a declaration card are its declaration's (explore position 5); the
             // rest go from where the menu was opened, as the editor's commands do.
             boolean atPlace = kind != MapCardLinks.Kind.REFERENCES
@@ -3442,7 +3474,7 @@ final class ProjectMapPreview extends StackPane {
         java.util.List<MenuItem> trees = new java.util.ArrayList<>();
         for (MapCardLinks.Kind kind : MapCardLinks.HIERARCHY_MENU_KINDS) {
             MenuItem item = new MenuItem(MapCardLinks.hierarchyMenuLabel(kind));
-            item.setDisable(!offered.contains(kind));
+            RowReasons.because(item, answerReason(text, offered.contains(kind)));
             // A call hierarchy of a declaration card is its declaration's, as its callers are; a type's from the place.
             boolean atPlace = kind != MapCardLinks.Kind.CALLERS;
             item.setOnAction(ignored -> actions.hierarchy(this, kind, line, column, atPlace));
@@ -3455,13 +3487,17 @@ final class ProjectMapPreview extends StackPane {
         // Its callers, callees, supertypes and subtypes around it, walked as in a code browser (round 2).
         MenuItem graph = MapButtonCommands.row(
                 new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph()), "projectMap.showSymbolGraph");
-        graph.setDisable(!(offered.contains(MapCardLinks.Kind.CALLERS)
-                || offered.contains(MapCardLinks.Kind.CALLEES)
-                || offered.contains(MapCardLinks.Kind.SUPERTYPES)
-                || offered.contains(MapCardLinks.Kind.SUBTYPES)));
+        RowReasons.because(
+                graph,
+                answerReason(
+                        text,
+                        offered.contains(MapCardLinks.Kind.CALLERS)
+                                || offered.contains(MapCardLinks.Kind.CALLEES)
+                                || offered.contains(MapCardLinks.Kind.SUPERTYPES)
+                                || offered.contains(MapCardLinks.Kind.SUBTYPES)));
         graph.setOnAction(ignored -> actions.symbolGraph(this, line, column));
         MenuItem hover = MenuChords.tag(new MenuItem(tr("project.map.links.hover.show")), "lsp.hover");
-        hover.setDisable(!text || !actions.documents(file));
+        RowReasons.because(hover, answerReason(text, text && actions.documents(file)));
         int[] at = followAt.clone();
         hover.setOnAction(ignored -> {
             moveCaretTo(at[0], at[1]); // the popup stands at the caret: where the menu was opened

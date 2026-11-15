@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -96,6 +97,62 @@ class DebugValuePopupThemeFxTest {
                             s.getStyleClass().contains("editor-area"),
                             "the editor's own rules must not reach the popup");
                 }
+            });
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                popup.hide();
+                stage.close();
+            });
+        }
+    }
+
+    /** The popup's grayed rows say why (KBD-04): nothing selected in its tree, a value tied to no line. */
+    @Test
+    void itsGrayedRowsSayWhy() throws Exception {
+        DebugValuePopup.Source strings = new DebugValuePopup.Source() {
+            @Override
+            public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
+                cb.accept(new DapModels.EvalResult("\"line one\"", 0, "String"));
+            }
+
+            @Override
+            public void children(
+                    int ref, String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
+                cb.accept(List.of());
+            }
+
+            @Override
+            public void addWatch(String expression) {}
+        };
+        Object[] made = FxTestSupport.callOnFx(() -> {
+            CodeArea area = new CodeArea("msg\n");
+            Stage stage = new Stage();
+            stage.setScene(new Scene(new StackPane(area), 600, 300));
+            stage.show();
+            return new Object[] {area, stage, new DebugValuePopup(strings)};
+        });
+        CodeArea area = (CodeArea) made[0];
+        Stage stage = (Stage) made[1];
+        DebugValuePopup popup = (DebugValuePopup) made[2];
+        try {
+            FxTestSupport.runOnFx(() -> {
+                popup.show(area, "msg", stage.getX() + 20, stage.getY() + 40, true);
+                javafx.scene.control.ContextMenu tree = FxTestSupport.field(popup, "menu");
+                tree.getOnShowing().handle(new javafx.stage.WindowEvent(tree, javafx.stage.WindowEvent.WINDOW_SHOWING));
+                assertEquals(
+                        tr("row.unavailable.noSelection"),
+                        com.editora.editor.RowReasons.reasonOf(tree.getItems().get(1)),
+                        "Add to Watches with no row selected");
+                assertEquals(
+                        tr("row.unavailable.noSelection"),
+                        com.editora.editor.RowReasons.reasonOf(tree.getItems().get(2)));
+                Label line = FxTestSupport.field(popup, "line");
+                javafx.scene.control.ContextMenu lineMenu = line.getContextMenu();
+                lineMenu.getOnShowing()
+                        .handle(new javafx.stage.WindowEvent(lineMenu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+                String pin = com.editora.editor.RowReasons.reasonOf(
+                        lineMenu.getItems().get(1));
+                assertEquals(lineMenu.getItems().get(1).isDisable(), pin != null, "grayed exactly when it says why");
             });
         } finally {
             FxTestSupport.runOnFx(() -> {

@@ -403,9 +403,6 @@ public final class HttpClientPanel extends VBox {
         copyCurlItem.setOnAction(e -> copyCurlButton.fire());
         openTabItem.setOnAction(e -> openTabButton.fire());
         saveItem.setOnAction(e -> saveButton.fire());
-        copyCurlItem.disableProperty().bind(copyCurlButton.disableProperty());
-        openTabItem.disableProperty().bind(openTabButton.disableProperty());
-        saveItem.disableProperty().bind(saveButton.disableProperty());
         clearItem.setOnAction(e -> askAndClear());
         moreButton.setGraphic(Icons.more());
         moreButton.getStyleClass().addAll("flat", "http-action", "http-more");
@@ -597,8 +594,8 @@ public final class HttpClientPanel extends VBox {
         ContextMenu menu = new ContextMenu(copyValue, copyLine, copyAll);
         menu.setOnShowing(e -> {
             boolean any = !headersTable.getSelectionModel().getSelectedItems().isEmpty();
-            copyValue.setDisable(!any);
-            copyLine.setDisable(!any);
+            com.editora.editor.RowReasons.when(copyValue, any, "row.unavailable.noSelection");
+            com.editora.editor.RowReasons.when(copyLine, any, "row.unavailable.noSelection");
         });
         headersTable.setContextMenu(menu);
         FocusCommands.shownMenu(headersTable);
@@ -1253,7 +1250,23 @@ public final class HttpClientPanel extends VBox {
         copyCurlButton.setDisable(e == null || HttpStatusText.notSent(r));
         openTabButton.setDisable(!has || !bodyKept || r == null || r.binary());
         saveButton.setDisable(!has || !bodyKept);
-        clearItem.setDisable(running || history.isEmpty());
+        // The More menu's rows are the buttons' (they fire them): unavailable with them, saying why.
+        String noBody = running
+                ? "row.unavailable.httpRunning"
+                : !has ? "row.unavailable.noResponse" : !bodyKept ? "row.unavailable.bodyNotKept" : null;
+        com.editora.editor.RowReasons.because(
+                copyCurlItem,
+                running
+                        ? "row.unavailable.httpRunning"
+                        : e == null
+                                ? "row.unavailable.noResponse"
+                                : HttpStatusText.notSent(r) ? "row.unavailable.notSent" : null);
+        com.editora.editor.RowReasons.because(
+                openTabItem, noBody != null ? noBody : r == null || r.binary() ? "row.unavailable.binaryBody" : null);
+        com.editora.editor.RowReasons.because(saveItem, noBody);
+        com.editora.editor.RowReasons.because(
+                clearItem,
+                running ? "row.unavailable.httpRunning" : history.isEmpty() ? "row.unavailable.historyEmpty" : null);
     }
 
     private void clearView() {

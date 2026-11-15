@@ -323,11 +323,15 @@ final class BufferContextMenu {
         boolean hasSelection = menuView.getSelection().getLength() > 0;
         MenuItem explain = MenuChords.tag(
                 new MenuItem(tr("command.ai.explainSelection"), MenuIcons.explain()), "ai.explainSelection");
-        explain.setDisable(!hasSelection);
+        RowReasons.when(explain, hasSelection, "palette.disabled.needsSelection");
         explain.setOnAction(e -> b.requestExplainSelection());
         MenuItem rewrite = MenuChords.tag(
                 new MenuItem(tr("command.ai.rewriteSelection"), MenuIcons.rewrite()), "ai.rewriteSelection");
-        rewrite.setDisable(!hasSelection || !b.isEditable());
+        RowReasons.because(
+                rewrite,
+                !hasSelection
+                        ? "palette.disabled.needsSelection"
+                        : !b.isEditable() ? "row.unavailable.readOnly" : null);
         rewrite.setOnAction(e -> b.requestRewriteSelection());
         Menu menu = new Menu(tr("editmenu.aiActions"), MenuIcons.ai());
         menu.getItems().addAll(explain, rewrite);
@@ -473,23 +477,26 @@ final class BufferContextMenu {
                 view.cut();
             }
         });
-        cut.setDisable(!canCopy || !editable);
+        RowReasons.because(
+                cut, !canCopy ? "palette.disabled.needsSelection" : !editable ? "row.unavailable.readOnly" : null);
         MenuItem copy = tableItem("editmenu.copy", "edit.copy", MenuIcons.copy(), () -> {
             if (!b.multiCaretCopy()) {
                 view.copy();
             }
         });
-        copy.setDisable(!canCopy);
+        RowReasons.when(copy, canCopy, "palette.disabled.needsSelection");
         MenuItem paste = tableItem("editmenu.paste", "edit.paste", MenuIcons.paste(), () -> {
             if (!b.multiCaretPaste()) {
                 view.paste();
             }
         });
-        paste.setDisable(!hasClipboardText || !editable);
+        RowReasons.because(
+                paste,
+                !editable ? "row.unavailable.readOnly" : !hasClipboardText ? "row.unavailable.clipboardEmpty" : null);
         MenuItem undo = tableItem("editmenu.undo", "edit.undo", MenuIcons.undo(), () -> b.undoOrRedo(view, false));
-        undo.setDisable(!view.isUndoAvailable());
+        RowReasons.when(undo, view.isUndoAvailable(), "row.unavailable.nothingToUndo");
         MenuItem redo = tableItem("editmenu.redo", "edit.redo", MenuIcons.redo(), () -> b.undoOrRedo(view, true));
-        redo.setDisable(!view.isRedoAvailable());
+        RowReasons.when(redo, view.isRedoAvailable(), "row.unavailable.nothingToRedo");
         MenuItem selectAll = tableItem("editmenu.selectAll", "edit.selectAll", MenuIcons.selectAll(), view::selectAll);
         return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
     }

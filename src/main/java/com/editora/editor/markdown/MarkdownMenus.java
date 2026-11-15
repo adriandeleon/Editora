@@ -10,6 +10,7 @@ import javafx.scene.control.SeparatorMenuItem;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.MenuIcons;
+import com.editora.editor.RowReasons;
 import com.editora.markdown.MarkdownTable;
 import org.jspecify.annotations.Nullable;
 
@@ -59,15 +60,26 @@ public final class MarkdownMenus {
                 new SeparatorMenuItem(),
                 item("command.markdown.link", MenuIcons.link(), md::formatLinkFromClipboard),
                 item("command.markdown.editLink", null, md::editLinkInteractive),
-                enabledWhen(item("command.markdown.removeLink", null, md::removeLink), () -> onLink),
-                enabledWhen(item("command.markdown.linkToReference", null, () -> md.convertLink(false)), () -> onLink),
-                enabledWhen(item("command.markdown.linkToInline", null, () -> md.convertLink(true)), () -> onLink),
+                enabledWhen(
+                        item("command.markdown.removeLink", null, md::removeLink),
+                        () -> onLink,
+                        "row.unavailable.notOnLink"),
+                enabledWhen(
+                        item("command.markdown.linkToReference", null, () -> md.convertLink(false)),
+                        () -> onLink,
+                        "row.unavailable.notOnLink"),
+                enabledWhen(
+                        item("command.markdown.linkToInline", null, () -> md.convertLink(true)),
+                        () -> onLink,
+                        "row.unavailable.notOnLink"),
                 enabledWhen(
                         item("command.markdown.convertWikiLink", null, md::convertWikiLink),
-                        () -> md.linkForEditing()[2] != null),
+                        () -> md.linkForEditing()[2] != null,
+                        "row.unavailable.notOnWikiLink"),
                 enabledWhen(
                         item("command.markdown.openLink", null, b::openLinkUnderCaret),
-                        () -> b.linkUnderCaret() != null),
+                        () -> b.linkUnderCaret() != null,
+                        "row.unavailable.notOnLink"),
                 new SeparatorMenuItem(),
                 item("command.markdown.bulletList", MenuIcons.bulletList(), md::formatBulletList),
                 item("command.markdown.orderedList", MenuIcons.orderedList(), md::formatOrderedList),
@@ -90,7 +102,8 @@ public final class MarkdownMenus {
                 item("command.markdown.insertHorizontalRule", null, md::insertHorizontalRule),
                 enabledWhen(
                         item("command.markdown.insertImage", MenuIcons.download(), insertImage),
-                        () -> insertImage != null),
+                        () -> insertImage != null,
+                        "row.unavailable.noImageChooser"),
                 item("command.markdown.pasteAsMarkdown", MenuIcons.paste(), () -> md.pasteAsMarkdown(true)));
     }
 
@@ -103,80 +116,114 @@ public final class MarkdownMenus {
         menu.getItems()
                 .addAll(
                         item("command.markdown.insertTable", MenuIcons.table(), md::insertTableInteractive),
-                        enabledWhen(item("command.markdown.reflowTable", null, md::reflowTable), onTable),
+                        enabledWhen(
+                                item("command.markdown.reflowTable", null, md::reflowTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         new SeparatorMenuItem(),
-                        enabledWhen(item("command.markdown.tableAddRow", MenuIcons.add(), md::tableAddRow), onTable),
+                        enabledWhen(
+                                item("command.markdown.tableAddRow", MenuIcons.add(), md::tableAddRow),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item("command.markdown.tableAddRowAbove", MenuIcons.add(), md::tableAddRowAbove),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
-                                item("command.markdown.tableMoveRowUp", null, () -> md.tableMoveRow(true)), onTable),
+                                item("command.markdown.tableMoveRowUp", null, () -> md.tableMoveRow(true)),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
-                                item("command.markdown.tableMoveRowDown", null, () -> md.tableMoveRow(false)), onTable),
+                                item("command.markdown.tableMoveRowDown", null, () -> md.tableMoveRow(false)),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item("command.markdown.tableDeleteRow", MenuIcons.remove(), md::tableDeleteRow),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
-                                item("command.markdown.tableAddColumn", MenuIcons.add(), md::tableAddColumn), onTable),
+                                item("command.markdown.tableAddColumn", MenuIcons.add(), md::tableAddColumn),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item("command.markdown.tableDeleteColumn", MenuIcons.remove(), md::tableDeleteColumn),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item("command.markdown.tableAddColumnLeft", MenuIcons.add(), md::tableAddColumnLeft),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item("command.markdown.tableMoveColumnLeft", null, () -> md.tableMoveColumn(true)),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item("command.markdown.tableMoveColumnRight", null, () -> md.tableMoveColumn(false)),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         new SeparatorMenuItem(),
                         enabledWhen(
-                                item("command.markdown.tableSortAscending", null, () -> md.tableSort(true)), onTable),
+                                item("command.markdown.tableSortAscending", null, () -> md.tableSort(true)),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
-                                item("command.markdown.tableSortDescending", null, () -> md.tableSort(false)), onTable),
-                        enabledWhen(item("command.markdown.tableDelete", MenuIcons.remove(), md::tableDelete), onTable),
+                                item("command.markdown.tableSortDescending", null, () -> md.tableSort(false)),
+                                onTable,
+                                "row.unavailable.notInTable"),
+                        enabledWhen(
+                                item("command.markdown.tableDelete", MenuIcons.remove(), md::tableDelete),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         new SeparatorMenuItem(),
                         enabledWhen(
                                 item(
                                         "command.markdown.tableAlignLeft",
                                         MenuIcons.alignLeft(),
                                         () -> md.tableSetAlignment(MarkdownTable.Align.LEFT)),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item(
                                         "command.markdown.tableAlignCenter",
                                         MenuIcons.alignCenter(),
                                         () -> md.tableSetAlignment(MarkdownTable.Align.CENTER)),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item(
                                         "command.markdown.tableAlignRight",
                                         MenuIcons.alignRight(),
                                         () -> md.tableSetAlignment(MarkdownTable.Align.RIGHT)),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         new SeparatorMenuItem(),
                         item("command.markdown.tableFromCsv", MenuIcons.paste(), md::tableFromCsv),
-                        enabledWhen(item("command.markdown.tableToCsv", MenuIcons.copy(), md::tableToCsv), onTable),
+                        enabledWhen(
+                                item("command.markdown.tableToCsv", MenuIcons.copy(), md::tableToCsv),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         new SeparatorMenuItem(),
                         enabledWhen(
                                 item(
                                         "command.markdown.tableExportCsv",
                                         MenuIcons.download(),
                                         () -> md.exportTableFile("csv")),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item(
                                         "command.markdown.tableExportExcel",
                                         MenuIcons.download(),
                                         () -> md.exportTableFile("xlsx")),
-                                onTable),
+                                onTable,
+                                "row.unavailable.notInTable"),
                         enabledWhen(
                                 item(
                                         "command.markdown.tableExportOds",
                                         MenuIcons.download(),
                                         () -> md.exportTableFile("ods")),
-                                onTable));
+                                onTable,
+                                "row.unavailable.notInTable"));
         return menu;
     }
 
@@ -196,8 +243,8 @@ public final class MarkdownMenus {
         return mi;
     }
 
-    private static MenuItem enabledWhen(MenuItem item, BooleanSupplier enabled) {
-        item.setDisable(!enabled.getAsBoolean());
-        return item;
+    /** {@code item}, unavailable saying {@code reasonKey}'s sentence while {@code enabled} is false. */
+    private static MenuItem enabledWhen(MenuItem item, BooleanSupplier enabled, String reasonKey) {
+        return RowReasons.when(item, enabled.getAsBoolean(), reasonKey);
     }
 }

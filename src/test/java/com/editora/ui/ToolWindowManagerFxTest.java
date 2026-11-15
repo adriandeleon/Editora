@@ -345,21 +345,28 @@ class ToolWindowManagerFxTest {
 
             menu.getOnShowing().handle(new WindowEvent(menu, WindowEvent.WINDOW_SHOWING));
             assertTrue(split.isDisable(), "nothing is open on that side to split with");
+            assertEquals(
+                    tr("row.unavailable.nothingToSplitWith"),
+                    com.editora.editor.RowReasons.reasonOf(split),
+                    "and says so (KBD-04)");
 
             rig.open(a);
             menu.getOnShowing().handle(new WindowEvent(menu, WindowEvent.WINDOW_SHOWING));
             assertFalse(split.isDisable());
+            assertNull(com.editora.editor.RowReasons.reasonOf(split));
             split.fire();
             rig.layout();
             assertTrue(rig.manager().isOpen(a) && rig.manager().isOpen(b), "both share the side");
 
             menu.getOnShowing().handle(new WindowEvent(menu, WindowEvent.WINDOW_SHOWING));
             assertTrue(split.isDisable(), "it is already there");
+            assertEquals(tr("row.unavailable.alreadyOpenOnSide"), com.editora.editor.RowReasons.reasonOf(split));
             rig.manager().openInSplit(b); // asked again: nothing changes
             assertTrue(rig.manager().isOpen(a) && rig.manager().isOpen(b));
 
             // A side holds two: a third joins by taking the companion's place, the primary stays.
             assertFalse(rig.manager().canSplitWith(c));
+            assertEquals("row.unavailable.sideFull", rig.manager().splitReason(c));
             rig.manager().openInSplit(c);
             rig.layout();
             assertTrue(rig.manager().isOpen(a) && rig.manager().isOpen(c));

@@ -669,8 +669,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private void fillHistoryMenu() {
         List<String> history = actions.messageHistory();
         if (history.isEmpty()) {
-            MenuItem none = new MenuItem(tr("gitpanel.historyEmpty"));
-            none.setDisable(true);
+            MenuItem none = com.editora.editor.RowReasons.placeholder(new MenuItem(tr("gitpanel.historyEmpty")));
             historyButton.getItems().setAll(none);
             return;
         }
@@ -803,8 +802,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             updateBanner();
             updateCommitEnabled();
             reviewButton.setDisable(true);
-            reviewWorkingItem.setDisable(true);
-            reviewStagedItem.setDisable(true);
+            com.editora.editor.RowReasons.because(reviewWorkingItem, "row.unavailable.noRepository");
+            com.editora.editor.RowReasons.because(reviewStagedItem, "row.unavailable.noRepository");
             getChildren().setAll(placeholderPane);
             return;
         }
@@ -818,8 +817,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         conflicts = GitConflicts.unmerged(status).size();
         updateBanner();
         boolean hasWorking = status.files().stream().anyMatch(file -> file.unstaged() || file.untracked());
-        reviewStagedItem.setDisable(!hasStaged);
-        reviewWorkingItem.setDisable(!hasWorking);
+        com.editora.editor.RowReasons.when(reviewStagedItem, hasStaged, "row.unavailable.nothingStaged");
+        com.editora.editor.RowReasons.when(reviewWorkingItem, hasWorking, "row.unavailable.nothingUnstaged");
         reviewButton.setDisable(!hasStaged && !hasWorking);
         signOffCheck.setSelected(actions.signOff());
         if (amendCheck.isSelected() && (operation.inProgress() || conflicts > 0)) {

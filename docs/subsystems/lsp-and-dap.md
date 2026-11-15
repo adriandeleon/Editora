@@ -1566,6 +1566,31 @@ n: …` to the console and resumes. A session records at most `MAX_RECORDED_STOP
 off, the breakpoint stops and says why. *Debug: Toggle Recording Breakpoint* and the breakpoint form's *Record and
 continue* set it; the gutter draws it purple with a ring. `RecordingBreakpointsWindowFxTest` (a fake adapter) and the
 `…Recording` tests of `DebugHistoryProbeFxTest` cover it.
+**Don't step into** (IntelliJ's stepping filters, VS Code's `skipFiles`, debugpy's `rules`; Settings → Debugging's
+list, and the call stack's Don't Step Into This…, `debug.dontStepIntoFrame`) names code Step Into goes over and a step
+leaves at once: a class or package (`com.shop.util.*`), a module (`requests`), a function (`fmt.*`, `std::*`) or a file
+(`**/vendor/**`), for one language or every one. They are kept in Settings (`debugStepFilterList` of
+[`dap/StepFilter`](../../src/main/java/com/editora/dap/StepFilter.java), schema 173) and shared by every session
+(`DapManager.setStepFilters`). [`dap/StepFilters`](../../src/main/java/com/editora/dap/StepFilters.java) (pure) decides
+how each debugger is told. A pattern is a file when it has a `/` (not in Go, whose functions are named by import path),
+a leading `**` or a source extension (`pathLike`); otherwise it names code. The debuggers that skip code themselves are
+told: java-debug through `vscode.java.updateDebugSettings`' `skipClasses`, beside the JDK's (`JavaDebugSettings.toJson`,
+sent before each session and again at once when the list changes during one — java-debug reads it at each step);
+Editora's own JVM adapter through the launch's `skipClasses`; debugpy through `rules` (`{"module": …}` or `{"path": …}`,
+`include` false) and js-debug through `skipFiles`, added to the launch or attach request by a decorator `publishClient`
+gives each `DapClient` (`decorate`; a child session's request is its parent adapter's). Delve, CodeLLDB, GDB, netcoredbg,
+rdbg and Xdebug have no such option, and a filter added during a session reaches debugpy and js-debug only at the next
+launch, so [`ui/StepFilterCommands`](../../src/main/java/com/editora/ui/StepFilterCommands.java) checks every `step`
+stop: when its top frame is in filtered code (`matches`: the function's name as a glob, a dotted name as a package or
+module found in the frame's path, a file glob against the path) and there is a caller, the stop is held quiet and the
+thread steps out — again while it lands in such code, at most `MAX_STEPS_OUT` (8) times. A breakpoint in filtered code
+still stops. Don't Step Into This… offers the frame's code as its language names it (`suggest`: a JVM class with the
+package its source declares, a Python or JavaScript file — its package under `node_modules` — a Go or C# package, a C++
+or Rust outer namespace) in [`ui/StepFilterDialog`](../../src/main/java/com/editora/ui/StepFilterDialog.java), and adds
+it; Settings' list is [`ui/StepFiltersEditor`](../../src/main/java/com/editora/ui/StepFiltersEditor.java).
+`StepFiltersWindowFxTest` covers the step out and the command against `FakeDebugAdapter` (as rdbg);
+`StepFiltersProbeFxTest` steps into a filtered call on debugpy (a module), java-debug (a class), js-debug (a file) and
+Delve (`strings.*`, stepped out of by Editora) and stops back in the caller.
 **Exception breakpoints** (IntelliJ's Java Exception Breakpoints, Visual Studio's Exception Settings; Debug: Add
 Exception Breakpoint…, and rows of Debug: Exception Breakpoints… after the adapter's filters) stop on an exception
 of a named type, when a condition holds. A [`config/ExceptionBreakpoint`](../../src/main/java/com/editora/config/ExceptionBreakpoint.java)

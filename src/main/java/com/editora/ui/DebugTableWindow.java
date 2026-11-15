@@ -163,6 +163,7 @@ final class DebugTableWindow {
         RowMenus.install(
                 table,
                 () -> !table.getItems().isEmpty(),
+                "row.unavailable.emptyTable",
                 ListRowCommands.buttonRow(table, ListRowCommands.COPY, copy, Icons.copy()));
         Button asCsv = new Button(tr("valuetable.openAsCsv"));
         asCsv.setOnAction(e -> actions.openText(tr("valuetable.csvTitle", name), model.csv(shownRows()), "csv"));

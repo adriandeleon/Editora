@@ -322,7 +322,10 @@ final class RemoteSitesPane {
                 list,
                 ListRowCommands.enabledWhen(
                         ListRowCommands.buttonRow(list, ListRowCommands.OPEN, connectButton, null),
-                        () -> connectButton.isVisible() && !connectButton.isDisabled()),
+                        () -> connectButton.isVisible() && !connectButton.isDisabled(),
+                        () -> connectButton.isVisible()
+                                ? ListRowCommands.buttonReason(connectButton, ListRowCommands.OPEN)
+                                : "row.unavailable.cannotConnectHere"),
                 ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, RemoteConnection::displayLabel)),
                 new javafx.scene.control.SeparatorMenuItem(),
                 ListRowCommands.danger(ListRowCommands.buttonRow(list, ListRowCommands.REMOVE, remove, null)));

@@ -2,8 +2,10 @@ package com.editora.ui;
 
 import java.util.List;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 import com.editora.command.Command;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -51,7 +53,8 @@ final class PanelRowCommands {
                     mc,
                     id,
                     mc.bookmarksToolWindow,
-                    () -> mc.bookmarkCoordinator.panel().runMenuRow(id));
+                    () -> mc.bookmarkCoordinator.panel().runMenuRow(id),
+                    () -> mc.bookmarkCoordinator.panel().menuRowReason(id));
         }
         for (String id : List.of(
                 "notes.editSelected",
@@ -79,9 +82,23 @@ final class PanelRowCommands {
      * while the window is open; otherwise, or where the row is not offered, the status line says so.
      */
     private static void menuRow(MainController mc, String id, ToolWindow window, BooleanSupplier run) {
+        menuRow(mc, id, window, run, () -> null);
+    }
+
+    /**
+     * {@link #menuRow(MainController, String, ToolWindow, BooleanSupplier)} whose row may be grayed for the selected
+     * row: then the status line says {@code reason}'s sentence, as the row's tooltip does (KBD-04).
+     */
+    private static void menuRow(
+            MainController mc, String id, ToolWindow window, BooleanSupplier run, Supplier<@Nullable String> reason) {
         mc.registry.register(Command.of(id, () -> {
             if (!(mc.toolWindows.isOpen(window) && run.getAsBoolean())) {
-                mc.setStatus(tr("status.rows.notOffered", DebugPanelText.bareTitle(tr("command." + id))));
+                String title = DebugPanelText.bareTitle(tr("command." + id));
+                String why = mc.toolWindows.isOpen(window) ? reason.get() : null;
+                mc.setStatus(
+                        why == null
+                                ? tr("status.rows.notOffered", title)
+                                : tr("status.commandUnavailable", title, why));
             }
         }));
     }

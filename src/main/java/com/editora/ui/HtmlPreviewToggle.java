@@ -44,8 +44,7 @@ public class HtmlPreviewToggle extends Button {
         ContextMenu menu = new ContextMenu();
         List<Browser> list = browsers.get();
         if (list == null || list.isEmpty()) {
-            MenuItem none = new MenuItem(tr("htmlPreview.noBrowsers"));
-            none.setDisable(true);
+            MenuItem none = com.editora.editor.RowReasons.placeholder(new MenuItem(tr("htmlPreview.noBrowsers")));
             menu.getItems().add(none);
         } else {
             for (Browser b : list) {

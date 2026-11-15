@@ -1397,7 +1397,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                     Icons.diff(),
                     () -> actions.compareCommits(selected.get(1), selected.get(0)),
                     "git.log.compareSelected");
-            compare.setDisable(selected.size() != 2);
+            com.editora.editor.RowReasons.when(compare, selected.size() == 2, "row.unavailable.selectTwoCommits");
             MenuItem checkout =
                     item(tr("gitlog.menu.checkout"), Icons.git(), () -> actions.checkout(h), "git.log.checkout");
             MenuItem newBranch =
@@ -1521,7 +1521,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             MenuItem copy = item(
                     tr("gitlog.menu.copyPath"), Icons.copy(), () -> actions.copyPath(path), "git.log.copyFilePath");
             // A deleted file has no working-tree copy to open.
-            open.setDisable(GitFileStatus.fromLetter(f.status()) == GitFileStatus.DELETED);
+            com.editora.editor.RowReasons.when(
+                    open, GitFileStatus.fromLetter(f.status()) != GitFileStatus.DELETED, "row.unavailable.fileDeleted");
             return new ContextMenu(diff, compareWorking, open, history, copy);
         }
 

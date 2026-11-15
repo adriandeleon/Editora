@@ -895,7 +895,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
      */
     private List<MenuItem> menuItems(Diagnostic d, boolean atCaret) {
         MenuItem fix = new MenuItem(tr("markdownLint.menu.fix"));
-        fix.setDisable(!MarkdownLint.fixable(d.code()));
+        com.editora.editor.RowReasons.when(fix, MarkdownLint.fixable(d.code()), "row.unavailable.notFixable");
         fix.setOnAction(e -> fix(d));
         MenuItem line = new MenuItem(tr("markdownLint.menu.disableLine"));
         line.setOnAction(e -> disableLine(d));

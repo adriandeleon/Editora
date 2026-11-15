@@ -475,8 +475,10 @@ jobs:
       # PythonDataProbeFxTest: on debugpy, a pandas DataFrame of 1,500 rows opens as a table of its first 1,000 (named,
       # typed columns), Load More brings the rest, a Series is a column of values and a 3-D numpy array rows of its last
       # dimension.
+      # StepFiltersProbeFxTest: Step Into a call into filtered code stops back in the caller on debugpy (a module),
+      # java-debug (a class) and Delve (strings.*, stepped out of by Editora); its js-debug case runs with Node's.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release
@@ -528,6 +530,8 @@ jobs:
       # DebugHistoryProbeFxTest#javascript*: on js-debug, a loop's stops are kept and read back, and recorded.
       # JsColumnBreakpointsProbeFxTest: on js-debug, a lambda breakpoint on an arrow function stops inside it each
       # time it runs; made a line breakpoint, it stops on the line only.
+      # StepFiltersProbeFxTest#javascript: on js-debug, Step Into a call into a file in Don't step into (skipFiles)
+      # stops back in the caller.
       # TriggeredBreakpointsProbeFxTest#javascript: on js-debug, a breakpoint that waits for another stops only after
       # that one is hit.
       # LoadedSourcesProbeFxTest#javascript*: js-debug lists the program's file first and opens a Node internal read-only.
@@ -536,4 +540,4 @@ jobs:
       # BrowserDebugProbeFxTest: on js-debug and a headless Chrome, F5 on an HTML file stops in its inline script and
       # in a script it loads; a launch.json chrome configuration opens a file: URL and stops.
       - name: Test the TypeScript server, JavaScript debugging and Pyright
-        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,TriggeredBreakpointsProbeFxTest#javascript,LoadedSourcesProbeFxTest#javascript*,SourcelessFramesProbeFxTest,BrowserDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,StepFiltersProbeFxTest#javascript,TriggeredBreakpointsProbeFxTest#javascript,LoadedSourcesProbeFxTest#javascript*,SourcelessFramesProbeFxTest,BrowserDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test

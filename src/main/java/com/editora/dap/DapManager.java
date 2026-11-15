@@ -1853,6 +1853,44 @@ public final class DapManager {
         shared.javaDebugSettings = settings == null ? JavaDebugSettings.defaults() : settings;
     }
 
+    /** The java-debug settings to send: Settings' with the Java Don't step into classes. */
+    private String javaSettingsJson() {
+        return shared.javaDebugSettings.toJson(
+                StepFilters.classPatterns("java", StepFilters.patterns(shared.stepFilters, "java")));
+    }
+
+    /**
+     * Don't step into ({@link StepFilters}): every language's filters. A session launched from now on gets its
+     * debugger's own options; a live Java session's java-debug is told at once (it reads them at each step), and the
+     * rest are caught as their steps end ({@link #stepFilterPatterns}).
+     */
+    public void setStepFilters(List<StepFilter> filters) {
+        List<StepFilter> copies = new ArrayList<>();
+        for (StepFilter f : filters == null ? List.<StepFilter>of() : filters) {
+            copies.add(f.copy());
+        }
+        shared.stepFilters = List.copyOf(copies);
+        if (copies.equals(liveStepFilters)) {
+            return;
+        }
+        liveStepFilters = List.copyOf(copies);
+        if (client != null && state != State.INACTIVE && javaDebugSession()) {
+            executeCommand(debugFile, JavaDebugSettings.COMMAND, List.of(javaSettingsJson()), (r, e) -> {
+                if (e != null) {
+                    LOG.log(Level.FINE, "java-debug step filters were not updated", e);
+                }
+            });
+        }
+    }
+
+    /** The filters this session's java-debug was last told of (each session tells its own). */
+    private List<StepFilter> liveStepFilters = List.of();
+
+    /** The patterns of the Don't step into filters that are on for this session's language. */
+    public List<String> stepFilterPatterns() {
+        return StepFilters.patterns(shared.stepFilters, sessionLanguage);
+    }
+
     private void startDebugSessionAndConnect(
             @Nullable Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
         if (!isCurrent(epoch)) {
@@ -1860,7 +1898,7 @@ public final class DapManager {
         }
         // java-debug keeps one set of settings per jdtls: give it this session's before the session starts. A
         // failure (an older java-debug) is no reason not to debug, on its defaults as before.
-        executeCommand(file, JavaDebugSettings.COMMAND, List.of(shared.javaDebugSettings.toJson()), (r, e) -> {
+        executeCommand(file, JavaDebugSettings.COMMAND, List.of(javaSettingsJson()), (r, e) -> {
             if (e != null) {
                 LOG.log(Level.FINE, "java-debug settings were not applied", e);
             }
@@ -5654,6 +5692,9 @@ public final class DapManager {
             }
             candidate.setMemberBreakpoints(shared.memberBreakpoints); // sent on its initialized event
             candidate.setExtraExceptionFilters(exceptionExtras()); // its language's exception breakpoints need
+            String language = sessionLanguage;
+            List<String> skips = StepFilters.patterns(shared.stepFilters, language);
+            candidate.setLaunchDecorator(args -> StepFilters.decorate(language, args, skips)); // Don't step into
             candidate.setHexValues(shared.hexValues);
             client = candidate;
             return true;

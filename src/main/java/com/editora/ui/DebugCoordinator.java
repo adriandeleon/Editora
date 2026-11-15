@@ -248,6 +248,9 @@ final class DebugCoordinator {
         /** Saves Settings' type renderers ({@code debugTypeRenderers}). */
         default void persistDebugTypeRenderers(List<com.editora.dap.TypeRenderer> renderers) {}
 
+        /** Saves Settings' Don't step into filters ({@code debugStepFilterList}). */
+        default void persistDebugStepFilters(List<com.editora.dap.StepFilter> filters) {}
+
         /** The per-file breakpoint map ({@code breakpoints.json}); path-string → that file's breakpoints. */
         Map<String, List<Breakpoint>> breakpointMap();
 
@@ -1289,6 +1292,8 @@ final class DebugCoordinator {
                 com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes()),
                 s.isDebugShowToString(),
                 s.isDebugSuspendAllThreads()));
+        List<com.editora.dap.StepFilter> skips = s.getDebugStepFilterList();
+        forEachSession(() -> dap().setStepFilters(skips)); // Don't step into: a live Java session is told at once
         List<String> bundles = on ? dap().bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
@@ -2206,6 +2211,8 @@ final class DebugCoordinator {
                     return; // a breakpoint with filters: Editora checks them before the stop is shown
                 } else if (exceptions().stop(threadId, reason, frames, () -> onStopped(threadId, reason, stopFrames))) {
                     return; // an exception, where exception breakpoints decide whether it is shown
+                } else if (stepFilters().stop(reason, frames)) {
+                    return; // a step into code the user does not step into: out of it again
                 }
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
@@ -9218,11 +9225,29 @@ final class DebugCoordinator {
     List<javafx.scene.control.MenuItem> stackMenuItems(
             DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
         javafx.scene.control.MenuItem restart = new javafx.scene.control.MenuItem(tr("debugpanel.restartFrame"));
-        restart.setDisable(!canRestartFrame(
-                dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
+        com.editora.editor.RowReasons.because(
+                restart,
+                DebugPanelText.restartFrameReason(
+                        dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
         restart.setOnAction(e -> restartFrame(frame));
         com.editora.editor.MenuChords.tag(restart, "debug.restartFrame"); // the selected frame is the shown one
-        return List.of(restart);
+        return List.of(restart, stepFilters().menuItem(frame));
+    }
+
+    /** Debug: Don't Step Into This… ({@code debug.dontStepIntoFrame}), for the frame shown. */
+    void dontStepIntoFrame() {
+        stepFilters().dontStepInto(null);
+    }
+
+    private @Nullable StepFilterCommands stepFilterCommands;
+
+    StepFilterCommands stepFilters() {
+        StepFilterCommands c = stepFilterCommands;
+        if (c == null) {
+            c = new StepFilterCommands(this, host, ops);
+            stepFilterCommands = c;
+        }
+        return c;
     }
 
     /** The last Smart Step Into picker shown (null before the first). */
@@ -9675,7 +9700,10 @@ final class DebugCoordinator {
      */
     void runPanelRow(String commandId) {
         if (!ops.isToolWindowOpen() || !panel().runMenuRow(commandId)) {
-            host.setStatus(tr("status.debug.rowNotOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
+            host.setStatus(
+                    ops.isToolWindowOpen()
+                            ? panel().rowRefusal(commandId)
+                            : tr("status.debug.rowNotOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
         }
     }
 
@@ -9770,11 +9798,13 @@ final class DebugCoordinator {
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
         javafx.scene.control.MenuItem toGroup =
                 menuItem("debug.moveBreakpointToGroup", null, this::moveBreakpointToGroupAtCaret);
-        toGroup.setDisable(b.getBreakpointManager().get(b.getFocusedArea().getCurrentParagraph()) == null);
+        com.editora.editor.RowReasons.when(
+                toGroup, DebugPanelText.hasBreakpointAtCaret(b), "row.unavailable.noBreakpointHere");
         items.add(toGroup);
         javafx.scene.control.MenuItem flip =
                 menuItem("debug.toggleBreakpointEnabled", Icons.check(), this::toggleBreakpointEnabledAtCaret);
-        flip.setDisable(b.getBreakpointManager().get(b.getFocusedArea().getCurrentParagraph()) == null);
+        com.editora.editor.RowReasons.when(
+                flip, DebugPanelText.hasBreakpointAtCaret(b), "row.unavailable.noBreakpointHere");
         items.add(flip);
         items.add(new javafx.scene.control.SeparatorMenuItem());
         items.add(menuItem("debug.breakpoints", Icons.outline(), this::showBreakpoints));

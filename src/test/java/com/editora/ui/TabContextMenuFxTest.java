@@ -20,6 +20,7 @@ import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -315,6 +316,78 @@ class TabContextMenuFxTest {
         } finally {
             fx.dispose();
         }
+    }
+
+    /**
+     * A tab's grayed rows say why (KBD-04): nothing to the left of the first tab or to the right of the last, nothing
+     * to save in a clean file; the same rows can run, and say nothing, where they apply.
+     */
+    @Test
+    void aTabsGrayedRowsSayWhy(@TempDir Path dir) throws Exception {
+        Path first = Files.writeString(dir.resolve("first.txt"), "one\n");
+        Path second = Files.writeString(dir.resolve("second.txt"), "two\n");
+        FxWindowFixture fx = FxWindowFixture.create(
+                Files.createDirectories(dir.resolve("config")),
+                false,
+                false,
+                false,
+                List.of(new MainController.OpenTarget(first, 0, 0), new MainController.OpenTarget(second, 0, 0)),
+                c -> {});
+        try {
+            FxTestSupport.runOnFx(() -> {
+                MainController c = fx.controller;
+                EditorArea area = FxTestSupport.field(c, "editorArea");
+                List<Tab> tabs = area.tabs();
+                ContextMenu left = tabs.get(0).getContextMenu();
+                left.getOnShowing().handle(null);
+                assertEquals(tr("row.unavailable.noTabsLeft"), reason(left, "menu.closeLeft"));
+                assertNull(reason(left, "menu.closeRight"), "the other tab can be closed");
+                assertEquals(tr("row.unavailable.noChanges"), reason(left, "menu.save"));
+                assertNull(reason(left, "menu.copyPath"), "a saved file has a path");
+
+                ContextMenu right = tabs.get(tabs.size() - 1).getContextMenu();
+                right.getOnShowing().handle(null);
+                assertEquals(tr("row.unavailable.noTabsRight"), reason(right, "menu.closeRight"));
+                assertNull(reason(right, "menu.closeLeft"));
+
+                EditorBuffer buffer =
+                        (EditorBuffer) FxTestSupport.call(c, "bufferOf", new Class<?>[] {Tab.class}, tabs.get(0));
+                buffer.getFocusedArea().appendText("more");
+                left.getOnShowing().handle(null);
+                assertNull(reason(left, "menu.save"), "an edited file can be saved");
+                assertNull(reason(left, "menu.encrypt"), "a plain file can be encrypted");
+                assertEquals(tr("row.unavailable.notInRepo"), reason(left, "project.menu.git"), "a folder with no Git");
+
+                // An untitled file: the rows that need a file on disk say it has not been saved.
+                c.registry.run("file.new");
+                List<Tab> now = area.tabs();
+                Tab untitled = now.stream()
+                        .filter(t -> FxTestSupport.call(c, "bufferOf", new Class<?>[] {Tab.class}, t)
+                                        instanceof EditorBuffer b
+                                && b.getPath() == null)
+                        .findFirst()
+                        .orElseThrow();
+                ContextMenu fresh = untitled.getContextMenu();
+                fresh.getOnShowing().handle(null);
+                for (String key : List.of("menu.copyPath", "menu.rename")) {
+                    assertEquals(tr("row.unavailable.unsaved"), reason(fresh, key), key);
+                }
+                assertNull(reason(fresh, "menu.save"), "an untitled file can always be saved");
+            });
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    /** Why the row titled {@code key} of {@code menu} is grayed, or null; a grayed row that says nothing fails. */
+    private static String reason(ContextMenu menu, String key) {
+        MenuItem row = menu.getItems().stream()
+                .filter(item -> tr(key).equals(item.getText()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no " + key));
+        String reason = com.editora.editor.RowReasons.reasonOf(row);
+        assertEquals(reason != null, row.isDisable(), key + " is grayed exactly when it says why");
+        return reason;
     }
 
     /** The menu as drawn: visible items by label, a visible separator as {@code "-"}. */

@@ -188,6 +188,13 @@ class ProjectMapTrailsCoverageFxTest {
                 assertFalse(item(items, tr("project.map.trails.new")).isDisable());
                 assertTrue(item(items, tr("project.map.trails.addStop")).isDisable(), "no card to add yet");
                 assertTrue(item(items, tr("project.map.trails.none")).isDisable());
+                assertEquals(
+                        tr("row.unavailable.noCodeCard"),
+                        com.editora.editor.RowReasons.reasonOf(item(items, tr("project.map.trails.addStop"))));
+                assertNull(
+                        com.editora.editor.RowReasons.reasonOf(item(items, tr("project.map.trails.none"))),
+                        "a placeholder is a label");
+                assertTrue(com.editora.editor.RowReasons.isPlaceholder(item(items, tr("project.map.trails.none"))));
                 assertTrue(items.stream().noneMatch(i -> i instanceof Menu), "nothing to edit: no Edit submenu");
             });
             tour(project);

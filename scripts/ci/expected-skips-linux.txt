@@ -72,6 +72,7 @@ com.editora.ui.ParallelStacksProbeFxTest
 com.editora.ui.StepBackProbeFxTest
 com.editora.ui.ExceptionBreakpointsProbeFxTest
 com.editora.ui.PythonDataProbeFxTest
+com.editora.ui.StepFiltersProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

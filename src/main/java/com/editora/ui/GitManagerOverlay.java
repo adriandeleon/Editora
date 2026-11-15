@@ -124,7 +124,8 @@ final class GitManagerOverlay<T> {
             row.setOnAction(e -> fire(action));
             rows.add(ListRowCommands.enabledWhen(
                     row,
-                    () -> !action.needsSelection() || list.getSelectionModel().getSelectedItem() != null));
+                    () -> !action.needsSelection() || list.getSelectionModel().getSelectedItem() != null,
+                    "row.unavailable.noSelection"));
         }
         RowMenus.install(list, () -> true, rows.toArray(MenuItem[]::new));
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> syncButtons());

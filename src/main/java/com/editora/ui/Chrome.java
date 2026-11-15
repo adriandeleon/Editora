@@ -726,6 +726,7 @@ final class Chrome {
             "debug.showValue",
             "debug.smartStepInto",
             "debug.restartFrame",
+            "debug.dontStepIntoFrame",
             "debug.stepBack",
             "debug.reverseContinue",
             "debug.toggleRecording");

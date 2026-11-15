@@ -91,6 +91,18 @@ class SettingsRemoteSitesFxTest {
             ListView<RemoteConnection> list = FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "list");
             List<TextField> f = formFields(w);
             FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
+            // The list's rows say why when grayed (KBD-04): Connect when this window cannot connect.
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.ContextMenu menu = list.getContextMenu();
+                menu.getOnShowing().handle(new javafx.stage.WindowEvent(menu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+                javafx.scene.control.MenuItem connect = menu.getItems().get(0);
+                String why = com.editora.editor.RowReasons.reasonOf(connect);
+                assertEquals(connect.isDisable(), why != null, "grayed exactly when it says why");
+                javafx.scene.control.Button button = button(w, Messages.tr("settings.remote.connect"));
+                if (!button.isVisible()) {
+                    assertEquals(Messages.tr("row.unavailable.cannotConnectHere"), why);
+                }
+            });
 
             typeAndEnter(f.get(1), "new.example");
             assertEquals(

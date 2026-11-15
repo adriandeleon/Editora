@@ -963,10 +963,9 @@ final class HttpClientCoordinator {
         return item;
     }
 
+    /** A row that is a hint or a problem to read, not a command: a label in the menu. */
     private static MenuItem disabledItem(String text) {
-        MenuItem item = new MenuItem(text);
-        item.setDisable(true);
-        return item;
+        return com.editora.editor.RowReasons.placeholder(new MenuItem(text));
     }
 
     private MenuItem openEnvFileItem(Path file) {

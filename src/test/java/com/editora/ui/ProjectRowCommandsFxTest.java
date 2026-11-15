@@ -292,6 +292,15 @@ class ProjectRowCommandsFxTest {
         return tr("status.project.rowUnavailable", title(row));
     }
 
+    /** What the command says for a row its menu grays out: the row's reason, as its tooltip says it (KBD-04). */
+    private static String grayed(ProjectRowCommands.Row row, String reason) {
+        return tr("status.commandUnavailable", title(row), reason);
+    }
+
+    private static String featureOff(String toggleId) {
+        return tr("palette.disabled.featureOff", tr("command." + toggleId));
+    }
+
     @Test
     void eachFileRowRunsWhatItsMenuRowRunsOnTheSelectedFile(@TempDir Path dir) throws Exception {
         Rig rig = new Rig(dir).build(true);
@@ -419,28 +428,32 @@ class ProjectRowCommandsFxTest {
                 "an encrypted file has no Encrypt…");
         // The active repository's status grays these out, as the menu does.
         assertEquals(
-                unavailable(ProjectRowCommands.Row.GIT_REVERT),
+                grayed(ProjectRowCommands.Row.GIT_REVERT, tr("row.unavailable.nothingToRevert")),
                 rig.run(rig.clean, ProjectRowCommands.Row.GIT_REVERT),
                 "nothing to revert in a clean file");
         assertEquals(
-                unavailable(ProjectRowCommands.Row.GIT_IGNORE),
+                grayed(ProjectRowCommands.Row.GIT_IGNORE, tr("row.unavailable.notUntracked")),
                 rig.run(rig.modified, ProjectRowCommands.Row.GIT_IGNORE),
                 "a tracked file is not added to .gitignore");
         assertEquals(
-                unavailable(ProjectRowCommands.Row.GIT_REVERT),
+                grayed(ProjectRowCommands.Row.GIT_REVERT, tr("row.unavailable.nothingToRevert")),
                 rig.run(rig.root, ProjectRowCommands.Row.GIT_REVERT),
                 "the root is not among the changed folders");
         // Another repository's status is unknown: the action is left to report.
         rig.scope.set(GitPathScope.OTHER);
         assertNull(rig.run(rig.clean, ProjectRowCommands.Row.GIT_REVERT));
         rig.scope.set(GitPathScope.NONE);
-        assertEquals(tr("status.project.notInGit"), rig.run(rig.clean, ProjectRowCommands.Row.GIT_STAGE));
+        assertEquals(
+                grayed(ProjectRowCommands.Row.GIT_STAGE, tr("row.unavailable.notInRepo")),
+                rig.run(rig.clean, ProjectRowCommands.Row.GIT_STAGE));
         rig.scope.set(GitPathScope.ACTIVE);
         rig.notes.set(false);
-        assertEquals(unavailable(ProjectRowCommands.Row.NOTE), rig.run(rig.clean, ProjectRowCommands.Row.NOTE));
+        assertEquals(
+                grayed(ProjectRowCommands.Row.NOTE, featureOff("view.toggleNotes")),
+                rig.run(rig.clean, ProjectRowCommands.Row.NOTE));
         rig.localHistory.set(false);
         assertEquals(
-                unavailable(ProjectRowCommands.Row.LOCAL_HISTORY),
+                grayed(ProjectRowCommands.Row.LOCAL_HISTORY, featureOff("view.toggleLocalHistory")),
                 rig.run(rig.clean, ProjectRowCommands.Row.LOCAL_HISTORY));
         rig.simple.set(true);
         for (ProjectRowCommands.Row row : List.of(

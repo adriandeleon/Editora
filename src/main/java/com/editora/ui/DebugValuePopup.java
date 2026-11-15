@@ -156,9 +156,10 @@ final class DebugValuePopup implements DebugValuePresenter {
         menu.setOnShowing(e -> {
             String expr = selectedExpression();
             watch.setText(tr("debugpanel.addToWatches", expr));
-            watch.setDisable(expr.isEmpty());
+            com.editora.editor.RowReasons.when(watch, !expr.isEmpty(), "row.unavailable.noSelection");
             pin.setText(tr("debugpanel.pinToLine", expr, anchorLine + 1));
-            pin.setDisable(expr.isEmpty() || anchorLine < 0 || owner == null);
+            com.editora.editor.RowReasons.because(
+                    pin, pinReason(expr, "row.unavailable.noSelection", anchorLine >= 0 && owner != null));
         });
         tree.setContextMenu(menu);
         RowContextMenu.anchor(tree, menu); // the Menu key / Shift+F10: at the selected row
@@ -173,7 +174,8 @@ final class DebugValuePopup implements DebugValuePresenter {
         lineMenu.setOnShowing(e -> {
             String expr = expression == null ? "" : expression;
             pinLine.setText(tr("debugpanel.pinToLine", expr, anchorLine + 1));
-            pinLine.setDisable(expr.isEmpty() || anchorLine < 0 || owner == null);
+            com.editora.editor.RowReasons.because(
+                    pinLine, pinReason(expr, "row.unavailable.noExpression", anchorLine >= 0 && owner != null));
         });
         line.setContextMenu(lineMenu);
         textHeader.getStyleClass().add("debug-value-line");
@@ -551,5 +553,17 @@ final class DebugValuePopup implements DebugValuePresenter {
 
     PopupControl popup() {
         return popup;
+    }
+
+    /**
+     * Why Pin to Line cannot pin {@code expr} (the key of its sentence), or null when it can: there is no expression
+     * ({@code noExpressionKey}: nothing selected in the tree, or a value with none), or the value is tied to no line of
+     * a file ({@code onALine} false). Pure.
+     */
+    static @Nullable String pinReason(String expr, String noExpressionKey, boolean onALine) {
+        if (expr.isEmpty()) {
+            return noExpressionKey;
+        }
+        return onALine ? null : "row.unavailable.noLineToPinTo";
     }
 }

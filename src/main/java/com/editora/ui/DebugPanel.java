@@ -1017,7 +1017,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         javafx.scene.control.MenuItem endInput = new javafx.scene.control.MenuItem(tr("debugpanel.endInput"));
         endInput.setOnAction(e -> actions.endInput());
         com.editora.editor.MenuChords.tag(endInput, "debug.endProgramInput");
-        consoleMenu.setOnShowing(e -> endInput.setDisable(!inputMode()));
+        consoleMenu.setOnShowing(
+                e -> com.editora.editor.RowReasons.when(endInput, inputMode(), "row.unavailable.notReadingInput"));
         consoleMenu.getItems().addAll(clear, endInput);
         console.setContextMenu(consoleMenu);
 
@@ -1843,6 +1844,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             leaveHistory();
             return true;
         }
+        return MenuRows.fire(menuRows(), commandId);
+    }
+
+    /** The rows of this window's right-click menus as a right-click on the selection would build them now. */
+    private List<javafx.scene.control.MenuItem> menuRows() {
         javafx.scene.control.ContextMenu vars = new javafx.scene.control.ContextMenu();
         rebuildVarsMenu(vars);
         javafx.scene.control.ContextMenu threads = new javafx.scene.control.ContextMenu();
@@ -1851,7 +1857,19 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         rows.addAll(threads.getItems());
         rows.addAll(stackMenuRows());
         rows.add(clearConsoleRow);
-        return MenuRows.fire(rows, commandId);
+        return rows;
+    }
+
+    /**
+     * What the status line says when command {@code commandId} did not run its row: the reason its row is grayed
+     * for the selection (KBD-04), as the row's tooltip says it, or that the row is not offered here.
+     */
+    String rowRefusal(String commandId) {
+        String title = DebugPanelText.bareTitle(tr("command." + commandId));
+        String reason = MenuRows.reason(menuRows(), commandId);
+        return reason == null
+                ? tr("status.debug.rowNotOffered", title)
+                : tr("status.commandUnavailable", title, reason);
     }
 
     /** The thread menu for the selected row: Show Frames and Resume Thread when it is suspended, else Pause Thread. */

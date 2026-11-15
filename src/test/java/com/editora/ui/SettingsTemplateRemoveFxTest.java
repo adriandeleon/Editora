@@ -167,6 +167,11 @@ class SettingsTemplateRemoveFxTest {
                 assertEquals("My Shared", shared.name(), "the user's file wins over the plugin's");
                 list.getSelectionModel().select(note);
                 assertTrue(button(pg, tr("settings.template.remove")).isDisabled(), "not the user's to remove");
+                assertEquals(
+                        "row.unavailable.bundledTemplate",
+                        ListRowCommands.buttonReason(
+                                button(pg, tr("settings.template.remove")), ListRowCommands.REMOVE),
+                        "the list's Remove row says why (KBD-04)");
                 list.getSelectionModel().select(shared);
                 assertFalse(button(pg, tr("settings.template.remove")).isDisabled());
 
