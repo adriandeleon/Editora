@@ -85,7 +85,31 @@ final class ProjectMapResultsStrip extends HBox {
         });
         HBox.setHgrow(list, Priority.ALWAYS);
         getChildren().setAll(previous, next, count, partial, list);
+        // The strip's buttons and list are commands too (KBD-01): each presses its control while the strip shows
+        // matches, as Enter, Shift+Enter and F3 in the search field step through them.
+        MapButtonCommands.bindIf(view, "projectMap.previousMatch", () -> press(previous));
+        MapButtonCommands.bindIf(view, "projectMap.nextMatch", () -> press(next));
+        MapButtonCommands.bindIf(view, "projectMap.goToMatch", this::pickMatch);
         refresh();
+    }
+
+    /** Presses {@code button} of the strip as a click would; false while the strip has no matches to step to. */
+    private boolean press(Button button) {
+        if (!isVisible() || button.isDisabled()) {
+            return false;
+        }
+        button.fire();
+        return true;
+    }
+
+    /** {@code projectMap.goToMatch}: opens the list of every match, as a click on it does; false with none. */
+    private boolean pickMatch() {
+        if (!isVisible() || list.isDisabled() || list.getScene() == null) {
+            return false;
+        }
+        list.requestFocus(); // the keyboard picks in the list, as the pointer does
+        list.show();
+        return true;
     }
 
     /** Brings the strip up to date with the Map's answer and current match. */

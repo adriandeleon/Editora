@@ -101,6 +101,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
         back.setMnemonicParsing(false);
         Icons.name(back, tr("project.map.graph.backTip"));
         back.setOnAction(event -> goBack());
+        MapButtonCommands.press(this, "projectMap.cardBack", back); // a command too (KBD-01)
         summary.getStyleClass().add("project-map-graph-summary");
         summary.setWrapText(true);
         summary.setMnemonicParsing(false);
@@ -319,12 +320,15 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
                     event.consume();
                 }
             });
-            MenuItem graphHere = new MenuItem(tr("project.map.graph.walk"));
+            MenuItem graphHere =
+                    MapButtonCommands.row(new MenuItem(tr("project.map.graph.walk")), "projectMap.graphFromHere");
             graphHere.setDisable(!walkable);
             graphHere.setOnAction(event -> walk(group, side, via));
-            MenuItem card = new MenuItem(tr("project.map.graph.openCard"));
+            MenuItem card =
+                    MapButtonCommands.row(new MenuItem(tr("project.map.graph.openCard")), "projectMap.openCard");
             card.setOnAction(event -> open(group));
             setContextMenu(new ContextMenu(graphHere, card));
+            MapButtonCommands.ownMenu(this); // its menu's commands act on it while it has the keyboard
         }
     }
 
@@ -355,7 +359,8 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             middle.getStyleClass().add("project-map-graph-subject");
             middle.setMnemonicParsing(false);
             middle.setWrapText(true);
-            middle.setOnAction(event -> openSubject());
+            // Its declaration, opened as a card: the graph's Open as Card, while the keyboard is on it (KBD-01).
+            MapButtonCommands.runs(middle, middle, "projectMap.openCard", ProjectMapSymbolGraphCard.this::openSubject);
             middle.setTooltip(ControlNames.tooltip(tr("project.map.graph.subjectTip")));
             curves.setManaged(false);
             curves.setMouseTransparent(true);

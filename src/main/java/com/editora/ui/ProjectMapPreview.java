@@ -760,7 +760,7 @@ final class ProjectMapPreview extends StackPane {
         open.setText(tr("project.map.preview.open"));
         open.getStyleClass().add("project-map-preview-button");
         open.setTooltip(ControlNames.tooltip(tr("project.map.preview.openHelp")));
-        open.setOnAction(event -> {
+        MapButtonCommands.runs(this, open, "projectMap.openInEditor", () -> {
             Path selected = path;
             Range shown = range;
             Runnable narrowed = onOpenNarrowed;
@@ -832,6 +832,14 @@ final class ProjectMapPreview extends StackPane {
         header.getChildren().setAll(titleBar);
         installFindBar();
         textPane.getChildren().add(moves.usesOverlay());
+        // The Go to Line bar's ×, as a command while the bar is open (KBD-01); Escape in its field does the same.
+        MapButtonCommands.bindIf(this, "projectMap.cardGoToLineClose", () -> {
+            if (!moves.lineBarShown()) {
+                return false;
+            }
+            moves.closeLineBar();
+            return true;
+        });
 
         editor.getStyleClass().addAll("editor-area", "project-map-preview-editor");
         editor.setEditable(false);
@@ -840,8 +848,14 @@ final class ProjectMapPreview extends StackPane {
         ConsoleNav.onCommand(editor, "edit.copy", editor::copy);
         ConsoleNav.onCommand(editor, "edit.selectAll", editor::selectAll);
         installGutter();
+        // The gutter's breakpoint strip and ▶ answer the caret's line from the keyboard too (KBD-01).
+        MapButtonCommands.bindIf(this, "projectMap.cardToggleBreakpoint", () -> gutterAtCaret(true));
+        MapButtonCommands.bindIf(this, "projectMap.cardRun", () -> gutterAtCaret(false));
         editor.setAccessibleHelp(tr("project.map.preview.accessibleHelp"));
         installEditorContextMenu();
+        // Its menu's rows are commands (MapMenuCommands): run with the keyboard in the card, one fires its row of the
+        // menu the Menu key opens, at the caret.
+        MapButtonCommands.menu(this, this::menuAtCaret);
         // Sized in the pass that lays its lines out: scrolled here, the card opens where it was asked to.
         frame.getStyleClass().add("project-map-preview-frame");
         frame.setTop(header);
@@ -2053,6 +2067,30 @@ final class ProjectMapPreview extends StackPane {
         refreshGutter(false); // the store is written later; the card shows the click now
     }
 
+    /**
+     * {@code projectMap.cardToggleBreakpoint} ({@code breakpoint}) and {@code projectMap.cardRun}: what a click in the
+     * breakpoint strip, or on the ▶, of the caret's line does. False when the card shows no such mark there.
+     */
+    private boolean gutterAtCaret(boolean breakpoint) {
+        if (disposed || path == null || gutterSource == null || frame.getCenter() != textPane) {
+            return false;
+        }
+        int line = fileLine(editor.getCurrentParagraph());
+        if (breakpoint) {
+            if (!gutterMarks.breakpointsOn()) {
+                return false;
+            }
+            gutterBreakpoint(line);
+            return true;
+        }
+        MapCardGutter.Run run = gutterRuns.get(line);
+        if (run == null) {
+            return false;
+        }
+        gutterRun(run);
+        return true;
+    }
+
     /** A click on a ▶. */
     private void gutterRun(MapCardGutter.Run run) {
         Path file = path;
@@ -2813,6 +2851,13 @@ final class ProjectMapPreview extends StackPane {
         event.consume();
     }
 
+    /** The card's menu as the Menu key opens it, at the caret: what the card's row commands fire a row of. */
+    private java.util.List<MenuItem> menuAtCaret() {
+        followAt = new int[] {editor.getCurrentParagraph(), editor.getCaretColumn()};
+        rebuildEditorContextMenu(editor.getCurrentParagraph());
+        return editorContextMenu.getItems();
+    }
+
     private void rebuildEditorContextMenu(int clickedLine) {
         boolean empty = editor.getLength() == 0;
         // With nothing selected Copy takes the whole text, and says so.
@@ -2823,6 +2868,7 @@ final class ProjectMapPreview extends StackPane {
         if (selection) {
             MenuChords.tag(copy, "edit.copy"); // the key copies the selection; it never copies the whole text
         }
+        MapButtonCommands.row(copy, "projectMap.cardCopy"); // which copies what the row copies
         MenuItem selectAll =
                 MenuChords.tag(new MenuItem(tr("editmenu.selectAll"), Icons.selectAll()), "edit.selectAll");
         selectAll.setDisable(empty);
@@ -2842,7 +2888,8 @@ final class ProjectMapPreview extends StackPane {
         Range shown = range;
         Runnable narrowed = onOpenNarrowed;
         if (selected != null && shown != null && narrowed != null) {
-            MenuItem openNarrowed = new MenuItem(tr("project.map.preview.openNarrowed"));
+            MenuItem openNarrowed = MapButtonCommands.row(
+                    new MenuItem(tr("project.map.preview.openNarrowed")), "projectMap.openNarrowed");
             openNarrowed.setDisable(symbolMissing || missing);
             openNarrowed.setOnAction(ignored -> narrowed.run());
             items.add(0, openNarrowed);
@@ -2889,6 +2936,8 @@ final class ProjectMapPreview extends StackPane {
             if (!out) {
                 // The Structure command typed in the card shows the column and goes to it; it never hides it.
                 MenuChords.tag(column, "tool.structure");
+            } else {
+                MapButtonCommands.row(column, "projectMap.cardStructure"); // shown, the card's command hides it
             }
             column.setOnAction(ignored -> {
                 if (out) {
@@ -2901,11 +2950,14 @@ final class ProjectMapPreview extends StackPane {
             card.add(column);
             if (shown == null) {
                 // A file card's caret to the declaration before or after it (Alt+Page Up / Alt+Page Down).
-                MenuItem previous =
-                        new MenuItem(tr("project.map.preview.previousDeclaration.menu"), Icons.chevronLeft());
+                MenuItem previous = MapButtonCommands.row(
+                        new MenuItem(tr("project.map.preview.previousDeclaration.menu"), Icons.chevronLeft()),
+                        "projectMap.cardPreviousDeclaration");
                 previous.setDisable(empty);
                 previous.setOnAction(ignored -> stepDeclaration(-1));
-                MenuItem next = new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight());
+                MenuItem next = MapButtonCommands.row(
+                        new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight()),
+                        "projectMap.cardNextDeclaration");
                 next.setDisable(empty);
                 next.setOnAction(ignored -> stepDeclaration(1));
                 card.add(previous);
@@ -2914,17 +2966,23 @@ final class ProjectMapPreview extends StackPane {
         }
         if (shown != null) {
             // A declaration card's ‹ › and Show in Structure (position 8): the buttons may have given way.
-            MenuItem previous = new MenuItem(tr("project.map.preview.previousDeclaration.menu"), Icons.chevronLeft());
+            MenuItem previous = MapButtonCommands.row(
+                    new MenuItem(tr("project.map.preview.previousDeclaration.menu"), Icons.chevronLeft()),
+                    "projectMap.cardPreviousDeclaration");
             previous.setDisable(!stepBack);
             previous.setOnAction(ignored -> stepDeclaration(-1));
-            MenuItem next = new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight());
+            MenuItem next = MapButtonCommands.row(
+                    new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight()),
+                    "projectMap.cardNextDeclaration");
             next.setDisable(!stepForward);
             next.setOnAction(ignored -> stepDeclaration(1));
             card.add(previous);
             card.add(next);
             Runnable inStructure = onShowInStructure;
             if (inStructure != null) {
-                MenuItem showInStructure = new MenuItem(tr("project.map.preview.showInStructure"), Icons.structure());
+                MenuItem showInStructure = MapButtonCommands.row(
+                        new MenuItem(tr("project.map.preview.showInStructure"), Icons.structure()),
+                        "projectMap.showInStructure");
                 showInStructure.setDisable(symbolMissing);
                 showInStructure.setOnAction(ignored -> inStructure.run());
                 card.add(showInStructure);
@@ -2933,12 +2991,14 @@ final class ProjectMapPreview extends StackPane {
         if (!card.isEmpty()) {
             card.add(new SeparatorMenuItem());
         }
-        MenuItem pinItem =
-                new MenuItem(tr(pin.isSelected() ? "project.map.preview.unpin.menu" : "project.map.preview.pin.menu"));
+        MenuItem pinItem = MapButtonCommands.row(
+                new MenuItem(tr(pin.isSelected() ? "project.map.preview.unpin.menu" : "project.map.preview.pin.menu")),
+                "projectMap.cardPin");
         pinItem.setGraphic(Icons.pin());
         pinItem.setOnAction(ignored -> setPinned(!pin.isSelected()));
         card.add(pinItem);
-        MenuItem freeSpace = new MenuItem(tr("project.map.preview.moveToFreeSpace"));
+        MenuItem freeSpace = MapButtonCommands.row(
+                new MenuItem(tr("project.map.preview.moveToFreeSpace")), "projectMap.moveToFreeSpace");
         freeSpace.setOnAction(ignored -> onMoveToFreeSpace.run());
         card.add(freeSpace);
         items.add(new SeparatorMenuItem());
@@ -3257,7 +3317,7 @@ final class ProjectMapPreview extends StackPane {
                 // Typed in the card the command does this only when the Map does not answer it as cards itself.
                 MenuChords.tag(item, commandId);
             }
-            inEditor.add(item);
+            inEditor.add(MapButtonCommands.row(item, editorRowCommand(commandId)));
         }
         if (links != null) {
             // The Map answers them as cards (above): the editor's own run stays one submenu away.
@@ -3274,13 +3334,15 @@ final class ProjectMapPreview extends StackPane {
             return java.util.List.of();
         }
         java.util.List<MenuItem> items = new java.util.ArrayList<>();
-        MenuItem related = MenuChords.tag(new MenuItem(tr("project.map.follow.related")), RELATED_COMMAND);
+        MenuItem related = MapButtonCommands.row(
+                MenuChords.tag(new MenuItem(tr("project.map.follow.related")), RELATED_COMMAND), "projectMap.related");
         related.setOnAction(ignored -> actions.related(file));
         items.add(related);
         Runnable dependencies = onDependencies;
         if (dependencies != null && ProjectMapImports.languageOf(file.toString()) != null) {
             // What uses the file and what it uses, as a card on the Map beside this one (gap 14).
-            MenuItem uses = new MenuItem(tr("project.map.deps.menu"), Icons.dependencies());
+            MenuItem uses = MapButtonCommands.row(
+                    new MenuItem(tr("project.map.deps.menu"), Icons.dependencies()), "projectMap.dependencies");
             uses.setOnAction(ignored -> dependencies.run());
             items.add(uses);
         }
@@ -3289,18 +3351,21 @@ final class ProjectMapPreview extends StackPane {
         Runnable declarationHistory = onHistory;
         if (shown != null && declarationHistory != null) {
             // The declaration's own commits and blame, as a card on the Map beside this one (gap 12).
-            MenuItem lines = new MenuItem(tr("project.map.history.menu"), Icons.gitLog());
+            MenuItem lines = MapButtonCommands.row(
+                    new MenuItem(tr("project.map.history.menu"), Icons.gitLog()), "projectMap.declarationHistory");
             lines.setDisable(symbolMissing);
             lines.setOnAction(ignored -> declarationHistory.run());
             git.add(lines);
         }
-        MenuItem history =
-                MenuChords.tag(new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog()), "git.fileHistory");
+        MenuItem history = MapButtonCommands.row(
+                MenuChords.tag(new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog()), "git.fileHistory"),
+                "projectMap.fileHistory");
         history.setOnAction(ignored -> actions.fileHistory(file));
         git.add(history);
         // Annotate: the editor's blame, on the card's file — a declaration card's opens at its declaration (position
         // 9).
-        MenuItem annotate = new MenuItem(tr("project.map.preview.annotate"));
+        MenuItem annotate =
+                MapButtonCommands.row(new MenuItem(tr("project.map.preview.annotate")), "projectMap.annotate");
         java.util.function.BiConsumer<Path, Integer> openAt = onOpenAt;
         annotate.setOnAction(ignored -> {
             if (shown != null && openAt != null && !symbolMissing) {
@@ -3310,7 +3375,8 @@ final class ProjectMapPreview extends StackPane {
         });
         git.add(annotate);
         // The web address of what the card shows, at HEAD: its selected lines, else its declaration, else the caret's.
-        MenuItem permalink = new MenuItem(tr("project.map.permalink.copy"));
+        MenuItem permalink =
+                MapButtonCommands.row(new MenuItem(tr("project.map.permalink.copy")), "projectMap.copyPermalink");
         int[] lines = permalinkLines();
         permalink.setOnAction(ignored -> actions.copyPermalink(file, lines[0], lines[1]));
         git.add(permalink);
@@ -3371,7 +3437,7 @@ final class ProjectMapPreview extends StackPane {
             if (command != null && (atPlace || range == null)) {
                 MenuChords.tag(item, command);
             }
-            asCards.put(kind, item);
+            asCards.put(kind, linkRow(item, kind));
         }
         java.util.List<MenuItem> trees = new java.util.ArrayList<>();
         for (MapCardLinks.Kind kind : MapCardLinks.HIERARCHY_MENU_KINDS) {
@@ -3384,10 +3450,11 @@ final class ProjectMapPreview extends StackPane {
             if (command != null && (atPlace || range == null)) {
                 MenuChords.tag(item, command);
             }
-            trees.add(item);
+            trees.add(MapButtonCommands.row(item, hierarchyRowCommand(kind)));
         }
         // Its callers, callees, supertypes and subtypes around it, walked as in a code browser (round 2).
-        MenuItem graph = new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph());
+        MenuItem graph = MapButtonCommands.row(
+                new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph()), "projectMap.showSymbolGraph");
         graph.setDisable(!(offered.contains(MapCardLinks.Kind.CALLERS)
                 || offered.contains(MapCardLinks.Kind.CALLEES)
                 || offered.contains(MapCardLinks.Kind.SUPERTYPES)
@@ -3445,6 +3512,53 @@ final class ProjectMapPreview extends StackPane {
             }
         }
         return null;
+    }
+
+    /**
+     * The Map's command for the menu row that shows {@code kind} as cards ({@link MapMenuCommands}): it fires that row
+     * of the menu the Map's keyboard is on, a card's or a declaration row's. Pure.
+     */
+    static String linkRowCommand(MapCardLinks.Kind kind) {
+        return switch (kind) {
+            case REFERENCES -> "projectMap.showReferences";
+            case CALLERS -> "projectMap.showCallers";
+            case CALLEES -> MapCardLinks.CALLEES_COMMAND;
+            case DEFINITION -> "projectMap.showDefinition";
+            case DECLARATION -> "projectMap.showDeclaration";
+            case TYPE_DEFINITION -> "projectMap.showTypeDefinition";
+            case IMPLEMENTATIONS -> "projectMap.showImplementations";
+            case SUPER_METHOD -> "projectMap.showSuperMethod";
+            case SUPERTYPES -> "projectMap.showSupertypes";
+            case SUBTYPES -> "projectMap.showSubtypes";
+        };
+    }
+
+    /**
+     * {@code item}, the menu row that shows {@code kind} as cards, marked as its command's row. Show Callees as Cards
+     * typed in a card asks about the caret, so a Callees row that asks about a declaration does not show its chord.
+     */
+    static MenuItem linkRow(MenuItem item, MapCardLinks.Kind kind) {
+        return kind == MapCardLinks.Kind.CALLEES
+                ? MapButtonCommands.also(item, MapCardLinks.CALLEES_COMMAND)
+                : MapButtonCommands.row(item, linkRowCommand(kind));
+    }
+
+    /** The Map's command for the menu row that shows {@code kind}'s hierarchy (calls or types) as a tree. Pure. */
+    static String hierarchyRowCommand(MapCardLinks.Kind kind) {
+        return kind == MapCardLinks.Kind.CALLERS || kind == MapCardLinks.Kind.CALLEES
+                ? "projectMap.showCallHierarchy"
+                : "projectMap.showTypeHierarchy";
+    }
+
+    /** The Map's command for an In the Editor row, which runs editor command {@code commandId} there. Pure. */
+    static String editorRowCommand(String commandId) {
+        return switch (commandId) {
+            case "lsp.gotoDefinition" -> "projectMap.editorDefinition";
+            case "lsp.findReferences" -> "projectMap.editorReferences";
+            case "lsp.gotoImplementation" -> "projectMap.editorImplementation";
+            case "lsp.typeHierarchy" -> "projectMap.editorTypeHierarchy";
+            default -> "projectMap.editorCallHierarchy";
+        };
     }
 
     private int clickLineAt(double x, double y) {
@@ -3820,6 +3934,21 @@ final class ProjectMapPreview extends StackPane {
         findNext.setOnAction(event -> findStep(1));
         findCase.setOnAction(event -> findStep(0));
         findClose.setOnAction(event -> closeFind());
+        // Each is a command too, which presses it while the bar is open (KBD-01): Match case has no key of its own.
+        for (var button : java.util.Map.of(
+                        "projectMap.cardFindPrevious", findPrevious,
+                        "projectMap.cardFindNext", findNext,
+                        "projectMap.cardFindMatchCase", findCase,
+                        "projectMap.cardFindClose", findClose)
+                .entrySet()) {
+            MapButtonCommands.bindIf(this, button.getKey(), () -> {
+                if (!findShown()) {
+                    return false;
+                }
+                button.getValue().fire();
+                return true;
+            });
+        }
         findField.textProperty().addListener((obs, old, now) -> findStep(0));
         // F3 / Shift+F3 step through the matches whatever the keymap binds them to (Emacs: macro recording), as
         // the spec promises (review 4, C10).
@@ -4701,6 +4830,14 @@ final class ProjectMapPreview extends StackPane {
         Button reveal = new Button(tr("project.menu.revealInFileManager"), Icons.revealInFiles());
         reveal.getStyleClass().add("project-map-preview-button");
         reveal.setOnAction(event -> onReveal.accept(file));
+        // Its command, which the card answers while this pane is what it shows (KBD-01).
+        MapButtonCommands.bindIf(this, "projectMap.revealInFileManager", () -> {
+            if (frame.getCenter() != info || disposed) {
+                return false;
+            }
+            reveal.fire();
+            return true;
+        });
         info.getChildren().add(reveal);
         info.getStyleClass().add("project-map-preview-info");
         UiZoom.padding(info, 12);

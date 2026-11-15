@@ -5789,6 +5789,26 @@ final class MapSurface extends Region {
     }
 
     /**
+     * Presses the selected row's column's "Show hidden" ({@code showHidden}) or lock button, as a click on it does
+     * (the Map's {@code projectMap.columnShowHidden} and {@code .columnPin}); false with no row selected, or on the
+     * first column, which has neither.
+     */
+    boolean pressColumnControl(boolean showHidden) {
+        ProjectMapModel.Entry entry = selectedEntry().orElse(null);
+        Path parent = entry == null ? null : entry.parent();
+        if (entry == null || parent == null || parent.equals(view.root)) {
+            return false;
+        }
+        ColumnControls controls = dataColumnControls(columnId(entry));
+        if (showHidden) {
+            controls.showHidden().fire();
+        } else {
+            controls.pin().fire();
+        }
+        return true;
+    }
+
+    /**
      * The column whose header stands for {@code path}: the root's (the first column), or a compacted
      * column's for a folder of its chain that has no row of its own. Null when the path has a row.
      */

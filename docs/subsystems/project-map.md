@@ -1008,6 +1008,41 @@ the previous one, and a crumb's tooltip (its full path) is made when the pointer
 toolbar's small text (chips, selectors, Clear, Hide unmatched, the breadcrumb, the column filter and Show
 hidden) is 0.85em of the UI size, and the back, forward and help buttons and the crumbs are at least 24 px.
 
+### Every row and button is a command (KBD-01, MENU-05)
+
+Every row of the Map's menus and every Map button runs a registered command, in the `projectMap.*` family:
+[`MapButtonCommands`](../../src/main/java/com/editora/ui/MapButtonCommands.java) (the header bar's, and the earlier
+card commands), [`ProjectRowCommands`](../../src/main/java/com/editora/ui/ProjectRowCommands.java) (the Project tree's
+file menu, which is also a row's), and [`MapMenuCommands`](../../src/main/java/com/editora/ui/MapMenuCommands.java) for
+the rest. A command acts on what the Map's keyboard is on: `MapButtonCommands.find` walks up from the Map scene's focus
+owner, a column or note stuck on a card going on to its card, and at each node asks, in order, for an action bound to
+the command (`bind`, `bindIf`, `press`, `runs`) and for a menu with a row marked with it (`menu`, `ownMenu`). The menu
+is built as a right-click builds it, for the selected row (the map's rows: `selectedRowMenu`; a card's Structure
+column; a Code Metrics row) or the caret (a card: `menuAtCaret`), and the row is chosen as a click chooses it
+(`choose`: a check row turns over, a radio row is chosen). Past the cards the view itself answers: its filters and
+zoom bar are bound on it, and its options menu is its menu (`optionsMenuNow`, which fills Open cards, Working sets and
+Trails first). With the keyboard outside the view (the search field) the view is asked directly.
+
+- **Rows.** A row is marked with `MapButtonCommands.row(item, id)`: it shows the command's chord, or, when it shows
+  another command's already (Go to Definition as a card, tagged with `lsp.gotoDefinition`, which typed in a card does
+  the same), keeps that chord and the Map command still finds it. `also` marks a row without showing a chord: a
+  declaration card's Show Callees as Cards asks about its declaration, while `projectMap.showCallees` typed in the card
+  asks at the caret. From the palette `projectMap.showCallees` fires the Callees row of the menu where the keyboard
+  is first (so a card's Structure column asks about its selected declaration), and falls back to the caret.
+- **Buttons.** `press(owner, id, button)` fires a card's bar button as a click would; `bindIf` takes an action that
+  answers false when the control would do nothing (the find bar closed, no ▶ on the caret's line), and `runs` gives a
+  button and its command one action while the button keeps its words. Buttons that name a place (an Overview link, a
+  note's heading, the Symbol Graph's middle) are bound on themselves, so their command is theirs while they have the
+  keyboard.
+- **Lists of named things** are a pick away: working sets, trails and the breadcrumb's places through the view's
+  `Picker` (`ProjectPanel.mapPick`, a `QuickOpen` over the Map window), the open cards through the card switcher, the
+  history through `projectMap.history`, and the Type selector, the results list and the Changes card's Against through
+  their own drop-down, which the command opens.
+- **Refusals.** With the Map closed: `status.projectMap.notShowing` in the editor window. Nothing where the keyboard is
+  offers the command: `status.projectMap.notOffered`; a row the menu shows disabled, or a bound action that does not
+  apply: `status.projectMap.rowUnavailable`; a pick with nothing in it: `status.projectMap.nothingToPick`. These go to
+  the Map's own status line, and the command brings the Map window forward first.
+
 ## Filters, ordering, and state
 
 The search field at the top of the Map window is the map's global fuzzy name query (the Project tool

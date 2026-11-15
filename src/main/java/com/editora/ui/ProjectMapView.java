@@ -403,6 +403,11 @@ final class ProjectMapView extends VBox {
         surface.overviewCards = cards::visibleCards;
         surface.onOverviewCard = cards::bringIntoView;
         surface.setStatusSuppliers(this.isOpen, this.isModified);
+        // With the keyboard on the map, the row commands fire the selected row's menu rows (MapMenuCommands), and
+        // the column commands press its column's header buttons.
+        MapButtonCommands.menu(surface, this::selectedRowMenu);
+        MapButtonCommands.bind(surface, "projectMap.columnShowHidden", () -> pressColumn(true));
+        MapButtonCommands.bind(surface, "projectMap.columnPin", () -> pressColumn(false));
         loadingLabel.getStyleClass().addAll("project-map-zoom-control", "project-map-loading");
         // The zoom-control class makes it transparent; over map rows it needs the overlay fill to be read.
         UiZoom.style(loadingLabel, "-fx-background-color: -color-bg-overlay; -fx-background-radius: 5;");
@@ -518,6 +523,30 @@ final class ProjectMapView extends VBox {
         canvasExportMenu.setDisable(true);
         canvasExportPngItem.setOnAction(event -> canvasExport(true));
         canvasExportSvgItem.setOnAction(event -> canvasExport(false));
+        // Each row is a command's (MapMenuCommands), which fires the row: the row shows the command's chord.
+        java.util.Map<MenuItem, String> commands = new java.util.LinkedHashMap<>();
+        commands.put(keepZoomOnOpen, "projectMap.toggleKeepZoom");
+        commands.put(focusNewColumn, "projectMap.toggleFocusNewColumn");
+        commands.put(singleClickOpens, "projectMap.toggleSingleClickOpens");
+        commands.put(compactChainsOption, "projectMap.toggleCompactChains");
+        commands.put(layoutCompactRowsOption, "projectMap.toggleCompactRows");
+        commands.put(layoutHideIgnoredOption, "projectMap.toggleHideIgnored");
+        commands.put(activityRecentChangesOption, "projectMap.toggleRecentChanges");
+        commands.put(dependencyOverlayOption, "projectMap.toggleDependencyOverlay");
+        commands.put(debugFollowOption, "projectMap.toggleFollowDebugger");
+        commands.put(hideOpenNotes, "projectMap.toggleHideNotes");
+        commands.put(followActiveFile, "projectMap.toggleFollowActiveFile");
+        commands.put(layoutOverviewItem, "projectMap.overview");
+        commands.put(dependenciesItem, "projectMap.projectDependencies");
+        commands.put(metricsItem, "projectMap.projectMetrics");
+        commands.put(changesItem, "projectMap.reviewChanges");
+        commands.put(canvasCollapseAllItem, "projectMap.collapseAll");
+        commands.put(canvasExportPngItem, "projectMap.exportPng");
+        commands.put(canvasExportSvgItem, "projectMap.exportSvg");
+        commands.forEach(MapButtonCommands::row);
+        MapButtonCommands.menu(this, this::optionsMenuNow);
+        MapButtonCommands.bind(this, "projectMap.switchCard", this::switchCardCommand); // Open cards ▸, one pick
+        MapButtonCommands.bind(this, "projectMap.breadcrumb", this::pickBreadcrumb); // the crumbs, one pick
         openCardsMenu.setOnShowing(event -> fillOpenCardsMenu());
         fillOpenCardsMenu(); // never empty: a submenu with no items does not open
         printButton.setDisable(true);
@@ -590,6 +619,7 @@ final class ProjectMapView extends VBox {
         if (switcher != null && !cards.visibleCards().isEmpty()) {
             // Recent Files and Switch File typed in the Map window both open this switcher; one key can show.
             MenuItem switchItem = MenuChords.tag(new MenuItem(tr("project.map.switch.menu")), "recent.jump");
+            MapButtonCommands.row(switchItem, "projectMap.switchCard");
             switchItem.setOnAction(event -> switcher.run());
             items.add(switchItem);
             items.add(new SeparatorMenuItem());
@@ -1201,6 +1231,7 @@ final class ProjectMapView extends VBox {
             item.setToggleGroup(flows);
             item.setSelected(flow == DEFAULT_FLOW);
             item.setOnAction(event -> canvasApplyFlow(flow, true));
+            MapButtonCommands.row(item, flowCommand(flow));
             canvasFlowItems.put(flow, item);
             canvasFlowMenu.getItems().add(item);
         }
@@ -1234,6 +1265,16 @@ final class ProjectMapView extends VBox {
             button.setOnAction(event -> updateFilters());
         }
         typeFilter.setOnAction(event -> updateFilters());
+        // Each filter is a command too (MapMenuCommands), which does what a press of the control does.
+        MapButtonCommands.bind(this, "projectMap.filterOpen", openFilter::fire);
+        MapButtonCommands.bind(this, "projectMap.filterUnsaved", modifiedFilter::fire);
+        MapButtonCommands.bind(this, "projectMap.filterGitChanged", gitFilter::fire);
+        MapButtonCommands.bind(this, "projectMap.filterBookmarks", bookmarksFilter::fire);
+        MapButtonCommands.bind(this, "projectMap.filterPersonalNotes", personalNotesFilter::fire);
+        MapButtonCommands.bind(this, "projectMap.filterProblems", problemsFilter::fire);
+        MapButtonCommands.bind(this, "projectMap.toggleHideUnmatched", hideUnmatched::fire);
+        MapButtonCommands.bind(this, "projectMap.clearFilters", clear::fire);
+        MapButtonCommands.bind(this, "projectMap.filterType", this::pickTypeFilter);
         hideUnmatched.getStyleClass().add("project-map-hide-unmatched");
         hideUnmatched.setMinWidth(Region.USE_PREF_SIZE);
         hideUnmatched.setTooltip(ControlNames.tooltip(tr("project.map.filter.hideUnmatched.help")));
@@ -1289,6 +1330,12 @@ final class ProjectMapView extends VBox {
         Button fit = zoomButton(Icons.fitView(), "project.map.zoom.fitHelp", surface::fitContent);
         Button center = zoomButton(Icons.centerView(), "project.map.navigation.centerHelp", surface::centerSelection);
         Button reset = zoomButton(Icons.resetView(), "project.map.zoom.resetHelp", surface::resetViewport);
+        // Each is a command too (MapMenuCommands): the button keeps its name and the command fires it.
+        MapButtonCommands.bind(this, "projectMap.zoomOut", zoomOut::fire);
+        MapButtonCommands.bind(this, "projectMap.zoomIn", zoomIn::fire);
+        MapButtonCommands.bind(this, "projectMap.fitView", fit::fire);
+        MapButtonCommands.bind(this, "projectMap.centerSelection", center::fire);
+        MapButtonCommands.bind(this, "projectMap.resetView", reset::fire);
         surface.setOnZoomChanged(() -> zoom.setText(surface.zoomPercent()));
 
         HBox zoomBar = UiZoom.spacing(new HBox(zoomOut, zoom, zoomIn, fit, center, reset), 1);
@@ -1424,6 +1471,86 @@ final class ProjectMapView extends VBox {
     /** {@code projectMap.options}: shows the ⋯ button's menu. */
     void showOptions() {
         options.show();
+    }
+
+    // --- the commands of the options menu, the filters and the breadcrumb (KBD-01, MENU-05) ------------------
+
+    /**
+     * A list to choose from over the Map's window (a {@link QuickOpen}): {@code rows} under {@code title}, starting on
+     * row {@code current} (-1 for the first), and what choosing row {@code index} does.
+     */
+    interface Picker {
+        void pick(String title, List<String> rows, int current, java.util.function.IntConsumer chosen);
+    }
+
+    /** Shows the pickers the Map's commands open; nothing until the owner gives one (a view on its own). */
+    private Picker picker = (title, rows, current, chosen) -> {};
+
+    void setPicker(@Nullable Picker shows) {
+        picker = shows == null ? (title, rows, current, chosen) -> {} : shows;
+    }
+
+    /** Shows a picker for command {@code commandId}, titled as the command; with no rows it says so instead. */
+    void pick(String commandId, List<String> rows, int current, java.util.function.IntConsumer chosen) {
+        if (rows.isEmpty()) {
+            onStatus.accept(tr("status.projectMap.nothingToPick", CommandTips.title(commandId)));
+            return;
+        }
+        picker.pick(CommandTips.title(commandId), rows, current, chosen);
+    }
+
+    /** The options menu as a command finds its rows: the lists in it (open cards, sets, trails) filled now. */
+    List<MenuItem> optionsMenuNow() {
+        fillOpenCardsMenu();
+        workingSets.fill();
+        trails.fill();
+        return options.getItems();
+    }
+
+    /** The command of the options menu's flow row for {@code flow}. Pure. */
+    static String flowCommand(FlowDirection flow) {
+        return switch (flow) {
+            case LEFT_TO_RIGHT -> "projectMap.flowLeftToRight";
+            case RIGHT_TO_LEFT -> "projectMap.flowRightToLeft";
+            case TOP_TO_BOTTOM -> "projectMap.flowTopToBottom";
+            case BOTTOM_TO_TOP -> "projectMap.flowBottomToTop";
+        };
+    }
+
+    /** {@code projectMap.filterType}: opens the Type selector's list, as a click on it does. */
+    private void pickTypeFilter() {
+        if (typeFilter.getScene() != null) {
+            typeFilter.requestFocus();
+            typeFilter.show();
+        }
+    }
+
+    /** {@code projectMap.breadcrumb}: the breadcrumb's places to pick from, the one chosen revealed as a crumb does. */
+    private void pickBreadcrumb() {
+        List<Path> trail = List.copyOf(crumbTrail);
+        pick(
+                "projectMap.breadcrumb",
+                trail.stream().map(this::crumbLabel).toList(),
+                trail.size() - 1,
+                index -> revealPath(trail.get(index)));
+    }
+
+    /** The column commands: the selected row's column's "Show hidden" or lock, pressed; refused on the first column. */
+    private void pressColumn(boolean showHidden) {
+        if (!surface.pressColumnControl(showHidden)) {
+            String id = showHidden ? "projectMap.columnShowHidden" : "projectMap.columnPin";
+            onStatus.accept(tr("status.projectMap.rowUnavailable", CommandTips.title(id)));
+        }
+    }
+
+    /** {@code projectMap.switchCard}: the card switcher, which says itself when no card is open. */
+    private void switchCardCommand() {
+        Runnable switcher = onSwitchCard;
+        if (switcher != null) {
+            switcher.run();
+        } else {
+            onStatus.accept(tr("project.map.switch.none"));
+        }
     }
 
     /** The mouse and keyboard model, which nothing else on screen spells out: the ? button, {@code projectMap.help}. */
@@ -2878,12 +3005,26 @@ final class ProjectMapView extends VBox {
 
     void setContextMenuFactory(Function<ProjectMapModel.Entry, ContextMenu> factory) {
         // A "+N more" or stub row is not a file: it has no file-management menu. A declaration has its own.
-        surface.setContextMenuFactory(
-                factory == null
+        rowMenus = factory == null
+                ? null
+                : entry -> entry.isPlaceholder()
                         ? null
-                        : entry -> entry.isPlaceholder()
-                                ? null
-                                : menuWithMapItems(entry, entry.isSymbol() ? symbolMenu(entry) : factory.apply(entry)));
+                        : menuWithMapItems(entry, entry.isSymbol() ? symbolMenu(entry) : factory.apply(entry));
+        surface.setContextMenuFactory(rowMenus);
+    }
+
+    /** What a right-click on a row opens, as {@link #setContextMenuFactory} composed it; null before. */
+    private @Nullable Function<ProjectMapModel.Entry, @Nullable ContextMenu> rowMenus;
+
+    /**
+     * The selected row's menu, as a right-click on it builds it: where the Map's row commands find their rows while
+     * the map has the keyboard (MapMenuCommands). Null with no row selected, or no menu for it.
+     */
+    private @Nullable List<MenuItem> selectedRowMenu() {
+        Function<ProjectMapModel.Entry, @Nullable ContextMenu> menus = rowMenus;
+        ProjectMapModel.Entry entry = surface.selectedEntry().orElse(null);
+        ContextMenu menu = menus == null || entry == null ? null : menus.apply(entry);
+        return menu == null ? null : menu.getItems();
     }
 
     /**
@@ -2897,44 +3038,54 @@ final class ProjectMapView extends VBox {
         }
         List<MenuItem> items = new ArrayList<>();
         if (entry.isFile()) {
-            items.add(mapMenuItem("project.map.menu.preview", () -> previewFileEntry(entry)));
+            items.add(mapMenuItem("project.map.menu.preview", "projectMap.preview", () -> previewFileEntry(entry)));
             if (followCode != null) {
-                items.add(mapMenuItem("project.map.follow.related", () -> followRelated(entry.path())));
+                items.add(mapMenuItem(
+                        "project.map.follow.related", "projectMap.related", () -> followRelated(entry.path())));
             }
         }
         if (entry.isFile() && surface.hasStructure(entry) || entry.isSymbol() && surface.branches(entry)) {
             String key = structure.isOpen(entry.path())
                     ? "project.map.menu.hideStructure"
                     : "project.map.menu.showStructure";
-            items.add(mapMenuItem(key, () -> toggleStructure(entry)));
+            items.add(mapMenuItem(key, "projectMap.rowStructure", () -> toggleStructure(entry)));
         }
         if (!entry.isSymbol() && surface.notedPaths.contains(entry.path())) {
-            items.add(mapMenuItem("project.map.menu.personalNotes", () -> cardsShowNotes(entry.path())));
+            items.add(mapMenuItem(
+                    "project.map.menu.personalNotes", "projectMap.personalNotes", () -> cardsShowNotes(entry.path())));
         }
         FollowCode code = followCode;
         if (code != null && (entry.isFile() || entry.directory())) {
             // The file's or folder's web address at HEAD (Map code browser round 2).
-            items.add(mapMenuItem("project.map.permalink.copy", () -> code.copyPermalink(entry.path(), -1, -1)));
+            items.add(mapMenuItem(
+                    "project.map.permalink.copy",
+                    "projectMap.copyPermalink",
+                    () -> code.copyPermalink(entry.path(), -1, -1)));
         }
         if (entry.directory()
                 || entry.isFile() && ProjectMapImports.languageOf(entry.path().toString()) != null) {
             // What uses it and what it uses, as a card (gap 14).
-            items.add(mapMenuItem("project.map.deps.menu", () -> openDependencies(entry.path(), null)));
+            items.add(mapMenuItem(
+                    "project.map.deps.menu", "projectMap.dependencies", () -> openDependencies(entry.path(), null)));
         }
         if (!entry.isSymbol() && surface.gitChanged(entry.path())) {
             // Its changes against HEAD (a folder's: its first changed file's), in the Changes card (round 2).
-            items.add(mapMenuItem("project.map.changes.menu", () -> openChanges(entry.path())));
+            items.add(mapMenuItem("project.map.changes.menu", "projectMap.changes", () -> openChanges(entry.path())));
         }
         if (entry.directory()) {
             // Its files' sizes, complexity and hotspots, as a card (gap 15).
-            items.add(mapMenuItem("project.map.metrics.menu", () -> openMetrics(entry.path())));
+            items.add(mapMenuItem("project.map.metrics.menu", "projectMap.metrics", () -> openMetrics(entry.path())));
         }
         Path closable = surface.closeTargetFor(entry);
         if (closable != null) {
-            items.add(mapMenuItem("project.map.menu.closeColumn", () -> closeColumn(closable)));
+            items.add(
+                    mapMenuItem("project.map.menu.closeColumn", "projectMap.closeColumn", () -> closeColumn(closable)));
         }
         if (canvasHasOtherBranches(entry.path())) {
-            items.add(mapMenuItem("project.map.menu.closeOtherBranches", () -> canvasCloseOthers(entry.path(), true)));
+            items.add(mapMenuItem(
+                    "project.map.menu.closeOtherBranches",
+                    "projectMap.closeOtherBranches",
+                    () -> canvasCloseOthers(entry.path(), true)));
         }
         if (items.isEmpty()) {
             return menu;
@@ -2971,8 +3122,8 @@ final class ProjectMapView extends VBox {
         return false;
     }
 
-    private static MenuItem mapMenuItem(String key, Runnable action) {
-        MenuItem item = new MenuItem(tr(key));
+    private static MenuItem mapMenuItem(String key, String commandId, Runnable action) {
+        MenuItem item = MapButtonCommands.row(new MenuItem(tr(key)), commandId);
         item.setOnAction(event -> action.run());
         item.getProperties().put(ProjectPanel.STAYS_IN_MAP, Boolean.TRUE);
         return item;
@@ -3037,11 +3188,14 @@ final class ProjectMapView extends VBox {
         if (symbol == null) {
             return menu;
         }
-        MenuItem preview = new MenuItem(tr("project.map.structure.preview"));
+        MenuItem preview =
+                MapButtonCommands.row(new MenuItem(tr("project.map.structure.preview")), "projectMap.preview");
         preview.setOnAction(event -> previewAction.run());
-        MenuItem openAt = new MenuItem(tr("project.map.structure.openAt"));
+        MenuItem openAt =
+                MapButtonCommands.row(new MenuItem(tr("project.map.structure.openAt")), "projectMap.openInEditor");
         openAt.setOnAction(event -> onOpenAt.accept(symbol.file(), symbol.line()));
-        MenuItem openNarrowed = new MenuItem(tr("project.map.preview.openNarrowed"));
+        MenuItem openNarrowed =
+                MapButtonCommands.row(new MenuItem(tr("project.map.preview.openNarrowed")), "projectMap.openNarrowed");
         openNarrowed.setOnAction(event -> onOpenNarrowed.accept(
                 symbol.file(),
                 symbol.block() != null
@@ -3081,7 +3235,7 @@ final class ProjectMapView extends VBox {
             if (command != null) {
                 MenuChords.tag(item, command);
             }
-            items.add(item);
+            items.add(ProjectMapPreview.linkRow(item, kind));
         }
         for (MapCardLinks.Kind kind : MapCardLinks.HIERARCHY_MENU_KINDS) {
             MenuItem item = new MenuItem(MapCardLinks.hierarchyMenuLabel(kind));
@@ -3090,9 +3244,10 @@ final class ProjectMapView extends VBox {
             if (command != null) {
                 MenuChords.tag(item, command);
             }
-            items.add(item);
+            items.add(MapButtonCommands.row(item, ProjectMapPreview.hierarchyRowCommand(kind)));
         }
-        MenuItem graph = new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph());
+        MenuItem graph = MapButtonCommands.row(
+                new MenuItem(tr("project.map.graph.menu"), Icons.symbolGraph()), "projectMap.showSymbolGraph");
         graph.setOnAction(event -> cards.showSymbolGraph(entry));
         items.add(graph);
         return items;
@@ -3511,7 +3666,9 @@ final class ProjectMapView extends VBox {
         items.add(new SeparatorMenuItem());
         List<MenuItem> inEditor = new ArrayList<>();
         for (String commandId : ProjectMapPreview.FOLLOW_COMMANDS) {
-            MenuItem item = new MenuItem(ProjectMapPreview.followLabel(commandId));
+            MenuItem item = MapButtonCommands.row(
+                    new MenuItem(ProjectMapPreview.followLabel(commandId)),
+                    ProjectMapPreview.editorRowCommand(commandId));
             item.setOnAction(event -> code.follow(file, line, -1, name, commandId));
             inEditor.add(item);
         }
@@ -3523,11 +3680,13 @@ final class ProjectMapView extends VBox {
             items.addAll(inEditor);
         }
         items.add(new SeparatorMenuItem());
-        items.add(mapMenuItem("project.map.follow.related", () -> followRelated(file)));
-        MenuItem lines = new MenuItem(tr("project.map.history.menu"), Icons.gitLog());
+        items.add(mapMenuItem("project.map.follow.related", "projectMap.related", () -> followRelated(file)));
+        MenuItem lines = MapButtonCommands.row(
+                new MenuItem(tr("project.map.history.menu"), Icons.gitLog()), "projectMap.declarationHistory");
         lines.setOnAction(event -> declarationHistory.run());
         items.add(lines);
-        MenuItem history = new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog());
+        MenuItem history = MapButtonCommands.row(
+                new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog()), "projectMap.fileHistory");
         history.setOnAction(event -> code.fileHistory(file));
         items.add(history);
         return items;
