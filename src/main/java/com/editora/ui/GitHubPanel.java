@@ -340,6 +340,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             }
         });
         stateFilter.setAccessibleText(tr("github.panel.stateTip"));
+        FocusCommands.bind(this, "github.filterByState", stateFilter::show); // the choices, in the drop-down itself
         stateFilter.setTooltip(ControlNames.tooltip(tr("github.panel.stateTip")));
         stateFilter.getStyleClass().add("github-state-filter");
         // A fixed width: sized from its items it shrank below its own label when the segment's items changed.

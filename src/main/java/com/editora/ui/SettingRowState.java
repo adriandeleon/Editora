@@ -58,9 +58,18 @@ final class SettingRowState {
             text.getChildren().add(line);
         }
         modified.addListener((o, was, now) -> refresh());
+        // Reset to default (or Use My Setting) of the row the keyboard is in, as its link and menu row do.
+        FocusCommands.bindIf(row, "settings.resetRow", () -> {
+            if (resetAction == null || !modified.get()) {
+                return false;
+            }
+            resetNow();
+            return true;
+        });
+        FocusCommands.focusOnly(row);
         row.setOnContextMenuRequested(e -> {
             if (resetAction != null && modified.get()) {
-                MenuItem item = new MenuItem(tr("settings.row.reset"));
+                MenuItem item = FocusCommands.row(new MenuItem(tr("settings.row.reset")), "settings.resetRow");
                 item.getStyleClass().add("danger"); // a reset of a setting: a destructive row reads red
                 item.setOnAction(a -> resetNow());
                 new ContextMenu(item).show(row, e.getScreenX(), e.getScreenY());

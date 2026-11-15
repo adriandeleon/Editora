@@ -114,6 +114,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         Label groupLabel = new Label(tr("todo.groupBy"));
         groupBy.getItems().setAll(TodoGrouping.GroupBy.values());
         groupBy.getSelectionModel().select(TodoGrouping.GroupBy.FILE);
+        FocusCommands.bind(this, "todo.groupBy", groupBy::show); // the choices, in the drop-down itself
         groupBy.setConverter(new StringConverter<>() {
             @Override
             public String toString(TodoGrouping.GroupBy g) {
@@ -170,7 +171,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         });
         ListRowCommands.bind(tree, ListRowCommands.OPEN, () -> {
             TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
-            if (item == null || item.getValue() == null || item.getValue().match() == null) {
+            if (item == null || item.getValue().match() == null) { // none, or a file's header row
                 return false;
             }
             activateSelected();

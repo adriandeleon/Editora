@@ -670,6 +670,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threads.getStyleClass().add("debug-threads");
         threads.setMaxWidth(Double.MAX_VALUE);
         threads.setPromptText(tr("debugpanel.threads"));
+        FocusCommands.bindIf(
+                this,
+                "debug.chooseThread",
+                () -> { // the session's threads, in the drop-down itself
+                    if (threads.getItems().isEmpty()) {
+                        return false;
+                    }
+                    threads.show();
+                    return true;
+                });
         threads.setConverter(new StringConverter<>() {
             @Override
             public String toString(DapModels.ThreadInfo t) {

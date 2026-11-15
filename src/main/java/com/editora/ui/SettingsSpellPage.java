@@ -129,14 +129,16 @@ final class SettingsSpellPage {
                 "spell file types languages per language json yaml toml xml csv markdown html typst code comments");
         // The dictionaries get a card of their own: both switches, both file links, then the word list.
         Card dict = w.card(p, tr("settings.dict.title"));
-        Hyperlink techLink = new Hyperlink(tr("settings.dict.openTechnical"));
+        Hyperlink techLink = FocusCommands.press(
+                new Hyperlink(tr("settings.dict.openTechnical")), "settings.openTechnicalDictionary");
         techLink.setTooltip(ControlNames.tooltip(tr("settings.dict.openTechnicalTip")));
         techLink.setOnAction(e -> {
             if (onOpenTechnicalDictionary != null) {
                 onOpenTechnicalDictionary.run();
             }
         });
-        Hyperlink personalLink = new Hyperlink(tr("settings.dict.openPersonal"));
+        Hyperlink personalLink =
+                FocusCommands.press(new Hyperlink(tr("settings.dict.openPersonal")), "settings.openPersonalDictionary");
         personalLink.setTooltip(ControlNames.tooltip(tr("settings.dict.openPersonalTip")));
         personalLink.setOnAction(e -> {
             if (onOpenPersonalDictionary != null) {
@@ -183,7 +185,7 @@ final class SettingsSpellPage {
         // The list has no search of its own: what is being typed narrows it, which also shows at once
         // whether the word is already there. Filtering only — nothing is stored until Add.
         input.textProperty().addListener((o, was, now) -> refreshDictionaryList());
-        Button add = new Button(tr("settings.dict.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.dict.add")), "settings.addDictionaryWord");
         Runnable doAdd = () -> {
             // One entry per word, in the form the checker looks words up by. A phrase used to be stored
             // whole ("foo bar"), which no single word can ever match.

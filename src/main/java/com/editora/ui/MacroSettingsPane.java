@@ -165,16 +165,16 @@ final class MacroSettingsPane extends HBox {
                 touched();
             }
         });
-        Button addCommand = new Button(tr("settings.macro.addCommand"));
+        Button addCommand = FocusCommands.press(new Button(tr("settings.macro.addCommand")), "macro.addCommandStep");
         addCommand.setOnAction(e -> {
             String id = chooseCommand(null);
             if (id != null) {
                 addStep(MacroStep.command(id));
             }
         });
-        Button addText = new Button(tr("settings.macro.addText"));
+        Button addText = FocusCommands.press(new Button(tr("settings.macro.addText")), "macro.addTextStep");
         addText.setOnAction(e -> addStep(MacroStep.text("")));
-        Button addKey = new Button(tr("settings.macro.addKey"));
+        Button addKey = FocusCommands.press(new Button(tr("settings.macro.addKey")), "macro.addKeyStep");
         addKey.setOnAction(e -> addStep(MacroStep.key("")));
         HBox reorder = UiZoom.spacing(new HBox(up, down), 6);
         // No button may shrink below its label: a squeezed button reads "…" (and wraps to the next line instead).
@@ -207,11 +207,11 @@ final class MacroSettingsPane extends HBox {
         // No macro selected, no steps to edit: Add Command used to add a step that belonged to nothing.
         stepEditor.disableProperty().bind(form.disabledProperty());
 
-        Button save = new Button(tr("settings.save"));
+        Button save = FocusCommands.press(new Button(tr("settings.save")), "macro.saveEdits");
         save.getStyleClass().add("success");
         save.disableProperty().bind(dirty.not());
         save.setOnAction(e -> save());
-        Button revert = new Button(tr("settings.macro.revert"));
+        Button revert = FocusCommands.press(new Button(tr("settings.macro.revert")), "macro.revertEdits");
         revert.disableProperty().bind(dirty.not());
         revert.setOnAction(e -> load(selectedStored()));
         Label unsaved = new Label(tr("settings.macro.unsaved"));
@@ -465,9 +465,9 @@ final class MacroSettingsPane extends HBox {
         Label chordLabel = new Label(bound ? chord : tr("settings.shortcuts.unbound"));
         chordLabel.getStyleClass().add(bound ? "shortcut-chord" : "shortcut-unbound");
         chordLabel.setMinWidth(Region.USE_PREF_SIZE);
-        Button record = new Button(tr("settings.shortcuts.record"));
+        Button record = FocusCommands.press(new Button(tr("settings.shortcuts.record")), "macro.recordBinding");
         // A macro has no default chord, so this removes the binding — and says so.
-        Button clear = new Button(tr("settings.shortcuts.remove"));
+        Button clear = FocusCommands.press(new Button(tr("settings.shortcuts.remove")), "macro.removeBinding");
         clear.setDisable(!bound);
         fitToLabel(record, clear);
         clear.setOnAction(e -> {
@@ -575,7 +575,8 @@ final class MacroSettingsPane extends HBox {
             value.setWrapText(true);
             HBox.setHgrow(value, Priority.ALWAYS);
             value.setMaxWidth(Double.MAX_VALUE);
-            Button choose = new Button(tr("settings.macro.chooseCommand"));
+            Button choose =
+                    FocusCommands.press(new Button(tr("settings.macro.chooseCommand")), "macro.chooseStepCommand");
             choose.getStyleClass().add("macro-step-input");
             fitToLabel(choose);
             choose.setOnAction(e -> {

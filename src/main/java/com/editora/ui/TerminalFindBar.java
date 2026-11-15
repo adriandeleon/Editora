@@ -55,6 +55,11 @@ final class TerminalFindBar extends HBox {
         older.setOnAction(e -> step(true));
         newer.setOnAction(e -> step(false));
         close.setOnAction(e -> close());
+        // The console find bars' commands, here on the terminal's own scrollback (older is Find Previous).
+        FocusCommands.press(this, "find.previous", older);
+        FocusCommands.press(this, "find.next", newer);
+        FocusCommands.bindIf(this, "find.toggleCase", PanelCommands.toggle(matchCase));
+        FocusCommands.press(this, "edit.cancel", close);
 
         typing.setOnFinished(e -> run());
         query.textProperty().addListener((o, was, now) -> typing.playFromStart());

@@ -1,14 +1,24 @@
 package com.editora.ui;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import javafx.scene.Node;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tab;
 import javafx.stage.Window;
 
+import com.editora.AppInfo;
 import com.editora.command.Command;
+import com.editora.dap.DapManager;
+import com.editora.editor.EditorBuffer;
+import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -188,6 +198,75 @@ final class PanelCommands {
             "welcome.copyFocusedPath",
             "welcome.removeFocusedRecent");
 
+    /** The Settings window's and its sub-windows' buttons and links that act (not those that edit one value). */
+    static final List<String> SETTINGS = List.of(
+            "settings.toggleModifiedOnly",
+            "settings.resetAll",
+            "settings.pageHelp",
+            "settings.resetRow",
+            "settings.editUserSettings",
+            "settings.editProjectSettings",
+            "settings.resetFontZoom",
+            "settings.openUserThemesFolder",
+            "settings.chooseJavaCleanups",
+            "settings.installTool",
+            "settings.followToolLink",
+            "settings.restoreToolWindowLayout",
+            "settings.moveToolWindowEarlier",
+            "settings.moveToolWindowLater",
+            "settings.revokeAllTrust",
+            "settings.openSettingsFile",
+            "settings.openSessionLog",
+            "settings.restoreBackup",
+            "settings.resetAllShortcuts",
+            "settings.recordShortcut",
+            "settings.resetShortcut",
+            "settings.removeShortcut",
+            "settings.openTechnicalDictionary",
+            "settings.openPersonalDictionary",
+            "settings.addDictionaryWord",
+            "settings.addSnippet",
+            "settings.addTemplate",
+            "settings.addAbbreviation",
+            "settings.addExternalTool",
+            "settings.addTypeRenderer",
+            "settings.addRemoteSite",
+            "settings.addTodoPattern",
+            "settings.removeTodoPattern",
+            "sync.removeStoredCredentials",
+            "sync.keepStoredCredentials",
+            "sync.connect",
+            "sync.disconnect",
+            "sync.createGithubRepo",
+            "sync.syncAnyway",
+            "sync.cancel",
+            "sync.openFolder",
+            "mcp.newToken",
+            "settings.testAiConnection",
+            "plugins.reload",
+            "plugins.removeFocused",
+            "macro.addCommandStep",
+            "macro.addTextStep",
+            "macro.addKeyStep",
+            "macro.chooseStepCommand",
+            "macro.saveEdits",
+            "macro.revertEdits",
+            "macro.recordBinding",
+            "macro.removeBinding",
+            "toolbar.addSeparator",
+            "run.addConfig",
+            "deploy.addDeployment",
+            "debug.addCompound");
+
+    /** A panel's drop-down that sets what it shows, and the CSV header's rename: each opens or runs where it is. */
+    static final List<String> VIEW_CHOICES = List.of(
+            "structure.sortBy",
+            "todo.groupBy",
+            "github.filterByState",
+            "http.showHistory",
+            "debug.chooseThread",
+            "csv.renameColumn");
+
     /** Every family, in palette order. */
     static final List<List<String>> FAMILIES = List.of(
             TERMINAL,
@@ -230,15 +309,24 @@ final class PanelCommands {
                 () -> mc.debugCoordinator.ifDebug(
                         () -> mc.debugCoordinator.memberBreakpoints().removeMarkAtCaret())));
         // The Welcome page's and the About box's links to Editora's pages.
-        mc.registry.register(
-                Command.of("help.whatsNew", () -> mc.openExternalUrl(com.editora.AppInfo.releaseNotesUrl())));
-        mc.registry.register(Command.of("help.homepage", () -> mc.openExternalUrl(com.editora.AppInfo.HOMEPAGE)));
-        mc.registry.register(Command.of("help.releases", () -> mc.openExternalUrl(com.editora.AppInfo.RELEASES_PAGE)));
+        mc.registry.register(Command.of("help.whatsNew", () -> mc.openExternalUrl(AppInfo.releaseNotesUrl())));
+        mc.registry.register(Command.of("help.homepage", () -> mc.openExternalUrl(AppInfo.HOMEPAGE)));
+        mc.registry.register(Command.of("help.releases", () -> mc.openExternalUrl(AppInfo.RELEASES_PAGE)));
         mc.registry.register(Command.of("help.copyAboutDetails", () -> {
-            AboutDialog.copyDetails(
-                    mc.config.isDev() ? com.editora.AppInfo.gitCommit() : "", mc.config.getSettingsFile());
+            AboutDialog.copyDetails(mc.config.isDev() ? AppInfo.gitCommit() : "", mc.config.getSettingsFile());
             mc.setStatus(tr("about.copied"));
         }));
+        // Alt+click's Quick Evaluate, at the caret; the format bar's heading level, asked as a list.
+        mc.registry.register(Command.of(
+                "debug.quickEvaluate",
+                () -> mc.debugCoordinator.ifDebug(() -> {
+                    EditorBuffer b = mc.activeBuffer();
+                    if (b == null || !b.quickEvaluateAtCaret()) { // the hover is active only while paused
+                        boolean paused = mc.debugCoordinator.dap().state() == DapManager.State.SUSPENDED;
+                        mc.setStatus(tr(paused ? "status.debug.noValueAtCaret" : "palette.disabled.needsSuspended"));
+                    }
+                })));
+        mc.registry.register(Command.of("markdown.setHeadingLevel", () -> setHeadingLevel(mc)));
         // Rows that name a thing (a crumb's folder, a tool window's icon): the command asks which.
         mc.registry.register(Command.of("toolbar.toggleCustomize", () -> {
             if (!mc.toolbarCoordinator.toggleCustomizeIfShown()) {
@@ -265,12 +353,25 @@ final class PanelCommands {
                         mc,
                         "file.openTerminalInFolder",
                         false,
-                        dir -> mc.openTerminalAt(dir, true, com.editora.vfs.Vfs.isLocal(dir)))));
+                        dir -> mc.openTerminalAt(dir, true, Vfs.isLocal(dir)))));
+    }
+
+    /**
+     * Markdown: Set Heading Level… — the format bar's Style drop-down for the active Markdown file's caret line: Normal
+     * text or a heading level, picked from a list. Says so for a file that is not Markdown, or is read-only.
+     */
+    private static void setHeadingLevel(MainController mc) {
+        List<String> names = new ArrayList<>(List.of(tr("markdown.heading.normal")));
+        for (int level = 1; level <= 6; level++) {
+            names.add(tr("markdown.heading.h" + level));
+        }
+        mc.previews.withMarkdown(b ->
+                choose(mc, "markdown.setHeadingLevel", List.of(0, 1, 2, 3, 4, 5, 6), names::get, b::setHeadingLevel));
     }
 
     /** Runs {@code op} on the active buffer, or says that no file is open. */
-    private static void withBuffer(MainController mc, java.util.function.Consumer<com.editora.editor.EditorBuffer> op) {
-        com.editora.editor.EditorBuffer b = mc.activeBuffer();
+    private static void withBuffer(MainController mc, Consumer<EditorBuffer> op) {
+        EditorBuffer b = mc.activeBuffer();
         if (b == null) {
             mc.setStatus(tr("status.bookmarks.noFile"));
         } else {
@@ -282,28 +383,23 @@ final class PanelCommands {
      * Asks which folder above the active file command {@code id} acts on, as the breadcrumb's crumbs offer them: its
      * own folder first, up to the root; local folders only for {@code localOnly}. Says so when there is no file.
      */
-    private static void chooseFolder(
-            MainController mc, String id, boolean localOnly, java.util.function.Consumer<java.nio.file.Path> op) {
-        com.editora.editor.EditorBuffer b = mc.activeBuffer();
-        java.nio.file.Path file = b == null ? null : b.getPath();
-        if (file == null || (localOnly && !com.editora.vfs.Vfs.isLocal(file))) {
+    private static void chooseFolder(MainController mc, String id, boolean localOnly, Consumer<Path> op) {
+        EditorBuffer b = mc.activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file == null || (localOnly && !Vfs.isLocal(file))) {
             mc.setStatus(tr("status.bookmarks.noFile"));
             return;
         }
-        List<java.nio.file.Path> folders = new ArrayList<>();
-        for (java.nio.file.Path dir = file.getParent(); dir != null; dir = dir.getParent()) {
+        List<Path> folders = new ArrayList<>();
+        for (Path dir = file.getParent(); dir != null; dir = dir.getParent()) {
             folders.add(dir);
         }
-        choose(mc, id, folders, dir -> com.editora.vfs.Vfs.displayLabel(dir), op);
+        choose(mc, id, folders, dir -> Vfs.displayLabel(dir), op);
     }
 
     /** Asks for one of {@code items} for command {@code id} in a picker over the window, and runs {@code op} on it. */
     private static <T> void choose(
-            MainController mc,
-            String id,
-            List<T> items,
-            java.util.function.Function<T, String> label,
-            java.util.function.Consumer<T> op) {
+            MainController mc, String id, List<T> items, Function<T, String> label, Consumer<T> op) {
         if (items.isEmpty()) {
             mc.setStatus(tr("status.projectMap.nothingToPick", CommandTips.title(id)));
             return;
@@ -325,7 +421,7 @@ final class PanelCommands {
                 CommandTips.title(id),
                 tr("project.map.pick.prompt"),
                 () -> rows,
-                row -> java.util.Objects.requireNonNullElse(row.getText(), ""),
+                row -> Objects.requireNonNullElse(row.getText(), ""),
                 row -> "",
                 FocusCommands::choose);
         picker.setOverlayHost(mc.overlayHost);
@@ -336,18 +432,14 @@ final class PanelCommands {
      * Ties a find bar's Match Case, Regular Expression and Whole Word toggles to {@code find.toggleCase} and the
      * others, for the bar (or panel) {@code owner} the keyboard is in or the window shows.
      */
-    static void bindFindOptions(
-            Node owner,
-            javafx.scene.control.CheckBox matchCase,
-            javafx.scene.control.CheckBox regex,
-            javafx.scene.control.CheckBox word) {
+    static void bindFindOptions(Node owner, CheckBox matchCase, CheckBox regex, CheckBox word) {
         FocusCommands.bindIf(owner, "find.toggleCase", toggle(matchCase));
         FocusCommands.bindIf(owner, "find.toggleRegex", toggle(regex));
         FocusCommands.bindIf(owner, "find.toggleWholeWord", toggle(word));
     }
 
     /** Turns {@code box} over as a click on its toggle does; false, doing nothing, while it is disabled (no query). */
-    static java.util.function.BooleanSupplier toggle(javafx.scene.control.CheckBox box) {
+    static BooleanSupplier toggle(CheckBox box) {
         return () -> {
             if (box.isDisabled()) {
                 return false;
@@ -361,15 +453,13 @@ final class PanelCommands {
     static List<Node> showing(MainController mc) {
         List<Node> roots = new ArrayList<>();
         Tab tab = mc.activeTab();
-        if (tab != null && tab.getContent() != null) {
+        if (tab != null) {
             roots.add(tab.getContent());
         }
         for (ToolWindow window : mc.toolWindows.getOpenToolWindows()) {
-            Node content = window.contentIfBuilt();
-            if (content != null) {
-                roots.add(content);
-            }
+            roots.add(window.contentIfBuilt());
         }
+        roots.removeIf(Objects::isNull); // a tab or tool window with nothing built in it yet
         return roots;
     }
 }

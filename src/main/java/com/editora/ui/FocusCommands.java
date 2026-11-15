@@ -375,7 +375,8 @@ class FocusCommands {
     /**
      * Runs command {@code commandId} where it is offered, or says on {@code status} why it did not run: looked for from
      * the focus owner of each of {@code windows} up (the focused window first), then below each of {@code showing} (the
-     * main window's active tab and open tool windows). A window other than the focused one is brought forward first,
+     * main window's active tab and open tool windows), then below each window's root. A window other than the focused one
+     * is brought forward first,
      * so nothing runs where the user is not looking. A command marked on several rows of the menu (a submenu's choices)
      * hands the enabled ones to {@code pick}, which asks which. Answers whether it ran.
      */
@@ -398,6 +399,12 @@ class FocusCommands {
         }
         for (int i = 0; found == null && i < showing.size(); i++) {
             found = findBelow(showing.get(i), commandId);
+        }
+        // Last, what a window shows with the keyboard elsewhere in it (the Settings page on screen, its buttons).
+        for (int i = 0; found == null && i < ordered.size(); i++) {
+            Scene scene = ordered.get(i).getScene();
+            found = scene == null ? null : findBelow(scene.getRoot(), commandId);
+            in = found == null ? null : ordered.get(i);
         }
         if (in instanceof Stage stage && !stage.isFocused()) {
             stage.toFront();

@@ -19,6 +19,8 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
+import com.editora.http.HttpExchange;
+import com.editora.http.HttpFixtures;
 import com.editora.markdown.MarkdownLint;
 import com.editora.text.LspDiagnostic;
 import com.editora.text.LspDiagnostic.Severity;
@@ -490,6 +492,21 @@ class PanelCommandsFxTest {
             if (!clears) {
                 status.removeLast();
             }
+            // With a response kept: its history can be shown and cleared.
+            HttpExchange exchange = HttpFixtures.exchange(
+                    "get",
+                    "GET",
+                    "http://x.test/get",
+                    List.of(),
+                    "",
+                    HttpFixtures.text(200, List.of(), "{}", "application/json", 3, 2, null, List.of()));
+            http.showEntries(
+                    List.of(new HttpHistoryEntry(exchange, null, 0, System.currentTimeMillis(), false, false, false)));
+            assertTrue(run("http.showHistory", http, status), "the past responses, in the drop-down itself");
+            FxTestSupport.<javafx.scene.control.ComboBox<?>>field(http, "historyCombo")
+                    .hide();
+            assertFalse(clear.isDisable(), "a kept response can be cleared");
+            assertTrue(run("http.clearHistory", http, status));
 
             HierarchyPanel hierarchy =
                     new HierarchyPanel((HierarchyPanel.Loader) java.lang.reflect.Proxy.newProxyInstance(
@@ -617,6 +634,102 @@ class PanelCommandsFxTest {
             agent.setBusy(true);
             assertFalse(run("agent.send", agent, status), "while a turn runs the button is Stop: agent.stop's");
             assertEquals(List.of(notOffered("agent.send")), status);
+        });
+    }
+
+    @Test
+    void aPanelsViewDropDownIsOpenedByItsCommand() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            StructurePanel structure = new StructurePanel();
+            Stage stage = stage(new StackPane(structure));
+            try {
+                List<String> status = new ArrayList<>();
+                javafx.scene.control.ComboBox<?> sort = FxTestSupport.field(structure, "sortCombo");
+                assertTrue(run("structure.sortBy", structure, status));
+                assertTrue(sort.isShowing(), "the sort choices, in the drop-down itself");
+                sort.hide();
+                HttpClientPanel http = new HttpClientPanel(null, e -> {}, e -> {}, "monospace", 12);
+                assertFalse(run("http.showHistory", http, status), "no past responses: nothing to show");
+                assertEquals(List.of(notOffered("http.showHistory")), status);
+            } finally {
+                stage.close();
+            }
+        });
+    }
+
+    @Test
+    void anEditableCsvGridsColumnIsRenamedFromTheKeyboard() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            CsvGridPanel panel = new CsvGridPanel((line, field) -> {});
+            Stage stage = stage(new StackPane(panel));
+            try {
+                List<List<String>> rows = new ArrayList<>();
+                rows.add(new ArrayList<>(List.of("name", "qty")));
+                rows.add(new ArrayList<>(List.of("pear", "10")));
+                panel.setData(rows);
+                @SuppressWarnings("unchecked")
+                TableView<Object> table = (TableView<Object>) FxTestSupport.<TableView<?>>field(panel, "table");
+                table.getFocusModel().focus(0, table.getColumns().get(1));
+                List<String> status = new ArrayList<>();
+                assertFalse(run("csv.renameColumn", panel, status), "a read-only grid is not renamed");
+                panel.setEditable(true, null);
+                table.getFocusModel().focus(0, table.getColumns().get(1));
+                table.getFocusModel().focus(0, table.getColumns().get(0)); // the "#" gutter has no header to rename
+                assertFalse(run("csv.renameColumn", panel, status));
+                status.removeLast(); // said, as the first refusal was
+                table.getFocusModel().focus(0, table.getColumns().get(1));
+                assertTrue(run("csv.renameColumn", panel, status));
+                assertTrue(
+                        table.getColumns().get(1).getGraphic() instanceof javafx.scene.control.TextField,
+                        "the header became its rename field, as a double-click makes it");
+                assertEquals(List.of(notOffered("csv.renameColumn")), status);
+            } finally {
+                stage.close();
+            }
+        });
+    }
+
+    @Test
+    void theTerminalsFindBarAnswersTheConsoleFindBarsCommands() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            TerminalFindBar bar = new TerminalFindBar();
+            List<String> closed = new ArrayList<>();
+            bar.setOnClose(() -> closed.add("closed"));
+            List<String> status = new ArrayList<>();
+            assertFalse(run("find.toggleCase", bar, status), "a hidden bar offers nothing");
+            bar.setVisible(true);
+            CheckBox matchCase = FxTestSupport.field(bar, "matchCase");
+            assertTrue(run("find.toggleCase", bar, status));
+            assertTrue(matchCase.isSelected());
+            assertTrue(run("edit.cancel", bar, status), "what closes the editor's find bar closes it");
+            assertFalse(bar.isVisible());
+            assertEquals(List.of(notOffered("find.toggleCase")), status);
+        });
+    }
+
+    @Test
+    void theDebugWindowsThreadListIsOpenedOnlyWithThreadsInIt() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            DebugPanel panel = new DebugPanel((DebugPanel.Actions) java.lang.reflect.Proxy.newProxyInstance(
+                    DebugPanel.Actions.class.getClassLoader(),
+                    new Class<?>[] {DebugPanel.Actions.class},
+                    (proxy, method, args) -> {
+                        Class<?> type = method.getReturnType();
+                        return type == boolean.class ? false : type == int.class ? 0 : null;
+                    }));
+            Stage stage = stage(new StackPane(panel));
+            try {
+                List<String> status = new ArrayList<>();
+                assertFalse(run("debug.chooseThread", panel, status), "no session: no threads to choose from");
+                javafx.scene.control.ComboBox<com.editora.dap.DapModels.ThreadInfo> threads =
+                        FxTestSupport.field(panel, "threads");
+                threads.getItems().add(new com.editora.dap.DapModels.ThreadInfo(1, "main"));
+                assertTrue(run("debug.chooseThread", panel, status), "the session's threads, in the drop-down itself");
+                threads.hide();
+                assertEquals(List.of(notOffered("debug.chooseThread")), status);
+            } finally {
+                stage.close();
+            }
         });
     }
 }

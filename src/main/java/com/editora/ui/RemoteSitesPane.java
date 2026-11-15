@@ -282,7 +282,7 @@ final class RemoteSitesPane {
             }
         });
 
-        Button add = new Button(tr("settings.remote.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.remote.add")), "settings.addRemoteSite");
         add.setOnAction(e -> {
             RemoteConnection c = new RemoteConnection(
                     "",

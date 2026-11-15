@@ -371,7 +371,7 @@ final class SnippetsEditor {
             load.accept(sel == null ? null : sel.name());
         };
 
-        Button add = new Button(tr("settings.snippet.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.snippet.add")), "settings.addSnippet");
         add.setOnAction(e -> {
             // The file is keyed by name: a second "New Snippet" would replace the first on disk.
             java.util.Set<String> taken = new java.util.HashSet<>();

@@ -600,8 +600,9 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   selection (`menu`, `shownMenu` for a context menu set up by its showing handler); each row is tagged with its command
   (`row`, or `also` without showing its chord). `FocusCommands.run` looks from the focus owner of the focused window up,
   then of each other window (a popup that takes no focus, the value popup, is looked in below its root), then below what
-  the main window shows (`PanelCommands.showing`: the active tab and each open tool window), so the palette reaches a
-  terminal or a diff while the keyboard is in the editor. A node that is one row of many (a Doctor check, a Welcome
+  the main window shows (`PanelCommands.showing`: the active tab and each open tool window), and last below each
+  window's root (the Settings page that is open), so the palette reaches a terminal, a diff or a Settings button while
+  the keyboard is in the editor. A node that is one row of many (a Doctor check, a Welcome
   entry, a search field, a merge conflict) is `focusOnly`: it answers only with the keyboard in it. A disabled or hidden
   row or button is refused with `status.rows.notOffered`, as is a command nothing offers; a command marked on several
   rows (a TODO's priorities and keywords, the debug session strip) asks which in a `QuickOpen`. Classes outside `ui`

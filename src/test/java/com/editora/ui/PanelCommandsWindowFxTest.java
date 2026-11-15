@@ -185,6 +185,27 @@ class PanelCommandsWindowFxTest {
     }
 
     @Test
+    void theHeadingLevelAndQuickEvaluateSayWhyWhereTheyCannotRun(@TempDir Path dir) throws Exception {
+        Path notes = Files.writeString(dir.resolve("notes.md"), "# Title\n\nsome text\n");
+        window(dir);
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(tr("status.notMarkdown"), run("markdown.setHeadingLevel"));
+            assertEquals(tr("palette.disabled.needsSuspended"), run("debug.quickEvaluate"), "nothing is paused");
+            fx.controller.fileWorkflows.openPath(notes);
+        });
+        for (int i = 0; i < 100 && FxTestSupport.callOnFx(() -> fx.controller.activeBuffer() == null); i++) {
+            Thread.sleep(50);
+        }
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(
+                    tr("palette.disabled.needsSuspended"), run("debug.quickEvaluate"), "a file open, nothing paused");
+            assertEquals("", run("markdown.setHeadingLevel"), "Normal text and the six levels, to choose from");
+            assertTrue(fx.controller.overlayHost.isShowing());
+            fx.controller.overlayHost.hide();
+        });
+    }
+
+    @Test
     void theToolbarsCustomizeAndTheAboutDetailsAreCommands(@TempDir Path dir) throws Exception {
         window(dir);
         FxTestSupport.runOnFx(() -> {

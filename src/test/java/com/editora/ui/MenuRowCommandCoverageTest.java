@@ -76,7 +76,6 @@ class MenuRowCommandCoverageTest {
             allow("ProjectMapWorkingSets", 3, "a working set's rows name it: projectMap commands pick a set"),
             allow("RemoteCoordinator", 1, "an ssh-config host fills the Connect form's field (a value in a dialog)"),
             allow("RunConfigurationsWindow", 2, "an npm script fills a field of the editing window; a placeholder"),
-            allow("SettingRowState", 1, "resets a value on a Settings page"),
             allow("StructurePanel", 1, "a symbol kind, in the drop-down structure.filterKinds opens"),
             allow(
                     "ToolWindowManager",

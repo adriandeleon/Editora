@@ -153,6 +153,9 @@ final class ToolWindowsSettingsPane {
         controls.setAlignment(Pos.CENTER_RIGHT);
         controls.setMinWidth(Region.USE_PREF_SIZE);
         HBox node = UiZoom.spacing(new HBox(main, controls), 16);
+        FocusCommands.press(node, "settings.moveToolWindowEarlier", moveUp); // the row the keyboard is in
+        FocusCommands.press(node, "settings.moveToolWindowLater", moveDown);
+        FocusCommands.focusOnly(node);
         node.setAlignment(Pos.CENTER_LEFT);
         node.getStyleClass().add("settings-row");
         Row row = new Row(tw, node, showCheck, sideCombo, moveUp, moveDown, disabledNote);

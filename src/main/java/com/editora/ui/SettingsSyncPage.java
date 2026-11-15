@@ -104,7 +104,8 @@ final class SettingsSyncPage {
 
         // A URL stored with a password or token before the field refused them: offered, once, to take it out.
         TextField urlField = new TextField();
-        Button removeSecret = new Button(tr("settings.sync.credentials.remove"));
+        Button removeSecret =
+                FocusCommands.press(new Button(tr("settings.sync.credentials.remove")), "sync.removeStoredCredentials");
         removeSecret.setOnAction(e -> {
             String clean = com.editora.sync.SyncEngine.withoutCredentials(
                     config.getSettings().getSyncRepoUrl());
@@ -113,7 +114,8 @@ final class SettingsSyncPage {
             syncSettingsChanged(); // saves; the clone's remote is rewritten at the next sync
             showSyncNotice(tr("settings.sync.credentials.removed"));
         });
-        Button keepSecret = new Button(tr("settings.sync.credentials.keep"));
+        Button keepSecret =
+                FocusCommands.press(new Button(tr("settings.sync.credentials.keep")), "sync.keepStoredCredentials");
         keepSecret.setOnAction(e -> {
             if (settingsSync != null) { // the warning only shows with one
                 settingsSync.storedCredentialsKept = true;
@@ -168,9 +170,9 @@ final class SettingsSyncPage {
             syncNotice = null;
             refreshSyncControls();
         });
-        syncConnectButton = new Button(tr("settings.sync.connect"));
+        syncConnectButton = FocusCommands.press(new Button(tr("settings.sync.connect")), "sync.connect");
         syncConnectButton.setOnAction(e -> connectSync());
-        syncDisconnectButton = new Button(tr("settings.sync.disconnect"));
+        syncDisconnectButton = FocusCommands.press(new Button(tr("settings.sync.disconnect")), "sync.disconnect");
         syncDisconnectButton.setOnAction(e -> {
             config.getSettings().setSyncEnabled(false);
             config.save();
@@ -180,7 +182,8 @@ final class SettingsSyncPage {
             syncNotice = null;
             refreshSyncControls();
         });
-        syncCreateGithubButton = new Button(tr("settings.sync.createGithub"));
+        syncCreateGithubButton =
+                FocusCommands.press(new Button(tr("settings.sync.createGithub")), "sync.createGithubRepo");
         syncCreateGithubButton.setOnAction(e -> createSyncRepoOnGithub());
         w.cardRow(
                 repo,
@@ -223,13 +226,13 @@ final class SettingsSyncPage {
                 settingsSync.syncNow();
             }
         });
-        syncAnywayButton = new Button(tr("settings.sync.anyway"));
+        syncAnywayButton = FocusCommands.press(new Button(tr("settings.sync.anyway")), "sync.syncAnyway");
         syncAnywayButton.setOnAction(e -> {
             if (settingsSync != null) {
                 settingsSync.syncAllowingLargeRemoval();
             }
         });
-        syncCancelButton = new Button(tr("settings.sync.cancel"));
+        syncCancelButton = FocusCommands.press(new Button(tr("settings.sync.cancel")), "sync.cancel");
         syncCancelButton.setOnAction(e -> {
             if (!syncChecking) { // a sync under way: stopped before it writes anything here, or let finish
                 if (settingsSync != null && !settingsSync.cancelSync()) {
@@ -243,7 +246,7 @@ final class SettingsSyncPage {
             syncConnectMessage = null;
             showSyncNotice(tr("settings.sync.cancelled"));
         });
-        Button openFolder = new Button(tr("settings.sync.openFolder"));
+        Button openFolder = FocusCommands.press(new Button(tr("settings.sync.openFolder")), "sync.openFolder");
         openFolder.setOnAction(e -> openSyncFolder());
         w.cardRow(
                 repo,

@@ -270,6 +270,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // Sort mode (Position / Name / Kind) — re-sorts and re-renders the outline.
         sortCombo.getItems().setAll(SortMode.POSITION, SortMode.NAME, SortMode.KIND);
         sortCombo.setValue(SortMode.POSITION);
+        FocusCommands.bind(this, "structure.sortBy", sortCombo::show); // the choices, in the drop-down itself
         sortCombo.getStyleClass().add("structure-sort");
         sortCombo.setConverter(new StringConverter<>() {
             @Override

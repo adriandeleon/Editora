@@ -310,6 +310,16 @@ public final class HttpClientPanel extends VBox {
 
         historyCombo.getStyleClass().add("http-history");
         historyCombo.setMinWidth(0); // the header row sizes it: it narrows first in a tight Split
+        FocusCommands.bindIf(
+                this,
+                "http.showHistory",
+                () -> { // the past responses, in the drop-down itself
+                    if (historyCombo.getItems().isEmpty()) {
+                        return false;
+                    }
+                    historyCombo.show();
+                    return true;
+                });
         UiZoom.maxWidth(historyCombo, HttpPanelLayout.HISTORY_MAX_WIDTH);
         Icons.name(historyCombo, tr("httppanel.historyName"));
         historyCombo.setCellFactory(list -> new HttpHistoryCell(zone));
