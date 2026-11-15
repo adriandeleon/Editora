@@ -163,6 +163,9 @@ final class DebugSession {
     /** The stop a recording breakpoint made, whose frame is not shown in the editor; -1 for none. */
     int quietStop = -1;
 
+    /** Steps out taken in a row, out of code a Don't step into filter names ({@link StepFilterCommands}). */
+    int stepsOut;
+
     /** A breakpoint's filters were checked and passed: the stop is handled anew, this time shown. */
     boolean filtersPassed;
 

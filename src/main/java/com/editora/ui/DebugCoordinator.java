@@ -248,6 +248,9 @@ final class DebugCoordinator {
         /** Saves Settings' type renderers ({@code debugTypeRenderers}). */
         default void persistDebugTypeRenderers(List<com.editora.dap.TypeRenderer> renderers) {}
 
+        /** Saves Settings' Don't step into filters ({@code debugStepFilterList}). */
+        default void persistDebugStepFilters(List<com.editora.dap.StepFilter> filters) {}
+
         /** The per-file breakpoint map ({@code breakpoints.json}); path-string → that file's breakpoints. */
         Map<String, List<Breakpoint>> breakpointMap();
 
@@ -1289,6 +1292,8 @@ final class DebugCoordinator {
                 com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes()),
                 s.isDebugShowToString(),
                 s.isDebugSuspendAllThreads()));
+        List<com.editora.dap.StepFilter> skips = s.getDebugStepFilterList();
+        forEachSession(() -> dap().setStepFilters(skips)); // Don't step into: a live Java session is told at once
         List<String> bundles = on ? dap().bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
@@ -2206,6 +2211,8 @@ final class DebugCoordinator {
                     return; // a breakpoint with filters: Editora checks them before the stop is shown
                 } else if (exceptions().stop(threadId, reason, frames, () -> onStopped(threadId, reason, stopFrames))) {
                     return; // an exception, where exception breakpoints decide whether it is shown
+                } else if (stepFilters().stop(reason, frames)) {
+                    return; // a step into code the user does not step into: out of it again
                 }
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
@@ -9222,7 +9229,23 @@ final class DebugCoordinator {
                 dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
         restart.setOnAction(e -> restartFrame(frame));
         com.editora.editor.MenuChords.tag(restart, "debug.restartFrame"); // the selected frame is the shown one
-        return List.of(restart);
+        return List.of(restart, stepFilters().menuItem(frame));
+    }
+
+    /** Debug: Don't Step Into This… ({@code debug.dontStepIntoFrame}), for the frame shown. */
+    void dontStepIntoFrame() {
+        stepFilters().dontStepInto(null);
+    }
+
+    private @Nullable StepFilterCommands stepFilterCommands;
+
+    StepFilterCommands stepFilters() {
+        StepFilterCommands c = stepFilterCommands;
+        if (c == null) {
+            c = new StepFilterCommands(this, host, ops);
+            stepFilterCommands = c;
+        }
+        return c;
     }
 
     /** The last Smart Step Into picker shown (null before the first). */

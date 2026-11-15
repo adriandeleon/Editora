@@ -765,12 +765,20 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** Sends the {@code launch} request (body from {@link LaunchConfig#launch}). */
     public CompletableFuture<Void> launch(Map<String, Object> args) {
-        return timed(server().launch(args));
+        return timed(server().launch(launchDecorator.apply(args)));
     }
 
     /** Sends the {@code attach} request (body from {@link LaunchConfig#attach}). */
     public CompletableFuture<Void> attach(Map<String, Object> args) {
-        return timed(server().attach(args));
+        return timed(server().attach(launchDecorator.apply(args)));
+    }
+
+    /** What a launch or attach adds to its request before it is sent: the session's Don't step into options. */
+    private volatile java.util.function.UnaryOperator<Map<String, Object>> launchDecorator = a -> a;
+
+    /** Sets {@link #launchDecorator} (a child session's request is its parent adapter's, and is sent as it is). */
+    public void setLaunchDecorator(java.util.function.UnaryOperator<Map<String, Object>> decorator) {
+        this.launchDecorator = decorator == null ? a -> a : decorator;
     }
 
     // --- IDebugProtocolClient events (launcher reader thread) -----------------------------------

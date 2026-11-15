@@ -126,6 +126,7 @@ class SettingsCommandsFxTest {
             {"ABBREVIATIONS", "settings.addAbbreviation"},
             {"EXTERNAL_TOOLS", "settings.addExternalTool"},
             {"DEBUG", "settings.addTypeRenderer"},
+            {"DEBUG", "settings.addStepFilter"},
             {"REMOTE", "settings.addRemoteSite"},
             {"TODO", "settings.addTodoPattern"},
             {"TOOLBAR", "toolbar.addSeparator"},

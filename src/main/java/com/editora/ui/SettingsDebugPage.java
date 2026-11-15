@@ -264,6 +264,10 @@ final class SettingsDebugPage {
     @Nullable
     TypeRenderersEditor typeRenderers;
 
+    /** Settings → Debugging's Don't step into list (built with the page). */
+    @Nullable
+    StepFiltersEditor stepFilters;
+
     VBox build() {
         VBox p = w.page(tr("settings.cat.debug"), tr("settings.debug.subtitle"));
         Card master = w.card(p, null);
@@ -325,6 +329,26 @@ final class SettingsDebugPage {
         renderersNote.setWrapText(true);
         UiZoom.maxWidth(renderersNote, 460);
         w.cardRow(renderersCard, Category.DEBUG, renderersNote, "debug type renderers this self expression");
+        // Don't step into (IntelliJ's stepping filters, VS Code's skipFiles): every language's, one list.
+        Card skipCard = w.card(p, tr("settings.debug.stepFilterList"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), skipCard.box());
+        stepFilters = new StepFiltersEditor(new StepFiltersEditor.Hooks(
+                () -> config.getSettings().getDebugStepFilterList(),
+                list -> {
+                    config.getSettings().setDebugStepFilterList(list);
+                    w.apply();
+                },
+                (owner, initial, isNew) -> StepFilterDialog.edit(owner, initial, isNew),
+                () -> w.stage));
+        w.cardRow(
+                skipCard,
+                Category.DEBUG,
+                stepFilters.node(),
+                "debug don't step into step filters skip files classes modules library stepping");
+        Label skipNote = SettingsWindow.note(tr("settings.debug.stepFilterList.hint"));
+        skipNote.setWrapText(true);
+        UiZoom.maxWidth(skipNote, 460);
+        w.cardRow(skipCard, Category.DEBUG, skipNote, "debug don't step into pattern skip");
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             Card c = w.card(p, tr(dbg.sectionKey()));
             SettingsDependents.bind(debugCheck.selectedProperty(), c.box());
@@ -675,6 +699,9 @@ final class SettingsDebugPage {
         debugBrowserCombo.setValue(browser);
         debugGdbPathField.setText(settings.getGdbPath());
         debugStepTimingCheck.setSelected(settings.isDebugStepTiming());
+        if (stepFilters != null) {
+            stepFilters.reload();
+        }
         if (typeRenderers != null) {
             typeRenderers.reload();
         }

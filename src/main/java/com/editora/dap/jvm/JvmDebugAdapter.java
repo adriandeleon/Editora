@@ -251,7 +251,9 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     /** What a launch and an attach both say: the language, where its sources are, the files it is made of. */
     private void configure(Map<String, Object> args, String cwd) {
         language = string(args.get("language"));
-        stepFilters = JvmSourceMap.stepFilters(language);
+        List<String> filters = new ArrayList<>(JvmSourceMap.stepFilters(language));
+        filters.addAll(strings(args.get("skipClasses"))); // the user's Don't step into classes (StepFilters)
+        stepFilters = List.copyOf(filters);
         if (args.get("connectTimeoutMs") instanceof Number timeout && timeout.longValue() > 0) {
             connectTimeoutMs = timeout.longValue();
         }
