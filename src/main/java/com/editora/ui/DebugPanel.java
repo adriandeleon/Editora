@@ -767,20 +767,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // Call-stack context menu (Restart Frame), built for the frame it opens on; the keyboard's menu key too.
         javafx.scene.control.ContextMenu stackMenu = new javafx.scene.control.ContextMenu();
         stack.setOnContextMenuRequested(e -> {
-            DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
-            List<javafx.scene.control.MenuItem> items = new java.util.ArrayList<>(
-                    f == null || StackFolding.isFold(f) ? List.of() : actions.stackMenuItems(f, allFrames));
-            if (!allFrames.isEmpty()) {
-                if (!items.isEmpty()) {
-                    items.add(new javafx.scene.control.SeparatorMenuItem());
-                }
-                javafx.scene.control.MenuItem copy = new javafx.scene.control.MenuItem(tr("debugpanel.copyCallStack"));
-                copy.setGraphic(Icons.copy());
-                copy.setOnAction(ev -> copyCallStack());
-                items.add(copy);
-                items.add(threadDumpItem());
-                items.add(parallelStacksItem());
-            }
+            List<javafx.scene.control.MenuItem> items = stackMenuRows();
             stackMenu.getItems().setAll(items);
             if (!items.isEmpty()) {
                 // The Menu key / Shift+F10 open it under the selected frame, not in the middle of the list.
@@ -1008,9 +995,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         VBox consoleBox = UiZoom.spacing(new VBox(consoleHeader, consoleFindBar, consoleArea), 2);
         VBox.setVgrow(consoleArea, Priority.ALWAYS);
         javafx.scene.control.ContextMenu consoleMenu = new javafx.scene.control.ContextMenu();
-        javafx.scene.control.MenuItem clear = new javafx.scene.control.MenuItem(tr("debugpanel.clearConsole"));
-        clear.setGraphic(Icons.remove());
-        clear.setOnAction(e -> clearConsole());
+        javafx.scene.control.MenuItem clear = clearConsoleRow;
         javafx.scene.control.MenuItem endInput = new javafx.scene.control.MenuItem(tr("debugpanel.endInput"));
         endInput.setOnAction(e -> actions.endInput());
         com.editora.editor.MenuChords.tag(endInput, "debug.endProgramInput");
@@ -1804,6 +1789,50 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threadsRefresh.setOnFinished(e -> refreshThreads());
     }
 
+    /** The call stack's menu for the selected frame: its frame actions, then Copy Call Stack, Thread Dump, Parallel Stacks. */
+    private List<javafx.scene.control.MenuItem> stackMenuRows() {
+        DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
+        List<javafx.scene.control.MenuItem> items = new java.util.ArrayList<>(
+                f == null || StackFolding.isFold(f) ? List.of() : actions.stackMenuItems(f, allFrames));
+        if (!allFrames.isEmpty()) {
+            if (!items.isEmpty()) {
+                items.add(new javafx.scene.control.SeparatorMenuItem());
+            }
+            javafx.scene.control.MenuItem copy = new javafx.scene.control.MenuItem(tr("debugpanel.copyCallStack"));
+            copy.setGraphic(Icons.copy());
+            copy.setOnAction(ev -> copyCallStack());
+            items.add(com.editora.editor.MenuChords.tag(copy, "debug.copyCallStack"));
+            items.add(threadDumpItem());
+            items.add(parallelStacksItem());
+        }
+        return items;
+    }
+
+    /**
+     * Runs the row of one of this window's right-click menus (the Variables view's, the Threads view's, the call
+     * stack's, the console's) that command {@code commandId} stands for, as choosing it would: the menu is built for
+     * the selection as a right-click builds it, so the command does what the row would, and only where the row would
+     * be offered. False when it would not be, or would be grayed out.
+     */
+    boolean runMenuRow(String commandId) {
+        if ("debug.historyLive".equals(commandId)) { // the banner's link too, so offered on any row
+            if (viewing == null) {
+                return false;
+            }
+            leaveHistory();
+            return true;
+        }
+        javafx.scene.control.ContextMenu vars = new javafx.scene.control.ContextMenu();
+        rebuildVarsMenu(vars);
+        javafx.scene.control.ContextMenu threads = new javafx.scene.control.ContextMenu();
+        rebuildThreadMenu(threads);
+        List<javafx.scene.control.MenuItem> rows = new java.util.ArrayList<>(vars.getItems());
+        rows.addAll(threads.getItems());
+        rows.addAll(stackMenuRows());
+        rows.add(clearConsoleRow);
+        return MenuRows.fire(rows, commandId);
+    }
+
     /** The thread menu for the selected row: Show Frames and Resume Thread when it is suspended, else Pause Thread. */
     private void rebuildThreadMenu(javafx.scene.control.ContextMenu menu) {
         menu.getItems().clear();
@@ -1813,13 +1842,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         if (t.paused()) {
             javafx.scene.control.MenuItem show = new javafx.scene.control.MenuItem(tr("debugpanel.showFrames"));
+            com.editora.editor.MenuChords.tag(show, "debug.showSelectedThreadFrames");
             show.setOnAction(e -> showSelectedThread());
             javafx.scene.control.MenuItem resume = new javafx.scene.control.MenuItem(tr("debugpanel.resumeThread"));
+            com.editora.editor.MenuChords.tag(resume, "debug.resumeSelectedThread");
             resume.setGraphic(Icons.run());
             resume.setOnAction(e -> actions.resumeThread(t.id()));
             menu.getItems().addAll(show, resume);
         } else {
             javafx.scene.control.MenuItem pause = new javafx.scene.control.MenuItem(tr("debugpanel.pauseThread"));
+            com.editora.editor.MenuChords.tag(pause, "debug.pauseSelectedThread");
             pause.setGraphic(Icons.debugPause());
             pause.setOnAction(e -> actions.pauseThread(t.id()));
             menu.getItems().add(pause);
@@ -1831,14 +1863,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private javafx.scene.control.MenuItem threadDumpItem() {
         javafx.scene.control.MenuItem dump = new javafx.scene.control.MenuItem(tr("debugpanel.threadDump"));
         dump.setOnAction(e -> actions.threadDump());
-        return dump;
+        return com.editora.editor.MenuChords.tag(dump, "debug.threadDump");
     }
 
     /** Parallel Stacks…, beside Thread Dump in the Threads view's menu and the call stack's. */
     private javafx.scene.control.MenuItem parallelStacksItem() {
         javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(tr("debugpanel.parallelStacks"));
         item.setOnAction(e -> actions.parallelStacks());
-        return item;
+        return com.editora.editor.MenuChords.tag(item, "debug.parallelStacks");
     }
 
     /** Shows the frames of the selected thread when it is suspended (Enter, a double-click, Show Frames). */
@@ -2282,9 +2314,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         if (row != null && row.kind() == Kind.WATCH) {
             javafx.scene.control.MenuItem edit = new javafx.scene.control.MenuItem(tr("debugpanel.editWatch"));
+            com.editora.editor.MenuChords.tag(edit, "debug.editSelectedWatch");
             edit.setGraphic(Icons.edit());
             edit.setOnAction(e -> editWatchPrompt(row.name()));
             javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(tr("debugpanel.removeWatch"));
+            com.editora.editor.MenuChords.tag(remove, "debug.removeSelectedWatch");
             remove.setGraphic(Icons.remove());
             remove.getStyleClass().add("danger"); // a destructive row reads red
             remove.setOnAction(e -> removeWatch(row.name()));
@@ -2294,10 +2328,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             boolean paused = pausedWatches.contains(row.name());
             javafx.scene.control.MenuItem pause =
                     new javafx.scene.control.MenuItem(tr(paused ? "debugpanel.resumeWatch" : "debugpanel.pauseWatch"));
+            com.editora.editor.MenuChords.tag(pause, "debug.pauseSelectedWatch");
             pause.setOnAction(e -> setWatchPaused(row.name(), !paused));
             menu.getItems().add(pause);
             if (paused && lastState == DapManager.State.SUSPENDED && !evaluatedOnce.contains(row.name())) {
                 javafx.scene.control.MenuItem once = new javafx.scene.control.MenuItem(tr("debugpanel.evaluateOnce"));
+                com.editora.editor.MenuChords.tag(once, "debug.evaluateSelectedWatchOnce");
                 once.setOnAction(e -> evaluateWatchOnce(row.name()));
                 menu.getItems().add(once);
             }
@@ -2316,11 +2352,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         || row.kind() == Kind.RESULT)) {
             // Review C7: a value could not be copied at all, and Add Watch started from an empty prompt.
             javafx.scene.control.MenuItem copyValue = new javafx.scene.control.MenuItem(tr("debugpanel.copyValue"));
+            com.editora.editor.MenuChords.tag(copyValue, "debug.copySelectedValue");
             copyValue.setOnAction(e ->
                     copyToClipboard(row.kind() == Kind.EXCEPTION ? row.name() : DebugPanelText.copyValue(row.value())));
             menu.getItems().add(copyValue);
             if (row.kind() != Kind.EXCEPTION) {
                 javafx.scene.control.MenuItem copyName = new javafx.scene.control.MenuItem(tr("debugpanel.copyName"));
+                com.editora.editor.MenuChords.tag(copyName, "debug.copySelectedName");
                 copyName.setOnAction(e -> copyToClipboard(row.name()));
                 menu.getItems().add(copyName);
             }
@@ -2331,10 +2369,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             if (row.kind() == Kind.RESULT) {
                 javafx.scene.control.MenuItem toWatches = new javafx.scene.control.MenuItem(
                         tr("debugpanel.addToWatches", DebugPanelText.oneLine(row.name(), 60)));
+                com.editora.editor.MenuChords.tag(toWatches, "debug.watchSelected");
                 toWatches.setGraphic(Icons.newFile());
                 toWatches.setOnAction(e -> addWatchExpression(row.name()));
                 javafx.scene.control.MenuItem clearResult =
                         new javafx.scene.control.MenuItem(tr("debugpanel.clearResult"));
+                com.editora.editor.MenuChords.tag(clearResult, "debug.clearResult");
                 clearResult.setOnAction(e -> clearResult());
                 menu.getItems().addAll(toWatches, clearResult);
             }
@@ -2344,10 +2384,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 // a condition or the console.
                 javafx.scene.control.MenuItem copyExpression =
                         new javafx.scene.control.MenuItem(tr("debugpanel.copyExpression"));
+                com.editora.editor.MenuChords.tag(copyExpression, "debug.copySelectedExpression");
                 copyExpression.setOnAction(e -> copyToClipboard(expression));
                 menu.getItems().add(copyExpression);
                 javafx.scene.control.MenuItem toWatches =
                         new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
+                com.editora.editor.MenuChords.tag(toWatches, "debug.watchSelected");
                 toWatches.setGraphic(Icons.newFile());
                 toWatches.setOnAction(e -> addWatchPrompt(expression));
                 menu.getItems().add(toWatches);
@@ -2355,6 +2397,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     // VS Code's View Binary Data, Visual Studio's Memory window at a variable.
                     javafx.scene.control.MenuItem viewMemory =
                             new javafx.scene.control.MenuItem(tr("debugpanel.viewMemory"));
+                    com.editora.editor.MenuChords.tag(viewMemory, "debug.viewSelectedMemory");
                     viewMemory.setOnAction(e -> actions.viewMemory(expression));
                     menu.getItems().add(viewMemory);
                 }
@@ -2362,6 +2405,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     // IntelliJ's and VS Code's "Break When Value Changes": a watchpoint on the field this row is
                     javafx.scene.control.MenuItem watchField =
                             new javafx.scene.control.MenuItem(tr("debugpanel.watchField"));
+                    com.editora.editor.MenuChords.tag(watchField, "debug.watchSelectedField");
                     watchField.setOnAction(e -> actions.watchField(row.parentRef(), row.name()));
                     menu.getItems().add(watchField);
                 }
@@ -2372,6 +2416,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 // IntelliJ's Jump to Type Source: the class of the value, which may be a subclass of the declared one.
                 javafx.scene.control.MenuItem jumpToType =
                         new javafx.scene.control.MenuItem(tr("debugpanel.jumpToTypeSource"));
+                com.editora.editor.MenuChords.tag(jumpToType, "debug.jumpToSelectedType");
                 jumpToType.setOnAction(e -> actions.jumpToType(row.type(), row.value()));
                 menu.getItems().add(jumpToType);
             }
@@ -2379,6 +2424,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 // IntelliJ's Customize Data Views → Java Type Renderers, for this value's type.
                 javafx.scene.control.MenuItem customize =
                         new javafx.scene.control.MenuItem(tr("debugpanel.customizeRendering"));
+                com.editora.editor.MenuChords.tag(customize, "debug.customizeSelectedRendering");
                 customize.setOnAction(e -> actions.customizeRendering(row.type(), row.value()));
                 menu.getItems().add(customize);
             }
@@ -2392,6 +2438,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     // IntelliJ's and Visual Studio's table view of a collection: its elements as rows.
                     javafx.scene.control.MenuItem asTable =
                             new javafx.scene.control.MenuItem(tr("debugpanel.viewAsTable"));
+                    com.editora.editor.MenuChords.tag(asTable, "debug.viewSelectedAsTable");
                     String expression = row.kind() == Kind.VARIABLE
                             ? expression(variables.getSelectionModel().getSelectedItem())
                             : row.name();
@@ -2405,6 +2452,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         TreeItem<VarRow> selectedItem = variables.getSelectionModel().getSelectedItem();
         if (offersGoToIndex(selectedItem)) {
             javafx.scene.control.MenuItem goTo = new javafx.scene.control.MenuItem(tr("debugpanel.goToIndex"));
+            com.editora.editor.MenuChords.tag(goTo, "debug.goToSelectedIndex");
             goTo.setOnAction(e -> goToIndexPrompt(selectedItem));
             menu.getItems().addAll(goTo, new javafx.scene.control.SeparatorMenuItem());
         }
@@ -2420,6 +2468,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (!watches.isEmpty() && onWatches) {
             javafx.scene.control.MenuItem removeAll =
                     new javafx.scene.control.MenuItem(tr("debugpanel.removeAllWatches"));
+            com.editora.editor.MenuChords.tag(removeAll, "debug.removeAllWatches");
             removeAll.setGraphic(Icons.remove());
             removeAll.getStyleClass().add("danger");
             removeAll.setOnAction(e -> removeAllWatches());
@@ -2427,6 +2476,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         if (!marks.isEmpty()) {
             javafx.scene.control.MenuItem unmarkAll = new javafx.scene.control.MenuItem(tr("debugpanel.unmarkAll"));
+            com.editora.editor.MenuChords.tag(unmarkAll, "debug.unmarkAllObjects");
             unmarkAll.setOnAction(e -> {
                 marks.clear();
                 variables.refresh();
@@ -2584,6 +2634,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /** The console menu's Clear Console row, which {@code debug.clearConsole} fires too. */
+    private final javafx.scene.control.MenuItem clearConsoleRow = clearConsoleRow();
+
+    private javafx.scene.control.MenuItem clearConsoleRow() {
+        javafx.scene.control.MenuItem clear = new javafx.scene.control.MenuItem(tr("debugpanel.clearConsole"));
+        clear.setGraphic(Icons.remove());
+        clear.setOnAction(e -> clearConsole());
+        return com.editora.editor.MenuChords.tag(clear, "debug.clearConsole");
+    }
+
     // --- Mark Object and View As -----------------------------------------------------------------------------
 
     /** Mark Object… (or Edit Mark…) and Unmark Object for a row whose value shows an object's identity. */
@@ -2594,11 +2654,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         String current = marks.labelOf(row.value());
         javafx.scene.control.MenuItem mark = new javafx.scene.control.MenuItem(
                 tr(current == null ? "debugpanel.markObject" : "debugpanel.editMark"));
+        com.editora.editor.MenuChords.tag(mark, "debug.markSelectedObject");
         mark.setOnAction(e -> markPrompt(row));
         if (current == null) {
             return List.of(mark);
         }
         javafx.scene.control.MenuItem unmark = new javafx.scene.control.MenuItem(tr("debugpanel.unmarkObject"));
+        com.editora.editor.MenuChords.tag(unmark, "debug.unmarkSelectedObject");
         unmark.setOnAction(e -> {
             marks.mark(row.value(), "");
             variables.refresh();
@@ -2633,6 +2695,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         ViewAs(String language) {
             this.language = language;
         }
+
+        /** The command that opens the selected value this way ({@code debug.viewSelectedAsJson}…). */
+        String commandId() {
+            return switch (this) {
+                case JSON -> "debug.viewSelectedAsJson";
+                case XML -> "debug.viewSelectedAsXml";
+                case TEXT -> "debug.viewSelectedAsText";
+            };
+        }
     }
 
     /** View As ▸ JSON / XML / Text, for a string value. */
@@ -2645,6 +2716,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(
                     tr("debugpanel.viewAs." + how.name().toLowerCase(java.util.Locale.ROOT)));
             item.setOnAction(e -> viewAs(row, expression, how));
+            com.editora.editor.MenuChords.tag(item, how.commandId());
             menu.getItems().add(item);
         }
         return menu;
@@ -3748,13 +3820,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private void historyVarsMenu(javafx.scene.control.ContextMenu menu, @Nullable VarRow row) {
         if (row == null || !(row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH)) {
             javafx.scene.control.MenuItem live = new javafx.scene.control.MenuItem(tr("debugpanel.history.live"));
+            com.editora.editor.MenuChords.tag(live, "debug.historyLive");
             live.setOnAction(e -> leaveHistory());
             menu.getItems().add(live);
             return;
         }
         javafx.scene.control.MenuItem copyValue = new javafx.scene.control.MenuItem(tr("debugpanel.copyValue"));
+        com.editora.editor.MenuChords.tag(copyValue, "debug.copySelectedValue");
         copyValue.setOnAction(e -> copyToClipboard(DebugPanelText.copyValue(row.value())));
         javafx.scene.control.MenuItem copyName = new javafx.scene.control.MenuItem(tr("debugpanel.copyName"));
+        com.editora.editor.MenuChords.tag(copyName, "debug.copySelectedName");
         copyName.setOnAction(e -> copyToClipboard(row.name()));
         menu.getItems().addAll(copyValue, copyName);
         javafx.scene.control.MenuItem valueHistory = valueHistoryItem();
@@ -3776,7 +3851,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         List<String> path = pathOf(item);
         javafx.scene.control.MenuItem show = new javafx.scene.control.MenuItem(tr("debugpanel.history.valueHistory"));
         show.setOnAction(e -> showValueHistory(key, path));
-        return show;
+        return com.editora.editor.MenuChords.tag(show, "debug.selectedValueHistory");
     }
 
     /** The history key of the frame whose values are shown (an earlier stop's, or the live one's), or null. */

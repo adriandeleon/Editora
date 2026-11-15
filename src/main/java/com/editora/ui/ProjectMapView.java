@@ -2762,6 +2762,20 @@ final class ProjectMapView extends VBox {
         onLeaveMap = leave == null ? () -> {} : leave;
     }
 
+    /**
+     * The file or folder row selected on the Map while the keyboard is on the Map's rows: what the Project tree's
+     * file-menu commands act on in the Map window ({@link ProjectRowCommands}). Null when the rows do not have the
+     * keyboard, or the selection is a declaration or a placeholder.
+     */
+    ProjectMapModel.@Nullable Entry focusedRow() {
+        if (!surface.isFocused()) {
+            return null;
+        }
+        return surface.selectedEntry()
+                .filter(e -> !e.isSymbol() && !e.isPlaceholder())
+                .orElse(null);
+    }
+
     /** The Project tree's F2 (rename) and Delete row actions, applied to the selected map entry. */
     void setRowActions(Consumer<ProjectMapModel.Entry> rename, Consumer<ProjectMapModel.Entry> delete) {
         onRenameEntry = rename == null ? entry -> {} : rename;

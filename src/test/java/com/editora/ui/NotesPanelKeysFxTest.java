@@ -298,6 +298,22 @@ class NotesPanelKeysFxTest {
                 calls);
     }
 
+    /** The commands behind the rows run the selected row's row, and nothing on a row whose menu has none. */
+    @Test
+    void theRowCommandsRunTheSelectedRowsMenuRow() throws Exception {
+        select("body=active note");
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(panel.runMenuRow("notes.toggleSelectedResolved"));
+            assertFalse(panel.runMenuRow("notes.deleteAllInSelectedFile"), "a note's menu has no file row");
+        });
+        select("FileRow[projectKey=p1, fileKey=/p1/A.java");
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(panel.runMenuRow("notes.deleteAllInSelectedFile"));
+            assertFalse(panel.runMenuRow("notes.editSelected"), "a file header is not a note");
+        });
+        assertEquals(List.of("status p1 /p1/A.java active note\nmore RESOLVED", "deleteAll p1 /p1/A.java"), calls);
+    }
+
     @Test
     void theFilterMatchesBodyTagsAndPathAndTheClearButtonUndoesIt() throws Exception {
         TextField filter = FxTestSupport.field(panel, "filterField");

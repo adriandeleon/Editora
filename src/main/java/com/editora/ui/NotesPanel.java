@@ -320,11 +320,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 getStyleClass().add("notes-file-row");
                 setGraphic(FileIcons.forProjectItem(fileName(f.fileKey()), f.folder()));
                 setTooltip(ControlNames.tooltip(f.fileKey()));
-                MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
-                deleteAll.setGraphic(Icons.trash());
-                deleteAll.getStyleClass().add("danger"); // a destructive row reads red
-                deleteAll.setOnAction(e -> actions.deleteAll(f.projectKey(), f.fileKey()));
-                setContextMenu(new ContextMenu(deleteAll));
+                setContextMenu(new ContextMenu(fileMenuRows(f).toArray(MenuItem[]::new)));
             } else if (item instanceof NoteRow n) {
                 setText(null);
                 HBox row = UiZoom.spacing(new HBox(), 4);
@@ -343,24 +339,50 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 } else if (n.note().status() == NoteStatus.ORPHANED) {
                     getStyleClass().add("note-orphaned");
                 }
-                setContextMenu(noteMenu(n));
+                setContextMenu(new ContextMenu(noteMenuRows(n).toArray(MenuItem[]::new)));
             }
         }
+    }
 
-        private ContextMenu noteMenu(NoteRow n) {
-            MenuItem edit = new MenuItem(tr("notes.editBody"));
-            edit.setGraphic(Icons.edit());
-            edit.setOnAction(e -> actions.editBody(n.projectKey(), n.fileKey(), n.note()));
-            boolean resolved = n.note().status() == NoteStatus.RESOLVED;
-            MenuItem toggle = new MenuItem(resolved ? tr("notes.reopen") : tr("notes.resolve"));
-            toggle.setGraphic(resolved ? Icons.refresh() : Icons.check());
-            toggle.setOnAction(e -> actions.setStatus(
-                    n.projectKey(), n.fileKey(), n.note(), resolved ? NoteStatus.ACTIVE : NoteStatus.RESOLVED));
-            MenuItem delete = new MenuItem(tr("notes.delete"));
-            delete.setGraphic(Icons.trash());
-            delete.getStyleClass().add("danger");
-            delete.setOnAction(e -> actions.delete(n.projectKey(), n.fileKey(), n.note()));
-            return new ContextMenu(edit, toggle, new SeparatorMenuItem(), delete);
-        }
+    /** A file row's menu: Delete All Notes in File, which {@code notes.deleteAllInSelectedFile} runs too. */
+    private List<MenuItem> fileMenuRows(FileRow f) {
+        MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
+        deleteAll.setGraphic(Icons.trash());
+        deleteAll.getStyleClass().add("danger"); // a destructive row reads red
+        deleteAll.setOnAction(e -> actions.deleteAll(f.projectKey(), f.fileKey()));
+        return List.of(com.editora.editor.MenuChords.tag(deleteAll, "notes.deleteAllInSelectedFile"));
+    }
+
+    /** A note's menu: Edit, Resolve / Reopen, Delete, each a command's on the selected note. */
+    private List<MenuItem> noteMenuRows(NoteRow n) {
+        MenuItem edit = new MenuItem(tr("notes.editBody"));
+        edit.setGraphic(Icons.edit());
+        edit.setOnAction(e -> actions.editBody(n.projectKey(), n.fileKey(), n.note()));
+        boolean resolved = n.note().status() == NoteStatus.RESOLVED;
+        MenuItem toggle = new MenuItem(resolved ? tr("notes.reopen") : tr("notes.resolve"));
+        toggle.setGraphic(resolved ? Icons.refresh() : Icons.check());
+        toggle.setOnAction(e -> actions.setStatus(
+                n.projectKey(), n.fileKey(), n.note(), resolved ? NoteStatus.ACTIVE : NoteStatus.RESOLVED));
+        MenuItem delete = new MenuItem(tr("notes.delete"));
+        delete.setGraphic(Icons.trash());
+        delete.getStyleClass().add("danger");
+        delete.setOnAction(e -> actions.delete(n.projectKey(), n.fileKey(), n.note()));
+        return List.of(
+                com.editora.editor.MenuChords.tag(edit, "notes.editSelected"),
+                com.editora.editor.MenuChords.tag(toggle, "notes.toggleSelectedResolved"),
+                new SeparatorMenuItem(),
+                com.editora.editor.MenuChords.tag(delete, "notes.deleteSelected"));
+    }
+
+    /**
+     * Runs the row of the selected row's menu that command {@code commandId} stands for, as choosing it would
+     * ({@link PanelRowCommands}); false when nothing is selected or its menu has no such row.
+     */
+    boolean runMenuRow(String commandId) {
+        TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+        Row row = item == null ? null : item.getValue();
+        List<MenuItem> rows =
+                row instanceof FileRow f ? fileMenuRows(f) : row instanceof NoteRow n ? noteMenuRows(n) : List.of();
+        return MenuRows.fire(rows, commandId);
     }
 }

@@ -204,9 +204,18 @@ class NativeDebugWindowFxTest {
         var gone = new com.editora.config.RunConfiguration(
                 "Gone", "cpp", root.resolve("gone.cpp").toString(), "", "", "", "", "", "", "", "");
         int before = adapter.sessionCount();
-        FxTestSupport.runOnFx(() -> debug.debugConfig(gone));
-        FxTestSupport.drainFx();
+        // The guard takes the user to the configuration. The real editor is a window that would stay open
+        // behind the tests that follow, so the seam records the call instead.
+        List<String> edited = new java.util.concurrent.CopyOnWriteArrayList<>();
+        FxTestSupport.runOnFx(() -> fx.controller.setRunConfigEditorForTest(edited::add));
+        try {
+            FxTestSupport.runOnFx(() -> debug.debugConfig(gone));
+            FxTestSupport.drainFx();
+        } finally {
+            FxTestSupport.runOnFx(() -> fx.controller.setRunConfigEditorForTest(null));
+        }
         assertEquals(before, adapter.sessionCount(), "nothing is started for a file that is not there");
+        assertEquals(List.of("Gone"), edited, "and the configuration is opened to be put right");
     }
 
     @Test

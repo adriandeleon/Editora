@@ -105,6 +105,11 @@ class GitPanelMenusAndKeysFxTest {
         }
 
         @Override
+        public void acceptSide(List<String> paths, boolean ours) {
+            calls.add("accept " + (ours ? "ours " : "theirs ") + paths);
+        }
+
+        @Override
         public void resolve(String repoRelativePath) {
             calls.add("resolve " + repoRelativePath);
         }
@@ -315,6 +320,105 @@ class GitPanelMenusAndKeysFxTest {
         ContextMenu narrowed = menuKey(panel, FxTestSupport.callOnFx(() -> groupRow(panel, "MODIFIED")));
         fire(narrowed, tr("gitpanel.menu.stageGroup"));
         assertEquals(List.of("stage [changed.txt, src/other.txt]"), recorder.take());
+    }
+
+    /**
+     * The commands behind the rows ({@code git.openSelected}, {@code git.diffSelected}, {@code git.discardSelected},
+     * {@code git.stageSelected} on a header) do to the selection what the rows do to the row right-clicked, and the
+     * rows show those commands.
+     */
+    @Test
+    void theRowCommandsDoToTheSelectionWhatTheRowsDo() throws Exception {
+        Recorder recorder = new Recorder();
+        GitPanel panel = shown(recorder);
+
+        ContextMenu changed = menuKey(panel, FxTestSupport.callOnFx(() -> fileRow(panel, "MODIFIED", "changed.txt")));
+        assertEquals(
+                List.of("git.openSelected", "git.diffSelected", "git.stageSelected", "git.discardSelected"),
+                changed.getItems().stream()
+                        .map(com.editora.editor.MenuChords::commandOf)
+                        .toList());
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(panel.openSelectedFile());
+            assertTrue(panel.diffSelected());
+            assertTrue(panel.discardSelected());
+            assertFalse(panel.resolveSelected(), "not a conflict");
+            assertFalse(panel.acceptSideOfSelected(true), "not a conflict");
+        });
+        assertEquals(
+                List.of(
+                        "open changed.txt",
+                        "diff changed.txt staged=false",
+                        "discard tracked=[changed.txt] untracked=[]"),
+                recorder.take());
+
+        menuKey(panel, FxTestSupport.callOnFx(() -> groupRow(panel, "UNTRACKED")));
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(panel.openSelectedFile(), "a header is not a file");
+            assertTrue(panel.stageSelected());
+            assertTrue(panel.discardSelected());
+        });
+        assertEquals(
+                List.of("stage [new.txt, scratch.txt]", "discard tracked=[] untracked=[new.txt, scratch.txt]"),
+                recorder.take());
+    }
+
+    /** The conflict commands act on the selected conflicted rows, and the others refuse what their rows refuse. */
+    @Test
+    void theRowCommandsOnConflictsAndOnWhatTheirRowsRefuse() throws Exception {
+        Recorder recorder = new Recorder();
+        GitPanel panel = shown(recorder);
+        FxTestSupport.runOnFx(() -> panel.setStatus(new GitStatus(
+                true,
+                "main",
+                "",
+                0,
+                0,
+                List.of(
+                        new FileEntry("both.txt", 'U', 'U', null),
+                        new FileEntry("staged.txt", 'M', '.', null),
+                        new FileEntry("new.txt", '?', '?', null)))));
+
+        menuKey(panel, FxTestSupport.callOnFx(() -> fileRow(panel, "CONFLICTS", "both.txt")));
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(panel.diffSelected(), "a conflicted file has no index version to diff against");
+            assertTrue(panel.resolveSelected());
+            assertTrue(panel.acceptSideOfSelected(true));
+            assertTrue(panel.acceptSideOfSelected(false));
+            assertTrue(panel.stageSelected(), "staging a conflict marks it resolved");
+            assertFalse(panel.discardSelected(), "a conflict is resolved, not discarded");
+        });
+        assertEquals(
+                List.of("resolve both.txt", "accept ours [both.txt]", "accept theirs [both.txt]", "stage [both.txt]"),
+                recorder.take());
+
+        menuKey(panel, FxTestSupport.callOnFx(() -> fileRow(panel, "UNTRACKED", "new.txt")));
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(panel.diffSelected(), "nothing to diff an untracked file against");
+            assertFalse(panel.resolveSelected(), "not a conflict");
+        });
+        menuKey(panel, FxTestSupport.callOnFx(() -> fileRow(panel, "STAGED", "staged.txt")));
+        FxTestSupport.runOnFx(() -> assertTrue(panel.diffSelected()));
+        assertEquals(List.of("diff staged.txt staged=true"), recorder.take(), "a staged file against HEAD");
+
+        // A header of staged files or of conflicts stands for nothing to stage or discard.
+        menuKey(panel, FxTestSupport.callOnFx(() -> groupRow(panel, "STAGED")));
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(panel.stageSelected());
+            assertFalse(panel.discardSelected());
+            assertFalse(panel.openSelectedFile());
+        });
+        FxTestSupport.runOnFx(() -> {
+            tree(panel).getSelectionModel().clearSelection();
+            tree(panel).getSelectionModel().select(groupRow(panel, "CONFLICTS"));
+            assertFalse(panel.stageSelected());
+            assertFalse(panel.discardSelected());
+            // Two rows selected: the single-row commands refuse, as their rows are not offered.
+            tree(panel).getSelectionModel().select(fileRow(panel, "STAGED", "staged.txt"));
+            assertFalse(panel.openSelectedFile());
+            assertFalse(panel.diffSelected());
+        });
+        assertEquals(List.of(), recorder.take());
     }
 
     @Test

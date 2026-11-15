@@ -70,7 +70,12 @@ final class ListRowCommands {
      * window) is brought forward first: a row is never removed, or run, in a window the user is not looking at.
      */
     static void run(String id, Consumer<String> status) {
-        Target target = targetFor(id);
+        run(id, status, Window.getWindows());
+    }
+
+    /** {@link #run(String, Consumer)} over {@code windows} instead of every showing window. */
+    static void run(String id, Consumer<String> status, List<? extends Window> windows) {
+        Target target = targetFor(id, windows);
         if (target == null) {
             status.accept(tr("status.list.noTarget"));
             return;
@@ -92,18 +97,17 @@ final class ListRowCommands {
     /** A bound action and the window its list is in. */
     record Target(Window window, BooleanSupplier action) {}
 
-    /** What command {@code id} runs where the keyboard is ({@link #targetFor}), or null. */
-    static @Nullable BooleanSupplier actionFor(String id) {
-        Target target = targetFor(id);
-        return target == null ? null : target.action();
-    }
-
     /**
      * What command {@code id} runs where the keyboard is: from the focus owner of the focused window up to the
      * first node {@linkplain #bind bound} to it, else the same in each other showing window; null when none is.
      */
     static @Nullable Target targetFor(String id) {
-        List<Window> windows = new ArrayList<>(Window.getWindows());
+        return targetFor(id, Window.getWindows());
+    }
+
+    /** {@link #targetFor(String)} over {@code among} instead of every showing window. */
+    static @Nullable Target targetFor(String id, List<? extends Window> among) {
+        List<Window> windows = new ArrayList<>(among);
         windows.sort((a, b) -> Boolean.compare(b.isFocused(), a.isFocused()));
         for (Window window : windows) {
             Scene scene = window.getScene();

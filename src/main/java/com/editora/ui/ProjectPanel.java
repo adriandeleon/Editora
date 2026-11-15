@@ -3408,7 +3408,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private Menu newMenu(TreeItem<Path> dirItem, boolean simple) {
         Menu newMenu = new Menu(tr("newfile.menu.new"));
         newMenu.setGraphic(Icons.newFile());
-        Path dir = dirItem.getValue();
         BiConsumer<Path, com.editora.template.NewFileType> newFile = onNewFile;
         Consumer<Path> newFromTemplate = onNewFromTemplate;
         Consumer<Path> newMavenProject = onNewMavenProject;
@@ -3416,9 +3415,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (newFile != null) {
             newMenu.getItems().add(typeItem(com.editora.template.NewFileCatalog.PLAIN, dirItem, newFile));
         }
-        MenuItem folder = new MenuItem(tr("project.menu.newFolder"));
-        folder.setGraphic(Icons.newFolder());
-        folder.setOnAction(e -> newFolder(dirItem));
+        MenuItem folder =
+                fileRow(ProjectRowCommands.Row.NEW_FOLDER, "project.menu.newFolder", Icons.newFolder(), dirItem, true);
         folder.getProperties().put(STAYS_IN_MAP, Boolean.TRUE); // asks over the Map window
         newMenu.getItems().add(folder);
 
@@ -3445,16 +3443,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             newMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
         if (newFromTemplate != null) {
-            MenuItem fromTemplate = new MenuItem(tr("project.menu.newFromTemplate"));
-            fromTemplate.setGraphic(Icons.template());
-            fromTemplate.setOnAction(e -> newFromTemplate.accept(dir));
-            newMenu.getItems().add(fromTemplate);
+            newMenu.getItems()
+                    .add(fileRow(
+                            ProjectRowCommands.Row.NEW_FROM_TEMPLATE,
+                            "project.menu.newFromTemplate",
+                            Icons.template(),
+                            dirItem,
+                            true));
         }
         if (newMavenProject != null) {
-            MenuItem maven = new MenuItem(tr("project.menu.newMavenProject"));
-            maven.setGraphic(Icons.newFolder());
-            maven.setOnAction(e -> newMavenProject.accept(dir));
-            newMenu.getItems().add(maven);
+            newMenu.getItems()
+                    .add(fileRow(
+                            ProjectRowCommands.Row.NEW_MAVEN_PROJECT,
+                            "project.menu.newMavenProject",
+                            Icons.newFolder(),
+                            dirItem,
+                            true));
         }
         return newMenu;
     }
@@ -3479,16 +3483,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 type.extension().isEmpty() && type.suggestedFileName().isEmpty()
                         ? Icons.newFile()
                         : FileIcons.forFileName(type.suggestedFileName()));
-        item.setOnAction(e -> {
-            dirItem.setExpanded(true); // reveal where the new file will land
-            if (dirItem instanceof MapRowItem) {
-                mapNewFileFolder = dirItem.getValue(); // the file it opens is revealed on the Map (setActiveFile)
-                mapNewFileAt = System.currentTimeMillis();
-                revealCreatedOnMap(dirItem, dirItem.getValue());
-            }
-            onNewFile.accept(dirItem.getValue(), type);
-        });
+        item.setOnAction(e -> newFileOfType(dirItem, type, onNewFile));
         return item;
+    }
+
+    /** Creates a file of {@code type} in {@code dirItem}'s folder, as its "New ▸" row does. */
+    private void newFileOfType(
+            TreeItem<Path> dirItem,
+            com.editora.template.NewFileType type,
+            BiConsumer<Path, com.editora.template.NewFileType> onNewFile) {
+        dirItem.setExpanded(true); // reveal where the new file will land
+        if (dirItem instanceof MapRowItem) {
+            mapNewFileFolder = dirItem.getValue(); // the file it opens is revealed on the Map (setActiveFile)
+            mapNewFileAt = System.currentTimeMillis();
+            revealCreatedOnMap(dirItem, dirItem.getValue());
+        }
+        onNewFile.accept(dirItem.getValue(), type);
     }
 
     /** Prompts for a name and creates a new subfolder inside {@code dirItem}'s directory. */
@@ -4546,52 +4556,48 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // Rename is offered on every file/folder EXCEPT the project root — renaming that would move the
         // whole project folder on disk and leave the project pointing at a path that no longer exists.
         if (!isRoot) {
-            MenuItem rename = new MenuItem(tr("project.menu.rename"));
-            rename.setGraphic(Icons.edit());
-            rename.setOnAction(e -> renameItem(treeItem));
+            MenuItem rename =
+                    fileRow(ProjectRowCommands.Row.RENAME, "project.menu.rename", Icons.edit(), treeItem, isDir);
             rename.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
             menu.getItems().add(rename);
         }
         if (canUndoMove()) {
-            MenuItem undoMove = new MenuItem(tr("project.menu.undoMove"));
-            undoMove.setGraphic(Icons.undo());
-            undoMove.setOnAction(e -> undoLastMove());
+            MenuItem undoMove =
+                    fileRow(ProjectRowCommands.Row.UNDO_MOVE, "project.menu.undoMove", Icons.undo(), treeItem, isDir);
             undoMove.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
             menu.getItems().add(undoMove);
         }
         if (!isDir) {
-            MenuItem delete = new MenuItem(tr("project.menu.delete"));
-            delete.setGraphic(Icons.trash());
+            MenuItem delete =
+                    fileRow(ProjectRowCommands.Row.DELETE, "project.menu.delete", Icons.trash(), treeItem, isDir);
             delete.getStyleClass().add("danger"); // a destructive row reads red, as in every menu
             // Deletes the whole multi-file selection when this row is part of it, else just this file
             // (the confirm dialog shows the count).
-            delete.setOnAction(e -> deleteSelected(treeItem));
             delete.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
             menu.getItems().add(delete);
             Path target = treeItem.getValue();
-            if (fileOps != null
-                    && target != null
-                    && com.editora.text.EncryptedNames.extensionOf(String.valueOf(target.getFileName())) == null) {
-                MenuItem encrypt = new MenuItem(tr("project.menu.encrypt"));
-                encrypt.setGraphic(Icons.lock());
-                encrypt.setOnAction(e -> fileOps.encrypt(target));
-                menu.getItems().add(encrypt);
+            if (fileOps != null && target != null && !encrypted(target)) {
+                menu.getItems()
+                        .add(fileRow(
+                                ProjectRowCommands.Row.ENCRYPT, "project.menu.encrypt", Icons.lock(), treeItem, isDir));
             }
         }
         if (markerOps != null && !simple) {
-            Path target = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
-
-            MenuItem bookmark = new MenuItem(tr(isDir ? "project.menu.addFolderBookmark" : "project.menu.addBookmark"));
-            bookmark.setGraphic(Icons.bookmark());
-            bookmark.setOnAction(e -> markerOps.addBookmark(target));
-            menu.getItems().add(bookmark);
-
-            MenuItem note =
-                    new MenuItem(tr(isDir ? "project.menu.addFolderPersonalNote" : "project.menu.addPersonalNote"));
-            note.setGraphic(Icons.notes());
+            menu.getItems()
+                    .add(fileRow(
+                            ProjectRowCommands.Row.BOOKMARK,
+                            isDir ? "project.menu.addFolderBookmark" : "project.menu.addBookmark",
+                            Icons.bookmark(),
+                            treeItem,
+                            isDir));
+            MenuItem note = fileRow(
+                    ProjectRowCommands.Row.NOTE,
+                    isDir ? "project.menu.addFolderPersonalNote" : "project.menu.addPersonalNote",
+                    Icons.notes(),
+                    treeItem,
+                    isDir);
             note.setDisable(!markerOps.personalNotesEnabled());
-            note.setOnAction(e -> markerOps.addPersonalNote(target));
             menu.getItems().add(note);
         }
         boolean terminalShown = terminalOpener != null && !simple;
@@ -4603,68 +4609,57 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             if (!(revealer != null || terminalShown)) {
                 menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
             }
-            Path target = treeItem.getValue();
-            MenuItem revealInMap = new MenuItem(tr("project.map.menu.revealInMap"));
-            revealInMap.setGraphic(Icons.locateFile());
-            revealInMap.setOnAction(e -> showInMap(target));
-            menu.getItems().add(revealInMap);
+            menu.getItems()
+                    .add(fileRow(
+                            ProjectRowCommands.Row.REVEAL_IN_MAP,
+                            "project.map.menu.revealInMap",
+                            Icons.locateFile(),
+                            treeItem,
+                            isDir));
         }
         if (revealer != null) {
-            MenuItem reveal = new MenuItem(tr("project.menu.revealInFileManager"));
-            reveal.setGraphic(Icons.revealInFiles());
-            reveal.setOnAction(e -> revealer.accept(treeItem.getValue(), isDir));
+            MenuItem reveal = fileRow(
+                    ProjectRowCommands.Row.REVEAL_IN_FILE_MANAGER,
+                    "project.menu.revealInFileManager",
+                    Icons.revealInFiles(),
+                    treeItem,
+                    isDir);
             reveal.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
             menu.getItems().add(reveal);
         }
-        if (terminalOpener != null && terminalShown) {
-            MenuItem terminal = new MenuItem(tr("project.menu.openTerminal"));
-            terminal.setGraphic(Icons.terminal());
-            terminal.setOnAction(e -> terminalOpener.accept(treeItem.getValue(), isDir));
-            menu.getItems().add(terminal);
+        if (terminalShown) {
+            menu.getItems()
+                    .add(fileRow(
+                            ProjectRowCommands.Row.OPEN_TERMINAL,
+                            "project.menu.openTerminal",
+                            Icons.terminal(),
+                            treeItem,
+                            isDir));
         }
         // Local History + Git act on a concrete file (not a folder).
         if (fileOps != null && !isDir && !simple) {
             Path file = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
-            MenuItem localHistory = new MenuItem(tr("project.menu.localHistory"));
-            localHistory.setGraphic(Icons.history());
-            localHistory.setOnAction(e -> fileOps.showLocalHistory(file));
+            MenuItem localHistory = fileRow(
+                    ProjectRowCommands.Row.LOCAL_HISTORY,
+                    "project.menu.localHistory",
+                    Icons.history(),
+                    treeItem,
+                    isDir);
             menu.getItems().add(localHistory);
 
             Menu git = new Menu(tr("project.menu.git"));
             git.setGraphic(Icons.git());
-            MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
-            stage.setGraphic(Icons.stageAll());
-            stage.setOnAction(e -> fileOps.gitStage(file));
-            MenuItem unstage = new MenuItem(tr("project.menu.git.unstage"));
-            unstage.setGraphic(Icons.remove());
-            unstage.setOnAction(e -> fileOps.gitUnstage(file));
-            MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
-            revert.setGraphic(Icons.undo());
+            MenuItem stage = fileRow(
+                    ProjectRowCommands.Row.GIT_STAGE, "project.menu.git.stage", Icons.stageAll(), treeItem, isDir);
+            MenuItem unstage = fileRow(
+                    ProjectRowCommands.Row.GIT_UNSTAGE, "project.menu.git.unstage", Icons.remove(), treeItem, isDir);
+            MenuItem revert = fileRow(
+                    ProjectRowCommands.Row.GIT_REVERT, "project.menu.git.revert", Icons.undo(), treeItem, isDir);
             revert.getStyleClass().add("danger"); // discards the file's changes
-            revert.setOnAction(e -> fileOps.gitRevert(file));
-            MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
-            ignore.setGraphic(Icons.git());
-            ignore.setOnAction(e -> fileOps.gitAddToGitignore(file));
-            MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
-            compareHead.setGraphic(Icons.diff());
-            compareHead.setOnAction(e -> fileOps.gitCompareWithHead(file));
-            MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
-            compareBranch.setGraphic(Icons.diff());
-            compareBranch.setOnAction(e -> fileOps.gitCompareWithBranch(file));
-            MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
-            compareRevision.setGraphic(Icons.diff());
-            compareRevision.setOnAction(e -> fileOps.gitCompareWithRevision(file));
-            MenuItem compareTag = new MenuItem(tr("project.menu.git.compareTag"));
-            compareTag.setGraphic(Icons.diff());
-            compareTag.setOnAction(e -> fileOps.gitCompareWithTag(file));
-            MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
-            annotate.setGraphic(Icons.blame());
-            annotate.setOnAction(e -> fileOps.gitAnnotate(file));
-            MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
-            fileHistory.setGraphic(Icons.gitLog());
-            fileHistory.setOnAction(e -> fileOps.gitShowFileHistory(file));
+            MenuItem ignore = fileRow(
+                    ProjectRowCommands.Row.GIT_IGNORE, "project.menu.git.addToGitignore", Icons.git(), treeItem, isDir);
             git.getItems()
                     .addAll(
                             stage,
@@ -4672,12 +4667,42 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                             revert,
                             ignore,
                             new javafx.scene.control.SeparatorMenuItem(),
-                            compareHead,
-                            compareBranch,
-                            compareTag,
-                            compareRevision,
-                            annotate,
-                            fileHistory);
+                            fileRow(
+                                    ProjectRowCommands.Row.COMPARE_HEAD,
+                                    "project.menu.git.compareHead",
+                                    Icons.diff(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.COMPARE_BRANCH,
+                                    "project.menu.git.compareBranch",
+                                    Icons.diff(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.COMPARE_TAG,
+                                    "project.menu.git.compareTag",
+                                    Icons.diff(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.COMPARE_REVISION,
+                                    "project.menu.git.compareRevision",
+                                    Icons.diff(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.ANNOTATE,
+                                    "project.menu.git.annotate",
+                                    Icons.blame(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.GIT_HISTORY,
+                                    "project.menu.git.fileHistory",
+                                    Icons.gitLog(),
+                                    treeItem,
+                                    isDir));
             menu.getItems().add(git);
 
             // Disable to match the live feature toggles + the file's actual status.
@@ -4685,13 +4710,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 localHistory.setDisable(!fileOps.localHistoryEnabled());
                 GitPathScope scope = fileOps.gitScope(file);
                 git.setDisable(scope == GitPathScope.NONE); // grey out the Git submenu when there's no VCS
-                com.editora.git.GitFileStatus st =
-                        gitStatus.get(file.toAbsolutePath().normalize());
-                // The tree's status map is the active repository's. For a file of another one it says
-                // nothing, so the status-dependent items stay enabled and the action itself reports.
-                boolean known = scope == GitPathScope.ACTIVE;
-                revert.setDisable(known && st == null); // nothing to revert on a clean file
-                ignore.setDisable(known && st != com.editora.git.GitFileStatus.UNTRACKED); // for new files
+                revert.setDisable(nothingToRevert(fileOps, file, false));
+                ignore.setDisable(notIgnorable(fileOps, file));
             });
         }
         // On a folder: Local History plus subtree-wide Git mutation and comparison actions.
@@ -4699,65 +4719,338 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Path dir = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
             // Exploring one folder (Project Map review 3 E10): search only inside it, and what changed here lately.
-            MenuItem findInFolder = new MenuItem(tr("project.menu.findInFolder"));
-            findInFolder.setGraphic(Icons.findInFiles());
+            // On the Map: its own text search, limited to the folder, its hits cards on the Map (gap 10).
+            MenuItem findInFolder = fileRow(
+                    ProjectRowCommands.Row.FIND_IN_FOLDER,
+                    "project.menu.findInFolder",
+                    Icons.findInFiles(),
+                    treeItem,
+                    isDir);
             if (treeItem instanceof MapRowItem) {
-                // On the Map: its own text search, limited to the folder, its hits cards on the Map (gap 10).
                 findInFolder.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
-                findInFolder.setOnAction(e -> mapFindText(dir));
-            } else {
-                findInFolder.setOnAction(e -> fileOps.findInFolder(dir));
             }
             menu.getItems().add(findInFolder);
-            MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));
-            folderHistory.setGraphic(Icons.history());
-            folderHistory.setOnAction(e -> fileOps.showLocalHistory(dir));
+            MenuItem folderHistory = fileRow(
+                    ProjectRowCommands.Row.LOCAL_HISTORY,
+                    "project.menu.localHistory",
+                    Icons.history(),
+                    treeItem,
+                    isDir);
             menu.getItems().add(folderHistory);
 
             Menu git = new Menu(tr("project.menu.git"));
             git.setGraphic(Icons.git());
-            MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
-            stage.setGraphic(Icons.stageAll());
-            stage.setOnAction(e -> fileOps.gitStage(dir));
-            MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
-            revert.setGraphic(Icons.undo());
+            MenuItem revert = fileRow(
+                    ProjectRowCommands.Row.GIT_REVERT, "project.menu.git.revert", Icons.undo(), treeItem, isDir);
             revert.getStyleClass().add("danger"); // discards the folder's changes
-            revert.setOnAction(e -> fileOps.gitRevert(dir));
-            MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
-            compareHead.setGraphic(Icons.diff());
-            compareHead.setOnAction(e -> fileOps.gitCompareWithHead(dir));
-            MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
-            compareBranch.setGraphic(Icons.diff());
-            compareBranch.setOnAction(e -> fileOps.gitCompareWithBranch(dir));
-            MenuItem compareTag = new MenuItem(tr("project.menu.git.compareTag"));
-            compareTag.setGraphic(Icons.diff());
-            compareTag.setOnAction(e -> fileOps.gitCompareWithTag(dir));
-            MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
-            compareRevision.setGraphic(Icons.diff());
-            compareRevision.setOnAction(e -> fileOps.gitCompareWithRevision(dir));
-            MenuItem folderGitHistory = new MenuItem(tr("project.menu.git.folderHistory"));
-            folderGitHistory.setGraphic(Icons.gitLog());
-            folderGitHistory.setOnAction(e -> fileOps.gitShowFolderHistory(dir));
             git.getItems()
                     .addAll(
-                            stage,
+                            fileRow(
+                                    ProjectRowCommands.Row.GIT_STAGE,
+                                    "project.menu.git.stage",
+                                    Icons.stageAll(),
+                                    treeItem,
+                                    isDir),
                             revert,
                             new javafx.scene.control.SeparatorMenuItem(),
-                            compareHead,
-                            compareBranch,
-                            compareTag,
-                            compareRevision,
-                            folderGitHistory);
+                            fileRow(
+                                    ProjectRowCommands.Row.COMPARE_HEAD,
+                                    "project.menu.git.compareHead",
+                                    Icons.diff(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.COMPARE_BRANCH,
+                                    "project.menu.git.compareBranch",
+                                    Icons.diff(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.COMPARE_TAG,
+                                    "project.menu.git.compareTag",
+                                    Icons.diff(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.COMPARE_REVISION,
+                                    "project.menu.git.compareRevision",
+                                    Icons.diff(),
+                                    treeItem,
+                                    isDir),
+                            fileRow(
+                                    ProjectRowCommands.Row.GIT_HISTORY,
+                                    "project.menu.git.folderHistory",
+                                    Icons.gitLog(),
+                                    treeItem,
+                                    isDir));
             menu.getItems().add(git);
 
             menu.setOnShowing(e -> {
                 folderHistory.setDisable(!fileOps.localHistoryEnabled());
                 GitPathScope scope = fileOps.gitScope(dir);
                 git.setDisable(scope == GitPathScope.NONE);
-                revert.setDisable(scope == GitPathScope.ACTIVE
-                        && !gitChangedDirs.contains(dir.toAbsolutePath().normalize()));
+                revert.setDisable(nothingToRevert(fileOps, dir, true));
             });
         }
         return menu;
+    }
+
+    /**
+     * A row of the file menu: titled {@code textKey}, doing {@code row} to {@code treeItem}, and showing the chord of
+     * the command that does the same to the selected row ({@link ProjectRowCommands}), which a right-click selects.
+     */
+    private MenuItem fileRow(
+            ProjectRowCommands.Row row, String textKey, Node icon, TreeItem<Path> treeItem, boolean isDir) {
+        MenuItem item = new MenuItem(tr(textKey));
+        item.setGraphic(icon);
+        item.setOnAction(e -> perform(row, treeItem, isDir));
+        return com.editora.editor.MenuChords.tag(item, row.id());
+    }
+
+    /** Whether {@code file}'s name already says it is encrypted, so the menu offers no Encrypt… for it. */
+    private static boolean encrypted(Path file) {
+        return com.editora.text.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null;
+    }
+
+    /**
+     * Whether Revert… has nothing to do on {@code path}: a clean file, or a folder with no change under it, of the
+     * active repository. For another repository's path the tree knows no status, so the action itself reports.
+     */
+    private boolean nothingToRevert(FileActions fileOps, Path path, boolean dir) {
+        if (fileOps.gitScope(path) != GitPathScope.ACTIVE) {
+            return false;
+        }
+        Path key = path.toAbsolutePath().normalize();
+        return dir ? !gitChangedDirs.contains(key) : gitStatus.get(key) == null;
+    }
+
+    /** Whether Add to .gitignore does not fit {@code file}: one of the active repository's that is not untracked. */
+    private boolean notIgnorable(FileActions fileOps, Path file) {
+        return fileOps.gitScope(file) == GitPathScope.ACTIVE
+                && gitStatus.get(file.toAbsolutePath().normalize()) != com.editora.git.GitFileStatus.UNTRACKED;
+    }
+
+    /** What {@code row} does to {@code treeItem}, from its menu row or from its command. */
+    private void perform(ProjectRowCommands.Row row, TreeItem<Path> treeItem, boolean isDir) {
+        Path path = treeItem.getValue();
+        FileActions fileOps = fileActions;
+        MarkerActions markerOps = markerActions;
+        switch (row) {
+            case NEW_FILE -> pickNewFileType(treeItem);
+            case NEW_FOLDER -> newFolder(treeItem);
+            case NEW_FROM_TEMPLATE -> {
+                if (onNewFromTemplate != null) {
+                    onNewFromTemplate.accept(path);
+                }
+            }
+            case NEW_MAVEN_PROJECT -> {
+                if (onNewMavenProject != null) {
+                    onNewMavenProject.accept(path);
+                }
+            }
+            case RENAME -> renameItem(treeItem);
+            case UNDO_MOVE -> undoLastMove();
+            case DELETE -> deleteSelected(treeItem);
+            case ENCRYPT -> {
+                if (fileOps != null) {
+                    fileOps.encrypt(path);
+                }
+            }
+            case BOOKMARK -> {
+                if (markerOps != null) {
+                    markerOps.addBookmark(path);
+                }
+            }
+            case NOTE -> {
+                if (markerOps != null) {
+                    markerOps.addPersonalNote(path);
+                }
+            }
+            case REVEAL_IN_MAP -> showInMap(path);
+            case REVEAL_IN_FILE_MANAGER -> {
+                if (onReveal != null) {
+                    onReveal.accept(path, isDir);
+                }
+            }
+            case OPEN_TERMINAL -> {
+                if (onOpenTerminal != null) {
+                    onOpenTerminal.accept(path, isDir);
+                }
+            }
+            case FIND_IN_FOLDER -> {
+                if (treeItem instanceof MapRowItem) {
+                    mapFindText(path);
+                } else if (fileOps != null) {
+                    fileOps.findInFolder(path);
+                }
+            }
+            default -> {
+                if (fileOps != null) {
+                    performGit(fileOps, row, path, isDir);
+                }
+            }
+        }
+    }
+
+    /** The Local History and Git rows of the file menu. */
+    private static void performGit(FileActions fileOps, ProjectRowCommands.Row row, Path path, boolean isDir) {
+        switch (row) {
+            case LOCAL_HISTORY -> fileOps.showLocalHistory(path);
+            case GIT_STAGE -> fileOps.gitStage(path);
+            case GIT_UNSTAGE -> fileOps.gitUnstage(path);
+            case GIT_REVERT -> fileOps.gitRevert(path);
+            case GIT_IGNORE -> fileOps.gitAddToGitignore(path);
+            case COMPARE_HEAD -> fileOps.gitCompareWithHead(path);
+            case COMPARE_BRANCH -> fileOps.gitCompareWithBranch(path);
+            case COMPARE_TAG -> fileOps.gitCompareWithTag(path);
+            case COMPARE_REVISION -> fileOps.gitCompareWithRevision(path);
+            case ANNOTATE -> fileOps.gitAnnotate(path);
+            case GIT_HISTORY -> {
+                if (isDir) {
+                    fileOps.gitShowFolderHistory(path);
+                } else {
+                    fileOps.gitShowFileHistory(path);
+                }
+            }
+            default -> {}
+        }
+    }
+
+    /**
+     * New File in Selected Folder…: the picker of file types the folder menu's "New ▸" lists (in Simple mode only
+     * the plain file, which it then creates without asking which type), creating the file in {@code dirItem}.
+     */
+    private void pickNewFileType(TreeItem<Path> dirItem) {
+        BiConsumer<Path, com.editora.template.NewFileType> newFile = onNewFile;
+        if (newFile == null) {
+            return;
+        }
+        if (simpleMode.getAsBoolean() || newFileTypePicker == null) {
+            newFileOfType(dirItem, com.editora.template.NewFileCatalog.PLAIN, newFile);
+            return;
+        }
+        newFileTypePicker.accept(type -> newFileOfType(dirItem, type, newFile));
+    }
+
+    /**
+     * Shows the picker of file types and hands the chosen one on; set by the window, which owns the overlay a
+     * picker opens in.
+     */
+    private @Nullable Consumer<Consumer<com.editora.template.NewFileType>> newFileTypePicker;
+
+    void setNewFileTypePicker(Consumer<Consumer<com.editora.template.NewFileType>> picker) {
+        this.newFileTypePicker = picker;
+    }
+
+    /** A file row the menu's commands act on: the item, and whether it is a folder or the project's root. */
+    record RowTarget(TreeItem<Path> item, boolean dir, boolean root) {}
+
+    /**
+     * The row the file menu's commands act on ({@link ProjectRowCommands}): the Project Map's selected row while
+     * the keyboard is on the Map's rows, else, while the Map window does not have the keyboard, the Project tree's
+     * selected row; null when there is none.
+     */
+    @Nullable
+    RowTarget commandTarget() {
+        if (mapWindow.isFocused()) {
+            ProjectMapModel.Entry entry = mapView.focusedRow();
+            return entry == null
+                    ? null
+                    : new RowTarget(
+                            new MapRowItem(entry.path()),
+                            entry.directory(),
+                            entry.path().equals(mapRoot));
+        }
+        TreeItem<Path> item = tree.getSelectionModel().getSelectedItem();
+        Path path = item == null ? null : item.getValue();
+        if (item == null || path == null) {
+            return null;
+        }
+        boolean isDir = item instanceof PathItem pi ? !pi.isLeaf() : Files.isDirectory(path);
+        return new RowTarget(item, isDir, path.equals(root));
+    }
+
+    /**
+     * Runs {@code row} on the {@linkplain #commandTarget selected row}, as its menu row would; answers what to say on
+     * the status line instead when there is no row, or when the menu would not offer that row for it (or would
+     * gray it out), and null when it ran.
+     */
+    @Nullable
+    String runRowCommand(ProjectRowCommands.Row row) {
+        if (row == ProjectRowCommands.Row.UNDO_MOVE) { // takes back the last move, whatever is selected
+            if (!canUndoMove()) {
+                return tr("status.project.noMoveToUndo");
+            }
+            undoLastMove();
+            return null;
+        }
+        RowTarget target = commandTarget();
+        if (target == null) {
+            return tr("status.project.selectRow");
+        }
+        String refusal = refusal(row, target);
+        if (refusal != null) {
+            return refusal;
+        }
+        if (target.item() instanceof MapRowItem && !row.staysInMap()) {
+            raiseEditorWindow(); // as the Map's copy of the row does: the work shows in the editor window
+        }
+        perform(row, target.item(), target.dir());
+        return null;
+    }
+
+    /** Why the menu would not offer {@code row} for {@code target}, or gray it out; null when it would run it. */
+    private @Nullable String refusal(ProjectRowCommands.Row row, RowTarget target) {
+        String title = DebugPanelText.bareTitle(tr("command." + row.id()));
+        String unavailable = tr("status.project.rowUnavailable", title);
+        Path path = target.item().getValue();
+        boolean simple = simpleMode.getAsBoolean();
+        FileActions fileOps = fileActions;
+        MarkerActions markerOps = markerActions;
+        if (row.folderOnly() && !target.dir()) {
+            return tr("status.project.rowIsFile", title);
+        }
+        if (row.fileOnly() && target.dir()) {
+            return tr("status.project.rowIsFolder", title);
+        }
+        return switch (row) {
+            case NEW_FILE -> onNewFile == null ? unavailable : null;
+            case NEW_FROM_TEMPLATE -> simple || onNewFromTemplate == null ? unavailable : null;
+            case NEW_MAVEN_PROJECT -> simple || onNewMavenProject == null ? unavailable : null;
+            case RENAME -> target.root() ? tr("status.project.rootCannotBeRenamed") : null;
+            case ENCRYPT -> fileOps == null || encrypted(path) ? unavailable : null;
+            case BOOKMARK -> markerOps == null || simple ? unavailable : null;
+            case NOTE -> markerOps == null || simple || !markerOps.personalNotesEnabled() ? unavailable : null;
+            case REVEAL_IN_MAP -> target.item() instanceof MapRowItem ? unavailable : null;
+            case REVEAL_IN_FILE_MANAGER -> onReveal == null ? unavailable : null;
+            case OPEN_TERMINAL -> onOpenTerminal == null || simple ? unavailable : null;
+            case FIND_IN_FOLDER -> fileOps == null || simple ? unavailable : null;
+            case LOCAL_HISTORY -> fileOps == null || simple || !fileOps.localHistoryEnabled() ? unavailable : null;
+            case NEW_FOLDER, UNDO_MOVE, DELETE -> null;
+            default -> gitRefusal(fileOps, row, path, target.dir(), simple, unavailable);
+        };
+    }
+
+    /** {@link #refusal} for the Git rows: no Git here, or a status that grays the row out. */
+    private @Nullable String gitRefusal(
+            @Nullable FileActions fileOps,
+            ProjectRowCommands.Row row,
+            Path path,
+            boolean dir,
+            boolean simple,
+            String unavailable) {
+        if (fileOps == null || simple) {
+            return unavailable;
+        }
+        if (fileOps.gitScope(path) == GitPathScope.NONE) {
+            return tr("status.project.notInGit");
+        }
+        if (row == ProjectRowCommands.Row.GIT_REVERT && nothingToRevert(fileOps, path, dir)) {
+            return unavailable;
+        }
+        if (row == ProjectRowCommands.Row.GIT_IGNORE && notIgnorable(fileOps, path)) {
+            return unavailable;
+        }
+        return null;
     }
 }

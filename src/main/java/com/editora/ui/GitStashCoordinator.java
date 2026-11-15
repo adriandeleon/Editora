@@ -252,6 +252,26 @@ final class GitStashCoordinator {
         chooseStash(tr("stash.picker.dropTitle"), this::drop);
     }
 
+    /** {@code git.stashShow}: a picker over the stash list to show one entry's changes, as its Show Changes row. */
+    void pickToShow() {
+        chooseStash(tr("stash.picker.showTitle"), this::show);
+    }
+
+    /** {@code git.stashPopChosen}: a picker over the stash list to pop one entry, as its Pop row. */
+    void pickToPop() {
+        chooseStash(tr("stash.picker.popTitle"), (root, entry) -> apply(root, entry, true));
+    }
+
+    /** {@code git.stashBranch}: a picker over the stash list to make a branch of one entry, as its Branch… row. */
+    void pickToBranch() {
+        chooseStash(tr("stash.picker.branchTitle"), this::promptBranch);
+    }
+
+    /** {@code git.stashCopyName}: a picker over the stash list to copy one entry's name, as its Copy Name row. */
+    void pickToCopyName() {
+        chooseStash(tr("stash.picker.copyTitle"), (root, entry) -> copyName(entry));
+    }
+
     /**
      * Applies {@code entry} ({@code pop}: and drops it when that succeeds). The buffers of the files the
      * stash touches are saved first, as for a stage: git merges the stash into the files on disk.

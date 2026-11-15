@@ -126,6 +126,11 @@ class FileHistoryPanelFxTest {
         }
 
         @Override
+        public void purgeFile(String path) {
+            log.add("purge " + Path.of(path).getFileName());
+        }
+
+        @Override
         public void fetchContent(HistoryRevision revision, Consumer<Optional<String>> onText) {
             onText.accept(Optional.ofNullable(contentBySha.get(revision.sha256())));
         }
@@ -483,6 +488,64 @@ class FileHistoryPanelFxTest {
             assertNull(cell.getGraphic());
             assertNull(cell.getTooltip());
             assertNull(cell.getAccessibleText());
+        });
+    }
+
+    /**
+     * The commands behind the rows ({@code history.restoreSelected}, {@code history.labelSelected},
+     * {@code localHistory.purgeSelectedFile}) do to the selected row what its menu row does, and refuse where the
+     * row is not offered.
+     */
+    @Test
+    void theRowCommandsActOnTheSelectedRowAsItsMenuRowDoes() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Fixture f = fixture();
+            f.list().getSelectionModel().clearSelection();
+            assertFalse(f.panel().restoreSelected(), "no version selected");
+            assertFalse(f.panel().labelSelected());
+            assertFalse(f.panel().purgeSelectedFile(), "a file's history has no file rows");
+            assertTrue(f.host().log.stream().noneMatch(l -> l.startsWith("editLabel") || l.startsWith("revert")));
+
+            f.list().getSelectionModel().select(1);
+            HistoryRevision second = f.orders().get(1);
+            assertTrue(f.panel().labelSelected());
+            assertEquals("editLabel " + second.timestamp(), f.host().log.getLast());
+            int before = f.host().log.size();
+            assertTrue(f.panel().restoreSelected());
+            List<String> byCommand =
+                    List.copyOf(f.host().log.subList(before, f.host().log.size()));
+            assertFalse(byCommand.isEmpty(), "the restore ran");
+
+            // The row's own Restore on the same version asks and does the same.
+            f.showOrders();
+            f.list().getSelectionModel().select(1);
+            int rowStart = f.host().log.size();
+            javafx.scene.control.MenuItem restoreRow =
+                    f.cell(1).getContextMenu().getItems().get(0);
+            assertEquals("history.restoreSelected", com.editora.editor.MenuChords.commandOf(restoreRow));
+            restoreRow.fire();
+            assertEquals(
+                    byCommand,
+                    List.copyOf(f.host().log.subList(rowStart, f.host().log.size())));
+
+            Path gone = Path.of("/p/docs/gone.md");
+            HistoryRevision deleted = f.host().revision(gone, 6_000, "was here\n", HistoryRevision.REASON_DELETE, "");
+            f.panel()
+                    .setFolderHistory(
+                            Path.of("/p/docs"),
+                            List.of(new FileHistoryPanel.FileGroup(
+                                    gone.toString(), "gone.md", true, List.of(deleted))));
+            TreeItem<Object> goneFile = f.tree().getRoot().getChildren().get(0);
+            assertFalse(f.panel().purgeSelectedFile(), "nothing selected in the folder's history");
+            f.tree().getSelectionModel().select(goneFile);
+            assertFalse(f.panel().restoreSelected(), "a file row is not a version");
+            assertTrue(f.panel().purgeSelectedFile());
+            assertEquals("purge gone.md", f.host().log.getLast());
+            f.tree().getSelectionModel().select(goneFile.getChildren().get(0));
+            assertFalse(f.panel().purgeSelectedFile(), "a version row is not a file");
+            assertFalse(f.panel().labelSelected(), "a folder's history labels nothing");
+            assertTrue(f.panel().restoreSelected());
+            assertEquals("restoreToDisk gone.md", f.host().log.getLast());
         });
     }
 

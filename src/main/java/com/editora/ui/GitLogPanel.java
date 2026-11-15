@@ -901,6 +901,70 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                 .format(Instant.ofEpochSecond(epochSeconds).atZone(ZoneId.systemDefault()));
     }
 
+    /**
+     * The file the log's file commands act on ({@code git.log.showFileDiff}…): in a file's history, that file as the
+     * selected commit has it, unless the changed-files list has the keyboard; else the file selected in that list.
+     * Null when there is none.
+     */
+    private @Nullable CommitFile commandFile() {
+        CommitFile picked = files.getSelectionModel().getSelectedItem();
+        String hash = selectedHash();
+        CommitFile followedFile = view.fileHistory() && hash != null ? followed.get(hash) : null;
+        return followedFile != null && !(files.isFocused() && picked != null) ? followedFile : picked;
+    }
+
+    /** Show Diff on the selected file at the selected commit, as its menu row does; false when there is none. */
+    boolean showSelectedFileDiff() {
+        String hash = selectedHash();
+        CommitFile f = commandFile();
+        if (hash == null || f == null) {
+            return false;
+        }
+        actions.openFileDiff(hash, f.path(), f.origPath());
+        return true;
+    }
+
+    /** Compare with Working Copy on the selected file at the selected commit; false when there is none. */
+    boolean compareSelectedFileWithWorking() {
+        String hash = selectedHash();
+        CommitFile f = commandFile();
+        if (hash == null || f == null) {
+            return false;
+        }
+        actions.compareFileWithWorking(hash, f.path());
+        return true;
+    }
+
+    /** Open File on the selected changed file; false when there is none, or it was deleted (no copy to open). */
+    boolean openSelectedChangedFile() {
+        CommitFile f = files.getSelectionModel().getSelectedItem();
+        if (f == null || GitFileStatus.fromLetter(f.status()) == GitFileStatus.DELETED) {
+            return false;
+        }
+        actions.openFile(f.path());
+        return true;
+    }
+
+    /** Show File History on the selected changed file; false when there is none. */
+    boolean selectedFileHistory() {
+        CommitFile f = files.getSelectionModel().getSelectedItem();
+        if (f == null) {
+            return false;
+        }
+        actions.showFileHistory(f.path());
+        return true;
+    }
+
+    /** Copy Path on the selected changed file; false when there is none. */
+    boolean copySelectedFilePath() {
+        CommitFile f = files.getSelectionModel().getSelectedItem();
+        if (f == null) {
+            return false;
+        }
+        actions.copyPath(f.path());
+        return true;
+    }
+
     /** The hash of the currently-selected commit, or {@code null} when none is selected (backs the palette commands). */
     public @Nullable String selectedHash() {
         Entry c = commits.getSelectionModel().getSelectedItem();
@@ -1365,11 +1429,13 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                                 item(
                                         tr("gitlog.menu.showDiff"),
                                         Icons.diff(),
-                                        () -> actions.openFileDiff(h, file.path(), file.origPath())),
+                                        () -> actions.openFileDiff(h, file.path(), file.origPath()),
+                                        "git.log.showFileDiff"),
                                 item(
                                         tr("gitlog.menu.compareWorking"),
                                         Icons.merge(),
-                                        () -> actions.compareFileWithWorking(h, file.path())),
+                                        () -> actions.compareFileWithWorking(h, file.path()),
+                                        "git.log.compareFileWithWorking"),
                                 new SeparatorMenuItem());
             }
             menu.getItems().addAll(copy, review, compare, patch, new SeparatorMenuItem(), checkout, newBranch, newTag);
@@ -1442,9 +1508,17 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                     actions.compareFileWithWorking(c.hash(), path);
                 }
             });
-            MenuItem open = item(tr("gitlog.menu.openFile"), Icons.fileSheet(), () -> actions.openFile(path));
-            MenuItem history = item(tr("gitlog.menu.fileHistory"), Icons.gitLog(), () -> actions.showFileHistory(path));
-            MenuItem copy = item(tr("gitlog.menu.copyPath"), Icons.copy(), () -> actions.copyPath(path));
+            MenuChords.tag(diff, "git.log.showFileDiff");
+            MenuChords.tag(compareWorking, "git.log.compareFileWithWorking");
+            MenuItem open = item(
+                    tr("gitlog.menu.openFile"), Icons.fileSheet(), () -> actions.openFile(path), "git.log.openFile");
+            MenuItem history = item(
+                    tr("gitlog.menu.fileHistory"),
+                    Icons.gitLog(),
+                    () -> actions.showFileHistory(path),
+                    "git.log.fileHistoryOfFile");
+            MenuItem copy = item(
+                    tr("gitlog.menu.copyPath"), Icons.copy(), () -> actions.copyPath(path), "git.log.copyFilePath");
             // A deleted file has no working-tree copy to open.
             open.setDisable(GitFileStatus.fromLetter(f.status()) == GitFileStatus.DELETED);
             return new ContextMenu(diff, compareWorking, open, history, copy);

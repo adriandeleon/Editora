@@ -699,6 +699,8 @@ public final class HttpClientPanel extends VBox {
      * selection (or the whole text when nothing is selected) on the clipboard without disturbing the selection.
      */
     private static void installCopyMenu(CodeArea area) {
+        // edit.copy / edit.selectAll do what these rows do while the keyboard is in the area.
+        ConsoleContextMenu.mark(area, () -> ConsoleContextMenu.copySelectionOrAll(area), area::selectAll);
         MenuItem copy = com.editora.editor.MenuChords.tag(new MenuItem(tr("editmenu.copy"), Icons.copy()), "edit.copy");
         copy.setOnAction(
                 e -> putOnClipboard(area.getSelection().getLength() > 0 ? area.getSelectedText() : area.getText()));

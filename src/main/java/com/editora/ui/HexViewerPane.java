@@ -54,6 +54,8 @@ public final class HexViewerPane implements TabContent {
         area.setEditable(false);
         area.setWrapText(false);
         area.getStyleClass().add("hex-viewer-area");
+        // Right-click Select All / Copy, which edit.selectAll / edit.copy also do while the dump has the keyboard.
+        ConsoleContextMenu.install(area);
         // A bare CodeArea virtualizes but shows no scrollbars; load() wraps it like the editor does so the dump
         // scrolls vertically (65k+ rows) and horizontally (a narrow window clips the ASCII column).
         load();

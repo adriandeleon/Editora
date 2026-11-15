@@ -117,7 +117,15 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         RERUN,
         RERUN_FAILED,
         CANCEL,
-        COPY_URL
+        COPY_URL,
+        /** Open in Browser: the selected pull request's, issue's or run's page. */
+        OPEN_URL,
+        /** View Failure Log of the selected failed run. */
+        VIEW_LOG,
+        /** Check Out the selected pull request's branch. */
+        CHECKOUT_PR,
+        /** Review the selected pull request's changes. */
+        REVIEW_PR
     }
 
     /** Whether a {@link RowAction} can run on the selection, or why not ({@link #messageKey}). */
@@ -127,6 +135,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         OPEN_AND_ASK("status.github.row.choose"),
         NO_SELECTION("status.github.row.none"),
         NOT_A_RUN("status.github.row.notARun"),
+        NOT_A_PR("status.github.row.notAPr"),
         NOT_FAILED("status.github.row.onlyFailed"),
         NOT_ACTIVE("status.github.row.notActive"),
         STILL_ACTIVE("status.github.row.stillActive"),
@@ -156,8 +165,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         if (selected == null || selected instanceof MoreRow) {
             return RowAnswer.NO_SELECTION;
         }
-        if (action == RowAction.COPY_URL) {
+        if (action == RowAction.COPY_URL || action == RowAction.OPEN_URL) {
             return urlOf(selected).isBlank() ? RowAnswer.NO_URL : RowAnswer.RUN;
+        }
+        if (action == RowAction.CHECKOUT_PR || action == RowAction.REVIEW_PR) {
+            return selected instanceof PullRequest ? RowAnswer.RUN : RowAnswer.NOT_A_PR;
         }
         if (!(selected instanceof WorkflowRun run)) {
             return RowAnswer.NOT_A_RUN;
@@ -165,9 +177,9 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         RunState state = run.state();
         return switch (action) {
             case RERUN -> state.active() ? RowAnswer.STILL_ACTIVE : RowAnswer.RUN;
-            case RERUN_FAILED -> state.failed() ? RowAnswer.RUN : RowAnswer.NOT_FAILED;
+            case RERUN_FAILED, VIEW_LOG -> state.failed() ? RowAnswer.RUN : RowAnswer.NOT_FAILED;
             case CANCEL -> state.active() ? RowAnswer.RUN : RowAnswer.NOT_ACTIVE;
-            case COPY_URL -> RowAnswer.RUN;
+            case COPY_URL, OPEN_URL, CHECKOUT_PR, REVIEW_PR -> RowAnswer.RUN;
         };
     }
 
@@ -289,13 +301,19 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         repository.setTooltip(ControlNames.tooltip(tr("github.panel.repositoryTip")));
         repository.setOnAction(e -> {
             repository.setVisited(false);
-            if (!context.url().isBlank()) {
-                actions.openUrl(context.url());
-            }
+            repositoryAction(true);
         });
         repository.setContextMenu(new ContextMenu(
-                item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(context.url())),
-                item(tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(context.url()))));
+                item(
+                        tr("github.panel.menu.open"),
+                        Icons.github(),
+                        () -> actions.openUrl(context.url()),
+                        "github.openRepository"),
+                item(
+                        tr("github.panel.menu.copyUrl"),
+                        Icons.copy(),
+                        () -> actions.copyUrl(context.url()),
+                        "github.copyRepositoryUrl")));
         branch.setGraphic(Icons.git());
         branch.setTooltip(ControlNames.tooltip(tr("github.panel.branchTip")));
         branch.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
@@ -527,14 +545,40 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         }
         if (action == RowAction.COPY_URL) {
             actions.copyUrl(urlOf(sel));
+        } else if (action == RowAction.OPEN_URL) {
+            actions.openUrl(urlOf(sel));
+        } else if (sel instanceof PullRequest pr) {
+            if (action == RowAction.CHECKOUT_PR) {
+                actions.checkoutPr(pr.number());
+            } else if (action == RowAction.REVIEW_PR) {
+                actions.reviewPr(pr.number());
+            }
         } else if (sel instanceof WorkflowRun run) {
             switch (action) {
                 case RERUN -> actions.rerunRun(run.databaseId(), false);
                 case RERUN_FAILED -> actions.rerunRun(run.databaseId(), true);
                 case CANCEL -> actions.cancelRun(run.databaseId());
-                case COPY_URL -> {}
+                case VIEW_LOG -> actions.viewRunLog(run.databaseId(), run.workflowName());
+                case COPY_URL, OPEN_URL, CHECKOUT_PR, REVIEW_PR -> {}
             }
         }
+    }
+
+    /**
+     * Open on GitHub / Copy URL of the repository the window shows ({@code github.openRepository},
+     * {@code github.copyRepositoryUrl}), as its link and the link's menu do; false when it shows none.
+     */
+    boolean repositoryAction(boolean open) {
+        String url = context.url();
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        if (open) {
+            actions.openUrl(url);
+        } else {
+            actions.copyUrl(url);
+        }
+        return true;
     }
 
     /** Selects the row at {@code index} of the visible list. For tests. */
@@ -861,7 +905,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                 items.add(item(
                         tr("github.panel.menu.viewLog"),
                         Icons.terminal(),
-                        () -> actions.viewRunLog(run.databaseId(), run.workflowName())));
+                        () -> actions.viewRunLog(run.databaseId(), run.workflowName()),
+                        "github.viewSelectedRunLog"));
                 items.add(item(
                         tr("github.panel.menu.rerunFailed"),
                         Icons.refresh(),
@@ -881,7 +926,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                         () -> actions.cancelRun(run.databaseId()),
                         "github.cancelRun"));
             }
-            items.add(item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(run.url())));
+            items.add(item(
+                    tr("github.panel.menu.open"),
+                    Icons.github(),
+                    () -> actions.openUrl(run.url()),
+                    "github.openSelected"));
             items.add(item(
                     tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(run.url()), "github.copyUrl"));
             setContextMenu(new ContextMenu(items.toArray(new MenuItem[0])));
@@ -899,10 +948,21 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             setRow(new Label(title), number);
             setTooltip(ControlNames.tooltip(pr.authorLogin() + " · " + pr.headRefName() + " → " + pr.baseRefName()
                     + "\n" + when(pr.updatedAt())));
-            MenuItem checkout =
-                    item(tr("github.panel.menu.checkout"), Icons.git(), () -> actions.checkoutPr(pr.number()));
-            MenuItem review = item(tr("github.panel.menu.review"), Icons.diff(), () -> actions.reviewPr(pr.number()));
-            MenuItem open = item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(pr.url()));
+            MenuItem checkout = item(
+                    tr("github.panel.menu.checkout"),
+                    Icons.git(),
+                    () -> actions.checkoutPr(pr.number()),
+                    "github.checkoutSelectedPr");
+            MenuItem review = item(
+                    tr("github.panel.menu.review"),
+                    Icons.diff(),
+                    () -> actions.reviewPr(pr.number()),
+                    "github.reviewSelectedPr");
+            MenuItem open = item(
+                    tr("github.panel.menu.open"),
+                    Icons.github(),
+                    () -> actions.openUrl(pr.url()),
+                    "github.openSelected");
             MenuItem copy = item(
                     tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(pr.url()), "github.copyUrl");
             setContextMenu(new ContextMenu(checkout, review, open, copy));
@@ -917,7 +977,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             setRow(new Label(issue.title() + labels + closed), number);
             setTooltip(ControlNames.tooltip(
                     issue.authorLogin() + " · " + stateWord(state) + "\n" + when(issue.updatedAt())));
-            MenuItem open = item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(issue.url()));
+            MenuItem open = item(
+                    tr("github.panel.menu.open"),
+                    Icons.github(),
+                    () -> actions.openUrl(issue.url()),
+                    "github.openSelected");
             MenuItem copy = item(
                     tr("github.panel.menu.copyUrl"),
                     Icons.copy(),

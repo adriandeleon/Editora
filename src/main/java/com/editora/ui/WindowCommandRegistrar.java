@@ -2133,6 +2133,7 @@ final class WindowCommandRegistrar {
         }));
         host.registry().register(Command.of("test.runClassAtCaret", () -> host.runTestAtCaret(true, false)));
         host.registry().register(Command.of("test.debugAtCaret", () -> host.runTestAtCaret(false, true)));
+        host.registry().register(Command.of("test.debugClassAtCaret", () -> host.runTestAtCaret(true, true)));
         if (host.debugCoordinator() != null) { // Debug ▶ in a JUnit file debugs its test (review A102)
             host.debugCoordinator().setTestDebugger(classLevel -> host.runTestAtCaret(classLevel, true));
         }
@@ -2248,6 +2249,19 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.threads", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showThreads)));
+        // What the editor menu's Debug File, Debug Main Class and Add to Watches rows do, at the caret.
+        host.registry()
+                .register(Command.of(
+                        "debug.debugFile",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugActiveFile)));
+        host.registry()
+                .register(Command.of(
+                        "debug.mainClassAtCaret",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugMainClassAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.addWatchAtCaret",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addWatchAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.threadDump",
@@ -2953,6 +2967,18 @@ final class WindowCommandRegistrar {
                 .register(Command.of("github.rerunFailedJobs", () -> onGithubRow(GitHubPanel.RowAction.RERUN_FAILED)));
         host.registry().register(Command.of("github.cancelRun", () -> onGithubRow(GitHubPanel.RowAction.CANCEL)));
         host.registry().register(Command.of("github.copyUrl", () -> onGithubRow(GitHubPanel.RowAction.COPY_URL)));
+        // The rest of the list's right-click rows, on the selected row as those are.
+        host.registry().register(Command.of("github.openSelected", () -> onGithubRow(GitHubPanel.RowAction.OPEN_URL)));
+        host.registry()
+                .register(Command.of("github.viewSelectedRunLog", () -> onGithubRow(GitHubPanel.RowAction.VIEW_LOG)));
+        host.registry()
+                .register(
+                        Command.of("github.checkoutSelectedPr", () -> onGithubRow(GitHubPanel.RowAction.CHECKOUT_PR)));
+        host.registry()
+                .register(Command.of("github.reviewSelectedPr", () -> onGithubRow(GitHubPanel.RowAction.REVIEW_PR)));
+        // The repository link at the top of the window, and its menu.
+        host.registry().register(Command.of("github.openRepository", () -> githubRepository(true)));
+        host.registry().register(Command.of("github.copyRepositoryUrl", () -> githubRepository(false)));
         host.registry().register(Command.of("github.showChecks", host.github()::showChecks));
         host.registry().register(Command.of("github.refresh", host.github()::refresh));
         host.registry().register(Command.of("view.toggleGithub", host.github()::toggleSupport));
@@ -2972,6 +2998,8 @@ final class WindowCommandRegistrar {
                                 host.toolWindows().isOpen(host.fileHistoryToolWindow()),
                                 () -> host.toolWindows().close(host.fileHistoryToolWindow()),
                                 host.historyCoordinator()::showActive)));
+        // Opens the window on the active file and leaves it open: what a tab's Show Local History row does to its tab.
+        host.registry().register(Command.of("history.showActiveFile", host.historyCoordinator()::showActive));
         host.registry().register(Command.of("history.putLabel", host.historyCoordinator()::putLabel));
         host.registry().register(Command.of("history.recentChanges", host.historyCoordinator()::showRecentChanges));
         // Deliberately outside the feature-gated "history." prefix: turning Local History off must not gray
@@ -2982,6 +3010,8 @@ final class WindowCommandRegistrar {
                 .register(
                         Command.of("git.fileHistory", () -> host.git().ifEnabled(host.gitWindows()::showFileHistory)));
         host.registry().register(Command.of("git.toggleBlame", host.git()::toggleBlame));
+        // Turns blame on for the active file (never off): what a tab's Annotate row does to its tab.
+        host.registry().register(Command.of("git.annotate", () -> host.git().ifEnabled(host.git()::annotateActive)));
         host.registry()
                 .register(Command.of("git.copyPermalink", () -> host.git().ifEnabled(host.git()::copyPermalink)));
         host.registry()
@@ -3095,6 +3125,11 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "diff.openChange",
                         () -> host.diffCoordinator().withActiveDiff(DiffViewerPane::openCurrentChange)));
+        // The diff menu's line rows, for the line at the caret of the side the keyboard is in.
+        diffLine(host, "diff.stageLine", DiffViewerPane.GitHunkAction.STAGE);
+        diffLine(host, "diff.unstageLine", DiffViewerPane.GitHunkAction.UNSTAGE);
+        diffLine(host, "diff.revertLine", DiffViewerPane.GitHunkAction.REVERT);
+        diffLine(host, "diff.openLineInEditor", DiffViewerPane.GitHunkAction.OPEN);
         host.registry().register(Command.of("diff.compareWith", host.diffCoordinator()::compareActiveWithFile));
         host.registry()
                 .register(Command.of("diff.compareClipboard", host.diffCoordinator()::compareActiveWithClipboard));
@@ -3128,7 +3163,12 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("find.selectAllMatches", host::selectAllFindMatches));
         host.registry().register(Command.of("edit.selectAllOccurrences", host::selectAllOccurrences));
         host.registry().register(Command.of("edit.cut", host.editing()::onCut));
-        host.registry().register(Command.of("edit.copy", host.editing()::onCopy));
+        // In a read-only view (a console, a diff, the hex viewer) Copy is that view's, as its menu row's is.
+        host.registry().register(Command.of("edit.copy", () -> {
+            if (!ConsoleContextMenu.runInFocusedView(true)) {
+                host.editing().onCopy();
+            }
+        }));
         host.registry().register(Command.of("edit.paste", host.editing()::onPaste));
         host.registry().register(Command.of("edit.yankPop", host.editing()::yankPop));
         host.registry().register(Command.of("edit.yankFromRing", host.editing()::showKillRingPicker));
@@ -3176,7 +3216,11 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "edit.transposeLines",
                         () -> host.editing().transpose(com.editora.editops.Transposer::transposeLines)));
-        host.registry().register(Command.of("edit.selectAll", host.editing()::selectAll));
+        host.registry().register(Command.of("edit.selectAll", () -> {
+            if (!ConsoleContextMenu.runInFocusedView(false)) {
+                host.editing().selectAll();
+            }
+        }));
         host.registry().register(Command.of("edit.completeStatement", host.editing()::completeStatement));
         for (var line : java.util.Map.of(
                         "edit.insertLineBelow", EditorBuffer.LineCommand.INSERT_BELOW,
@@ -3646,6 +3690,16 @@ final class WindowCommandRegistrar {
         commands.put("git.fetchRemote", branches::fetchRemote);
         commands.put("git.remotes", branches::manageRemotes);
         commands.put("git.worktrees", branches::manageWorktrees);
+        // The remotes and work-trees managers' buttons and menu rows: the selected row while one is up, else a picker.
+        commands.put("git.addRemote", branches::addRemoteCommand);
+        commands.put("git.renameRemote", branches::renameRemoteCommand);
+        commands.put("git.setRemoteUrl", branches::setRemoteUrlCommand);
+        commands.put("git.pruneRemote", branches::pruneRemoteCommand);
+        commands.put("git.removeRemote", branches::removeRemoteCommand);
+        commands.put("git.addWorktree", branches::addWorktreeCommand);
+        commands.put("git.openWorktree", branches::openWorktreeCommand);
+        commands.put("git.pruneWorktrees", branches::pruneWorktreesCommand);
+        commands.put("git.removeWorktree", branches::removeWorktreeCommand);
         commands.forEach((id, action) ->
                 host.registry().register(Command.of(id, () -> host.git().ifEnabled(action))));
     }
@@ -3674,6 +3728,15 @@ final class WindowCommandRegistrar {
             }
             host.toolWindows().open(host.githubToolWindow(), true); // opening it loads the list
             host.setStatus(tr(answer.messageKey()));
+        });
+    }
+
+    /** Opens or copies the URL of the repository the GitHub window shows; says so when it shows none. */
+    private void githubRepository(boolean open) {
+        host.github().ifEnabled(() -> {
+            if (!host.githubPanel().repositoryAction(open)) {
+                host.setStatus(tr("status.github.noRepository"));
+            }
         });
     }
 
@@ -3744,6 +3807,18 @@ final class WindowCommandRegistrar {
                 "toolwindow.undoHistory",
                 () -> host.undoHistoryPanel().restoreSelected());
         row(host, "messageLog.copySelected", "messagelog.title", host.statusBar()::copySelectedMessages);
+    }
+
+    /** Registers {@code id}: {@code action} on the line at the caret of the active diff, or says there is none. */
+    private static void diffLine(Host host, String id, DiffViewerPane.GitHunkAction action) {
+        host.registry()
+                .register(Command.of(
+                        id,
+                        () -> host.diffCoordinator().withActiveDiff(dp -> {
+                            if (!dp.caretLineAction(action)) {
+                                host.setStatus(tr("status.diff.noChangedLineAtCaret"));
+                            }
+                        })));
     }
 
     /** Registers {@code id}: {@code action} on a panel's selected row, which answers false when it has none. */

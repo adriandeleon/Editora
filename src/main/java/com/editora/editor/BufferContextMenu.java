@@ -102,9 +102,7 @@ final class BufferContextMenu {
                 MenuItem debugTest =
                         new MenuItem(tr(method ? "testrunner.menu.debugTest" : "testrunner.menu.debugClass"));
                 debugTest.setGraphic(MenuIcons.debug());
-                if (method) {
-                    MenuChords.tag(debugTest, "test.debugAtCaret");
-                }
+                MenuChords.tag(debugTest, method ? "test.debugAtCaret" : "test.debugClassAtCaret");
                 debugTest.setOnAction(ev -> b.runGutter.testDebugHandler.accept(testTarget));
                 items.addAll(java.util.List.of(runTests, debugTest));
                 items.add(new SeparatorMenuItem());
@@ -143,7 +141,7 @@ final class BufferContextMenu {
                 });
                 items.add(run);
                 if (b.runGutter.debugFileHandler != null && b.runGutter.debugFileShown.getAsBoolean()) {
-                    MenuItem debugFile = new MenuItem(tr("editmenu.debugFile"));
+                    MenuItem debugFile = MenuChords.tag(new MenuItem(tr("editmenu.debugFile")), "debug.debugFile");
                     debugFile.setGraphic(MenuIcons.debug());
                     debugFile.setOnAction(ev -> {
                         Runnable handler = b.runGutter.debugFileHandler;
@@ -159,10 +157,12 @@ final class BufferContextMenu {
                 com.editora.run.MainMethodScanner.MainMethod mainTarget = b.runGutter.mainTargetAt(at.line());
                 if (mainTarget != null) {
                     String simple = com.editora.test.TestSourceLocator.simpleName(mainTarget.fqn());
-                    MenuItem runMain = new MenuItem(tr("editmenu.runMainClass", simple));
+                    // Run Context Configuration runs the main at the caret when no test is there, as here.
+                    MenuItem runMain = MenuChords.tag(new MenuItem(tr("editmenu.runMainClass", simple)), "run.context");
                     runMain.setGraphic(FoldManager.runGlyph());
                     runMain.setOnAction(ev -> b.runGutter.mainRunHandler.accept(mainTarget));
-                    MenuItem debugMain = new MenuItem(tr("editmenu.debugMainClass", simple));
+                    MenuItem debugMain = MenuChords.tag(
+                            new MenuItem(tr("editmenu.debugMainClass", simple)), "debug.mainClassAtCaret");
                     debugMain.setGraphic(MenuIcons.debug());
                     debugMain.setOnAction(ev -> b.runGutter.mainDebugHandler.accept(mainTarget));
                     items.add(runMain);
