@@ -1258,6 +1258,11 @@ public class SharedConfig {
         return breakpointStore.members(key);
     }
 
+    /** A project's exception breakpoints (live list; persist with {@link #saveBreakpoints}). */
+    public List<ExceptionBreakpoint> exceptionBreakpoints(String key) {
+        return breakpointStore.exceptions(key);
+    }
+
     /** A project's pinned values by file (live map; persist with {@link #saveBreakpoints}). */
     public Map<String, List<PinnedLine>> pinsBucket(String key) {
         return breakpointStore.pinsBucket(key);
@@ -1267,6 +1272,7 @@ public class SharedConfig {
         String key = projectKey == null ? "" : projectKey;
         boolean lines = breakpointStore.getByProject().remove(key) != null;
         lines |= breakpointStore.getPins().remove(key) != null;
+        lines |= breakpointStore.getExceptionBreakpoints().remove(key) != null;
         if (breakpointStore.getMemberBreakpoints().remove(key) != null || lines) {
             saveBreakpoints();
         }

@@ -394,7 +394,42 @@ public final class DapManager {
         if (client != null) {
             List<String> chosen = shared.exceptionChoices.get(sessionLanguage);
             client.setExceptionFilters(muted ? List.of() : chosen);
+            client.setExtraExceptionFilters(exceptionExtras());
         }
+    }
+
+    /**
+     * The exception filters each language's exception breakpoints need ({@code language → filters}), for every session
+     * of the window: they are sent besides the user's choice. None while breakpoints are muted.
+     */
+    public void setExceptionExtras(Map<String, List<String>> extras) {
+        shared.exceptionExtras.clear();
+        extras.forEach((language, filters) -> shared.exceptionExtras.put(language, List.copyOf(filters)));
+        DapClient c = client;
+        if (c != null) {
+            c.setExtraExceptionFilters(exceptionExtras());
+        }
+    }
+
+    /** The extra exception filters for the session's language: none while breakpoints are muted. */
+    private List<String> exceptionExtras() {
+        return shared.exceptionsMuted ? List.of() : shared.exceptionExtras.getOrDefault(sessionLanguage, List.of());
+    }
+
+    /**
+     * Which exception {@code threadId} stopped on, asked now (the stop's own report comes on its own): {@code cb}
+     * gets it on the FX thread, or null when the adapter cannot say or the session moved on.
+     */
+    public void exceptionInfo(int threadId, Consumer<DapModels.@Nullable ExceptionInfo> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(null);
+            return;
+        }
+        long epoch = sessionEpoch;
+        c.exceptionInfo(threadId)
+                .whenComplete((info, e) -> fx(() ->
+                        cb.accept(e == null && isCurrent(epoch, c) && info != null && !info.isEmpty() ? info : null)));
     }
 
     /** The language of the live (or last) session. */
@@ -5618,6 +5653,7 @@ public final class DapManager {
                 return false;
             }
             candidate.setMemberBreakpoints(shared.memberBreakpoints); // sent on its initialized event
+            candidate.setExtraExceptionFilters(exceptionExtras()); // its language's exception breakpoints need
             candidate.setHexValues(shared.hexValues);
             client = candidate;
             return true;

@@ -178,9 +178,10 @@ class PrefixKeyHintFxTest {
             keymap().loadNamed("vscode"); // C-x is Cut there, not a prefix
             hint().refresh();
             assertFalse(hint().isShowing(), "nothing follows C-x in VS Code");
-            hint().prefixChanged("C-k");
+            String chord = KeymapManager.isMac() ? "Cmd-k" : "C-k"; // VS Code's chord prefix, Cmd-K on macOS
+            hint().prefixChanged(chord);
             hint().show();
-            assertEquals(keymap().display("C-k"), hint().heading());
+            assertEquals(keymap().display(chord), hint().heading());
             assertTrue(
                     hint().rows().stream().allMatch(r -> r.contains("\t") && !r.startsWith("C-")),
                     "VS Code's keys are written its way: " + hint().rows());

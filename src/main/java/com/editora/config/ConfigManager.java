@@ -327,6 +327,11 @@ public class ConfigManager {
         return shared.memberBreakpoints(currentBookmarkKey());
     }
 
+    /** This window's project's exception breakpoints (live list; persist with saveBreakpoints). */
+    public List<ExceptionBreakpoint> getExceptionBreakpoints() {
+        return shared.exceptionBreakpoints(currentBookmarkKey());
+    }
+
     public void saveBreakpoints() {
         shared.saveBreakpoints();
     }

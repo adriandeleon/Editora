@@ -74,6 +74,12 @@ final class DapSettings {
     boolean exceptionsMuted;
 
     /**
+     * Language → exception filters turned on for its exception breakpoints, beyond the user's choice: the adapter
+     * must stop on thrown exceptions for Editora to check their type ({@link DapClient#setExtraExceptionFilters}).
+     */
+    final Map<String, List<String>> exceptionExtras = new java.util.HashMap<>();
+
+    /**
      * Set when the running jdtls already advertises the java-debug commands — some distributions (e.g. Homebrew's
      * jdtls) ship and auto-load the plugin, so there is no jar to find and nothing to inject, yet debugging works.
      * Pushed by the controller from the LSP capabilities (#711).
