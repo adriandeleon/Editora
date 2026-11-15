@@ -42,6 +42,8 @@ final class EditorSettingsCoordinator {
 
         StatusBar statusBar();
 
+        RemovalUndo removalUndo();
+
         SettingsWindow settingsWindow();
 
         OverlayHost overlayHost();
@@ -533,11 +535,58 @@ final class EditorSettingsCoordinator {
         host.setStatus(tr("status.shortcut.bound", host.keymap().display(chordSeq), commandTitle(commandId)));
     }
 
-    /** Unbinds {@code commandId}: its own bindings go, and so do its keymap defaults. */
+    /**
+     * Unbinds {@code commandId}: its own bindings go, and so do its keymap defaults. It asks nothing; when the command
+     * had a key, Undo Last Removal binds it again.
+     */
     void clearShortcut(String commandId) {
-        applyKeybindingOverrides(
-                com.editora.command.KeybindingEdits.clear(baseBindings(), currentKeybindings(), commandId));
-        host.setStatus(tr("status.shortcut.removed", commandTitle(commandId)));
+        java.util.Map<String, String> before = currentKeybindings();
+        java.util.List<String> chords = com.editora.command.KeybindingEdits.defaultChords(
+                host.keymap().bindings(), commandId); // what it is bound to now, the user's bindings included
+        applyKeybindingOverrides(com.editora.command.KeybindingEdits.clear(baseBindings(), before, commandId));
+        String removed = tr("status.shortcut.removed", commandTitle(commandId));
+        if (chords.isEmpty()) {
+            host.setStatus(removed); // it had no key: nothing went
+        } else {
+            recordShortcutRemoval(commandId, before, chords, removed);
+        }
+    }
+
+    /** Records how to take back a removal or a reset of {@code commandId}'s keys, and says {@code sentence}. */
+    private void recordShortcutRemoval(
+            String commandId, java.util.Map<String, String> before, java.util.List<String> chords, String sentence) {
+        java.util.Map<String, String> after = currentKeybindings();
+        String keymap = UserKeys.keymap(host.config().getSettings());
+        host.removalUndo()
+                .removed(
+                        sentence,
+                        tr("status.shortcut.restored", commandTitle(commandId)),
+                        () -> restoreShortcut(commandId, keymap, before, after, chords));
+    }
+
+    /**
+     * Gives {@code commandId} back the keys a removal or a reset took ({@code before} and {@code after}: this
+     * system's overrides around it, in {@code keymap}). False, changing nothing, when another keymap is active now,
+     * the command is gone (a deleted macro), or {@link com.editora.command.KeybindingEdits#restored} says a key is
+     * taken or was changed since.
+     */
+    boolean restoreShortcut(
+            String commandId,
+            String keymap,
+            java.util.Map<String, String> before,
+            java.util.Map<String, String> after,
+            java.util.List<String> chords) {
+        if (!keymap.equals(UserKeys.keymap(host.config().getSettings()))
+                || host.registry().all().stream().noneMatch(c -> c.id().equals(commandId))) {
+            return false;
+        }
+        java.util.Map<String, String> restored = com.editora.command.KeybindingEdits.restored(
+                before, after, currentKeybindings(), host.keymap().bindings(), commandId, chords);
+        if (restored == null) {
+            return false;
+        }
+        applyKeybindingOverrides(restored);
+        return true;
     }
 
     /** The default chords of {@code commandId} that another command's override holds now (Reset takes them back). */
@@ -552,7 +601,22 @@ final class EditorSettingsCoordinator {
         reloadKeymap();
     }
 
+    /**
+     * Puts {@code commandId} back on its keymap default. When that discards a chord of the user's own, Undo Last
+     * Removal binds it again.
+     */
     void resetShortcut(String commandId) {
+        java.util.Map<String, String> before = currentKeybindings();
+        java.util.List<String> chords =
+                com.editora.command.KeybindingEdits.defaultChords(host.keymap().bindings(), commandId);
+        dropShortcut(commandId);
+        if (before.containsValue(commandId)) {
+            recordShortcutRemoval(commandId, before, chords, tr("status.shortcut.reset", commandTitle(commandId)));
+        }
+    }
+
+    /** {@link #resetShortcut} with no way back: the command itself is going (a deleted macro, which asked). */
+    void dropShortcut(String commandId) {
         applyKeybindingOverrides(
                 com.editora.command.KeybindingEdits.reset(baseBindings(), currentKeybindings(), commandId));
         host.setStatus(tr("status.shortcut.reset", commandTitle(commandId)));

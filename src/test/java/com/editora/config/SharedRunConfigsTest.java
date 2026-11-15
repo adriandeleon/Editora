@@ -148,4 +148,24 @@ class SharedRunConfigsTest {
         assertEquals(1, loaded.size());
         assertEquals(1, SharedRunConfigs.merge(List.of(), loaded).size(), "merge reads each name");
     }
+
+    /** What an export would overwrite: a shared file that says something else. Never a file that is not there yet. */
+    @Test
+    void wouldReplaceIsTrueOnlyForAFileThatSaysSomethingElse(@org.junit.jupiter.api.io.TempDir Path root)
+            throws Exception {
+        List<RunConfiguration> mine = List.of(cfg("Server", "--port 80"));
+        assertEquals(false, SharedRunConfigs.wouldReplace(MAPPER, root, mine, List.of()), "no file yet");
+
+        SharedRunConfigs.save(MAPPER, root, mine);
+        assertEquals(false, SharedRunConfigs.wouldReplace(MAPPER, root, mine, List.of()), "the file says this already");
+        Path file = SharedRunConfigs.fileFor(root);
+        Files.writeString(file, Files.readString(file).replace("\n", "\r\n  "));
+        assertEquals(false, SharedRunConfigs.wouldReplace(MAPPER, root, mine, List.of()), "white space is not content");
+
+        assertTrue(SharedRunConfigs.wouldReplace(MAPPER, root, List.of(cfg("Server", "--port 81")), List.of()));
+        assertTrue(SharedRunConfigs.wouldReplace(MAPPER, root, List.of(), List.of()), "an export of fewer");
+
+        Files.writeString(file, "{ this is not json");
+        assertTrue(SharedRunConfigs.wouldReplace(MAPPER, root, mine, List.of()), "a file a save would replace");
+    }
 }

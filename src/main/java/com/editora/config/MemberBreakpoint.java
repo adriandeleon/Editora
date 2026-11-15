@@ -42,6 +42,15 @@ public record MemberBreakpoint(
         return new MemberBreakpoint(kind, className, member, access, condition, hitCondition, enabled, newGroup);
     }
 
+    /**
+     * Whether it carries something typed beyond its member: a condition, a hit count or a group. Removing such a
+     * breakpoint loses that, where a plain one comes back with the same key.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean carriesDetails() {
+        return !condition.isEmpty() || !hitCondition.isEmpty() || !group.isEmpty();
+    }
+
     /** A method's entry or a field's access. */
     public enum Kind {
         METHOD,

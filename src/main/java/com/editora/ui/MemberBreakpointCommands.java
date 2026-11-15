@@ -99,17 +99,18 @@ final class MemberBreakpointCommands {
 
     /** Adds {@code m}, or removes the breakpoint already on its member. Reports which on the status line. */
     void toggle(MemberBreakpoint m) {
-        List<MemberBreakpoint> list = new ArrayList<>(ops.memberBreakpoints());
-        boolean removed = list.removeIf(m::sameMember);
-        if (!removed) {
-            list.add(m);
+        if (ops.memberBreakpoints().stream().anyMatch(m::sameMember)) {
+            remove(m, true);
+            return;
         }
+        List<MemberBreakpoint> list = new ArrayList<>(ops.memberBreakpoints());
+        list.add(m);
         save(list);
-        boolean method = m.kind() == MemberBreakpoint.Kind.METHOD;
-        String key = method
-                ? (removed ? "status.debug.methodBreakpointRemoved" : "status.debug.methodBreakpointAdded")
-                : (removed ? "status.debug.fieldWatchpointRemoved" : "status.debug.fieldWatchpointAdded");
-        host.setStatus(tr(key, m.shortName()));
+        host.setStatus(tr(
+                m.kind() == MemberBreakpoint.Kind.METHOD
+                        ? "status.debug.methodBreakpointAdded"
+                        : "status.debug.fieldWatchpointAdded",
+                m.shortName()));
     }
 
     /** Adds {@code m} unless its member already has one (then it is left as it is). */
@@ -154,11 +155,61 @@ final class MemberBreakpointCommands {
         }
     }
 
+    /** Removes the breakpoint on {@code m}'s member (Remove on the line, the Breakpoints list). */
     void remove(MemberBreakpoint m) {
+        remove(m, false);
+    }
+
+    /**
+     * Removes the breakpoint on {@code m}'s member: every removal comes here. One that carried a condition, a hit
+     * count or a group records how to come back where it was in the list, and the status line says so; a plain one
+     * comes back with the toggle, which alone says it removed one ({@code say}).
+     */
+    private void remove(MemberBreakpoint m, boolean say) {
         List<MemberBreakpoint> list = new ArrayList<>(ops.memberBreakpoints());
-        if (list.removeIf(m::sameMember)) {
-            save(list);
+        int index = -1;
+        for (int i = 0; i < list.size() && index < 0; i++) {
+            index = list.get(i).sameMember(m) ? i : -1;
         }
+        if (index < 0) {
+            return;
+        }
+        MemberBreakpoint was = list.remove(index);
+        save(list);
+        boolean method = was.kind() == MemberBreakpoint.Kind.METHOD;
+        String removed = tr(
+                method ? "status.debug.methodBreakpointRemoved" : "status.debug.fieldWatchpointRemoved",
+                was.shortName());
+        if (!was.carriesDetails()) {
+            if (say) {
+                host.setStatus(removed);
+            }
+            return;
+        }
+        int at = index;
+        host.removalUndo()
+                .removed(
+                        removed,
+                        tr(
+                                method
+                                        ? "status.debug.methodBreakpointRestored"
+                                        : "status.debug.fieldWatchpointRestored",
+                                was.shortName()),
+                        () -> restore(was, at));
+    }
+
+    /**
+     * Puts {@code was} back at {@code index} of the list (the end, when it is shorter now). False, changing nothing,
+     * when its member has a breakpoint again.
+     */
+    boolean restore(MemberBreakpoint was, int index) {
+        List<MemberBreakpoint> list = new ArrayList<>(ops.memberBreakpoints());
+        if (list.stream().anyMatch(was::sameMember)) {
+            return false;
+        }
+        list.add(Math.min(index, list.size()), was);
+        save(list);
+        return true;
     }
 
     /**

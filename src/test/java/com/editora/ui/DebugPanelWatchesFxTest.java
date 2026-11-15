@@ -356,6 +356,45 @@ class DebugPanelWatchesFxTest {
         assertEquals(List.of(tr("debugpanel.addWatch")), watchRows());
     }
 
+    /** One watch removed asks nothing: Undo Last Removal puts it back in its place, paused as it was. */
+    @Test
+    void aRemovedWatchIsRecordedAndComesBackWhereItWasPausedAsItWas() throws Exception {
+        List<String> said = new ArrayList<>();
+        RemovalUndo undo = new RemovalUndo(said::add);
+        boolean[] shown = {true};
+        FxTestSupport.runOnFx(() -> {
+            panel.setRemovalUndo(undo, () -> shown[0]);
+            panel.setWatches(List.of("count", "name", "items"));
+            panel.setWatchPaused("name", true);
+            watchChanges = 0;
+            // The Delete key on the watch's row.
+            tree().getSelectionModel().select(row(tr("debugpanel.watches"), "name"));
+            tree().fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.DELETE, false, false, false, false));
+        });
+        assertEquals(List.of("count", "items"), FxTestSupport.callOnFx(panel::getWatches));
+        assertEquals(List.of(), FxTestSupport.callOnFx(panel::getPausedWatches));
+        assertEquals(List.of("Watch “name” removed. Undo Last Removal takes this back."), said);
+
+        FxTestSupport.runOnFx(undo::undoLast);
+        assertEquals(List.of("count", "name", "items"), FxTestSupport.callOnFx(panel::getWatches), "its place");
+        assertEquals(List.of("name"), FxTestSupport.callOnFx(panel::getPausedWatches), "and still paused");
+        assertEquals("Watch “name” restored.", said.getLast());
+        assertEquals(2, watchChanges, "the removal and the restore are both saved");
+
+        // The row's menu, then the panel's session is closed: the window's watches are another panel's now.
+        FxTestSupport.runOnFx(() -> menuFor(row(tr("debugpanel.watches"), "items")).stream()
+                .filter(item -> tr("debugpanel.removeWatch").equals(item.getText()))
+                .findFirst()
+                .orElseThrow()
+                .fire());
+        assertEquals(List.of("count", "name"), FxTestSupport.callOnFx(panel::getWatches));
+        shown[0] = false;
+        FxTestSupport.runOnFx(undo::undoLast);
+        assertEquals("This can no longer be undone: Watch “items” removed.", said.getLast());
+        assertEquals(List.of("count", "name"), FxTestSupport.callOnFx(panel::getWatches), "nothing is written");
+        assertEquals(3, watchChanges);
+    }
+
     /** Remove All Watches asks first, naming how many go: the row, and its command through the same row. */
     @Test
     void removeAllWatchesAsksBeforeItEmptiesTheList() throws Exception {

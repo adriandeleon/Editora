@@ -483,6 +483,22 @@ public class SettingsWindow {
     private @Nullable Consumer<String> onStatus;
 
     /**
+     * Where a small removal made in this window (a dictionary word, a row put back to its default) records how to
+     * come back: the owning editor window's {@link RemovalUndo}, whose status bar says so and whose Edit: Undo Last
+     * Removal takes it back. Until the owner gives its own, one that says it through {@link #setStatusSink}.
+     */
+    RemovalUndo removalUndo = new RemovalUndo(text -> {
+        if (onStatus != null && text != null) {
+            onStatus.accept(text);
+        }
+    });
+
+    /** See {@link #removalUndo}. */
+    void setRemovalUndo(RemovalUndo removalUndo) {
+        this.removalUndo = removalUndo;
+    }
+
+    /**
      * Changes the three Local History retention limits on behalf of this window's spinners. Lowering one
      * deletes revisions, so the implementation ({@code HistoryCoordinator.changeLimits}) writes the settings
      * only once it knows nothing would go or the user confirmed what would; {@code done} gets whether it did.
@@ -873,6 +889,7 @@ public class SettingsWindow {
 
         VBox root = new VBox(0, scopeUi.bar(), body, buttons);
         scopeUi.setRows(() -> rows.stream().map(SettingsSearch.Row::node).toList());
+        scopeUi.setRemovalUndo(() -> removalUndo); // "Use my setting" on a row records there too
         registerScopedControls();
         javafx.geometry.Dimension2D size = preferredSize(owner);
         root.setPrefWidth(size.getWidth());
@@ -4985,10 +5002,7 @@ public class SettingsWindow {
         modifiedPerPage = modified.refresh(
                 rows,
                 config.getSettings(),
-                keys -> {
-                    SettingsModified.reset(config.getSettings(), keys);
-                    commitReset(); // saves, applies, re-reads every control
-                },
+                this::resetRow,
                 scopeUi::marksRow); // Project mode marks its own rows (the project's values)
         List<String> restart = RestartPending.changed(config.getSettings());
         restartNote.setText(tr("settings.restart.pending", restart.size()));
@@ -4997,6 +5011,38 @@ public class SettingsWindow {
         if (modifiedOnly.isSelected() || SettingsSearch.wantsModified(searchField.getText())) {
             filter(searchField.getText()); // a row put back to its default leaves the list
         }
+    }
+
+    /**
+     * Reset to default on one row: its {@code keys} go back to their defaults, with no question. When a value
+     * differed, Undo Last Removal puts the row's values back.
+     */
+    private void resetRow(java.util.Set<String> keys) {
+        Settings settings = config.getSettings();
+        boolean differed = SettingsModified.modifiedKeys(settings).stream().anyMatch(keys::contains);
+        com.fasterxml.jackson.databind.node.ObjectNode previous = SettingsModified.values(settings, keys);
+        SettingsModified.reset(settings, keys);
+        commitReset(); // saves, applies, re-reads every control
+        if (differed) {
+            removalUndo.removed(
+                    tr("status.settings.rowReset"),
+                    tr("status.settings.rowRestored"),
+                    () -> restoreRow(keys, previous));
+        }
+    }
+
+    /**
+     * Puts a reset row's {@code previous} values back, through what every settings change goes through (saved,
+     * applied, every control read again). False, changing nothing, when one of {@code keys} was changed again since.
+     */
+    boolean restoreRow(java.util.Set<String> keys, com.fasterxml.jackson.databind.node.ObjectNode previous) {
+        Settings settings = config.getSettings();
+        if (SettingsModified.modifiedKeys(settings).stream().anyMatch(keys::contains)) {
+            return false;
+        }
+        SettingsModified.restore(settings, previous);
+        commitReset();
+        return true;
     }
 
     private SettingsModified modified; // which rows differ from their defaults (built with the pages)

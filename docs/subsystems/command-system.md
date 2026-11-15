@@ -737,6 +737,17 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   paste keys) is a fixed key, set as a plain accelerator. `MenuChordTagsSourceTest` fails on a tag whose
   literal id is no command.
 
+## Undo Last Removal
+
+`edit.undoRemoval` (Edit menu, no default key in any keymap) takes back the newest small removal of its window: the
+removals that ask nothing because they are frequent (a watch, a breakpoint with a condition, a key binding, a
+dictionary word, a setting reset to its default). Each window's `MainController` holds one
+[`RemovalUndo`](../../src/main/java/com/editora/ui/RemovalUndo.java), twenty entries, emptied when the window
+closes; a coordinator reaches it as `host.removalUndo()`, and the window's Settings records on the same one, so a
+removal made in Settings is said in the editor window's status bar and undone from the editor window (the Settings
+window has no key dispatcher and no palette of its own). The contract of a recorded restore is in
+[conventions](../conventions.md) beside the rule for a question before something is lost.
+
 ## Adding a command
 
 See [extending.md → Add a command](../extending.md#add-a-command). In short: register in

@@ -86,15 +86,39 @@ public final class SharedRunConfigs {
         save(mapper, projectRoot, configs, List.of());
     }
 
+    /**
+     * Whether {@link #save} would replace a file that says something else: the project has the shared file and its
+     * content is not what {@code configs} and {@code deployments} write (white space aside). False when there is no
+     * file yet, or it already holds exactly this; true for a file that cannot be read as JSON, which a save replaces.
+     */
+    public static boolean wouldReplace(
+            ObjectMapper mapper, Path projectRoot, List<RunConfiguration> configs, List<Deployment> deployments) {
+        Path file = fileFor(projectRoot);
+        if (!Files.exists(file)) {
+            return false;
+        }
+        try {
+            return !mapper.readTree(Files.readAllBytes(file))
+                    .equals(mapper.readTree(mapper.writeValueAsBytes(stored(configs, deployments))));
+        } catch (IOException | RuntimeException e) {
+            return true;
+        }
+    }
+
+    private static Stored stored(List<RunConfiguration> configs, List<Deployment> deployments) {
+        Stored stored = new Stored();
+        stored.configurations = new ArrayList<>(configs);
+        stored.deployments = deployments == null || deployments.isEmpty() ? null : new ArrayList<>(deployments);
+        return stored;
+    }
+
     /** Writes {@code configs} and {@code deployments} into the project, creating {@code .editora/} if needed. */
     public static void save(
             ObjectMapper mapper, Path projectRoot, List<RunConfiguration> configs, List<Deployment> deployments)
             throws IOException {
         Path file = fileFor(projectRoot);
         Files.createDirectories(file.getParent());
-        Stored stored = new Stored();
-        stored.configurations = new ArrayList<>(configs);
-        stored.deployments = deployments == null || deployments.isEmpty() ? null : new ArrayList<>(deployments);
+        Stored stored = stored(configs, deployments);
         // Temp file + atomic move, like every other config store: a crash mid-write must not leave a
         // truncated file, and this one lives in the user's repository where a corrupt file is worse still.
         // ConfigDurabilityTest enforces this for every store.

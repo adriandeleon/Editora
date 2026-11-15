@@ -2586,14 +2586,63 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /**
+     * Removes one watch (its row's menu, Delete on it, the command) with no question: Undo Last Removal puts it back
+     * where it was, paused when it was paused.
+     */
     private void removeWatch(String expr) {
-        if (watches.remove(expr)) {
-            if (!watches.contains(expr)) {
-                pausedWatches.remove(expr);
-            }
-            onWatchesChanged.run();
-            refreshWatchesNode();
+        int index = watches.indexOf(expr);
+        if (index < 0) {
+            return;
         }
+        boolean paused = pausedWatches.contains(expr);
+        watches.remove(index);
+        if (!watches.contains(expr)) {
+            pausedWatches.remove(expr);
+        }
+        onWatchesChanged.run();
+        refreshWatchesNode();
+        RemovalUndo undo = removalUndo;
+        if (undo != null) {
+            // Weak: the window's removals outlive a closed session, and must not keep its panel.
+            java.lang.ref.WeakReference<DebugPanel> panel = new java.lang.ref.WeakReference<>(this);
+            undo.removed(tr("status.debug.watchRemoved", expr), tr("status.debug.watchRestored", expr), () -> {
+                DebugPanel p = panel.get();
+                return p != null && p.restoreWatch(expr, index, paused);
+            });
+        }
+    }
+
+    /**
+     * Puts a removed watch back at {@code index} (the end, when the list is shorter now), {@code paused} as it was.
+     * False, changing nothing, when this panel's session is gone: the window's watches are another panel's by now.
+     */
+    private boolean restoreWatch(String expr, int index, boolean paused) {
+        if (!stillShown.getAsBoolean()) {
+            return false;
+        }
+        watches.add(Math.min(index, watches.size()), expr);
+        if (paused) {
+            pausedWatches.add(expr);
+        }
+        onWatchesChanged.run();
+        refreshWatchesNode();
+        return true;
+    }
+
+    /** Where a removed watch records how to come back (null: nowhere, a panel built by a test). */
+    private @Nullable RemovalUndo removalUndo;
+
+    /** Whether this panel is still one of the window's (its session was not closed). */
+    private java.util.function.BooleanSupplier stillShown = () -> true;
+
+    /**
+     * Gives the panel the window's {@link RemovalUndo}; {@code stillShown} says whether the panel is still one of the
+     * window's when a removal is taken back.
+     */
+    void setRemovalUndo(RemovalUndo undo, java.util.function.BooleanSupplier stillShown) {
+        this.removalUndo = undo;
+        this.stillShown = stillShown;
     }
 
     /**

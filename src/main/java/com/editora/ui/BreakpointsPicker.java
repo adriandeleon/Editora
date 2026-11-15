@@ -454,7 +454,13 @@ final class BreakpointsPicker {
     void rewriteClosed(Path file, String key, int line, @Nullable Breakpoint next) {
         Map<String, List<Breakpoint>> map = ops.breakpointMap();
         List<Breakpoint> list = new ArrayList<>(map.getOrDefault(key, List.of()));
+        Breakpoint was =
+                list.stream().filter(bp -> bp.line() == line).findFirst().orElse(null);
         list.removeIf(bp -> bp.line() == line);
+        if (next == null && was != null) {
+            // Removed by the user (the list's remove key, a Map card's gutter): one with a condition can come back.
+            BreakpointRemovalUndo.removedInStore(host, ops, this, file, key, was);
+        }
         if (next != null) {
             list.add(next);
             list.sort(java.util.Comparator.comparingInt(Breakpoint::line));

@@ -594,12 +594,19 @@ final class RunConfigurationCoordinator {
             host.setStatus(tr("status.run.noConfigs"));
             return;
         }
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        List<com.editora.config.Deployment> deployments =
+                host.config().getWorkspaceState().getDeployments();
+        // The file is the project's, shared through its repository: one that says something else is asked about.
+        if (com.editora.config.SharedRunConfigs.wouldReplace(mapper, root, configs, deployments)
+                && !Confirm.ask(
+                        host.stage(),
+                        exportReplaceQuestion(host.homeCollapsed(com.editora.config.SharedRunConfigs.fileFor(root)
+                                .toString())))) {
+            return;
+        }
         try {
-            com.editora.config.SharedRunConfigs.save(
-                    new com.fasterxml.jackson.databind.ObjectMapper(),
-                    root,
-                    configs,
-                    host.config().getWorkspaceState().getDeployments());
+            com.editora.config.SharedRunConfigs.save(mapper, root, configs, deployments);
             host.setStatus(tr(
                     "status.run.configsExported",
                     configs.size(),
@@ -608,6 +615,18 @@ final class RunConfigurationCoordinator {
         } catch (java.io.IOException e) {
             host.setError(tr("status.run.configsExportFailed", e.getMessage()));
         }
+    }
+
+    /**
+     * The question before an export replaces the project's shared file {@code file}, which holds something other
+     * than this window's configurations. Pure.
+     */
+    static Confirm.Question exportReplaceQuestion(String file) {
+        return new Confirm.Question(
+                tr("run.config.exportReplace.title"),
+                null,
+                tr("run.config.exportReplace.confirm", file),
+                tr("confirm.action.replace"));
     }
 
     /**

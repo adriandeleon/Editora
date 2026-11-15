@@ -863,4 +863,50 @@ class RunConfigurationCommandsFxTest {
         assertEquals("", RunConfigurationCoordinator.readTextOrEmpty(dir.resolve("missing.xml")));
         assertEquals("", RunConfigurationCoordinator.readTextOrEmpty(dir), "a folder is not a build file");
     }
+
+    // --- Export over the project's shared file ---------------------------------------------------------------
+
+    /** An export asks only when the project's file is there and says something else; Cancel leaves the file. */
+    @Test
+    void anExportAsksBeforeItReplacesASharedFileThatSaysSomethingElse() throws Exception {
+        projectRoot = Files.createDirectories(dir.resolve("proj"));
+        Path shared = SharedRunConfigs.fileFor(projectRoot);
+        configurations(script("Deploy"), python("Report", "report.py"));
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(coordinator::exportRunConfigs); // no file yet
+            FxTestSupport.runOnFx(coordinator::exportRunConfigs); // the file says exactly this
+            assertEquals(List.of(), questions.asked(), "nothing would be lost: nothing is asked");
+            String written = Files.readString(shared);
+
+            configurations(script("Deploy")); // this window has one fewer now
+            statuses.clear();
+            FxTestSupport.runOnFx(coordinator::exportRunConfigs);
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Export Run Configurations",
+                            null,
+                            "Replace the shared file of the project, ~/proj/" + SharedRunConfigs.DIR + "/"
+                                    + SharedRunConfigs.FILE + "? It holds other run configurations than this window"
+                                    + " has, and everyone who works on the project gets it. This cannot be undone.",
+                            "Replace")),
+                    questions.asked());
+            assertEquals(written, Files.readString(shared), "Cancel keeps the project's file");
+            assertEquals(List.of(), statuses, "and nothing claims an export");
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(coordinator::exportRunConfigs);
+            assertEquals(2, questions.asked().size(), "asked once for the export");
+        }
+        assertEquals(
+                List.of("Deploy"),
+                SharedRunConfigs.load(new com.fasterxml.jackson.databind.ObjectMapper(), projectRoot).stream()
+                        .map(RunConfiguration::name)
+                        .toList());
+        assertEquals(
+                List.of(tr(
+                        "status.run.configsExported",
+                        1,
+                        "~/proj/" + SharedRunConfigs.DIR + "/" + SharedRunConfigs.FILE)),
+                statuses);
+    }
 }

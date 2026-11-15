@@ -140,9 +140,9 @@ final class ProjectMapWorkingSets {
     }
 
     /**
-     * Saves what the Map shows as {@code name}: a set of that name (ignoring case) is replaced where it stands, else
-     * the set is added — up to {@link #MAX_SETS} per folder. False when nothing was saved (no name, no local folder,
-     * the folder full).
+     * Saves what the Map shows as {@code name}: a set of that name (ignoring case) is replaced where it stands, after
+     * a question when it shows something else, else the set is added — up to {@link #MAX_SETS} per folder. False when
+     * nothing was saved (no name, no local folder, the folder full, the set of that name kept).
      */
     boolean save(@Nullable String name) {
         String value = name == null ? "" : name.strip();
@@ -153,6 +153,11 @@ final class ProjectMapWorkingSets {
         state.setHistory(List.of()); // a set is a view, not a trail of places: Back stays the user's
         state.setHistoryIndex(-1);
         int index = indexOf(value);
+        if (index >= 0
+                && !sameView(sets.get(index).getState(), state)
+                && !Confirm.ask(owner(), replaceQuestion(sets.get(index).getName()))) {
+            return false; // the set of that name shows something else, and the user kept it
+        }
         if (index >= 0) {
             sets.set(index, new ProjectMapWorkingSet(sets.get(index).getName(), state));
             view.onStatus.accept(
@@ -167,6 +172,27 @@ final class ProjectMapWorkingSets {
         current = index >= 0 ? sets.get(index).getName() : value;
         changed();
         return true;
+    }
+
+    /** The question before the working set {@code name} is replaced by what the Map shows now. Pure. */
+    static Confirm.Question replaceQuestion(String name) {
+        return new Confirm.Question(
+                tr("project.map.workingSets.replaceTitle"),
+                null,
+                tr("project.map.workingSets.replaceConfirm", name),
+                tr("confirm.action.replace"));
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /** Whether two saved views are the same view, as they are stored: saving one over the other loses nothing. Pure. */
+    static boolean sameView(ProjectMapState a, ProjectMapState b) {
+        return JSON.valueToTree(a).equals(JSON.valueToTree(b));
+    }
+
+    private javafx.stage.@Nullable Window owner() {
+        return view.getScene() == null ? null : view.getScene().getWindow();
     }
 
     /** Shows the set {@code name} of the folder the Map shows, as a restart shows the last session's state. */
@@ -191,9 +217,7 @@ final class ProjectMapWorkingSets {
         if (index < 0) {
             return false;
         }
-        javafx.stage.Window owner =
-                view.getScene() == null ? null : view.getScene().getWindow();
-        return Confirm.ask(owner, deleteQuestion(sets.get(index).getName())) && delete(name);
+        return Confirm.ask(owner(), deleteQuestion(sets.get(index).getName())) && delete(name);
     }
 
     /** The question before the working set {@code name} is deleted. Pure. */

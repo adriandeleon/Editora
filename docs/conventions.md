@@ -152,6 +152,24 @@ A control that works with the mouse but cannot be reached, seen or named from th
   words and that one removal asked once. A question whose words have a count, a choice or a name is built by a
   static function that returns the `Confirm.Question` (`DebugPanel.removeAllWatchesQuestion(int)`), asked only
   when something would be lost, from the one method every entry point of the removal shares.
+- **A small, frequent removal records an undo instead of asking** (CONF-01, Pauta 6.0.1): one watch, a breakpoint
+  that carries details, a key binding, a dictionary word. The one method every entry point of the removal shares
+  calls `host.removalUndo().removed(removedSentence, restoredSentence, restore)`
+  ([`RemovalUndo`](../src/main/java/com/editora/ui/RemovalUndo.java)): the window's status bar says the sentence and
+  that Undo Last Removal (`edit.undoRemoval`) takes it back, and the command runs `restore` on the newest of the
+  window's twenty. Both sentences are whole sentences from the catalog, one pair per removal. `restore` returns
+  whether it put the thing back, and it is written to be safe when the world moved on:
+  - it goes through the model or store the removal went through, so everything that listens hears it;
+  - it returns `false`, changing nothing, when its place is gone or taken by something made since (a closed tab, a
+    line that reads something else, a key that runs another command, another breakpoint on the line), and never
+    throws;
+  - what comes back is what was removed: same index where the list has an order, same typed details;
+  - it holds a buffer through a `RemovedLine` (a weak reference, the whole-file line and the line's text), never
+    directly: the list outlives a closed tab. The list is the window's, never static, and is emptied when the
+    window closes.
+
+  A removal the same key undoes (a plain breakpoint or bookmark) records nothing; a removal by the program (a
+  temporary breakpoint that was hit: `EditorBuffer.dropBreakpoint`) is not the user's and records nothing either.
 - A row that can run out of width **wraps** (`WrapRow`, `SettingRowPane`) rather than ellipsizing a label
   or a button to "…"; check German at 1024 px.
 
