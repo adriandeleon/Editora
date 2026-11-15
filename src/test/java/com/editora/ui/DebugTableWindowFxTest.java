@@ -152,24 +152,48 @@ class DebugTableWindowFxTest {
 
     /** The Variables menu's View as Table on the row called {@code name}, or null when it offers none. FX thread. */
     private MenuItem viewAsTable(String name) {
+        return viewAs(name, "debugpanel.viewAsTable");
+    }
+
+    /** The Variables menu's row {@code key} (View as Table, View as DataFrame…) on the row {@code name}. FX thread. */
+    private MenuItem viewAs(String name, String key) {
         TreeView<DebugPanel.VarRow> tree = FxTestSupport.field(debug.panel(), "variables");
         tree.getSelectionModel().select(item(name));
         ContextMenu menu = tree.getContextMenu();
         menu.getOnShowing().handle(null);
         return menu.getItems().stream()
-                .filter(i -> tr("debugpanel.viewAsTable").equals(i.getText()))
+                .filter(i -> tr(key).equals(i.getText()))
                 .findFirst()
                 .orElse(null);
     }
 
     private DebugTableWindow open(String name) throws Exception {
-        FxTestSupport.runOnFx(() -> viewAsTable(name).fire());
+        return open(name, "debugpanel.viewAsTable");
+    }
+
+    private DebugTableWindow open(String name, String key) throws Exception {
+        FxTestSupport.runOnFx(() -> viewAs(name, key).fire());
         await("the table window", () -> call(() -> !debug.tableWindows().isEmpty()));
         return call(() -> debug.tableWindows().getLast());
     }
 
+    /** The columns' names: a data column's is the label it has for its dtype's tooltip. */
     private static List<String> headers(DebugTableWindow w) {
-        return w.table().getColumns().stream().map(TableColumn::getText).toList();
+        return w.table().getColumns().stream()
+                .map(c -> c.getGraphic() instanceof javafx.scene.control.Label l ? l.getText() : c.getText())
+                .toList();
+    }
+
+    /** The dtype a data column's header shows on hover. */
+    private static String dtype(DebugTableWindow w, String column) {
+        return w.table().getColumns().stream()
+                .filter(c -> c.getGraphic() instanceof javafx.scene.control.Label l
+                        && l.getText().equals(column))
+                .map(c -> ((javafx.scene.control.Label) c.getGraphic())
+                        .getTooltip()
+                        .getText())
+                .findFirst()
+                .orElse(null);
     }
 
     private static List<String> column(DebugTableWindow w, String column) {
@@ -278,5 +302,127 @@ class DebugTableWindowFxTest {
             nums.table().getSortOrder().setAll(value);
         });
         assertEquals("999", call(() -> nums.table().getItems().getFirst().cell(ValueTable.VALUE_COLUMN)));
+    }
+
+    /** A typed Python value with children, as debugpy lists a DataFrame or an array. */
+    private static org.eclipse.lsp4j.debug.Variable typed(String name, String type, int ref) {
+        org.eclipse.lsp4j.debug.Variable v = variable(name, type + " …", ref);
+        v.setType(type);
+        v.setEvaluateName(name);
+        return v;
+    }
+
+    /** The helper's answer for {@code count} rows from {@code start} of a DataFrame of {@code total}, as debugpy says it. */
+    private static String frame(int start, int count, int total) {
+        StringBuilder rows = new StringBuilder();
+        StringBuilder index = new StringBuilder();
+        for (int i = start; i < start + count; i++) {
+            rows.append(i > start ? ", " : "")
+                    .append("[\"")
+                    .append(i)
+                    .append("\", \"it's #")
+                    .append(i)
+                    .append("\", \"")
+                    .append(i % 2 == 0 ? "1.5" : "nan")
+                    .append("\"]");
+            index.append(i > start ? ", " : "").append("\"r").append(i).append("\"");
+        }
+        return PythonDataTable.pythonString("{\"kind\": \"DataFrame\", \"shape\": [" + total + ", 3], \"columns\": "
+                + "[\"id\", \"name\", \"name\"], \"dtypes\": [\"int64\", \"object\", \"float64\"], \"index\": ["
+                + index + "], \"rows\": [" + rows + "], \"total\": " + total + ", \"width\": 3}");
+    }
+
+    @Test
+    void aDataFrameShowsItsRowsAPageAtATimeAndAnArrayItsValues() throws Exception {
+        int total = ValueTable.MAX_ROWS + 2;
+        FakeDebugAdapter.Session session = stopped(s -> {
+            s.variables.put(
+                    FakeDebugAdapter.Session.LOCALS,
+                    List.of(
+                            typed("df", "DataFrame", 5000),
+                            typed("a", "ndarray", 5001),
+                            typed("bad", "ndarray", 5002),
+                            variable("n", "1", 0)));
+            s.variables.put(5000, List.of(variable("T", "<transposed dataframe>", 0)));
+            s.variables.put(5001, List.of(variable("0", "7", 0)));
+            s.variables.put(5002, List.of(variable("0", "7", 0)));
+            s.evaluateResults.put(
+                    PythonDataTable.expression("df", 0, ValueTable.MAX_ROWS), frame(0, ValueTable.MAX_ROWS, total));
+            s.evaluateResults.put(
+                    PythonDataTable.expression("df", ValueTable.MAX_ROWS, ValueTable.MAX_ROWS),
+                    frame(ValueTable.MAX_ROWS, 2, total));
+            s.evaluateResults.put(
+                    PythonDataTable.expression("a", 0, ValueTable.MAX_ROWS),
+                    PythonDataTable.pythonString("{\"kind\": \"ndarray\", \"shape\": [2], \"leaf\": true, "
+                            + "\"columns\": [\"\"], \"dtypes\": [\"int64\"], \"index\": [\"0\", \"1\"], "
+                            + "\"rows\": [[\"7\"], [\"8\"]], \"total\": 2, \"width\": 1}"));
+            s.evaluateResults.put(
+                    PythonDataTable.expression("bad", 0, ValueTable.MAX_ROWS),
+                    PythonDataTable.pythonString("{\"kind\": \"list\", \"error\": \"unsupported\"}"));
+        });
+        // The menu says what the value is in a Python session; elsewhere a DataFrame is a table of its children.
+        assertNull(call(() -> viewAs("df", "debugpanel.viewAsDataFrame")), "a Ruby session's");
+        python();
+        assertNull(call(() -> viewAs("df", "debugpanel.viewAsTable")));
+        assertNotNull(call(() -> viewAs("a", "debugpanel.viewAsArray")));
+
+        DebugTableWindow df = open("df", "debugpanel.viewAsDataFrame");
+        await(
+                "the first page",
+                () -> call(() -> tr("valuetable.dataFirstOf", ValueTable.MAX_ROWS, total)
+                        .equals(df.note().getText())));
+        assertEquals(List.of("#", "id", "name", "name (2)"), call(() -> headers(df)), "each column once");
+        assertEquals("object", call(() -> dtype(df, "name")));
+        assertEquals(
+                tr("valuetable.dataHeading", "df", "DataFrame", total + " × 3"),
+                call(() -> df.heading().getText()));
+        assertEquals("it's #0", call(() -> df.table().getItems().getFirst().cell("name")));
+        assertEquals("r0", call(() -> df.table().getItems().getFirst().cell("#")));
+        assertEquals(
+                "clipboard",
+                session.evaluateRequests.getLast().getContext(),
+                "the context where debugpy answers a long string whole");
+
+        assertTrue(call(() -> df.moreButton().isVisible()));
+        FxTestSupport.runOnFx(df.moreButton()::fire);
+        await(
+                "the next page",
+                () -> call(
+                        () -> tr("valuetable.dataCount", total).equals(df.note().getText())));
+        assertFalse(call(() -> df.moreButton().isVisible()), "every row shown");
+        assertEquals(
+                "r" + (total - 1), call(() -> df.table().getItems().getLast().cell("#")));
+
+        DebugTableWindow a = open("a", "debugpanel.viewAsArray");
+        await(
+                "the values",
+                () -> call(() -> tr("valuetable.dataCount", 2).equals(a.note().getText())));
+        assertEquals(List.of("#", tr("valuetable.value")), call(() -> headers(a)));
+        assertEquals("int64", call(() -> dtype(a, tr("valuetable.value"))));
+        assertEquals(List.of("7", "8"), call(() -> column(a, ValueTable.VALUE_COLUMN)));
+
+        DebugTableWindow bad = open("bad", "debugpanel.viewAsArray");
+        await(
+                "why not",
+                () -> call(() -> tr("valuetable.dataFailed", "bad", tr("valuetable.dataUnsupported"))
+                        .equals(bad.note().getText())));
+
+        // Refresh asks again from the first page; once the program goes on, Load More and Refresh wait for a stop.
+        FxTestSupport.runOnFx(df.refreshButton()::fire);
+        await(
+                "the first page again",
+                () -> call(() -> tr("valuetable.dataFirstOf", ValueTable.MAX_ROWS, total)
+                        .equals(df.note().getText())));
+        FxTestSupport.runOnFx(manager::resume);
+        await("running", () -> call(manager::state) == DapManager.State.RUNNING);
+        assertTrue(call(() -> df.moreButton().isDisabled()));
+        assertTrue(call(() -> df.refreshButton().isDisabled()));
+    }
+
+    /** Makes the session a Python one, as debugpy's is: the stand-in is reached as Ruby's debugger. */
+    private void python() throws Exception {
+        java.lang.reflect.Field language = DapManager.class.getDeclaredField("sessionLanguage");
+        language.setAccessible(true);
+        language.set(manager, "python");
     }
 }
