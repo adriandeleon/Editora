@@ -1866,6 +1866,25 @@ is the stop's: it keeps its values after the program goes on. One window per col
 (`DebugCoordinator.tableWindows`). `DebugTableWindowFxTest` covers it against `FakeDebugAdapter`;
 `DebugTableProbeFxTest` opens a list of two objects on debugpy (a Python list), java-debug (a `List<Order>`) and Delve
 (a `[]*Order`): two rows, the fields as columns, none of the debuggers' own rows.
+**View as DataFrame / View as Array** (the same menu row, named for the value, in a Python session; PyCharm's data
+viewer) shows a pandas `DataFrame` or `Series`, or a numpy array, as a table of its rows. debugpy lists a DataFrame's
+attributes under it, not its rows, so they cannot come from its children: [`ui/PythonDataTable`](../../src/main/java/com/editora/ui/PythonDataTable.java)
+(pure) builds one expression that defines a small helper (`HELPER`) in a dictionary of its own — nothing of the
+program's is touched — and calls it on the value for a page of `MAX_ROWS` rows from a start, at most `MAX_COLUMNS`
+columns. The helper finds pandas and numpy in `sys.modules` (it imports neither), writes each cell as `str()` does
+(cut at 1,000 characters), and answers JSON: the kind, the shape, the column names and dtypes, the index labels, the
+rows, and the rows and columns in all. A Series, a 0-d or 1-D array is a column of values (`leaf`); a structured
+array's fields are its columns; an array of more dimensions is rows of its last one, each named by the indexes before
+it (`(1, 2)`). The window evaluates it in debugpy's `clipboard` context, where a string comes back whole (the others
+cut it at 1,000 characters), written as a Python string literal: `unrepr` reads it back and `parse` the JSON;
+`columnNames` gives each column one name the table can key on (a second `a` is `a (2)`, never `#` or blank). The
+columns' headers are labels whose tooltip is the dtype; the heading says the kind and the shape; Load More asks for the
+next page and Refresh for the first again, both while paused. Which rows offer it is `PythonDataTable.viewable` (a
+type ending in `DataFrame` or `Series`, `ndarray`, `matrix`, `MaskedArray`, `memmap`), asked through the panel's
+`viewsAsData` so only a Python session's values do. `DebugTableWindowFxTest` covers it against `FakeDebugAdapter`
+(scripted helper answers); `PythonDataProbeFxTest` runs a program with pandas and numpy from its project's `.venv`
+(a link to `-Dpandas.venv`, by default `~/.cache/editora/pandas-venv`; CI makes one) on debugpy: a DataFrame of 1,500
+rows, its Series and a 3-D array.
 **Core dumps** (`debug.openCoreDump`, Run → Launch after Reattach; GoLand's and CLion's Open Core Dump) open the
 memory of a program that crashed, or that `gcore` dumped, to look at its threads, stacks and variables.
 [`dap/CoreDumps`](../../src/main/java/com/editora/dap/CoreDumps.java) reads a Linux (ELF) core's notes: `NT_FILE`

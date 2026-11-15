@@ -328,6 +328,13 @@ jobs:
           scripts/install-debugpy.sh
           PYTHONPATH="$HOME/.editora/plugins/dap/python" python3 -c "import debugpy; print(debugpy.__version__)"
 
+      # pandas and numpy for PythonDataProbeFxTest: an environment its program's project links as its .venv.
+      - name: Install pandas and numpy
+        run: |
+          python3 -m venv "$HOME/.cache/editora/pandas-venv"
+          "$HOME/.cache/editora/pandas-venv/bin/pip" install --quiet pandas numpy
+          "$HOME/.cache/editora/pandas-venv/bin/python" -c "import pandas, numpy; print(pandas.__version__, numpy.__version__)"
+
       # Go and Delve for GoDebugProbeFxTest. Delve is pinned to the release last checked (go install @latest is what
       # Editora's installer runs). ptrace_scope 0 lets Delve attach to a program it did not start (Ubuntu's 1 allows
       # only a debugger's own children), as a developer does before attaching on such a machine.
@@ -465,8 +472,11 @@ jobs:
       # Continue back to where recording began.
       # ExceptionBreakpointsProbeFxTest: on debugpy and java-debug, one exception breakpoint (a type, a condition true
       # only the third time) stops once among three caught throws, and the program runs to its end.
+      # PythonDataProbeFxTest: on debugpy, a pandas DataFrame of 1,500 rows opens as a table of its first 1,000 (named,
+      # typed columns), Load More brings the rest, a Series is a column of values and a 3-D numpy array rows of its last
+      # dimension.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

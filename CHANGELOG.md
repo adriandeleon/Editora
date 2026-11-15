@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **View as DataFrame and View as Array.** A pandas DataFrame or Series, or a numpy array, in a program you are
+  debugging opens as a table of its rows, as PyCharm's data viewer does: right-click it in Variables, a watch or an
+  evaluate result. The columns are named as in the data and show their dtype on hover, an array of more than two
+  dimensions is laid out as rows of its last one, and Load More brings the next 1,000 rows. Filter, sort, Copy and
+  Open as CSV work as in View as Table.
 - **Exception breakpoints by type and condition.** Stop only when an exception of a type you name is thrown, as
   IntelliJ's exception breakpoints do: Debug: Add Exception Breakpoint… (offering the type of the exception the
   debugger is stopped on), or the new rows of Debug: Exception Breakpoints…. A type can be a pattern

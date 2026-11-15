@@ -237,6 +237,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
          */
         default void viewAsTable(String name, String expression, int ref, int named, int indexed) {}
 
+        /** Whether a value of {@code type} is shown as data: a Python DataFrame, Series or numpy array. */
+        default boolean viewsAsData(String type) {
+            return false;
+        }
+
+        /** View as DataFrame / View as Array: the value {@code expression} (named {@code name}) as a table of rows. */
+        default void viewAsData(String name, String expression) {}
+
         /** Whether type renderers are muted (Mute Renderers): every value as the debugger shows it. */
         default boolean renderersMuted() {
             return false;
@@ -2436,14 +2444,25 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 if (row.ref() > 0
                         && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.RESULT)) {
                     // IntelliJ's and Visual Studio's table view of a collection: its elements as rows.
-                    javafx.scene.control.MenuItem asTable =
-                            new javafx.scene.control.MenuItem(tr("debugpanel.viewAsTable"));
-                    com.editora.editor.MenuChords.tag(asTable, "debug.viewSelectedAsTable");
                     String expression = row.kind() == Kind.VARIABLE
                             ? expression(variables.getSelectionModel().getSelectedItem())
                             : row.name();
-                    asTable.setOnAction(
-                            e -> actions.viewAsTable(row.name(), expression, row.ref(), row.named(), row.indexed()));
+                    // A DataFrame's rows, not its attributes: PyCharm's View as DataFrame / View as Array.
+                    boolean data = !expression.isBlank() && actions.viewsAsData(row.type());
+                    javafx.scene.control.MenuItem asTable = new javafx.scene.control.MenuItem(tr(
+                            !data
+                                    ? "debugpanel.viewAsTable"
+                                    : PythonDataTable.frame(row.type())
+                                            ? "debugpanel.viewAsDataFrame"
+                                            : "debugpanel.viewAsArray"));
+                    com.editora.editor.MenuChords.tag(asTable, "debug.viewSelectedAsTable");
+                    asTable.setOnAction(e -> {
+                        if (data) {
+                            actions.viewAsData(row.name(), expression);
+                        } else {
+                            actions.viewAsTable(row.name(), expression, row.ref(), row.named(), row.indexed());
+                        }
+                    });
                     menu.getItems().add(asTable);
                 }
             }
