@@ -121,6 +121,7 @@ final class DebugExceptionCard {
         head.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         HBox buttons = UiZoom.spacing(new HBox(copy, caughtOff), 6);
         card = UiZoom.spacing(new VBox(head, type, message, causes, traceScroll, buttons), 4);
+        FocusCommands.press(card, "debug.copyException", copy); // the card is a popup: its root is looked in
         card.getStyleClass().addAll("debug-panel", "debug-value-popup", "debug-exception-card");
         UiZoom.prefWidth(card, WIDTH);
         UiZoom.maxWidth(card, WIDTH);

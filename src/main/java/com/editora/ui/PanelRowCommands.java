@@ -71,6 +71,7 @@ final class PanelRowCommands {
                     mc.testResultsToolWindow,
                     () -> mc.testRunCoordinator.panel().runMenuRow(id));
         }
+        PanelCommands.register(mc); // the rest of the panels' rows and buttons, found where the keyboard is
     }
 
     /**

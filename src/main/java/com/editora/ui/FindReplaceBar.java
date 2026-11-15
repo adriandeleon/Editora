@@ -231,6 +231,9 @@ public class FindReplaceBar extends HBox {
         }
         HBox findGroup = group(findLabel, findField, findClear, countLabel, prev, next);
         HBox replaceGroup = group(replaceLabel, replaceField, replaceClear, replace, replaceAll);
+        PanelCommands.bindFindOptions(this, caseSensitive, regex, wholeWord);
+        FocusCommands.bindIf(this, "find.togglePreserveCase", PanelCommands.toggle(preserveCase));
+        FocusCommands.bindIf(this, "find.toggleInSelection", PanelCommands.toggle(inSelection));
         HBox options = group(
                 OptionToggle.viewOf(caseSensitive, tr("search.caseTip")),
                 OptionToggle.viewOf(regex, tr("search.regexTip")),

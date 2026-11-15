@@ -425,7 +425,7 @@ final class SettingsSnippetPages {
             }
         };
 
-        Button add = new Button(tr("settings.template.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.template.add")), "settings.addTemplate");
         add.setOnAction(e -> {
             java.util.Set<String> existing = new java.util.HashSet<>();
             for (com.editora.template.Template t : templateItems) {

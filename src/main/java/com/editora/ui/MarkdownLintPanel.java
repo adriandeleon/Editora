@@ -162,6 +162,19 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
                 e.consume(); // the keyboard's request: at the selected row, not in the middle of the list
             }
         });
+        // The rows' commands (markdownLint.fixSelected…) fire the selected row's row; list.open is its Enter.
+        FocusCommands.menu(list, () -> {
+            List<MenuItem> rows = rowMenu(list.getSelectionModel().getSelectedItem());
+            return rows.isEmpty() ? null : rows;
+        });
+        ListRowCommands.bind(list, ListRowCommands.OPEN, () -> {
+            MarkdownLint.Diagnostic d = list.getSelectionModel().getSelectedItem();
+            if (d == null || isHeader(d)) {
+                return false;
+            }
+            activateSelected();
+            return true;
+        });
         VBox.setVgrow(list, Priority.ALWAYS);
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
 
@@ -178,20 +191,27 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
             MenuItem fix = new MenuItem(tr("markdownLint.menu.fix"));
             fix.setDisable(!MarkdownLint.fixable(d.code()));
             fix.setOnAction(e -> issues.fix(d));
+            FocusCommands.row(fix, "markdownLint.fixSelected");
             MenuItem line = new MenuItem(tr("markdownLint.menu.disableLine"));
             line.setOnAction(e -> issues.disableLine(d));
+            FocusCommands.row(line, "markdownLint.disableSelectedLine");
             MenuItem inFile = new MenuItem(tr("markdownLint.menu.disableFile", d.code()));
             inFile.setOnAction(e -> issues.disableFile(d));
+            FocusCommands.row(inFile, "markdownLint.disableSelectedInFile");
             MenuItem inProject = new MenuItem(tr("markdownLint.menu.disableProject", d.code()));
             inProject.setOnAction(e -> issues.disableProject(d));
+            FocusCommands.row(inProject, "markdownLint.disableSelectedInProject");
             MenuItem rule = new MenuItem(tr("markdownLint.menu.disableRule", d.code()));
             rule.setOnAction(e -> issues.disableRule(d));
+            FocusCommands.row(rule, "markdownLint.disableSelectedRule");
             MenuItem help = new MenuItem(tr("markdownLint.menu.help"));
             help.setOnAction(e -> issues.help(d));
+            FocusCommands.row(help, "markdownLint.selectedRuleHelp");
             items.addAll(List.of(fix, line, inFile, inProject, rule, help, new SeparatorMenuItem()));
         }
         MenuItem copy = new MenuItem(tr("markdownLint.menu.copy"));
         copy.setOnAction(e -> Clipboard.getSystemClipboard().setContent(Map.of(DataFormat.PLAIN_TEXT, rowText(d))));
+        FocusCommands.row(copy, "markdownLint.copySelected");
         items.add(copy);
         return items;
     }

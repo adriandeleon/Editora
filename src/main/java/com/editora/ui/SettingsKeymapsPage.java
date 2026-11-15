@@ -126,7 +126,8 @@ final class SettingsKeymapsPage {
         scroll.getStyleClass().add("shortcut-scroll");
         Label note = SettingsWindow.note(tr("settings.shortcuts.note"));
         note.setWrapText(true);
-        Button resetAll = new Button(tr("settings.shortcuts.resetAll"));
+        Button resetAll =
+                FocusCommands.press(new Button(tr("settings.shortcuts.resetAll")), "settings.resetAllShortcuts");
         resetAll.setOnAction(e -> {
             if (w.shortcutActions != null && confirmResetAllShortcuts()) {
                 w.shortcutActions.resetAll();
@@ -340,6 +341,10 @@ final class SettingsKeymapsPage {
                 remove.setDisable(s.chord() == null);
                 remove.setOnAction(e -> removeShortcut(actions, s.id()));
                 row.getChildren().addAll(record, reset, remove);
+                // The selected row's buttons are the only ones: their commands act on that shortcut.
+                FocusCommands.press(record, "settings.recordShortcut");
+                FocusCommands.press(reset, "settings.resetShortcut");
+                FocusCommands.press(remove, "settings.removeShortcut");
             }
         }
         return row;

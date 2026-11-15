@@ -137,6 +137,9 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         headerToggle.setSelected(true);
         headerToggle.getStyleClass().add("csv-grid-header-toggle");
         headerToggle.selectedProperty().addListener((o, was, is) -> rebuild());
+        FocusCommands.bind(this, "csv.toggleHeaderRow", headerToggle::fire);
+        // A header's double-click rename, for the focused cell's column (an editable grid with a header row).
+        FocusCommands.bindIf(this, "csv.renameColumn", this::renameFocusedColumn);
 
         filterField.setPromptText(tr("csvgrid.filterPrompt"));
         // The configured keymap's caret/editing chords act on this field (the KeyDispatcher leaves them to it).
@@ -207,6 +210,11 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
                 exportOds);
         table.setContextMenu(menu);
         RowContextMenu.anchor(table, menu); // the Menu key / Shift+F10: at the focused cell's row
+        FocusCommands.row(reveal, "csv.revealFocusedCell");
+        FocusCommands.row(sortAsc, "csv.sortAscending");
+        FocusCommands.row(sortDesc, "csv.sortDescending");
+        FocusCommands.row(clearSort, "csv.clearSort");
+        FocusCommands.ownMenu(table); // the rows' commands act on the grid's focused cell, as the rows do
     }
 
     private static Region spacer() {
@@ -508,6 +516,20 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
             headerLabels.add(label);
         }
         return label;
+    }
+
+    /** Starts renaming the focused cell's column, as a double-click on its header does; false where that would not. */
+    private boolean renameFocusedColumn() {
+        TablePosition<?, ?> pos = table.getFocusModel().getFocusedCell();
+        int field = pos == null ? -1 : pos.getColumn() - 1; // column 0 is the "#" gutter
+        if (!editable || !headerToggle.isSelected() || field < 0 || field >= baseTitles.size()) {
+            return false;
+        }
+        @SuppressWarnings("unchecked")
+        TableColumn<Row, String> tc =
+                (TableColumn<Row, String>) table.getColumns().get(pos.getColumn());
+        startHeaderEdit(tc, field, baseTitles.get(field));
+        return true;
     }
 
     private void startHeaderEdit(TableColumn<Row, String> tc, int field, String current) {

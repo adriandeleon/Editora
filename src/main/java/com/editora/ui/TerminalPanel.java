@@ -193,6 +193,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         this.closeGuard = closeGuard;
         this.directory = directory;
         getStyleClass().add("terminal-panel");
+        FocusCommands.menu(this, this::commandMenu);
         tabs.getStyleClass().add("terminal-tabs");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.ALL_TABS);
 
@@ -956,6 +957,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             }
         });
         HBox banner = UiZoom.spacing(new HBox(message, reconnect), 10);
+        FocusCommands.press(banner, "terminal.reconnect", reconnect);
         banner.getStyleClass().add("terminal-lost-banner");
         banner.setAlignment(Pos.CENTER_LEFT);
         // Above the text, taking rows from it, not over it: what the shell printed last (often the error) is
@@ -1144,7 +1146,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         view.setClipboardWrites(config.clipboardWrites());
         view.setScrollbackLines(config.scrollback());
         view.setMenuIcons(TerminalPanel::menuIcon);
+        view.setRowTagger((item, row) -> MenuChords.tag(item, "terminal." + row));
         view.setMenuExtras(menuExtras);
+        FocusCommands.menu(view, view::commandMenu); // the terminal.* row commands, where the keyboard is in it
         if (linkActions != null) { // null until the coordinator sets it
             view.setLinkActions(linkActions);
         }
@@ -1397,6 +1401,25 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         focusActive();
     }
 
+    /**
+     * The rows the terminal row commands fire while the keyboard is in the panel or the panel is open: the selected
+     * tab's own menu as it would show, then its terminal's. Null with no tab.
+     */
+    private @Nullable List<MenuItem> commandMenu() {
+        Tab tab = tabs.getSelectionModel().getSelectedItem();
+        if (tab == null) {
+            return null;
+        }
+        javafx.scene.control.ContextMenu menu = tabMenu(tab);
+        menu.getOnShowing().handle(new javafx.stage.WindowEvent(menu, javafx.stage.WindowEvent.WINDOW_SHOWING));
+        List<MenuItem> rows = new ArrayList<>(menu.getItems());
+        TerminalView view = views.get(tab);
+        if (view != null) {
+            rows.addAll(view.commandMenu());
+        }
+        return rows;
+    }
+
     /** A tab's own menu (right-click on its header): the tab it acts on is the clicked one. */
     private javafx.scene.control.ContextMenu tabMenu(Tab tab) {
         MenuItem rename = new MenuItem(tr("terminal.tab.rename"), Icons.edit());
@@ -1440,6 +1463,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 moveLeft,
                 moveRight,
                 toEditor);
+        MenuChords.tag(closeOthers, "terminal.closeOthers");
+        MenuChords.tag(closeRight, "terminal.closeRight");
         // Per show: how many tabs there are, and where this one sits, change after the menu is built.
         menu.setOnShowing(e -> {
             toEditor.setVisible(editorHost != null);

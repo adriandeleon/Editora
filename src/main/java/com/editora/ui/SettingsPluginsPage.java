@@ -121,7 +121,7 @@ final class SettingsPluginsPage {
 
         // Installed Plugins first: they are what people come to this page for.
         Card installed = w.card(p, tr("settings.plugins.installed"));
-        Button reload = new Button(tr("settings.plugins.reload"));
+        Button reload = FocusCommands.press(new Button(tr("settings.plugins.reload")), "plugins.reload");
         reload.setOnAction(e -> {
             if (pluginManager != null) {
                 pluginManager.discover(); // the list only: what runs is the launch's set until a restart
@@ -330,6 +330,8 @@ final class SettingsPluginsPage {
             }
         });
         HBox header = UiZoom.spacing(new HBox(cb, id, spacer, remove), 8);
+        FocusCommands.press(header, "plugins.removeFocused", remove); // the plugin row the keyboard is in
+        FocusCommands.focusOnly(header);
         header.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(cb, Priority.SOMETIMES);
         VBox entry = UiZoom.spacing(new VBox(header), 2);

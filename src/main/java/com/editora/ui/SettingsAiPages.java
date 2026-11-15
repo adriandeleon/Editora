@@ -234,7 +234,7 @@ final class SettingsAiPages {
                 mcpActions.copyCommand().run();
             }
         });
-        mcpNewTokenButton = new Button(tr("settings.mcp.newToken"));
+        mcpNewTokenButton = FocusCommands.press(new Button(tr("settings.mcp.newToken")), "mcp.newToken");
         mcpNewTokenButton.setOnAction(e -> {
             if (mcpActions != null) {
                 mcpActions.newToken().run();
@@ -599,7 +599,8 @@ final class SettingsAiPages {
         aiStatusLabel.getStyleClass().add("settings-git-status");
         aiStatusLabel.setWrapText(true);
         UiZoom.maxWidth(aiStatusLabel, 440);
-        Button test = new Button(tr("settings.ai.testConnection"));
+        // The page's own check: its answer goes on the page (ai.testConnection's goes to the status line).
+        Button test = FocusCommands.press(new Button(tr("settings.ai.testConnection")), "settings.testAiConnection");
         test.setOnAction(e -> refreshAiStatus(true));
         SettingsWindow.keepWidth(test);
         HBox status = UiZoom.spacing(new HBox(aiStatusLabel, test), 8);

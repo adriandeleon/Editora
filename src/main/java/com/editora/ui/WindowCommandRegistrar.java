@@ -2799,7 +2799,9 @@ final class WindowCommandRegistrar {
                 .register(Command.of("git.unstageFile", () -> host.git().ifEnabled(host.git()::gitUnstageActiveFile)));
         host.registry()
                 .register(Command.of("git.discardFile", () -> host.git().ifEnabled(host.git()::gitDiscardActiveFile)));
-        host.registry().register(Command.of("git.stageAll", () -> host.git().ifEnabled(host.gitWindows()::stageAll)));
+        // What the Commit window's Stage All button does: unsaved files saved and leftover conflict markers asked
+        // about first (KBD-01: the button and the command are one).
+        host.registry().register(Command.of("git.stageAll", () -> host.git().ifEnabled(host.git()::gitStageAll)));
         host.registry()
                 .register(Command.of(
                         "git.addToGitignore", () -> host.git().ifEnabled(host.gitWindows()::addActiveFileToGitignore)));
@@ -3160,8 +3162,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("find.show", host::findShowOrNext));
         host.registry().register(Command.of("find.showBackward", host::findShowOrPrevious));
         host.registry().register(Command.of("find.replace", host::showReplace));
-        host.registry().register(Command.of("find.next", host::findNextMatch));
-        host.registry().register(Command.of("find.previous", host::findPreviousMatch));
+        // In a console's find bar the keyboard is in, its own Next / Previous (FocusCommands); the editor's otherwise.
+        host.registry().register(Command.of("find.next", () -> barOr(host, "find.next", host::findNextMatch)));
+        host.registry()
+                .register(Command.of("find.previous", () -> barOr(host, "find.previous", host::findPreviousMatch)));
         host.registry().register(Command.of("find.replaceCurrent", host::findReplaceCurrentMatch));
         host.registry().register(Command.of("find.replaceAll", host::findReplaceAllMatches));
         host.registry().register(Command.of("find.selectAllMatches", host::selectAllFindMatches));
@@ -3201,7 +3205,8 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("edit.queryReplaceRegexp", host.editing()::queryReplaceRegexp));
         host.registry().register(Command.of("edit.undo", host.editing()::onUndo));
         host.registry().register(Command.of("edit.redo", host.editing()::onRedo));
-        host.registry().register(Command.of("edit.cancel", host::cancel));
+        // A console's or the terminal's find bar the keyboard is in closes on it, as the editor's does.
+        host.registry().register(Command.of("edit.cancel", () -> barOr(host, "edit.cancel", host::cancel)));
         host.registry().register(Command.of("edit.completion", host.editing()::triggerCompletion));
         host.registry()
                 .register(Command.of(
@@ -3832,6 +3837,13 @@ final class WindowCommandRegistrar {
                 host.setStatus(tr("status.rows.selectFirst", tr(panelNameKey)));
             }
         }));
+    }
+
+    /** Runs {@code id}'s button in the find bar the keyboard is in ({@link FocusCommands}), else {@code otherwise}. */
+    private static void barOr(Host host, String id, Runnable otherwise) {
+        if (!FocusCommands.runWhereFocused(id, host::setStatus, javafx.stage.Window.getWindows())) {
+            otherwise.run();
+        }
     }
 
     /** The palette's "this feature is turned off" line, naming the command that turns Project support on. */

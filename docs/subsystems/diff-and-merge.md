@@ -223,3 +223,12 @@ from the Commit window's Conflicts group. A partial resolution is only written i
 Add/remove signs accompany color backgrounds, diff areas and controls expose accessible text, and gutter
 apply slots are keyboard-focusable buttons supporting Enter and Space. New controls must retain a textual or
 shape cue; red/green color alone is not an acceptable state indicator.
+
+## Commands behind the rows and buttons
+
+The bar's option buttons, the result editor's buttons and the gutter's apply arrows are commands
+(`PanelCommands.DIFF`): `diff.cycleWhitespace`, `diff.toggleWordHighlight`, `diff.toggleCollapseContext`,
+`diff.toggleWrapLines`, `diff.applyFinalNewline`, `diff.applyResult`, `diff.resetResult`, `diff.applyChange` (the
+current change) and `diff.applyLine` (the caret's line); a review's `diff.previousFile` / `diff.nextFile` and
+`diff.applyPatchToWorkingTree` / `diff.applyPatchToIndex`; the merge view's `merge.saveResult` and
+`merge.acceptOurs` / `Theirs` / `Both` / `Base`, for the conflict the keyboard is in.

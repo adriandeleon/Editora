@@ -107,6 +107,7 @@ final class TerminalCoordinator {
             p.setMenuExtras(() -> {
                 MenuItem here = new MenuItem(tr("terminal.newHere"));
                 here.setOnAction(e -> p.newTerminalHere());
+                com.editora.editor.MenuChords.tag(here, "terminal.newHere");
                 MenuItem find = new MenuItem(tr("terminal.menu.find"));
                 find.setOnAction(e -> p.find());
                 find.setAccelerator(

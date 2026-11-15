@@ -768,7 +768,54 @@ public final class DiffViewerPane implements TabContent {
         }
     }
 
+    /**
+     * The commands behind the bar's option buttons, the result editor's buttons and the gutter's apply chevrons
+     * (KBD-01 in Pauta 6.0.1): each presses its button, or applies the current change or the caret's line as a
+     * chevron applies the change or line it sits on, in the diff the keyboard is in or the active tab shows.
+     */
+    private void bindCommands() {
+        FocusCommands.press(root, "diff.cycleWhitespace", whitespaceButton);
+        FocusCommands.press(root, "diff.toggleWordHighlight", wordButton);
+        FocusCommands.press(root, "diff.toggleCollapseContext", contextButton);
+        FocusCommands.press(root, "diff.toggleWrapLines", wrapButton);
+        FocusCommands.press(root, "diff.applyFinalNewline", applyEofButton);
+        // The result editor's buttons, while it is open (its buttons stay visible inside it when it is closed).
+        FocusCommands.bindIf(root, "diff.applyResult", whileEditing(applyResultButton));
+        FocusCommands.bindIf(root, "diff.resetResult", whileEditing(resetResultButton));
+        FocusCommands.bindIf(root, "diff.applyChange", () -> {
+            int start = currentBlockStart();
+            if (!canMutate() || resultEditing || start < 0) {
+                return false;
+            }
+            applyBlock(start);
+            return true;
+        });
+        FocusCommands.bindIf(root, "diff.applyLine", () -> {
+            int row = caretSourceRow(); // a changed row, or -1
+            if (!canMutate() || resultEditing || row < 0) {
+                return false;
+            }
+            applyRow(row);
+            return true;
+        });
+    }
+
+    /**
+     * Fires {@code button} of the result editor as a click would, and answers true; false, doing nothing, while the
+     * editor is closed or the button disabled.
+     */
+    private java.util.function.BooleanSupplier whileEditing(javafx.scene.control.ButtonBase button) {
+        return () -> {
+            if (!resultEditing || button.isDisabled()) {
+                return false;
+            }
+            button.fire();
+            return true;
+        };
+    }
+
     private HBox buildToolbar() {
+        bindCommands();
         summary.getStyleClass().add("diff-summary");
         changeNav.getStyleClass().add("diff-summary");
         updateSummary();

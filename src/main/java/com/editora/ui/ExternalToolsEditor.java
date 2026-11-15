@@ -177,7 +177,7 @@ final class ExternalToolsEditor {
             }
         });
 
-        Button add = new Button(tr("settings.externalTool.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.externalTool.add")), "settings.addExternalTool");
         add.setOnAction(e -> {
             // Two tools named "New Tool" would share one externalTool.run.<slug> command.
             String newName = tr("settings.externalTool.newName");

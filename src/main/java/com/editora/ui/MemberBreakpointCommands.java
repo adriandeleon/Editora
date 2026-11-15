@@ -162,6 +162,57 @@ final class MemberBreakpointCommands {
     }
 
     /**
+     * The gutter menu's Enable / Disable and Remove rows for the method breakpoints and field watchpoints marked on
+     * {@code line} of {@code b}: each moves the caret to the line, as the menu's other rows do, and runs its command.
+     */
+    List<javafx.scene.control.MenuItem> gutterRows(
+            EditorBuffer b, int line, com.editora.editor.debug.BreakpointManager.MemberMark mark) {
+        var flip =
+                new javafx.scene.control.MenuItem(tr(mark.enabled() ? "debug.gutter.disable" : "debug.gutter.enable"));
+        flip.setOnAction(ev -> {
+            b.getFocusedArea().moveTo(line, 0);
+            flipMarkAtCaret();
+        });
+        com.editora.editor.MenuChords.tag(flip, "debug.toggleMarkedMembersEnabled");
+        var remove = new javafx.scene.control.MenuItem(
+                tr(mark.field() ? "debug.gutter.removeFieldWatchpoint" : "debug.gutter.removeMethodBreakpoint"));
+        remove.setGraphic(Icons.remove());
+        remove.getStyleClass().add("danger"); // a destructive row reads red
+        remove.setOnAction(ev -> {
+            b.getFocusedArea().moveTo(line, 0);
+            removeMarkAtCaret();
+        });
+        com.editora.editor.MenuChords.tag(remove, "debug.removeMarkedMembers");
+        return List.of(flip, remove);
+    }
+
+    /** Debug: Enable or Disable the method breakpoints and field watchpoints marked on the caret's line. */
+    void flipMarkAtCaret() {
+        withMarkAtCaret(mark -> {
+            boolean enabled = mark.enabled();
+            mark.members().forEach(m -> replace(m.withEnabled(!enabled)));
+        });
+    }
+
+    /** Debug: Remove the method breakpoints and field watchpoints marked on the caret's line. */
+    void removeMarkAtCaret() {
+        withMarkAtCaret(mark -> mark.members().forEach(this::remove));
+    }
+
+    private void withMarkAtCaret(
+            java.util.function.Consumer<com.editora.editor.debug.BreakpointManager.MemberMark> op) {
+        EditorBuffer b = host.activeBuffer();
+        var mark = b == null
+                ? null
+                : b.getBreakpointManager().memberMark(b.getFocusedArea().getCurrentParagraph());
+        if (mark == null) {
+            host.setStatus(tr("status.debug.noMemberMarkHere"));
+        } else {
+            op.accept(mark);
+        }
+    }
+
+    /**
      * Debug: Toggle Method Breakpoint — on the method the caret is in. Outside one (or with no Java language
      * server to say), it asks for the method by name.
      */

@@ -29,6 +29,16 @@ final class ClearableField {
         });
         clear.visibleProperty().bind(field.textProperty().isEmpty().not());
         clear.managedProperty().bind(clear.visibleProperty());
+        command(field, clear);
         return clear;
+    }
+
+    /**
+     * Ties {@code clear}, a field's ✕, to {@code edit.clearSearchField} for the field the keyboard is in (never a field
+     * found below what a window shows); refused while the field is empty and the ✕ hidden.
+     */
+    static void command(TextField field, Button clear) {
+        FocusCommands.press(field, "edit.clearSearchField", clear);
+        FocusCommands.focusOnly(field);
     }
 }

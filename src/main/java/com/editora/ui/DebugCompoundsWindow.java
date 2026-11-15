@@ -160,7 +160,7 @@ final class DebugCompoundsWindow {
         form.disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
 
-        Button add = new Button(tr("settings.runConfig.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.runConfig.add")), "debug.addCompound");
         add.setId("compound-add");
         add.setOnAction(e -> add());
         Button remove = new Button(tr("settings.runConfig.remove"));

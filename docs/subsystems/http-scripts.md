@@ -102,3 +102,10 @@ not attached after `ATTACH_DEADLINE` (30 s) stops the script. The window's debug
 without it) check what the server receives and what a script may not do; `HttpResponseHandlersFxTest` checks the panel, the coordinator flow, the
 saved history on disk and the trust prompt. Pure tests: `HttpChecksTest`, `HttpScriptsTest`,
 `HttpResponseHandlerParseTest`, `HttpSessionVariablesTest`.
+
+## Commands behind the rows and buttons
+
+The panel's rows and buttons are commands (`PanelCommands.HTTP` and `OTHER`): `http.toggleResponseWrap`,
+`http.saveResponse`, `http.clearHistory`, `http.copyHeaderValue`, `http.copyAllHeaders`, `http.runSelectedAgain`,
+`http.goToSelectedRequest`, `http.runShownAgain`, `http.toggleOnlyFailures`, `http.imageFit` and
+`http.imageActualSize`.

@@ -32,8 +32,14 @@ final class DebugBuildTestButtonCommands {
                 Command.of("test.toggleSkipped", () -> testPanel(mc).toggleBucket(Bucket.SKIPPED)));
     }
 
-    /** The focused session's evaluate field, in the Debug window, which opens so the new watch is seen. */
+    /**
+     * The Evaluate window's expression while that window has the keyboard; else the focused session's evaluate
+     * field, in the Debug window, which opens so the new watch is seen.
+     */
     private static void watchEvaluated(MainController mc) {
+        if (FocusCommands.runWhereFocused("debug.watchEvaluated", mc::setStatus, javafx.stage.Window.getWindows())) {
+            return;
+        }
         DebugCoordinator debug = mc.debugCoordinator;
         debug.ifDebug(() -> {
             mc.toolWindows.open(mc.debugToolWindow, false);

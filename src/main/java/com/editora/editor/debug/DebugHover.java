@@ -148,6 +148,26 @@ public final class DebugHover {
         }
     }
 
+    /**
+     * Debug: Quick Evaluate at Caret — what Alt+click does, at the caret of {@code a}: the selection when the caret
+     * is in it, else the expression (calls included) at the caret, evaluated and shown under the caret. False (nothing
+     * done) when not paused or the caret is on nothing to evaluate.
+     */
+    public boolean quickEvaluateAtCaret(CodeArea a) {
+        DebugValuePresenter shown = presenter;
+        String expression = active && shown != null
+                ? quickExpression(a, a.getCaretPosition(), a.getSelection(), a.getSelectedText())
+                : null;
+        if (shown == null || expression == null) {
+            return false;
+        }
+        Bounds b = a.getCaretBounds().orElse(new javafx.geometry.BoundingBox(0, 0, 0, 0));
+        hide();
+        word = expression;
+        shown.showEvaluated(a, expression, b.getMinX(), b.getMaxY() + UiZoom.px(2));
+        return true;
+    }
+
     /** The selection when {@code offset} is in it (one line, not blank), else the expression at {@code offset}. */
     static @Nullable String quickExpression(
             CodeArea a, int offset, javafx.scene.control.IndexRange sel, @Nullable String selected) {

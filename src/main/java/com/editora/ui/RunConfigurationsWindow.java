@@ -471,7 +471,7 @@ public final class RunConfigurationsWindow {
             }
         });
 
-        Button add = new Button(tr("settings.runConfig.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.runConfig.add")), "run.addConfig");
         add.setOnAction(e -> {
             List<String> taken = items.stream().map(RunConfiguration::name).toList();
             // The active Python or shell script first: Add used to make an empty Java configuration whatever

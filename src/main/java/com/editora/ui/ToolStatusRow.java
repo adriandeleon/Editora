@@ -46,6 +46,9 @@ final class ToolStatusRow {
     /** Adds an Install… button running {@code action}; it reads "Installed" and greys out once the tool is found. */
     ToolStatusRow install(Runnable action) {
         install = new Button(tr("settings.install.button"));
+        // Install… of the tool card the keyboard is in (a card per server, adapter or tool: never the first found).
+        FocusCommands.press(node, "settings.installTool", install);
+        FocusCommands.focusOnly(node);
         install.getStyleClass().add("settings-install-button");
         install.setMinWidth(Region.USE_PREF_SIZE);
         install.setOnAction(e -> action.run());
@@ -57,6 +60,8 @@ final class ToolStatusRow {
     ToolStatusRow link(String text, Runnable action) {
         Hyperlink link = new Hyperlink(text);
         link.setMinWidth(Region.USE_PREF_SIZE);
+        FocusCommands.press(node, "settings.followToolLink", link); // Check Again, How to Install
+        FocusCommands.focusOnly(node);
         link.setOnAction(e -> action.run());
         node.getChildren().add(link);
         return this;

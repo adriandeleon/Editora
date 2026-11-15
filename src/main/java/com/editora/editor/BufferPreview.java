@@ -264,6 +264,8 @@ final class BufferPreview {
                 }
             });
             b.scrollSync.install(previewPane); // SPLIT-mode scroll sync, preview → editor half
+            // The right-click rows' commands (preview.copyAll and the rest) fire them from here.
+            MenuChords.offerRows(previewPane, b.previewMenu::commandMenu);
         }
         return previewPane;
     }
@@ -710,7 +712,11 @@ final class BufferPreview {
         StackPane.setAlignment(previewLoadingOverlay(), Pos.CENTER);
         if (b.isMarkdown() && !b.previewLive()) {
             // Too large to follow every edit: say so, and offer the render the pulse no longer does.
-            previewHost.getChildren().add(PreviewButtons.pausedStrip(this::refreshPreview));
+            Node strip = PreviewButtons.pausedStrip(this::refreshPreview);
+            // Its Refresh's command: the strip is shown while the preview is too large to follow every edit.
+            MenuChords.offerButton(strip, "preview.refresh", (javafx.scene.control.ButtonBase)
+                    ((javafx.scene.Parent) strip).getChildrenUnmodifiable().get(1));
+            previewHost.getChildren().add(strip);
         }
         return previewHost;
     }

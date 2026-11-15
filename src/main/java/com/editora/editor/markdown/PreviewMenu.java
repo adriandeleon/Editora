@@ -122,6 +122,34 @@ public final class PreviewMenu {
     }
 
     /**
+     * The menu's rows as a command fires them ({@code preview.copyAll} and the others, each row tagged with its
+     * command): as a right-click on the node the preview's selection starts on would offer them, so Copy Link, Copy
+     * Code, Go to Source and Enlarge are offered for what the selection is in, and not without a selection.
+     */
+    public List<MenuItem> commandMenu() {
+        MarkdownPreview p = b.isMarkdown() ? preview.get() : null;
+        PreviewSelection.Pos at =
+                p != null && p.selection().isActive() ? p.selection().anchor() : null;
+        Node target = at == null ? null : at.leaf();
+        double y = 0;
+        if (target != null) {
+            javafx.geometry.Bounds bounds = target.localToScene(target.getLayoutBounds());
+            y = (bounds.getMinY() + bounds.getMaxY()) / 2;
+        }
+        link = MarkdownRenderer.property(target, MarkdownRenderer.LINK_KEY);
+        code = MarkdownRenderer.property(target, MarkdownRenderer.CODE_KEY);
+        hit = target;
+        hitY = y;
+        ContextMenu m = menu;
+        if (m == null) {
+            m = build();
+            menu = m;
+        }
+        javafx.event.Event.fireEvent(m, new javafx.stage.WindowEvent(m, javafx.stage.WindowEvent.WINDOW_SHOWING));
+        return m.getItems();
+    }
+
+    /**
      * Copies the preview to the clipboard: the selection when the rendered Markdown has one, else all of it —
      * rendered plain text for Markdown, the source for a diagram.
      *
@@ -189,6 +217,7 @@ public final class PreviewMenu {
         MenuItem copyAll = new MenuItem(tr("previewmenu.copyAll"));
         copyAll.setGraphic(MenuIcons.copy());
         copyAll.setOnAction(ev -> copyAll());
+        com.editora.editor.MenuChords.tag(copyAll, "preview.copyAll");
         ContextMenu m = new ContextMenu(copyAll);
         List<MenuItem> fullOnly = new java.util.ArrayList<>(); // hidden in Simple UI mode
         if (b.isMarkdown()) {
@@ -198,10 +227,14 @@ public final class PreviewMenu {
             copy.setOnAction(ev -> withPreview(MarkdownPreview::copySelection));
             MenuItem selectAll = new MenuItem(tr("previewmenu.selectAll"));
             selectAll.setOnAction(ev -> withPreview(p -> p.selection().selectAll()));
+            // The editor's Select All does this while the preview has the keyboard, as it has after a right-click.
+            com.editora.editor.MenuChords.tag(selectAll, "edit.selectAll");
             MenuItem toSource = new MenuItem(tr("previewmenu.goToSource"));
             toSource.setOnAction(ev -> withPreview(p -> p.jumpToSourceAt(hit, hitY)));
+            com.editora.editor.MenuChords.tag(toSource, "preview.goToSource");
             MenuItem enlarge = new MenuItem(tr("previewmenu.enlarge"));
             enlarge.setOnAction(ev -> withPreview(p -> p.enlarge(MarkdownPreview.enlargeableAt(hit))));
+            com.editora.editor.MenuChords.tag(enlarge, "preview.enlarge");
             m.getItems().add(0, copy);
             m.getItems().addAll(selectAll, toSource, enlarge);
             m.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWING, ev -> {
@@ -216,9 +249,11 @@ public final class PreviewMenu {
             MenuItem copyLink = new MenuItem(tr("previewmenu.copyLink"));
             copyLink.setGraphic(MenuIcons.copy());
             copyLink.setOnAction(ev -> MarkdownRenderer.copyToClipboard(link));
+            com.editora.editor.MenuChords.tag(copyLink, "preview.copyLink");
             MenuItem copyCode = new MenuItem(tr("previewmenu.copyCode"));
             copyCode.setGraphic(MenuIcons.copy());
             copyCode.setOnAction(ev -> MarkdownRenderer.copyToClipboard(code));
+            com.editora.editor.MenuChords.tag(copyCode, "preview.copyCode");
             m.getItems().addAll(0, List.of(copyLink, copyCode));
             m.setOnShowing(ev -> {
                 copyLink.setVisible(link != null);

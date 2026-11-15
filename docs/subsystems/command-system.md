@@ -589,6 +589,31 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   nothing that offers it, with `status.projectMap.notOffered`. Lists of named things (working sets, trails, the
   breadcrumb) are picked from a `QuickOpen` over the Map window. See
   [the Project Map's guide](project-map.md#every-row-and-button-is-a-command-kbd-01-menu-05).
+- **The other panels' rows and buttons: one walk from the keyboard.** The rows and buttons of the smaller panels, the
+  debugger's popups and secondary windows, the diff and merge views, the find bars, the banners and the Welcome page
+  are the commands of [`PanelCommands`](../../src/main/java/com/editora/ui/PanelCommands.java) (`terminal.copy`,
+  `preview.copyAll`, `http.saveResponse`, `diff.toggleWrapLines`, `find.toggleCase`, `edit.clearSearchField`,
+  `crypto.decryptLocked`, `print.nextPage`…). They are found the way the Map's are: the mechanism moved from
+  `MapButtonCommands` into [`FocusCommands`](../../src/main/java/com/editora/ui/FocusCommands.java), which
+  `MapButtonCommands` extends so the Map's call sites read as before. A control `bind`s a command or `press`es its
+  button (kept in the node's properties), and a node offers the rows of the menu a right-click would open there for its
+  selection (`menu`, `shownMenu` for a context menu set up by its showing handler); each row is tagged with its command
+  (`row`, or `also` without showing its chord). `FocusCommands.run` looks from the focus owner of the focused window up,
+  then of each other window (a popup that takes no focus, the value popup, is looked in below its root), then below what
+  the main window shows (`PanelCommands.showing`: the active tab and each open tool window), and last below each
+  window's root (the Settings page that is open), so the palette reaches a terminal, a diff or a Settings button while
+  the keyboard is in the editor. A node that is one row of many (a Doctor check, a Welcome
+  entry, a search field, a merge conflict) is `focusOnly`: it answers only with the keyboard in it. A disabled or hidden
+  row or button is refused with `status.rows.notOffered`, as is a command nothing offers; a command marked on several
+  rows (a TODO's priorities and keywords, the debug session strip) asks which in a `QuickOpen`. Classes outside `ui`
+  (the terminal's view, the Markdown preview, the notice bar) offer rows and buttons through `MenuChords.offerRows` and
+  `MenuChords.offerButton`, the same properties. An existing command that a row in another place stands for first runs
+  that row where the keyboard is (`FocusCommands.runWhereFocused`): the Variables view's Copy Value and Add to Watches
+  in the Evaluate window and the value popup, `debug.watchEvaluated` in the Evaluate window, `find.next` / `find.previous`
+  in a console's find bar, and `maven.updateVersions`, `maven.showActions` and `maven.runCustom` on a pom's row of the
+  Project tree or the Map. `MenuRowCommandCoverageTest` (guard) counts, per file, the menu rows the source builds that
+  are tagged with no command, and fails on one more than the reasons it lists (a row that names a thing reached by a
+  picker command, a placeholder, a value in a dialog); it cannot follow a row-building helper to its callers.
 - **The Git managers' buttons.** A [`GitManagerOverlay.Action`](../../src/main/java/com/editora/ui/GitManagerOverlay.java)
   names its command (`git.addRemote`, `git.removeWorktree`…); the card's list has a right-click menu of the same
   actions, tagged with those commands. A command acts on the row selected in the card while it is up (and shows the

@@ -133,6 +133,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             filterField.requestFocus();
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        ClearableField.command(filterField, clearFilter);
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
 
         // Bookmarks from every project are visible by default. Non-current project groups remain collapsed,

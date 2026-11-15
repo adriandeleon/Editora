@@ -102,6 +102,9 @@ final class ProjectScopeSettings {
         this.owner = owner;
         userButton.setToggleGroup(group);
         projectButton.setToggleGroup(group);
+        // One command per choice: which settings the window edits, as clicking the toggle chooses it.
+        FocusCommands.bind(userButton, "settings.editUserSettings", () -> userButton.setSelected(true));
+        FocusCommands.bind(projectButton, "settings.editProjectSettings", () -> projectButton.setSelected(true));
         userButton.setSelected(true);
         userButton.setTooltip(com.editora.editor.ControlNames.tooltip(tr("settings.scope.userTip")));
         // A toggle group lets the selected button be clicked off; the scope is always one of the two.

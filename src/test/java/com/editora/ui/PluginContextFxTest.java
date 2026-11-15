@@ -422,6 +422,13 @@ class PluginContextFxTest {
             });
             assertEquals("QUIET WORDS\n", FxTestSupport.callOnFx(buffer::getContent));
             assertTrue(FxTestSupport.callOnFx(buffer::isDirty), "a plugin's edit is the user's to save or undo");
+            // Each row is a command too (KBD-01), which acts on the active editor as the row does on its buffer.
+            assertEquals("plugin.probe.editorMenu.1", com.editora.editor.MenuChords.commandOf(items.get(0)));
+            FxTestSupport.runOnFx(() -> {
+                buffer.setContent("loud words\n");
+                rig.fx.controller.registry.run("plugin.probe.editorMenu.1");
+            });
+            assertEquals("LOUD WORDS\n", FxTestSupport.callOnFx(buffer::getContent));
 
             // A status segment with a command runs it when clicked; one without is only a label.
             StatusBar statusBar = FxTestSupport.field(rig.fx.controller, "statusBar");

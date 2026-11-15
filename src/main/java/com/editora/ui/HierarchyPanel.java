@@ -74,6 +74,11 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
         primaryToggle.setToggleGroup(group);
         secondaryToggle.setToggleGroup(group);
         primaryToggle.setSelected(true);
+        // The other direction (Callers ⇄ Callees, Supertypes ⇄ Subtypes), as clicking the other toggle does.
+        FocusCommands.bind(
+                this,
+                "hierarchy.toggleDirection",
+                () -> (primaryToggle.isSelected() ? secondaryToggle : primaryToggle).setSelected(true));
         // A direction flip re-roots the tree — children reload lazily under the new direction.
         group.selectedToggleProperty().addListener((o, was, now) -> {
             if (now == null) {

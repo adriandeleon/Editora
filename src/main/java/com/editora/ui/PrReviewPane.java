@@ -263,14 +263,22 @@ public final class PrReviewPane extends Region implements TabContent {
         row.getStyleClass().add("pr-review-actions");
         row.setAlignment(Pos.CENTER_LEFT);
         PrDetail shown = detail; // every update rebuilds this row
+        // Each link's command acts on the pull request this tab reviews (KBD-01 in Pauta 6.0.1).
         if (shown != null && !shown.url().isBlank()) {
-            row.getChildren().add(link(tr("github.review.openOnGitHub"), () -> onOpenUrl.accept(shown.url())));
+            row.getChildren()
+                    .add(FocusCommands.press(
+                            link(tr("github.review.openOnGitHub"), () -> onOpenUrl.accept(shown.url())),
+                            "github.openReviewedPr"));
         }
         if (files.size() > 1) {
-            row.getChildren().add(link(tr("github.review.openAll", files.size()), onOpenAll));
+            row.getChildren()
+                    .add(FocusCommands.press(
+                            link(tr("github.review.openAll", files.size()), onOpenAll), "github.openReviewedFiles"));
         }
-        row.getChildren().add(link(tr("github.review.submit"), onSubmitReview));
-        row.getChildren().add(link(tr("github.review.refresh"), onRefresh));
+        row.getChildren()
+                .add(FocusCommands.press(link(tr("github.review.submit"), onSubmitReview), "github.submitReviewedPr"));
+        row.getChildren()
+                .add(FocusCommands.press(link(tr("github.review.refresh"), onRefresh), "github.refreshReviewedPr"));
         return row;
     }
 

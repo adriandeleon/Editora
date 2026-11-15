@@ -59,6 +59,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Changes cards. Each acts on what the Map's keyboard is on: the selected row, the card, the place in a card. Working
   sets, trails, the breadcrumb's places and the open cards are picked from a list. Where the row or button would do
   nothing, the Map's status line says why.
+- **Every other right-click row and button is a command too.** The rest of the panels' rows and buttons can now be run
+  from the Command Palette, and given a key: the terminal's menu (Copy, Paste, Select All, Clear Scrollback, Copy Last
+  Command Output, New Terminal Here, the link rows, Close Other Terminals, Reconnect); the Markdown preview's Copy All,
+  Go to Source, Enlarge, Copy Link and Copy Code (for what the preview's selection is in); the HTTP panel's Save
+  Response, Clear, Wrap, header copies, Run Again and Go to Request; the Markdown Lint, CSV, Doctor, TODO, Structure and
+  Problems rows; the diff's whitespace, words, context, wrap and apply buttons and gutter arrows; the merge view's
+  Accept and Save; the find bars' Match Case, Regular Expression and Whole Word, and every search field's ✕; the
+  debugger's value popup, Evaluate window, Thread Dump, Parallel Stacks, table window, exception card and Application
+  Log; the encryption banners; the print preview's bar; and the Welcome page's links. Each acts on what the keyboard
+  is in, or on what the window shows (the active tab, an open tool window); with nothing there the status bar says so.
+  A plugin's editor menu row is now a command of its own. No default keys were added. Git: Stage All, from the palette
+  or a key, now saves unsaved files and asks about leftover conflict markers first, as the Commit window's button did.
+  The Settings window's buttons and links that act are commands too (Reset All, Restore Backup, a page's help, Install…
+  on a card, Revoke All, the Sync page's buttons, a list's Add, the Keymaps page's Record / Reset / Remove, the Macros
+  page's buttons), as are a panel's drop-downs (Structure: Sort By…, TODO: Group By…, GitHub: Filter by State…, HTTP:
+  Show Response History…, Debug: Choose Thread…), Markdown: Set Heading Level…, CSV: Rename Focused Column and Debug:
+  Quick Evaluate at Caret (Alt+click's), and the terminal's find bar answers Find Next / Previous and Match Case.
 - **Commands for the editor menu's run and debug rows, the diff's line rows and the tab menu's last two rows.** Debug
   Current File, Debug Main Class at Caret, Debug Test Class at Caret, Add Expression at Caret to Watches, Stage,
   Unstage and Revert Line at Caret and Open Line at Caret in Editor in a diff, Local History: Show History of Current

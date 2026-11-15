@@ -208,7 +208,7 @@ final class AbbreviationsEditor {
             }
         });
 
-        Button add = new Button(tr("settings.abbrev.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.abbrev.add")), "settings.addAbbreviation");
         add.setOnAction(e -> {
             Abbreviation a = new Abbreviation("", "");
             items.add(a); // stored once it has a key

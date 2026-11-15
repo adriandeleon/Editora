@@ -57,13 +57,7 @@ final class AboutDialog {
         // For a snapshot build, append the git branch to the version string so a build made from a
         // worktree/feature branch can be told apart from one made off master. Empty for release builds
         // and for packaged snapshots with no git checkout.
-        String versionString = com.editora.AppInfo.VERSION;
-        if (com.editora.AppInfo.isSnapshot()) {
-            String branch = com.editora.AppInfo.gitBranch();
-            if (!branch.isBlank()) {
-                versionString += " (" + branch + ")";
-            }
-        }
+        String versionString = versionString();
 
         // --- header: icon beside name / version / tagline ------------------------------------------
         Label name = new Label(com.editora.AppInfo.NAME);
@@ -99,21 +93,10 @@ final class AboutDialog {
         copyright.getStyleClass().add("about-copyright");
 
         VBox links = UiZoom.spacing(new VBox(), 2);
-        links.getChildren().add(aboutLink(com.editora.AppInfo.LICENSE, () -> {
-            if (openUrl != null) {
-                openUrl.accept(com.editora.AppInfo.HOMEPAGE);
-            }
-        }));
-        links.getChildren().add(aboutLink(tr("about.homepage"), () -> {
-            if (openUrl != null) {
-                openUrl.accept(com.editora.AppInfo.HOMEPAGE);
-            }
-        }));
-        links.getChildren().add(aboutLink(tr("about.releases"), () -> {
-            if (openUrl != null) {
-                openUrl.accept(com.editora.AppInfo.RELEASES_PAGE);
-            }
-        }));
+        // The pages the palette opens too (help.homepage, help.releases), run through their commands.
+        links.getChildren().add(aboutLink(com.editora.AppInfo.LICENSE, () -> runCommand.accept("help.homepage")));
+        links.getChildren().add(aboutLink(tr("about.homepage"), () -> runCommand.accept("help.homepage")));
+        links.getChildren().add(aboutLink(tr("about.releases"), () -> runCommand.accept("help.releases")));
         // The Pauta edition and the conformance (pauta-project.dev): the conformance comes from the helper,
         // never typed here, and at Partial the edition's link says "Working toward", not "Built to".
         com.editora.PautaConformance.Conformance conformance = com.editora.PautaConformance.conformance();
@@ -151,9 +134,7 @@ final class AboutDialog {
         // --- footer: Copy details (in the content, so it does not dismiss) --------------------------
         Button copyDetails = new Button(tr("about.copyDetails"));
         copyDetails.setOnAction(e -> {
-            javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-            cc.putString(details);
-            javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+            copyDetails(commit, settingsFile); // what Help: Copy About Details copies
             copyDetails.setText(tr("about.copied"));
         });
         HBox footer = new HBox(copyDetails);
@@ -258,6 +239,25 @@ final class AboutDialog {
         link.setPadding(Insets.EMPTY);
         link.setOnAction(e -> onClick.run());
         return link;
+    }
+
+    /** Help: Copy About Details — puts the About box's environment details on the clipboard. */
+    static void copyDetails(String commit, Path settingsFile) {
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(environmentDetails(versionString(), commit, settingsFile));
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+    }
+
+    /** The version, with the Git branch of a snapshot build made from a checkout. */
+    private static String versionString() {
+        String versionString = com.editora.AppInfo.VERSION;
+        if (com.editora.AppInfo.isSnapshot()) {
+            String branch = com.editora.AppInfo.gitBranch();
+            if (!branch.isBlank()) {
+                versionString += " (" + branch + ")";
+            }
+        }
+        return versionString;
     }
 
     /** The monospace environment block, also what "Copy details" puts on the clipboard. */

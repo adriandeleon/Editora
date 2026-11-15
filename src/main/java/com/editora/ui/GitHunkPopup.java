@@ -66,6 +66,10 @@ final class GitHunkPopup {
         // Claim the keys, as every in-scene card does, or the global dispatcher runs editor chords
         // (and Escape never reaches the host).
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        // Previous / Next open the card on the next change, as no other command does; Copy Old has none either.
+        FocusCommands.press(card, "git.peekPreviousChange", previous);
+        FocusCommands.press(card, "git.peekNextChange", next);
+        FocusCommands.press(card, "git.copyPeekedOldLines", copyOld);
         revert.setOnAction(e -> closeThen(Actions::revert));
         stage.setOnAction(e -> closeThen(Actions::stage));
         previous.setOnAction(e -> closeThen(Actions::previous));

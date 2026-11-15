@@ -3250,6 +3250,11 @@ public class EditorBuffer implements TabContent {
         return debugHover.showAtCaret(focusedArea);
     }
 
+    /** Debug: Quick Evaluate at Caret, the keyboard's Alt+click ({@link DebugHover#quickEvaluateAtCaret}). */
+    public boolean quickEvaluateAtCaret() {
+        return debugHover.quickEvaluateAtCaret(focusedArea);
+    }
+
     public MarkdownViewMode getMarkdownViewMode() {
         return markdownViewMode;
     }

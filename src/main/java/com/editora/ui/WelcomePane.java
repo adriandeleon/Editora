@@ -403,6 +403,9 @@ public final class WelcomePane extends Region implements TabContent {
             menuFor(null, rootText).show(row, e.getScreenX(), e.getScreenY());
             e.consume();
         });
+        FocusCommands.menu(
+                row, () -> menuFor(null, rootText).getItems()); // the rows' commands, for the row with the keyboard
+        FocusCommands.focusOnly(row);
         return row;
     }
 
@@ -456,13 +459,16 @@ public final class WelcomePane extends Region implements TabContent {
             menuFor(path, pathText).show(row, e.getScreenX(), e.getScreenY());
             e.consume();
         });
+        FocusCommands.menu(
+                row, () -> menuFor(path, pathText).getItems()); // the rows' commands, for the row with the keyboard
+        FocusCommands.focusOnly(row);
         return row;
     }
 
     /** Copy Path, plus Remove from recent files for a recent file. */
     private ContextMenu menuFor(@Nullable Path removable, String pathText) {
         ContextMenu menu = new ContextMenu();
-        MenuItem copy = new MenuItem(tr("menu.copyPath"));
+        MenuItem copy = FocusCommands.row(new MenuItem(tr("menu.copyPath")), "welcome.copyFocusedPath");
         copy.setGraphic(Icons.copy());
         copy.setOnAction(e -> {
             ClipboardContent cc = new ClipboardContent();
@@ -472,7 +478,8 @@ public final class WelcomePane extends Region implements TabContent {
         menu.getItems().add(copy);
         Consumer<Path> remover = onRemoveRecent;
         if (removable != null && remover != null) {
-            MenuItem remove = new MenuItem(tr("tooltip.removeRecent"));
+            MenuItem remove =
+                    FocusCommands.row(new MenuItem(tr("tooltip.removeRecent")), "welcome.removeFocusedRecent");
             remove.setGraphic(Icons.trash());
             remove.getStyleClass().add("danger"); // a destructive row reads red
             remove.setOnAction(e -> remover.accept(removable));
@@ -625,7 +632,7 @@ public final class WelcomePane extends Region implements TabContent {
         row.getChildren()
                 .addAll(
                         helpLink(tr("welcome.documentation"), () -> registry.run("help.documentation")),
-                        helpLink(tr("welcome.whatsNew"), () -> openUrl.accept(AppInfo.releaseNotesUrl())),
+                        helpLink(tr("welcome.whatsNew"), () -> registry.run("help.whatsNew")),
                         helpLink(tr("welcome.doctor"), () -> registry.run("view.doctor")));
         return row;
     }
@@ -643,7 +650,7 @@ public final class WelcomePane extends Region implements TabContent {
         version.getStyleClass().add("welcome-footer");
         Hyperlink home = new Hyperlink(AppInfo.HOMEPAGE.replaceFirst("^https?://", ""));
         home.getStyleClass().addAll("welcome-link", "welcome-footer-link");
-        home.setOnAction(e -> openUrl.accept(AppInfo.HOMEPAGE));
+        home.setOnAction(e -> registry.run("help.homepage"));
         HBox line1 = new HBox(UiZoom.px(8), version, dotLabel(), home);
         line1.setAlignment(Pos.BASELINE_LEFT);
 

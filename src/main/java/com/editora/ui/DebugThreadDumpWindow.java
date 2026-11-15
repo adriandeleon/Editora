@@ -185,6 +185,8 @@ final class DebugThreadDumpWindow {
         VBox root = UiZoom.spacing(new VBox(heading, note, top, split, buttons), 6);
         UiZoom.padding(root, 10);
         root.getStyleClass().addAll("debug-panel", "thread-dump-window");
+        FocusCommands.press(root, "debug.copyDump", copy); // its buttons' commands, while it has the keyboard
+        FocusCommands.press(root, "debug.openDumpAsText", asText);
         Scene scene = new Scene(root, UiZoom.px(WIDTH), UiZoom.px(HEIGHT));
         scene.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ESCAPE && !e.isConsumed()) {

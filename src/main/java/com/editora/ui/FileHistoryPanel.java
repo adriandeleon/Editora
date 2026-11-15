@@ -202,6 +202,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         backToFile.setVisible(false);
         backToFile.setManaged(false);
         Button refresh = iconButton(Icons.refresh(), tr("history.refreshTip"), actions::refresh);
+        FocusCommands.press(this, "history.refresh", refresh); // the window's buttons' commands
+        FocusCommands.press(this, "history.toggleIgnoreWhitespace", ignoreWs);
+        FocusCommands.press(this, "history.toggleHighlightWords", wordLevel);
         HBox toolbar = UiZoom.spacing(new HBox(backToFile, fileLabel, refresh), 2);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);

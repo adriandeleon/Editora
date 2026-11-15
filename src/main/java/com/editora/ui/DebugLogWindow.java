@@ -123,6 +123,10 @@ public final class DebugLogWindow {
         UiZoom.padding(root, 10);
         VBox.setVgrow(area, Priority.ALWAYS);
 
+        FocusCommands.press(root, "debugLog.refresh", refresh); // its buttons' commands, while it has the keyboard
+        FocusCommands.press(root, "debugLog.copyAll", copy);
+        FocusCommands.press(root, "debugLog.clear", clear);
+        FocusCommands.press(root, "debugLog.export", export);
         Scene scene = new Scene(root, UiZoom.px(900), UiZoom.px(600));
         scene.getStylesheets()
                 .addAll(

@@ -209,6 +209,11 @@ final class ConsoleFindBar extends HBox {
         previous.setOnAction(e -> step(false));
         next.setOnAction(e -> step(true));
         close.setOnAction(e -> close());
+        // The editor's Find Previous / Next and the case toggle, run while the keyboard is in this bar.
+        FocusCommands.press(this, "find.previous", previous);
+        FocusCommands.press(this, "find.next", next);
+        FocusCommands.press(this, "edit.cancel", close); // what closes the editor's find bar closes this one
+        FocusCommands.bindIf(this, "find.toggleCase", PanelCommands.toggle(matchCase));
 
         query.textProperty().addListener((o, was, now) -> refine());
         matchCase.selectedProperty().addListener((o, was, now) -> refine());

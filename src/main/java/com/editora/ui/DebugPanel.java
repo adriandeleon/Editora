@@ -670,6 +670,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threads.getStyleClass().add("debug-threads");
         threads.setMaxWidth(Double.MAX_VALUE);
         threads.setPromptText(tr("debugpanel.threads"));
+        FocusCommands.bindIf(
+                this,
+                "debug.chooseThread",
+                () -> { // the session's threads, in the drop-down itself
+                    if (threads.getItems().isEmpty()) {
+                        return false;
+                    }
+                    threads.show();
+                    return true;
+                });
         threads.setConverter(new StringConverter<>() {
             @Override
             public String toString(DapModels.ThreadInfo t) {
@@ -1746,6 +1756,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threadsToggle.setFocusTraversable(false);
         threadsToggle.setTooltip(com.editora.editor.ControlNames.tooltip(tr("debugpanel.threadsViewTip")));
         threadsToggle.selectedProperty().addListener((o, was, on) -> showThreadsView(on));
+        // The toggle's command, and the Console tab's (the Disassembly and Memory tabs have theirs).
+        FocusCommands.bind(this, "debug.toggleThreadsView", threadsToggle::fire);
+        FocusCommands.bind(this, "debug.showConsoleArea", () -> showArea(AREA_CONSOLE));
         threadList.getStyleClass().add("debug-stack");
         threadList.setVisible(false);
         Label empty = new Label(tr("debugpanel.noThreads"));

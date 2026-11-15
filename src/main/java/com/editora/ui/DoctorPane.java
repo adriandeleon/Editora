@@ -64,6 +64,10 @@ import static com.editora.i18n.Messages.tr;
  */
 final class DoctorPane extends Region implements TabContent {
 
+    /** The commands a row binds to its buttons, dropped before the row is filled again. */
+    private static final List<String> ROW_BUTTONS =
+            List.of("doctor.installRow", "doctor.howToInstallRow", "doctor.clearRow");
+
     /** Row actions, implemented by {@code DoctorCoordinator}. */
     interface Actions {
         void refresh();
@@ -631,6 +635,8 @@ final class DoctorPane extends Region implements TabContent {
         copyReport.getStyleClass().add("doctor-copy");
         copyReport.setMinWidth(Region.USE_PREF_SIZE);
         copyReport.setOnAction(e -> copyReport());
+        FocusCommands.press(this, "doctor.copyReport", copyReport);
+        FocusCommands.press(this, "doctor.checkNewer", checkNewer);
         refresh.setGraphic(new Group(refreshIcon));
         refresh.getStyleClass().add("doctor-refresh");
         refresh.setMinWidth(Region.USE_PREF_SIZE);
@@ -848,6 +854,7 @@ final class DoctorPane extends Region implements TabContent {
             actionBox.setAlignment(Pos.CENTER_RIGHT);
             actionBox.getStyleClass().add("doctor-actions");
             actionBox.setMinWidth(Region.USE_PREF_SIZE);
+            ROW_BUTTONS.forEach(node.getProperties()::remove); // the buttons of the row's last showing
             addActions(c, actionBox);
 
             HBox line = UiZoom.spacing(new HBox(pill, nameBox, detail, actionBox), 12);
@@ -885,6 +892,9 @@ final class DoctorPane extends Region implements TabContent {
                 rowMenu(c).show(node, e.getScreenX(), e.getScreenY());
                 e.consume();
             });
+            // The row's commands (doctor.copyRow…) act on the row the keyboard is in, as its menu and buttons do.
+            FocusCommands.menu(node, () -> rowMenu(c).getItems());
+            FocusCommands.focusOnly(node);
 
             if (focusedRole != null) {
                 Node target = findRole(node, focusedRole);
@@ -916,6 +926,7 @@ final class DoctorPane extends Region implements TabContent {
                         actions.install(c);
                     }
                 });
+                FocusCommands.press(node, "doctor.installRow", install);
                 box.getChildren().add(install);
             }
             if (!c.enableKey().isEmpty() && (st == DoctorStatus.DISABLED || st == DoctorStatus.MISSING)) {
@@ -928,6 +939,7 @@ final class DoctorPane extends Region implements TabContent {
                     && (st == DoctorStatus.WARN || st == DoctorStatus.OPTIONAL || st == DoctorStatus.MISSING)) {
                 Button help = action(tr("doctor.action.howToInstall"), "help");
                 help.setOnAction(e -> actions.openUrl(c.helpUrl()));
+                FocusCommands.press(node, "doctor.howToInstallRow", help);
                 box.getChildren().add(help);
             }
             if (c.restartable()) {
@@ -938,6 +950,7 @@ final class DoctorPane extends Region implements TabContent {
             if (c.clearable() && st == DoctorStatus.OK && pathIn(c.detail()) != null) {
                 Button clear = action(tr("doctor.action.clear"), "clear"); // a cache with something in it
                 clear.setOnAction(e -> actions.clear(c));
+                FocusCommands.press(node, "doctor.clearRow", clear);
                 box.getChildren().add(clear);
             }
             if (!c.settingsKey().isEmpty()) {
@@ -968,19 +981,22 @@ final class DoctorPane extends Region implements TabContent {
         /** Copy the row, copy its path, reveal the path, open its settings. */
         private ContextMenu rowMenu(DoctorCheck c) {
             ContextMenu menu = new ContextMenu();
-            MenuItem copy = new MenuItem(tr("doctor.menu.copyRow"), Icons.copy());
+            MenuItem copy = FocusCommands.row(new MenuItem(tr("doctor.menu.copyRow"), Icons.copy()), "doctor.copyRow");
             copy.setOnAction(e -> putOnClipboard(rowText(c)));
             menu.getItems().add(copy);
             Path path = pathIn(c.detail());
             if (path != null) {
-                MenuItem copyPath = new MenuItem(tr("doctor.menu.copyPath"));
+                MenuItem copyPath = FocusCommands.row(new MenuItem(tr("doctor.menu.copyPath")), "doctor.copyRowPath");
                 copyPath.setOnAction(e -> putOnClipboard(path.toString()));
-                MenuItem reveal = new MenuItem(tr("menu.revealInFileManager"), Icons.revealInFiles());
+                MenuItem reveal = FocusCommands.row(
+                        new MenuItem(tr("menu.revealInFileManager"), Icons.revealInFiles()), "doctor.revealRowPath");
                 reveal.setOnAction(e -> actions.reveal(path));
                 menu.getItems().addAll(copyPath, reveal);
             }
             if (!c.settingsKey().isEmpty()) {
-                MenuItem settings = new MenuItem(tr("doctor.action.settings"));
+                // The row's Settings button does the same; the command fires this row.
+                MenuItem settings =
+                        FocusCommands.row(new MenuItem(tr("doctor.action.settings")), "doctor.openRowSettings");
                 settings.setOnAction(e -> actions.openSettings(c.settingsKey()));
                 menu.getItems().add(settings);
             }

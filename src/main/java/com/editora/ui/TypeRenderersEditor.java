@@ -73,7 +73,7 @@ final class TypeRenderersEditor {
                 e.consume();
             }
         });
-        Button add = new Button(tr("typerenderer.add"));
+        Button add = FocusCommands.press(new Button(tr("typerenderer.add")), "settings.addTypeRenderer");
         add.setOnAction(e -> add());
         edit.setOnAction(e -> editSelected());
         remove.setOnAction(e -> removeSelected());

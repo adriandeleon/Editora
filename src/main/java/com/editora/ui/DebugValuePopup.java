@@ -105,6 +105,18 @@ final class DebugValuePopup implements DebugValuePresenter {
 
     private @Nullable String expression;
 
+    /** The rows of the menu of what the popup shows, as they would show now; null for a String's text box. */
+    private @Nullable List<MenuItem> shownRows(ContextMenu lineMenu) {
+        ContextMenu shown =
+                root.getChildren().contains(tree) ? menu : root.getChildren().contains(line) ? lineMenu : null;
+        if (shown == null) {
+            return null;
+        }
+        javafx.event.Event.fireEvent(
+                shown, new javafx.stage.WindowEvent(shown, javafx.stage.WindowEvent.WINDOW_SHOWING));
+        return shown.getItems();
+    }
+
     DebugValuePopup(Source source) {
         this.source = source;
         this.values = new DebugValueTree(source::children);
@@ -137,6 +149,10 @@ final class DebugValuePopup implements DebugValuePresenter {
         MenuItem pin = new MenuItem();
         pin.setOnAction(e -> pinSelected());
         menu.getItems().addAll(copy, watch, pin);
+        // The rows' commands: the Variables view's Copy Value and Add to Watches act on the row selected here.
+        FocusCommands.row(copy, "debug.copySelectedValue");
+        FocusCommands.row(watch, "debug.watchSelected");
+        FocusCommands.row(pin, "debug.pinShownValue");
         menu.setOnShowing(e -> {
             String expr = selectedExpression();
             watch.setText(tr("debugpanel.addToWatches", expr));
@@ -151,6 +167,8 @@ final class DebugValuePopup implements DebugValuePresenter {
         copyLine.setOnAction(e -> DebugPanel.copyToClipboard(line.getText()));
         MenuItem pinLine = new MenuItem();
         pinLine.setOnAction(e -> pin(expression));
+        FocusCommands.row(copyLine, "debug.copySelectedValue");
+        FocusCommands.row(pinLine, "debug.pinShownValue");
         ContextMenu lineMenu = new ContextMenu(copyLine, pinLine);
         lineMenu.setOnShowing(e -> {
             String expr = expression == null ? "" : expression;
@@ -166,6 +184,9 @@ final class DebugValuePopup implements DebugValuePresenter {
         copyText.setText(tr("debugpanel.copyValue"));
         copyText.setFocusTraversable(false);
         copyText.setOnAction(e -> DebugPanel.copyToClipboard(text.getText()));
+        FocusCommands.press(textBox, "debug.copySelectedValue", copyText);
+        // A command fires the row of the part showing: the tree's for its selected row, else the one value line's.
+        FocusCommands.menu(root, () -> shownRows(lineMenu));
         // As tall as its rows, up to the bound: a three-element list was a mostly empty box.
         tree.expandedItemCountProperty().addListener((o, was, now) -> fitHeight());
         root.getChildren().add(line);

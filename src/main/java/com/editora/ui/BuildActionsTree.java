@@ -148,6 +148,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             filterField.requestFocus();
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        ClearableField.command(filterField, clearFilter);
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
         HBox filterBar = UiZoom.spacing(new HBox(filterField, clearFilter), 6);
         filterBar.getStyleClass().add("project-filter-bar");

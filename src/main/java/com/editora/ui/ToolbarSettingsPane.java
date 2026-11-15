@@ -48,7 +48,8 @@ final class ToolbarSettingsPane {
     private final Button remove = new Button(tr("settings.toolbar.remove"));
     private final Button up = new Button("▲");
     private final Button down = new Button("▼");
-    private final Button separator = new Button(tr("settings.toolbar.addSeparator"));
+    private final Button separator =
+            FocusCommands.press(new Button(tr("settings.toolbar.addSeparator")), "toolbar.addSeparator");
     private final Button restore = new Button(tr("settings.toolbar.restoreDefault"));
 
     ToolbarSettingsPane(Supplier<SettingsWindow.ToolbarActions> actions) {

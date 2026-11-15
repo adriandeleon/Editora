@@ -2296,3 +2296,14 @@ when it has settings of its own.
   Java debuggee's console gets this through the Run pump.
 - **DAP.** `dispose()` waits up to 250 ms for the queued `disconnect`; `stackTrace` asks for the innermost
   1,000 frames when the adapter advertises `supportsDelayedStackTraceLoading`.
+
+## Commands behind the rows and buttons
+
+The debugger's secondary windows and popups have commands of their own (`PanelCommands.DEBUG`, `DEBUG_WINDOWS`):
+`debug.pinShownValue`, `debug.evaluateHistory`, `debug.copyDump`, `debug.openDumpAsText`, `debug.openTableAsCsv`,
+`debug.refreshTable`, `debug.copyException`, `debug.toggleThreadsView`, `debug.showConsoleArea`,
+`debug.switchSession` and the Application Log's `debugLog.refresh`, `debugLog.copyAll`, `debugLog.clear`,
+`debugLog.export`. The Evaluate window's and the value popup's Copy Value, Copy Name and Add to Watches rows are the
+Variables view's commands (`debug.copySelectedValue`…), which act on the row selected there while it has the
+keyboard. The gutter's Stop on the Line and a method breakpoint's Enable / Disable and Remove rows are
+`debug.toggleStopOnLine`, `debug.toggleMarkedMembersEnabled` and `debug.removeMarkedMembers`, on the caret's line.

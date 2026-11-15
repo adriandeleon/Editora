@@ -106,6 +106,7 @@ public final class MergeViewerPane implements TabContent {
         Button save = new Button(tr("merge.save"));
         save.getStyleClass().addAll("merge-save", "success");
         save.setOnAction(e -> saveResult());
+        FocusCommands.press(root, "merge.saveResult", save);
         HBox bar = UiZoom.spacing(new HBox(status, spacer(), save), 8);
         bar.getStyleClass().add("merge-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
@@ -201,6 +202,17 @@ public final class MergeViewerPane implements TabContent {
 
         VBox card = UiZoom.spacing(new VBox(header, sides, actions), 4);
         card.getStyleClass().add("merge-conflict-card");
+        // The Accept commands act on the conflict the keyboard is in, as its buttons do.
+        FocusCommands.press(card, "merge.acceptOurs", acceptOurs);
+        FocusCommands.press(card, "merge.acceptTheirs", acceptTheirs);
+        FocusCommands.press(card, "merge.acceptBoth", acceptBoth);
+        for (Node action : actions.getChildren()) {
+            if (action instanceof Button base
+                    && !List.of(acceptOurs, acceptTheirs, acceptBoth).contains(base)) {
+                FocusCommands.press(card, "merge.acceptBase", base);
+            }
+        }
+        FocusCommands.focusOnly(card);
         UiZoom.padding(card, 6);
         return card;
     }

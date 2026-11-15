@@ -60,7 +60,7 @@ final class TodoSettingsPane {
 
     /** The pattern rows plus "Add pattern". */
     Node patternsEditor() {
-        Button add = new Button(tr("settings.todo.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.todo.add")), "settings.addTodoPattern");
         // A new row starts empty, with the caret in its name: typing BUG makes it match \bBUG\b. It used to
         // start as "NEW" matching \bTODO\b, which counted every TODO twice until the regex was edited.
         add.setOnAction(e -> {
@@ -178,6 +178,8 @@ final class TodoSettingsPane {
         });
         HBox row = UiZoom.spacing(new HBox(enabled, name, regex, color, caseSensitive, remove), 6);
         row.setAlignment(Pos.CENTER_LEFT);
+        FocusCommands.press(row, "settings.removeTodoPattern", remove); // the pattern row the keyboard is in
+        FocusCommands.focusOnly(row);
         return row;
     }
 

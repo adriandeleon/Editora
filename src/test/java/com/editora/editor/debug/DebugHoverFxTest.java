@@ -132,6 +132,30 @@ class DebugHoverFxTest {
         });
     }
 
+    /** Debug: Quick Evaluate at Caret is Alt+click at the caret: the selection, or the expression there, in the popup. */
+    @Test
+    void quickEvaluateAtCaretShowsTheCaretsExpressionOrTheSelection() throws Exception {
+        DebugHover.setDebounceForTest(Duration.ZERO);
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = buffer(new ArrayList<>());
+            Presenter presenter = new Presenter();
+            buffer.setDebugValuePresenter(presenter);
+            Stage stage = EditorFx.show(buffer, 700, 300);
+            buffer.getArea().moveTo(SOURCE.indexOf("depth") + 2);
+            assertFalse(buffer.quickEvaluateAtCaret(), "not paused: nothing to evaluate");
+            buffer.setDebugHoverActive(true);
+            assertTrue(buffer.quickEvaluateAtCaret());
+            assertEquals("key other.depth", presenter.calls.getLast(), "the expression at the caret, as Alt+click");
+            int at = SOURCE.indexOf("depth");
+            buffer.getArea().selectRange(at, at + "depth".length());
+            assertTrue(buffer.quickEvaluateAtCaret());
+            assertEquals("key depth", presenter.calls.getLast(), "the caret is in the selection: the selection");
+            buffer.setDebugHoverActive(false);
+            stage.close();
+            buffer.dispose();
+        });
+    }
+
     /** Records what the hover asks of an expandable value popup (follow-up 6). */
     private static final class Presenter implements DebugValuePresenter {
         final List<String> calls = new ArrayList<>();

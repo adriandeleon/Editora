@@ -831,6 +831,8 @@ public class SettingsWindow {
         modifiedOnly.setTooltip(ControlNames.tooltip(tr("settings.search.modifiedOnly.tip")));
         modifiedOnly.setAccessibleHelp(tr("settings.search.modifiedOnly.tip"));
         modifiedOnly.setOnAction(e -> filter(searchField.getText()));
+        // The window's buttons and links that act are commands too (KBD-01), found while this window shows.
+        FocusCommands.press(modifiedOnly, "settings.toggleModifiedOnly");
         modifiedOnly.getStyleClass().add(atlantafx.base.theme.Styles.SMALL); // under the search: it filters it
         VBox nav = UiZoom.spacing(new VBox(searchField, modifiedOnly, sidebar), 8);
         nav.getStyleClass().add("settings-nav");
@@ -843,6 +845,7 @@ public class SettingsWindow {
         // button). Reset also stays on the Advanced page so searching "reset" still finds it.
         Button footReset = new Button(tr("settings.resetDefaults"));
         footReset.setOnAction(e -> resetAll());
+        FocusCommands.press(footReset, "settings.resetAll"); // the Advanced page's Reset is the same resetAll()
         Button close = new Button(tr("settings.close"));
         close.getStyleClass().add("accent");
         close.setOnAction(e -> stage.close());
@@ -1612,6 +1615,7 @@ public class SettingsWindow {
                     }
                 });
                 heading.getChildren().add(help);
+                FocusCommands.press(help, "settings.pageHelp"); // the shown page's: the others are not in the scene
                 heading.setAlignment(Pos.CENTER_LEFT);
                 page.getChildren().add(0, heading);
             }
@@ -1640,7 +1644,8 @@ public class SettingsWindow {
         controlRow(mainCard, Category.APPEARANCE, tr("settings.fontSize"), null, fontSize, "font size text");
         // Text zoom (status bar −/+, the zoom commands) scales the size above; without this the field and the
         // preview showed 18 while the editor drew 29 px.
-        Hyperlink resetZoom = new Hyperlink(tr("settings.fontZoom.reset"));
+        Hyperlink resetZoom =
+                FocusCommands.press(new Hyperlink(tr("settings.fontZoom.reset")), "settings.resetFontZoom");
         resetZoom.setOnAction(e -> {
             config.getSettings().setFontZoom(1.0);
             apply();
@@ -1670,7 +1675,8 @@ public class SettingsWindow {
                 tr("settings.editorThemeNote"),
                 editorThemeCombo,
                 "editor theme syntax colors highlighting");
-        Hyperlink openThemes = new Hyperlink(tr("settings.userThemes.open"));
+        Hyperlink openThemes =
+                FocusCommands.press(new Hyperlink(tr("settings.userThemes.open")), "settings.openUserThemesFolder");
         openThemes.setOnAction(e -> {
             Path dir = config.getConfigDir().resolve("themes");
             try {
@@ -2561,8 +2567,8 @@ public class SettingsWindow {
                 "organize optimize imports on save actions java jdtls");
         checkRow(lsp, Category.COMPLETION, javaFormatOnSaveCheck, null, "format reformat on save actions java jdtls");
         checkRow(lsp, Category.COMPLETION, javaCleanupOnSaveCheck, null, "clean up cleanup on save actions java jdtls");
-        javafx.scene.control.Button chooseCleanups =
-                new javafx.scene.control.Button(tr("settings.javaCleanups.choose"));
+        javafx.scene.control.Button chooseCleanups = FocusCommands.press(
+                new javafx.scene.control.Button(tr("settings.javaCleanups.choose")), "settings.chooseJavaCleanups");
         chooseCleanups.setOnAction(
                 e -> JavaCleanupsDialog.show(stage, config.getSettings().getJavaCleanups(), ids -> {
                     config.getSettings().setJavaCleanups(ids);
@@ -3528,7 +3534,8 @@ public class SettingsWindow {
         // The page hint reads as the subtitle, like the other pages.
         VBox p = page(tr("settings.cat.toolWindows"), tr("settings.toolWindows.hint"));
         Card layout = card(p, null);
-        Button restore = new Button(tr("settings.toolbar.restoreDefault"));
+        Button restore = FocusCommands.press(
+                new Button(tr("settings.toolbar.restoreDefault")), "settings.restoreToolWindowLayout");
         restore.setOnAction(e -> {
             if (toolWindowSettings != null) { // made below, before the page shows
                 toolWindowSettings.restoreDefaultLayout();
@@ -3607,7 +3614,8 @@ public class SettingsWindow {
         UiZoom.prefHeight(trustedFoldersList, 120);
         trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
         Button revoke = new Button(tr("settings.trustedFolders.revoke"));
-        Button revokeAll = new Button(tr("settings.trustedFolders.revokeAll"));
+        Button revokeAll =
+                FocusCommands.press(new Button(tr("settings.trustedFolders.revokeAll")), "settings.revokeAllTrust");
         revoke.disableProperty()
                 .bind(trustedFoldersList
                         .getSelectionModel()
@@ -3646,7 +3654,8 @@ public class SettingsWindow {
     private VBox advancedPage() {
         VBox p = page(tr("settings.cat.advanced"), tr("settings.advanced.subtitle"));
         Card fileSection = card(p, tr("settings.section.file"));
-        Hyperlink link = new Hyperlink(displaySettingsPath(config.getSettingsFile()));
+        Hyperlink link = FocusCommands.press(
+                new Hyperlink(displaySettingsPath(config.getSettingsFile())), "settings.openSettingsFile");
         link.setTooltip(ControlNames.tooltip(tr("settings.openFileTip")));
         link.setOnAction(e -> {
             if (onOpenFile != null) {
@@ -3662,7 +3671,8 @@ public class SettingsWindow {
         cardRow(fileSection, Category.ADVANCED, fileNotes.node(), "hand edit json reload apply restart unknown key");
 
         Path sessionLog = DebugLog.sessionFile(config.getConfigDir());
-        Hyperlink sessionLink = new Hyperlink(sessionLog == null ? "" : displaySettingsPath(sessionLog));
+        Hyperlink sessionLink = FocusCommands.press(
+                new Hyperlink(sessionLog == null ? "" : displaySettingsPath(sessionLog)), "settings.openSessionLog");
         sessionLink.setTooltip(ControlNames.tooltip(tr("settings.openFileTip")));
         sessionLink.setOnAction(e -> {
             if (onOpenFile != null && sessionLog != null) {
@@ -3680,7 +3690,7 @@ public class SettingsWindow {
         Card resetSection = card(p, tr("settings.section.reset"));
         Button reset = new Button(tr("settings.resetDefaults"));
         reset.setOnAction(e -> resetAll());
-        Button restore = new Button(tr("settings.restore.button"));
+        Button restore = FocusCommands.press(new Button(tr("settings.restore.button")), "settings.restoreBackup");
         restore.setOnAction(e -> resetFlow().restore(stage));
         cardRow(
                 resetSection,

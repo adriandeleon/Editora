@@ -336,7 +336,7 @@ public final class DeploymentsWindow {
             }
         });
 
-        Button add = new Button(tr("settings.runConfig.add"));
+        Button add = FocusCommands.press(new Button(tr("settings.runConfig.add")), "deploy.addDeployment");
         add.setId("deploy-add");
         add.setOnAction(e -> {
             List<String> taken = items.stream().map(Deployment::name).toList();

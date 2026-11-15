@@ -653,6 +653,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         tree.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         tree.setCellFactory(t -> new PathCell());
         RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
+        // A pom's Maven submenu: maven.updateVersions and the others run its row for the selected row's pom.
+        FocusCommands.menu(tree, () -> {
+            TreeItem<Path> item = tree.getSelectionModel().getSelectedItem();
+            javafx.scene.control.Menu maven = item == null || item.getValue() == null || simpleMode.getAsBoolean()
+                    ? null
+                    : mavenMenuFor(item.getValue());
+            return maven == null ? null : List.<javafx.scene.control.MenuItem>of(maven);
+        });
         // F2 / Delete / Alt+Insert are row actions here (see onKey), even in keymaps that bind them to a global
         // command: the IntelliJ keymap's Alt+Insert is Generate in the editor and New in the Project view (EN1).
         tree.getProperties()
@@ -737,6 +745,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             filterField.requestFocus();
         });
         clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        ClearableField.command(filterField, clear);
         clear.managedProperty().bind(clear.visibleProperty()); // reclaim its width when hidden
 
         mapButton.getStyleClass().add("project-view-toggle");
@@ -2126,6 +2135,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         disconnectedLabel.setText(message);
         reconnectButton.setText(buttonText);
         reconnectButton.setOnAction(e -> reconnect.run());
+        FocusCommands.press(this, "remote.reconnectProject", reconnectButton); // hidden, so refused, when connected
         if (root == null) {
             rebuildBody();
         }

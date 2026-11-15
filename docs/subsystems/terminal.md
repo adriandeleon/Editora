@@ -435,3 +435,12 @@ theme. Published values are kept as they are (Solarized's bright black is its ow
   (`.terminal-scroll-bar` in `app.css`, Termina's rules).
 - No palette rescues a prompt built for a dark terminal. Oh My Bash's agnoster theme draws `user@host` in the
   default foreground on ANSI black, which is dark on dark in any light theme.
+
+## Commands behind the rows and buttons
+
+The menu's rows are commands (`PanelCommands.TERMINAL`): `terminal.copy`, `terminal.paste`, `terminal.selectAll`,
+`terminal.copyLastOutput`, `terminal.clearScrollback`, `terminal.openLink` and `terminal.copyLinkAddress` (for the
+link the selection starts on), `terminal.newHere`, `terminal.closeOthers`, `terminal.closeRight`, and the lost
+connection's `terminal.reconnect`. None has a default key, so no key the shell needs is taken;
+`TerminalView.setRowTagger` ties the view's rows, which know nothing of commands, and `TerminalView.commandMenu`
+builds them as a right-click would.

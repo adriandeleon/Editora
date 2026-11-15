@@ -52,6 +52,8 @@ final class NoticeBar {
             }
         });
         node = UiZoom.spacing(new HBox(message, spacer, progress, action, dismiss), 10);
+        // The notice's action, from the keyboard: refused while the notice is hidden.
+        MenuChords.offerButton(node, "buffer.noticeAction", action);
         node.getStyleClass().addAll(styleClasses);
         node.setAlignment(Pos.CENTER_LEFT);
     }

@@ -148,3 +148,9 @@ Matching ignores case.
 - **Create Patch…** on a row (`git.log.createPatch`) hands the commit to `GitPatchCoordinator`.
 - **The commit message in the details pane is selectable**: a read-only `TextArea` sized to its text
   (`fitMessageHeight`), so the pane still scrolls as a whole.
+
+## Commands behind the rows and buttons
+
+The search button (and Enter in the filter field) is `git.log.searchHistory`; the Commit window's Sign-off box and
+Commit button are `git.toggleSignOff` and `git.commitNow`; the change card's arrows and Copy Old are
+`git.peekPreviousChange`, `git.peekNextChange` and `git.copyPeekedOldLines`.

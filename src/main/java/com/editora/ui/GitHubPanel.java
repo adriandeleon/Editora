@@ -340,6 +340,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             }
         });
         stateFilter.setAccessibleText(tr("github.panel.stateTip"));
+        FocusCommands.bind(this, "github.filterByState", stateFilter::show); // the choices, in the drop-down itself
         stateFilter.setTooltip(ControlNames.tooltip(tr("github.panel.stateTip")));
         stateFilter.getStyleClass().add("github-state-filter");
         // A fixed width: sized from its items it shrank below its own label when the segment's items changed.
@@ -354,6 +355,16 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         mineToggle.getStyleClass().add("github-tab");
         mineToggle.setTooltip(ControlNames.tooltip(tr("github.panel.mineTip")));
         mineToggle.setOnAction(e -> filterChanged());
+        FocusCommands.bind(this, "github.toggleMine", mineToggle::fire);
+        FocusCommands.bindIf(this, "github.loadMore", () -> {
+            for (Object item : list.getItems()) {
+                if (item instanceof MoreRow more) {
+                    loadMore(more);
+                    return true;
+                }
+            }
+            return false;
+        });
         UiZoom.prefSize(busy, 14, 14);
         UiZoom.maxSize(busy, 14, 14);
         busy.setVisible(false);
