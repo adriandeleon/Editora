@@ -2613,6 +2613,16 @@ final class DebugCoordinator {
             }
 
             @Override
+            public boolean viewsAsData(String type) {
+                return PythonDataTable.viewable(dap().sessionLanguage(), type);
+            }
+
+            @Override
+            public void viewAsData(String name, String expression) {
+                DebugCoordinator.this.viewAsData(name, expression);
+            }
+
+            @Override
             public boolean renderersMuted() {
                 return renderersMuted;
             }
@@ -8497,6 +8507,19 @@ final class DebugCoordinator {
      * expression}) as a table of its elements and their fields ({@link DebugTableWindow}).
      */
     void viewAsTable(String name, String expression, int ref, int named, int indexed) {
+        tableWindow().show(host.window(), name, expression, ref, named, indexed);
+    }
+
+    /**
+     * View as DataFrame / View as Array: opens a window showing the pandas DataFrame or Series, or numpy array, {@code
+     * expression} (named {@code name}) of the Python program, as a table of its rows ({@link PythonDataTable}).
+     */
+    void viewAsData(String name, String expression) {
+        tableWindow().showData(host.window(), name, expression);
+    }
+
+    /** A new View as Table window, of the session shown. */
+    private DebugTableWindow tableWindow() {
         DebugSession session = s();
         DebugTableWindow window = new DebugTableWindow(new DebugTableWindow.Actions() {
             @Override
@@ -8524,13 +8547,23 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void evaluateData(String expression, Consumer<DapModels.@Nullable EvalResult> cb) {
+                if (!canRefresh()) {
+                    cb.accept(null);
+                    return;
+                }
+                // debugpy's clipboard context: the helper's answer whole, where the others cut a string at 1,000.
+                dap().evaluateFull(expression, panel().selectedFrameId(), "clipboard", cb::accept);
+            }
+
+            @Override
             public boolean canRefresh() {
                 return session == s() && dap().state() == DapManager.State.SUSPENDED;
             }
         });
         tableWindows.removeIf(w -> !w.isShowing());
         tableWindows.add(window);
-        window.show(host.window(), name, expression, ref, named, indexed);
+        return window;
     }
 
     /** The View as Table windows open (tests). */

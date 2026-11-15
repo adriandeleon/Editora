@@ -31,6 +31,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.dap.DapModels;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -64,6 +65,14 @@ final class DebugTableWindow {
 
         /** Whether the program is paused, so the expression can be evaluated again. */
         boolean canRefresh();
+
+        /**
+         * Evaluates {@code expression} in the frame shown as its whole value ({@link PythonDataTable}'s helper call);
+         * {@code cb} gets null when it cannot.
+         */
+        default void evaluateData(String expression, Consumer<DapModels.@Nullable EvalResult> cb) {
+            cb.accept(null);
+        }
     }
 
     static final double WIDTH = 820;
@@ -78,6 +87,7 @@ final class DebugTableWindow {
     private final ObservableList<ValueTable.Row> rows = FXCollections.observableArrayList();
     private final FilteredList<ValueTable.Row> filtered = new FilteredList<>(rows);
     private final Button refresh = new Button(tr("valuetable.refresh"));
+    private final Button more = new Button(tr("valuetable.loadMore"));
     private ValueTable model = ValueTable.of(List.of());
     private String name = "";
     private String expression = "";
@@ -89,7 +99,23 @@ final class DebugTableWindow {
     private int pending;
 
     /** How many elements the collection has, as its debugger said; -1 when it did not. */
-    private int total = -1;
+    private long total = -1;
+
+    /**
+     * Whether the table is a Python DataFrame, Series or array's ({@link PythonDataTable}): its rows come a page at a
+     * time from a helper evaluated in the program, not from the debugger's children.
+     */
+    private boolean data;
+
+    /** A DataFrame's or array's columns in all (-1 when not known), and each shown column's dtype by its name. */
+    private long width = -1;
+
+    private Map<String, String> dtypes = Map.of();
+
+    /** What the helper said the value is, and its shape: {@code DataFrame}, {@code 1000 × 4}. */
+    private String kind = "";
+
+    private String shape = "";
 
     DebugTableWindow(Actions actions) {
         this.actions = actions;
@@ -142,12 +168,15 @@ final class DebugTableWindow {
         Button asCsv = new Button(tr("valuetable.openAsCsv"));
         asCsv.setOnAction(e -> actions.openText(tr("valuetable.csvTitle", name), model.csv(shownRows()), "csv"));
         refresh.setOnAction(e -> refresh());
+        more.setOnAction(e -> loadData(true));
+        more.setVisible(false);
+        more.managedProperty().bind(more.visibleProperty());
         Button close = new Button(tr("threaddump.close"));
         close.setCancelButton(true);
         close.setOnAction(e -> stage.hide());
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox buttons = UiZoom.spacing(new HBox(copy, asCsv, refresh, spacer, close), 8);
+        HBox buttons = UiZoom.spacing(new HBox(copy, asCsv, refresh, more, spacer, close), 8);
         buttons.setAlignment(Pos.CENTER_LEFT);
 
         VBox root = UiZoom.spacing(new VBox(heading, note, filter, table, buttons), 6);
@@ -178,16 +207,35 @@ final class DebugTableWindow {
      * {@code named} and {@code indexed} children as its debugger counted them (0 when it did not) — over {@code owner}.
      */
     void show(Window owner, String name, String expression, int ref, int named, int indexed) {
+        open(owner, name, expression, false);
+        load(ref, named, indexed);
+        bringUp(owner);
+    }
+
+    /**
+     * Shows the Python DataFrame, Series or numpy array {@code expression} (named {@code name}) over {@code owner}: its
+     * first rows, more on Load More ({@link PythonDataTable}).
+     */
+    void showData(Window owner, String name, String expression) {
+        open(owner, name, expression, true);
+        loadData(false);
+        bringUp(owner);
+    }
+
+    private void open(Window owner, String name, String expression, boolean data) {
         if (stage.getOwner() == null && owner != null) {
             stage.initOwner(owner);
             mirrorStylesheets(owner);
         }
         this.name = name;
         this.expression = expression;
+        this.data = data;
         stage.setTitle(tr("valuetable.title", name));
         heading.setText(expression.isBlank() ? name : expression);
         refresh.setDisable(!actions.canRefresh() || expression.isBlank());
-        load(ref, named, indexed);
+    }
+
+    private void bringUp(Window owner) {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
@@ -201,6 +249,7 @@ final class DebugTableWindow {
     /** The session moved on (or ended): Refresh needs a paused program. */
     void sessionChanged() {
         refresh.setDisable(!actions.canRefresh() || expression.isBlank());
+        showMore();
     }
 
     boolean isShowing() {
@@ -302,6 +351,70 @@ final class DebugTableWindow {
         showNote();
     }
 
+    /**
+     * Asks the program for a page of the DataFrame's or array's rows: the first ({@code append} false, the table
+     * emptied), or the next after those shown.
+     */
+    private void loadData(boolean append) {
+        long load = append ? generation : ++generation;
+        if (!append) {
+            rows.clear();
+            pending = 0;
+            total = -1;
+            width = -1;
+            dtypes = Map.of();
+            kind = "";
+            shape = "";
+            model = ValueTable.of(List.of());
+        }
+        int start = rows.size();
+        more.setDisable(true);
+        showNote();
+        if (!actions.canRefresh()) {
+            failed(tr("valuetable.dataNotPaused"));
+            return;
+        }
+        actions.evaluateData(PythonDataTable.expression(expression, start, ValueTable.MAX_ROWS), ev -> {
+            if (load != generation) {
+                return;
+            }
+            if (ev == null || ev.failed()) {
+                failed(ev == null ? "" : ev.result());
+                return;
+            }
+            PythonDataTable.Page page = PythonDataTable.parse(ev.result());
+            if (page.error() != null) {
+                failed("unsupported".equals(page.error()) ? tr("valuetable.dataUnsupported") : page.error());
+                return;
+            }
+            kind = page.kind();
+            shape = page.shapeText();
+            heading.setText(tr("valuetable.dataHeading", expression.isBlank() ? name : expression, kind, shape));
+            total = page.total();
+            width = page.width();
+            Map<String, String> types = new LinkedHashMap<>(dtypes);
+            types.putAll(PythonDataTable.dtypes(page));
+            dtypes = Map.copyOf(types);
+            rows.addAll(PythonDataTable.rows(page));
+            rebuild();
+            showNote();
+            showMore();
+        });
+    }
+
+    /** The helper could not show the value: the table stays empty and the note says why. */
+    private void failed(String why) {
+        total = rows.size();
+        note.setText(tr("valuetable.dataFailed", expression, why.strip()));
+        showMore();
+    }
+
+    /** Load More: there while a DataFrame or array has rows not shown, usable while the program is paused. */
+    private void showMore() {
+        more.setVisible(data && total > rows.size());
+        more.setDisable(!actions.canRefresh());
+    }
+
     /** Makes the columns those of the rows there are, keeping the sort when its columns are still there. */
     private void rebuild() {
         ValueTable next = ValueTable.of(new ArrayList<>(rows));
@@ -318,8 +431,19 @@ final class DebugTableWindow {
                 table.getSortOrder().stream().map(c -> (String) c.getUserData()).toList();
         List<TableColumn<ValueTable.Row, String>> columns = new ArrayList<>();
         for (String c : next.columns()) {
-            TableColumn<ValueTable.Row, String> col =
-                    new TableColumn<>(ValueTable.VALUE_COLUMN.equals(c) ? tr("valuetable.value") : c);
+            String text = ValueTable.VALUE_COLUMN.equals(c) ? tr("valuetable.value") : c;
+            TableColumn<ValueTable.Row, String> col = new TableColumn<>(text);
+            String dtype = dtypes.get(c);
+            if (dtype == null && ValueTable.VALUE_COLUMN.equals(c) && dtypes.size() == 1) {
+                dtype = dtypes.values().iterator().next(); // a Series' or a 1-D array's one dtype
+            }
+            if (dtype != null) {
+                // A DataFrame's dtype on hover: the header's text is a label of its own, which can have a tooltip.
+                Label header = new Label(text);
+                header.setTooltip(ControlNames.tooltip(dtype));
+                col.setText("");
+                col.setGraphic(header);
+            }
             col.setUserData(c);
             col.setCellValueFactory(
                     cell -> new ReadOnlyStringWrapper(cell.getValue().cell(c)));
@@ -337,6 +461,18 @@ final class DebugTableWindow {
     }
 
     private void showNote() {
+        if (data) {
+            String text = total < 0
+                    ? tr("valuetable.dataLoading")
+                    : total > rows.size()
+                            ? tr("valuetable.dataFirstOf", rows.size(), total)
+                            : tr("valuetable.dataCount", rows.size());
+            if (width > 0 && dtypes.size() < width) {
+                text += " " + tr("valuetable.firstColumns", dtypes.size(), width);
+            }
+            note.setText(text);
+            return;
+        }
         String text;
         if (total < 0) {
             text = tr("valuetable.loading");
@@ -364,6 +500,10 @@ final class DebugTableWindow {
     /** Evaluates the expression again at the current stop and shows what it is now. */
     private void refresh() {
         if (expression.isBlank() || !actions.canRefresh()) {
+            return;
+        }
+        if (data) {
+            loadData(false);
             return;
         }
         actions.evaluate(expression, ev -> {
@@ -402,6 +542,14 @@ final class DebugTableWindow {
 
     Button refreshButton() {
         return refresh;
+    }
+
+    Button moreButton() {
+        return more;
+    }
+
+    Label heading() {
+        return heading;
     }
 
     ValueTable model() {
