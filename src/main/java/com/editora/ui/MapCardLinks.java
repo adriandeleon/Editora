@@ -1934,6 +1934,14 @@ final class MapCardLinks {
             chip.setVisible(!more.isEmpty() && from.isVisible());
             if (!more.isEmpty()) {
                 chip.toFront(); // over the result cards that just opened (C3)
+                // Its command (KBD-01), with the keyboard in the card: the list of the latest answer with a chip.
+                MapButtonCommands.bindIf(from, "projectMap.allPlaces", () -> {
+                    if (!chip.isVisible() || !canvasHost.getChildren().contains(chip)) {
+                        return false;
+                    }
+                    chip.fire();
+                    return true;
+                });
             }
             cards.connectorsMoved();
         }

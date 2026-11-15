@@ -2594,6 +2594,11 @@ final class MapCards {
                 previewNotes(file); // the note card lists every note of the file
             }
         });
+        // The "+K more notes" sheet's button, as a command of the card (KBD-01): its notes are shown now.
+        MapButtonCommands.bindIf(card, "projectMap.allNotes", () -> {
+            ProjectMapStickyNotes now = stickyNotes.get(card);
+            return now != null && now.openMore();
+        });
         stuck.setHidden(host.hideOpenNotes());
         stuck.setReserved(which -> besideCard(card, which));
         stuck.show(cardNotes(card));

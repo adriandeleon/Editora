@@ -234,6 +234,12 @@ final class ProjectMapCardStructure implements CardAttachment {
             }
             event.consume();
         });
+        // The Map's row commands fire the selected declaration's menu rows while the keyboard is in the column.
+        MapButtonCommands.menu(tree, () -> {
+            ProjectMapStructure.Node node = selectedNode();
+            ContextMenu menu = node == null ? null : menuFor.apply(node);
+            return menu == null ? null : menu.getItems();
+        });
     }
 
     /**

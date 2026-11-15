@@ -107,6 +107,9 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         changesButton.setToggleGroup(modes);
         blameButton.setToggleGroup(modes);
         changesButton.setSelected(true);
+        // Its modes are commands too (KBD-01): each presses its button while the keyboard is in the card.
+        MapButtonCommands.press(this, "projectMap.historyChanges", changesButton);
+        MapButtonCommands.press(this, "projectMap.historyBlame", blameButton);
         changesButton.setTooltip(ControlNames.tooltip(tr("project.map.history.changesTip")));
         blameButton.setTooltip(ControlNames.tooltip(tr("project.map.history.blameTip")));
         modes.selectedToggleProperty().addListener((obs, was, now) -> {

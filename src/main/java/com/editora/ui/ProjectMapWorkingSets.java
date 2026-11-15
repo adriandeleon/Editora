@@ -40,6 +40,26 @@ final class ProjectMapWorkingSets {
         menu.getStyleClass().add("project-map-working-sets");
         menu.setOnShowing(event -> fill());
         fill(); // never empty: a submenu with no items does not open
+        // Its lists of sets are a pick away from the keyboard too (KBD-01, MENU-05).
+        MapButtonCommands.bind(view, "projectMap.showWorkingSet", () -> pick(false));
+        MapButtonCommands.bind(view, "projectMap.deleteWorkingSet", () -> pick(true));
+    }
+
+    /** Show Working Set… ({@code delete} false) and Delete Working Set…: the folder's sets, the one picked shown or deleted. */
+    private void pick(boolean delete) {
+        Path root = view.root;
+        List<ProjectMapWorkingSet> mine = root != null && com.editora.vfs.Vfs.isLocal(root) ? forRoot() : List.of();
+        view.pick(
+                delete ? "projectMap.deleteWorkingSet" : "projectMap.showWorkingSet",
+                mine.stream().map(ProjectMapWorkingSet::getName).toList(),
+                -1,
+                index -> {
+                    if (delete) {
+                        delete(mine.get(index).getName());
+                    } else {
+                        show(mine.get(index).getName());
+                    }
+                });
     }
 
     Menu menu() {
@@ -69,7 +89,8 @@ final class ProjectMapWorkingSets {
         List<MenuItem> items = new ArrayList<>();
         Path root = view.root;
         boolean local = root != null && com.editora.vfs.Vfs.isLocal(root);
-        MenuItem save = new MenuItem(tr("project.map.workingSets.save"));
+        MenuItem save =
+                MapButtonCommands.row(new MenuItem(tr("project.map.workingSets.save")), "projectMap.saveWorkingSet");
         save.setDisable(!local);
         save.setOnAction(event -> askAndSave());
         items.add(save);

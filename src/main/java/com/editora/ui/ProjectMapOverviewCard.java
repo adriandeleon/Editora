@@ -460,7 +460,8 @@ final class ProjectMapOverviewCard extends StackPane {
         Button open = new Button(tr("project.map.overview.openReadme", readme));
         open.setMnemonicParsing(false);
         open.getStyleClass().addAll("flat", "project-map-overview-open");
-        open.setOnAction(event -> onOpen.accept(file));
+        // The README opened in the editor: the card's Open in Editor (KBD-01), while the keyboard is in the card.
+        MapButtonCommands.runs(this, open, "projectMap.openInEditor", () -> onOpen.accept(file));
         content.add(open);
     }
 
@@ -558,7 +559,8 @@ final class ProjectMapOverviewCard extends StackPane {
         link.getStyleClass().addAll("flat", "project-map-overview-link");
         link.setTooltip(ControlNames.tooltip(tr("project.map.overview.reveal")));
         if (target != null) {
-            link.setOnAction(event -> onReveal.accept(target));
+            // A place on the map: Show on Map while it has the keyboard (KBD-01), as a press of it.
+            MapButtonCommands.runs(link, link, "projectMap.showOnMap", () -> onReveal.accept(target));
         }
         return link;
     }

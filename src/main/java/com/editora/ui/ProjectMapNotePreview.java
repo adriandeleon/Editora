@@ -307,7 +307,8 @@ final class ProjectMapNotePreview extends StackPane {
                 quoted.isEmpty() ? tr("project.map.notes.openAt") : quoted + "\n" + tr("project.map.notes.openAt")));
         where.setAccessibleHelp(tr("project.map.notes.openAt"));
         int line = note.anchor().line();
-        where.setOnAction(event -> {
+        // Its file at the note: Open in Editor while it has the keyboard (KBD-01), as a press of it.
+        MapButtonCommands.runs(where, where, "projectMap.openInEditor", () -> {
             Path file = path;
             if (file != null) {
                 onOpenAt.accept(file, line);

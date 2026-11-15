@@ -113,22 +113,13 @@ final class ProjectMapTrails {
         CommandTips.name(next, "projectMap.trailNext");
         editButton.setGraphic(Icons.edit());
         Icons.name(editButton, tr("project.map.trails.bar.edit"));
-        editButton.setOnAction(event -> {
-            MapTrails.Listed shown = playing;
-            if (shown != null) {
-                edit(shown.name());
-            }
-        });
+        editButton.setOnAction(event -> editPlaying());
         CommandTips.name(closeButton, "projectMap.trailClose");
         closeButton.setOnAction(event -> close());
         position.getStyleClass().add("project-map-trail-bar-position");
         position.setMinWidth(Region.USE_PREF_SIZE);
         title.getStyleClass().add("project-map-trail-bar-title");
-        title.setOnMouseClicked(event -> {
-            if (stopCardGone && stop >= 0) {
-                showStop(stop); // the card closed under the bar: the title brings it back
-            }
-        });
+        title.setOnMouseClicked(event -> showGoneStop()); // the card closed under the bar: the title brings it back
         title.setMinWidth(0);
         UiZoom.maxWidth(title, 420);
         HBox.setHgrow(title, Priority.ALWAYS);
@@ -143,6 +134,55 @@ final class ProjectMapTrails {
         StackPane.setAlignment(bar, Pos.TOP_CENTER);
         UiZoom.follow(bar, () -> StackPane.setMargin(bar, UiZoom.insets(8, 120, 0, 120)));
         view.viewsCanvasHost().addEventFilter(KeyEvent.KEY_PRESSED, this::viewsKeyPressed);
+        // The bar's ✎ and title, and the menu's lists of trails, are commands too (KBD-01, MENU-05).
+        MapButtonCommands.bindIf(view, "projectMap.trailEditPlaying", this::editPlaying);
+        MapButtonCommands.bindIf(view, "projectMap.trailShowStop", this::showGoneStop);
+        MapButtonCommands.bind(view, "projectMap.playTrail", () -> pickTrail(false));
+        MapButtonCommands.bind(view, "projectMap.editTrail", () -> pickTrail(true));
+    }
+
+    /** The bar's ✎: the playing trail in the editor card; false when none plays. */
+    private boolean editPlaying() {
+        MapTrails.Listed shown = playing;
+        if (shown == null) {
+            return false;
+        }
+        edit(shown.name());
+        return true;
+    }
+
+    /** The bar's title: the stop's card again, after it was closed; false while it is open, or nothing plays. */
+    private boolean showGoneStop() {
+        if (playing == null || !stopCardGone || stop < 0) {
+            return false;
+        }
+        showStop(stop);
+        return true;
+    }
+
+    /**
+     * Play Trail… ({@code edit} false) and Edit Trail…: the trails the menu lists, to pick one to play from its first
+     * stop or to edit; a trail that cannot be read, or (to edit) cannot be changed, is left out as the menu disables it.
+     */
+    private void pickTrail(boolean edit) {
+        Path root = root();
+        List<MapTrails.Listed> listed = new ArrayList<>();
+        for (MapTrails.Listed trail : root == null ? List.<MapTrails.Listed>of() : MapTrails.list(root)) {
+            if (trail.trail() != null && !(edit && trail.readOnly())) {
+                listed.add(trail);
+            }
+        }
+        view.pick(
+                edit ? "projectMap.editTrail" : "projectMap.playTrail",
+                listed.stream().map(MapTrails.Listed::label).toList(),
+                -1,
+                index -> {
+                    if (edit) {
+                        edit(listed.get(index).name());
+                    } else {
+                        play(listed.get(index).name(), 0);
+                    }
+                });
     }
 
     /** Shortcut+→ / Shortcut+← while a trail plays: its next or previous stop, unless the keys move a caret. */
@@ -221,10 +261,10 @@ final class ProjectMapTrails {
     void fill() {
         List<MenuItem> items = new ArrayList<>();
         Path root = root();
-        MenuItem create = new MenuItem(tr("project.map.trails.new"));
+        MenuItem create = MapButtonCommands.row(new MenuItem(tr("project.map.trails.new")), "projectMap.newTrail");
         create.setDisable(root == null);
         create.setOnAction(event -> askNew(null));
-        MenuItem add = new MenuItem(tr("project.map.trails.addStop"));
+        MenuItem add = MapButtonCommands.row(new MenuItem(tr("project.map.trails.addStop")), "projectMap.addTrailStop");
         add.setDisable(root == null || lastCodeCard() == null);
         add.setOnAction(event -> {
             ProjectMapPreview card = lastCodeCard();
@@ -292,7 +332,7 @@ final class ProjectMapTrails {
         if (root() == null) {
             return List.of();
         }
-        MenuItem add = new MenuItem(tr("project.map.trails.addStop"));
+        MenuItem add = MapButtonCommands.row(new MenuItem(tr("project.map.trails.addStop")), "projectMap.addTrailStop");
         add.setOnAction(event -> addStop(card));
         return List.of(add);
     }

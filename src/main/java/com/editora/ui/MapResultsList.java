@@ -139,6 +139,7 @@ final class MapResultsList extends MapSideColumn {
                         tree, () -> ListRowCommands.selectedText(tree, row -> row.message() ? null : row.text())));
         filter.textProperty().addListener((obs, was, now) -> refill());
         tests.selectedProperty().addListener((obs, was, now) -> refill());
+        pressedBy("projectMap.placesTests", tests); // out of the Tab order, so a command reaches it (KBD-01)
         // Down from the filter goes to the list, as a finder's does.
         filter.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.DOWN || event.getCode() == KeyCode.ENTER) {
