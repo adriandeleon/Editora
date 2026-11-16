@@ -773,7 +773,20 @@ public final class DapClient implements IDebugProtocolClient {
         return timed(server().attach(launchDecorator.apply(args)));
     }
 
-    /** What a launch or attach adds to its request before it is sent: the session's Don't step into options. */
+    /** How long an {@code evaluate} is waited for: past the debugger's own time limit ({@link EvaluationLimits#wait}). */
+    private volatile Duration evaluationWait = REQUEST_TIMEOUT;
+
+    /** Sets {@link #evaluationWait}. */
+    public void setEvaluationWait(Duration wait) {
+        this.evaluationWait = wait == null ? REQUEST_TIMEOUT : wait;
+    }
+
+    /** How long an evaluation is waited for, in seconds. */
+    public long evaluationWaitSeconds() {
+        return evaluationWait.toSeconds();
+    }
+
+    /** What a launch or attach adds to its request before it is sent: Don't step into, the evaluation time limit. */
     private volatile java.util.function.UnaryOperator<Map<String, Object>> launchDecorator = a -> a;
 
     /** Sets {@link #launchDecorator} (a child session's request is its parent adapter's, and is sent as it is). */
@@ -1975,7 +1988,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setFrameId(frameId);
         a.setContext(context);
         a.setFormat(valueFormat());
-        return timed(server().evaluate(a)).thenApply(r -> r == null ? null : r.getResult());
+        return withTimeout(server().evaluate(a), evaluationWait).thenApply(r -> r == null ? null : r.getResult());
     }
 
     /** Like {@link #evaluate} but keeps the full response: result + expandable children reference + type
@@ -1990,7 +2003,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setFrameId(frameId);
         a.setContext(context);
         a.setFormat(valueFormat());
-        return timed(server().evaluate(a))
+        return withTimeout(server().evaluate(a), evaluationWait)
                 .thenApply(r -> r == null
                         ? null
                         : new DapModels.EvalResult(
@@ -2239,7 +2252,8 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext("watch");
-        return timed(server().evaluate(a)).thenApply(r -> r == null ? null : r.getMemoryReference());
+        return withTimeout(server().evaluate(a), evaluationWait)
+                .thenApply(r -> r == null ? null : r.getMemoryReference());
     }
 
     public CompletableFuture<Void> stepOut(int threadId) {
@@ -2591,7 +2605,7 @@ public final class DapClient implements IDebugProtocolClient {
         EvaluateArguments a = new EvaluateArguments();
         a.setExpression(command);
         a.setContext("repl");
-        return timed(server().evaluate(a)).thenApply(r -> r == null ? null : r.getResult());
+        return withTimeout(server().evaluate(a), evaluationWait).thenApply(r -> r == null ? null : r.getResult());
     }
 
     /** Step Back: the thread goes back over the last statement ({@code stepBack}). */
