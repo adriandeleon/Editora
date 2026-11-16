@@ -94,6 +94,10 @@ final class DebugExpressionField {
         frame.getStyleClass().add("debug-expression-frame");
         area.setWrapText(true);
         placeholder.getStyleClass().add("debug-expression-placeholder");
+        // The area sizes its placeholder to the label's preferred width: capped at the area's own, a long prompt
+        // ends in "…" in a narrow panel instead of running past the field and under its buttons.
+        placeholder.setMinWidth(0);
+        placeholder.maxWidthProperty().bind(area.widthProperty());
         area.setPlaceholder(placeholder, javafx.geometry.Pos.CENTER_LEFT);
         area.getProperties().put(KeyDispatcher.CLAIMED_KEYS, CLAIMED);
         area.setAccessibleRole(javafx.scene.AccessibleRole.TEXT_AREA);
