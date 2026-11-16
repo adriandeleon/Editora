@@ -232,12 +232,18 @@ final class EncodingCommands {
     }
 
     private boolean confirmDiscard(EditorBuffer buffer, String charset) {
-        return Confirm.ask(
-                host.stage(),
-                new Confirm.Question(
-                        tr("command." + REOPEN),
-                        tr("dialog.reopenEncoding.header", buffer.getTitle(), EditorConfigCharset.displayName(charset)),
-                        tr("dialog.reopenEncoding.content"),
-                        tr("confirm.action.reopen")));
+        return Confirm.ask(host.stage(), reopenQuestion(buffer.getTitle(), charset));
+    }
+
+    /**
+     * The words of the question before the tab titled {@code title} is reopened in {@code charset}, which discards
+     * its unsaved changes.
+     */
+    static Confirm.Question reopenQuestion(String title, String charset) {
+        return new Confirm.Question(
+                tr("command." + REOPEN),
+                tr("dialog.reopenEncoding.header", title, EditorConfigCharset.displayName(charset)),
+                tr("dialog.reopenEncoding.content"),
+                tr("confirm.action.reopen"));
     }
 }

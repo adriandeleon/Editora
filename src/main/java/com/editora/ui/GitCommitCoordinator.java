@@ -302,6 +302,20 @@ final class GitCommitCoordinator {
     }
 
     /**
+     * The words of the question before the last commit ({@code shortHash}, {@code subject}) is undone, in stronger
+     * words when it is already {@code pushed} to {@code upstream}.
+     */
+    static Confirm.Question undoCommitQuestion(boolean pushed, String shortHash, String subject, String upstream) {
+        return new Confirm.Question(
+                tr("dialog.undoCommit.title"),
+                null,
+                pushed
+                        ? tr("dialog.undoCommit.pushed", shortHash, subject, upstream)
+                        : tr("dialog.undoCommit.message", shortHash, subject),
+                tr("dialog.undoCommit.action"));
+    }
+
+    /**
      * {@code git.undoLastCommit}: {@code git reset --soft HEAD~1} — the commit is taken off the branch, its
      * changes stay staged, and its message goes back into the commit box. Confirmed first, in stronger words
      * when the commit is already on the upstream (the branch then has to be force-pushed). Refused for a
@@ -325,10 +339,8 @@ final class GitCommitCoordinator {
                 host.setStatus(tr(refusal));
                 return;
             }
-            String message = head.pushed()
-                    ? tr("dialog.undoCommit.pushed", head.shortHash(), head.subject(), head.upstream())
-                    : tr("dialog.undoCommit.message", head.shortHash(), head.subject());
-            if (!git.confirmDestructive(tr("dialog.undoCommit.title"), message, tr("dialog.undoCommit.action"))) {
+            if (!git.confirmDestructive(
+                    undoCommitQuestion(head.pushed(), head.shortHash(), head.subject(), head.upstream()))) {
                 return;
             }
             String[] args = {"reset", "--soft", "HEAD~1"};

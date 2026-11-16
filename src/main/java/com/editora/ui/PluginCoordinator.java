@@ -893,6 +893,23 @@ final class PluginCoordinator {
         }
     }
 
+    /**
+     * The words of the question before the plugin shown as {@code name} is removed from {@code dir}, saying so
+     * when the data it keeps there ({@code hasData}) goes with it.
+     */
+    static Question uninstallQuestion(String name, String dir, boolean hasData) {
+        StringBuilder body = new StringBuilder(tr("dialog.plugins.uninstallBody", dir));
+        if (hasData) {
+            body.append("\n\n").append(tr("dialog.plugins.uninstallData"));
+        }
+        return new Question(
+                Question.Kind.UNINSTALL,
+                tr("dialog.plugins.uninstallHeader", name),
+                body.toString(),
+                "",
+                tr("dialog.plugins.removeButton"));
+    }
+
     /** Asks a {@link Question}; {@code true} = go ahead. Replaceable so a test can answer without a modal dialog. */
     private java.util.function.Predicate<Question> confirm = this::confirmDialog;
 
@@ -946,17 +963,8 @@ final class PluginCoordinator {
             return;
         }
         String name = PluginDisclosure.clean(d.displayName(), 80);
-        StringBuilder body =
-                new StringBuilder(tr("dialog.plugins.uninstallBody", d.dir().toString()));
-        if (Files.isDirectory(d.dir().resolve("data"))) {
-            body.append("\n\n").append(tr("dialog.plugins.uninstallData"));
-        }
-        if (!confirm.test(new Question(
-                Question.Kind.UNINSTALL,
-                tr("dialog.plugins.uninstallHeader", name),
-                body.toString(),
-                "",
-                tr("dialog.plugins.removeButton")))) {
+        if (!confirm.test(uninstallQuestion(
+                name, d.dir().toString(), Files.isDirectory(d.dir().resolve("data"))))) {
             return;
         }
         boolean running = pluginManager.running(d.id()) != null;

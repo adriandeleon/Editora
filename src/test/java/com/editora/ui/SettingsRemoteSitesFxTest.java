@@ -209,43 +209,70 @@ class SettingsRemoteSitesFxTest {
             FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
             javafx.scene.control.Button remove = button(w, Messages.tr("settings.remote.remove"));
 
-            // The real dialog: Enter does not delete, and the host question is there.
-            FxTestSupport.runOnFx(() -> javafx.application.Platform.runLater(remove::fire));
-            javafx.scene.control.DialogPane ask = null;
-            long deadline = System.nanoTime() + 10_000_000_000L;
-            while (ask == null && System.nanoTime() < deadline) {
-                ask = FxTestSupport.callOnFx(() -> javafx.stage.Window.getWindows().stream()
-                        .filter(win -> win.isShowing()
-                                && win.getScene() != null
-                                && win.getScene().getRoot() instanceof javafx.scene.control.DialogPane)
-                        .map(win ->
-                                (javafx.scene.control.DialogPane) win.getScene().getRoot())
-                        .findFirst()
-                        .orElse(null));
-                Thread.sleep(20);
-            }
-            javafx.scene.control.DialogPane dialog = ask;
-            FxTestSupport.runOnFx(() -> {
-                javafx.scene.control.Button cancel =
-                        FxDialogs.button(dialog, javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
-                assertTrue(cancel.isDefaultButton(), "Cancel is the default");
-                assertTrue(all(dialog, javafx.scene.control.CheckBox.class, new ArrayList<>()).stream()
-                        .anyMatch(c ->
-                                c.getText().equals(Messages.tr("settings.remote.deleteForgetHost", "box.example"))));
-                cancel.fire();
-            });
-            FxTestSupport.drainFx();
-            assertEquals(1, fx.shared.getConnections().size(), "cancelled: the site stays");
+            // The question, answered with no window: Enter does not delete, and the host question is there.
+            try (DialogAnswers answers =
+                    DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
+                FxTestSupport.runOnFx(remove::fire);
+                Dialogs.Asked asked = answers.only();
+                assertEquals(RemoteSitesPane.deleteQuestion(site.displayLabel()).title(), asked.title());
+                assertTrue(
+                        asked.answer(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)
+                                .isDefault(),
+                        "Cancel is the default");
+                Dialogs.Answer delete = asked.answer(Messages.tr("settings.remote.delete"));
+                assertTrue(delete.destructive() && !delete.isDefault(), "Delete is red and never the default");
+                assertTrue(FxTestSupport.callOnFx(() ->
+                        all(asked.dialog().getDialogPane(), javafx.scene.control.CheckBox.class, new ArrayList<>())
+                                .stream()
+                                .anyMatch(c -> c.getText()
+                                        .equals(Messages.tr("settings.remote.deleteForgetHost", "box.example")))));
+                assertEquals(
+                        RemoteSitesPane.deleteQuestion(site.displayLabel()).message() + "\n"
+                                + RemoteSitesPane.forgetHostOption("box.example"),
+                        asked.content());
+                assertEquals(1, fx.shared.getConnections().size(), "cancelled: the site stays");
+                assertTrue(fx.shared.remoteExecAllowed(site.id()), "and so does its host's agreement");
 
-            boolean[] askedAboutHost = {false};
-            pane.confirmDelete = (s, askHost) -> {
-                askedAboutHost[0] = askHost;
-                return java.util.Optional.of(true);
-            };
-            FxTestSupport.runOnFx(remove::fire);
-            assertTrue(askedAboutHost[0]);
+                answers.nowClosing();
+                FxTestSupport.runOnFx(remove::fire);
+                assertEquals(1, fx.shared.getConnections().size(), "closing the question keeps the site too");
+
+                // Delete, with the box left ticked as it opens: the site goes and its host's trust with it.
+                answers.nowPressing(Messages.tr("settings.remote.delete"));
+                FxTestSupport.runOnFx(remove::fire);
+                assertEquals(3, answers.asked().size());
+            }
             assertEquals(List.of(), fx.shared.getConnections());
             assertFalse(fx.shared.remoteExecAllowed(site.id()), "a site added again for this host asks again");
+        }
+    }
+
+    /** The question's check box is the caller's to read: unticked, the site goes and its host's agreement stays. */
+    @Test
+    void removingASiteWithTheBoxUntickedKeepsItsHostsTrust() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            RemoteConnection site = new RemoteConnection(
+                    "box.example", 22, "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "Box", "");
+            FxTestSupport.runOnFx(() -> {
+                fx.shared.putConnection(site);
+                fx.shared.allowRemoteExec(site.id());
+            });
+            SettingsWindow w = showRemote(fx);
+            RemoteSitesPane pane = FxTestSupport.field(w, "remoteSites");
+            ListView<RemoteConnection> list = FxTestSupport.field(pane, "list");
+            FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
+            javafx.scene.control.Button remove = button(w, Messages.tr("settings.remote.remove"));
+            try (DialogAnswers answers = DialogAnswers.with(asked -> {
+                all(asked.dialog().getDialogPane(), javafx.scene.control.CheckBox.class, new ArrayList<>())
+                        .get(0)
+                        .setSelected(false);
+                return asked.answer(javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+            })) {
+                FxTestSupport.runOnFx(remove::fire);
+                assertEquals(1, answers.asked().size());
+            }
+            assertEquals(List.of(), fx.shared.getConnections());
+            assertTrue(fx.shared.remoteExecAllowed(site.id()), "the box was unticked: the host stays allowed");
         }
     }
 

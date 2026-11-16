@@ -164,7 +164,7 @@ final class NewMavenProjectSession {
         confirm.setTitle(tr("dialog.mavenProject.trustTitle"));
         confirm.setHeaderText(tr("dialog.mavenProject.trustHeader", archetype.artifactId()));
         UiZoom.minWidth(confirm.getDialogPane(), 560);
-        ButtonType answer = confirm.showAndWait().orElse(cancel);
+        ButtonType answer = Dialogs.showAndWait(confirm).orElse(cancel);
         return answer == proceed
                 ? MavenProjectCoordinator.Consent.ONCE
                 : answer == always ? MavenProjectCoordinator.Consent.ALWAYS : MavenProjectCoordinator.Consent.CANCEL;

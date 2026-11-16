@@ -197,6 +197,46 @@ class DocumentOnDiskFxTest {
         }
     }
 
+    /** The read-only question answered through the hook, with no window: only its action replaces the file. */
+    @Test
+    void theReadOnlyQuestionIsAnsweredWithNoDialog(@TempDir Path dir) throws Exception {
+        Assumptions.assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
+        Path file = Files.writeString(dir.resolve("ro.txt"), "locked\n");
+        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("r--r--r--"));
+        Assumptions.assumeFalse(Files.isWritable(file), "running as a user the mode does not bind (root)");
+        try (AsyncTestScope async = new AsyncTestScope();
+                DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = load(fx, file);
+            FxTestSupport.runOnFx(() -> buffer.getArea().insertText(0, "changed\n"));
+
+            save(async, fx);
+            Dialogs.Asked asked = answers.only();
+            Confirm.Question words = FileWorkflowCoordinator.replaceReadOnlyQuestion("ro.txt");
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.header(), asked.header());
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    java.util.List.of(
+                            new Dialogs.Answer(words.action(), ButtonBar.ButtonData.OK_DONE, true, false),
+                            new Dialogs.Answer(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE, false, false)),
+                    asked.answers());
+            assertEquals("locked\n", Files.readString(file), "Cancel: the file is untouched");
+            assertEquals(tr("status.save.cannotWriteReadOnly", "ro.txt"), echo(fx));
+
+            answers.nowClosing();
+            save(async, fx);
+            assertEquals(2, answers.asked().size());
+            assertEquals("locked\n", Files.readString(file), "closing the question leaves it untouched too");
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+
+            answers.nowPressing(words.action());
+            save(async, fx);
+            assertEquals("changed\nlocked\n", Files.readString(file));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+        }
+    }
+
     // --- .editorconfig ----------------------------------------------------------------------------------
 
     @Test

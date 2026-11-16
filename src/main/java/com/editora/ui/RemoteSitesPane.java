@@ -443,26 +443,38 @@ final class RemoteSitesPane {
         }
     }
 
+    /** The words of "Delete “x”?" for the site shown as {@code siteLabel}. */
+    static Confirm.Question deleteQuestion(String siteLabel) {
+        return new Confirm.Question(
+                tr("settings.remote.remove"),
+                null,
+                tr("settings.remote.deleteConfirm", siteLabel),
+                tr("settings.remote.delete"));
+    }
+
+    /** The words of the question's check box: also forget that {@code host} may run commands. */
+    static String forgetHostOption(String host) {
+        return tr("settings.remote.deleteForgetHost", host);
+    }
+
     private java.util.Optional<Boolean> deleteDialog(RemoteConnection site, boolean askAboutHost) {
-        javafx.scene.control.ButtonType delete = Dialogs.action(tr("settings.remote.delete"));
+        Confirm.Question words = deleteQuestion(site.displayLabel());
+        javafx.scene.control.ButtonType delete = Dialogs.action(words.action());
         javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                tr("settings.remote.deleteConfirm", site.displayLabel()),
-                delete,
-                Dialogs.cancel()));
+                javafx.scene.control.Alert.AlertType.CONFIRMATION, words.message(), delete, Dialogs.cancel()));
         alert.initOwner(list.getScene() == null ? null : list.getScene().getWindow());
-        alert.setTitle(tr("settings.remote.remove"));
-        alert.setHeaderText(null);
-        CheckBox forget = new CheckBox(tr("settings.remote.deleteForgetHost", site.host()));
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
+        CheckBox forget = new CheckBox(forgetHostOption(site.host()));
         forget.setSelected(true); // removing a site is how people expect to withdraw its trust
         forget.setWrapText(true);
         if (askAboutHost) {
-            Label text = new Label(tr("settings.remote.deleteConfirm", site.displayLabel()));
+            Label text = new Label(words.message());
             alert.getDialogPane().setContent(UiZoom.spacing(new VBox(text, forget), 10));
         }
         // Cancel is the default: Enter does not delete.
         Dialogs.destructive(alert, delete);
-        return alert.showAndWait().filter(b -> b == delete).map(b -> forget.isSelected());
+        return Dialogs.showAndWait(alert).filter(b -> b == delete).map(b -> forget.isSelected());
     }
 
     private void persist() {

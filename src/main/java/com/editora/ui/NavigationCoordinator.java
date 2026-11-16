@@ -655,7 +655,7 @@ final class NavigationCoordinator {
         ask.initOwner(host.stage());
         ask.setTitle(tr("dialog.related.createTest.title"));
         ask.setHeaderText(null);
-        return ask.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == create;
+        return Dialogs.showAndWait(ask).orElse(javafx.scene.control.ButtonType.CANCEL) == create;
     }
 
     /**

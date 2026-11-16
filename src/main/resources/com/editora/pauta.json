@@ -337,14 +337,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {
-      "rule": "CONF-12",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-12",
-      "kind": "pending",
-      "reason": "Some confirmation questions cannot be answered automatically in tests.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
       "rule": "REL-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/release/#rel-04",

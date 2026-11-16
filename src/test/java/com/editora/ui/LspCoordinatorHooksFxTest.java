@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -11,11 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-import javafx.animation.AnimationTimer;
-import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
-import javafx.scene.control.DialogPane;
-import javafx.stage.Window;
 
 import com.editora.completion.CompletionResult;
 import com.editora.completion.CompletionSource;
@@ -71,6 +66,7 @@ class LspCoordinatorHooksFxTest {
 
     @AfterEach
     void tearDown() throws Exception {
+        Dialogs.answerWith(null);
         fx.close();
     }
 
@@ -664,33 +660,22 @@ class LspCoordinatorHooksFxTest {
     private record Asked(String header, String content) {}
 
     /**
-     * Answers the next dialog to appear with its button of kind {@code answer}. The future completes with
-     * what the dialog said once the answer has been acted on: the code that asked runs on when the dialog
-     * closes, and only a task queued behind it can know that it has.
+     * Answers the next dialog with its button of kind {@code answer}, through the hook: no window opens. The
+     * future completes with what the dialog said once the answer has been acted on: the code that asked runs on
+     * when the answer is given, and only a task queued behind it can know that it has.
      */
-    private CompletableFuture<Asked> answerNextDialog(ButtonBar.ButtonData answer) throws Exception {
+    private CompletableFuture<Asked> answerNextDialog(ButtonBar.ButtonData answer) {
         CompletableFuture<Asked> asked = new CompletableFuture<>();
-        AnimationTimer timer = new AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                for (Window window : List.copyOf(Window.getWindows())) {
-                    if (window.isShowing()
-                            && window.getScene() != null
-                            && window.getScene().getRoot() instanceof DialogPane pane) {
-                        stop();
-                        Asked said = new Asked(pane.getHeaderText(), pane.getContentText());
-                        ((Button) pane.lookupButton(pane.getButtonTypes().stream()
-                                        .filter(type -> type.getButtonData() == answer)
-                                        .findFirst()
-                                        .orElseThrow()))
-                                .fire();
-                        javafx.application.Platform.runLater(() -> asked.complete(said));
-                        return;
-                    }
-                }
+        Dialogs.answerWith(dialog -> {
+            Dialogs.answerWith(null); // the next dialog only
+            Asked said = new Asked(dialog.header(), dialog.content());
+            javafx.application.Platform.runLater(() -> asked.complete(said));
+            Dialogs.Answer chosen = dialog.answer(answer);
+            if (chosen == null) {
+                throw new AssertionError("no " + answer + " answer in the dialog: " + dialog);
             }
-        };
-        FxTestSupport.runOnFx(timer::start);
+            return chosen;
+        });
         return asked;
     }
 
@@ -738,34 +723,24 @@ class LspCoordinatorHooksFxTest {
     void enterDoesNotConfirmADestructiveEdit() throws Exception {
         List<WorkspaceEditHazards.Hazard> hazards = List.of(
                 new WorkspaceEditHazards.Hazard(root.resolve("old"), WorkspaceEditHazards.Kind.DELETE_FILE, null));
-        CompletableFuture<List<String>> defaults = new CompletableFuture<>();
-        AnimationTimer timer = new AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                for (Window window : List.copyOf(Window.getWindows())) {
-                    if (window.isShowing()
-                            && window.getScene() != null
-                            && window.getScene().getRoot() instanceof DialogPane pane) {
-                        stop();
-                        List<String> out = new ArrayList<>();
-                        for (var type : pane.getButtonTypes()) {
-                            Button button = (Button) pane.lookupButton(type);
-                            if (button.isDefaultButton()) {
-                                out.add(type.getButtonData().name());
-                            }
-                        }
-                        defaults.complete(out);
-                        FxDialogs.button(pane, javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)
-                                .fire();
-                        return;
-                    }
-                }
-            }
-        };
-        FxTestSupport.runOnFx(timer::start);
+        try (DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            assertFalse(
+                    FxTestSupport.callOnFx(() -> fx.coordinator.workspaceEdits.destructiveEditConfirmer.test(hazards)));
+            Dialogs.Asked asked = answers.only();
+            assertEquals(
+                    List.of("CANCEL_CLOSE"),
+                    asked.answers().stream()
+                            .filter(Dialogs.Answer::isDefault)
+                            .map(a -> a.role().name())
+                            .toList());
+            Dialogs.Answer apply = asked.answer(tr("dialog.lsp.destructiveEdit.apply"));
+            assertTrue(apply.destructive() && !apply.isDefault(), "Apply is red and never the default");
 
-        assertFalse(FxTestSupport.callOnFx(() -> fx.coordinator.workspaceEdits.destructiveEditConfirmer.test(hazards)));
-        assertEquals(List.of("CANCEL_CLOSE"), defaults.get(30, TimeUnit.SECONDS));
+            answers.nowClosing();
+            assertFalse(
+                    FxTestSupport.callOnFx(() -> fx.coordinator.workspaceEdits.destructiveEditConfirmer.test(hazards)),
+                    "closing the question applies nothing");
+        }
     }
 
     /** Leaves {@code name} moved aside under a hidden name, as a process that died mid-transaction does. */

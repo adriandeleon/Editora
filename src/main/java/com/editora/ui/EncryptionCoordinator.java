@@ -889,7 +889,7 @@ final class EncryptionCoordinator {
         alert.getButtonTypes().setAll(cancel, save);
         // Cancel is the default: Enter must never be the key that writes a secret in plain text.
         Dialogs.defaultTo(alert, cancel);
-        return alert.showAndWait().orElse(cancel) == save;
+        return Dialogs.showAndWait(alert).orElse(cancel) == save;
     }
 
     /**
@@ -922,7 +922,7 @@ final class EncryptionCoordinator {
         ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(cancel, go);
         Dialogs.defaultTo(alert, cancel);
-        return alert.showAndWait().orElse(cancel) == go;
+        return Dialogs.showAndWait(alert).orElse(cancel) == go;
     }
 
     // ---- recipients -------------------------------------------------------------------------------------------

@@ -182,7 +182,7 @@ final class ContainerCoordinator {
         alert.initOwner(host.window());
         alert.setTitle(tr(wsl ? "dialog.wsl.title" : "dialog.container.title"));
         alert.setHeaderText(tr(wsl ? "dialog.wsl.header" : "dialog.container.header", name));
-        return alert.showAndWait().orElse(notNow) == allow;
+        return Dialogs.showAndWait(alert).orElse(notNow) == allow;
     }
 
     /** Containers: Run This Project's Tools in a Container… — the user picks a running container. */

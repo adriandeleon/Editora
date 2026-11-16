@@ -379,7 +379,7 @@ final class ProjectScopeSettings {
                     javafx.scene.control.Alert.AlertType.ERROR, message, javafx.scene.control.ButtonType.OK));
             failed.initOwner(owner.get());
             failed.setHeaderText(null);
-            failed.showAndWait();
+            Dialogs.showAndWait(failed);
         });
     }
 

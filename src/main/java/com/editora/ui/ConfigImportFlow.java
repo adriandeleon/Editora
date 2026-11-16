@@ -299,7 +299,7 @@ final class ConfigImportFlow {
         alert.setHeaderText(tr(failed ? "dialog.importConfig.failed" : "dialog.importConfig.done"));
         if (failed) {
             alert.setContentText(o.failure());
-            alert.showAndWait();
+            Dialogs.showAndWait(alert);
             return;
         }
         StringBuilder body =
@@ -315,7 +315,7 @@ final class ConfigImportFlow {
         if (!o.needRestart().isEmpty() && restart != null) {
             alert.getButtonTypes().setAll(restartNow, ButtonType.CLOSE);
         }
-        if (alert.showAndWait().orElse(ButtonType.CLOSE) == restartNow && restart != null) {
+        if (Dialogs.showAndWait(alert).orElse(ButtonType.CLOSE) == restartNow && restart != null) {
             restart.run();
         }
     }

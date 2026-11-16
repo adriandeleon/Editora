@@ -1677,7 +1677,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.closeProject.title"));
         confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(cancel) != close) {
+        if (Dialogs.showAndWait(confirm).orElse(cancel) != close) {
             return;
         }
         if (windowManager != null) {
@@ -1705,11 +1705,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.noProjectToDelete"));
             return;
         }
-        if (!Confirm.ask(
-                stage,
-                tr("dialog.deleteProject.title"),
-                tr("dialog.deleteProject.body", p.name()),
-                tr("confirm.action.delete"))) {
+        if (!Confirm.ask(stage, deleteProjectQuestion(p.name()))) {
             return;
         }
         // Close the project's window first (persisting its session + saving dirty buffers); a cancelled
@@ -2075,21 +2071,46 @@ public class MainController implements com.editora.mcp.McpBridge {
         return item;
     }
 
+    /** The words of the question before the project named {@code name} is deleted from the project list. */
+    static Confirm.Question deleteProjectQuestion(String name) {
+        return new Confirm.Question(
+                tr("dialog.deleteProject.title"),
+                null,
+                tr("dialog.deleteProject.body", name),
+                tr("confirm.action.delete"));
+    }
+
+    /** The words of the question before {@code path} is dropped from the recent files. Its answer: Remove (0). */
+    static Confirm.Choice removeRecentQuestion(Path path) {
+        return Confirm.choice(
+                tr("dialog.removeRecent.title"),
+                tr("dialog.removeRecent.header", String.valueOf(path.getFileName())),
+                path.toString(),
+                tr("dialog.removeRecent.remove"));
+    }
+
+    /** The words of the question before the recent files are cleared. Its answer: Clear (0). */
+    static Confirm.Choice clearRecentQuestion() {
+        return Confirm.choice(
+                tr("dialog.clearRecent.title"), tr("dialog.clearRecent.header"), null, tr("dialog.clearRecent.clear"));
+    }
+
     /** Asks before dropping {@code path} from the recent files; the full path tells same-named files apart. */
     private void confirmRemoveRecent(Path path) {
         if (recentFiles == null) {
             return;
         }
+        Confirm.Choice words = removeRecentQuestion(path);
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(stage);
-        alert.setTitle(tr("dialog.removeRecent.title"));
-        alert.setHeaderText(tr("dialog.removeRecent.header", path.getFileName().toString()));
-        alert.setContentText(path.toString());
-        ButtonType remove = new ButtonType(tr("dialog.removeRecent.remove"));
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
+        alert.setContentText(words.message());
+        ButtonType remove = new ButtonType(words.answer(0));
         ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(remove, cancel);
         Dialogs.destructive(alert, remove);
-        if (alert.showAndWait().orElse(cancel) == remove) {
+        if (Dialogs.showAndWait(alert).orElse(cancel) == remove) {
             recentFiles.remove(path);
         }
     }
@@ -3014,7 +3035,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         confirm.setTitle(tr("dialog.mcp.enableTitle"));
         confirm.setHeaderText(tr("dialog.mcp.enableHeader"));
         UiZoom.minWidth(confirm.getDialogPane(), 480);
-        return confirm.showAndWait().orElse(cancel) == enable;
+        return Dialogs.showAndWait(confirm).orElse(cancel) == enable;
     }
 
     /** Opens Settings on the Workspace page, where the trusted-folder list lives ({@code workspace.manageTrust}). */
@@ -3097,7 +3118,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Path root = HttpSecretGate.trustRoot(file, projectRoot());
         TrustPrompts.Prompt prompt = TrustPrompts.httpSecrets(stage, root, reads, hosts);
-        if (prompt.alert().showAndWait().orElse(Dialogs.cancelOf(prompt.alert())) != prompt.trust()) {
+        if (Dialogs.showAndWait(prompt.alert()).orElse(Dialogs.cancelOf(prompt.alert())) != prompt.trust()) {
             return false;
         }
         config.getTrustStore().trust(root);
@@ -3114,7 +3135,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Path root = HttpSecretGate.trustRoot(file, projectRoot());
         TrustPrompts.Prompt prompt = TrustPrompts.httpScripts(stage, root, file);
-        if (prompt.alert().showAndWait().orElse(Dialogs.cancelOf(prompt.alert())) != prompt.trust()) {
+        if (Dialogs.showAndWait(prompt.alert()).orElse(Dialogs.cancelOf(prompt.alert())) != prompt.trust()) {
             return false;
         }
         config.getTrustStore().trust(root);
@@ -4155,16 +4176,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (recentFiles == null || recentFiles.getList().isEmpty()) {
             return;
         }
+        Confirm.Choice words = clearRecentQuestion();
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(stage);
-        alert.setTitle(tr("dialog.clearRecent.title"));
-        alert.setHeaderText(tr("dialog.clearRecent.header"));
-        alert.setContentText(null);
-        ButtonType clear = new ButtonType(tr("dialog.clearRecent.clear"));
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
+        alert.setContentText(words.message());
+        ButtonType clear = new ButtonType(words.answer(0));
         ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(clear, cancel);
         Dialogs.destructive(alert, clear);
-        if (alert.showAndWait().orElse(cancel) == clear) {
+        if (Dialogs.showAndWait(alert).orElse(cancel) == clear) {
             recentFiles.clear();
             setStatus(tr("status.recentCleared"));
         }
@@ -5524,7 +5546,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     alert.setHeaderText(
                             tr(failure == null ? "dialog.exportConfig.done" : "dialog.exportConfig.failed"));
                     alert.setContentText(detail);
-                    alert.showAndWait();
+                    Dialogs.showAndWait(alert);
                 }));
     }
 

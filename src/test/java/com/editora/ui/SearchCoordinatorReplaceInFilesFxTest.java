@@ -55,6 +55,55 @@ class SearchCoordinatorReplaceInFilesFxTest {
         FxTestSupport.bootToolkit();
     }
 
+    /** The question before Replace All, answered through the hook with no window: only its action replaces. */
+    @Test
+    void theReplaceAllQuestionIsAnsweredWithNoDialog(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope();
+                DialogAnswers answers =
+                        DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            Path one = Files.writeString(dir.resolve("one.txt"), "old one");
+            Path two = Files.writeString(dir.resolve("two.txt"), "old two");
+            RecordingHost host = new RecordingHost();
+            SearchCoordinator coordinator = coordinator(
+                    host, new HashMap<>(), (file, content, completion) -> completion.accept(true), null, null);
+            async.onClose(coordinator::shutdown);
+
+            SearchCoordinator.ReplaceResult cancelled = async.await(
+                    FxTestSupport.callOnFx(() -> coordinator.replaceInFiles(QUERY, "new", List.of(one, two))));
+            assertTrue(cancelled.cancelled());
+            assertEquals("old one", Files.readString(one), "Cancel replaces nothing");
+            Dialogs.Asked asked = answers.only();
+            Confirm.Choice words = SearchCoordinator.replaceInFilesQuestion(2);
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(
+                                    words.answer(0), javafx.scene.control.ButtonBar.ButtonData.OK_DONE, false, true),
+                            new Dialogs.Answer(
+                                    words.cancel(),
+                                    javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE,
+                                    true,
+                                    false)),
+                    asked.answers(),
+                    "Replace All is red and never the default; Cancel is");
+
+            answers.nowClosing();
+            assertTrue(async.await(
+                            FxTestSupport.callOnFx(() -> coordinator.replaceInFiles(QUERY, "new", List.of(one, two))))
+                    .cancelled());
+            assertEquals("old two", Files.readString(two), "closing the question replaces nothing");
+
+            answers.nowPressing(words.answer(0));
+            SearchCoordinator.ReplaceResult replaced = async.await(
+                    FxTestSupport.callOnFx(() -> coordinator.replaceInFiles(QUERY, "new", List.of(one, two))));
+            assertFalse(replaced.cancelled());
+            assertEquals(2, replaced.changedFiles());
+            assertEquals("new one", Files.readString(one));
+            assertEquals("new two", Files.readString(two));
+            assertEquals(3, answers.asked().size());
+        }
+    }
+
     @Test
     void failedDurableHistoryLeavesTheClosedFileIntactAndReportsPartialSuccess(@TempDir Path dir) throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
@@ -344,7 +393,10 @@ class SearchCoordinatorReplaceInFilesFxTest {
                 new SearchCoordinator.ReplaceSupport(
                         file -> openBuffers.get(key(file)), buffer -> false, historyRecorder, sequencer::begin),
                 new SearchCoordinator.Persistence(query -> {}, FXCollections::observableArrayList, found -> {}));
-        return FxTestSupport.callOnFx(() -> new SearchCoordinator(host, ops, worker, confirmation));
+        // With no confirmation of the test's own, the coordinator asks its question as the app does.
+        return FxTestSupport.callOnFx(() -> confirmation == null
+                ? new SearchCoordinator(host, ops)
+                : new SearchCoordinator(host, ops, worker, confirmation));
     }
 
     private static EditorBuffer dirtyBuffer(Path file, String baseline, String unsaved) throws Exception {

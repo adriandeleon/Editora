@@ -2219,7 +2219,7 @@ final class LspCoordinator {
         Path name = root.getFileName();
         confirm.setHeaderText(TrustPromptText.header(name == null ? root.toString() : name.toString(), requests));
         UiZoom.minWidth(confirm.getDialogPane(), 520);
-        return confirm.showAndWait().orElse(cancel) == trust;
+        return Dialogs.showAndWait(confirm).orElse(cancel) == trust;
     }
 
     /**

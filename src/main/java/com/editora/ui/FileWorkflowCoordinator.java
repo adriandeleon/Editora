@@ -1682,16 +1682,14 @@ final class FileWorkflowCoordinator {
         if (path == null) {
             return; // untitled: there is no file to have changed
         }
-        String name = path.getFileName().toString();
+        Confirm.Choice words = ExternalChangePrompt.question(path.getFileName().toString(), buffer.isDirty());
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(host.stage());
-        alert.setTitle(tr("dialog.externalChange.title"));
-        alert.setHeaderText(tr("dialog.externalChange.header", name));
-        alert.setContentText(buffer.isDirty() ? tr("dialog.externalChange.dirty") : tr("dialog.externalChange.clean"));
-        ButtonType reload = new ButtonType(tr("dialog.externalChange.reload"));
-        ButtonType keep = new ButtonType(
-                buffer.isDirty() ? tr("dialog.externalChange.keepMine") : tr("dialog.externalChange.keep"),
-                ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
+        alert.setContentText(words.message());
+        ButtonType reload = new ButtonType(words.answer(0));
+        ButtonType keep = new ButtonType(words.cancel(), ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(reload, keep);
         if (buffer.isDirty()) {
             // Reload discards the unsaved edits: red, and never the default. Keep is this question's Cancel.
@@ -1700,7 +1698,7 @@ final class FileWorkflowCoordinator {
         } else {
             ExternalChangePrompt.reloadIsTheKeyboardDefault(alert, reload);
         }
-        if (alert.showAndWait().filter(b -> b == reload).isPresent()) {
+        if (Dialogs.showAndWait(alert).filter(b -> b == reload).isPresent()) {
             reloadFromDisk(tab, buffer);
         } else {
             buffer.setDiskSnapshot(mtime, size); // keep the editor's version, stop nagging about this change
@@ -2132,13 +2130,25 @@ final class FileWorkflowCoordinator {
     }
 
     private boolean confirmRevertDialog(EditorBuffer buffer) {
-        return Confirm.ask(
-                host.stage(),
-                new Confirm.Question(
-                        tr("command.file.revert"),
-                        tr("dialog.revert.header", buffer.getTitle()),
-                        tr("dialog.revert.content"),
-                        tr("confirm.action.revert")));
+        return Confirm.ask(host.stage(), revertQuestion(buffer.getTitle()));
+    }
+
+    /** The words of the question before a revert discards the unsaved changes of the tab titled {@code title}. */
+    static Confirm.Question revertQuestion(String title) {
+        return new Confirm.Question(
+                tr("command.file.revert"),
+                tr("dialog.revert.header", title),
+                tr("dialog.revert.content"),
+                tr("confirm.action.revert"));
+    }
+
+    /** The words of the question before a Save As or an export replaces the existing file {@code fileName}. */
+    static Confirm.Question overwriteQuestion(String fileName) {
+        return new Confirm.Question(
+                tr("dialog.saveAs.overwrite.title"),
+                tr("dialog.saveAs.overwrite.header", fileName),
+                tr("dialog.saveAs.overwrite.content"),
+                tr("confirm.action.overwrite"));
     }
 
     /**
@@ -2455,13 +2465,7 @@ final class FileWorkflowCoordinator {
 
     /** Native confirmation before overwriting an existing (different) file from the keyboard Save-As prompt. */
     boolean confirmOverwrite(Path target) {
-        return Confirm.ask(
-                host.stage(),
-                new Confirm.Question(
-                        tr("dialog.saveAs.overwrite.title"),
-                        tr("dialog.saveAs.overwrite.header", target.getFileName()),
-                        tr("dialog.saveAs.overwrite.content"),
-                        tr("confirm.action.overwrite")));
+        return Confirm.ask(host.stage(), overwriteQuestion(String.valueOf(target.getFileName())));
     }
 
     /**
@@ -2723,16 +2727,38 @@ final class FileWorkflowCoordinator {
     /** Buffers the user agreed to normalise although they hold binary data. FX-thread only. */
     private final Set<EditorBuffer> mixedBinaryAgreed = Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
+    /**
+     * The words of the question before a save rewrites every line break of {@code fileName}, a file that mixes line
+     * endings and holds binary data, as {@code lineEnding}.
+     */
+    static Confirm.Question mixedBinaryQuestion(String fileName, String lineEnding) {
+        return new Confirm.Question(
+                tr("dialog.saveMixedBinary.title"),
+                tr("dialog.saveMixedBinary.header", fileName),
+                tr("dialog.saveMixedBinary.content", lineEnding),
+                tr("dialog.saveMixedBinary.save"));
+    }
+
+    /** The words of the question before a save replaces {@code fileName}, a file that is read-only on disk. */
+    static Confirm.Question replaceReadOnlyQuestion(String fileName) {
+        return new Confirm.Question(
+                tr("dialog.saveReadOnly.title"),
+                tr("dialog.saveReadOnly.header", fileName),
+                tr("dialog.saveReadOnly.content"),
+                tr("dialog.saveReadOnly.overwrite"));
+    }
+
     private boolean askMixedBinaryConsent(Path target, String lineEnding) {
+        Confirm.Question words = mixedBinaryQuestion(String.valueOf(target.getFileName()), lineEnding);
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.WARNING));
         alert.initOwner(host.stage());
-        alert.setTitle(tr("dialog.saveMixedBinary.title"));
-        alert.setHeaderText(tr("dialog.saveMixedBinary.header", target.getFileName()));
-        alert.setContentText(tr("dialog.saveMixedBinary.content", lineEnding));
-        ButtonType rewrite = new ButtonType(tr("dialog.saveMixedBinary.save"), ButtonBar.ButtonData.OTHER);
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
+        alert.setContentText(words.message());
+        ButtonType rewrite = new ButtonType(words.action(), ButtonBar.ButtonData.OTHER);
         ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(cancel, rewrite);
-        return alert.showAndWait().orElse(cancel) == rewrite;
+        return Dialogs.showAndWait(alert).orElse(cancel) == rewrite;
     }
 
     /**
@@ -2844,22 +2870,22 @@ final class FileWorkflowCoordinator {
                     choice.complete(RemoteSaveChoice.CANCEL);
                     return;
                 }
+                Confirm.Choice words = ExternalChangePrompt.saveConflictQuestion(
+                        String.valueOf(request.target().getFileName()));
                 Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
                 alert.initOwner(host.stage());
-                alert.setTitle(tr("dialog.externalChange.title"));
-                alert.setHeaderText(
-                        tr("dialog.externalChange.header", request.target().getFileName()));
-                alert.setContentText(tr("dialog.externalChange.dirty"));
-                ButtonType reload = new ButtonType(tr("dialog.externalChange.reload"), ButtonBar.ButtonData.LEFT);
-                ButtonType overwrite =
-                        new ButtonType(tr("dialog.externalChange.keepMine"), ButtonBar.ButtonData.OK_DONE);
+                alert.setTitle(words.title());
+                alert.setHeaderText(words.header());
+                alert.setContentText(words.message());
+                ButtonType reload = new ButtonType(words.answer(0), ButtonBar.ButtonData.LEFT);
+                ButtonType overwrite = new ButtonType(words.answer(1), ButtonBar.ButtonData.OK_DONE);
                 ButtonType cancel = Dialogs.cancel();
                 alert.getButtonTypes().setAll(reload, overwrite, cancel);
                 // Reload discards the unsaved edits: red, and never the default. Saving is an option here, so
                 // Keep Mine stays the default button, as Save does in the unsaved-changes question.
                 Dialogs.destructive(alert, reload);
                 Dialogs.defaultTo(alert, overwrite);
-                ButtonType selected = alert.showAndWait().orElse(cancel);
+                ButtonType selected = Dialogs.showAndWait(alert).orElse(cancel);
                 if (selected == reload) {
                     invalidatePendingWrite(request.target());
                     Tab tab = host.editorArea().tabs().stream()
@@ -2914,16 +2940,16 @@ final class FileWorkflowCoordinator {
                     host.setStatus(tr("status.autoSave.cannotWriteReadOnly", target.getFileName()));
                     answer.complete(false);
                 } else {
+                    Confirm.Question words = replaceReadOnlyQuestion(String.valueOf(target.getFileName()));
                     Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
                     alert.initOwner(host.stage());
-                    alert.setTitle(tr("dialog.saveReadOnly.title"));
-                    alert.setHeaderText(tr("dialog.saveReadOnly.header", target.getFileName()));
-                    alert.setContentText(tr("dialog.saveReadOnly.content"));
-                    ButtonType overwrite =
-                            new ButtonType(tr("dialog.saveReadOnly.overwrite"), ButtonBar.ButtonData.OK_DONE);
+                    alert.setTitle(words.title());
+                    alert.setHeaderText(words.header());
+                    alert.setContentText(words.message());
+                    ButtonType overwrite = new ButtonType(words.action(), ButtonBar.ButtonData.OK_DONE);
                     ButtonType cancel = Dialogs.cancel();
                     alert.getButtonTypes().setAll(overwrite, cancel);
-                    boolean agreed = alert.showAndWait().orElse(cancel) == overwrite;
+                    boolean agreed = Dialogs.showAndWait(alert).orElse(cancel) == overwrite;
                     if (agreed) {
                         readOnlyOverwrites.put(buffer, target);
                     } else {

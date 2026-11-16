@@ -54,7 +54,7 @@ abstract class BuildTrustOps implements BuildCoordinator.Ops {
     @Override
     public boolean confirmTrust(@Nullable Path root, BuildTrust.Summary summary) {
         TrustPrompts.Prompt prompt = TrustPrompts.buildProject(owner.get(), root, summary);
-        return prompt.alert().showAndWait().orElse(ButtonType.CANCEL) == prompt.trust();
+        return Dialogs.showAndWait(prompt.alert()).orElse(ButtonType.CANCEL) == prompt.trust();
     }
 
     @Override

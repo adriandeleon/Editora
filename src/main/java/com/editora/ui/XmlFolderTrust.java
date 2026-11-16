@@ -72,7 +72,7 @@ final class XmlFolderTrust {
     /** Asks before trusting (TEST SEAM: a test answers without a dialog). */
     BiPredicate<Window, Path> confirmer = (owner, root) -> {
         TrustPrompts.Prompt prompt = TrustPrompts.folder(owner, root);
-        return prompt.alert().showAndWait().orElse(ButtonType.CANCEL) == prompt.trust();
+        return Dialogs.showAndWait(prompt.alert()).orElse(ButtonType.CANCEL) == prompt.trust();
     };
 
     XmlFolderTrust(LspCoordinator lsp, CoordinatorHost host, LspManager lspManager, LspCoordinator.Ops ops) {

@@ -347,7 +347,7 @@ final class GitBranchCoordinator {
     /** Asks {@link #deleteBranchQuestion}; on Cancel the status line says the branch was kept. */
     private boolean confirmDelete(String name, int unmerged) {
         Confirm.Question question = deleteBranchQuestion(name, unmerged);
-        if (git().confirmDestructive(question.title(), question.message(), question.action())) {
+        if (git().confirmDestructive(question)) {
             return true;
         }
         ui().setStatus(tr("status.git.branchKept", name));
@@ -400,10 +400,7 @@ final class GitBranchCoordinator {
             ui().setError(tr("status.git.unsafeRef", nz(remoteBranch)));
             return;
         }
-        if (!git().confirmDestructive(
-                        tr("dialog.deleteRemoteBranch.title"),
-                        tr("dialog.deleteRemoteBranch.confirm", target.branch(), target.remote()),
-                        tr("dialog.deleteRemoteBranch"))) {
+        if (!git().confirmDestructive(deleteRemoteBranchQuestion(target.branch(), target.remote()))) {
             return;
         }
         ui().setStatus(tr("status.gitRunning", tr("gitlabel.push")));
@@ -736,27 +733,72 @@ final class GitBranchCoordinator {
         CANCEL
     }
 
-    private void offerAfterRejection(Path root, String branch, String upstream) {
-        ButtonType pull = new ButtonType(tr("dialog.pushRejected.pull"), ButtonBar.ButtonData.YES);
-        ButtonType force = new ButtonType(tr("dialog.pushRejected.force"), ButtonBar.ButtonData.OTHER);
-        ButtonType cancel = Dialogs.cancel();
-        Alert alert = Dialogs.styled(new Alert(
-                Alert.AlertType.WARNING,
+    /** The words of the question before {@code branch} is deleted on {@code remote}. */
+    static Confirm.Question deleteRemoteBranchQuestion(String branch, String remote) {
+        return new Confirm.Question(
+                tr("dialog.deleteRemoteBranch.title"),
+                null,
+                tr("dialog.deleteRemoteBranch.confirm", branch, remote),
+                tr("dialog.deleteRemoteBranch"));
+    }
+
+    /** The words of the question before a force push of {@code branch} overwrites {@code target}. */
+    static Confirm.Question forcePushQuestion(String branch, String target) {
+        return new Confirm.Question(
+                tr("dialog.pushForce.title"),
+                null,
+                tr("dialog.pushForce.confirm", branch, target),
+                tr("dialog.pushForce"));
+    }
+
+    /** The words of the question before the remote {@code name} is removed. */
+    static Confirm.Question removeRemoteQuestion(String name) {
+        return new Confirm.Question(
+                tr("remotes.remove"), null, tr("dialog.remoteRemove.confirm", name), tr("dialog.remoteRemove"));
+    }
+
+    /**
+     * The words of the question before the worktree at {@code path} is removed; {@code dirty} when git refused
+     * because it has changes, and the answer forces it.
+     */
+    static Confirm.Question removeWorktreeQuestion(String path, boolean dirty) {
+        return new Confirm.Question(
+                tr("worktrees.remove"),
+                null,
+                tr(dirty ? "dialog.worktreeRemove.dirty" : "dialog.worktreeRemove.confirm", path),
+                tr(dirty ? "dialog.worktreeRemove.force" : "dialog.worktreeRemove"));
+    }
+
+    /**
+     * The words of the question after the push of {@code branch} to {@code upstream} (blank: "the remote") was
+     * rejected. Its answers: Pull, Then Push (0) and Force Push (1).
+     */
+    static Confirm.Choice rejectedPushQuestion(String branch, String upstream) {
+        return Confirm.choice(
+                tr("dialog.pushRejected.title"),
+                null,
                 tr(
                         "dialog.pushRejected.content",
                         branch,
                         upstream.isBlank() ? tr("dialog.pushRejected.remote") : upstream),
-                pull,
-                force,
-                cancel));
+                tr("dialog.pushRejected.pull"),
+                tr("dialog.pushRejected.force"));
+    }
+
+    private void offerAfterRejection(Path root, String branch, String upstream) {
+        Confirm.Choice words = rejectedPushQuestion(branch, upstream);
+        ButtonType pull = new ButtonType(words.answer(0), ButtonBar.ButtonData.YES);
+        ButtonType force = new ButtonType(words.answer(1), ButtonBar.ButtonData.OTHER);
+        ButtonType cancel = Dialogs.cancel();
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.WARNING, words.message(), pull, force, cancel));
         alert.initOwner(ui().window());
-        alert.setTitle(tr("dialog.pushRejected.title"));
-        alert.setHeaderText(null);
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
         // The force push is red and never the default; the safe answer beside it (pull, then push) stays the
         // default button, as Save does in the unsaved-changes question.
         Dialogs.destructive(alert, force);
         Dialogs.defaultTo(alert, pull);
-        ButtonType answer = alert.showAndWait().orElse(cancel);
+        ButtonType answer = Dialogs.showAndWait(alert).orElse(cancel);
         answerRejectedPush(
                 root,
                 branch,
@@ -818,10 +860,7 @@ final class GitBranchCoordinator {
         }
         service().pushRemoteOf(root, branch, remote -> {
             String target = upstream.isBlank() ? remote + "/" + branch : upstream;
-            if (git().confirmDestructive(
-                            tr("dialog.pushForce.title"),
-                            tr("dialog.pushForce.confirm", branch, target),
-                            tr("dialog.pushForce"))) {
+            if (git().confirmDestructive(forcePushQuestion(branch, target))) {
                 forcePush(root, branch, upstream);
             }
         });
@@ -1176,8 +1215,7 @@ final class GitBranchCoordinator {
         if (root == null || unsafe(name)) {
             return;
         }
-        if (!git().confirmDestructive(
-                        tr("remotes.remove"), tr("dialog.remoteRemove.confirm", name), tr("dialog.remoteRemove"))) {
+        if (!git().confirmDestructive(removeRemoteQuestion(name))) {
             after.run();
             return;
         }
@@ -1473,10 +1511,7 @@ final class GitBranchCoordinator {
             ui().setStatus(tr("status.git.worktreeCurrent"));
             return;
         }
-        if (git().confirmDestructive(
-                        tr("worktrees.remove"),
-                        tr("dialog.worktreeRemove.confirm", tree.path()),
-                        tr("dialog.worktreeRemove"))) {
+        if (git().confirmDestructive(removeWorktreeQuestion(tree.path(), false))) {
             removeWorktree(root, tree.path(), false, after);
         } else {
             after.run();
@@ -1498,11 +1533,7 @@ final class GitBranchCoordinator {
                                 }
                                 case DIRTY_WORKTREE ->
                                     Platform.runLater(() -> {
-                                        if (!force
-                                                && git().confirmDestructive(
-                                                                tr("worktrees.remove"),
-                                                                tr("dialog.worktreeRemove.dirty", path),
-                                                                tr("dialog.worktreeRemove.force"))) {
+                                        if (!force && git().confirmDestructive(removeWorktreeQuestion(path, true))) {
                                             removeWorktree(root, path, true, after);
                                         } else {
                                             ui().setStatus(tr("status.git.worktreeKept", path));

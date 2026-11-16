@@ -557,6 +557,35 @@ class SettingsListsFxTest {
         });
     }
 
+    /** The question before a snippet's comments are lost by a save: only its Save answers yes. */
+    @Test
+    void theSnippetSaveQuestionIsAnsweredWithNoDialog() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            Object pages = FxTestSupport.field(rig.window, "snippetPages");
+            String message = SnippetsEditor.commentsLostMessage("for-each");
+            java.util.function.BooleanSupplier ask = () ->
+                    (boolean) FxTestSupport.call(pages, "confirmSnippetSave", new Class<?>[] {String.class}, message);
+            try (DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+                assertFalse(ask.getAsBoolean(), "Cancel does not save");
+                Dialogs.Asked asked = answers.only();
+                assertEquals(message, asked.content());
+                assertEquals(
+                        List.of(
+                                new Dialogs.Answer(
+                                        tr("confirm.action.save"), ButtonBar.ButtonData.OK_DONE, false, true),
+                                new Dialogs.Answer(
+                                        tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE, true, false)),
+                        asked.answers(),
+                        "Save is red and never the default; Cancel is");
+                answers.nowClosing();
+                assertFalse(ask.getAsBoolean(), "nor does closing the question");
+                answers.nowPressing(tr("confirm.action.save"));
+                assertTrue(ask.getAsBoolean());
+            }
+        });
+    }
+
     @Test
     void aRecordedChordIsBoundAndCancellingKeepsTheOldOne() throws Exception {
         FxTestSupport.runOnFx(() -> {
@@ -602,24 +631,37 @@ class SettingsListsFxTest {
             record("cmd.0", ctrl(KeyCode.K));
             String typed = SettingsRig.all(row("cmd.0"), TextField.class).get(0).getText();
             keys.chords.put("cmd.1", typed); // whatever the platform spells Ctrl+K as, cmd.1 has it
-            List<SettingsRig.Shown> asked = SettingsRig.answering(
-                    ButtonBar.ButtonData.CANCEL_CLOSE,
-                    () -> SettingsRig.button(row("cmd.0"), tr("settings.shortcuts.save"))
-                            .fire());
-            assertEquals(1, asked.size());
-            assertEquals(tr("dialog.shortcut.conflict.title"), asked.get(0).title());
-            assertTrue(
-                    asked.get(0).content().contains(typed + "  —  Title of cmd.1"),
-                    asked.get(0).content());
-            assertEquals(List.of(), keys.log, "declined: nothing is rebound");
-            assertEquals("C-j", keys.chords.get("cmd.0"));
+            // Answered through the hook, with no window: Cancel, the question closed, then its action.
+            try (DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+                SettingsRig.button(row("cmd.0"), tr("settings.shortcuts.save")).fire();
+                List<Dialogs.Asked> asked = answers.asked();
+                assertEquals(1, asked.size());
+                assertEquals(tr("dialog.shortcut.conflict.title"), asked.get(0).title());
+                assertTrue(
+                        asked.get(0).content().contains(typed + "  —  Title of cmd.1"),
+                        asked.get(0).content());
+                assertEquals(
+                        List.of(
+                                new Dialogs.Answer(
+                                        tr("confirm.action.bind"), ButtonBar.ButtonData.OK_DONE, false, true),
+                                new Dialogs.Answer(
+                                        tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE, true, false)),
+                        asked.get(0).answers(),
+                        "Bind is red and never the default; Cancel is");
+                assertEquals(List.of(), keys.log, "declined: nothing is rebound");
+                assertEquals("C-j", keys.chords.get("cmd.0"));
 
-            record("cmd.0", ctrl(KeyCode.K));
-            asked = SettingsRig.answering(
-                    ButtonBar.ButtonData.OK_DONE,
-                    () -> SettingsRig.button(row("cmd.0"), tr("settings.shortcuts.save"))
-                            .fire());
-            assertEquals(1, asked.size());
+                answers.nowClosing();
+                record("cmd.0", ctrl(KeyCode.K));
+                SettingsRig.button(row("cmd.0"), tr("settings.shortcuts.save")).fire();
+                assertEquals(List.of(), keys.log, "the question closed: nothing is rebound");
+
+                answers.clear();
+                answers.nowPressing(ButtonBar.ButtonData.OK_DONE);
+                record("cmd.0", ctrl(KeyCode.K));
+                SettingsRig.button(row("cmd.0"), tr("settings.shortcuts.save")).fire();
+                assertEquals(1, answers.asked().size());
+            }
             assertEquals(List.of("rebind cmd.0 " + typed), keys.log);
             assertEquals(typed, keys.chords.get("cmd.0"));
             assertNull(keys.chords.get("cmd.1"), "the other command lost the chord");

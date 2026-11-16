@@ -1090,22 +1090,17 @@ final class BuildCoordinator {
 
     /** The "Stop and run" question: a modal confirmation whose default is Cancel (Enter must not kill a build). */
     private static boolean confirmStopAndRun(javafx.stage.Window owner, String toolName, String task) {
-        javafx.scene.control.ButtonType accept = new javafx.scene.control.ButtonType(
-                tr("dialog.buildStopAndRun.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.ButtonType cancel = Dialogs.cancel();
-        javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                tr("dialog.buildStopAndRun.body", task),
-                accept,
-                cancel));
-        if (owner != null) {
-            alert.initOwner(owner);
-        }
-        alert.setTitle(tr("dialog.buildStopAndRun.title", toolName));
-        alert.setHeaderText(tr("dialog.buildStopAndRun.header", toolName));
         // It ends a running build: the action is red and Cancel is the default.
-        Dialogs.destructive(alert, accept);
-        return alert.showAndWait().orElse(cancel) == accept;
+        return Confirm.ask(owner, stopAndRunQuestion(toolName, task));
+    }
+
+    /** The words of the "Stop and run" question: the tool whose build is running and the task asked for. */
+    static Confirm.Question stopAndRunQuestion(String toolName, String task) {
+        return new Confirm.Question(
+                tr("dialog.buildStopAndRun.title", toolName),
+                tr("dialog.buildStopAndRun.header", toolName),
+                tr("dialog.buildStopAndRun.body", task),
+                tr("dialog.buildStopAndRun.accept"));
     }
 
     /** Force re-parses the marker file right now (e.g. after an external edit) — {@code <tool>.refresh}. */

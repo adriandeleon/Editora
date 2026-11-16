@@ -667,15 +667,23 @@ final class SearchCoordinator {
         }
     }
 
+    /**
+     * The words of the question before Replace All changes {@code fileCount} files. Its answer: Replace All (0).
+     * It has no title of its own: the dialog keeps the one JavaFX gives a confirmation.
+     */
+    static Confirm.Choice replaceInFilesQuestion(int fileCount) {
+        return Confirm.choice(null, null, tr("search.replaceConfirm", fileCount), tr("search.replaceAll"));
+    }
+
     private static boolean showReplaceConfirmation(CoordinatorHost host, int fileCount) {
-        ButtonType replace = Dialogs.action(tr("search.replaceAll"));
+        Confirm.Choice words = replaceInFilesQuestion(fileCount);
+        ButtonType replace = Dialogs.action(words.answer(0));
         ButtonType cancel = Dialogs.cancel();
-        Alert confirm = Dialogs.styled(
-                new Alert(Alert.AlertType.CONFIRMATION, tr("search.replaceConfirm", fileCount), replace, cancel));
+        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, words.message(), replace, cancel));
         confirm.initOwner(host.window());
-        confirm.setHeaderText(null);
+        confirm.setHeaderText(words.header());
         Dialogs.destructive(confirm, replace);
-        return confirm.showAndWait().orElse(cancel) == replace;
+        return Dialogs.showAndWait(confirm).orElse(cancel) == replace;
     }
 
     private void runClosedReplacements(

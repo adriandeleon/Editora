@@ -140,23 +140,22 @@ final class XmlFormatCoordinator {
 
     /** The question before a large-file format that multiplies the line count; Cancel is the default. */
     private static boolean askGrowth(EditorBuffer buffer, long[] lines) {
-        var format = new javafx.scene.control.ButtonType(
-                tr("dialog.xml.formatGrowth.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        var cancel = Dialogs.cancel();
-        var alert = Dialogs.styled(new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                tr("dialog.xml.formatGrowth.body", String.format("%,d", lines[0]), String.format("%,d", lines[1])),
-                format,
-                cancel));
         var scene = buffer.getArea().getScene();
-        if (scene != null && scene.getWindow() != null) {
-            alert.initOwner(scene.getWindow());
-        }
-        alert.setTitle(tr("noUndo.op.format"));
-        alert.setHeaderText(growthHeader(buffer));
         // Undo cannot take the change back: the action is red and Cancel is the default.
-        Dialogs.destructive(alert, format);
-        return alert.showAndWait().orElse(cancel) == format;
+        return Confirm.ask(
+                scene == null ? null : scene.getWindow(), growthQuestion(buffer.getTitle(), lines[0], lines[1]));
+    }
+
+    /**
+     * The words of the question before a format takes the large file titled {@code title} from {@code before} lines
+     * to {@code after}.
+     */
+    static Confirm.Question growthQuestion(String title, long before, long after) {
+        return new Confirm.Question(
+                tr("noUndo.op.format"),
+                tr("dialog.xml.formatGrowth.header", title),
+                tr("dialog.xml.formatGrowth.body", String.format("%,d", before), String.format("%,d", after)),
+                tr("dialog.xml.formatGrowth.accept"));
     }
 
     /**

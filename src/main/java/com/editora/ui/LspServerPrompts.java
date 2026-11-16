@@ -50,12 +50,10 @@ final class LspServerPrompts implements com.editora.lsp.LspClientUi {
         alert.setTitle(serverLabel.apply(serverId));
         alert.setHeaderText(null);
         UiZoom.minWidth(alert.getDialogPane(), 480);
-        alert.setOnHidden(e -> {
-            javafx.scene.control.ButtonType chosen = alert.getResult();
-            answer.complete(
-                    chosen == null || chosen == javafx.scene.control.ButtonType.CLOSE ? null : chosen.getText());
-        });
-        alert.show();
+        Dialogs.show(
+                alert,
+                chosen -> answer.complete(
+                        chosen == null || chosen == javafx.scene.control.ButtonType.CLOSE ? null : chosen.getText()));
         return answer;
     }
 
@@ -71,8 +69,7 @@ final class LspServerPrompts implements com.editora.lsp.LspClientUi {
         if (placeHolder != null) {
             dialog.getEditor().setPromptText(placeHolder);
         }
-        dialog.setOnHidden(e -> answer.complete(dialog.getResult()));
-        dialog.show();
+        Dialogs.show(dialog, answer::complete);
         return answer;
     }
 

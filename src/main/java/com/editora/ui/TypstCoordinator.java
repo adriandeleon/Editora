@@ -96,9 +96,14 @@ final class TypstCoordinator {
 
     private boolean confirmReplaceDialog(java.util.List<Path> existing) {
         // Replacing files nobody named is the destructive answer: Enter must not give it.
-        return Confirm.ask(
-                host.window(),
+        return Confirm.ask(host.window(), replaceQuestion(existing));
+    }
+
+    /** The words of the question before an export replaces the page files {@code existing}. */
+    static Confirm.Question replaceQuestion(java.util.List<Path> existing) {
+        return new Confirm.Question(
                 tr("dialog.typstExport.title"),
+                null,
                 tr("dialog.typstExport.replaceBody", replaceList(existing)),
                 tr("confirm.action.replace"));
     }
@@ -131,7 +136,7 @@ final class TypstCoordinator {
             err.setTitle(tr("dialog.typstExport.title"));
             err.setHeaderText(tr("status.typst.exportFailed", ""));
             err.setContentText(msg);
-            err.showAndWait();
+            Dialogs.showAndWait(err);
             return;
         }
         if (!pending.ok()) {

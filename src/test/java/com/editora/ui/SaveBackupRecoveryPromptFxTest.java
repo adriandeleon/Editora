@@ -84,6 +84,63 @@ class SaveBackupRecoveryPromptFxTest {
         }
     }
 
+    /** The question answered through the hook, with no window: only its own buttons restore or delete. */
+    @Test
+    void theQuestionIsAnsweredWithNoDialog() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope();
+                DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path torn = Files.writeString(dir.resolve("torn.txt"), "half a li");
+            Path backup = backupOf(fx, torn, "the whole file\nas it was\n", daysAgo(2));
+
+            SaveBackupRecovery.offerAtStartup(fx.shared, stage(fx));
+            SaveGuardsFxTest.awaitOnFx(
+                    async, "the question", () -> answers.asked().size() == 1);
+            async.awaitFx();
+            Dialogs.Asked asked = answers.only();
+            assertEquals(tr("dialog.saveBackup.title"), asked.title());
+            assertEquals(tr("dialog.saveBackup.header", torn.toString()), asked.header());
+            assertTrue(asked.content().contains(backup.toString()), "it says where the backup is");
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(
+                                    tr("dialog.saveBackup.restore"), ButtonBar.ButtonData.OK_DONE, true, false),
+                            new Dialogs.Answer(tr("dialog.saveBackup.keep"), ButtonBar.ButtonData.OTHER, false, true),
+                            new Dialogs.Answer(
+                                    tr("dialog.saveBackup.later"), ButtonBar.ButtonData.CANCEL_CLOSE, false, false)),
+                    asked.answers(),
+                    "Restore is the default; the button that deletes the backup is red and never the default");
+            assertEquals("half a li", Files.readString(torn), "Decide Later changes nothing");
+            assertTrue(Files.exists(backup));
+
+            answers.clear();
+            answers.nowClosing();
+            SaveBackupRecovery.offerAtStartup(fx.shared, stage(fx));
+            SaveGuardsFxTest.awaitOnFx(
+                    async, "the question, again", () -> answers.asked().size() == 1);
+            async.awaitFx();
+            assertEquals("half a li", Files.readString(torn), "closing the question changes nothing");
+            assertTrue(Files.exists(backup), "and the backup is kept");
+
+            // The red button deletes the backup and leaves the file as it is.
+            answers.clear();
+            answers.nowPressing(tr("dialog.saveBackup.keep"));
+            SaveBackupRecovery.offerAtStartup(fx.shared, stage(fx));
+            SaveGuardsFxTest.awaitOnFx(async, "the backup to be deleted", () -> !Files.exists(backup));
+            assertEquals("half a li", Files.readString(torn));
+            assertEquals(List.of(), leftInBackupFolder(fx));
+
+            // Restore puts the previous contents back.
+            Path again = backupOf(fx, torn, "the whole file\nas it was\n", daysAgo(2));
+            answers.clear();
+            answers.nowPressing(tr("dialog.saveBackup.restore"));
+            SaveBackupRecovery.offerAtStartup(fx.shared, stage(fx));
+            SaveGuardsFxTest.awaitOnFx(async, "the restore to finish", () -> !Files.exists(again));
+            assertEquals("the whole file\nas it was\n", Files.readString(torn));
+            assertEquals(1, answers.asked().size());
+        }
+    }
+
     @Test
     void keepLeavesTheFileAsItIsAndRemovesTheBackup() throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {

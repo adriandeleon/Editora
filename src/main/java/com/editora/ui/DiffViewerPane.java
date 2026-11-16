@@ -2502,10 +2502,15 @@ public final class DiffViewerPane implements TabContent {
         String otherText = editableSide == EditableSide.RIGHT ? leftText : rightText;
         javafx.stage.Window owner =
                 root.getScene() == null ? null : root.getScene().getWindow();
-        if (Confirm.ask(
-                owner, tr("diff.applyAll.confirmTitle"), tr("diff.applyAll.confirm"), tr("confirm.action.replace"))) {
+        if (Confirm.ask(owner, applyAllQuestion())) {
             deliverApply(otherText);
         }
+    }
+
+    /** The words of the question before Apply All replaces the whole editable file with the other side. */
+    static Confirm.Question applyAllQuestion() {
+        return new Confirm.Question(
+                tr("diff.applyAll.confirmTitle"), null, tr("diff.applyAll.confirm"), tr("confirm.action.replace"));
     }
 
     private void deliverApply(String text) {

@@ -117,6 +117,66 @@ class ExternalChangeKeepsEditsFxTest {
         }
     }
 
+    /** The prompt answered through the hook, with no window: Reload discards the edits, Keep Mine and a close do not. */
+    @Test
+    void thePromptIsAnsweredWithNoDialog() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope();
+                DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FileWorkflowCoordinator workflows = workflows(fx);
+            Path file = Files.writeString(dir.resolve("hooked.txt"), "on disk\n");
+            EditorBuffer buffer = load(async, fx, file);
+            FxTestSupport.runOnFx(() -> buffer.getArea().insertText(0, "my unsaved edit "));
+            rewrite(file, "changed by another program\n");
+            long mtime = Files.getLastModifiedTime(file).toMillis();
+            long size = Files.size(file);
+
+            FxTestSupport.runOnFx(() -> workflows.promptExternalChange(tabOf(fx, buffer), buffer, mtime, size));
+            Dialogs.Asked asked = answers.only();
+            Confirm.Choice words = ExternalChangePrompt.question("hooked.txt", true);
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.header(), asked.header());
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    java.util.List.of(
+                            new Dialogs.Answer(words.answer(0), ButtonBar.ButtonData.OTHER, false, true),
+                            new Dialogs.Answer(words.cancel(), ButtonBar.ButtonData.CANCEL_CLOSE, true, false)),
+                    asked.answers(),
+                    "Reload is red and never the default; Keep Mine, this question's Cancel, is the default");
+            assertEquals("my unsaved edit on disk\n", FxTestSupport.callOnFx(buffer::getContent), "Keep Mine keeps");
+
+            answers.nowClosing();
+            FxTestSupport.runOnFx(() -> workflows.promptExternalChange(tabOf(fx, buffer), buffer, mtime, size));
+            assertEquals(
+                    "my unsaved edit on disk\n",
+                    FxTestSupport.callOnFx(buffer::getContent),
+                    "closing the prompt keeps the edits too");
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+
+            answers.nowPressing(words.answer(0));
+            FxTestSupport.runOnFx(() -> workflows.promptExternalChange(tabOf(fx, buffer), buffer, mtime, size));
+            SaveGuardsFxTest.awaitOnFx(
+                    async, "the reload", () -> "changed by another program\n".equals(buffer.getContent()));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+            assertEquals(3, answers.asked().size());
+
+            // A tab with no edits loses nothing by reloading: Reload is not red there, and is the default.
+            rewrite(file, "changed again\n");
+            answers.clear();
+            answers.nowPressing(ButtonBar.ButtonData.CANCEL_CLOSE);
+            long mtime2 = Files.getLastModifiedTime(file).toMillis();
+            long size2 = Files.size(file);
+            FxTestSupport.runOnFx(() -> workflows.promptExternalChange(tabOf(fx, buffer), buffer, mtime2, size2));
+            Confirm.Choice clean = ExternalChangePrompt.question("hooked.txt", false);
+            assertEquals(clean.message(), answers.only().content());
+            assertEquals(
+                    java.util.List.of(
+                            new Dialogs.Answer(clean.answer(0), ButtonBar.ButtonData.OTHER, true, false),
+                            new Dialogs.Answer(clean.cancel(), ButtonBar.ButtonData.CANCEL_CLOSE, false, false)),
+                    answers.only().answers());
+        }
+    }
+
     // --- the file is gone ---------------------------------------------------------------------------------
 
     @Test

@@ -1728,17 +1728,24 @@ public class SettingsWindow {
     java.util.function.@Nullable BiPredicate<String, String> confirmLoss;
 
     /**
-     * Asks before a step that loses something. The red button carries {@code action}, the step's own verb, and
-     * Cancel is the default answer.
+     * Asks {@code question} before a step that loses something. The red button carries its action, the step's
+     * own verb, and Cancel is the default answer.
      */
-    boolean askBeforeLoss(String title, String body, String action) {
+    boolean askBeforeLoss(Confirm.Question question) {
         java.util.function.BiPredicate<String, String> answer = confirmLoss;
         if (answer != null) {
-            return answer.test(title, body);
+            return answer.test(question.title(), question.message());
         }
-        Alert confirm = Confirm.dialog(stage, new Confirm.Question(title, null, body, action));
-        UiZoom.minWidth(confirm.getDialogPane(), 460);
-        return Confirm.confirmed(confirm, confirm.showAndWait());
+        return Confirm.ask(stage, question, 460);
+    }
+
+    /** The words of the question before the entry {@code name} of a Settings list (a snippet, an abbreviation) is deleted. */
+    static Confirm.Question deleteEntryQuestion(String name) {
+        return new Confirm.Question(
+                tr("settings.lists.deleteTitle"),
+                null,
+                tr("settings.lists.deleteConfirm", name),
+                tr("confirm.action.delete"));
     }
 
     /** Refreshes this window's toolbar selector after the separate editor persists a change. */
@@ -3247,18 +3254,23 @@ public class SettingsWindow {
         return externalToolsEditor;
     }
 
+    /**
+     * The words of "Delete “name”?" for an external tool. Its answer: Delete (0). It has no title of its own: the
+     * dialog keeps the one JavaFX gives a confirmation.
+     */
+    static Confirm.Choice deleteExternalToolQuestion(String name) {
+        return Confirm.choice(null, null, tr("settings.externalTool.confirmDelete", name), tr("confirm.action.delete"));
+    }
+
     /** "Delete “name”?" with Cancel as the default button, so Enter does not delete. */
     private boolean confirmDelete(String name) {
-        ButtonType delete = Dialogs.action(tr("confirm.action.delete"));
-        Alert a = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("settings.externalTool.confirmDelete", name),
-                delete,
-                Dialogs.cancel()));
+        Confirm.Choice words = deleteExternalToolQuestion(name);
+        ButtonType delete = Dialogs.action(words.answer(0));
+        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, words.message(), delete, Dialogs.cancel()));
         a.initOwner(stage);
-        a.setHeaderText(null);
+        a.setHeaderText(words.header());
         Dialogs.destructive(a, delete);
-        return a.showAndWait().orElse(Dialogs.cancelOf(a)) == delete;
+        return Dialogs.showAndWait(a).orElse(Dialogs.cancelOf(a)) == delete;
     }
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
@@ -3280,10 +3292,7 @@ public class SettingsWindow {
                                 config,
                                 this::apply,
                                 keymapsPage::macroWarn,
-                                name -> askBeforeLoss(
-                                        tr("settings.lists.deleteTitle"),
-                                        tr("settings.lists.deleteConfirm", name),
-                                        tr("confirm.action.delete"))))
+                                name -> askBeforeLoss(deleteEntryQuestion(name))))
                         .node(),
                 "abbrev abbreviation expand text replacement snippet shortcut dictionary emacs");
         return p;

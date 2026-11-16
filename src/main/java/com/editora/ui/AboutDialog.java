@@ -146,7 +146,7 @@ final class AboutDialog {
         // A single Close button; "Copy details" lives in the content so pressing it keeps the panel open.
         alert.getButtonTypes()
                 .setAll(new ButtonType(tr("dialog.close"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE));
-        alert.showAndWait();
+        Dialogs.showAndWait(alert);
     }
 
     /**

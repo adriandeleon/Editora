@@ -287,6 +287,67 @@ class MainControllerTabsFxTest {
         });
     }
 
+    /** The two recent-files questions, answered through the hook with no window. */
+    @Test
+    void theRecentFilesQuestionsAreAnsweredWithNoDialog() throws Exception {
+        Path one = Files.writeString(dir.resolve("one.txt"), "1\n");
+        Path two = Files.writeString(dir.resolve("two.txt"), "2\n");
+        SaveDecisionsFxTest.open(async, fx, one);
+        SaveDecisionsFxTest.open(async, fx, two);
+        MenuButton recent = FxTestSupport.field(controller, "recentButton");
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(controller, "rebuildRecentMenu"));
+        try (DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxTestSupport.runOnFx(() -> pressRemove(recentEntries(recent).get(0)));
+            FxTestSupport.drainFx();
+            Dialogs.Asked asked = answers.only();
+            Confirm.Choice remove = MainController.removeRecentQuestion(two);
+            assertEquals(remove.title(), asked.title());
+            assertEquals(remove.header(), asked.header());
+            assertEquals(two.toString(), asked.content(), "the full path tells same-named files apart");
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(remove.answer(0), ButtonBar.ButtonData.OTHER, false, true),
+                            new Dialogs.Answer(remove.cancel(), ButtonBar.ButtonData.CANCEL_CLOSE, true, false)),
+                    asked.answers(),
+                    "Remove is red and never the default; Cancel is");
+            assertEquals(2, fx.shared.recentFiles().getList().size(), "Cancel keeps the entry");
+
+            answers.nowClosing();
+            FxTestSupport.runOnFx(() -> pressRemove(recentEntries(recent).get(0)));
+            FxTestSupport.drainFx();
+            assertEquals(2, fx.shared.recentFiles().getList().size(), "closing the question keeps it");
+
+            answers.nowPressing(remove.answer(0));
+            FxTestSupport.runOnFx(() -> pressRemove(recentEntries(recent).get(0)));
+            FxTestSupport.drainFx();
+            assertEquals(3, answers.asked().size());
+            assertEquals(List.of(one), List.copyOf(fx.shared.recentFiles().getList()), "only that entry goes");
+
+            answers.clear();
+            answers.nowPressing(ButtonBar.ButtonData.CANCEL_CLOSE);
+            FxTestSupport.runOnFx(() -> FxTestSupport.invoke(controller, "onClearRecent"));
+            Dialogs.Asked clearAsked = answers.only();
+            Confirm.Choice clear = MainController.clearRecentQuestion();
+            assertEquals(clear.title(), clearAsked.title());
+            assertEquals(clear.header(), clearAsked.header());
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(clear.answer(0), ButtonBar.ButtonData.OTHER, false, true),
+                            new Dialogs.Answer(clear.cancel(), ButtonBar.ButtonData.CANCEL_CLOSE, true, false)),
+                    clearAsked.answers());
+            assertEquals(1, fx.shared.recentFiles().getList().size(), "Cancel clears nothing");
+
+            answers.nowClosing();
+            FxTestSupport.runOnFx(() -> FxTestSupport.invoke(controller, "onClearRecent"));
+            assertEquals(1, fx.shared.recentFiles().getList().size(), "closing the question clears nothing");
+
+            answers.nowPressing(clear.answer(0));
+            FxTestSupport.runOnFx(() -> FxTestSupport.invoke(controller, "onClearRecent"));
+            assertTrue(fx.shared.recentFiles().getList().isEmpty());
+            assertEquals(tr("status.recentCleared"), FxTestSupport.callOnFx(this::echo));
+        }
+    }
+
     private static List<CustomMenuItem> recentEntries(MenuButton recent) {
         return recent.getItems().stream()
                 .filter(CustomMenuItem.class::isInstance)
