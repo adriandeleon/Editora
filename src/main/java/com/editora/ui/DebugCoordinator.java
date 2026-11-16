@@ -624,6 +624,8 @@ final class DebugCoordinator {
             DebugPanel built = new DebugPanel(
                     inSessionProxy(DebugPanel.Actions.class, debugActions(), session), evaluateHistory());
             built.setPrompt(host::promptText);
+            built.setRemovalUndo(
+                    host.removalUndo(), () -> sessions.all().stream().anyMatch(x -> x.panel == built));
             built.setExpressionPrompt(this::expressionPrompt); // Add / Edit Watch: the field completes (follow-up 5)
             built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             built.setWatches(ops.debugWatches());
@@ -8319,6 +8321,7 @@ final class DebugCoordinator {
      *  restore persisted breakpoints). Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
         buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
+        buffer.setOnBreakpointRemoved((b, bp) -> BreakpointRemovalUndo.removedInTab(host, b, bp));
         buffer.getBreakpointManager().setMuted(breakpointsMuted ? tr("debug.breakpoint.muted") : "");
         buffer.setGutterBreakpointClick((b, line) -> {
             var mark = b.getBreakpointManager().isBreakpoint(line)
@@ -9503,7 +9506,7 @@ final class DebugCoordinator {
             int line = top.line() - mgr.regionFirstLine();
             Breakpoint bp = mgr.get(line);
             if (bp != null && bp.temporary() && bp.enabled() && !bp.isLogpoint()) {
-                b.toggleBreakpoint(line);
+                b.dropBreakpoint(line); // the program's removal, not the user's: no undo is recorded
                 host.setStatus(tr("status.debug.temporaryRemoved", top.line() + 1));
             }
         });

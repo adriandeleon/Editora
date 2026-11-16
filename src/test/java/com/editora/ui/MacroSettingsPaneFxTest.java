@@ -205,7 +205,27 @@ class MacroSettingsPaneFxTest {
 
         FxTestSupport.runOnFx(() -> {
             button(r.pane(), tr("settings.macro.addText")).fire();
-            button(r.pane(), tr("settings.macro.revert")).fire();
+            // Revert throws the unsaved edit away, so it asks first, naming the macro: Cancel keeps the edit.
+            try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                button(r.pane(), tr("settings.macro.revert")).fire();
+                assertEquals(
+                        List.of(MacroSettingsPane.revertQuestion(MacroCoordinator.displayName(
+                                r.pane().macroList().getSelectionModel().getSelectedItem()))),
+                        questions.asked());
+                assertEquals("Revert Macro", questions.asked().getFirst().title());
+                assertEquals("Revert", questions.asked().getFirst().action());
+                assertTrue(r.pane().isDirty(), "Cancel keeps the unsaved edit");
+                assertEquals(2, r.pane().steps().size());
+
+                questions.answer(true);
+                button(r.pane(), tr("settings.macro.revert")).fire();
+                assertEquals(2, questions.asked().size());
+
+                // Nothing unsaved: Revert is disabled, and the action itself has nothing to ask about.
+                assertTrue(button(r.pane(), tr("settings.macro.revert")).isDisable());
+                FxTestSupport.invoke(r.pane(), "revertEdits");
+                assertEquals(2, questions.asked().size(), "no question with no unsaved edit");
+            }
             assertFalse(r.pane().isDirty());
             assertEquals(1, r.pane().steps().size(), "Revert drops the edit");
             button(r.pane(), tr("settings.macro.addText")).fire();
@@ -215,6 +235,17 @@ class MacroSettingsPaneFxTest {
                 2,
                 FxTestSupport.callOnFx(() ->
                         r.config().getMacroStore().findById("other").steps().size()));
+    }
+
+    @Test
+    void theRevertQuestionNamesTheMacro() {
+        assertEquals(
+                new Confirm.Question(
+                        "Revert Macro",
+                        null,
+                        "Discard the unsaved changes to the macro \"Wrap in quotes\"? This cannot be undone.",
+                        "Revert"),
+                MacroSettingsPane.revertQuestion("Wrap in quotes"));
     }
 
     /** Renaming keeps the id (and so the key binding); the unnamed recording shows its label as a prompt. */

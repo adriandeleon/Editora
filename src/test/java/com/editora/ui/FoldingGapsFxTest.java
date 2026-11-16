@@ -156,10 +156,39 @@ class FoldingGapsFxTest {
                 FxTestSupport.callOnFx(() -> b.getFoldManager().manualRegions()),
                 "the manual range followed the edit");
 
-        run("view.removeManualFolds");
-        assertTrue(
-                FxTestSupport.callOnFx(() -> b.getFoldManager().manualRegions().isEmpty()));
-        assertFalse(collapsed(b, 10), "removing manual ranges unfolds them");
+        // Removing them asks first, naming how many and of which file: Cancel keeps the range, still folded.
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            run("view.removeManualFolds");
+            String title = FxTestSupport.callOnFx(b::getTitle);
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Remove Manual Fold Ranges",
+                            null,
+                            "Remove the manual fold range of " + title
+                                    + "? The text itself does not change. This cannot be undone.",
+                            "Remove")),
+                    questions.asked());
+            assertEquals(
+                    List.of(new Region(10, 12)),
+                    FxTestSupport.callOnFx(() -> b.getFoldManager().manualRegions()),
+                    "Cancel removes nothing");
+            assertTrue(collapsed(b, 10));
+
+            questions.answer(true);
+            run("view.removeManualFolds");
+            assertEquals(2, questions.asked().size());
+            assertTrue(FxTestSupport.callOnFx(
+                    () -> b.getFoldManager().manualRegions().isEmpty()));
+            assertFalse(collapsed(b, 10), "removing manual ranges unfolds them");
+
+            // None left: nothing would be lost, so nothing is asked.
+            run("view.removeManualFolds");
+            assertEquals(2, questions.asked().size(), "no question with no manual fold range");
+        }
+        assertEquals(
+                "Remove all 3 manual fold ranges of Notes.java? The text itself does not change. This cannot be"
+                        + " undone.",
+                NavigationCoordinator.removeManualFoldsQuestion(3, "Notes.java").message());
     }
 
     @Test

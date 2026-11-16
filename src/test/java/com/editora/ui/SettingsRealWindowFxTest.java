@@ -104,8 +104,12 @@ class SettingsRealWindowFxTest {
             assertTrue(trust.isTrusted(b));
             assertEquals(1, list.getItems().size());
 
-            SettingsRig.button(workspace, tr("settings.trustedFolders.revokeAll"))
-                    .fire();
+            // Remove All asks first; the one folder left is named as one.
+            try (ConfirmAnswers questions = ConfirmAnswers.confirming()) {
+                SettingsRig.button(workspace, tr("settings.trustedFolders.revokeAll"))
+                        .fire();
+                assertEquals(List.of(SettingsWindow.revokeAllTrustQuestion(1)), questions.asked());
+            }
             assertFalse(trust.isTrusted(b));
             assertEquals(List.of(), list.getItems());
         });
@@ -136,8 +140,12 @@ class SettingsRealWindowFxTest {
             assertEquals(before + 1, settings.getToolbarLayout().size(), "the layout is saved");
             assertEquals(ToolbarCatalog.SEPARATOR, settings.getToolbarLayout().get(1), "after the selected item");
 
-            SettingsRig.button(toolbarPage, tr("settings.toolbar.restoreDefault"))
-                    .fire();
+            // The page's Restore Default Layout asks, as the command and the toolbar's menu row do.
+            try (ConfirmAnswers questions = ConfirmAnswers.confirming()) {
+                SettingsRig.button(toolbarPage, tr("settings.toolbar.restoreDefault"))
+                        .fire();
+                assertEquals(List.of(ToolbarCoordinator.restoreDefaultQuestion()), questions.asked());
+            }
             assertEquals(List.of(), settings.getToolbarLayout(), "the default is \"nothing saved\"");
             assertEquals(ToolbarCatalog.defaultLayout(), toolbar.effectiveLayout());
             assertEquals(tr("status.toolbar.restored"), echo());

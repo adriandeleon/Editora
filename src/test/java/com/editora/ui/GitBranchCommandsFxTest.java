@@ -14,6 +14,7 @@ import javafx.scene.control.ButtonBar;
 import com.editora.git.GitRemotes;
 import com.editora.git.GitService;
 import com.editora.git.GitWorktrees;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,21 @@ class GitBranchCommandsFxTest {
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
+    }
+
+    @AfterEach
+    void showQuestionsAgain() {
+        Confirm.answerWith(null);
+    }
+
+    /** Answers every {@link Confirm} question with its action from here on, and returns the list they are added to. */
+    private static List<Confirm.Question> confirmEveryQuestion() {
+        List<Confirm.Question> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Confirm.answerWith(question -> {
+            asked.add(question);
+            return true;
+        });
+        return asked;
     }
 
     private record Window(GitFeatureFx w, GitBranchCoordinator branches, GitTestRepo repo, Path file) {}
@@ -112,12 +128,17 @@ class GitBranchCommandsFxTest {
         repo.git("branch", "topic");
         try (AsyncTestScope async = new AsyncTestScope()) {
             Window win = window(async, repo);
+            List<Confirm.Question> asked = confirmEveryQuestion();
 
             FxTestSupport.runOnFx(win.branches()::deleteBranch);
             assertEquals(List.of(local("topic")), awaitPicker(async, win), "never the checked-out branch");
             pick(win, "topic");
             awaitMessage(async, win, tr("status.git.deletedBranch", "topic"));
             assertFalse(hasBranch(repo, "topic"));
+            assertEquals(
+                    List.of(GitBranchCoordinator.deleteBranchQuestion("topic", 0)),
+                    asked,
+                    "the pick is asked about once");
 
             FxTestSupport.runOnFx(win.branches()::deleteBranch);
             awaitMessage(async, win, tr("status.git.noRefsToPick"));
@@ -571,6 +592,9 @@ class GitBranchCommandsFxTest {
             GitBranchCoordinator branches = win.branches();
             Path root = repo.root;
             Path occupied = Files.writeString(dir.toRealPath().resolve("occupied"), "a file");
+            // Deleting a branch asks first; git cannot count the commits of one that does not exist, so the
+            // question is the "not fully merged" one, and confirming it is what reaches git's refusal.
+            List<Confirm.Question> asked = confirmEveryQuestion();
             record Failure(String header, Runnable action) {}
             List<Failure> failures = List.of(
                     new Failure(
@@ -628,6 +652,7 @@ class GitBranchCommandsFxTest {
                 async.awaitWorker(FxTestSupport.field(win.w().git.service(), "exec"));
                 async.awaitFx();
             }
+            assertEquals(List.of(GitBranchCoordinator.deleteBranchQuestion("ghost", -1)), asked);
             assertEquals("main", currentBranch(repo));
             assertTrue(hasBranch(repo, "topic"));
             assertEquals("a file", Files.readString(occupied));
@@ -810,7 +835,7 @@ class GitBranchCommandsFxTest {
             assertEquals("from-feat", currentBranch(repo));
             repo.git("checkout", "-q", "main");
 
-            // Merge brings the row's branch into the current one; Delete then removes it without a question.
+            // Merge brings the row's branch into the current one; Delete then asks its plain question and removes it.
             FxTestSupport.runOnFx(
                     action(actions, tr("branch.row.merge", "feat", "main")).run());
             awaitMessage(async, win, tr("status.git.merged", "feat", "main"));
@@ -818,10 +843,12 @@ class GitBranchCommandsFxTest {
                     action(actions, tr("branch.row.rebase", "feat", "main")).run());
             awaitMessage(async, win, tr("status.git.alreadyUpToDate", "feat"));
             repo.git("branch", "-D", "from-feat");
+            List<Confirm.Question> asked = confirmEveryQuestion();
             FxTestSupport.runOnFx(
                     action(actions, tr("branch.row.delete", "feat", "main")).run());
             awaitMessage(async, win, tr("status.git.deletedBranch", "feat"));
             assertFalse(hasBranch(repo, "feat"));
+            assertEquals(List.of(GitBranchCoordinator.deleteBranchQuestion("feat", 0)), asked);
 
             assertEquals(8, guarded.get(), "each of the eight actions ran through the guard, once");
         }

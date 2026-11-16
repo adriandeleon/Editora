@@ -178,6 +178,50 @@ class RunConfigurationsWindowFxTest {
         FxTestSupport.runOnFx(stage::close);
     }
 
+    /** Remove is saved at once, so it asks first, naming the configuration: Cancel keeps it. */
+    @Test
+    void removingAConfigurationAsksFirst(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(
+                        new RunConfiguration("First", "example.First", "", "", "", ""),
+                        new RunConfiguration("Second", "example.Second", "", "", "", "")));
+        int[] changed = {0};
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> changed[0]++));
+        FxTestSupport.runOnFx(() -> window.show("Second", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        Button remove = FxTestSupport.callOnFx(() -> stage.getScene().getRoot().lookupAll(".button").stream()
+                .map(Button.class::cast)
+                .filter(b -> tr("settings.runConfig.remove").equals(b.getText()))
+                .findFirst()
+                .orElseThrow());
+        int before = changed[0];
+
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(remove::fire);
+            assertEquals(
+                    java.util.List.of(new Confirm.Question(
+                            "Remove Run Configuration",
+                            null,
+                            "Remove the run configuration “Second”? This cannot be undone.",
+                            "Remove")),
+                    questions.asked());
+            assertEquals(2, config.getWorkspaceState().getRunConfigurations().size(), "Cancel removes nothing");
+            assertEquals(before, changed[0], "and nothing is saved");
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(remove::fire);
+            assertEquals(2, questions.asked().size(), "asked once for the removal");
+        }
+        assertEquals(
+                java.util.List.of("First"),
+                config.getWorkspaceState().getRunConfigurations().stream()
+                        .map(RunConfiguration::name)
+                        .toList());
+        FxTestSupport.runOnFx(stage::close);
+    }
+
     /**
      * A field only commits on focus loss, which arrives after a click on another row has already changed the
      * selection: the edit was overwritten by that row's values and silently dropped.

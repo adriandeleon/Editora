@@ -351,7 +351,8 @@ public final class DeploymentsWindow {
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
             int index = list.getSelectionModel().getSelectedIndex();
-            if (index >= 0) {
+            // Removed and saved at once, so it asks first.
+            if (index >= 0 && Confirm.ask(stage, removeQuestion(items.get(index).name()))) {
                 items.remove(index);
                 persist(null, null);
             }
@@ -464,6 +465,12 @@ public final class DeploymentsWindow {
             selected = items.get(0);
         }
         list.getSelectionModel().select(selected);
+    }
+
+    /** The question before the deployment {@code name} is removed. Pure. */
+    static Confirm.Question removeQuestion(String name) {
+        return new Confirm.Question(
+                tr("deploy.removeTitle"), null, tr("deploy.removeConfirm", name), tr("confirm.action.remove"));
     }
 
     /** Saves the list; a rename from {@code oldName} to {@code newName} carries over to the configurations. */

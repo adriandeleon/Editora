@@ -289,9 +289,10 @@ final class GitBranchCoordinator {
     }
 
     /**
-     * Deletes local branch {@code name} with the safe {@code branch -d}. When git refuses because the branch
-     * has unmerged commits, a danger-styled confirmation names how many would be left without a branch
-     * before {@code -D} runs. The checked-out branch is never deleted.
+     * Deletes local branch {@code name}, after one question. How many of its commits the checked-out branch
+     * lacks is counted first: none, and a plain question comes before the safe {@code branch -d}; some, or a
+     * count git could not give, and the danger question names how many would be left without a branch before
+     * {@code -D} runs. The checked-out branch is never deleted.
      */
     void deleteBranch(Path root, String current, String name) {
         if (root == null || name == null || unsafe(name)) {
@@ -301,34 +302,72 @@ final class GitBranchCoordinator {
             ui().setStatus(tr("status.git.deleteCurrentBranch", name));
             return;
         }
-        runLocal(root, GitService.guarded(List.of("branch", "-d"), name), result -> {
-            switch (GitOutcome.of(result)) {
-                case OK -> ui().setStatus(tr("status.git.deletedBranch", name));
-                case NOT_FULLY_MERGED -> confirmForceDelete(root, name);
-                default -> fail(tr("status.git.deleteBranchFailed", name), result);
+        service().unmergedCount(root, name, count -> {
+            if (count != 0) {
+                confirmForceDelete(root, name, count);
+                return;
             }
+            if (!confirmDelete(name, 0)) {
+                return;
+            }
+            runLocal(root, GitService.guarded(List.of("branch", "-d"), name), result -> {
+                switch (GitOutcome.of(result)) {
+                    case OK -> ui().setStatus(tr("status.git.deletedBranch", name));
+                    // Merged into this branch but not into its upstream: git still refuses. The question was
+                    // answered and every commit is on the checked-out branch, so it is deleted without a second one.
+                    case NOT_FULLY_MERGED -> forceDelete(root, name);
+                    default -> fail(tr("status.git.deleteBranchFailed", name), result);
+                }
+            });
         });
     }
 
-    private void confirmForceDelete(Path root, String name) {
-        service().unmergedCount(root, name, count -> {
-            String message = count > 0
-                    ? tr(
-                            count == 1 ? "dialog.deleteBranch.unmerged.one" : "dialog.deleteBranch.unmerged.many",
-                            name,
-                            count)
-                    : tr("dialog.deleteBranch.unmerged.unknown", name);
-            if (!git().confirmDestructive(tr("dialog.deleteBranch.title"), message, tr("dialog.deleteBranch.force"))) {
-                ui().setStatus(tr("status.git.branchKept", name));
-                return;
+    /**
+     * The question before local branch {@code name} is deleted, from how many of its commits the checked-out
+     * branch lacks: none (a plain Delete), some (Delete Anyway, naming how many are left on no branch), or
+     * unknown when negative. Pure.
+     */
+    static Confirm.Question deleteBranchQuestion(String name, int unmerged) {
+        if (unmerged == 0) {
+            return new Confirm.Question(
+                    tr("dialog.deleteBranch.title"),
+                    null,
+                    tr("dialog.deleteBranch.merged", name),
+                    tr("confirm.action.delete"));
+        }
+        String message = unmerged > 0
+                ? tr(
+                        unmerged == 1 ? "dialog.deleteBranch.unmerged.one" : "dialog.deleteBranch.unmerged.many",
+                        name,
+                        unmerged)
+                : tr("dialog.deleteBranch.unmerged.unknown", name);
+        return new Confirm.Question(tr("dialog.deleteBranch.title"), null, message, tr("dialog.deleteBranch.force"));
+    }
+
+    /** Asks {@link #deleteBranchQuestion}; on Cancel the status line says the branch was kept. */
+    private boolean confirmDelete(String name, int unmerged) {
+        Confirm.Question question = deleteBranchQuestion(name, unmerged);
+        if (git().confirmDestructive(question.title(), question.message(), question.action())) {
+            return true;
+        }
+        ui().setStatus(tr("status.git.branchKept", name));
+        return false;
+    }
+
+    private void confirmForceDelete(Path root, String name, int unmerged) {
+        if (confirmDelete(name, unmerged)) {
+            forceDelete(root, name);
+        }
+    }
+
+    /** {@code branch -D}, once the question was answered. */
+    private void forceDelete(Path root, String name) {
+        runLocal(root, GitService.guarded(List.of("branch", "-D"), name), result -> {
+            if (result.ok()) {
+                ui().setStatus(tr("status.git.deletedBranch", name));
+            } else {
+                fail(tr("status.git.deleteBranchFailed", name), result);
             }
-            runLocal(root, GitService.guarded(List.of("branch", "-D"), name), result -> {
-                if (result.ok()) {
-                    ui().setStatus(tr("status.git.deletedBranch", name));
-                } else {
-                    fail(tr("status.git.deleteBranchFailed", name), result);
-                }
-            });
         });
     }
 

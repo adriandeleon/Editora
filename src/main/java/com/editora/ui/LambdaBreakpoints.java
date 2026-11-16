@@ -82,8 +82,12 @@ final class LambdaBreakpoints {
         } else if (bp.lambdas().contains(number)) {
             List<Integer> rest = new ArrayList<>(bp.lambdas());
             rest.remove(Integer.valueOf(number));
-            if (rest.isEmpty() && bp.lambdasOnly()) {
-                b.toggleBreakpoint(line); // it stopped nowhere else
+            if (rest.isEmpty() && bp.lambdasOnly()) { // it stopped nowhere else: the breakpoint goes
+                if (bp.withLambdas(List.of(), false).carriesDetails()) {
+                    b.toggleBreakpoint(line); // its condition goes too: recorded, and said with how to take it back
+                    return;
+                }
+                b.dropBreakpoint(line); // this key sets it again: nothing to record
             } else {
                 mgr.setLambdas(line, rest, bp.lambdasOnly());
             }

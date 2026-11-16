@@ -354,8 +354,32 @@ class SettingsContentPagesFxTest {
             twRow("structure").show().setSelected(false);
             assertEquals(away, tools.currentSide(notes));
             assertFalse(tools.isVisible(twRow("structure").window()));
+            assertFalse(tools.isDefaultLayout());
 
-            SettingsRig.button(page, tr("settings.toolbar.restoreDefault")).fire();
+            // Restore Default Layout asks first: Cancel leaves the layout as arranged.
+            try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                SettingsRig.button(page, tr("settings.toolbar.restoreDefault")).fire();
+                assertEquals(
+                        List.of(new Confirm.Question(
+                                "Restore Default Layout",
+                                null,
+                                "Restore the default tool window layout? Every tool window goes back to its default"
+                                        + " side and order, shown or hidden as it is by default. Other projects keep"
+                                        + " their layout. This cannot be undone.",
+                                "Restore")),
+                        questions.asked());
+                assertEquals(away, tools.currentSide(notes), "Cancel moves nothing");
+                assertFalse(tools.isVisible(twRow("structure").window()));
+
+                questions.answer(true);
+                SettingsRig.button(page, tr("settings.toolbar.restoreDefault")).fire();
+                assertEquals(2, questions.asked().size());
+
+                // The layout now is the default one: nothing would be lost, so nothing is asked.
+                assertTrue(tools.isDefaultLayout());
+                SettingsRig.button(page, tr("settings.toolbar.restoreDefault")).fire();
+                assertEquals(2, questions.asked().size(), "no question for a reset that changes nothing");
+            }
             assertEquals(home, tools.currentSide(notes));
             assertTrue(tools.isVisible(twRow("structure").window()));
             assertEquals(home, twRow("notes").side().getValue(), "the page shows it");

@@ -169,7 +169,8 @@ final class DebugCompoundsWindow {
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
             int index = list.getSelectionModel().getSelectedIndex();
-            if (index >= 0) {
+            // Removed and saved at once, so it asks first.
+            if (index >= 0 && Confirm.ask(stage, removeQuestion(items.get(index).name()))) {
                 items.remove(index);
                 persist();
             }
@@ -303,6 +304,15 @@ final class DebugCompoundsWindow {
             loading = false;
         }
         persist();
+    }
+
+    /** The question before the compound {@code name} is removed. Pure. */
+    static Confirm.Question removeQuestion(String name) {
+        return new Confirm.Question(
+                tr("debug.compound.removeTitle"),
+                null,
+                tr("debug.compound.removeConfirm", name),
+                tr("confirm.action.remove"));
     }
 
     private void persist() {

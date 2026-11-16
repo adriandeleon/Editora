@@ -397,13 +397,13 @@ public final class HttpClientPanel extends VBox {
             if (clearItem.isDisable()) {
                 return false;
             }
-            clear();
+            askAndClear();
             return true;
         });
         copyCurlItem.setOnAction(e -> copyCurlButton.fire());
         openTabItem.setOnAction(e -> openTabButton.fire());
         saveItem.setOnAction(e -> saveButton.fire());
-        clearItem.setOnAction(e -> clear());
+        clearItem.setOnAction(e -> askAndClear());
         moreButton.setGraphic(Icons.more());
         moreButton.getStyleClass().addAll("flat", "http-action", "http-more");
         moreButton.setMinWidth(Region.USE_PREF_SIZE);
@@ -1566,6 +1566,26 @@ public final class HttpClientPanel extends VBox {
         if (e != null && action != null) {
             action.accept(e.exchange());
         }
+    }
+
+    /**
+     * Clear (the "⋯" row and its command): the responses kept go, here and in the file's saved history, so it asks
+     * first, naming how many; with none kept there is nothing to ask.
+     */
+    private void askAndClear() {
+        javafx.stage.Window owner = getScene() == null ? null : getScene().getWindow();
+        if (history.isEmpty() || Confirm.ask(owner, clearQuestion(history.size()))) {
+            clear();
+        }
+    }
+
+    /** The question before the {@code responses} kept responses are cleared. Pure. */
+    static Confirm.Question clearQuestion(int responses) {
+        return new Confirm.Question(
+                tr("httppanel.clear.title"),
+                null,
+                tr("httppanel.clear.confirm", responses),
+                tr("confirm.action.clear"));
     }
 
     private void clear() {

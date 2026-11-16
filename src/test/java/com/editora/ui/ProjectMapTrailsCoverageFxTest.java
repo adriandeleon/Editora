@@ -542,7 +542,9 @@ class ProjectMapTrailsCoverageFxTest {
     void aTrailEditedWhilePlayingKeepsTheBarOnAStopItHasAndClosesWhenNoneAreLeft() throws Exception {
         Path project = project();
         tour(project);
-        try (Harness h = open(project)) {
+        // Each removal is asked about first (the editor's own test covers the question): here they are confirmed.
+        try (ConfirmAnswers questions = ConfirmAnswers.confirming();
+                Harness h = open(project)) {
             FxTestSupport.runOnFx(() -> {
                 ProjectMapTrails trails = h.trails();
                 assertTrue(trails.play("Tour", 2));
@@ -561,6 +563,7 @@ class ProjectMapTrailsCoverageFxTest {
                 assertNull(trails.playingName(), "no stops left: the bar closes");
                 assertNull(trails.editor(), "and its editor with it");
             });
+            assertEquals(3, questions.asked().size(), "one question for each stop removed");
         }
     }
 
@@ -570,7 +573,9 @@ class ProjectMapTrailsCoverageFxTest {
     void theEditorsKeysButtonsAndRowsActOnTheSelectedStop() throws Exception {
         Path project = project();
         tour(project);
-        try (Harness h = open(project)) {
+        // Delete and Remove ask before a stop goes: answered with Cancel first, then confirmed.
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling();
+                Harness h = open(project)) {
             FxTestSupport.runOnFx(() -> h.trails().edit("Tour"));
             waitForFx(() -> !h.trails().editor().list().lookupAll(".list-cell").isEmpty()
                     && cellTexts(h.trails().editor()).size() >= 3);
@@ -636,10 +641,22 @@ class ProjectMapTrailsCoverageFxTest {
                 assertEquals(0, h.trails().stopShown(), "a single click only selects");
 
                 Event.fireEvent(list, key(KeyCode.DELETE, false));
+                assertEquals(
+                        List.of(ProjectMapTrailEditor.removeStopQuestion("Three", false)),
+                        questions.asked(),
+                        "Delete asks, naming the stop");
+                assertEquals(3, read(project, "Tour").stops().size(), "Cancel keeps the stop");
+                questions.answer(true);
+                Event.fireEvent(list, key(KeyCode.DELETE, false));
                 assertEquals(List.of("One", "f2.txt?"), titlesOrFiles(project, "Tour"), "Delete removes the stop");
                 list.getSelectionModel().select(0);
                 button(editor, "remove").fire();
                 assertEquals(1, read(project, "Tour").stops().size());
+                assertEquals(
+                        ProjectMapTrailEditor.removeStopQuestion("One", true),
+                        questions.asked().getLast(),
+                        "the Remove button asks the same question; this stop has a note");
+                assertEquals(3, questions.asked().size(), "each removal asked about once");
 
                 list.getSelectionModel().clearSelection();
                 for (String id : List.of("up", "down", "remove", "rename", "note", "play")) {
@@ -651,6 +668,7 @@ class ProjectMapTrailsCoverageFxTest {
                 button(editor, "note").fire();
                 button(editor, "play").fire();
                 assertEquals(1, read(project, "Tour").stops().size(), "with no stop selected nothing changes");
+                assertEquals(3, questions.asked().size(), "and nothing is asked");
 
                 h.answers().add("Renamed tour");
                 button(editor, "renameTrail").fire();
@@ -664,7 +682,8 @@ class ProjectMapTrailsCoverageFxTest {
     void theEditorDragsByItsHeaderClosesOnEscapeAndShowsAnUnreadableTrailAsEmpty() throws Exception {
         Path project = project();
         tour(project);
-        try (Harness h = open(project)) {
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling();
+                Harness h = open(project)) {
             FxTestSupport.runOnFx(() -> {
                 h.trails().edit("Tour");
                 ProjectMapTrailEditor editor = h.trails().editor();
@@ -687,6 +706,7 @@ class ProjectMapTrailsCoverageFxTest {
                 editor.removeSelected();
                 editor.retitle(0, "x");
                 assertEquals(3, read(project, "Tour").stops().size(), "a trail it cannot read is never written");
+                assertEquals(List.of(), questions.asked(), "no stop listed: nothing to ask about");
 
                 Event.fireEvent(editor, key(KeyCode.B, false));
                 assertNotNull(h.trails().editor());
@@ -734,7 +754,22 @@ class ProjectMapTrailsCoverageFxTest {
                         .filter(i -> i instanceof Menu)
                         .findFirst()
                         .orElseThrow();
-                item(delete.getItems(), "Set 5").fire();
+                // The Delete submenu's row asks first, naming the set: Cancel keeps it.
+                try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                    item(delete.getItems(), "Set 5").fire();
+                    assertEquals(
+                            List.of(new Confirm.Question(
+                                    "Delete Working Set",
+                                    null,
+                                    "Delete the working set “Set 5”? This cannot be undone.",
+                                    "Delete")),
+                            questions.asked());
+                    assertEquals(ProjectMapWorkingSets.MAX_SETS, written.get().size(), "Cancel deletes nothing");
+                    assertEquals(tr("project.map.status.workingSet.shown", "Set 5"), h.last(), "and says nothing");
+                    questions.answer(true);
+                    item(delete.getItems(), "Set 5").fire();
+                    assertEquals(2, questions.asked().size(), "asked once for the deletion");
+                }
                 assertEquals(tr("project.map.status.workingSet.deleted", "Set 5"), h.last());
                 assertEquals(ProjectMapWorkingSets.MAX_SETS - 1, written.get().size());
 
