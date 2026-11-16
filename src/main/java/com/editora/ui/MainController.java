@@ -3037,7 +3037,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                     } else if (mcpServer != s) {
                         Thread.ofVirtual().name("mcp-stop").start(s::stop); // turned off while it started
                     }
-                    statusBar.setMcpRunning(mcpServer != null && mcpServer.isRunning());
+                    // The owner may have changed while it started (this window closed): tell the owner's bar.
+                    (mcpOwner != null ? mcpOwner : this)
+                            .statusBar.setMcpRunning(mcpServer != null && mcpServer.isRunning());
                 });
             });
         } else if (!on && mcpServer != null && mcpOwner == this) {
