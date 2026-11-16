@@ -590,7 +590,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void resetShortcut(String commandId) {
-                editorSettings.resetShortcut(commandId);
+                editorSettings.dropShortcut(commandId); // the macro is deleted: nothing to bind again
             }
         });
         // Built here (not as a field initializer) because NotesPanel's constructor reads config.getNotes().
@@ -651,6 +651,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setStatusSink(this::setStatus);
+        this.settingsWindow.setRemovalUndo(removalUndo); // a removal made in Settings is undone from this window
         this.settingsWindow.setMarkdownLintConfigNote(() -> previews.markdownLintConfigNote());
         this.settingsWindow.setHistoryLimits((perFile, ageDays, totalMb, owner, done) ->
                 historyCoordinator.changeLimits(perFile, ageDays, totalMb, owner, done));
@@ -1395,6 +1396,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Releases this window's resources on close: language servers, debug session, and worker threads. */
     void disposeWindow() {
         sessionClosed = true; // no further session writes from this window (see requestSave)
+        removalUndo.clear(); // its restores hold this window's buffers, panels and pages
         WindowDisposal.runAll(() -> recovery.dispose()); // stops copying; deletes nothing (see closedByUser)
         // Every step is isolated (WindowDisposal): one shutdown that throws used to skip all the later ones.
         WindowDisposal.runAll(() -> sessions.flushPendingMarks()); // while the buffers still hold their marks
@@ -2502,6 +2504,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     final InstallPromptCoordinator installPrompts = new InstallPromptCoordinator(new InstallPromptHost(this));
 
     final CoordinatorHost coordinatorHost = new WindowServicesHost(this);
+
+    /** This window's small removals, taken back by Edit: Undo Last Removal; emptied when the window closes. */
+    final RemovalUndo removalUndo = new RemovalUndo(this::setStatus);
 
     /** Crash recovery for this window's unsaved buffers (see {@link RecoveryCoordinator}). */
     final RecoveryCoordinator recovery =

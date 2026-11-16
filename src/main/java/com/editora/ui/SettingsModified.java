@@ -162,6 +162,35 @@ final class SettingsModified {
         }
     }
 
+    /** The values {@code keys} have in {@code settings} now, for {@link #restore} to put back after a {@link #reset}. */
+    static ObjectNode values(Settings settings, Set<String> keys) {
+        JsonNode now = JSON.valueToTree(settings);
+        ObjectNode out = JSON.createObjectNode();
+        for (String key : keys) {
+            if (now.has(key)) {
+                out.set(key, now.get(key));
+            }
+            if (key.equals("editorTheme") && now.has("editorThemeUserSet")) {
+                out.set("editorThemeUserSet", now.get("editorThemeUserSet")); // whether the theme was picked
+            }
+        }
+        return out;
+    }
+
+    /** Puts {@code values} (from {@link #values}) back into {@code settings}. */
+    static void restore(Settings settings, ObjectNode values) {
+        ObjectNode rest = values.deepCopy();
+        JsonNode keymap = rest.remove("keymap");
+        if (keymap != null) {
+            KeymapLayers.switchKeymap(settings, keymap.asText()); // as reset does: the keymap's own bindings follow
+        }
+        try {
+            JSON.readerForUpdating(settings).readValue((JsonNode) rest);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     /**
      * Marks every row of {@code rows} modified or not for {@code settings}, gives each marked row its reset
      * ({@code reset} receives the row's keys), and returns how many modified rows each page has.

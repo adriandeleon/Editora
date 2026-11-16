@@ -199,8 +199,18 @@ class MarkObjectWindowFxTest {
                 tr("debugpanel.viewAs.title", "doc", "XML"),
                 call(() -> fx.controller.activeBuffer().getDisplayName()));
 
-        FxTestSupport.runOnFx(
-                () -> find(menuOn("n"), tr("debugpanel.unmarkAll")).fire());
+        // Unmark All Objects asks first, naming how many labels go: Cancel keeps them.
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(
+                    () -> find(menuOn("n"), tr("debugpanel.unmarkAll")).fire());
+            assertEquals(List.of(DebugPanel.unmarkAllQuestion(1)), questions.asked());
+            assertEquals("list A", call(() -> panel.objectMarks().labelOf("ArrayList@10 size=3")), "Cancel");
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(
+                    () -> find(menuOn("n"), tr("debugpanel.unmarkAll")).fire());
+            assertEquals(2, questions.asked().size());
+        }
         assertTrue(call(() -> panel.objectMarks().isEmpty()));
         assertNull(call(() -> find(menuOn("n"), tr("debugpanel.unmarkAll"))), "nothing left to unmark");
 

@@ -439,9 +439,11 @@ final class BookmarkCoordinator {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.getPath() != null) {
             int line = b.getFocusedArea().getCurrentParagraph();
-            boolean hasNote = b.getBookmarkManager().snapshot().stream()
-                    .anyMatch(bm ->
-                            bm.line() == line && bm.note() != null && !bm.note().isBlank());
+            Bookmark was = b.getBookmarkManager().snapshot().stream()
+                    .filter(bm -> bm.line() == line)
+                    .findFirst()
+                    .orElse(null);
+            boolean hasNote = was != null && was.note() != null && !was.note().isBlank();
             if (hasNote
                     && !Confirm.ask(
                             host.window(),
@@ -450,10 +452,61 @@ final class BookmarkCoordinator {
                             tr("confirm.action.remove"))) {
                 return;
             }
+            RemovedLine at = RemovedLine.of(b, line);
+            int storedIndex = storedIndex(b.getPath().toString(), at.documentLine());
             b.toggleBookmark(line);
+            if (was != null && !hasNote && was.hasMnemonic()) {
+                // A mnemonic was typed and is the bookmark's name: the same key would bring back a bookmark without it.
+                String name = was.mnemonic().toUpperCase(java.util.Locale.ROOT);
+                host.removalUndo()
+                        .removed(
+                                tr("status.bookmarks.removed", name, at.documentLine() + 1),
+                                tr("status.bookmarks.restored", name, at.documentLine() + 1),
+                                () -> restoreBookmark(at, was, storedIndex));
+            }
         } else if (b != null) {
             host.setStatus(tr("status.saveBeforeBookmark"));
         }
+    }
+
+    /** Where the bookmark on {@code documentLine} is in the stored (user-ordered) list of {@code fileKey}; -1 for none. */
+    private int storedIndex(String fileKey, int documentLine) {
+        List<Bookmark> stored = ops.bookmarks().getOrDefault(fileKey, List.of());
+        for (int i = 0; i < stored.size(); i++) {
+            if (stored.get(i).line() == documentLine) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Puts the bookmark {@code was} back on its line with its mnemonic, at {@code storedIndex} of its file's list in
+     * the Bookmarks window. False, changing nothing, when the tab was closed, the line cannot take it back ({@link
+     * RemovedLine#viewLine}) or has a bookmark now, or the mnemonic names another bookmark now.
+     */
+    boolean restoreBookmark(RemovedLine at, Bookmark was, int storedIndex) {
+        EditorBuffer b = at.buffer(host);
+        int line = b == null ? -1 : at.viewLine(b);
+        Path file = b == null ? null : b.getPath();
+        if (b == null || file == null || line < 0 || b.getBookmarkManager().isBookmarked(line)) {
+            return false;
+        }
+        flushPendingPersist(); // the store as the removal left it: who holds the mnemonic is read from there
+        String key = file.toString();
+        var holder = BookmarkMnemonics.find(ops.bookmarks(), was.mnemonic());
+        if (holder != null && !(holder.file().equals(key) && holder.bookmark().line() == at.documentLine())) {
+            return false;
+        }
+        b.getBookmarkManager().add(was.withLine(line));
+        b.refreshGutterLine(line);
+        persistBookmarks(b); // nothing while narrowed: the store still has it, where it was
+        int now = storedIndex(key, at.documentLine());
+        List<Bookmark> stored = ops.bookmarks().get(key);
+        if (stored != null && now >= 0 && storedIndex >= 0 && now != Math.min(storedIndex, stored.size() - 1)) {
+            moveBookmark(file, now, Math.min(storedIndex, stored.size() - 1));
+        }
+        return true;
     }
 
     /** Adds (if absent) or edits the note on the bookmark at the active editor's caret line. */

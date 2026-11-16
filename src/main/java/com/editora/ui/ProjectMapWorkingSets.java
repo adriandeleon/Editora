@@ -55,7 +55,7 @@ final class ProjectMapWorkingSets {
                 -1,
                 index -> {
                     if (delete) {
-                        delete(mine.get(index).getName());
+                        askAndDelete(mine.get(index).getName());
                     } else {
                         show(mine.get(index).getName());
                     }
@@ -111,7 +111,7 @@ final class ProjectMapWorkingSets {
             MenuItem remove = new MenuItem(set.getName());
             remove.setMnemonicParsing(false);
             remove.getStyleClass().add("danger");
-            remove.setOnAction(event -> delete(set.getName()));
+            remove.setOnAction(event -> askAndDelete(set.getName()));
             delete.getItems().add(remove);
         }
         if (!mine.isEmpty()) {
@@ -140,9 +140,9 @@ final class ProjectMapWorkingSets {
     }
 
     /**
-     * Saves what the Map shows as {@code name}: a set of that name (ignoring case) is replaced where it stands, else
-     * the set is added — up to {@link #MAX_SETS} per folder. False when nothing was saved (no name, no local folder,
-     * the folder full).
+     * Saves what the Map shows as {@code name}: a set of that name (ignoring case) is replaced where it stands, after
+     * a question when it shows something else, else the set is added — up to {@link #MAX_SETS} per folder. False when
+     * nothing was saved (no name, no local folder, the folder full, the set of that name kept).
      */
     boolean save(@Nullable String name) {
         String value = name == null ? "" : name.strip();
@@ -153,6 +153,11 @@ final class ProjectMapWorkingSets {
         state.setHistory(List.of()); // a set is a view, not a trail of places: Back stays the user's
         state.setHistoryIndex(-1);
         int index = indexOf(value);
+        if (index >= 0
+                && !sameView(sets.get(index).getState(), state)
+                && !Confirm.ask(owner(), replaceQuestion(sets.get(index).getName()))) {
+            return false; // the set of that name shows something else, and the user kept it
+        }
         if (index >= 0) {
             sets.set(index, new ProjectMapWorkingSet(sets.get(index).getName(), state));
             view.onStatus.accept(
@@ -169,6 +174,27 @@ final class ProjectMapWorkingSets {
         return true;
     }
 
+    /** The question before the working set {@code name} is replaced by what the Map shows now. Pure. */
+    static Confirm.Question replaceQuestion(String name) {
+        return new Confirm.Question(
+                tr("project.map.workingSets.replaceTitle"),
+                null,
+                tr("project.map.workingSets.replaceConfirm", name),
+                tr("confirm.action.replace"));
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /** Whether two saved views are the same view, as they are stored: saving one over the other loses nothing. Pure. */
+    static boolean sameView(ProjectMapState a, ProjectMapState b) {
+        return JSON.valueToTree(a).equals(JSON.valueToTree(b));
+    }
+
+    private javafx.stage.@Nullable Window owner() {
+        return view.getScene() == null ? null : view.getScene().getWindow();
+    }
+
     /** Shows the set {@code name} of the folder the Map shows, as a restart shows the last session's state. */
     boolean show(String name) {
         int index = indexOf(name);
@@ -182,7 +208,28 @@ final class ProjectMapWorkingSets {
         return true;
     }
 
-    /** Deletes the set {@code name} of the folder the Map shows. */
+    /**
+     * Delete Working Set… and the Delete submenu's row: asks, naming the set, then deletes it. False when the user
+     * kept it, or there is no such set.
+     */
+    boolean askAndDelete(String name) {
+        int index = indexOf(name);
+        if (index < 0) {
+            return false;
+        }
+        return Confirm.ask(owner(), deleteQuestion(sets.get(index).getName())) && delete(name);
+    }
+
+    /** The question before the working set {@code name} is deleted. Pure. */
+    static Confirm.Question deleteQuestion(String name) {
+        return new Confirm.Question(
+                tr("project.map.workingSets.deleteTitle"),
+                null,
+                tr("project.map.workingSets.deleteConfirm", name),
+                tr("confirm.action.delete"));
+    }
+
+    /** Deletes the set {@code name} of the folder the Map shows, with no question. */
     boolean delete(String name) {
         int index = indexOf(name);
         if (index < 0) {

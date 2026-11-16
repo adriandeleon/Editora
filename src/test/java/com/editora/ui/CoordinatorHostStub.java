@@ -45,6 +45,14 @@ class CoordinatorHostStub implements CoordinatorHost {
     @Override
     public void setStatus(String message) {}
 
+    /** Says what it records through {@link #setStatus}, as the window's does. */
+    private final RemovalUndo removalUndo = new RemovalUndo(message -> setStatus(message));
+
+    @Override
+    public RemovalUndo removalUndo() {
+        return removalUndo;
+    }
+
     @Override
     public void setError(String message) {
         setStatus(message);

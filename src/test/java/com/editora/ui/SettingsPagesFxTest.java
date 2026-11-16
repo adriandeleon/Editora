@@ -195,6 +195,12 @@ class SettingsPagesFxTest {
 
     @Test
     void theTrustedFoldersListRevokesOneFolderOrAll() throws Exception {
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            theTrustedFoldersListRevokesOneFolderOrAll(questions);
+        }
+    }
+
+    private void theTrustedFoldersListRevokesOneFolderOrAll(ConfirmAnswers questions) throws Exception {
         FxTestSupport.runOnFx(() -> {
             List<String> trusted = new ArrayList<>(List.of("/work/a", "/work/b", "/work/c"));
             rig.show();
@@ -207,6 +213,7 @@ class SettingsPagesFxTest {
             assertTrue(revokeAll.isDisable());
             revokeAll.fire(); // and nothing to do, with or without a store
             revoke.fire();
+            assertEquals(List.of(), questions.asked(), "nothing listed, nothing asked");
 
             rig.window.setTrustActions(new SettingsWindow.TrustActions() {
                 @Override
@@ -239,7 +246,22 @@ class SettingsPagesFxTest {
             rig.window.refreshTrustedFolders();
             assertEquals(3, list.getItems().size());
 
+            // Remove All asks first, naming how many folders go; Cancel keeps them all.
             revokeAll.fire();
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            tr("settings.trustedFolders.revokeAll.title"),
+                            null,
+                            "Remove all 3 trusted folders from the list? Editora asks again before it runs a build"
+                                    + " task in any of them.",
+                            tr("confirm.action.remove"))),
+                    questions.asked());
+            assertEquals(3, trusted.size(), "Cancel revokes nothing");
+            assertEquals(3, list.getItems().size());
+
+            questions.answer(true);
+            revokeAll.fire();
+            assertEquals(2, questions.asked().size(), "asked once per press");
             assertEquals(List.of(), trusted);
             assertEquals(List.of(), list.getItems());
             assertTrue(revokeAll.isDisable());

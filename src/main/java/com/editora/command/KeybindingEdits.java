@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure, unit-tested logic for the keybinding editor: given the active keymap's <b>base</b> bindings
@@ -146,6 +149,60 @@ public final class KeybindingEdits {
             }
         }
         return first.length() == 1 || first.equals("space");
+    }
+
+    /**
+     * The overrides that take back a {@link #clear} or a {@link #reset} of {@code commandId}, or null when that is no
+     * longer safe. {@code before} and {@code after} are the overrides around the removal, {@code now} the overrides
+     * today, {@code activeNow} today's effective bindings (chord → command) and {@code chords} what the command was
+     * bound to before the removal. Only the chords the removal changed are put back, so bindings made since for
+     * other commands stay. Null when one of those chords was changed again since, when the command was bound again
+     * since (the new binding would be dropped), or when one of {@code chords} is no longer free (another command
+     * holds it, or a prefix of it, or a longer chord it would shadow). Pure.
+     */
+    public static @Nullable Map<String, String> restored(
+            Map<String, String> before,
+            Map<String, String> after,
+            Map<String, String> now,
+            Map<String, String> activeNow,
+            String commandId,
+            List<String> chords) {
+        List<String> changed = new ArrayList<>();
+        for (String chord : before.keySet()) {
+            if (!Objects.equals(before.get(chord), after.get(chord))) {
+                changed.add(chord);
+            }
+        }
+        for (String chord : after.keySet()) {
+            if (!before.containsKey(chord)) {
+                changed.add(chord);
+            }
+        }
+        for (String chord : changed) {
+            if (!Objects.equals(now.get(chord), after.get(chord))) {
+                return null; // that chord was bound, unbound or reset again since
+            }
+        }
+        for (Map.Entry<String, String> e : now.entrySet()) {
+            if (commandId.equals(e.getValue()) && !commandId.equals(after.get(e.getKey()))) {
+                return null; // the command was given a binding since
+            }
+        }
+        for (String chord : chords) {
+            if (!conflicts(activeNow, chord, commandId).isEmpty()) {
+                return null; // the key is taken
+            }
+        }
+        Map<String, String> result = new LinkedHashMap<>(now);
+        for (String chord : changed) {
+            String was = before.get(chord);
+            if (was == null) {
+                result.remove(chord);
+            } else {
+                result.put(chord, was);
+            }
+        }
+        return result;
     }
 
     /** A copy of {@code overrides} with every entry that <em>binds</em> {@code commandId} removed. */

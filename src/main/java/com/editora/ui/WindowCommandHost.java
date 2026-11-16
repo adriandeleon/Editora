@@ -75,6 +75,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public RemovalUndo removalUndo() {
+        return mc.removalUndo;
+    }
+
+    @Override
     public SettingsWindow settingsWindow() {
         return mc.settingsWindow;
     }

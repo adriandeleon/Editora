@@ -72,6 +72,11 @@ final class WindowServicesHost implements CoordinatorHost {
     }
 
     @Override
+    public RemovalUndo removalUndo() {
+        return mc.removalUndo;
+    }
+
+    @Override
     public void setError(@Nullable String message) {
         mc.setError(message);
     }

@@ -1821,6 +1821,31 @@ public class ToolWindowManager {
     }
 
     /**
+     * Whether the layout already is the one {@link #resetLayout} leaves: every tool window on its registered
+     * side, shown or hidden as it is by default, in registration order. Reads only; a reset then loses nothing.
+     */
+    public boolean isDefaultLayout() {
+        for (ToolWindow tw : byId.values()) {
+            if (currentSide(tw) != tw.getSide() || isVisible(tw) == defaultHidden.contains(tw.getId())) {
+                return false;
+            }
+        }
+        // The stored order as the stripes read it: the registered ids it names, then the ones it lacks.
+        List<String> order = new ArrayList<>();
+        for (String id : config.getWorkspaceState().getToolWindowOrder()) {
+            if (byId.containsKey(id) && !order.contains(id)) {
+                order.add(id);
+            }
+        }
+        for (String id : byId.keySet()) {
+            if (!order.contains(id)) {
+                order.add(id);
+            }
+        }
+        return order.equals(List.copyOf(byId.keySet()));
+    }
+
+    /**
      * Puts every tool window back on its registered side, shown or hidden as it is by default, in registration
      * order — the layout of a fresh window. A window that is open and changes side, or is hidden now, closes.
      * The layout is part of this window's session (per project), so other projects keep theirs.

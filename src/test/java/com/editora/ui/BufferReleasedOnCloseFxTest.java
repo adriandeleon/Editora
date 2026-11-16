@@ -71,6 +71,50 @@ class BufferReleasedOnCloseFxTest {
     }
 
     /**
+     * Undo Last Removal keeps how to put back what was removed from a tab's line (a breakpoint with a condition, its
+     * pinned values, a bookmark with a mnemonic) for the life of the window: it must find the buffer again without
+     * keeping it.
+     */
+    @Test
+    void aRemovalThatCanBeUndoneDoesNotKeepItsClosedBufferAlive() throws Exception {
+        Path file = Files.createTempFile("editora-release-removal", ".java");
+        Files.writeString(file, "class C {\n    int a = 1;\n    int b = 2;\n}\n");
+
+        WeakReference<EditorBuffer> ref = removeFromItsLinesAndClose(file);
+
+        assertEquals(3, FxTestSupport.callOnFx(() -> fx.controller.removalUndo.size()), "the removals are kept");
+        assertTrue(collected(ref), "the closed buffer is still reachable — a recorded removal kept it");
+        CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+        FxTestSupport.runOnFx(
+                () -> registry.run("edit.undoRemoval")); // its tab is gone: it says so, and throws nothing
+        assertEquals(2, FxTestSupport.callOnFx(() -> fx.controller.removalUndo.size()));
+    }
+
+    /** Opens the file, removes a detailed breakpoint, a line's pins and a mnemonic bookmark from it, and closes it. */
+    private WeakReference<EditorBuffer> removeFromItsLinesAndClose(Path file) throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
+        EditorBuffer buffer = FxTestSupport.callOnFx(
+                () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
+        assertNotNull(buffer, "the file opened into a buffer");
+        CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+        DebugCoordinator debug = FxTestSupport.field(fx.controller, "debugCoordinator");
+        FxTestSupport.runOnFx(() -> {
+            fx.controller.removalUndo.clear();
+            buffer.getBreakpointManager()
+                    .add(com.editora.config.Breakpoint.plain(1, "int a = 1;").withCondition("a > 0"));
+            buffer.toggleBreakpoint(1);
+            buffer.getPinManager().toggle(2, "b");
+            buffer.getFocusedArea().moveTo(2, 0);
+            debug.pinnedValues().unpinLine();
+            buffer.getBookmarkManager().add(new com.editora.config.Bookmark(2, "", "", "9"));
+            registry.run("bookmarks.toggle");
+            registry.run("buffer.closeAll");
+        });
+        return new WeakReference<>(buffer);
+    }
+
+    /**
      * The "which buffer was the last kill / yank / expand-selection in" slots only ever compare identity, so
      * they must not be what keeps a closed buffer alive. The selection-range slot is filled by a language
      * server's answer, which a headless test does not have: its declared type is pinned instead.

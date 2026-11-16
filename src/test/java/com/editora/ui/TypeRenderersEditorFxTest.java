@@ -72,10 +72,46 @@ class TypeRenderersEditorFxTest {
             button(editor.node(), tr("typerenderer.edit")).fire();
             assertEquals(before, saves.size());
 
+            // Remove is saved at once, so it asks first, naming the renderer: Cancel keeps it and saves nothing.
             editor.list().getSelectionModel().select(1);
-            button(editor.node(), tr("typerenderer.remove")).fire();
+            before = saves.size();
+            try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                button(editor.node(), tr("typerenderer.remove")).fire();
+                assertEquals(
+                        List.of(new Confirm.Question(
+                                "Remove Type Renderer",
+                                null,
+                                "Remove the renderer for Point? This cannot be undone.",
+                                "Remove")),
+                        questions.asked());
+                assertEquals(2, stored.size(), "Cancel removes nothing");
+                assertEquals(before, saves.size());
+
+                // Delete on the list is the same removal, asked about once.
+                editor.list()
+                        .getOnKeyPressed()
+                        .handle(new javafx.scene.input.KeyEvent(
+                                javafx.scene.input.KeyEvent.KEY_PRESSED,
+                                "",
+                                "",
+                                javafx.scene.input.KeyCode.DELETE,
+                                false,
+                                false,
+                                false,
+                                false));
+                assertEquals(2, questions.asked().size());
+                assertEquals(2, stored.size());
+
+                questions.answer(true);
+                button(editor.node(), tr("typerenderer.remove")).fire();
+                assertEquals(3, questions.asked().size(), "asked once for the removal");
+            }
             assertEquals(
                     List.of("Money"), stored.stream().map(TypeRenderer::getType).toList());
+            assertEquals(
+                    "Remove the renderer for Money (java)? This cannot be undone.",
+                    TypeRenderersEditor.removeQuestion(TypeRenderers.label(stored.getFirst()))
+                            .message());
         });
     }
 }

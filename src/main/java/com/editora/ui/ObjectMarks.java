@@ -80,6 +80,11 @@ final class ObjectMarks {
         return labels.isEmpty();
     }
 
+    /** How many objects carry a label. */
+    int size() {
+        return labels.size();
+    }
+
     /** Whether an object carries {@code label} (a breakpoint's instance filter names one by it). */
     boolean hasLabel(String label) {
         return labels.containsValue(tidy(label));

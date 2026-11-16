@@ -142,7 +142,7 @@ final class SettingsWindowWiring {
 
             @Override
             public void restoreDefault() {
-                mc.toolbarCoordinator.restoreDefault();
+                mc.toolbarCoordinator.restoreDefault(settingsWindow.stage); // the question is the Settings window's
             }
         });
     }

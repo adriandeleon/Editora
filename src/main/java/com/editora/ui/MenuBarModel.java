@@ -173,6 +173,7 @@ final class MenuBarModel {
                         List.of(
                                 "edit.undo",
                                 "edit.redo",
+                                "edit.undoRemoval",
                                 SEPARATOR,
                                 "edit.cut",
                                 "edit.copy",

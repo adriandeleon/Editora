@@ -356,6 +356,105 @@ class DebugPanelWatchesFxTest {
         assertEquals(List.of(tr("debugpanel.addWatch")), watchRows());
     }
 
+    /** One watch removed asks nothing: Undo Last Removal puts it back in its place, paused as it was. */
+    @Test
+    void aRemovedWatchIsRecordedAndComesBackWhereItWasPausedAsItWas() throws Exception {
+        List<String> said = new ArrayList<>();
+        RemovalUndo undo = new RemovalUndo(said::add);
+        boolean[] shown = {true};
+        FxTestSupport.runOnFx(() -> {
+            panel.setRemovalUndo(undo, () -> shown[0]);
+            panel.setWatches(List.of("count", "name", "items"));
+            panel.setWatchPaused("name", true);
+            watchChanges = 0;
+            // The Delete key on the watch's row.
+            tree().getSelectionModel().select(row(tr("debugpanel.watches"), "name"));
+            tree().fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.DELETE, false, false, false, false));
+        });
+        assertEquals(List.of("count", "items"), FxTestSupport.callOnFx(panel::getWatches));
+        assertEquals(List.of(), FxTestSupport.callOnFx(panel::getPausedWatches));
+        assertEquals(List.of("Watch “name” removed. Undo Last Removal takes this back."), said);
+
+        FxTestSupport.runOnFx(undo::undoLast);
+        assertEquals(List.of("count", "name", "items"), FxTestSupport.callOnFx(panel::getWatches), "its place");
+        assertEquals(List.of("name"), FxTestSupport.callOnFx(panel::getPausedWatches), "and still paused");
+        assertEquals("Watch “name” restored.", said.getLast());
+        assertEquals(2, watchChanges, "the removal and the restore are both saved");
+
+        // The row's menu, then the panel's session is closed: the window's watches are another panel's now.
+        FxTestSupport.runOnFx(() -> menuFor(row(tr("debugpanel.watches"), "items")).stream()
+                .filter(item -> tr("debugpanel.removeWatch").equals(item.getText()))
+                .findFirst()
+                .orElseThrow()
+                .fire());
+        assertEquals(List.of("count", "name"), FxTestSupport.callOnFx(panel::getWatches));
+        shown[0] = false;
+        FxTestSupport.runOnFx(undo::undoLast);
+        assertEquals("This can no longer be undone: Watch “items” removed.", said.getLast());
+        assertEquals(List.of("count", "name"), FxTestSupport.callOnFx(panel::getWatches), "nothing is written");
+        assertEquals(3, watchChanges);
+    }
+
+    /** Remove All Watches asks first, naming how many go: the row, and its command through the same row. */
+    @Test
+    void removeAllWatchesAsksBeforeItEmptiesTheList() throws Exception {
+        FxTestSupport.runOnFx(() -> panel.setWatches(List.of("count", "name", "items")));
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(() -> menuFor(row(tr("debugpanel.watches"), "name")).stream()
+                    .filter(item -> tr("debugpanel.removeAllWatches").equals(item.getText()))
+                    .findFirst()
+                    .orElseThrow()
+                    .fire());
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Remove All Watches", null, "Remove all 3 watches? This cannot be undone.", "Remove")),
+                    questions.asked());
+            assertEquals(
+                    List.of("count", "name", "items"),
+                    FxTestSupport.callOnFx(panel::getWatches),
+                    "Cancel keeps every watch");
+            assertEquals(0, watchChanges, "and nothing is saved");
+
+            // The command runs the same row, so it asks the same question, once.
+            FxTestSupport.runOnFx(() -> {
+                tree().getSelectionModel().select(row(tr("debugpanel.watches"), "name"));
+                assertTrue(panel.runMenuRow("debug.removeAllWatches"));
+            });
+            assertEquals(2, questions.asked().size());
+            assertEquals(3, FxTestSupport.callOnFx(panel::getWatches).size());
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(() -> {
+                tree().getSelectionModel().select(row(tr("debugpanel.watches"), "name"));
+                assertTrue(panel.runMenuRow("debug.removeAllWatches"));
+            });
+            assertEquals(3, questions.asked().size(), "asked once for the removal");
+        }
+        assertEquals(List.of(), FxTestSupport.callOnFx(panel::getWatches));
+        assertEquals(1, watchChanges);
+        assertEquals(List.of(tr("debugpanel.addWatch")), watchRows());
+    }
+
+    @Test
+    void theRemoveAllWatchesQuestionNamesOneWatchAsOne() {
+        assertEquals(
+                "Remove the watch? This cannot be undone.",
+                DebugPanel.removeAllWatchesQuestion(1).message());
+        assertEquals(
+                "Remove all 12 watches? This cannot be undone.",
+                DebugPanel.removeAllWatchesQuestion(12).message());
+        assertEquals(
+                "Remove the label of the marked object? This cannot be undone.",
+                DebugPanel.unmarkAllQuestion(1).message());
+        assertEquals(
+                new Confirm.Question(
+                        "Unmark All Objects",
+                        null,
+                        "Remove the labels of all 4 marked objects? This cannot be undone.",
+                        "Remove"),
+                DebugPanel.unmarkAllQuestion(4));
+    }
+
     @Test
     void theRowMenuOffersWhatFitsTheRowAndItsEntriesDoWhatDoubleClickDoes() throws Exception {
         FxTestSupport.runOnFx(() -> {

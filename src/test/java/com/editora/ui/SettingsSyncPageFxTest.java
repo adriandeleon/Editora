@@ -276,8 +276,28 @@ class SettingsSyncPageFxTest {
         assertTrue(otherSyncs().ok());
         assertEquals("zzfromhere\nzzfromother\n", Files.readString(other.resolve("dictionary.txt")));
 
-        // Disconnect: sync is off, the data stays, the repository can be changed again.
-        FxTestSupport.runOnFx(() -> this.<Button>control("syncDisconnectButton").fire());
+        // Disconnect asks first, saying what goes and what stays: Cancel leaves sync on.
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(
+                    () -> this.<Button>control("syncDisconnectButton").fire());
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Disconnect Sync",
+                            null,
+                            "Stop syncing this computer? Its copy of the sync repository is deleted and the account"
+                                    + " it signed in with is forgotten. The repository URL stays, and so do your"
+                                    + " settings, here and in the repository.",
+                            "Disconnect")),
+                    questions.asked());
+            assertTrue(FxTestSupport.callOnFx(settings::isSyncEnabled), "Cancel keeps the connection");
+            assertTrue(Files.isDirectory(fx.configDir.resolve("sync").resolve("repo")), "and this computer's copy");
+
+            // Then: sync is off, the data stays, the repository can be changed again.
+            questions.answer(true);
+            FxTestSupport.runOnFx(
+                    () -> this.<Button>control("syncDisconnectButton").fire());
+            assertEquals(2, questions.asked().size());
+        }
         awaitIdle();
         FxTestSupport.runOnFx(() -> {
             assertFalse(settings.isSyncEnabled());
@@ -570,7 +590,26 @@ class SettingsSyncPageFxTest {
             javafx.scene.layout.VBox warning = control("syncCredentialsWarning");
             assertTrue(warning.isVisible());
             assertTrue(SettingsRig.texts(warning).contains(tr("settings.sync.credentials.stored")));
-            ((Button) SettingsRig.button(warning, tr("settings.sync.credentials.remove"))).fire();
+            // Remove from URL asks first, as the token is kept nowhere else: Cancel leaves the URL as stored.
+            try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                ((Button) SettingsRig.button(warning, tr("settings.sync.credentials.remove"))).fire();
+                assertEquals(
+                        List.of(new Confirm.Question(
+                                "Remove Password or Token",
+                                null,
+                                "Remove the password or token from the repository URL? It is not kept anywhere else."
+                                        + " Syncing then signs in with your Git credential helper or SSH key.",
+                                "Remove")),
+                        questions.asked());
+                assertEquals(
+                        "https://me:ghp_FAKEFAKEFAKE@github.com/me/editora-sync.git",
+                        settings.getSyncRepoUrl(),
+                        "Cancel removes nothing");
+                assertTrue(warning.isVisible());
+                questions.answer(true);
+                ((Button) SettingsRig.button(warning, tr("settings.sync.credentials.remove"))).fire();
+                assertEquals(2, questions.asked().size());
+            }
             assertEquals("https://me@github.com/me/editora-sync.git", settings.getSyncRepoUrl());
             assertEquals(
                     "https://me@github.com/me/editora-sync.git",

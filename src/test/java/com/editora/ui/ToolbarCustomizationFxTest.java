@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -81,12 +82,42 @@ class ToolbarCustomizationFxTest {
     @Test
     void restoreDefaultClearsTheSettingAndRebuildsTheDefault() throws Exception {
         rebuildWith(List.of("file.save")); // customize first
-        FxTestSupport.runOnFx(() -> coord.restoreDefault());
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(() -> coord.restoreDefault());
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Restore Default Toolbar",
+                            null,
+                            "Restore the default toolbar? The buttons you added, removed or moved go back to the"
+                                    + " default arrangement, in every window. This cannot be undone.",
+                            "Restore")),
+                    questions.asked());
+            assertEquals(List.of("file.save"), settings.getToolbarLayout(), "Cancel keeps the customized toolbar");
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(() -> coord.restoreDefault());
+            assertEquals(2, questions.asked().size());
+        }
         assertTrue(settings.getToolbarLayout().isEmpty(), "restore clears the saved layout (empty ⇒ default)");
         List<Node> nodes = rebuildWith(List.of());
         assertEquals(
                 ToolbarCatalog.defaultLayout().size(),
                 FxTestSupport.callOnFx(nodes::size),
                 "toolbar is back to the default arrangement");
+    }
+
+    @Test
+    void restoreDefaultAsksNothingWhenTheToolbarAlreadyIsTheDefault() throws Exception {
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            rebuildWith(List.of()); // unset: the shipped default
+            FxTestSupport.runOnFx(() -> coord.restoreDefault());
+            rebuildWith(new java.util.ArrayList<>(ToolbarCatalog.defaultLayout())); // arranged the same by hand
+            FxTestSupport.runOnFx(() -> coord.restoreDefault());
+            assertEquals(List.of(), questions.asked(), "nothing would be lost");
+        }
+        assertTrue(settings.getToolbarLayout().isEmpty());
+        assertTrue(ToolbarCoordinator.isDefaultLayout(null));
+        assertTrue(ToolbarCoordinator.isDefaultLayout(List.of()));
+        assertFalse(ToolbarCoordinator.isDefaultLayout(List.of("file.save")));
     }
 }

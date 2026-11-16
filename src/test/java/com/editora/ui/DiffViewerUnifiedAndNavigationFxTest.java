@@ -780,11 +780,36 @@ class DiffViewerUnifiedAndNavigationFxTest {
         assertTrue(FxTestSupport.callOnFx(pane::hasResultEditor), "and the draft is still there");
         assertEquals(RIGHT + "draft\n", FxTestSupport.callOnFx(pane::resultText));
 
-        FxTestSupport.runOnFx(reset::fire);
+        // Reset asks first, since the draft's edits cannot be brought back: Cancel keeps the draft.
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(reset::fire);
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Reset Draft",
+                            null,
+                            "Discard the edits to the draft? It goes back to the text of the local file. This cannot"
+                                    + " be undone.",
+                            "Reset")),
+                    questions.asked());
+            assertEquals(RIGHT + "draft\n", FxTestSupport.callOnFx(pane::resultText), "Cancel keeps the draft");
+            assertTrue(FxTestSupport.callOnFx(pane::hasDirtyResult));
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(reset::fire);
+            assertEquals(2, questions.asked().size());
+        }
         assertEquals(RIGHT, FxTestSupport.callOnFx(pane::resultText));
         assertFalse(FxTestSupport.callOnFx(pane::hasDirtyResult));
         assertNull(FxTestSupport.callOnFx(pane::unsavedStateToken));
         assertEquals(RIGHT, edited.get(edited.size() - 1), "the comparison is recomputed for the baseline");
+
+        // A draft with no edits loses nothing: its button is disabled, and the action itself asks nothing.
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            assertTrue(FxTestSupport.callOnFx(reset::isDisabled));
+            FxTestSupport.runOnFx(() -> FxTestSupport.invoke(pane, "resetResult"));
+            assertEquals(List.of(), questions.asked());
+            assertEquals(RIGHT, FxTestSupport.callOnFx(pane::resultText));
+        }
 
         FxTestSupport.runOnFx(pane::toggleResultEditing);
         assertFalse(FxTestSupport.callOnFx(pane::hasResultEditor), "a clean editor closes");

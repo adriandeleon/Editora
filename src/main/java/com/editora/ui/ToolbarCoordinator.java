@@ -180,13 +180,40 @@ final class ToolbarCoordinator {
         applyLayout(tokens);
     }
 
-    /** Restores the shipped default arrangement. */
+    /** {@link #restoreDefault(javafx.stage.Window)} asked from this window (the command, the toolbar's menu row). */
     void restoreDefault() {
+        restoreDefault(host.window());
+    }
+
+    /**
+     * Restores the shipped default arrangement. The user's own arrangement is lost, so it asks first (the
+     * question belongs to {@code owner}); a toolbar that already is the default one is left without a question.
+     */
+    void restoreDefault(javafx.stage.@Nullable Window owner) {
+        if (!isDefaultLayout(host.settings().getToolbarLayout()) && !Confirm.ask(owner, restoreDefaultQuestion())) {
+            return;
+        }
         host.settings().setToolbarLayout(new ArrayList<>()); // empty ⇒ default
         host.requestSave();
         ops.broadcastToolbarChanged();
         host.syncSettingsWindow();
         host.setStatus(tr("status.toolbar.restored"));
+    }
+
+    /** Whether the saved layout {@code saved} shows the shipped default toolbar: unset, or arranged the same. Pure. */
+    static boolean isDefaultLayout(@Nullable List<String> saved) {
+        return saved == null
+                || saved.isEmpty()
+                || ToolbarLayout.sanitize(saved).equals(ToolbarLayout.sanitize(ToolbarCatalog.defaultLayout()));
+    }
+
+    /** The question before the toolbar goes back to its default arrangement. Pure. */
+    static Confirm.Question restoreDefaultQuestion() {
+        return new Confirm.Question(
+                tr("toolbar.restoreDefault.title"),
+                null,
+                tr("toolbar.restoreDefault.confirm"),
+                tr("confirm.action.restore"));
     }
 
     private void applyLayout(List<String> tokens) {

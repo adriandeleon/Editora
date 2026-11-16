@@ -4265,11 +4265,55 @@ public class EditorBuffer implements TabContent {
         breakpoints.setOnChanged(callback);
     }
 
-    /** Toggles the breakpoint on {@code line} and refreshes just that line's gutter strip. */
+    /**
+     * Toggles the breakpoint on {@code line} and refreshes just that line's gutter strip. When that removed one, the
+     * listener of {@link #setOnBreakpointRemoved} is told which.
+     */
     public boolean toggleBreakpoint(int line) {
+        com.editora.config.Breakpoint was = breakpoints.get(line);
         boolean on = breakpoints.toggle(line);
         refreshGutterLine(line);
+        if (!on && was != null) {
+            breakpointRemoved.accept(this, was);
+        }
         return on;
+    }
+
+    /** Told the breakpoint {@link #toggleBreakpoint} removed, as it was (its line is the buffer's view line). */
+    private java.util.function.BiConsumer<EditorBuffer, com.editora.config.Breakpoint> breakpointRemoved =
+            (buffer, breakpoint) -> {};
+
+    /**
+     * Sets who is told when {@link #toggleBreakpoint} removes a breakpoint (the controller records how to put back one
+     * that carried a condition). {@link #dropBreakpoint} tells nobody.
+     */
+    public void setOnBreakpointRemoved(
+            java.util.function.BiConsumer<EditorBuffer, com.editora.config.Breakpoint> listener) {
+        breakpointRemoved = listener == null ? (buffer, breakpoint) -> {} : listener;
+    }
+
+    /**
+     * Removes the breakpoint on {@code line}, if any, without telling the removal listener: a removal nobody needs to
+     * take back, because the program made it (a temporary breakpoint that was hit) or because the key that made it
+     * sets the breakpoint again (the last lambda of a lambda breakpoint toggled off).
+     */
+    public void dropBreakpoint(int line) {
+        breakpoints.remove(line);
+        refreshGutterLine(line);
+    }
+
+    /**
+     * Puts {@code breakpoint} back on its (view) line as it is, condition and all. False, changing nothing, when the
+     * line is past the end of the text or has a breakpoint now.
+     */
+    public boolean restoreBreakpoint(com.editora.config.Breakpoint breakpoint) {
+        int line = breakpoint.line();
+        if (line < 0 || line >= area.getParagraphs().size() || breakpoints.isBreakpoint(line)) {
+            return false;
+        }
+        breakpoints.add(breakpoint);
+        refreshGutterLine(line);
+        return true;
     }
 
     /** Replaces this buffer's breakpoints from persisted state; returns whether any was re-anchored. */

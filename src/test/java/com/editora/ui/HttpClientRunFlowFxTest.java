@@ -491,9 +491,31 @@ class HttpClientRunFlowFxTest {
         assertEquals(tr("status.http.binaryResponse"), host.last);
         assertEquals(2, ops.opened.size());
 
-        // Clear empties the viewer and its actions.
+        // Clear asks first, naming how many responses go (they leave the saved history too): Cancel keeps them.
         javafx.scene.control.MenuItem clear = panel(b).controlsForTest().clearItem();
-        FxTestSupport.runOnFx(clear::fire);
+        int kept = FxTestSupport.callOnFx(() -> panel(b).history().size());
+        assertTrue(kept > 1, "several responses kept");
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(clear::fire);
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Clear Response History",
+                            null,
+                            "Clear all " + kept + " responses the HTTP panel keeps for this file? This cannot be"
+                                    + " undone.",
+                            "Clear")),
+                    questions.asked());
+            assertEquals(kept, FxTestSupport.callOnFx(() -> panel(b).history().size()), "Cancel clears nothing");
+            assertNotNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()));
+
+            // Then it empties the viewer and its actions.
+            questions.answer(true);
+            FxTestSupport.runOnFx(clear::fire);
+            assertEquals(2, questions.asked().size(), "asked once for the clearing");
+        }
+        assertEquals(
+                "Clear the response the HTTP panel keeps for this file? This cannot be undone.",
+                HttpClientPanel.clearQuestion(1).message());
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()));
         assertEquals("", FxTestSupport.callOnFx(() -> responseText(panel(b))));
         assertTrue(FxTestSupport.callOnFx(copyCurl::isDisabled));

@@ -232,8 +232,7 @@ final class ExceptionBreakpointCommands {
                 : all.get(index);
         exceptionBreakpointEditor().edit(initial, isNew).ifPresent(result -> {
             if (result.remove()) {
-                all.remove(index);
-                host.setStatus(tr("status.debug.exceptionBreakpointRemoved"));
+                removed(all.remove(index), index);
             } else if (result.breakpoint() != null) {
                 if (isNew) {
                     all.add(result.breakpoint());
@@ -247,6 +246,34 @@ final class ExceptionBreakpointCommands {
             ops.persistExceptionBreakpoints(all);
             push();
         });
+    }
+
+    /**
+     * The form's Remove took {@code was} out of the list at {@code index}: it has a typed type, and often a condition,
+     * so it records how to come back there, and the status line says so.
+     */
+    private void removed(com.editora.config.ExceptionBreakpoint was, int index) {
+        String label = ExceptionBreakpoints.label(was, tr("exceptionbp.anyType"));
+        host.removalUndo()
+                .removed(
+                        tr("status.debug.exceptionBreakpointRemoved", label),
+                        tr("status.debug.exceptionBreakpointRestored", label),
+                        () -> restore(was, index));
+    }
+
+    /**
+     * Puts {@code was} back at {@code index} of the project's exception breakpoints (the end, when the list is shorter
+     * now). False, changing nothing, when the same one was added again since.
+     */
+    boolean restore(com.editora.config.ExceptionBreakpoint was, int index) {
+        List<com.editora.config.ExceptionBreakpoint> all = new ArrayList<>(ops.exceptionBreakpoints());
+        if (all.contains(was)) {
+            return false;
+        }
+        all.add(Math.min(index, all.size()), was);
+        ops.persistExceptionBreakpoints(all);
+        push();
+        return true;
     }
 
     /** How an exception breakpoint is edited: the form, or what a test answers. */

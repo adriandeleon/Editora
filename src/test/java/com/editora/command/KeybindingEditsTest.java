@@ -182,4 +182,88 @@ class KeybindingEditsTest {
             org.junit.jupiter.api.Assertions.assertFalse(KeybindingEdits.typesText(s), s);
         }
     }
+
+    // --- restored: taking a clear or a reset back ----------------------------------------------------------
+
+    /** The effective bindings: {@code base} with {@code overrides} on top, the suppressed chords left out. */
+    private static Map<String, String> active(Map<String, String> overrides) {
+        Map<String, String> m = base();
+        overrides.forEach((chord, cmd) -> {
+            if (cmd.isBlank()) {
+                m.remove(chord);
+            } else {
+                m.put(chord, cmd);
+            }
+        });
+        return m;
+    }
+
+    @Test
+    void aClearedCommandGetsItsOwnChordAndItsSuppressedDefaultsBack() {
+        Map<String, String> before = KeybindingEdits.rebind(base(), map(), "file.save", "C-M-s");
+        Map<String, String> after = KeybindingEdits.clear(base(), before, "file.save");
+        assertEquals(
+                before,
+                KeybindingEdits.restored(before, after, after, active(after), "file.save", java.util.List.of("C-M-s")));
+    }
+
+    @Test
+    void aClearedDefaultComesBackByLosingItsSuppressor() {
+        Map<String, String> after = KeybindingEdits.clear(base(), map(), "file.save");
+        assertEquals(map("C-x C-s", KeymapManager.UNBIND), after);
+        assertEquals(
+                map(),
+                KeybindingEdits.restored(
+                        map(), after, after, active(after), "file.save", java.util.List.of("C-x C-s")));
+    }
+
+    @Test
+    void aBindingMadeSinceForAnotherCommandStays() {
+        Map<String, String> before = KeybindingEdits.rebind(base(), map(), "file.save", "C-M-s");
+        Map<String, String> after = KeybindingEdits.clear(base(), before, "file.save");
+        Map<String, String> now = KeybindingEdits.rebind(base(), after, "edit.copy", "C-M-c");
+        Map<String, String> restored =
+                KeybindingEdits.restored(before, after, now, active(now), "file.save", java.util.List.of("C-M-s"));
+        assertEquals("file.save", restored.get("C-M-s"));
+        assertEquals("edit.copy", restored.get("C-M-c"), "what was bound since is kept");
+    }
+
+    @Test
+    void aChordTakenSinceIsNotTakenBack() {
+        Map<String, String> before = KeybindingEdits.rebind(base(), map(), "file.save", "C-M-s");
+        Map<String, String> after = KeybindingEdits.clear(base(), before, "file.save");
+        Map<String, String> now = KeybindingEdits.rebind(base(), after, "edit.copy", "C-M-s");
+        assertNull(
+                KeybindingEdits.restored(before, after, now, active(now), "file.save", java.util.List.of("C-M-s")),
+                "Copy has that key now");
+    }
+
+    @Test
+    void aChordShadowedSinceIsNotTakenBack() {
+        Map<String, String> before = KeybindingEdits.rebind(base(), map(), "file.save", "C-M-s x");
+        Map<String, String> after = KeybindingEdits.clear(base(), before, "file.save");
+        Map<String, String> now = KeybindingEdits.rebind(base(), after, "edit.copy", "C-M-s");
+        assertNull(
+                KeybindingEdits.restored(before, after, now, active(now), "file.save", java.util.List.of("C-M-s x")),
+                "its first key runs Copy now, so the chord could never be typed");
+    }
+
+    @Test
+    void aCommandBoundAgainSinceKeepsItsNewBinding() {
+        Map<String, String> before = KeybindingEdits.rebind(base(), map(), "file.save", "C-M-s");
+        Map<String, String> after = KeybindingEdits.clear(base(), before, "file.save");
+        Map<String, String> now = KeybindingEdits.rebind(base(), after, "file.save", "C-M-w");
+        assertNull(KeybindingEdits.restored(before, after, now, active(now), "file.save", java.util.List.of("C-M-s")));
+    }
+
+    @Test
+    void aResetIsTakenBackWithTheChordItGaveToAnotherCommand() {
+        // Copy took Save's default; Save was bound to a chord of its own. Reset gave Save its default back.
+        Map<String, String> before = map("C-x C-s", "edit.copy", "C-M-s", "file.save");
+        Map<String, String> after = KeybindingEdits.reset(base(), before, "file.save");
+        assertEquals(map(), after);
+        assertEquals(
+                before,
+                KeybindingEdits.restored(before, after, after, active(after), "file.save", java.util.List.of("C-M-s")));
+    }
 }
