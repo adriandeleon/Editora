@@ -172,6 +172,30 @@ final class SettingsDebugPage {
             config.getSettings().setDebugHistoryStops(now);
             w.apply();
         });
+        debugEvaluationLimitCombo = new ComboBox<>();
+        debugEvaluationLimitCombo.getItems().setAll(0, 5, 10, 30, 60, 300);
+        debugEvaluationLimitCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(Integer seconds) {
+                return seconds == null
+                        ? ""
+                        : seconds == 0
+                                ? tr("settings.debug.evaluationTimeLimit.off")
+                                : tr("settings.debug.evaluationTimeLimit.seconds", seconds);
+            }
+
+            @Override
+            public Integer fromString(String label) {
+                return Integer.valueOf(label);
+            }
+        });
+        debugEvaluationLimitCombo.valueProperty().addListener((obs, was, now) -> {
+            if (w.loading || now == null) {
+                return;
+            }
+            config.getSettings().setDebugEvaluationTimeLimit(now);
+            w.apply();
+        });
         debugGdbPathField = new TextField();
         debugGdbPathField.setPromptText("gdb");
         w.commitOnEnterOrBlur(debugGdbPathField, () -> config.getSettings().getGdbPath(), now -> {
@@ -247,6 +271,8 @@ final class SettingsDebugPage {
     /** Debug History: the stops a session keeps. */
     private ComboBox<Integer> debugHistoryCombo;
 
+    private ComboBox<Integer> debugEvaluationLimitCombo;
+
     /** GDB's path, for its DAP mode. */
     private TextField debugGdbPathField;
     /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
@@ -309,6 +335,16 @@ final class SettingsDebugPage {
                 tr("settings.debug.historyStops.hint"),
                 debugHistoryCombo,
                 "debug history back forward stops time travel earlier values remember");
+        Card evaluationCard = w.card(p, tr("settings.debug.evaluation"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), evaluationCard.box());
+        w.controlRow(
+                evaluationCard,
+                Category.DEBUG,
+                tr("settings.debug.evaluationTimeLimit"),
+                tr("settings.debug.evaluationTimeLimit.hint"),
+                debugEvaluationLimitCombo,
+                "debug evaluate evaluation expression watch console hover function call time limit timeout hang"
+                        + " stuck slow cancel stop interrupt");
         // Type renderers (IntelliJ's Java Type Renderers): every language's, one list.
         Card renderersCard = w.card(p, tr("settings.debug.typeRenderers"));
         SettingsDependents.bind(debugCheck.selectedProperty(), renderersCard.box());
@@ -711,6 +747,12 @@ final class SettingsDebugPage {
             debugHistoryCombo.getItems().sort(Integer::compare);
         }
         debugHistoryCombo.setValue(stops);
+        int limit = settings.getDebugEvaluationTimeLimit();
+        if (!debugEvaluationLimitCombo.getItems().contains(limit)) {
+            debugEvaluationLimitCombo.getItems().add(limit); // a value set in settings.json
+            debugEvaluationLimitCombo.getItems().sort(Integer::compare);
+        }
+        debugEvaluationLimitCombo.setValue(limit);
         nodePathField.setText(settings.getNodePath());
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             CheckBox enable = debugEnableChecks.get(dbg.id());

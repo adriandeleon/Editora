@@ -1,7 +1,9 @@
 package com.editora.editor;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import javafx.geometry.Side;
@@ -12,6 +14,7 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -68,10 +71,28 @@ class RowReasonsWindowFxTest {
         }
     }
 
+    /**
+     * Takes the status line off every window showing (another test's editor window still open in this JVM, which the
+     * fallback would speak in), and gives each its own back when run.
+     */
+    private static Runnable setAsideOtherStatusLines() throws Exception {
+        Map<Window, Object> aside = new HashMap<>();
+        EditorFx.onFx(() -> {
+            for (Window w : Window.getWindows()) {
+                Object say = w.getProperties().remove(RowReasons.SAY);
+                if (say != null) {
+                    aside.put(w, say);
+                }
+            }
+        });
+        return () -> aside.forEach((w, say) -> w.getProperties().put(RowReasons.SAY, say));
+    }
+
     @Test
     void aMenuOfAWindowWithNoEditorWindowAboveItSaysWhyInAShowingEditorWindow() throws Exception {
         List<String> main = new ArrayList<>();
         Stage[] stages = new Stage[2];
+        Runnable restore = setAsideOtherStatusLines();
         try {
             EditorFx.onFx(() -> {
                 stages[0] = new Stage();
@@ -84,7 +105,7 @@ class RowReasonsWindowFxTest {
                 say(null, "nowhere");
             });
             assertEquals(List.of("anywhere", "nowhere"), main);
-            // With no editor window focused, the first one shown hears it.
+            // With no editor window focused, the first one shown hears it (on macOS, a new window may not take focus).
             List<String> other = new ArrayList<>();
             Stage[] more = new Stage[2];
             try {
@@ -119,6 +140,7 @@ class RowReasonsWindowFxTest {
                         s.close();
                     }
                 }
+                restore.run();
             });
         }
     }

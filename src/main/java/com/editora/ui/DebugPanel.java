@@ -212,6 +212,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             setVariable(parentRef, name, value, cb);
         }
 
+        /**
+         * Set Value on a watch: assigns {@code value} to the watch's {@code expression} in frame {@code frameId};
+         * {@code variableRef} is the scope holding a variable of that name (0 when none). {@code cb} gets the value
+         * it has now.
+         */
+        default void setExpression(
+                String expression, String value, int variableRef, int frameId, Consumer<String> cb) {}
+
         /** Whether the session can watch a field (Variables → Break When Value Changes). */
         default boolean canWatchField() {
             return false;
@@ -2376,6 +2384,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 once.setOnAction(e -> evaluateWatchOnce(row.name()));
                 menu.getItems().add(once);
             }
+            if (settableWatch(row)) {
+                javafx.scene.control.MenuItem set = new javafx.scene.control.MenuItem(tr("debugpanel.setValue"));
+                set.setGraphic(Icons.edit());
+                set.setOnAction(e -> setValuePrompt());
+                com.editora.editor.MenuChords.tag(set, "debug.setValue");
+                menu.getItems().add(set);
+            }
         }
         if (row != null && row.kind() == Kind.VARIABLE && row.parentRef() > 0) {
             javafx.scene.control.MenuItem set = new javafx.scene.control.MenuItem(tr("debugpanel.setValue"));
@@ -2738,6 +2753,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private void setValuePrompt() {
         TreeItem<VarRow> item = variables.getSelectionModel().getSelectedItem();
         VarRow row = item == null ? null : item.getValue();
+        if (prompt != null && row != null && settableWatch(row)) {
+            setWatchValuePrompt(row);
+            return;
+        }
         if (prompt == null || row == null || row.kind() != Kind.VARIABLE || row.parentRef() <= 0) {
             return;
         }
@@ -2763,6 +2782,64 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 }
             });
         });
+    }
+
+    /**
+     * Whether {@code row} is a watch whose value can be set: one with a value at this stop (not paused, not failed),
+     * while the program is paused here.
+     */
+    private boolean settableWatch(VarRow row) {
+        return row.kind() == Kind.WATCH
+                && lastState == DapManager.State.SUSPENDED
+                && viewing == null
+                && !row.failed()
+                && row.note() == null
+                && !row.value().isEmpty()
+                && !"…".equals(row.value());
+    }
+
+    /**
+     * Set Value… on a watch (IntelliJ's and Visual Studio's): the prompt pre-filled with its value, then the watch's
+     * expression is assigned ({@link Actions#setExpression}) and the watches and values shown are evaluated again.
+     */
+    private void setWatchValuePrompt(VarRow row) {
+        String expression = row.name();
+        int variableRef = scopeHolding(expression.strip());
+        int frameId = selectedFrameId;
+        OverlayInput.Prompt ask = prompt;
+        if (ask == null) {
+            return;
+        }
+        ask.show(tr("debugpanel.setValueTitle"), expression, row.value(), value -> {
+            if (value == null) {
+                return;
+            }
+            actions.setExpression(expression, value, variableRef, frameId, newValue -> {
+                if (!actions.refreshValues()) {
+                    refreshWatchesNode();
+                }
+            });
+        });
+    }
+
+    /** The reference of the scope shown that has a variable called {@code name} (the first); 0 when none does. */
+    private int scopeHolding(String name) {
+        TreeItem<VarRow> root = variables.getRoot();
+        if (root == null) {
+            return 0;
+        }
+        for (TreeItem<VarRow> top : root.getChildren()) {
+            for (TreeItem<VarRow> child : top.getChildren()) {
+                VarRow v = child.getValue();
+                if (v != null
+                        && v.kind() == Kind.VARIABLE
+                        && v.parentRef() > 0
+                        && v.name().equals(name)) {
+                    return v.parentRef();
+                }
+            }
+        }
+        return 0;
     }
 
     /** The console menu's Clear Console row, which {@code debug.clearConsole} fires too. */

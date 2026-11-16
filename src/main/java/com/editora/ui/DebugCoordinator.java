@@ -1286,6 +1286,7 @@ final class DebugCoordinator {
         forEachPanel(panel -> panel.history().setCapacity(historyStops)); // fewer forgets the oldest now
         dap().setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         dap().setPythonSubprocesses(s.isDebugPythonSubprocesses()); // shared by every session, from its next launch
+        dap().setEvaluationTimeLimit(s.getDebugEvaluationTimeLimit()); // told to each debugger as its session starts
         dap().setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dap().setProgramTerminal(s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
         dap().setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
@@ -2654,6 +2655,12 @@ final class DebugCoordinator {
                     return;
                 }
                 dap().setVariable(parentRef, name, value, assignTo, frameId, cb);
+            }
+
+            @Override
+            public void setExpression(
+                    String expression, String value, int variableRef, int frameId, Consumer<String> cb) {
+                dap().setExpression(expression, value, frameId, variableRef, cb);
             }
 
             @Override
