@@ -507,10 +507,12 @@ final class SettingsSnippetPages {
                     },
                     (done, ex) -> {
                         if (ex != null) {
-                            Dialogs.showAndWait(Dialogs.styled(new Alert(
+                            Alert failed = Dialogs.styled(new Alert(
                                     Alert.AlertType.ERROR,
                                     tr("settings.template.saveFailed", ex.getMessage()),
-                                    ButtonType.OK)));
+                                    ButtonType.OK));
+                            failed.initOwner(w.stage);
+                            Dialogs.showAndWait(failed);
                             return;
                         }
                         w.markSyncDirty();
@@ -603,10 +605,12 @@ final class SettingsSnippetPages {
                 },
                 (done, e) -> {
                     if (e != null) {
-                        Dialogs.showAndWait(Dialogs.styled(new Alert(
+                        Alert failed = Dialogs.styled(new Alert(
                                 Alert.AlertType.ERROR,
                                 tr("settings.template.saveFailed", e.getMessage()),
-                                ButtonType.OK)));
+                                ButtonType.OK));
+                        failed.initOwner(w.stage);
+                        Dialogs.showAndWait(failed);
                         then.accept(false);
                         return;
                     }

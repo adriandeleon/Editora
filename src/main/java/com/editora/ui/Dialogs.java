@@ -130,6 +130,7 @@ final class Dialogs {
     static <R> Optional<R> showAndWait(Dialog<R> dialog) {
         Function<Asked, @Nullable Answer> answer = answerer;
         if (answer == null) {
+            adoptOwner(dialog);
             return dialog.showAndWait();
         }
         return Optional.ofNullable(answered(dialog, answer));
@@ -152,11 +153,32 @@ final class Dialogs {
         Function<Asked, @Nullable Answer> answer = answerer;
         if (answer == null) {
             dialog.setOnHidden(hidden -> onResult.accept(dialog.getResult()));
+            adoptOwner(dialog);
             dialog.show();
             return;
         }
         R result = answered(dialog, answer);
         javafx.application.Platform.runLater(() -> onResult.accept(result));
+    }
+
+    /**
+     * Gives a dialog built without an owner the app window in front, so JavaFX centres it on that window rather
+     * than on the screen (and it stays above it). A dialog that already has an owner, or was shown before and so
+     * can no longer take one, is left as it is.
+     */
+    static void adoptOwner(Dialog<?> dialog) {
+        if (dialog.getOwner() != null || dialog.isShowing()) {
+            return;
+        }
+        javafx.stage.Window owner = WindowPlacement.frontWindow();
+        if (owner == null) {
+            return;
+        }
+        try {
+            dialog.initOwner(owner);
+        } catch (IllegalStateException shownBefore) {
+            // JavaFX refuses an owner once the dialog's window has been visible: it opens where it did before
+        }
     }
 
     /** {@link #show(Dialog, java.util.function.Consumer)} for a dialog whose answer nobody reads (an error). */

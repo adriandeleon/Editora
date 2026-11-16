@@ -147,13 +147,11 @@ class CrossWindowSettingsFxTest {
         CommandRegistry registryB = FxTestSupport.field(b, "registry");
 
         FxTestSupport.callOnFx(() -> registryB.run("view.toggleLineNumbers"));
-        FxTestSupport.drainFx();
-        FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
+        deliverPendingReapply();
         assertEquals(!before, lineNumbers(bufferA), "window A follows a toggle made in window B");
 
         FxTestSupport.callOnFx(() -> registryB.run("view.toggleLineNumbers"));
-        FxTestSupport.drainFx();
-        FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
+        deliverPendingReapply();
         assertEquals(before, lineNumbers(bufferA));
     }
 }

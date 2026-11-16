@@ -6,7 +6,10 @@ import javafx.geometry.Dimension2D;
 import javafx.geometry.Point2D;
 import javafx.geometry.Rectangle2D;
 import javafx.stage.Screen;
+import javafx.stage.Stage;
 import javafx.stage.Window;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * Where a secondary window (Settings, Run Configurations, …) opens: centred on its owner, but always
@@ -42,7 +45,7 @@ final class WindowPlacement {
     }
 
     /** Visual bounds of the screen showing most of {@code owner}; the primary screen without an owner. */
-    static Rectangle2D screenOf(Window owner) {
+    static Rectangle2D screenOf(@Nullable Window owner) {
         if (owner != null && !Double.isNaN(owner.getX()) && !Double.isNaN(owner.getY())) {
             Rectangle2D bounds = new Rectangle2D(
                     owner.getX(), owner.getY(), Math.max(1, owner.getWidth()), Math.max(1, owner.getHeight()));
@@ -71,8 +74,28 @@ final class WindowPlacement {
         return best != null ? best : Screen.getPrimary().getVisualBounds();
     }
 
+    /**
+     * The app window a window opened without an owner belongs over: the focused showing stage, else the first
+     * showing one; null when no stage is showing.
+     */
+    static @Nullable Window frontWindow() {
+        Window first = null;
+        for (Window w : Window.getWindows()) {
+            if (!(w instanceof Stage) || !w.isShowing()) {
+                continue;
+            }
+            if (w.isFocused()) {
+                return w;
+            }
+            if (first == null) {
+                first = w;
+            }
+        }
+        return first;
+    }
+
     /** Positions {@code window} (of the given size) centred on {@code owner}, on the owner's screen. */
-    static void centerOnOwner(Window window, Window owner, double width, double height) {
+    static void centerOnOwner(Window window, @Nullable Window owner, double width, double height) {
         if (owner == null
                 || Double.isNaN(owner.getX())
                 || Double.isNaN(owner.getY())

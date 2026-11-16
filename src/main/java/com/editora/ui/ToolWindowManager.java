@@ -1192,8 +1192,7 @@ public class ToolWindowManager {
         // No usable memory (or the screen it was on is gone): a default size, centred on the editor window.
         stage.setWidth(b == null ? UiZoom.px(ToolWindowFloat.DEFAULT_WIDTH) : b.width());
         stage.setHeight(b == null ? UiZoom.px(ToolWindowFloat.DEFAULT_HEIGHT) : b.height());
-        stage.setX(owner.getX() + (owner.getWidth() - stage.getWidth()) / 2);
-        stage.setY(owner.getY() + (owner.getHeight() - stage.getHeight()) / 2);
+        WindowPlacement.centerOnOwner(stage, owner, stage.getWidth(), stage.getHeight());
     }
 
     /**

@@ -235,6 +235,7 @@ final class AgentCoordinator implements AcpClient.Host {
             stage.initOwner(owner);
         }
         stage.setScene(scene);
+        WindowPlacement.centerOnOwner(stage, owner, scene.getWidth(), scene.getHeight());
         stage.setOnHidden(e -> redockFromHolder(holder));
         detachedStage = stage;
         p.setDetached(true);
