@@ -489,6 +489,8 @@ class SettingsPagesFxTest {
             rig.window.syncDictionaryList();
             assertTrue(list.getItems().contains("fromeditor"));
         });
+        // dictionary.txt is written on the config-writer thread (PERF-01): read it once the queued writes land
+        assertTrue(rig.config.shared().awaitWrites());
         assertEquals(
                 List.of("fromeditor", "kubectl", "zzyzx"),
                 Files.readAllLines(rig.config.getUserDictionaryFile()).stream()
