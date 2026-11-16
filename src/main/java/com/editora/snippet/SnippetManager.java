@@ -212,6 +212,33 @@ public final class SnippetManager {
 
     private final Map<String, FileSet> files = new HashMap<>();
     private final Map<String, Resolved> resolved = new HashMap<>();
+
+    /**
+     * The one thread snippet files are read and written on, for every window, in the order asked (PERF-01, Pauta
+     * 6.0.1). The FX thread never reads one: an ask for a language not loaded yet is answered from what is loaded
+     * (nothing of that language) and starts its load here; {@link #warm} loads a buffer's language as the buffer
+     * is set up, so the first Tab or completion normally finds it loaded. Files are read and written outside this
+     * object's lock, which is only ever held for what is in memory.
+     */
+    private static final java.util.concurrent.ExecutorService FILE_THREAD =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    Thread.ofPlatform().daemon().name("snippet-files").factory());
+
+    /** Where file work runs (a seam: a test may run it in place). */
+    public java.util.concurrent.Executor fileWork = FILE_THREAD;
+
+    /** Counts the cache drops ({@link #reload}, a new source): a load begun before one is not kept. Guarded. */
+    private long cacheGeneration;
+    /** Languages whose load {@link #warm} has queued and not finished. Guarded. */
+    private final Set<String> warming = new HashSet<>();
+    /** The user snippet languages as last listed, for the FX thread, which lists nothing. Guarded. */
+    private @Nullable List<String> userLanguages;
+    /** Set by {@link #fileSet} when a set is not loaded: what {@link #resolve} made of it is not cached. */
+    private boolean incomplete;
+    /** Serializes the writers of the user files among themselves (never held by a reader). */
+    private final Object fileLock = new Object();
+    /** A language whose files are not loaded yet: nothing of it, for now. */
+    private static final FileSet NOT_LOADED = new FileSet(List.of(), List.of(), List.of());
     /** Extra source dirs (e.g. plugin {@code snippets/} folders), each holding {@code <lang>.json} files. */
     private final List<Path> extraDirs = new ArrayList<>();
     /** Problems found by the loads since the last {@link #reload()}, by file then entry. */
@@ -239,6 +266,8 @@ public final class SnippetManager {
         files.clear();
         resolved.clear();
         problems.clear();
+        userLanguages = null;
+        cacheGeneration++;
     }
 
     /**
@@ -250,6 +279,7 @@ public final class SnippetManager {
             extraDirs.add(dir);
             files.clear();
             resolved.clear();
+            cacheGeneration++;
         }
     }
 
@@ -257,16 +287,22 @@ public final class SnippetManager {
      * Snippets available in {@code language}: its own, then its fallback language's, then global ones — one
      * {@link Snippet} per trigger. See the class comment for what shadows what.
      */
-    public synchronized List<Snippet> forLanguage(String language) {
-        return new ArrayList<>(resolve(norm(language)).all());
+    public List<Snippet> forLanguage(String language) {
+        prepare(setsFor(norm(language)));
+        synchronized (this) {
+            return new ArrayList<>(resolve(norm(language)).all());
+        }
     }
 
     /** The snippet {@code prefix} stands for in {@code language} (the one Tab would expand), or null. */
-    public synchronized @Nullable Snippet byPrefix(String language, String prefix) {
+    public @Nullable Snippet byPrefix(String language, String prefix) {
         if (prefix == null || prefix.isEmpty()) {
             return null;
         }
-        return resolve(norm(language)).byTrigger().get(prefix);
+        prepare(setsFor(norm(language)));
+        synchronized (this) {
+            return resolve(norm(language)).byTrigger().get(prefix);
+        }
     }
 
     /**
@@ -275,17 +311,194 @@ public final class SnippetManager {
      * words that would otherwise expand in every file type whenever Tab follows them. A global snippet the
      * user wrote (or a bundled one they edited) is deliberate and expands like any other.
      */
-    public synchronized @Nullable Snippet byTabTrigger(String language, String prefix) {
+    public @Nullable Snippet byTabTrigger(String language, String prefix) {
         if (prefix == null || prefix.isEmpty()) {
             return null;
         }
-        Resolved r = resolve(norm(language));
-        return r.listOnly().contains(prefix) ? null : r.byTrigger().get(prefix);
+        prepare(setsFor(norm(language)));
+        synchronized (this) {
+            Resolved r = resolve(norm(language));
+            return r.listOnly().contains(prefix) ? null : r.byTrigger().get(prefix);
+        }
     }
 
     /** The most whitespace-separated words any trigger of {@code language} has (1 when none has a space). */
-    public synchronized int maxTriggerWords(String language) {
-        return resolve(norm(language)).maxWords();
+    public int maxTriggerWords(String language) {
+        prepare(setsFor(norm(language)));
+        synchronized (this) {
+            return resolve(norm(language)).maxWords();
+        }
+    }
+
+    // ---- Loading off the FX thread ----
+
+    /** The languages {@code lang} resolves from: itself, its fallback, then {@code global}. */
+    private static List<String> setsFor(String lang) {
+        List<String> out = new ArrayList<>();
+        out.add(lang);
+        String fallback = FALLBACK.get(lang);
+        if (fallback != null) {
+            out.add(fallback);
+        }
+        if (!lang.equals(GLOBAL)) {
+            out.add(GLOBAL);
+        }
+        return out;
+    }
+
+    /**
+     * Makes the files of {@code langs} loaded: here, outside the lock, for a caller that may block (a test, the
+     * snippet thread); never on the FX thread, which starts their load on the snippet thread instead and is
+     * answered from what is loaded meanwhile.
+     */
+    private void prepare(List<String> langs) {
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            warmLanguages(langs);
+            return;
+        }
+        for (int attempt = 0; attempt < 3; attempt++) {
+            boolean all = true;
+            for (String lang : langs) {
+                all &= loadOutsideLock(lang);
+            }
+            if (all) {
+                return; // else a reload dropped one meanwhile: read it again
+            }
+        }
+    }
+
+    /**
+     * Reads {@code lang}'s files unless they are loaded, outside the lock, and keeps them — unless the cache was
+     * dropped meanwhile. Returns whether they are loaded now.
+     */
+    private boolean loadOutsideLock(String lang) {
+        long generation;
+        List<Path> dirs;
+        synchronized (this) {
+            if (files.containsKey(lang)) {
+                return true;
+            }
+            generation = cacheGeneration;
+            dirs = List.copyOf(extraDirs);
+        }
+        List<Problem> found = new ArrayList<>();
+        FileSet read = readFileSet(lang, dirs, found::add);
+        synchronized (this) {
+            if (generation != cacheGeneration) {
+                return false;
+            }
+            if (!files.containsKey(lang)) {
+                files.put(lang, read);
+                resolved.clear(); // a language resolved without these files had none of them
+                found.forEach(this::report);
+            }
+            return true;
+        }
+    }
+
+    /**
+     * Loads {@code language}'s snippet files (its own, its fallback's, the global ones) on the snippet thread
+     * unless they are loaded: what a window does for each buffer it sets up, so the buffer's first Tab or
+     * completion request finds them in memory. Never blocks.
+     */
+    public void warm(String language) {
+        warmLanguages(setsFor(norm(language)));
+    }
+
+    private void warmLanguages(List<String> langs) {
+        List<String> queued = new ArrayList<>();
+        synchronized (this) {
+            for (String lang : langs) {
+                if (!files.containsKey(lang) && warming.add(lang)) {
+                    queued.add(lang);
+                }
+            }
+        }
+        if (queued.isEmpty()) {
+            return;
+        }
+        fileWork.execute(() -> {
+            try {
+                for (String lang : queued) {
+                    loadOutsideLock(lang);
+                }
+            } finally {
+                synchronized (this) {
+                    warming.removeAll(queued);
+                }
+            }
+        });
+    }
+
+    /** Whether {@code language}'s snippet files (its own, its fallback's, the global ones) are in memory. */
+    public synchronized boolean isLoaded(String language) {
+        return files.keySet().containsAll(setsFor(norm(language)));
+    }
+
+    /**
+     * Runs {@code then} on the FX thread once {@code language}'s snippet files are loaded (on the snippet thread):
+     * what the Settings page waits for before it lists a language's snippets.
+     */
+    public void whenLoaded(String language, Runnable then) {
+        List<String> langs = setsFor(norm(language));
+        fileWork.execute(() -> {
+            prepare(langs);
+            onFx(then);
+        });
+    }
+
+    /** Runs {@code action} on the FX thread: at once there, else later (no toolkit: here). */
+    private static void onFx(Runnable action) {
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            action.run();
+            return;
+        }
+        try {
+            javafx.application.Platform.runLater(action);
+        } catch (IllegalStateException noToolkit) {
+            action.run();
+        }
+    }
+
+    /** File work on the user's snippet files, which may fail. */
+    @FunctionalInterface
+    public interface FileWork {
+        void run(SnippetManager manager) throws IOException;
+    }
+
+    /**
+     * Runs {@code work} (a write of a user snippet file) on the snippet thread, after every file work asked for
+     * before it, and tells {@code done} on the FX thread, with the failure or {@code null}.
+     */
+    public void later(FileWork work, Consumer<@Nullable IOException> done) {
+        fileWork.execute(() -> {
+            IOException failure = null;
+            try {
+                work.run(this);
+            } catch (IOException e) {
+                failure = e;
+            } catch (RuntimeException e) {
+                failure = new IOException(e.getMessage(), e);
+            }
+            IOException result = failure;
+            onFx(() -> done.accept(result));
+        });
+    }
+
+    /** {@link #checkUserFiles} on the snippet thread; {@code then} gets its result on the FX thread. */
+    public void checkUserFilesLater(Consumer<List<Problem>> then) {
+        fileWork.execute(() -> {
+            List<Problem> found = checkUserFiles();
+            onFx(() -> then.accept(found));
+        });
+    }
+
+    /** {@link #userEntryHasComments} on the snippet thread; {@code then} gets the answer on the FX thread. */
+    public void userEntryHasCommentsLater(String language, String name, Consumer<Boolean> then) {
+        fileWork.execute(() -> {
+            boolean has = userEntryHasComments(language, name);
+            onFx(() -> then.accept(has));
+        });
     }
 
     /** The user snippet file for a language (may not exist yet); used by the "Edit User Snippets" command. */
@@ -311,7 +524,7 @@ public final class SnippetManager {
     }
 
     /** Every language that has snippets to show: the bundled files' plus the user's, {@code global} first. */
-    public synchronized List<String> languagesWithSnippets() {
+    public List<String> languagesWithSnippets() {
         java.util.TreeSet<String> sorted = new java.util.TreeSet<>(BUNDLED_LANGUAGES);
         sorted.addAll(FALLBACK.keySet());
         sorted.addAll(userSnippetLanguages());
@@ -326,8 +539,14 @@ public final class SnippetManager {
      * The snippets Settings shows for {@code language}: the bundled ones in file order — each replaced by the
      * user's entry of the same name when there is one — then the user's own. Plugin snippets are not listed.
      */
-    public synchronized List<Entry> entries(String language) {
-        String lang = norm(language);
+    public List<Entry> entries(String language) {
+        prepare(List.of(norm(language)));
+        synchronized (this) {
+            return entriesLocked(norm(language));
+        }
+    }
+
+    private List<Entry> entriesLocked(String lang) {
         FileSet fs = fileSet(lang);
         Map<String, Raw> user = new LinkedHashMap<>();
         for (Raw u : fs.user()) {
@@ -363,12 +582,15 @@ public final class SnippetManager {
      * bundled or plugin sources), in file order. A snippet with several triggers is collapsed to its first;
      * {@link #entries} has them all.
      */
-    public synchronized List<Snippet> userSnippets(String language) {
+    public List<Snippet> userSnippets(String language) {
         String lang = norm(language);
+        prepare(List.of(lang));
         List<Snippet> out = new ArrayList<>();
-        for (Raw r : fileSet(lang).user()) {
-            if (!r.marker()) {
-                out.add(firstTrigger(r, lang));
+        synchronized (this) {
+            for (Raw r : fileSet(lang).user()) {
+                if (!r.marker()) {
+                    out.add(firstTrigger(r, lang));
+                }
             }
         }
         return out;
@@ -378,11 +600,14 @@ public final class SnippetManager {
      * The bundled (shipped) snippets for {@code language} — only the classpath resource, not the user file
      * or plugins. A multi-trigger snippet is collapsed to its first prefix (as in {@link #userSnippets}).
      */
-    public synchronized List<Snippet> bundledSnippets(String language) {
+    public List<Snippet> bundledSnippets(String language) {
         String lang = norm(language);
+        prepare(List.of(lang));
         List<Snippet> out = new ArrayList<>();
-        for (Raw r : fileSet(lang).bundled()) {
-            out.add(firstTrigger(r, lang));
+        synchronized (this) {
+            for (Raw r : fileSet(lang).bundled()) {
+                out.add(firstTrigger(r, lang));
+            }
         }
         return out;
     }
@@ -397,7 +622,7 @@ public final class SnippetManager {
      * or {@code null} when it is fine, merely has a bad entry, or is absent. Callers that would
      * <em>write</em> the file ask here first.
      */
-    public synchronized @Nullable String userFileProblem(String language) {
+    public @Nullable String userFileProblem(String language) {
         Problem p = wholeFileProblem(norm(language));
         if (p == null) {
             return null;
@@ -406,15 +631,17 @@ public final class SnippetManager {
     }
 
     /** The problem that makes {@code language}'s user file unusable, or null. */
-    public synchronized @Nullable Problem wholeFileProblem(String language) {
+    public @Nullable Problem wholeFileProblem(String language) {
         String lang = norm(language);
-        fileSet(lang);
-        Problem p = problems.get(userFile(lang) + "|");
-        return p != null && p.wholeFile() ? p : null;
+        prepare(List.of(lang));
+        synchronized (this) {
+            Problem p = problems.get(userFile(lang) + "|");
+            return p != null && p.wholeFile() ? p : null;
+        }
     }
 
     /** The user snippet files that exist but cannot be read, as file names ({@code python.json}), sorted. */
-    public synchronized List<String> unreadableUserFiles() {
+    public List<String> unreadableUserFiles() {
         List<String> out = new ArrayList<>();
         for (String lang : userSnippetLanguages()) {
             if (wholeFileProblem(lang) != null) {
@@ -428,22 +655,40 @@ public final class SnippetManager {
      * Loads every user snippet file and returns what is wrong with them (whole files and single entries),
      * in file-name order. Reads files: call it off the FX thread when it is not already cached.
      */
-    public synchronized List<Problem> checkUserFiles() {
+    public List<Problem> checkUserFiles() {
+        List<String> langs = userSnippetLanguages();
+        prepare(langs);
         List<Problem> out = new ArrayList<>();
-        for (String lang : userSnippetLanguages()) {
-            fileSet(lang);
-            String key = userFile(lang).toString() + "|";
-            problems.forEach((k, p) -> {
-                if (k.startsWith(key)) {
-                    out.add(p);
-                }
-            });
+        synchronized (this) {
+            for (String lang : langs) {
+                String key = userFile(lang).toString() + "|";
+                problems.forEach((k, p) -> {
+                    if (k.startsWith(key)) {
+                        out.add(p);
+                    }
+                });
+            }
         }
         return out;
     }
 
+    /**
+     * What is known to be wrong with {@code language}'s user file, whole or per entry, as loaded (nothing is
+     * read here; see {@link #whenLoaded}).
+     */
+    public synchronized List<Problem> problemsOf(String language) {
+        String key = userFile(norm(language)) + "|";
+        List<Problem> out = new ArrayList<>();
+        problems.forEach((k, p) -> {
+            if (k.startsWith(key)) {
+                out.add(p);
+            }
+        });
+        return out;
+    }
+
     /** True when {@code language}'s user file holds a comment (which a whole-file rewrite would drop). */
-    public synchronized boolean userFileHasComments(String language) {
+    public boolean userFileHasComments(String language) {
         Path file = userFile(norm(language));
         try {
             return Files.exists(file) && hasComment(Files.readString(file, StandardCharsets.UTF_8));
@@ -453,7 +698,7 @@ public final class SnippetManager {
     }
 
     /** True when the user's entry called {@code name} holds a comment — the one thing saving that entry drops. */
-    public synchronized boolean userEntryHasComments(String language, String name) {
+    public boolean userEntryHasComments(String language, String name) {
         try {
             JsoncObject doc = readUserDocument(norm(language));
             JsoncObject.Member m = doc.member(name);
@@ -493,7 +738,13 @@ public final class SnippetManager {
      *
      * @throws IOException when the file exists but cannot be parsed (it is left untouched) or cannot be written
      */
-    public synchronized void saveUserEntry(String language, @Nullable String oldName, Entry e) throws IOException {
+    public void saveUserEntry(String language, @Nullable String oldName, Entry e) throws IOException {
+        synchronized (fileLock) {
+            saveUserEntryUnlocked(language, oldName, e);
+        }
+    }
+
+    private void saveUserEntryUnlocked(String language, @Nullable String oldName, Entry e) throws IOException {
         if (e == null || e.name() == null || e.name().isBlank()) {
             return;
         }
@@ -541,11 +792,13 @@ public final class SnippetManager {
     }
 
     /** Removes the user entry called {@code name} (a bundled snippet of that name shows again). */
-    public synchronized void removeUserEntry(String language, String name) throws IOException {
-        String lang = norm(language);
-        JsoncObject doc = readUserDocument(lang);
-        if (doc.member(name) != null) {
-            writeUserDocument(lang, doc.without(name));
+    public void removeUserEntry(String language, String name) throws IOException {
+        synchronized (fileLock) {
+            String lang = norm(language);
+            JsoncObject doc = readUserDocument(lang);
+            if (doc.member(name) != null) {
+                writeUserDocument(lang, doc.without(name));
+            }
         }
     }
 
@@ -553,7 +806,13 @@ public final class SnippetManager {
      * Switches the snippet called {@code name} off or back on. A bundled snippet the user has not edited is
      * switched off by a user entry holding only {@code "disabled": true}; switching it on removes that entry.
      */
-    public synchronized void setDisabled(String language, String name, boolean disabled) throws IOException {
+    public void setDisabled(String language, String name, boolean disabled) throws IOException {
+        synchronized (fileLock) {
+            setDisabledUnlocked(language, name, disabled);
+        }
+    }
+
+    private void setDisabledUnlocked(String language, String name, boolean disabled) throws IOException {
         String lang = norm(language);
         JsoncObject doc = readUserDocument(lang);
         JsoncObject.Member m = doc.member(name);
@@ -582,7 +841,13 @@ public final class SnippetManager {
      * did not change). Blank-named entries are skipped. A file that exists but cannot be parsed is never
      * replaced and fails with an {@link IOException} instead.
      */
-    public synchronized void saveUserSnippets(String language, List<Snippet> snippets) throws IOException {
+    public void saveUserSnippets(String language, List<Snippet> snippets) throws IOException {
+        synchronized (fileLock) {
+            saveUserSnippetsUnlocked(language, snippets);
+        }
+    }
+
+    private void saveUserSnippetsUnlocked(String language, List<Snippet> snippets) throws IOException {
         String lang = norm(language);
         JsoncObject doc = readUserDocument(lang);
         Set<String> keep = new HashSet<>();
@@ -670,6 +935,7 @@ public final class SnippetManager {
     }
 
     private JsoncObject readUserDocument(String lang) throws IOException {
+        com.editora.perf.BlockingSites.enter("snippets read " + lang);
         Path file = userFile(lang);
         if (!Files.exists(file)) {
             return JsoncObject.parse("", mapper.getFactory());
@@ -724,6 +990,7 @@ public final class SnippetManager {
     }
 
     private void writeUserDocument(String lang, String text) throws IOException {
+        com.editora.perf.BlockingSites.enter("snippets write " + lang);
         Path file = userFile(lang);
         Files.createDirectories(file.getParent());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
@@ -733,10 +1000,16 @@ public final class SnippetManager {
                 file,
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                 java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-        files.remove(lang);
-        resolved.clear();
-        problems.keySet().removeIf(k -> k.startsWith(file + "|"));
-        onUserFilesChanged.run();
+        Runnable changed;
+        synchronized (this) {
+            files.remove(lang);
+            resolved.clear();
+            problems.keySet().removeIf(k -> k.startsWith(file + "|"));
+            userLanguages = null;
+            cacheGeneration++; // a load of the old file still under way is not kept
+            changed = onUserFilesChanged;
+        }
+        changed.run();
     }
 
     /** The {@code prefix} value for a set of triggers: a string for one, an array for several. */
@@ -785,7 +1058,27 @@ public final class SnippetManager {
     }
 
     /** Languages that currently have a user snippet file (the basenames under {@code snippets/}), sorted. */
-    public synchronized List<String> userSnippetLanguages() {
+    public List<String> userSnippetLanguages() {
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            List<String> known;
+            synchronized (this) {
+                known = userLanguages;
+            }
+            if (known == null) {
+                fileWork.execute(this::listUserSnippetLanguages); // listed on the snippet thread, for the next ask
+                synchronized (this) {
+                    known = userLanguages; // listed already when the work ran in place (a test's seam)
+                }
+                return known == null ? List.of() : known;
+            }
+            return known;
+        }
+        return listUserSnippetLanguages();
+    }
+
+    /** Lists the user snippet languages and keeps them for the FX thread. Blocking. */
+    private List<String> listUserSnippetLanguages() {
+        com.editora.perf.BlockingSites.enter("snippets list");
         Path dir = config.getConfigDir().resolve("snippets");
         List<String> out = new ArrayList<>();
         if (Files.isDirectory(dir)) {
@@ -799,59 +1092,71 @@ public final class SnippetManager {
                 LOG.log(Level.WARNING, "Failed to list user snippet languages", e);
             }
         }
+        synchronized (this) {
+            userLanguages = List.copyOf(out);
+        }
         return out;
     }
 
     // ---- Loading ----
 
+    /** {@code language}'s files as loaded; under the lock. Not loaded: nothing, and {@link #incomplete} is set. */
     private FileSet fileSet(String language) {
         FileSet cached = files.get(language);
         if (cached != null) {
             return cached;
         }
+        incomplete = true;
+        return NOT_LOADED;
+    }
+
+    /**
+     * Reads {@code language}'s files: the bundled resource, each of {@code dirs}' and the user's. Blocking, and
+     * never under the lock; what is wrong goes to {@code problems}.
+     */
+    private FileSet readFileSet(String language, List<Path> dirs, Consumer<Problem> problems) {
+        com.editora.perf.BlockingSites.enter("snippets load " + language);
         List<Raw> bundled = new ArrayList<>();
         try (InputStream in = SnippetManager.class.getResourceAsStream("/com/editora/snippets/" + language + ".json")) {
             if (in != null) {
-                bundled = parse(new String(in.readAllBytes(), StandardCharsets.UTF_8), null);
+                bundled = parse(new String(in.readAllBytes(), StandardCharsets.UTF_8), null, problems);
             }
         } catch (IOException e) {
             LOG.log(Level.WARNING, "Failed to read bundled snippets for " + language, e);
         }
         List<Raw> plugin = new ArrayList<>();
-        for (Path dir : extraDirs) {
-            plugin.addAll(readFile(dir.resolve(language + ".json")));
+        for (Path dir : dirs) {
+            plugin.addAll(readFile(dir.resolve(language + ".json"), problems));
         }
-        FileSet fs = new FileSet(bundled, plugin, readFile(userFile(language)));
-        files.put(language, fs);
-        return fs;
+        return new FileSet(bundled, plugin, readFile(userFile(language), problems));
     }
 
-    private List<Raw> readFile(Path file) {
+    private List<Raw> readFile(Path file, Consumer<Problem> problems) {
         if (!Files.exists(file)) {
             return new ArrayList<>();
         }
         try {
-            return parse(Files.readString(file, StandardCharsets.UTF_8), file);
+            return parse(Files.readString(file, StandardCharsets.UTF_8), file, problems);
         } catch (IOException e) {
-            report(new Problem(file, Problem.Kind.UNREADABLE, "", describe(e), 0));
+            problems.accept(new Problem(file, Problem.Kind.UNREADABLE, "", describe(e), 0));
             return new ArrayList<>();
         }
     }
 
     /** The entries of one file's text. Problems are reported against {@code file} (null = a bundled resource). */
-    private List<Raw> parse(String text, @Nullable Path file) {
+    private List<Raw> parse(String text, @Nullable Path file, Consumer<Problem> problems) {
         List<Raw> out = new ArrayList<>();
         JsoncObject doc;
         try {
             doc = JsoncObject.parse(text, mapper.getFactory());
         } catch (JsoncObject.NotAnObjectException e) {
-            report(file, Problem.Kind.NOT_AN_OBJECT, "", describe(e), 1);
+            report(problems, file, Problem.Kind.NOT_AN_OBJECT, "", describe(e), 1);
             return out;
         } catch (IOException e) {
             int line = e instanceof JsonProcessingException j && j.getLocation() != null
                     ? j.getLocation().getLineNr()
                     : 0;
-            report(file, Problem.Kind.SYNTAX, "", describe(e), line);
+            report(problems, file, Problem.Kind.SYNTAX, "", describe(e), line);
             return out;
         }
         int stored = versionOf(doc);
@@ -862,6 +1167,7 @@ public final class SnippetManager {
                     ? com.editora.config.migration.UserFileVersion.keepCopyOfNewer(file, stored)
                     : null;
             report(
+                    problems,
                     file,
                     Problem.Kind.NEWER_VERSION,
                     "",
@@ -883,7 +1189,7 @@ public final class SnippetManager {
                 continue; // "name": null — nothing there, as before
             }
             if (!node.isObject()) {
-                report(file, Problem.Kind.BAD_ENTRY, m.name(), "", doc.lineOf(m.keyStart()));
+                report(problems, file, Problem.Kind.BAD_ENTRY, m.name(), "", doc.lineOf(m.keyStart()));
                 continue;
             }
             JsonNode disabled = node.get("disabled");
@@ -911,12 +1217,13 @@ public final class SnippetManager {
         return node.isContainerNode() ? null : node.asText();
     }
 
-    private void report(@Nullable Path file, Problem.Kind kind, String entry, String detail, int line) {
+    private static void report(
+            Consumer<Problem> problems, @Nullable Path file, Problem.Kind kind, String entry, String detail, int line) {
         if (file == null) {
             LOG.log(Level.WARNING, "Bundled snippet resource problem: " + kind + " " + entry + " " + detail);
             return;
         }
-        report(new Problem(file, kind, entry, detail, line));
+        problems.accept(new Problem(file, kind, entry, detail, line));
     }
 
     private void report(Problem p) {
@@ -942,6 +1249,7 @@ public final class SnippetManager {
         if (cached != null) {
             return cached;
         }
+        incomplete = false;
         List<List<Loaded>> sets = new ArrayList<>(); // highest priority first
         if (!language.equals(GLOBAL)) {
             sets.add(mergeByName(language));
@@ -985,7 +1293,9 @@ public final class SnippetManager {
             }
         }
         Resolved r = new Resolved(List.copyOf(all), byTrigger, listOnly, maxWords);
-        resolved.put(language, r);
+        if (!incomplete) {
+            resolved.put(language, r); // one made while a set was still loading is made again once it has
+        }
         return r;
     }
 

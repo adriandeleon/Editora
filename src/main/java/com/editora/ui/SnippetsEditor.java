@@ -211,15 +211,11 @@ final class SnippetsEditor {
             clash.setManaged(!text.isEmpty());
         };
 
-        Consumer<String> load = keep -> {
+        Consumer<String> fill = keep -> {
             fileProblem = manager == null ? null : manager.wholeFileProblem(language);
             List<Problem> entryProblems = new ArrayList<>();
             if (manager != null && fileProblem == null) {
-                for (Problem p : manager.checkUserFiles()) {
-                    if (p.file().equals(manager.userFile(language))) {
-                        entryProblems.add(p);
-                    }
-                }
+                entryProblems.addAll(manager.problemsOf(language));
             }
             Problem say = fileProblem != null ? fileProblem : entryProblems.isEmpty() ? null : entryProblems.get(0);
             problem.setText(
@@ -247,6 +243,20 @@ final class SnippetsEditor {
                 list.getSelectionModel().select(select);
             } else {
                 form.setDisable(true);
+            }
+        };
+
+        // The language's files are read on the snippet thread (PERF-01, Pauta 6.0.1); the page fills when they land.
+        Consumer<String> load = keep -> {
+            if (manager == null) {
+                fill.accept(keep);
+            } else {
+                String asked = language;
+                manager.whenLoaded(asked, () -> {
+                    if (asked.equals(language)) { // not another language picked meanwhile
+                        fill.accept(keep);
+                    }
+                });
             }
         };
 
@@ -303,16 +313,20 @@ final class SnippetsEditor {
             if (updated.equals(cur)) {
                 return; // only whitespace the commit trims away
             }
-            if (cur.source() == Source.USER
-                    && manager != null // a USER row comes from the manager
-                    && manager.userEntryHasComments(language, cur.name())
-                    && !hooks.confirm().test(commentsLostMessage(cur.name()))) {
-                return; // comments inside this one entry cannot be kept; the user chose to keep them
-            }
             String keep = newName;
-            if (write(m -> m.saveUserEntry(language, cur.name(), updated))) {
+            Runnable save = () -> write(m -> m.saveUserEntry(language, cur.name(), updated), () -> {
                 reloadKeepingForm(list, keep, filter);
                 showClash.run();
+            });
+            if (cur.source() == Source.USER && manager != null) { // a USER row comes from the manager
+                // Whether the entry holds comments is read off the FX thread; the question comes when it lands.
+                manager.userEntryHasCommentsLater(language, cur.name(), has -> {
+                    if (!has || hooks.confirm().test(commentsLostMessage(cur.name()))) {
+                        save.run(); // else: comments inside this one entry cannot be kept; the user kept them
+                    }
+                });
+            } else {
+                save.run();
             }
         };
         // Single-line fields commit on Enter / focus-loss; the body commits on focus-loss (Enter = newline).
@@ -383,12 +397,12 @@ final class SnippetsEditor {
                 newName = tr("settings.snippet.newName") + " " + n;
             }
             String created = newName;
-            if (write(m -> m.saveUserEntry(language, null, Entry.user(created, List.of(), "", "")))) {
+            write(m -> m.saveUserEntry(language, null, Entry.user(created, List.of(), "", "")), () -> {
                 filter.clear();
-                load.accept(created);
+                fill.accept(created); // the write left the language loaded
                 name.requestFocus();
                 name.selectAll();
-            }
+            });
         });
         Button remove = new Button(tr("settings.snippet.remove"));
         // Remove only affects the user's file: a pristine bundled row is switched off instead (it is shipped).
@@ -408,11 +422,9 @@ final class SnippetsEditor {
         });
         remove.setOnAction(e -> {
             Entry s = list.getSelectionModel().getSelectedItem();
-            if (s != null
-                    && s.source() == Source.USER
-                    && hooks.confirmDelete().test(s.name())
-                    && write(m -> m.removeUserEntry(language, s.name()))) {
-                load.accept(s.name()); // a removed edit reverts to its bundled snippet
+            if (s != null && s.source() == Source.USER && hooks.confirmDelete().test(s.name())) {
+                // a removed edit reverts to its bundled snippet
+                write(m -> m.removeUserEntry(language, s.name()), () -> fill.accept(s.name()));
             }
         });
         Button toggle = new Button(tr("settings.snippet.disable"));
@@ -426,8 +438,8 @@ final class SnippetsEditor {
                         list.getSelectionModel().selectedItemProperty()));
         toggle.setOnAction(e -> {
             Entry s = list.getSelectionModel().getSelectedItem();
-            if (s != null && write(m -> m.setDisabled(language, s.name(), !s.disabled()))) {
-                load.accept(s.name());
+            if (s != null) {
+                write(m -> m.setDisabled(language, s.name(), !s.disabled()), () -> fill.accept(s.name()));
             }
         });
         ListRowCommands.because(toggle, () -> fileProblem != null ? "row.unavailable.snippetsFileBroken" : null);
@@ -502,18 +514,24 @@ final class SnippetsEditor {
         void run(SnippetManager manager) throws IOException;
     }
 
-    /** Runs one write of the user file; a failure is shown and leaves the page as it was. */
-    private boolean write(Write action) {
-        if (manager == null || fileProblem != null) {
-            return false; // never write back over a file that could not be parsed
+    /**
+     * Runs one write of the user file on the snippet thread (PERF-01, Pauta 6.0.1); once it is written and the
+     * language read again (also there), runs {@code written} on the FX thread. A failure is shown and leaves the
+     * page as it was.
+     */
+    private void write(Write action, Runnable written) {
+        SnippetManager m = manager;
+        if (m == null || fileProblem != null) {
+            return; // never write back over a file that could not be parsed
         }
-        try {
-            action.run(manager);
-            return true;
-        } catch (IOException e) {
-            hooks.warn().accept(tr("settings.snippet.saveFailed", e.getMessage()));
-            return false;
-        }
+        String lang = language;
+        m.later(action::run, failure -> {
+            if (failure != null) {
+                hooks.warn().accept(tr("settings.snippet.saveFailed", failure.getMessage()));
+            } else {
+                m.whenLoaded(lang, written);
+            }
+        });
     }
 
     /** What saving the snippet {@code name} loses: the comments inside its entry in the user's file. */

@@ -109,7 +109,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-01",
       "kind": "pending",
-      "reason": "Start-up reads nothing on the interface's own thread any more, but many commands still read or write a file there, the settings stores among them, so a slow disk can briefly freeze the window.",
+      "reason": "Start-up and the settings and other stores no longer read or write files on the interface's own thread, but some commands still do: running a program, deleting or moving files, and checks made as you type or on each command, so a slow disk can briefly freeze the window.",
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {

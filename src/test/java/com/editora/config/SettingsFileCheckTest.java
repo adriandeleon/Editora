@@ -47,7 +47,7 @@ class SettingsFileCheckTest {
                 text.replaceFirst("\"tabSize\"\\s*:\\s*\\d+", "\"tabSize\" : 8")
                         .replaceFirst("\"fontSize\"\\s*:\\s*\\d+", "\"fontSize\" : -5")
                         .replaceFirst("\\{", "{ \"tabsize\" : 2,"));
-        List<SettingsFileCheck.Issue> issues = config.shared().reloadSettings();
+        List<SettingsFileCheck.Issue> issues = reload(config);
         assertEquals(8, live.getTabSize(), "the same Settings object every window holds now has the edit");
         assertEquals(Settings.MIN_FONT_SIZE, live.getFontSize());
         assertTrue(
@@ -59,7 +59,24 @@ class SettingsFileCheckTest {
 
         // Half-typed JSON applies nothing and keeps what is in force.
         Files.writeString(file, "{ \"tabSize\" : 3, ");
-        assertNull(config.shared().reloadSettings());
+        assertNull(reload(config));
         assertEquals(8, live.getTabSize());
+    }
+
+    /**
+     * {@code reloadSettings}, waited for: read on the config writer's thread; with no FX toolkit its result is
+     * handed over there before this (non-FX) caller's wait ends.
+     */
+    private static List<SettingsFileCheck.Issue> reload(ConfigManager config) {
+        java.util.concurrent.atomic.AtomicReference<List<SettingsFileCheck.Issue>> got =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean();
+        config.shared().setFxThreadForTest(Runnable::run); // no FX thread here, even when another test started one
+        config.shared().reloadSettings(issues -> {
+            got.set(issues);
+            done.set(true);
+        });
+        assertTrue(done.get(), "the reload landed before reloadSettings returned to a caller that may wait");
+        return got.get();
     }
 }

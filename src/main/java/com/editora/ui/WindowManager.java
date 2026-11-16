@@ -171,6 +171,11 @@ public class WindowManager {
         // Preferences are one object shared by every window, but each window applies them to its own buffers
         // and services. A save that carries a change no other window has applied yet re-applies it there.
         shared.setOnSettingsChanged(this::onSharedSettingsChanged);
+        // Who made a change is told at the save, on the FX thread; whether there was one is found on the config
+        // writer's thread after it (PERF-01, Pauta 6.0.1), and handed back here.
+        shared.setSettingsChanger(this::changerOf);
+        // A write of dictionary.txt that kept another process's words brings them into the shared set.
+        shared.setOnUserDictionaryChanged(this::broadcastUserDictionaryChanged);
         shared.setOnStoreChanged(this::onSharedStoreChanged);
         settingsRebroadcast.setOnFinished(e -> flushPendingSettingsBroadcast());
         // The recent-files and search-history lists are single shared instances; a change made through any
@@ -738,10 +743,13 @@ public class WindowManager {
         String key = WindowKeys.UNTITLED_PREFIX + "diff-"
                 + java.util.UUID.randomUUID().toString().substring(0, 8);
         try {
+            readForBuild = freshConfig(key); // a new key: no session to read
             buildWindow(key, null, untitledStateFile(key), List.of(), false, false, null, false, request);
+            readForBuild = null;
             transientWindows.add(key);
             focusKey(key);
         } catch (RuntimeException | Error t) {
+            readForBuild = null;
             java.util.logging.Logger.getLogger(WindowManager.class.getName())
                     .log(java.util.logging.Level.WARNING, "Failed to build standalone diff window", t);
             throw t;
@@ -807,18 +815,138 @@ public class WindowManager {
 
     // --- open / focus ---
 
-    /** Opens (or focuses) the global, no-project window. */
-    public Stage openOrFocusGlobal() {
+    /**
+     * Opens (or focuses) the global, no-project window. A window to build has its session read off the FX
+     * thread first (see {@link #openWhenRead}): the stage is returned when the window exists by the time this
+     * returns (it was open, or its session was read in place), else {@code null} and it is built when the read
+     * lands.
+     */
+    public @Nullable Stage openOrFocusGlobal() {
         Holder existing = findHolder("");
         if (existing != null) {
             focus(existing.stage);
             setActiveAndSave("");
             return existing.stage;
         }
-        Stage stage = buildWindow("", null, null, List.of(), false, false, null, false);
-        projects().markOpen("");
-        setActiveAndSave("");
-        return stage;
+        java.util.concurrent.atomic.AtomicReference<@Nullable Stage> stage =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        openWhenRead("", null, null, List.of(), (holder, built) -> {
+            if (built) {
+                projects().markOpen("");
+            } else if (holder != null) {
+                focus(holder.stage());
+            }
+            setActiveAndSave("");
+            stage.set(holder == null ? null : holder.stage());
+        });
+        return stage.get();
+    }
+
+    // --- a window opened by a command: its session read off the FX thread ---
+
+    /** Windows whose session is being read for a command, by key, with what waits for each (FX thread only). */
+    private final java.util.Map<String, List<java.util.function.BiConsumer<@Nullable Holder, Boolean>>> opening =
+            new java.util.HashMap<>();
+
+    /** Where a command's window has its session read: a thread of its own (a seam: a test may read in place). */
+    java.util.concurrent.Executor sessionReads = com.editora.process.BlockingTasks.named("window-session-read");
+
+    /** TEST SEAM — told of each window's controller right after its {@code init}; a test sets its own seams. */
+    java.util.function.Consumer<MainController> builtForTest = controller -> {};
+
+    /** The config a window about to be built was read into by {@link #openWhenRead}; taken by buildWindow. */
+    private @Nullable ConfigManager readForBuild;
+
+    /**
+     * Builds the window for {@code key} once its session (and its project's settings) are read off the FX thread
+     * (PERF-01, Pauta 6.0.1), then hands {@code then} the window and whether this call built it. The command
+     * that asked returns at once. A second ask for the same key while its read is under way joins it rather
+     * than building a second window: its {@code then} is told {@code false}. A window that was opened another
+     * way meanwhile is used as it is. The read waits for the config writes queued before it, so a session just
+     * saved (the same project closed a moment ago, a generated project's seeded session) is read as written.
+     */
+    private void openWhenRead(
+            String key,
+            @Nullable Project project,
+            @Nullable Path stateFile,
+            List<MainController.OpenTarget> targets,
+            java.util.function.BiConsumer<@Nullable Holder, Boolean> then) {
+        List<java.util.function.BiConsumer<@Nullable Holder, Boolean>> joined = opening.get(key);
+        if (joined != null) {
+            joined.add(then);
+            return;
+        }
+        opening.put(key, new ArrayList<>());
+        Path file = stateFile != null ? stateFile : new ConfigManager(shared).getWorkspaceStateFile();
+        Path root = project == null ? null : project.rootPath();
+        java.util.concurrent.CompletableFuture<ConfigManager> read = java.util.concurrent.CompletableFuture.supplyAsync(
+                () -> {
+                    if (!javafx.application.Platform.isFxApplicationThread()) {
+                        shared.awaitWrites(); // never on the FX thread (a test's in-place read)
+                    }
+                    return readWindowConfig(shared, file, root);
+                },
+                sessionReads);
+        if (read.isDone() && javafx.application.Platform.isFxApplicationThread()) {
+            // Read before the executor returned (a test's seam): built now, so the command can hand it back.
+            ConfigManager config = null;
+            Throwable failure = null;
+            try {
+                config = read.join();
+            } catch (java.util.concurrent.CompletionException e) {
+                failure = e.getCause() == null ? e : e.getCause();
+            }
+            landOpen(key, project, stateFile, targets, config, failure, then);
+            return;
+        }
+        read.whenComplete((config, failure) -> javafx.application.Platform.runLater(
+                () -> landOpen(key, project, stateFile, targets, config, failure, then)));
+    }
+
+    private void landOpen(
+            String key,
+            @Nullable Project project,
+            @Nullable Path stateFile,
+            List<MainController.OpenTarget> targets,
+            @Nullable ConfigManager config,
+            @Nullable Throwable failure,
+            java.util.function.BiConsumer<@Nullable Holder, Boolean> then) {
+        List<java.util.function.BiConsumer<@Nullable Holder, Boolean>> joined = opening.remove(key);
+        Holder holder = findHolder(key);
+        boolean built = false;
+        if (holder == null) {
+            if (failure != null) {
+                // Rare (the read reports what it cannot read itself): the window then reads its session as it is
+                // built, and reports what is wrong, rather than open over an empty one and save that.
+                java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                        .log(
+                                java.util.logging.Level.WARNING,
+                                "Could not read the session of window '" + key + "'",
+                                failure);
+            }
+            readForBuild = failure == null ? config : null;
+            try {
+                buildWindow(key, project, stateFile, targets, false, false, null, false);
+                built = true;
+            } catch (RuntimeException | Error t) {
+                java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                        .log(java.util.logging.Level.WARNING, "Failed to build window for key '" + key + "'", t);
+            } finally {
+                readForBuild = null;
+            }
+            holder = findHolder(key);
+        }
+        then.accept(holder, built);
+        if (joined != null) {
+            for (var waiting : joined) {
+                waiting.accept(holder, false);
+            }
+        }
+    }
+
+    /** Whether a command's window is waiting for its session to be read (a test waits for none to be). */
+    boolean openingWindows() {
+        return !opening.isEmpty();
     }
 
     /**
@@ -832,7 +960,14 @@ public class WindowManager {
     public Stage newWindow() {
         String uuid = java.util.UUID.randomUUID().toString().substring(0, 8);
         String key = WindowKeys.UNTITLED_PREFIX + uuid;
-        Stage stage = buildWindow(key, null, untitledStateFile(key), List.of(), false, false, null, false);
+        // A key nobody has had: there is no session to read, so the window is built at once, from nothing.
+        readForBuild = freshConfig(key);
+        Stage stage;
+        try {
+            stage = buildWindow(key, null, untitledStateFile(key), List.of(), false, false, null, false);
+        } finally {
+            readForBuild = null;
+        }
         projects().markOpen(key);
         setActiveAndSave(key);
         return stage;
@@ -906,6 +1041,7 @@ public class WindowManager {
         // writing a session file of its own (persistSession returns early under --no-session).
         noSession = true;
         try {
+            readForBuild = freshConfig(key); // a new key: no session to read
             Stage stage = buildWindow(key, null, untitledStateFile(key), files, zen, expert, newFile, simple);
             transientWindows.add(key);
             presentForExternalLaunch(stage);
@@ -915,6 +1051,7 @@ public class WindowManager {
             // Fall back to the old behaviour rather than dropping the user's file on the floor.
             openExternalFiles(files, zen, expert, simple);
         } finally {
+            readForBuild = null;
             noSession = restoreNoSession;
         }
     }
@@ -934,6 +1071,7 @@ public class WindowManager {
         boolean restoreNoSession = noSession;
         noSession = true; // the diff and nothing else: no saved tabs restored into it, no session written
         try {
+            readForBuild = freshConfig(key); // a new key: no session to read
             Stage stage = buildWindow(key, null, untitledStateFile(key), List.of(), false, false, null, false, request);
             transientWindows.add(key);
             presentForExternalLaunch(stage);
@@ -942,6 +1080,7 @@ public class WindowManager {
                     .log(java.util.logging.Level.WARNING, "Failed to open a diff window for an external launch", t);
             presentForExternalLaunch(); // the editor comes forward, so the launch is not silent
         } finally {
+            readForBuild = null;
             noSession = restoreNoSession;
         }
     }
@@ -982,12 +1121,23 @@ public class WindowManager {
         }
         Holder target = focusedHolder();
         if (target == null) {
-            openOrFocusGlobal(); // nothing open (or nothing focused) — land the files in the global window
-            target = focusedHolder();
-        }
-        if (target == null) {
+            // Nothing open (or nothing focused): land the files in the global window, once it is built.
+            openWhenRead("", null, null, List.of(), (holder, built) -> {
+                if (built) {
+                    projects().markOpen("");
+                }
+                setActiveAndSave("");
+                if (holder != null) {
+                    deliverExternalFiles(holder, files, zen, expert, simple);
+                }
+            });
             return;
         }
+        deliverExternalFiles(target, files, zen, expert, simple);
+    }
+
+    private void deliverExternalFiles(
+            Holder target, List<MainController.OpenTarget> files, boolean zen, boolean expert, boolean simple) {
         // Raise BEFORE opening, not after. Two reasons: the window should come forward the instant the click
         // is delivered rather than after a file read, tab build and first highlight (on a busy FX thread that
         // is visibly late); and if opening throws, the user would otherwise be left with a window that never
@@ -1117,6 +1267,14 @@ public class WindowManager {
         }
     }
 
+    /**
+     * The config of a window with a key just made up ({@code untitled:<random>}): a fresh session over a file no
+     * window has written, so nothing is read for it (PERF-01, Pauta 6.0.1).
+     */
+    private ConfigManager freshConfig(String key) {
+        return new ConfigManager(shared, untitledStateFile(key));
+    }
+
     /** Directory holding per-window session files for untitled no-project windows ({@code windows/<uuid>.json}). */
     private Path windowsDir() {
         return shared.getConfigDir().resolve("windows");
@@ -1128,21 +1286,38 @@ public class WindowManager {
     }
 
     /** Opens (or focuses) {@code project}'s window. A null/empty-id project routes to the global window. */
-    public Stage openOrFocus(@Nullable Project project) {
-        if (project == null || project.id().isEmpty()) {
-            return openOrFocusGlobal();
-        }
-        Holder existing = findHolder(project.id());
+    public @Nullable Stage openOrFocus(@Nullable Project project) {
+        java.util.concurrent.atomic.AtomicReference<@Nullable Stage> stage =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        openOrFocus(project, holder -> stage.set(holder == null ? null : holder.stage()));
+        return stage.get();
+    }
+
+    /**
+     * Opens (or focuses) {@code project}'s window, then hands it to {@code then} ({@code null} when it could not
+     * be built). An open window is focused at once; one to build has its session read off the FX thread first
+     * ({@link #openWhenRead}), and a second ask while that read is under way joins it.
+     */
+    void openOrFocus(@Nullable Project project, java.util.function.Consumer<@Nullable Holder> then) {
+        String key = project == null ? "" : project.id();
+        Holder existing = findHolder(key);
         if (existing != null) {
             focus(existing.stage);
-            setActiveAndSave(project.id());
-            return existing.stage;
+            setActiveAndSave(key);
+            then.accept(existing);
+            return;
         }
-        Stage stage =
-                buildWindow(project.id(), project, projects().stateFile(project), List.of(), false, false, null, false);
-        projects().markOpen(project.id());
-        setActiveAndSave(project.id());
-        return stage;
+        Project p = key.isEmpty() ? null : project;
+        Path stateFile = p == null ? null : projects().stateFile(p);
+        openWhenRead(key, p, stateFile, List.of(), (holder, built) -> {
+            if (built) {
+                projects().markOpen(key);
+            } else if (holder != null) {
+                focus(holder.stage());
+            }
+            setActiveAndSave(key);
+            then.accept(holder);
+        });
     }
 
     /** The controller of {@code project}'s open window, or null when it has none. */
@@ -1162,20 +1337,21 @@ public class WindowManager {
             com.editora.vfs.RemoteConnection conn,
             com.editora.vfs.RemoteFileSystems.@Nullable LiveConnection live,
             char @Nullable [] secret) {
-        openOrFocus(project);
-        MainController window = controllerOf(project);
-        if (window != null && live != null) {
-            window.remoteCoordinator().adoptForWindowProject(conn, live);
-        } else if (window != null) {
-            window.remoteCoordinator().connectForWindowProject(conn, secret);
-        } else {
-            if (live != null) {
-                live.close(); // no window to take it: don't leave a logged-in session behind
+        openOrFocus(project, holder -> {
+            MainController window = holder == null ? null : holder.controller();
+            if (window != null && live != null) {
+                window.remoteCoordinator().adoptForWindowProject(conn, live);
+            } else if (window != null) {
+                window.remoteCoordinator().connectForWindowProject(conn, secret);
+            } else {
+                if (live != null) {
+                    live.close(); // no window to take it: don't leave a logged-in session behind
+                }
+                if (secret != null) {
+                    java.util.Arrays.fill(secret, '\0');
+                }
             }
-            if (secret != null) {
-                java.util.Arrays.fill(secret, '\0');
-            }
-        }
+        });
     }
 
     /**
@@ -1199,24 +1375,25 @@ public class WindowManager {
             existing.controller().openAndNavigate(file, line);
             return;
         }
-        if (line < 0) {
-            Path stateFile = project == null ? null : projects().stateFile(project);
-            buildWindow(key, project, stateFile, List.of(), false, false, null, false);
-            projects().markOpen(key);
-            setActiveAndSave(key);
-            Holder created = findHolder(key);
-            if (created != null && created.controller() != null) {
+        // Not open — build it once its session is read (off the FX thread), passing the file as a startup target
+        // (1-based line) so it opens + jumps after this window's own session restore, exactly like a command-line
+        // FILE:line argument. Without a line (or when this ask joined a window already being built for another),
+        // the file is opened in the built window instead.
+        List<MainController.OpenTarget> targets =
+                line < 0 ? List.of() : List.of(new MainController.OpenTarget(file, line + 1, 1));
+        Path stateFile = project == null ? null : projects().stateFile(project);
+        String windowKey = key;
+        openWhenRead(windowKey, project, stateFile, targets, (created, built) -> {
+            if (built) {
+                projects().markOpen(windowKey);
+            } else if (created != null) {
+                focus(created.stage());
+            }
+            setActiveAndSave(windowKey);
+            if (created != null && created.controller() != null && (line < 0 || !built)) {
                 javafx.application.Platform.runLater(() -> created.controller().openAndNavigate(file, line));
             }
-            return;
-        }
-        // Not open — build it, passing the file as a startup target (1-based line) so it opens + jumps after
-        // this window's own session restore, exactly like a command-line FILE:line argument.
-        List<MainController.OpenTarget> targets = List.of(new MainController.OpenTarget(file, line + 1, 1));
-        Path stateFile = project == null ? null : projects().stateFile(project);
-        buildWindow(key, project, stateFile, targets, false, false, null, false);
-        projects().markOpen(key);
-        setActiveAndSave(key);
+        });
     }
 
     /**
@@ -1239,10 +1416,17 @@ public class WindowManager {
             return;
         }
         Path stateFile = project == null ? null : projects().stateFile(project);
-        buildWindow(
-                key, project, stateFile, List.of(new MainController.OpenTarget(file, 0, 0)), false, false, null, false);
-        projects().markOpen(key);
-        setActiveAndSave(key);
+        String windowKey = key;
+        openWhenRead(
+                windowKey, project, stateFile, List.of(new MainController.OpenTarget(file, 0, 0)), (created, built) -> {
+                    if (built) {
+                        projects().markOpen(windowKey);
+                    } else if (created != null) {
+                        focus(created.stage());
+                        created.controller().openRecentHere(file); // joined a window built for another ask
+                    }
+                    setActiveAndSave(windowKey);
+                });
     }
 
     private void setActiveAndSave(String key) {
@@ -1481,10 +1665,16 @@ public class WindowManager {
 
     /**
      * {@code settings.json} was saved in an editor tab: re-reads it into the shared settings and applies it in
-     * every window (theme, keymap, view settings, open Settings windows). Returns the status line saying so.
+     * every window (theme, keymap, view settings, open Settings windows), then hands {@code status} the status
+     * line saying so. The file is read and parsed off the FX thread (PERF-01, Pauta 6.0.1); the rest runs here
+     * when it lands.
      */
-    public String settingsFileSaved() {
-        List<com.editora.config.SettingsFileCheck.Issue> issues = shared.reloadSettings();
+    public void settingsFileSaved(java.util.function.Consumer<String> status) {
+        shared.reloadSettings(issues -> status.accept(applyReloadedSettings(issues)));
+    }
+
+    /** Applies settings just re-read everywhere; returns the status line saying so. */
+    String applyReloadedSettings(@Nullable List<com.editora.config.SettingsFileCheck.Issue> issues) {
         if (issues == null) {
             return Messages.tr("status.settings.reloadFailed");
         }
@@ -1503,13 +1693,13 @@ public class WindowManager {
      * A window saved preferences that the other windows have not applied — the change came from a palette
      * command or key binding, which applies it only in its own window. Schedules the others to catch up.
      */
-    private void onSharedSettingsChanged(@Nullable ConfigManager saver) {
+    private void onSharedSettingsChanged(@Nullable ConfigManager changer) {
         if (!javafx.application.Platform.isFxApplicationThread()) {
-            // By the time this runs the saves around the change are over, so who made it can't be told.
-            javafx.application.Platform.runLater(() -> onSharedSettingsChanged(null));
+            javafx.application.Platform.runLater(() -> onSharedSettingsChanged(changer));
             return;
         }
-        ConfigManager origin = changerOf(saver);
+        // Who made it was decided at the save (setSettingsChanger), when the windows' pending saves still said.
+        ConfigManager origin = changer;
         if (!settingsChangePending) {
             settingsChangePending = true;
             settingsChangeOrigin = origin;
@@ -1759,7 +1949,11 @@ public class WindowManager {
             CommandRegistry registry = new CommandRegistry();
             // A no-project window normally uses the default workspace-state.json (stateFile null); a project
             // OR an extra "untitled" no-project window passes its own session file so windows never clobber.
-            ConfigManager config = stateFile == null ? takeBootstrapConfig() : takeBootstrapProjectConfig(stateFile);
+            ConfigManager config = readForBuild; // read off the FX thread by openWhenRead, or fresh
+            readForBuild = null;
+            if (config == null) {
+                config = stateFile == null ? takeBootstrapConfig() : takeBootstrapProjectConfig(stateFile);
+            }
             if (config == null && stateFile != null) {
                 config = takeReadAhead(stateFile); // a restored window's, read while the windows before it painted
             }
@@ -1778,6 +1972,7 @@ public class WindowManager {
             com.editora.perf.Startup.mark(com.editora.perf.Startup.FXML_LOADED);
             controller.setPluginManager(pluginManager); // before init: applyPlugins() runs inside init
             controller.init(stage, config, registry, keymap);
+            builtForTest.accept(controller);
             com.editora.perf.Startup.mark(com.editora.perf.Startup.CONTROLLER_INIT);
             controller.setHostServices(hostServices);
             controller.setWindowContext(this, project);

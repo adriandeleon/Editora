@@ -45,8 +45,58 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>Edit opens a card listing the trail's stops ({@link ProjectMapTrailEditor}): reorder, remove, rename a stop or
  * the trail, change a stop's note, play from a stop. Every change is written at once. Local folders only.
+ *
+ * <p>Every read, listing and write of a trail file runs on one thread of its own, in the order they were asked for
+ * (PERF-01, Pauta 6.0.1), and what it found is applied on the FX thread when it lands. The menu is filled from the
+ * trails listed last, with a Loading… row until a first listing has landed, and is filled again when a fresh one
+ * lands. The editor's write over a trail checks, on that thread, that the file still holds the trail it showed.
  */
 final class ProjectMapTrails {
+
+    /** The one thread trail files are read and written on, in order. */
+    private static final java.util.concurrent.ExecutorService TRAILS_IO =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    Thread.ofPlatform().daemon().name("map-trails-io").factory());
+
+    /** Where trail file work runs (a seam: a test may run it in place, on the FX thread). */
+    java.util.concurrent.Executor io = TRAILS_IO;
+
+    /** File work on trails, which may fail. */
+    @FunctionalInterface
+    private interface Work<T> {
+        @Nullable
+        T run() throws IOException;
+    }
+
+    /** What file work gave: its value, or its failure. */
+    private record Done<T>(@Nullable T value, @Nullable IOException failure) {}
+
+    /** Runs {@code work} on the trails' thread and hands what it gave to {@code then} on the FX thread. */
+    private <T> void io(Work<T> work, java.util.function.Consumer<Done<T>> then) {
+        io.execute(() -> {
+            Done<T> done;
+            try {
+                done = new Done<>(work.run(), null);
+            } catch (IOException e) {
+                done = new Done<>(null, e);
+            } catch (RuntimeException e) {
+                done = new Done<>(null, new IOException(e.getMessage(), e));
+            }
+            Done<T> result = done;
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                then.accept(result); // run in place (a test's seam)
+            } else {
+                javafx.application.Platform.runLater(() -> then.accept(result));
+            }
+        });
+    }
+
+    /** The trails listed last, of {@link #listedRoot}; {@code null} until a listing has landed. */
+    private @Nullable List<MapTrails.Listed> listed;
+
+    private @Nullable Path listedRoot;
+    /** Counts the listings asked for; only the latest one's result is kept. */
+    private long listings;
 
     private final ProjectMapView view;
     private final Menu menu = new Menu(tr("project.map.trails"));
@@ -166,8 +216,16 @@ final class ProjectMapTrails {
      */
     private void pickTrail(boolean edit) {
         Path root = root();
+        if (root == null) {
+            pickFrom(edit, List.of());
+            return;
+        }
+        io(() -> MapTrails.list(root), done -> pickFrom(edit, done.value() == null ? List.of() : done.value()));
+    }
+
+    private void pickFrom(boolean edit, List<MapTrails.Listed> all) {
         List<MapTrails.Listed> listed = new ArrayList<>();
-        for (MapTrails.Listed trail : root == null ? List.<MapTrails.Listed>of() : MapTrails.list(root)) {
+        for (MapTrails.Listed trail : all) {
             if (trail.trail() != null && !(edit && trail.readOnly())) {
                 listed.add(trail);
             }
@@ -257,8 +315,30 @@ final class ProjectMapTrails {
         return root != null && com.editora.vfs.Vfs.isLocal(root) ? root : null;
     }
 
-    /** Builds the submenu for the trails on disk now. */
+    /**
+     * Builds the submenu from the trails listed last (a Loading… row before the first listing lands), and asks for
+     * a fresh listing, which fills it again when it lands.
+     */
     void fill() {
+        Path root = root();
+        fillFrom(root != null && root.equals(listedRoot) ? listed : null);
+        if (root == null) {
+            return;
+        }
+        long asked = ++listings;
+        io(() -> MapTrails.list(root), done -> {
+            if (asked != listings || !root.equals(root())) {
+                return; // a newer listing, or another folder, is under way
+            }
+            List<MapTrails.Listed> fresh = done.value() == null ? List.of() : done.value();
+            listedRoot = root;
+            listed = fresh;
+            fillFrom(fresh);
+        });
+    }
+
+    /** The submenu with {@code known} as the trails ({@code null}: not listed yet). */
+    private void fillFrom(@Nullable List<MapTrails.Listed> known) {
         List<MenuItem> items = new ArrayList<>();
         Path root = root();
         MenuItem create = MapButtonCommands.row(new MenuItem(tr("project.map.trails.new")), "projectMap.newTrail");
@@ -279,14 +359,16 @@ final class ProjectMapTrails {
         items.add(create);
         items.add(add);
         items.add(new SeparatorMenuItem());
-        List<MapTrails.Listed> listed = root == null ? List.of() : MapTrails.list(root);
+        List<MapTrails.Listed> trails = known == null ? List.of() : known;
         Menu edit = new Menu(tr("project.map.trails.edit"));
         if (root == null) {
             items.add(disabled(tr("project.map.trails.local")));
-        } else if (listed.isEmpty()) {
+        } else if (known == null) {
+            items.add(disabled(tr("project.map.preview.loading"))); // listed off the FX thread; filled when it lands
+        } else if (trails.isEmpty()) {
             items.add(disabled(tr("project.map.trails.none")));
         }
-        for (MapTrails.Listed trail : listed) {
+        for (MapTrails.Listed trail : trails) {
             if (trail.trail() == null) {
                 items.add(disabled(tr("project.map.trails.unreadable", trail.name())));
                 continue;
@@ -359,42 +441,65 @@ final class ProjectMapTrails {
         if (prompt == null || root() == null) {
             return;
         }
-        prompt.show(tr("project.map.trails.newTitle"), tr("project.map.trails.newLabel"), "", name -> {
-            String created = create(name);
-            if (created != null && then != null) {
-                then.accept(created);
-            } else if (created != null) {
-                edit(created); // an empty trail's card says how stops are added
-            }
-        });
+        prompt.show(
+                tr("project.map.trails.newTitle"),
+                tr("project.map.trails.newLabel"),
+                "",
+                name -> create(name, created -> {
+                    if (created != null && then != null) {
+                        then.accept(created);
+                    } else if (created != null) {
+                        edit(created); // an empty trail's card says how stops are added
+                    }
+                }));
     }
 
-    /** Writes an empty trail called {@code name}; its file name stem, or null (blank, taken, or not written). */
+    /**
+     * Writes an empty trail called {@code name}; its file name stem once written, or null (blank, taken, or not
+     * written), when that is known by the time this returns (the file work ran in place); else null.
+     */
     @Nullable
     String create(@Nullable String name) {
+        java.util.concurrent.atomic.AtomicReference<@Nullable String> made =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        create(name, made::set);
+        return made.get();
+    }
+
+    /** Writes an empty trail called {@code name}, then hands {@code then} its stem, or null when it was not written. */
+    void create(@Nullable String name, java.util.function.Consumer<@Nullable String> then) {
         Path root = root();
         String value = name == null ? "" : name.strip();
         String stem = MapTrails.fileName(value);
         if (root == null || stem.isEmpty()) {
-            return null;
+            then.accept(null);
+            return;
         }
         Path file = MapTrails.fileFor(root, stem);
-        if (Files.exists(file)) {
-            view.onStatus.accept(tr("project.map.status.trail.exists", value));
-            return null;
-        }
-        try {
-            MapTrails.save(root, stem, new MapTrails.Trail(value, List.of()));
-        } catch (IOException failed) {
-            view.onStatus.accept(tr("project.map.status.trail.saveFailed", value, reason(failed)));
-            return null;
-        }
-        current = stem;
-        view.onStatus.accept(tr(
-                "project.map.status.trail.created",
-                value,
-                root.relativize(file).toString().replace('\\', '/')));
-        return stem;
+        io(
+                () -> {
+                    if (Files.exists(file)) {
+                        return Boolean.FALSE;
+                    }
+                    MapTrails.save(root, stem, new MapTrails.Trail(value, List.of()));
+                    return Boolean.TRUE;
+                },
+                done -> {
+                    if (done.failure() != null) {
+                        view.onStatus.accept(tr("project.map.status.trail.saveFailed", value, reason(done.failure())));
+                        then.accept(null);
+                    } else if (!Boolean.TRUE.equals(done.value())) {
+                        view.onStatus.accept(tr("project.map.status.trail.exists", value));
+                        then.accept(null);
+                    } else {
+                        current = stem;
+                        view.onStatus.accept(tr(
+                                "project.map.status.trail.created",
+                                value,
+                                root.relativize(file).toString().replace('\\', '/')));
+                        then.accept(stem);
+                    }
+                });
     }
 
     /**
@@ -410,11 +515,17 @@ final class ProjectMapTrails {
         }
         String target = current;
         Path root = root();
-        if (target == null || root == null || !Files.exists(MapTrails.fileFor(root, target))) {
+        if (target == null || root == null) {
             askNew(created -> askNote(created, made));
             return;
         }
-        askNote(target, made);
+        io(() -> Files.exists(MapTrails.fileFor(root, target)), done -> {
+            if (Boolean.TRUE.equals(done.value())) {
+                askNote(target, made);
+            } else {
+                askNew(created -> askNote(created, made));
+            }
+        });
     }
 
     private void askNote(String trail, MapTrails.Stop made) {
@@ -423,39 +534,60 @@ final class ProjectMapTrails {
         if (prompt == null || root == null) {
             return;
         }
-        MapTrails.Listed listed = MapTrails.read(MapTrails.fileFor(root, trail));
-        String label = listed.label();
-        prompt.show(
-                tr("project.map.trails.stopTitle", label),
-                tr("project.map.trails.stopLabel"),
-                "",
-                note -> append(trail, made.withNote(note == null ? "" : note.strip())));
+        io(() -> MapTrails.read(MapTrails.fileFor(root, trail)), done -> {
+            MapTrails.Listed listed = done.value();
+            String label = listed == null ? trail : listed.label();
+            prompt.show(
+                    tr("project.map.trails.stopTitle", label),
+                    tr("project.map.trails.stopLabel"),
+                    "",
+                    note -> append(trail, made.withNote(note == null ? "" : note.strip()), added -> {}));
+        });
     }
 
-    /** Appends {@code made} to trail {@code name} and writes it; false when the trail could not be changed. */
+    /**
+     * Appends {@code made} to trail {@code name} and writes it; false when the trail could not be changed, or when
+     * that is not known by the time this returns (the file work runs on the trails' thread).
+     */
     boolean append(String name, MapTrails.Stop made) {
+        java.util.concurrent.atomic.AtomicBoolean added = new java.util.concurrent.atomic.AtomicBoolean();
+        append(name, made, added::set);
+        return added.get();
+    }
+
+    /** Appends {@code made} to trail {@code name} and writes it; {@code then} is told whether it was. */
+    void append(String name, MapTrails.Stop made, java.util.function.Consumer<Boolean> then) {
         Path root = root();
         if (root == null) {
-            return false;
+            then.accept(false);
+            return;
         }
-        MapTrails.Listed listed = MapTrails.read(MapTrails.fileFor(root, name));
-        MapTrails.Trail trail = listed.trail();
-        if (trail == null || listed.readOnly()) {
-            view.onStatus.accept(tr("project.map.status.trail.notWritable", listed.label(), notWritable(listed)));
-            return false;
-        }
-        if (trail.stops().size() >= MapTrails.MAX_STOPS) {
-            view.onStatus.accept(tr("project.map.status.trail.full", MapTrails.MAX_STOPS));
-            return false;
-        }
-        List<MapTrails.Stop> stops = new ArrayList<>(trail.stops());
-        stops.add(made);
-        if (!write(name, trail.withStops(stops))) {
-            return false;
-        }
-        current = name;
-        view.onStatus.accept(tr("project.map.status.trail.stopAdded", listed.label(), stops.size()));
-        return true;
+        io(() -> MapTrails.read(MapTrails.fileFor(root, name)), done -> {
+            MapTrails.Listed listed = done.value();
+            MapTrails.Trail trail = listed == null ? null : listed.trail();
+            if (listed == null || trail == null || listed.readOnly()) {
+                view.onStatus.accept(tr(
+                        "project.map.status.trail.notWritable",
+                        listed == null ? name : listed.label(),
+                        listed == null ? reason(done.failure()) : notWritable(listed)));
+                then.accept(false);
+                return;
+            }
+            if (trail.stops().size() >= MapTrails.MAX_STOPS) {
+                view.onStatus.accept(tr("project.map.status.trail.full", MapTrails.MAX_STOPS));
+                then.accept(false);
+                return;
+            }
+            List<MapTrails.Stop> stops = new ArrayList<>(trail.stops());
+            stops.add(made);
+            write(name, trail.withStops(stops), written -> {
+                if (written) {
+                    current = name;
+                    view.onStatus.accept(tr("project.map.status.trail.stopAdded", listed.label(), stops.size()));
+                }
+                then.accept(written);
+            });
+        });
     }
 
     /** A stop made of {@code card}: null for a card that shows no file of the Map's folder. */
@@ -491,78 +623,127 @@ final class ProjectMapTrails {
         return card.path();
     }
 
-    /** Writes trail {@code name}; says why when it cannot. Refreshes what plays and edits it. */
+    /**
+     * Writes trail {@code name}; says why when it cannot. Refreshes what plays and edits it. True once written, when
+     * that is known by the time this returns (the file work ran in place).
+     */
     boolean write(String name, MapTrails.Trail trail) {
-        Path root = root();
-        if (root == null) {
-            return false;
-        }
-        try {
-            Path file = MapTrails.save(root, name, trail);
-            refreshed(MapTrails.read(file));
-            return true;
-        } catch (MapTrails.NotWritableException refused) {
-            view.onStatus.accept(tr("project.map.status.trail.notWritable", trail.title(), refused.getMessage()));
-        } catch (IOException failed) {
-            view.onStatus.accept(tr("project.map.status.trail.saveFailed", trail.title(), reason(failed)));
-        }
-        return false;
+        java.util.concurrent.atomic.AtomicBoolean written = new java.util.concurrent.atomic.AtomicBoolean();
+        write(name, trail, written::set);
+        return written.get();
+    }
+
+    /** Writes trail {@code name}, then tells {@code then} whether it was written; says why when it cannot. */
+    void write(String name, MapTrails.Trail trail, java.util.function.Consumer<Boolean> then) {
+        writeOver(name, null, trail, then);
     }
 
     /**
      * The editor's write (review 4 A5): writes {@code trail} as {@code name} only while the file still holds {@code
      * expected}, the trail the editor last showed. When it changed on disk meanwhile (a pull, a checkout, a hand edit)
-     * nothing is written: the editor shows the file as it is now and the status line says so.
+     * nothing is written: the editor shows the file as it is now and the status line says so. The check and the
+     * write are made together on the trails' thread; {@code then} is told whether it was written.
      */
-    boolean writeOver(String name, MapTrails.Trail expected, MapTrails.Trail trail) {
+    void writeOver(
+            String name,
+            MapTrails.@Nullable Trail expected,
+            MapTrails.Trail trail,
+            java.util.function.Consumer<Boolean> then) {
         Path root = root();
         if (root == null) {
-            return false;
+            then.accept(false);
+            return;
         }
-        MapTrails.Listed now = MapTrails.read(MapTrails.fileFor(root, name));
-        if (!expected.equals(now.trail())) {
-            view.onStatus.accept(tr("project.map.status.trail.changedOnDisk", now.label()));
-            refreshed(now);
-            return false;
-        }
-        return write(name, trail);
+        io(
+                () -> {
+                    if (expected != null) {
+                        MapTrails.Listed now = MapTrails.read(MapTrails.fileFor(root, name));
+                        if (!expected.equals(now.trail())) {
+                            return new Written(now, true);
+                        }
+                    }
+                    return new Written(MapTrails.read(MapTrails.save(root, name, trail)), false);
+                },
+                done -> {
+                    Written result = done.value();
+                    if (result != null && result.changedOnDisk()) {
+                        view.onStatus.accept(tr(
+                                "project.map.status.trail.changedOnDisk",
+                                result.listed().label()));
+                        refreshed(result.listed());
+                        then.accept(false);
+                    } else if (result != null) {
+                        refreshed(result.listed());
+                        then.accept(true);
+                    } else if (done.failure() instanceof MapTrails.NotWritableException refused) {
+                        view.onStatus.accept(
+                                tr("project.map.status.trail.notWritable", trail.title(), refused.getMessage()));
+                        then.accept(false);
+                    } else {
+                        view.onStatus.accept(
+                                tr("project.map.status.trail.saveFailed", trail.title(), reason(done.failure())));
+                        then.accept(false);
+                    }
+                });
     }
 
-    /** Renames trail {@code name} to {@code to}; the new name's stem, or null when it was not renamed. */
+    /** A trail as written (or, when it changed on disk and was not, as it is there now). */
+    private record Written(MapTrails.Listed listed, boolean changedOnDisk) {}
+
+    /**
+     * Renames trail {@code name} to {@code to}; the new name's stem, or null when it was not renamed or that is not
+     * known by the time this returns (the file work runs on the trails' thread).
+     */
     @Nullable
     String rename(String name, String to) {
+        java.util.concurrent.atomic.AtomicReference<@Nullable String> renamed =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        rename(name, to, renamed::set);
+        return renamed.get();
+    }
+
+    /** Renames trail {@code name} to {@code to}, then hands {@code then} the new stem, or null when it was not. */
+    void rename(String name, String to, java.util.function.Consumer<@Nullable String> then) {
         Path root = root();
         String value = to == null ? "" : to.strip();
         if (root == null || MapTrails.fileName(value).isEmpty()) {
-            return null;
+            then.accept(null);
+            return;
         }
-        MapTrails.Listed listed = MapTrails.read(MapTrails.fileFor(root, name));
-        MapTrails.Trail trail = listed.trail();
-        if (trail == null) {
-            return null;
-        }
-        try {
-            Path file = MapTrails.rename(root, name, value, trail);
-            MapTrails.Listed renamed = MapTrails.read(file);
-            if (name.equals(current)) {
-                current = renamed.name();
-            }
-            MapTrails.Listed shown = playing;
-            if (shown != null && shown.name().equals(name)) {
-                playing = renamed;
-            }
-            ProjectMapTrailEditor open = editor;
-            if (open != null && open.name().equals(name)) {
-                open.show(renamed); // the editor follows the trail to its new file
-            }
-            refreshed(renamed);
-            return renamed.name();
-        } catch (java.nio.file.FileAlreadyExistsException taken) {
+        io(
+                () -> {
+                    MapTrails.Trail trail =
+                            MapTrails.read(MapTrails.fileFor(root, name)).trail();
+                    return trail == null ? null : MapTrails.read(MapTrails.rename(root, name, value, trail));
+                },
+                done -> then.accept(renamed(name, value, done)));
+    }
+
+    /** The FX thread's half of a rename: the new stem, or null after saying why there is none. */
+    private @Nullable String renamed(String name, String value, Done<MapTrails.Listed> done) {
+        MapTrails.Listed renamed = done.value();
+        if (done.failure() instanceof java.nio.file.FileAlreadyExistsException) {
             view.onStatus.accept(tr("project.map.status.trail.exists", value));
-        } catch (IOException failed) {
-            view.onStatus.accept(tr("project.map.status.trail.saveFailed", value, reason(failed)));
+            return null;
+        } else if (done.failure() != null) {
+            view.onStatus.accept(tr("project.map.status.trail.saveFailed", value, reason(done.failure())));
+            return null;
+        } else if (renamed == null) {
+            return null; // not a trail that can be read
         }
-        return null;
+        if (name.equals(current)) {
+            current = renamed.name();
+        }
+        MapTrails.Listed shown = playing;
+        if (shown != null && shown.name().equals(name)) {
+            playing = renamed;
+        }
+        ProjectMapTrailEditor open = editor;
+        if (open != null && open.name().equals(name)) {
+            open.show(renamed); // the editor follows the trail to its new file
+        }
+        refreshed(renamed);
+        return renamed.name();
     }
 
     private void refreshed(MapTrails.Listed listed) {
@@ -583,19 +764,37 @@ final class ProjectMapTrails {
         }
     }
 
-    private static String reason(IOException failed) {
+    private static String reason(@Nullable IOException failed) {
+        if (failed == null) {
+            return "";
+        }
         return failed.getMessage() == null ? failed.getClass().getSimpleName() : failed.getMessage();
     }
 
     // --- playing ------------------------------------------------------------------------------------------------
 
-    /** Play: reads trail {@code name} and shows its stop {@code index} (0-based). False when it cannot be played. */
+    /**
+     * Play: reads trail {@code name} (off the FX thread) and shows its stop {@code index} (0-based). True once it
+     * plays, when that is known by the time this returns (the read ran in place); false when it cannot be played or
+     * the read is still under way.
+     */
     boolean play(String name, int index) {
         Path root = root();
         if (root == null) {
             return false;
         }
-        MapTrails.Listed listed = MapTrails.read(MapTrails.fileFor(root, name));
+        java.util.concurrent.atomic.AtomicBoolean plays = new java.util.concurrent.atomic.AtomicBoolean();
+        io(() -> MapTrails.read(MapTrails.fileFor(root, name)), done -> {
+            MapTrails.Listed listed = done.value();
+            if (listed != null) {
+                plays.set(play(listed, index));
+            }
+        });
+        return plays.get();
+    }
+
+    /** Plays {@code listed} from its stop {@code index}; false when it cannot be played. */
+    private boolean play(MapTrails.Listed listed, int index) {
         MapTrails.Trail trail = listed.trail();
         if (trail == null) {
             view.onStatus.accept(
@@ -851,7 +1050,15 @@ final class ProjectMapTrails {
         if (root == null) {
             return;
         }
-        MapTrails.Listed listed = MapTrails.read(MapTrails.fileFor(root, name));
+        io(() -> MapTrails.read(MapTrails.fileFor(root, name)), done -> {
+            if (done.value() != null) {
+                edit(done.value());
+            }
+        });
+    }
+
+    /** Opens (or brings up) the card listing {@code listed}'s stops, once read. */
+    private void edit(MapTrails.Listed listed) {
         if (listed.trail() == null || listed.readOnly()) {
             view.onStatus.accept(tr("project.map.status.trail.notWritable", listed.label(), notWritable(listed)));
             return;

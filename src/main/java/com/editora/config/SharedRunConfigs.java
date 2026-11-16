@@ -48,6 +48,7 @@ public final class SharedRunConfigs {
 
     /** Reads a project's shared configurations; an empty list when the file is absent or unreadable. */
     public static List<RunConfiguration> load(ObjectMapper mapper, Path projectRoot) {
+        com.editora.perf.BlockingSites.enter("SharedRunConfigs.load");
         Path file = fileFor(projectRoot);
         if (!Files.isReadable(file)) {
             return List.of();
@@ -66,6 +67,7 @@ public final class SharedRunConfigs {
 
     /** A project's shared deployments; an empty list when the file is absent, unreadable, or has none. */
     public static List<Deployment> loadDeployments(ObjectMapper mapper, Path projectRoot) {
+        com.editora.perf.BlockingSites.enter("SharedRunConfigs.loadDeployments");
         Path file = fileFor(projectRoot);
         if (!Files.isReadable(file)) {
             return List.of();
@@ -93,6 +95,7 @@ public final class SharedRunConfigs {
      */
     public static boolean wouldReplace(
             ObjectMapper mapper, Path projectRoot, List<RunConfiguration> configs, List<Deployment> deployments) {
+        com.editora.perf.BlockingSites.enter("SharedRunConfigs.wouldReplace");
         Path file = fileFor(projectRoot);
         if (!Files.exists(file)) {
             return false;
@@ -117,6 +120,7 @@ public final class SharedRunConfigs {
             ObjectMapper mapper, Path projectRoot, List<RunConfiguration> configs, List<Deployment> deployments)
             throws IOException {
         Path file = fileFor(projectRoot);
+        com.editora.perf.BlockingSites.enter("SharedRunConfigs.save");
         Files.createDirectories(file.getParent());
         Stored stored = stored(configs, deployments);
         // Temp file + atomic move, like every other config store: a crash mid-write must not leave a

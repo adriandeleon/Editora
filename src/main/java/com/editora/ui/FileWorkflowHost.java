@@ -214,7 +214,7 @@ final class FileWorkflowHost implements FileWorkflowCoordinator.Host {
         mc.snippetCoordinator.fileSaved(file);
         mc.deployments.fileSaved(file); // a deployment that uploads on save
         if (mc.windowManager != null && mc.windowManager.isSettingsFile(file)) {
-            mc.setStatus(mc.windowManager.settingsFileSaved()); // a hand edit applies on save
+            mc.windowManager.settingsFileSaved(mc::setStatus); // a hand edit applies on save
         }
     }
 

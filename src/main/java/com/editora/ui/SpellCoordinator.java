@@ -310,17 +310,23 @@ final class SpellCoordinator {
 
     /** Re-reads {@code dictionary.txt} (edited by hand, or by another program) and applies it everywhere. */
     void reloadDictionary() {
-        if (host.config().reloadUserDictionary()) {
-            refreshEveryWindow();
-        }
-        host.setStatus(tr("status.spell.dictionaryReloaded"));
+        // Read on the config writer's thread; the words apply when it lands (PERF-01, Pauta 6.0.1).
+        host.config().reloadUserDictionary(changed -> {
+            if (changed) {
+                refreshEveryWindow();
+            }
+            host.setStatus(tr("status.spell.dictionaryReloaded"));
+        });
     }
 
     /** A file was saved in this window: when it is the personal dictionary, its words apply at once. */
     void fileSaved(Path file) {
-        if (PathKeys.sameNormalized(file, host.config().getUserDictionaryFile())
-                && host.config().reloadUserDictionary()) {
-            refreshEveryWindow();
+        if (PathKeys.sameNormalized(file, host.config().getUserDictionaryFile())) {
+            host.config().reloadUserDictionary(changed -> {
+                if (changed) {
+                    refreshEveryWindow();
+                }
+            });
         }
     }
 

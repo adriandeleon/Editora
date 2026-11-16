@@ -61,16 +61,10 @@ public class SharedConfig {
     private final StoreSync sync;
 
     /**
-     * Stores written on the caller's thread whose last write failed, each with the save that writes it again.
-     * Such a store is written only when it changes, so without this a note, bookmark, breakpoint, macro, site
-     * or dictionary word added while the config folder was briefly unwritable lived in memory until quit and
-     * was gone after it. Retried after the next store write that succeeds, by {@link #flushWrites} (every
-     * durable save, including the one at quit) and by {@link #shutdown}.
+     * Where a result worked out on the writer thread is handed back to the FX thread: {@code Platform.runLater},
+     * or the calling thread when no toolkit runs (a test, a tool).
      */
-    private final Map<Path, Runnable> unsavedStores = new LinkedHashMap<>();
-
-    /** True while {@link #retryUnsavedStores} runs, so the saves it calls do not start another round. */
-    private boolean retryingUnsavedStores;
+    private volatile java.util.concurrent.Executor fxThread = SharedConfig::runOnFx;
 
     /**
      * The body hashes of revisions that are in the Local History index on disk but not in this process's
@@ -120,7 +114,10 @@ public class SharedConfig {
     private AbbrevStore abbrevStore = new AbbrevStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
     private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
-    /** The dictionary as this process last read or wrote it: what its own additions and removals are relative to. */
+    /**
+     * The dictionary as this process last read or wrote it: what its own additions and removals are relative to.
+     * Owned by the writer thread after the load.
+     */
     private final java.util.Set<String> userDictionaryBase = new java.util.LinkedHashSet<>();
     /** The shared projects index ({@code projects.json}) — one source of truth across all windows. */
     private final ProjectManager projects;
@@ -129,7 +126,7 @@ public class SharedConfig {
     private @Nullable RecentFiles recentFiles;
 
     private @Nullable SearchHistory searchHistory;
-    private @Nullable AgentSessionHistory agentSessions;
+    private volatile @Nullable AgentSessionHistory agentSessions;
     private @Nullable HttpResponseHistory httpHistory;
 
     /**
@@ -155,16 +152,35 @@ public class SharedConfig {
             "latestReleaseVersion",
             "latestReleaseUrl",
             "lastUpdateCheckOkEpoch");
-    /** The serialized preferences every window last applied, or {@code null} until {@link #markSettingsApplied}. */
-    private @Nullable JsonNode appliedSettings;
+    /**
+     * The serialized preferences every window last applied, or {@code null} until {@link #markSettingsApplied}.
+     * Read and written on the writer thread only (see {@link #detectSettingsChange}).
+     */
+    private volatile @Nullable JsonNode appliedSettings;
 
-    private byte @Nullable [] appliedSettingsBytes;
+    private volatile byte @Nullable [] appliedSettingsBytes;
+
+    /**
+     * Picks, at the moment of a save on the FX thread, the window the change it carries came from (see
+     * {@link #setSettingsChanger}); the answer travels with the save to {@link #onSettingsChanged}.
+     */
+    private java.util.function.UnaryOperator<@Nullable ConfigManager> settingsChanger = saver -> saver;
+
+    /**
+     * Re-reads of {@code settings.json} asked for on the FX thread and not applied yet. While one is under way the
+     * settings in memory are about to be replaced by the file's, so a save of them would write the old values
+     * over the hand edit: it is held, and made once the file's values are in (see {@link #reloadSettings}).
+     */
+    private int settingsReloadsInFlight;
+
+    /** A settings save was held while a re-read was under way (see {@link #settingsReloadsInFlight}). */
+    private boolean settingsSaveHeld;
     /** The export in progress, if any (see {@link #exportConfigAsync}). */
     private java.util.concurrent.@Nullable CompletableFuture<Path> runningExport;
     /** Where an export lands; {@code null} means the user's home directory (see {@link #exportDirectory}). */
     private volatile @Nullable Path exportDirectory;
 
-    private Consumer<ConfigManager> onSettingsChanged = origin -> {};
+    private Consumer<@Nullable ConfigManager> onSettingsChanged = origin -> {};
     private volatile Runnable onStoreChanged = () -> {};
 
     public SharedConfig(Path configDir, boolean dev) {
@@ -172,11 +188,8 @@ public class SharedConfig {
         this.dev = dev;
         this.sync = new StoreSync(configDir, json);
         this.projects = new ProjectManager(configDir);
-        this.projects.setOnWriteError((file, failure) -> {
-            writer.reportWriteError(file, failure);
-            markUnsaved(file, this.projects::save);
-        });
-        this.projects.setOnSaved(file -> storeSaved(file));
+        this.projects.setOnWriteError(writer::reportWriteError);
+        this.projects.useWriter(writer);
         this.projects.loadProblems().forEach(this::onLoadProblem);
         this.historyService =
                 new HistoryService(new HistoryBlobStore(getHistoryBlobsDir()), this::mayCollectHistoryBlobs);
@@ -285,7 +298,12 @@ public class SharedConfig {
         // The projects index is read once, when this object is built — before load(), which would otherwise
         // discard what it reported.
         projects.loadProblems().forEach(this::onLoadProblem);
-        appliedSettings = null; // a reload replaces the Settings object; the next window pair re-baselines
+        // A reload replaces the Settings object; the next window pair re-baselines. On the writer thread, in order
+        // with the comparisons it resets.
+        writer.run(() -> {
+            appliedSettings = null;
+            appliedSettingsBytes = null;
+        });
         List<String> skipped = new ArrayList<>();
         int before = loadProblems.size();
         settings = loadSettings();
@@ -293,8 +311,9 @@ public class SharedConfig {
             settings.useApiKeyVault(apiKeys); // a reload replaced the Settings object the keys were attached to
         }
         loadProblems.subList(before, loadProblems.size()).forEach(p -> skipped.addAll(p.skipped()));
-        settingsFileIssues = checkSettingsFile(skipped);
-        sync.loaded(getSettingsFile(), settingsBytes());
+        byte[] loadedBytes = settingsBytes();
+        settingsFileIssues = checkSettingsFile(skipped, loadedBytes);
+        sync.loaded(getSettingsFile(), loadedBytes);
         loadBookmarks();
         loadBreakpoints();
         loadHistory();
@@ -315,13 +334,13 @@ public class SharedConfig {
     }
 
     /** The issues of the settings file as it is now on disk; none when it is unreadable or of another schema. */
-    private List<SettingsFileCheck.Issue> checkSettingsFile(List<String> skipped) {
+    private List<SettingsFileCheck.Issue> checkSettingsFile(List<String> skipped, byte[] loaded) {
         try {
             JsonNode written = json.readTree(getSettingsFile().toFile());
             if (written == null || written.path("schemaVersion").asInt(-1) != Settings.SCHEMA_VERSION) {
                 return List.of(); // migrated keys are renamed on purpose, not "unknown"
             }
-            return SettingsFileCheck.issues(written, json.readTree(settingsBytes()), skipped);
+            return SettingsFileCheck.issues(written, json.readTree(loaded), skipped);
         } catch (IOException | RuntimeException e) {
             return List.of();
         }
@@ -329,11 +348,83 @@ public class SharedConfig {
 
     /**
      * Re-reads {@code settings.json} — saved by hand in the editor — into the live {@link Settings}, which every
-     * window holds, and returns its issues. A file that cannot be read (half-typed JSON, a newer schema) leaves
-     * the settings as they are and returns null; its problem is reported like one found at startup.
+     * window holds, and hands {@code done} its issues on the FX thread. A file that cannot be read (half-typed
+     * JSON, a newer schema) leaves the settings as they are and hands over null; its problem is reported like one
+     * found at startup.
+     *
+     * <p>The file is read, parsed and checked on the writer thread, after every write queued before it (PERF-01,
+     * Pauta 6.0.1); the values are applied on the FX thread, field by field, with no JSON there. Until they are,
+     * a save of the settings is held: it would write the old values over the hand edit.
      */
-    public @Nullable List<SettingsFileCheck.Issue> reloadSettings() {
+    public void reloadSettings(Consumer<@Nullable List<SettingsFileCheck.Issue>> done) {
+        reloadSettings(null, (failure, issues) -> done.accept(issues));
+    }
+
+    /** File work for the writer thread, which may fail. */
+    @FunctionalInterface
+    public interface FileWork<T> {
+        T run() throws IOException;
+    }
+
+    /**
+     * As {@link #reloadSettings(Consumer)}, with {@code first} run on the writer thread just before the read (a
+     * backup copied over {@code settings.json}). When it fails nothing is read: {@code done} gets its failure.
+     */
+    public void reloadSettings(
+            @Nullable FileWork<?> first,
+            java.util.function.BiConsumer<@Nullable IOException, @Nullable List<SettingsFileCheck.Issue>> done) {
+        settingsReloadsInFlight++;
+        writer.run(() -> {
+            if (first != null) {
+                try {
+                    first.run();
+                } catch (IOException e) {
+                    fxThread.execute(() -> applyReloadedSettings(null, issues -> done.accept(e, null)));
+                    return;
+                }
+            }
+            Reloaded reloaded;
+            try {
+                reloaded = readSettingsForReload();
+            } catch (RuntimeException e) {
+                java.util.logging.Logger.getLogger(SharedConfig.class.getName())
+                        .log(java.util.logging.Level.WARNING, "Could not re-read " + getSettingsFile(), e);
+                reloaded = null;
+            }
+            Reloaded result = reloaded;
+            fxThread.execute(() -> applyReloadedSettings(result, issues -> done.accept(null, issues)));
+        });
+        settleUnlessFx(); // a caller that may wait (a test, a tool) has the result when this returns
+    }
+
+    /**
+     * Runs {@code work} on the writer thread after every config write queued so far, and hands its result (or
+     * its failure) to {@code done} on the FX thread. For file work that must see those writes on disk — a copy of
+     * {@code settings.json} made right after a save — without the FX thread waiting for them (PERF-01, Pauta
+     * 6.0.1).
+     */
+    public <T> void afterWrites(
+            FileWork<T> work, java.util.function.BiConsumer<@Nullable T, @Nullable Exception> done) {
+        writer.run(() -> {
+            T result;
+            try {
+                result = work.run();
+            } catch (IOException | RuntimeException e) {
+                fxThread.execute(() -> done.accept(null, e));
+                return;
+            }
+            fxThread.execute(() -> done.accept(result, null));
+        });
+        settleUnlessFx();
+    }
+
+    /** What a re-read of {@code settings.json} found: the values, their issues, whether a key went to the keychain. */
+    private record Reloaded(Settings read, List<SettingsFileCheck.Issue> issues, boolean keysMoved) {}
+
+    /** The writer thread's half of {@link #reloadSettings}: null when the file cannot be applied. */
+    private @Nullable Reloaded readSettingsForReload() {
         Path file = getSettingsFile();
+        com.editora.perf.BlockingSites.enter("reloadSettings");
         List<ConfigLoadProblem> problems = new ArrayList<>();
         try {
             if (!json.readTree(file.toFile()).isObject()) {
@@ -352,17 +443,29 @@ public class SharedConfig {
             }
             skipped.addAll(p.skipped());
         }
-        try {
-            json.readerForUpdating(settings).readValue(json.writeValueAsBytes(read));
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to apply " + file.getFileName(), e);
+        // A key typed into the file moves to the keychain here, off the FX thread; the file then lets go of it.
+        ApiKeyVault vault = apiKeys;
+        // A keychain that refuses puts the keys it held into read, not into the live settings (the FX thread's).
+        boolean keysMoved = vault != null && (vault.absorb(read) | vault.settingsChanged());
+        byte[] bytes = serialize(read, file);
+        List<SettingsFileCheck.Issue> issues = checkSettingsFile(skipped, bytes);
+        sync.loaded(file, bytes); // what is on disk now is this process's own state
+        return new Reloaded(read, issues, keysMoved);
+    }
+
+    /** The FX thread's half of {@link #reloadSettings}. */
+    private void applyReloadedSettings(
+            @Nullable Reloaded reloaded, Consumer<@Nullable List<SettingsFileCheck.Issue>> done) {
+        settingsReloadsInFlight--;
+        if (reloaded != null) {
+            Snapshots.assignFields(reloaded.read(), settings);
+            settingsFileIssues = reloaded.issues();
         }
-        settingsFileIssues = checkSettingsFile(skipped);
-        if (apiKeys != null && apiKeys.absorb(settings)) {
-            saveSettings(); // a key typed into the file moved to the keychain; the file lets go of it
+        if (settingsReloadsInFlight == 0 && (settingsSaveHeld || (reloaded != null && reloaded.keysMoved()))) {
+            settingsSaveHeld = false;
+            enqueueSettings(); // what was held, now over the file's values (unchanged ones are not written)
         }
-        sync.loaded(file, settingsBytes()); // what is on disk now is this process's own state
-        return settingsFileIssues;
+        done.accept(reloaded == null ? null : reloaded.issues());
     }
 
     /**
@@ -441,12 +544,55 @@ public class SharedConfig {
     }
 
     /**
-     * Queues {@code mine} — a store serialized on the calling thread — for {@code file}. The write happens on
-     * the writer thread through {@link StoreSync}: skipped when this process changed nothing, merged with
-     * what is on disk when another process wrote the file in the meantime.
+     * Queues the store {@code mine} serializes to for {@code file}. Serializing and the write happen on the writer
+     * thread through {@link StoreSync}: skipped when this process changed nothing, merged with what is on disk
+     * when another process wrote the file in the meantime. {@code mine} is called on the writer thread, so it
+     * must serialize a snapshot nobody changes ({@link Snapshots#copy}), never a live store.
      */
-    void enqueueStore(Path file, byte[] mine, ConfigSchema schema) {
-        writer.enqueue(file, () -> sync.write(file, mine, schema, null) ? null : ConfigWriter.UNCHANGED);
+    void enqueueStore(Path file, ConfigWriter.BytesSupplier mine, ConfigSchema schema) {
+        writer.enqueue(file, () -> {
+            byte[] bytes = mine.get();
+            return bytes == null || sync.write(file, bytes, schema, null) ? null : ConfigWriter.UNCHANGED;
+        });
+    }
+
+    /**
+     * {@code value}'s JSON, for {@code file}. On the writer thread or at load, never the FX thread (PERF-01,
+     * Pauta 6.0.1); named for {@link com.editora.perf.BlockingSites} so a test can tell.
+     */
+    byte[] serialize(Object value, Path file) {
+        com.editora.perf.BlockingSites.enter("json " + file.getFileName());
+        try {
+            return json.writeValueAsBytes(value);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new UncheckedIOException("Failed to serialize " + file.getFileName(), e);
+        }
+    }
+
+    /**
+     * A caller that is not the FX thread (a test, a tool, a background task) waits for what it just queued, as
+     * every store save did before the writes left the FX thread; the FX thread and the writer go on. Returns
+     * whether everything queued is on disk (true when nobody waited).
+     */
+    boolean settleUnlessFx() {
+        if (javafx.application.Platform.isFxApplicationThread() || writer.onWriterThread()) {
+            return true;
+        }
+        return writer.awaitQueued();
+    }
+
+    /** {@code Platform.runLater}, or the calling thread when no JavaFX toolkit is running (a test, a tool). */
+    private static void runOnFx(Runnable task) {
+        try {
+            javafx.application.Platform.runLater(task);
+        } catch (IllegalStateException noToolkit) {
+            task.run();
+        }
+    }
+
+    /** TEST SEAM — where results worked out on the writer thread are handed back to the FX thread. */
+    void setFxThreadForTest(java.util.concurrent.Executor executor) {
+        this.fxThread = executor;
     }
 
     /** The sink a history list writes through: queued, and merged like every other store. */
@@ -559,10 +705,13 @@ public class SharedConfig {
         return settings;
     }
 
-    /** Writes preferences to {@code settings.json} synchronously (serialize now, then block until written). */
+    /**
+     * Saves the preferences to {@code settings.json}: queued on the FX thread, which goes on at once; a caller on
+     * any other thread then waits until it is written (see {@link #settleUnlessFx}).
+     */
     public boolean saveSettings() {
         enqueueSettings();
-        return flushWrites();
+        return settleUnlessFx();
     }
 
     /** Drops any queued write for {@code file} (it's about to be deleted — see {@link ConfigWriter#cancel}). */
@@ -585,7 +734,7 @@ public class SharedConfig {
         projects.saveQueued(writer);
     }
 
-    /** Serializes the current preferences and queues a write to {@code settings.json} (non-blocking). */
+    /** Queues a write of the current preferences to {@code settings.json} (non-blocking, no JSON here). */
     void enqueueSettings() {
         enqueueSettings(null);
     }
@@ -597,37 +746,92 @@ public class SharedConfig {
      * broadcast it.
      */
     void enqueueSettings(@Nullable ConfigManager origin) {
-        byte[] bytes = settingsBytes();
-        if (!writeProtected.contains(getSettingsFile())) {
-            enqueueStore(getSettingsFile(), bytes, ConfigSchema.SETTINGS);
+        if (settingsReloadsInFlight > 0) {
+            settingsSaveHeld = true; // the file's values are about to replace these; saved once they have
+            return;
         }
-        if (appliedSettings == null || Arrays.equals(bytes, appliedSettingsBytes)) {
+        // A copy, serialized on the writer thread (PERF-01, Pauta 6.0.1): the write and the comparison below
+        // share the one serialization.
+        Settings snapshot = Snapshots.copy(settings);
+        Path file = getSettingsFile();
+        Serialized bytes = new Serialized(() -> serialize(snapshot, file));
+        if (!writeProtected.contains(file)) {
+            enqueueStore(file, bytes::get, ConfigSchema.SETTINGS);
+        }
+        // Who made the change is decided now, while the windows' pending saves still say it; the comparison
+        // that tells whether there was one runs after the write, in order with every other save's.
+        ConfigManager changer = origin == null ? null : settingsChanger.apply(origin);
+        writer.run(() -> detectSettingsChange(bytes.get(), changer));
+    }
+
+    /** One serialization, made on first use on the writer thread and then reused by the write and the comparison. */
+    private static final class Serialized {
+        private final java.util.function.Supplier<byte[]> make;
+        private byte @Nullable [] bytes;
+
+        Serialized(java.util.function.Supplier<byte[]> make) {
+            this.make = make;
+        }
+
+        synchronized byte[] get() {
+            byte[] b = bytes;
+            if (b == null) {
+                b = make.get();
+                bytes = b;
+            }
+            return b;
+        }
+    }
+
+    /**
+     * On the writer thread: tells {@link #onSettingsChanged}, on the FX thread, when {@code bytes} carry
+     * preferences that differ from what every window last applied.
+     */
+    private void detectSettingsChange(byte[] bytes, @Nullable ConfigManager changer) {
+        JsonNode applied = appliedSettings;
+        if (applied == null || Arrays.equals(bytes, appliedSettingsBytes)) {
             return;
         }
         JsonNode now = applicableSettings(bytes);
-        boolean changed = !now.equals(appliedSettings);
+        boolean changed = !now.equals(applied);
         appliedSettings = now;
         appliedSettingsBytes = bytes;
         if (changed) {
-            onSettingsChanged.accept(origin);
+            fxThread.execute(() -> onSettingsChanged.accept(changer));
         }
     }
 
     /**
      * Records that every window now reflects the current preferences. Starts change detection: until the
-     * first call nothing is reported, which is right while a single window exists.
+     * first call nothing is reported, which is right while a single window exists. The comparison baseline is
+     * serialized on the writer thread, in order with the saves compared against it.
      */
     public void markSettingsApplied() {
-        appliedSettingsBytes = settingsBytes();
-        appliedSettings = applicableSettings(appliedSettingsBytes);
+        Settings snapshot = Snapshots.copy(settings);
+        writer.run(() -> {
+            byte[] bytes = serialize(snapshot, getSettingsFile());
+            appliedSettingsBytes = bytes;
+            appliedSettings = applicableSettings(bytes);
+        });
     }
 
     /**
-     * Sets the handler told (on the saving thread, the FX thread) that a save carried preferences no other
-     * window has applied yet. Its argument is the saving window's config, or {@code null} when unknown.
+     * Sets the handler told, on the FX thread, that a save carried preferences no other window has applied
+     * yet. Its argument is the window the change came from (see {@link #setSettingsChanger}), or {@code null}
+     * when that cannot be told.
      */
-    public void setOnSettingsChanged(Consumer<ConfigManager> handler) {
+    public void setOnSettingsChanged(Consumer<@Nullable ConfigManager> handler) {
         this.onSettingsChanged = handler == null ? origin -> {} : handler;
+    }
+
+    /**
+     * Sets how a save names the window a change came from: called on the FX thread at the save with the saving
+     * window's config, it returns that window, another one, or {@code null} when it cannot be told. The answer
+     * is what {@link #setOnSettingsChanged}'s handler is given once the comparison, made on the writer thread,
+     * finds a change.
+     */
+    public void setSettingsChanger(java.util.function.UnaryOperator<@Nullable ConfigManager> changer) {
+        this.settingsChanger = changer == null ? saver -> saver : changer;
     }
 
     /** The preferences as a tree, without the fields that never need a window to re-apply anything. */
@@ -643,30 +847,39 @@ public class SharedConfig {
         }
     }
 
+    /** The live preferences' JSON: for the load, off the FX thread. */
     private byte[] settingsBytes() {
-        try {
-            return json.writeValueAsBytes(settings);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new UncheckedIOException("Failed to serialize settings", e);
-        }
+        return serialize(settings, getSettingsFile());
     }
 
-    /** Blocks until all queued settings/session writes have landed (a durable save, an export, or exit). */
+    /**
+     * Blocks until all queued config writes have landed (an export, an import, a test, or the quit), retrying any
+     * that failed before. Not on the FX thread outside the quit ({@link ConfigWriter#flush} says so loudly).
+     */
     public boolean flushWrites() {
-        boolean storesSaved = retryUnsavedStores();
-        return writer.flush() && storesSaved;
+        return writer.flush();
+    }
+
+    /** As {@link #flushWrites()}, by the name a test or a background task waits under. */
+    public boolean awaitWrites() {
+        return flushWrites();
+    }
+
+    /** The app is quitting: from here the FX thread may make the last save and wait for it. */
+    public void quitting() {
+        writer.quitting();
     }
 
     /** Stops app-wide background services after the last window has closed. */
     public boolean shutdown() {
+        writer.quitting(); // the quit: the waits below are the last save, which the FX thread may make
         // The HTTP Client's saves wait on its own thread before they reach the writer: let them through first, or
         // a response that landed just before quitting (a Clear, an environment change) is never saved.
         awaitHttpHistoryWork();
         // Then: the history worker finishes the records still in flight (the save made from the quit prompt)
         // and hands them over, which queues the index — so the writer has to be running still.
         historyService.shutdown();
-        boolean storesSaved = retryUnsavedStores(); // the last chance for a store whose write failed earlier
-        boolean durable = writer.shutdown() && storesSaved;
+        boolean durable = writer.shutdown(); // retries, a last time, every write that failed earlier
         InstanceLock lock = instanceLock;
         if (lock != null) {
             lock.close(); // after the last write: the next launch may now be the primary
@@ -737,6 +950,7 @@ public class SharedConfig {
 
     /** Whether a plugin keeps data of its own ({@code plugins/<id>/data/}), which an export leaves out unless asked. */
     public boolean hasPluginData() {
+        com.editora.perf.BlockingSites.enter("SharedConfig.hasPluginData");
         Path plugins = getPluginsDir();
         try (Stream<Path> dirs = Files.list(plugins)) {
             return dirs.filter(d -> !d.getFileName().toString().startsWith("."))
@@ -783,6 +997,7 @@ public class SharedConfig {
 
     /** Whether the HTTP Client has saved responses, which an export leaves out unless the user asks. */
     public boolean hasHttpHistory() {
+        com.editora.perf.BlockingSites.enter("SharedConfig.hasHttpHistory");
         Path dir = configDir.resolve(HttpResponseHistory.DIR_NAME);
         try (Stream<Path> files = Files.list(dir)) {
             return files.anyMatch(f -> f.getFileName().toString().endsWith(".json"));
@@ -913,91 +1128,38 @@ public class SharedConfig {
     }
 
     /**
-     * Writes one store synchronously and atomically. A file that is {@link #isWriteProtected write-protected}
-     * is left alone: the in-memory store is the defaults loaded in its place, not its content.
+     * Queues a write of one store. A file that is {@link #isWriteProtected write-protected} is left alone: the
+     * in-memory store is the defaults loaded in its place, not its content.
+     *
+     * <p>The store is copied here ({@link Snapshots#copy}); the copy is serialized and written on the writer
+     * thread (PERF-01, Pauta 6.0.1), so the FX thread, where these saves are made (toggle a bookmark or a
+     * breakpoint, edit a note, save a macro, trust a folder), neither serializes, hashes, locks nor writes. The
+     * in-memory store stays the one the windows read. Writes of one file are made in order, and a later save of
+     * it replaces one still queued, so an older state is never written over a newer one.
      *
      * <p>The write goes through {@link StoreSync}: nothing is written when this process changed nothing, and
      * when another process wrote the file in the meantime its entries are kept and only this process's own
-     * additions, edits and removals are applied.
+     * additions, edits and removals are applied. What that merge keeps of the other process's stays on disk; it
+     * is not loaded into this process's memory (it shows after a restart), so nothing comes back to the FX
+     * thread.
      *
-     * <p>Never throws. These writes run inside FX event handlers (toggle a bookmark or breakpoint, edit a
-     * note, save a macro, trust a folder) and, for the one-time {@code bookmarks.json} creation, inside
-     * {@link #load()}: an exception from a full disk or a read-only config dir used to abort the handler with
-     * nothing shown, or stop the app from starting. A failure is logged and reported through
-     * {@link #setOnWriteError} like a queued write; the change stays in memory and {@code retry} is run again
-     * later (see {@link #unsavedStores}).
-     *
-     * @param retry the public save that leads back here for this store
-     * @return whether the store in memory is now the one on disk
+     * <p>Never throws. A failure is logged and reported through {@link #setOnWriteError}; the change stays in
+     * memory and the writer writes the same snapshot again after its next successful write, at every flush and
+     * at quit (unless a newer save of the store replaced it). A caller that is not the FX thread waits for the
+     * write ({@link #settleUnlessFx}).
      */
-    private boolean writeStore(Path file, Object store, ConfigSchema schema, Runnable retry) {
+    private void writeStore(Path file, Object store, ConfigSchema schema) {
         if (writeProtected.contains(file)) {
-            return false;
+            return;
         }
-        boolean written;
-        try {
-            Files.createDirectories(configDir);
-            written = sync.write(file, json.writeValueAsBytes(store), schema, null);
-        } catch (IOException e) {
-            writer.reportWriteError(file, e);
-            markUnsaved(file, retry);
-            return false;
-        }
-        if (written) { // an unchanged store that was skipped says nothing about whether the disk works
-            storeSaved(file);
-        }
-        return true;
-    }
-
-    private void markUnsaved(Path file, Runnable retry) {
-        synchronized (unsavedStores) {
-            unsavedStores.put(file, retry);
-        }
-    }
-
-    /** {@code file} is on disk as it is in memory; the disk takes writes, so retry what failed before. */
-    private void storeSaved(Path file) {
-        synchronized (unsavedStores) {
-            unsavedStores.remove(file);
-        }
-        retryUnsavedStores();
-    }
-
-    /**
-     * Saves again every store whose last write failed. A store that fails again reports it again and stays
-     * listed.
-     *
-     * @return whether nothing is left unsaved
-     */
-    private boolean retryUnsavedStores() {
-        List<Runnable> retries;
-        synchronized (unsavedStores) {
-            if (retryingUnsavedStores) {
-                return true;
-            }
-            if (unsavedStores.isEmpty()) {
-                return true;
-            }
-            retryingUnsavedStores = true;
-            retries = new ArrayList<>(unsavedStores.values());
-        }
-        try {
-            retries.forEach(Runnable::run);
-        } finally {
-            synchronized (unsavedStores) {
-                retryingUnsavedStores = false;
-            }
-        }
-        synchronized (unsavedStores) {
-            return unsavedStores.isEmpty();
-        }
+        Object snapshot = Snapshots.copy(store);
+        enqueueStore(file, () -> serialize(snapshot, file), schema);
+        settleUnlessFx();
     }
 
     /** Whether a store's last write failed and is still waiting to be retried. */
     boolean hasUnsavedStores() {
-        synchronized (unsavedStores) {
-            return !unsavedStores.isEmpty();
-        }
+        return writer.hasFailedWrites();
     }
 
     // --- recent files, search history, agent sessions (one instance each, shared by every window) ---
@@ -1033,13 +1195,64 @@ public class SharedConfig {
         return httpHistory;
     }
 
-    /** The AI Agent chat-session history, shared like {@link #recentFiles()}. */
-    public AgentSessionHistory agentSessions() {
-        if (agentSessions == null) {
-            agentSessions =
-                    new AgentSessionHistory(configDir, sinkFor(ConfigSchema.AGENT_SESSIONS), this::onLoadProblem);
+    /**
+     * The AI Agent chat-session history, shared like {@link #recentFiles()}. Reads it on the calling thread the
+     * first time: not for the FX thread, which goes through {@link #agentSessions(Consumer)}.
+     */
+    public synchronized AgentSessionHistory agentSessions() {
+        AgentSessionHistory history = agentSessions;
+        if (history == null) {
+            history = new AgentSessionHistory(configDir, sinkFor(ConfigSchema.AGENT_SESSIONS), this::onLoadProblem);
+            agentSessions = history;
         }
+        return history;
+    }
+
+    /** The agent session history once read, else {@code null} (its read may be under way). */
+    public @Nullable AgentSessionHistory agentSessionsIfRead() {
         return agentSessions;
+    }
+
+    /** The read of the agent session history started by {@link #readAgentSessionsAhead}; guarded by {@code this}. */
+    private java.util.concurrent.@Nullable CompletableFuture<AgentSessionHistory> agentSessionsRead;
+
+    /** What waits on the FX thread for that read, in the order it asked. FX thread only. */
+    private final List<Consumer<AgentSessionHistory>> waitingForAgentSessions = new ArrayList<>();
+
+    /** Starts reading the agent session history on a thread of its own, unless it is read or being read. */
+    public synchronized java.util.concurrent.CompletableFuture<AgentSessionHistory> readAgentSessionsAhead() {
+        java.util.concurrent.CompletableFuture<AgentSessionHistory> read = agentSessionsRead;
+        if (read == null) {
+            read = agentSessions != null
+                    ? java.util.concurrent.CompletableFuture.completedFuture(agentSessions)
+                    : java.util.concurrent.CompletableFuture.supplyAsync(
+                            this::agentSessions, com.editora.process.BlockingTasks.named("agent-sessions-read"));
+            agentSessionsRead = read;
+        }
+        return read;
+    }
+
+    /**
+     * Hands the agent session history to {@code then} on the FX thread: at once when it is read, else once its
+     * first read, on a thread of its own, is done (PERF-01, Pauta 6.0.1). Calls made meanwhile run in the order
+     * they were made.
+     */
+    public void agentSessions(Consumer<AgentSessionHistory> then) {
+        AgentSessionHistory history = agentSessions;
+        if (history != null && waitingForAgentSessions.isEmpty()) {
+            then.accept(history);
+            return;
+        }
+        waitingForAgentSessions.add(then);
+        if (waitingForAgentSessions.size() == 1) {
+            readAgentSessionsAhead()
+                    .whenComplete((read, failure) -> fxThread.execute(() -> {
+                        List<Consumer<AgentSessionHistory>> waiting = new ArrayList<>(waitingForAgentSessions);
+                        waitingForAgentSessions.clear();
+                        AgentSessionHistory got = read != null ? read : agentSessions();
+                        waiting.forEach(w -> w.accept(got));
+                    }));
+        }
     }
 
     // --- plugins (enable-state) ---
@@ -1054,7 +1267,7 @@ public class SharedConfig {
     }
 
     public void savePlugins() {
-        writeStore(getPluginsFile(), pluginStore, ConfigSchema.PLUGINS, this::savePlugins);
+        writeStore(getPluginsFile(), pluginStore, ConfigSchema.PLUGINS);
     }
 
     // --- workspace trust (folders allowed to run their own build wrapper) ---
@@ -1073,7 +1286,7 @@ public class SharedConfig {
     }
 
     public void saveTrust() {
-        writeStore(getTrustFile(), trustStore, ConfigSchema.TRUST, this::saveTrust);
+        writeStore(getTrustFile(), trustStore, ConfigSchema.TRUST);
     }
 
     // --- keyboard macros (app-global) ---
@@ -1092,7 +1305,7 @@ public class SharedConfig {
     }
 
     public void saveMacros() {
-        writeStore(getMacrosFile(), macroStore, ConfigSchema.MACROS, this::saveMacros);
+        writeStore(getMacrosFile(), macroStore, ConfigSchema.MACROS);
     }
 
     // --- abbreviations (app-global) ---
@@ -1128,12 +1341,28 @@ public class SharedConfig {
      * re-applies the settings to refresh those.
      */
     public void reloadAbbreviations() {
-        loadAbbreviations();
-        onStoreChanged.run();
+        reloadAbbreviations(() -> {});
+    }
+
+    /**
+     * As {@link #reloadAbbreviations()}: the file is read on the config writer's thread, after the writes queued
+     * before it (PERF-01, Pauta 6.0.1); the list is replaced, the windows told and {@code then} run on the FX
+     * thread. A change made to the list on the FX thread meanwhile is overwritten, as the file's is the newer.
+     */
+    public void reloadAbbreviations(Runnable then) {
+        writer.run(() -> {
+            AbbrevStore read = read(getAbbreviationsFile(), new AbbrevStore(), ConfigSchema.ABBREVIATIONS);
+            fxThread.execute(() -> {
+                abbrevStore = read;
+                onStoreChanged.run();
+                then.run();
+            });
+        });
+        settleUnlessFx();
     }
 
     public void saveAbbreviations() {
-        writeStore(getAbbreviationsFile(), abbrevStore, ConfigSchema.ABBREVIATIONS, this::rewriteAbbreviations);
+        writeStore(getAbbreviationsFile(), abbrevStore, ConfigSchema.ABBREVIATIONS);
         onStoreChanged.run();
     }
 
@@ -1198,18 +1427,8 @@ public class SharedConfig {
     }
 
     public void saveConnections() {
-        writeStore(getConnectionsFile(), connectionStore, ConfigSchema.CONNECTIONS, this::rewriteConnections);
+        writeStore(getConnectionsFile(), connectionStore, ConfigSchema.CONNECTIONS);
         onStoreChanged.run();
-    }
-
-    /** The retry of a failed {@link #saveAbbreviations}: the list did not change again, so nobody is told. */
-    private void rewriteAbbreviations() {
-        writeStore(getAbbreviationsFile(), abbrevStore, ConfigSchema.ABBREVIATIONS, this::rewriteAbbreviations);
-    }
-
-    /** The retry of a failed {@link #saveConnections}. */
-    private void rewriteConnections() {
-        writeStore(getConnectionsFile(), connectionStore, ConfigSchema.CONNECTIONS, this::rewriteConnections);
     }
 
     /**
@@ -1305,7 +1524,11 @@ public class SharedConfig {
         return userDictionary;
     }
 
-    /** Adds a word to the user dictionary (lower-cased) and appends it to {@code dictionary.txt}. */
+    /**
+     * Adds a word to the user dictionary (lower-cased). The shared set changes at once, so the word stops being
+     * flagged at once; {@code dictionary.txt} is written on the writer thread (PERF-01, Pauta 6.0.1), the word
+     * appended to it.
+     */
     public void addUserWord(String word) {
         if (word == null || word.isBlank()) {
             return;
@@ -1314,23 +1537,7 @@ public class SharedConfig {
         if (w.isEmpty() || !userDictionary.add(w)) {
             return; // already present
         }
-        try {
-            Files.createDirectories(configDir);
-            Path file = getUserDictionaryFile();
-            // A hand-edited or synced file may not end in a line break; appending straight after it would
-            // glue this word onto the last one ("beta" + "gamma" -> "betagamma", losing both).
-            String separator = endsMidLine(file) ? System.lineSeparator() : "";
-            Files.writeString(
-                    file,
-                    separator + w + System.lineSeparator(),
-                    java.nio.file.StandardOpenOption.CREATE,
-                    java.nio.file.StandardOpenOption.APPEND);
-            userDictionaryBase.add(w);
-        } catch (IOException e) {
-            // The word still applies for this session; say that it is not saved, and try again later.
-            writer.reportWriteError(getUserDictionaryFile(), e);
-            markUnsaved(getUserDictionaryFile(), this::rewriteUserDictionary);
-        }
+        queueDictionaryWrite();
     }
 
     /** True when {@code file} has content whose last byte is not a line feed. */
@@ -1348,14 +1555,14 @@ public class SharedConfig {
         }
     }
 
-    /** Removes a word from the user dictionary and rewrites {@code dictionary.txt}; no-op if absent. */
+    /** Removes a word from the user dictionary; {@code dictionary.txt} is rewritten without it. No-op if absent. */
     public void removeUserWord(String word) {
         if (word == null) {
             return;
         }
         String w = dictionaryForm(word);
         if (userDictionary.remove(w)) {
-            rewriteUserDictionary();
+            queueDictionaryWrite();
         }
     }
 
@@ -1369,79 +1576,167 @@ public class SharedConfig {
     }
 
     /**
-     * Re-reads {@code dictionary.txt} into the shared set, returning whether the set changed. For a file
-     * edited by hand (the Settings link opens it in the editor): the words used to be read once at startup,
-     * so an added line was not accepted, and a removed one stayed accepted, until the next launch.
+     * Words the writer took from the file (another process's, a hand edit's) that the shared set may not hold yet:
+     * their result has not been applied on the FX thread. Their absence from a later copy of the set is not a
+     * removal made here. Owned by the writer thread; emptied of what a result brought once it is applied.
      */
-    public boolean reloadUserDictionary() {
-        java.util.Set<String> onDisk;
-        try {
-            onDisk = readUserDictionary(getUserDictionaryFile());
-        } catch (IOException e) {
-            return false; // unreadable right now: keep what is in memory
-        }
-        // What this process added or removed and has not managed to write yet still applies on top.
-        java.util.Set<String> merged = new java.util.LinkedHashSet<>(onDisk);
-        for (String known : userDictionaryBase) {
-            if (!userDictionary.contains(known)) {
-                merged.remove(known);
-            }
-        }
-        for (String word : userDictionary) {
-            if (!userDictionaryBase.contains(word)) {
-                merged.add(word);
-            }
-        }
-        userDictionaryBase.clear();
-        userDictionaryBase.addAll(onDisk);
-        if (merged.equals(userDictionary)) {
-            return false;
-        }
-        // In place: every buffer's checker holds this very set.
-        userDictionary.retainAll(merged);
-        userDictionary.addAll(merged);
-        return true;
+    private final java.util.Set<String> userDictionaryForeign = new java.util.LinkedHashSet<>();
+
+    /**
+     * Counts the changes made to the shared word set on the FX thread. A result worked out on the writer thread
+     * from the set as it was at change {@code n} is applied only while the count is still {@code n}: a newer
+     * change has its own write queued, which brings its own result.
+     */
+    private long userDictionaryChanges;
+
+    /** Told, on the FX thread, when a write or a re-read changed the shared word set (another process's words). */
+    private Runnable onUserDictionaryChanged = () -> {};
+
+    /** Sets what runs on the FX thread when the shared word set changed under the windows (see above). */
+    public void setOnUserDictionaryChanged(Runnable handler) {
+        this.onUserDictionaryChanged = handler == null ? () -> {} : handler;
     }
 
     /**
-     * Brings {@code dictionary.txt} in line with this process's additions and removals, keeping every word
-     * another process (or a hand edit) added to the file in the meantime — the file used to be rewritten from
-     * this process's set alone, which dropped them. Those words join the in-memory set as well.
-     *
-     * <p>Written via temp + atomic move (the project convention): a plain {@code writeString} truncates
-     * first, so a crash / disk-full between truncate and write left the whole personal dictionary empty.
-     * A failure is reported and the rewrite is retried later; the in-memory set applies meanwhile.
+     * Queues the write that brings {@code dictionary.txt} in line with the shared set as it is now. A caller that
+     * is not the FX thread waits for it.
      */
-    private void rewriteUserDictionary() {
+    private void queueDictionaryWrite() {
+        long change = ++userDictionaryChanges;
+        java.util.Set<String> wanted = new java.util.LinkedHashSet<>(userDictionary);
         Path file = getUserDictionaryFile();
-        try {
-            Files.createDirectories(configDir);
-            java.util.Set<String> merged = readUserDictionary(file);
-            for (String removedHere : userDictionaryBase) {
-                if (!userDictionary.contains(removedHere)) {
-                    merged.remove(removedHere);
+        writer.enqueue(file, () -> {
+            java.util.Set<String> merged = writeUserDictionary(file, wanted);
+            if (!merged.equals(wanted)) {
+                fxThread.execute(() -> applyUserDictionary(change, merged, null));
+            }
+            return null; // written here, by append or rewrite
+        });
+        settleUnlessFx();
+    }
+
+    /**
+     * Re-reads {@code dictionary.txt} into the shared set, on the writer thread, and hands {@code done} (on the
+     * FX thread) whether the set changed. For a file edited by hand (the Settings link opens it in the editor),
+     * synced or imported: the words used to be read once at startup, so an added line was not accepted, and a
+     * removed one stayed accepted, until the next launch. A caller that is not the FX thread waits for the read.
+     */
+    public void reloadUserDictionary(Consumer<Boolean> done) {
+        long change = userDictionaryChanges;
+        java.util.Set<String> wanted = new java.util.LinkedHashSet<>(userDictionary);
+        Path file = getUserDictionaryFile();
+        writer.run(() -> {
+            java.util.Set<String> onDisk;
+            try {
+                com.editora.perf.BlockingSites.enter("dictionary read");
+                onDisk = readUserDictionary(file);
+            } catch (IOException e) {
+                fxThread.execute(() -> done.accept(false)); // unreadable right now: keep what is in memory
+                return;
+            }
+            // What this process added or removed and has not managed to write yet still applies on top.
+            java.util.Set<String> merged = new java.util.LinkedHashSet<>(onDisk);
+            for (String known : userDictionaryBase) {
+                if (!wanted.contains(known) && !userDictionaryForeign.contains(known)) {
+                    merged.remove(known);
                 }
             }
-            for (String word : userDictionary) {
+            for (String word : wanted) {
                 if (!userDictionaryBase.contains(word)) {
-                    merged.add(word); // added here (possibly by an append that failed)
+                    merged.add(word);
                 }
             }
+            userDictionaryBase.clear();
+            userDictionaryBase.addAll(onDisk);
+            noteForeign(merged, wanted);
+            fxThread.execute(() -> applyUserDictionary(change, merged, done));
+        });
+        settleUnlessFx();
+    }
+
+    /**
+     * On the FX thread: makes the shared set {@code merged}, worked out from the set as it was at change
+     * {@code change}, unless the set has changed again since (that change's write brings a newer result).
+     */
+    private void applyUserDictionary(long change, java.util.Set<String> merged, @Nullable Consumer<Boolean> done) {
+        boolean current = change == userDictionaryChanges;
+        boolean changed = current && !merged.equals(userDictionary);
+        if (changed) {
+            // In place: every buffer's checker holds this very set.
+            userDictionary.retainAll(merged);
+            userDictionary.addAll(merged);
+        }
+        if (current) {
+            // The set holds them now: from here on their absence from a copy is a removal made here.
+            writer.run(() -> userDictionaryForeign.removeAll(merged));
+        }
+        if (done != null) {
+            done.accept(changed);
+        } else if (changed) {
+            onUserDictionaryChanged.run();
+        }
+    }
+
+    /**
+     * On the writer thread: brings {@code file} in line with this process's additions and removals since it last
+     * read or wrote the file ({@link #userDictionaryBase}), keeping every word another process (or a hand edit)
+     * added to the file in the meantime — the file used to be rewritten from this process's set alone, which
+     * dropped them. Words only added are appended, which leaves the rest of the file as it is; a removal rewrites
+     * it via temp + atomic move (a plain {@code writeString} truncates first, so a crash between truncate and
+     * write left the whole personal dictionary empty). Returns the words the file now holds.
+     *
+     * @throws IOException when it could not be written: the writer reports it and tries again later
+     */
+    private java.util.Set<String> writeUserDictionary(Path file, java.util.Set<String> wanted) throws IOException {
+        com.editora.perf.BlockingSites.enter("dictionary write");
+        java.util.Set<String> onDisk = readUserDictionary(file);
+        java.util.Set<String> merged = new java.util.LinkedHashSet<>(onDisk);
+        boolean removes = false;
+        for (String removedHere : userDictionaryBase) {
+            if (!wanted.contains(removedHere) && !userDictionaryForeign.contains(removedHere)) {
+                removes |= merged.remove(removedHere);
+            }
+        }
+        List<String> append = new ArrayList<>();
+        for (String word : wanted) {
+            if (!userDictionaryBase.contains(word) && merged.add(word)) {
+                append.add(word); // added here (possibly by an earlier write that failed)
+            }
+        }
+        Files.createDirectories(configDir);
+        if (removes) {
             StringBuilder sb = new StringBuilder();
             for (String w : merged) {
                 sb.append(w).append(System.lineSeparator());
             }
             com.editora.io.AtomicFileWrite.write(file, sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            userDictionary.addAll(merged);
-            userDictionary.retainAll(merged);
-            userDictionaryBase.clear();
-            userDictionaryBase.addAll(merged);
-        } catch (IOException e) {
-            writer.reportWriteError(file, e);
-            markUnsaved(file, this::rewriteUserDictionary);
-            return;
+        } else if (!append.isEmpty()) {
+            // A hand-edited or synced file may not end in a line break; appending straight after it would
+            // glue this word onto the last one ("beta" + "gamma" -> "betagamma", losing both).
+            StringBuilder sb = new StringBuilder(endsMidLine(file) ? System.lineSeparator() : "");
+            for (String w : append) {
+                sb.append(w).append(System.lineSeparator());
+            }
+            Files.writeString(
+                    file,
+                    sb.toString(),
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
         }
-        storeSaved(file);
+        userDictionaryBase.clear();
+        userDictionaryBase.addAll(merged);
+        noteForeign(merged, wanted);
+        return merged;
+    }
+
+    /** On the writer thread: the words of {@code merged} that the copy {@code wanted} of the set did not hold. */
+    private void noteForeign(java.util.Set<String> merged, java.util.Set<String> wanted) {
+        userDictionaryForeign.clear();
+        for (String word : merged) {
+            if (!wanted.contains(word)) {
+                userDictionaryForeign.add(word);
+            }
+        }
     }
 
     private void loadUserDictionary() {
@@ -1789,12 +2084,12 @@ public class SharedConfig {
 
     /** Writes the global bookmarks to {@code bookmarks.json}, independently of a session save. */
     public void saveBookmarks() {
-        writeStore(getBookmarksFile(), bookmarkStore, ConfigSchema.BOOKMARKS, this::saveBookmarks);
+        writeStore(getBookmarksFile(), bookmarkStore, ConfigSchema.BOOKMARKS);
     }
 
     /** Writes the breakpoints to {@code breakpoints.json}, independently of a session save. */
     public void saveBreakpoints() {
-        writeStore(getBreakpointsFile(), breakpointStore, ConfigSchema.BREAKPOINTS, this::saveBreakpoints);
+        writeStore(getBreakpointsFile(), breakpointStore, ConfigSchema.BREAKPOINTS);
     }
 
     /** Loads {@code notes.json} (versioned, per-project buckets). Missing/malformed ⇒ an empty store. */
@@ -1804,6 +2099,6 @@ public class SharedConfig {
 
     /** Writes the global Personal Notes to {@code notes.json}, independently of a session save. */
     public void saveNotes() {
-        writeStore(getNotesFile(), noteStore, ConfigSchema.NOTES, this::saveNotes);
+        writeStore(getNotesFile(), noteStore, ConfigSchema.NOTES);
     }
 }

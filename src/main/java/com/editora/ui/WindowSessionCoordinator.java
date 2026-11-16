@@ -1231,7 +1231,7 @@ final class WindowSessionCoordinator {
         persistWindowBounds(state);
         host.toolWindows().persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
         restoreCliFocusToolWindows(state);
-        host.config().save(); // durable flush on quit — not coalesced
+        host.config().save(); // queued, not coalesced; at quit, Application.stop() waits for it
     }
 
     /** Writes any bookmark / note positions still waiting on their edit debounce. */

@@ -290,19 +290,21 @@ final class EditorSettingsCoordinator {
         boolean next = !effective;
         String field = prose ? "wordWrapProse" : "wordWrap";
         if (scope.trusted() && ProjectScopeSettings.valueOf(scope.settings(), "editor." + field) != null) {
-            // The project's value governs this window: flipping the user's would change nothing on screen.
-            try {
-                com.editora.config.ProjectSettingsFile.set(scope.root(), "editor", field, next);
-            } catch (java.io.IOException e) {
-                host.setStatus(tr(
-                        "settings.scope.writeFailed",
-                        com.editora.config.ProjectSettings.fileFor(scope.root()).toString(),
-                        String.valueOf(e.getMessage())));
-                return;
-            }
-            scope.reload(); // re-lays out this window's buffers with the project's new value
-            syncSettingsViewChecks();
-            host.setStatus(tr("status.toggle.wordWrapProject", tr(key, tr(next ? "common.on" : "common.off"))));
+            // The project's value governs this window: flipping the user's would change nothing on screen. The
+            // file is written off the FX thread (PERF-01, Pauta 6.0.1); the window re-lays out when it is.
+            Path root = scope.root();
+            com.editora.config.ProjectSettingsFile.setLater(root, "editor", field, next, failure -> {
+                if (failure != null) {
+                    host.setStatus(tr(
+                            "settings.scope.writeFailed",
+                            com.editora.config.ProjectSettings.fileFor(root).toString(),
+                            String.valueOf(failure.getMessage())));
+                    return;
+                }
+                scope.reload(); // re-lays out this window's buffers with the project's new value
+                syncSettingsViewChecks();
+                host.setStatus(tr("status.toggle.wordWrapProject", tr(key, tr(next ? "common.on" : "common.off"))));
+            });
             return;
         }
         if (prose) {

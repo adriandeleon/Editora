@@ -457,6 +457,7 @@ class BuildCoordinatorFxTest {
         host.settings.setMavenSupport(true);
         host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
         host.scope = new ProjectScope(() -> dir, () -> null); // no trust store: untrusted
+        host.scope.reads = Runnable::run; // the project file read in place: a reload's values are there at once
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         ops.promptAnswer = false;

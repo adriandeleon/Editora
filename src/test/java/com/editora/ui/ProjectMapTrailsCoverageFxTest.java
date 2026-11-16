@@ -95,6 +95,7 @@ class ProjectMapTrailsCoverageFxTest {
         }
 
         ProjectMapTrails trails() {
+            view.trails.io = Runnable::run; // trail files read and written in place: the result is there at once
             return view.trails;
         }
 

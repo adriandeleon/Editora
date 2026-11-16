@@ -99,6 +99,50 @@ public final class TemplateRegistry {
         this.config = config;
     }
 
+    /**
+     * The one thread template files are read and written on, for every window, in the order asked (PERF-01, Pauta
+     * 6.0.1): every read lists and parses the user's and the plugins' folders, so the commands and the Settings
+     * page hand their work here ({@link #later}) and go on when it lands, rather than read on the FX thread.
+     */
+    private static final java.util.concurrent.ExecutorService FILE_THREAD =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    Thread.ofPlatform().daemon().name("template-files").factory());
+
+    /** Where file work runs (a seam: a test may run it in place). */
+    public java.util.concurrent.Executor fileWork = FILE_THREAD;
+
+    /** Template file work, which may fail. */
+    @FunctionalInterface
+    public interface Work<T> {
+        @Nullable
+        T run(TemplateRegistry registry) throws IOException;
+    }
+
+    /**
+     * Runs {@code work} on the template thread and hands its result, or its failure, to {@code then} on the FX
+     * thread (at once when it ran in place there).
+     */
+    public <T> void later(Work<T> work, java.util.function.BiConsumer<@Nullable T, @Nullable IOException> then) {
+        fileWork.execute(() -> {
+            T result = null;
+            IOException failure = null;
+            try {
+                result = work.run(this);
+            } catch (IOException e) {
+                failure = e;
+            } catch (RuntimeException e) {
+                failure = new IOException(e.getMessage(), e);
+            }
+            T value = result;
+            IOException failed = failure;
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                then.accept(value, failed);
+            } else {
+                javafx.application.Platform.runLater(() -> then.accept(value, failed));
+            }
+        });
+    }
+
     /** Kept for callers that used to drop a cache: every read is already fresh. */
     public synchronized void reload() {
         // Nothing to drop — see the class comment.
@@ -196,6 +240,7 @@ public final class TemplateRegistry {
      * array. A blank name is written as the id, so the saved file is always one this registry loads.
      */
     public synchronized void saveUserTemplate(Template t) throws IOException {
+        com.editora.perf.BlockingSites.enter("templates write");
         if (t == null || t.id() == null || t.id().isBlank()) {
             return;
         }
@@ -288,6 +333,7 @@ public final class TemplateRegistry {
     }
 
     private static List<Path> jsonFiles(Path dir) {
+        com.editora.perf.BlockingSites.enter("templates list");
         if (dir == null || !Files.isDirectory(dir)) {
             return List.of();
         }
@@ -364,6 +410,7 @@ public final class TemplateRegistry {
     }
 
     private @Nullable Template readBundled(String id) {
+        com.editora.perf.BlockingSites.enter("templates bundled");
         try (InputStream in = TemplateRegistry.class.getResourceAsStream(DIR + id + ".json")) {
             if (in == null) {
                 return null;

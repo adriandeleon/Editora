@@ -138,6 +138,61 @@ final class BufferSnippets {
                         windowStart + edit.from(), windowStart + edit.to(), edit.replacement());
     }
 
+    private SnippetLoading snippetLoading = new SnippetLoading() {
+        @Override
+        public boolean loaded(String language) {
+            return true;
+        }
+
+        @Override
+        public void whenLoaded(String language, Runnable then) {
+            then.run();
+        }
+    };
+
+    void setSnippetLoading(SnippetLoading loading) {
+        if (loading != null) {
+            this.snippetLoading = loading;
+        }
+    }
+
+    /**
+     * A Tab that could end a trigger in a language whose snippets are not loaded yet: consumed now, and decided
+     * once they land — expanded when the trigger is a snippet's, else the Tab it would have been — provided the
+     * buffer is as it was (same caret, same length, same line, no selection). Changed meanwhile, the stale Tab is
+     * dropped rather than applied somewhere else. Returns whether it held the Tab.
+     */
+    private boolean deferUntilSnippetsLoaded(CodeArea a) {
+        if (!b.isEditable() || !snippetTabExpansion || a.getSelection().getLength() > 0) {
+            return false;
+        }
+        int caret = a.getCaretPosition();
+        if (caret == 0 || Character.isWhitespace(a.getText(caret - 1, caret).charAt(0))) {
+            return false; // no trigger can end here: an ordinary Tab
+        }
+        String lang = SnippetTyping.snippetLanguageAt(a, caret, b.language);
+        if (lang == null || snippetLoading.loaded(lang)) {
+            return false;
+        }
+        int length = a.getLength();
+        int paragraph = a.getCurrentParagraph();
+        String line = a.getText(paragraph);
+        snippetLoading.whenLoaded(lang, () -> {
+            boolean unchanged = a.getCaretPosition() == caret
+                    && a.getLength() == length
+                    && a.getCurrentParagraph() == paragraph
+                    && a.getText(paragraph).equals(line)
+                    && a.getSelection().getLength() == 0;
+            if (!unchanged || expandPrefixAtCaret(a)) {
+                return;
+            }
+            if (!b.typingAids.tryLspReindentLine(a) && !b.typingAids.applySmartTab(a, false)) {
+                a.replaceSelection("\t"); // what the area's own Tab would have inserted
+            }
+        });
+        return true;
+    }
+
     /** Injects the snippet lookup used by Tab-expand (set by the controller). */
     void setSnippetProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
         if (provider != null) {
@@ -237,7 +292,7 @@ final class BufferSnippets {
                 // the completion instead.
                 if (b.isMarkdown() && b.isEditable() && !b.hugeFile && b.markdownEditing.tab(a, !e.isShiftDown())) {
                     e.consume(); // Tab/Shift-Tab: between table cells, or a list item in/out one level
-                } else if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
+                } else if (!e.isShiftDown() && (deferUntilSnippetsLoaded(a) || expandPrefixAtCaret(a))) {
                     e.consume();
                 } else if (!e.isShiftDown() && b.typingAids.tryLspReindentLine(a)) {
                     e.consume(); // LSP re-indents the current line (async); see tryLspReindentLine

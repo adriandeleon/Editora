@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** add/remove on the personal spell dictionary persist to dictionary.txt (backing the Settings editor). */
@@ -119,10 +120,10 @@ class UserDictionaryTest {
         c.addUserWord("alpha");
         c.addUserWord("beta");
         java.util.Set<String> shared = c.getUserDictionary(); // the very set every buffer's checker holds
-        assertFalse(c.reloadUserDictionary(), "nothing changed on disk");
+        assertFalse(reloadWords(c), "nothing changed on disk");
 
         Files.writeString(c.getUserDictionaryFile(), "alpha\nParagraf\n"); // beta removed, a word added
-        assertTrue(c.reloadUserDictionary());
+        assertTrue(reloadWords(c));
         assertEquals(java.util.Set.of("alpha", "paragraf"), shared, "updated in place");
         assertTrue(shared == c.getUserDictionary());
 
@@ -133,7 +134,20 @@ class UserDictionaryTest {
         assertEquals(java.util.Set.of("paragraf", "gamma"), reload(dir));
 
         Files.delete(c.getUserDictionaryFile());
-        assertTrue(c.reloadUserDictionary());
+        assertTrue(reloadWords(c));
         assertTrue(shared.isEmpty(), "a deleted file is an empty dictionary");
+    }
+
+    /**
+     * {@code reloadUserDictionary}, waited for: read on the config writer's thread; with no FX toolkit, whether
+     * the words changed is handed over there before this (non-FX) caller's wait ends.
+     */
+    private static boolean reloadWords(ConfigManager c) {
+        java.util.concurrent.atomic.AtomicReference<Boolean> changed =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        c.shared().setFxThreadForTest(Runnable::run); // no FX thread here, even when another test started one
+        c.reloadUserDictionary(changed::set);
+        assertNotNull(changed.get(), "the reload landed before reloadUserDictionary returned");
+        return changed.get();
     }
 }

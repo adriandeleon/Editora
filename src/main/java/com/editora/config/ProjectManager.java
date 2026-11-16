@@ -90,8 +90,11 @@ public class ProjectManager {
      * copy is still there). See {@link #loadedIntact()}.
      */
     private boolean holdingFailedIndex;
-    /** Told after a {@link #save()} that wrote the file. */
-    private java.util.function.Consumer<Path> onSaved = file -> {};
+    /**
+     * The shared writer the index is written on, once {@link SharedConfig} attaches it; {@code null} for an index
+     * used on its own (a test, a tool), which writes on the calling thread.
+     */
+    private @Nullable ConfigWriter writer;
     /** Told of a failed {@link #save()}; the default only logs. */
     private BiConsumer<Path, IOException> onWriteError =
             (file, e) -> LOG.log(java.util.logging.Level.SEVERE, "Failed to write " + file, e);
@@ -186,9 +189,9 @@ public class ProjectManager {
         return List.copyOf(loadProblems);
     }
 
-    /** Sets what is told (with the index file) after a {@link #save()} that reached the disk. */
-    void setOnSaved(java.util.function.Consumer<Path> handler) {
-        this.onSaved = handler == null ? file -> {} : handler;
+    /** From here on {@link #save()} and {@link #delete} queue their file work on {@code writer}. */
+    void useWriter(ConfigWriter writer) {
+        this.writer = writer;
     }
 
     /** Routes a failed {@link #save()} to {@code handler} instead of the log alone. */
@@ -214,23 +217,32 @@ public class ProjectManager {
      * <p>Another process's changes to the file are kept: only what this process changed is written
      * ({@link StoreSync}), and nothing at all when it changed nothing.
      *
-     * @return whether the index in memory is now the one on disk
+     * <p>With the shared writer attached (the app) the index is copied here and serialized, merged and written on
+     * the writer's thread ({@link #saveQueued}): window open, close and focus call this on the FX thread
+     * (PERF-01, Pauta 6.0.1). A caller that is not the FX thread then waits for the write.
+     *
+     * @return whether the index in memory is now the one on disk (queued, for an FX caller)
      */
     public boolean save() {
         if (writeProtected() || holdingFailedIndex) {
             return false;
         }
+        ConfigWriter queue = writer;
+        if (queue != null) {
+            saveQueued(queue);
+            if (javafx.application.Platform.isFxApplicationThread() || queue.onWriterThread()) {
+                return true;
+            }
+            queue.awaitQueued();
+            return !queue.hasFailedWrite(indexFile());
+        }
         saveGeneration.incrementAndGet(); // this save is newer than any queued one still waiting
-        boolean written;
         try {
             Files.createDirectories(configDir);
-            written = sync.write(indexFile(), json.writeValueAsBytes(index), ConfigSchema.PROJECTS, null);
+            sync.write(indexFile(), json.writeValueAsBytes(index), ConfigSchema.PROJECTS, null);
         } catch (IOException e) {
             onWriteError.accept(indexFile(), e);
             return false;
-        }
-        if (written) {
-            onSaved.accept(indexFile());
         }
         return true;
     }
@@ -242,29 +254,23 @@ public class ProjectManager {
     private final java.util.concurrent.atomic.AtomicLong saveGeneration = new java.util.concurrent.atomic.AtomicLong();
 
     /**
-     * As {@link #save()}, with the write queued on {@code writer} instead of done here: the index is
-     * serialized now, on the calling thread, and written (with the same merge rules) on the writer's thread.
-     * For the launch path, which saves the index on the FX thread before and after the first window and
-     * again when the restore completes, where a synchronous {@code fsync} is only latency. A failure is
-     * reported and retried by the writer like any queued store.
+     * As {@link #save()}, with the write queued on {@code writer} instead of done here: the index is copied now,
+     * on the calling thread ({@link Snapshots#copy}), and serialized and written (with the same merge rules) on
+     * the writer's thread. A failure is reported and retried by the writer like any queued store.
      */
     public void saveQueued(ConfigWriter writer) {
         if (writeProtected() || holdingFailedIndex) {
             return;
         }
-        byte[] mine;
-        try {
-            mine = json.writeValueAsBytes(index);
-        } catch (IOException e) {
-            onWriteError.accept(indexFile(), e);
-            return;
-        }
+        Index snapshot = Snapshots.copy(index);
         long generation = saveGeneration.incrementAndGet();
         Path file = indexFile();
         writer.enqueue(file, () -> {
             if (generation != saveGeneration.get()) {
                 return ConfigWriter.UNCHANGED; // a newer save already wrote (or will write) the index
             }
+            com.editora.perf.BlockingSites.enter("json " + INDEX_FILE_NAME);
+            byte[] mine = json.writeValueAsBytes(snapshot);
             Files.createDirectories(configDir);
             return sync.write(file, mine, ConfigSchema.PROJECTS, null) ? null : ConfigWriter.UNCHANGED;
         });
@@ -346,12 +352,26 @@ public class ProjectManager {
             index.setActiveProjectId("");
         }
         index.getOpenProjectIds().remove(projectId); // a deleted project can't have an open window
+        Path stateFile = configDir.resolve(PROJECTS_DIR).resolve(projectId + ".json");
+        ConfigWriter queue = writer;
+        if (queue == null) {
+            deleteQuietly(stateFile);
+        } else {
+            // On the writer thread, after (and in place of) any write of the session still queued, which would
+            // otherwise bring the file back.
+            queue.cancel(stateFile);
+            queue.run(() -> deleteQuietly(stateFile));
+        }
+        return removed;
+    }
+
+    private static void deleteQuietly(Path file) {
+        com.editora.perf.BlockingSites.enter("ProjectManager.delete");
         try {
-            Files.deleteIfExists(configDir.resolve(PROJECTS_DIR).resolve(projectId + ".json"));
+            Files.deleteIfExists(file);
         } catch (IOException ignored) {
             // best effort — a leftover state file is harmless
         }
-        return removed;
     }
 
     /** The project whose root is {@code root} (matched by absolute, normalized path), or {@code null}. */

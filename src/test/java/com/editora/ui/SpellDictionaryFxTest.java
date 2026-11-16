@@ -41,6 +41,8 @@ class SpellDictionaryFxTest {
         });
 
         FxTestSupport.runOnFx(() -> buffer.spell().addToDictionary("zzqqx"));
+        assertTrue(config.getUserDictionary().contains("zzqqx"), "the word applies at once, before it is written");
+        config.shared().awaitWrites(); // written on the config writer's thread, off the FX thread
 
         Path dictionary = config.getUserDictionaryFile();
         assertTrue(Files.isReadable(dictionary), "dictionary.txt should be created on the first add");

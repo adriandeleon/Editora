@@ -1,7 +1,6 @@
 package com.editora.config;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -254,8 +253,9 @@ public class ConfigManager {
         shared.removeUserWord(word);
     }
 
-    public boolean reloadUserDictionary() {
-        return shared.reloadUserDictionary();
+    /** See {@link SharedConfig#reloadUserDictionary}: {@code done} is told, on the FX thread, whether it changed. */
+    public void reloadUserDictionary(java.util.function.Consumer<Boolean> done) {
+        shared.reloadUserDictionary(done);
     }
 
     /**
@@ -395,7 +395,9 @@ public class ConfigManager {
     }
 
     /**
-     * Reads a session file, reporting what could not be read as written to the shared config — so the window
+     * Reads a session file — blocking, so never on the FX thread (a window's is read by whoever opens it, off
+     * that thread: see {@code WindowManager.readWindowConfig}) — reporting what could not be read as written to
+     * the shared config — so the window
      * shows it (a newer or unparseable session used to open as an empty one with no message) and a file that
      * could be neither read nor backed up is not overwritten ({@link SharedConfig#isWriteProtected}).
      */
@@ -404,7 +406,7 @@ public class ConfigManager {
                 file, json, new WorkspaceState(), ConfigSchema.WORKSPACE, shared::onLoadProblem);
         // The baseline a later save is compared with: a window that changed nothing writes nothing, and a
         // session another process changed meanwhile is merged with rather than replaced.
-        shared.storeLoaded(file, bytesOf(state, file));
+        shared.storeLoaded(file, shared.serialize(state, file));
         return state;
     }
 
@@ -491,41 +493,50 @@ public class ConfigManager {
         return shared.getSettings();
     }
 
-    /** Writes preferences + this window's session state synchronously (blocks until both are on disk). */
+    /**
+     * Saves preferences + this window's session state. On the FX thread it queues them and returns at once
+     * (PERF-01, Pauta 6.0.1): a copy of each is taken here, and serialized and written on the shared
+     * {@link ConfigWriter}'s thread, in order with every other config write. On any other thread it then waits
+     * until both are on disk. The wait that makes the session durable at quit is {@code Application.stop()}'s
+     * {@link SharedConfig#shutdown}, which drains the writer.
+     *
+     * @return whether everything queued is on disk (always true on the FX thread, which does not wait); a failed
+     *     write is reported through {@link SharedConfig#setOnWriteError} either way
+     */
     public boolean save() {
-        shared.enqueueSettings(this);
-        enqueueWorkspace();
-        return shared.flushWrites();
+        saveAsync();
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            return true;
+        }
+        return shared.flushWrites(); // durable: what failed earlier is tried again, as the quit's save does
     }
 
     /**
-     * Writes preferences + session state <em>off the FX thread</em>: a consistent snapshot is serialized on
-     * the caller thread (the FX thread is single-threaded, so this needs no locking), then written by the
-     * shared {@link ConfigWriter}. Used by the frequent, coalesced in-session save
-     * ({@code MainController.requestSave}); {@link #save()} is the durable (blocking) form for quit / one-off
-     * actions / export.
+     * Queues preferences + session state, never waiting: copies are taken on the calling thread (the FX thread,
+     * which is single-threaded, so this needs no locking) and serialized and written by the shared
+     * {@link ConfigWriter}. Used by the frequent, coalesced in-session save ({@code MainController.requestSave}).
      */
     public void saveAsync() {
         shared.enqueueSettings(this);
         enqueueWorkspace();
     }
 
+    /**
+     * Saves this window's session state alone, not the shared preferences: for a session built on a thread other
+     * than the FX thread (a generated project's), which must not copy the settings the FX thread owns. Waits for
+     * the write unless called on the FX thread.
+     */
+    public boolean saveSession() {
+        enqueueWorkspace();
+        return shared.settleUnlessFx();
+    }
+
     /** Queues this window's session state ({@code workspace-state.json}, possibly in a project sub-dir). */
     private void enqueueWorkspace() {
-        if (!shared.isWriteProtected(workspaceStateFile)) {
-            shared.enqueueStore(workspaceStateFile, workspaceBytes(), ConfigSchema.WORKSPACE);
-        }
-    }
-
-    private byte[] workspaceBytes() {
-        return bytesOf(workspaceState, workspaceStateFile);
-    }
-
-    private byte[] bytesOf(WorkspaceState state, Path file) {
-        try {
-            return json.writeValueAsBytes(state);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new UncheckedIOException("Failed to serialize session state for " + file, e);
+        Path file = workspaceStateFile;
+        if (!shared.isWriteProtected(file)) {
+            WorkspaceState snapshot = Snapshots.copy(workspaceState);
+            shared.enqueueStore(file, () -> shared.serialize(snapshot, file), ConfigSchema.WORKSPACE);
         }
     }
 

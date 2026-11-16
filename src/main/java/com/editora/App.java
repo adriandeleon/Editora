@@ -77,7 +77,7 @@ public class App extends Application {
         // needs yet.
         com.editora.ui.Fonts.loadForFirstPaint(settings.getFontFamily());
         // Flush any pending off-thread settings/session writes on exit, covering paths where persistSession()
-        // doesn't run (the normal quit already flushes via its blocking config.save()).
+        // doesn't run (the normal quit's last save is stop() -> SharedConfig.shutdown(), which waits for the writer).
         Runtime.getRuntime().addShutdownHook(new Thread(shared::flushWrites, "config-flush"));
         // The session log, the instance claim, the orphan reaping, the stale MCP endpoint, the user's themes and
         // the rest of the disk work for the first window were done by the config-prefetch thread (StartupPrep).

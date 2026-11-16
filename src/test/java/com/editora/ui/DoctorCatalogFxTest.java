@@ -861,6 +861,7 @@ class DoctorCatalogFxTest {
                 new com.editora.config.ConfigManager(Files.createDirectories(dir.resolve("config")));
         Host host = new Host();
         host.scope = new ProjectScope(() -> project, () -> config);
+        host.scope.reads = Runnable::run; // the project file read in place: its values are there at once
         Ops ops = new Ops();
         ops.root = project;
         ops.debug = true;

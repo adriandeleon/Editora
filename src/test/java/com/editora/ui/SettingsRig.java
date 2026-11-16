@@ -285,6 +285,11 @@ final class SettingsRig implements AutoCloseable {
                     return;
                 }
             }
+            // None yet: the action may show one later (an answer from another thread). Look again shortly.
+            javafx.animation.PauseTransition again =
+                    new javafx.animation.PauseTransition(javafx.util.Duration.millis(10));
+            again.setOnFinished(e -> responder[0].run());
+            again.play();
         };
         Platform.runLater(responder[0]);
         try {
@@ -392,6 +397,26 @@ final class SettingsRig implements AutoCloseable {
         if (!seen[0]) {
             throw new AssertionError("no dialog was shown");
         }
+    }
+
+    /**
+     * On the FX thread: runs the event loop (nested) until {@code done} holds or ten seconds pass, for a step whose
+     * answer arrives from another thread while a test's action is still running there.
+     */
+    static void pumpUntil(java.util.function.BooleanSupplier done) {
+        Object key = new Object();
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        javafx.animation.AnimationTimer timer = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                if (done.getAsBoolean() || System.nanoTime() > deadline) {
+                    stop();
+                    Platform.runLater(() -> Platform.exitNestedEventLoop(key, null));
+                }
+            }
+        };
+        timer.start();
+        Platform.enterNestedEventLoop(key);
     }
 
     static List<Shown> answering(ButtonBar.ButtonData answer, Runnable action) {

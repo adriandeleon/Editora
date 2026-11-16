@@ -70,6 +70,7 @@ class WindowManagerLaunchFxTest {
                 wm = new WindowManager(shared, keymap, null);
                 wm.adoptBootstrapConfig(bootstrap);
                 wm.restoreScheduler = scheduled::add;
+                wm.sessionReads = FxWindowFixture::readAndWait; // a command's window is built before it returns
             });
         }
 

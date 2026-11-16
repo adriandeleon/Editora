@@ -102,11 +102,27 @@ final class AgentOpsHost implements AgentCoordinator.Ops {
 
     @Override
     public void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt, String agentId) {
-        mc.config.shared().agentSessions().remember(sessionId, cwd, candidateLabel, updatedAt, agentId);
+        // The history's first read runs on a thread of its own (PERF-01, Pauta 6.0.1); the entry lands after it.
+        mc.config
+                .shared()
+                .agentSessions(history -> history.remember(sessionId, cwd, candidateLabel, updatedAt, agentId));
     }
 
     @Override
     public javafx.collections.ObservableList<com.editora.config.AgentSessionHistory.Entry> sessionHistory() {
-        return mc.config.shared().agentSessions().getList();
+        com.editora.config.AgentSessionHistory history = mc.config.shared().agentSessionsIfRead();
+        if (history != null) {
+            return history.getList();
+        }
+        // Not read yet: empty for now, never a read here. The read starts; withSessionHistory waits for it.
+        mc.config.shared().readAgentSessionsAhead();
+        return javafx.collections.FXCollections.observableArrayList();
+    }
+
+    @Override
+    public void withSessionHistory(
+            java.util.function.Consumer<javafx.collections.ObservableList<com.editora.config.AgentSessionHistory.Entry>>
+                    then) {
+        mc.config.shared().agentSessions(history -> then.accept(history.getList()));
     }
 }

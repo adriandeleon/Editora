@@ -205,9 +205,11 @@ final class ProjectMapTrailEditor extends VBox {
         }
         items.add(target, items.remove(index));
         stops.getSelectionModel().clearSelection();
-        if (save(items)) {
-            stops.getSelectionModel().select(target);
-        }
+        save(items, saved -> {
+            if (saved) {
+                stops.getSelectionModel().select(target);
+            }
+        });
     }
 
     /** Remove, Delete and the menu row: the selected stop goes, written to the trail at once, so it asks first. */
@@ -304,13 +306,19 @@ final class ProjectMapTrailEditor extends VBox {
                 value -> trails.rename(shown.name(), value));
     }
 
-    private boolean save(List<MapTrails.Stop> items) {
+    private void save(List<MapTrails.Stop> items) {
+        save(items, saved -> {});
+    }
+
+    /** Writes {@code items} as the trail's stops (off the FX thread), then tells {@code then} whether it did. */
+    private void save(List<MapTrails.Stop> items, java.util.function.Consumer<Boolean> then) {
         MapTrails.Listed shown = listed;
         if (shown == null || shown.trail() == null) {
-            return false;
+            then.accept(false);
+            return;
         }
         // Written over the trail it showed only: one changed on disk meanwhile is shown again instead (review 4 A5).
-        return trails.writeOver(shown.name(), shown.trail(), shown.trail().withStops(items));
+        trails.writeOver(shown.name(), shown.trail(), shown.trail().withStops(items), then);
     }
 
     private void dragPressed(MouseEvent event) {

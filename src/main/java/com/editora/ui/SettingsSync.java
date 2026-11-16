@@ -330,6 +330,8 @@ final class SettingsSync {
         Set<SyncCategory> categories = categories();
         BackgroundTasks.Handle task = windows.startSyncTask(tr("sync.task"));
         worker.execute(() -> {
+            // The stores are written on the config writer's thread now: what the sync reads must be on disk.
+            shared.awaitWrites();
             String login = SyncAccount.choose(
                     git, gh, url, host -> GitHubService.logins(gh, host, GH_TIMEOUT), verify, search);
             QuietGit signedIn = git.with(SyncAccount.credentialConfig(gh, SyncAccount.httpsHost(url), login));
@@ -405,6 +407,8 @@ final class SettingsSync {
         BackgroundTasks.Handle task = windows.startSyncTask(tr("sync.task"));
         Path configDir = shared.getConfigDir();
         worker.execute(() -> {
+            shared.awaitWrites(); // what the preview compares must be on disk (the stores are written off the FX
+            // thread)
             SyncReport report = insideAnotherRepository(configDir)
                     ? new SyncReport(
                             SyncReport.Status.FAILED,
@@ -576,12 +580,16 @@ final class SettingsSync {
         if (changed.contains(SyncCategory.SNIPPETS)) {
             windows.broadcastSnippetsChanged(null);
         }
-        if (changed.contains(SyncCategory.DICTIONARY) && shared.reloadUserDictionary()) {
-            windows.broadcastUserDictionaryChanged();
+        if (changed.contains(SyncCategory.DICTIONARY)) {
+            shared.reloadUserDictionary(dictionaryChanged -> {
+                if (dictionaryChanged) {
+                    windows.broadcastUserDictionaryChanged();
+                }
+            });
         }
         if (changed.contains(SyncCategory.ABBREVIATIONS)) {
-            shared.reloadAbbreviations();
-            windows.broadcastSettingsApplied(); // each buffer holds its own copy of the abbreviation map
+            // each buffer holds its own copy of the abbreviation map: re-applied once the file is read
+            shared.reloadAbbreviations(windows::broadcastSettingsApplied);
         }
         if (changed.contains(SyncCategory.SNIPPETS) || changed.contains(SyncCategory.TEMPLATES)) {
             windows.refreshFileBackedSettings();

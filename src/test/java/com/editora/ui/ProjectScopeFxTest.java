@@ -32,6 +32,14 @@ class ProjectScopeFxTest {
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
+        // The project file is written in place here, so a step sees it as it returns (the app writes it on a thread
+        // of its own, PERF-01, Pauta 6.0.1).
+        com.editora.config.ProjectSettingsFile.writeInPlaceForTest(true);
+    }
+
+    @org.junit.jupiter.api.AfterAll
+    static void writeOffThreadAgain() {
+        com.editora.config.ProjectSettingsFile.writeInPlaceForTest(false);
     }
 
     @BeforeEach

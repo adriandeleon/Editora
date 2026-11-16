@@ -22,7 +22,14 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The file is read once per project root and cached: these are read on every settings apply for every open
  * buffer, and re-reading would be disk I/O on the FX thread for a value that changes only when someone edits
- * it. {@link #reload()} drops the cache (an edited file, a Settings change in Project scope, a trust decision).
+ * it. {@link #reload()} reads it again (an edited file, a Settings change in Project scope, a trust decision).
+ *
+ * <p>Every read is made off the FX thread (PERF-01, Pauta 6.0.1) and applied when it lands, under a generation
+ * guard, so a slower, older read never replaces a newer one. Meanwhile the scope answers the last values it knew
+ * of this root: after a {@link #reload()}, those read before it, until the new read lands and the listeners
+ * re-apply. A root whose file has never been read here (a window's first ask is normally answered by the read
+ * made with its session, see {@link ConfigManager#takeStartupProjectSettings}) answers as a project with no
+ * file — the user's values — and nothing of the project's applies, trusted or not, until its read lands.
  */
 final class ProjectScope {
 
@@ -33,8 +40,17 @@ final class ProjectScope {
 
     private final Supplier<Path> root;
     private final Supplier<ConfigManager> config;
+    /** The root {@link #cache} holds the values of, or {@code null} while none is known. */
     private @Nullable Path cachedRoot;
+
     private ProjectSettings cache = EMPTY;
+    /** Counts the reads started; a read's result is applied only while it is the latest one. */
+    private long readGeneration;
+    /** The root of the read under way, or {@code null}. */
+    private @Nullable Path readingRoot;
+
+    /** Where a read runs: a thread of its own (a seam: a test may read in place). */
+    java.util.concurrent.Executor reads = com.editora.process.BlockingTasks.named("project-settings-read");
 
     ProjectScope(Supplier<Path> root, Supplier<ConfigManager> config) {
         this.root = root;
@@ -53,14 +69,56 @@ final class ProjectScope {
             return EMPTY;
         }
         if (!r.equals(cachedRoot)) {
-            cachedRoot = r;
             // Read with the window's session, off the FX thread, when the window was built from one that was
-            // read ahead (the launch's first window, a restored one); else read now.
+            // read ahead (every window but one with no session file); else read now, off the thread too, and
+            // answer as a project with no file until it lands.
             ConfigManager c = config.get();
             ProjectSettings ahead = c == null ? null : c.takeStartupProjectSettings(r);
-            cache = ahead != null ? ahead : ProjectSettings.load(r);
+            if (ahead != null) {
+                cachedRoot = r;
+                cache = ahead;
+            } else {
+                if (!r.equals(readingRoot)) {
+                    startRead(r);
+                }
+                return r.equals(cachedRoot) ? cache : EMPTY; // landed already when read in place
+            }
         }
         return cache;
+    }
+
+    /** Whether the values of the window's current root are known (read), not stood in for by the user's. */
+    boolean known() {
+        Path r = root.get();
+        return r == null || r.equals(cachedRoot);
+    }
+
+    /**
+     * Reads {@code r}'s file off the FX thread and applies it when it lands — if no newer read was started
+     * meanwhile — telling the listeners when what applies changed.
+     */
+    private void startRead(Path r) {
+        long generation = ++readGeneration;
+        readingRoot = r;
+        java.util.concurrent.CompletableFuture.supplyAsync(() -> ProjectSettings.load(r), reads)
+                .whenComplete((read, failure) -> {
+                    Runnable land = () -> landRead(generation, r, read);
+                    if (javafx.application.Platform.isFxApplicationThread()) {
+                        land.run(); // read in place (a test's seam)
+                    } else {
+                        javafx.application.Platform.runLater(land);
+                    }
+                });
+    }
+
+    private void landRead(long generation, Path r, @Nullable ProjectSettings read) {
+        if (generation != readGeneration) {
+            return; // a newer read is under way; it brings the newer values
+        }
+        readingRoot = null;
+        cachedRoot = r;
+        cache = read == null ? EMPTY : read; // load never throws; a failure reads as no file, as it always did
+        notifyIfChanged();
     }
 
     private final List<Runnable> changeListeners = new java.util.ArrayList<>();
@@ -76,8 +134,22 @@ final class ProjectScope {
      * a Settings apply does not re-lay out every buffer twice.
      */
     void reload() {
-        cachedRoot = null;
-        cache = EMPTY;
+        Path r = root.get();
+        if (r == null) {
+            readGeneration++; // a read still under way is of a root this window no longer has
+            readingRoot = null;
+            cachedRoot = null;
+            cache = EMPTY;
+            notifyIfChanged();
+            return;
+        }
+        // A trust decision applies at once: trust is read live, and the values known so far are the file's.
+        notifyIfChanged();
+        startRead(r); // the file may have changed too: its values apply when the read lands
+    }
+
+    /** Tells the listeners when what applies changed since they were last told. */
+    private void notifyIfChanged() {
         String now = signature();
         if (!now.equals(applied)) {
             applied = now;

@@ -183,6 +183,7 @@ public final class MapTrails {
      * is not one. Empty when the folder is absent or cannot be listed. Blocking file I/O.
      */
     public static List<Listed> list(Path projectRoot) {
+        com.editora.perf.BlockingSites.enter("MapTrails.list");
         Path folder = folderFor(projectRoot);
         if (!Files.isDirectory(folder)) {
             return List.of();
@@ -211,6 +212,7 @@ public final class MapTrails {
      * know — is read (it plays) but {@code readOnly}, with the reason as its {@code problem}.
      */
     public static Listed read(Path file) {
+        com.editora.perf.BlockingSites.enter("MapTrails.read");
         String fileName = file.getFileName() == null ? "" : file.getFileName().toString();
         String name = fileName.endsWith(SUFFIX) ? fileName.substring(0, fileName.length() - SUFFIX.length()) : fileName;
         try {
@@ -287,6 +289,7 @@ public final class MapTrails {
      * file.
      */
     public static Path save(Path projectRoot, String name, Trail trail) throws IOException {
+        com.editora.perf.BlockingSites.enter("MapTrails.save");
         Path folder = folderFor(projectRoot);
         Path file = listedFile(folder, name); // a listed trail's own file, whatever its name (review 4 A3)
         if (file == null) {
@@ -308,6 +311,7 @@ public final class MapTrails {
      * already has that file. Returns the new file.
      */
     public static Path rename(Path projectRoot, String from, String to, Trail trail) throws IOException {
+        com.editora.perf.BlockingSites.enter("MapTrails.rename");
         Path source = folderFor(projectRoot).resolve(from + SUFFIX);
         String stem = fileName(to);
         if (stem.isEmpty()) {

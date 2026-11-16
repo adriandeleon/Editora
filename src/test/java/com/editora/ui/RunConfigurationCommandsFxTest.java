@@ -398,6 +398,7 @@ class RunConfigurationCommandsFxTest {
             debug = new DebugCoordinator(windowHost, dap, lspManager, lsp, new DebugOps());
             run = new RunCoordinator(windowHost, new RunOps(opened));
             coordinator = new RunConfigurationCoordinator(new Host());
+            coordinator.sharedFiles = Runnable::run; // the shared file read and written in place: results at once
             coordinator.runConfigEditor = name -> opened.add("editor:" + name);
         });
         projectRoot = Files.createDirectories(dir.resolve("proj")); // run configurations are a project's

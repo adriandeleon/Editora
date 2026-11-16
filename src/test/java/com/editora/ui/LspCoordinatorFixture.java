@@ -304,6 +304,7 @@ final class LspCoordinatorFixture implements AutoCloseable {
             coordinator = new LspCoordinator(
                     host, manager, ops, LspCoordinator.WorkspaceFileOperations.SYSTEM, Runnable::run);
             coordinator.setServerAvailableForTest("java", true);
+            coordinator.projectScope().reads = Runnable::run; // the project file read in place: values at once
         });
     }
 

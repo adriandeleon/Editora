@@ -123,6 +123,40 @@ class ApiKeyVaultTest {
         assertTrue(vault.settingsChanged());
     }
 
+    /**
+     * settings.json re-read on the config writer's thread with a key typed into it while the keychain refuses: the
+     * keys the vault held go back into the re-read copy, never into the live settings the FX thread owns; the live
+     * settings get them when the copy is applied on the FX thread, and the file is saved with them.
+     */
+    @Test
+    void aKeychainThatRefusesDuringAReReadTouchesOnlyTheReReadCopy(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+        config.getSettings().setAiApiKeyOpenai("or-FAKE");
+        config.shared().saveSettings();
+        FakeSecretStore store = new FakeSecretStore();
+        config.shared().useSecretStore(store);
+        Settings live = config.getSettings();
+        assertEquals("", live.getAiApiKeyOpenai(), "moved to the keychain");
+        Files.writeString(
+                config.getSettingsFile(),
+                Files.readString(config.getSettingsFile())
+                        .replace("\"aiApiKey\" : \"\"", "\"aiApiKey\" : \"typed-FAKE\""));
+        store.refuseWrites = true;
+        java.util.List<Runnable> toFx = new java.util.concurrent.CopyOnWriteArrayList<>();
+        config.shared().setFxThreadForTest(toFx::add);
+        config.shared().reloadSettings(issues -> {});
+        assertEquals(1, toFx.size(), "the re-read is waiting for the FX thread");
+        assertEquals("", live.getAiApiKeyOpenai(), "the writer thread left the live settings alone");
+        assertEquals("", live.getAiApiKey());
+        toFx.remove(0).run(); // the FX thread adopts the re-read copy
+        assertEquals("or-FAKE", live.getAiApiKeyOpenai(), "the held key is back in the field");
+        assertEquals("typed-FAKE", live.getAiApiKey());
+        assertTrue(config.shared().awaitWrites());
+        assertTrue(Files.readString(config.getSettingsFile()).contains("or-FAKE"), "and saved");
+        config.shared().shutdown();
+    }
+
     @Test
     void aResetKeepsTheKeysInTheKeychain() {
         FakeSecretStore store = new FakeSecretStore();

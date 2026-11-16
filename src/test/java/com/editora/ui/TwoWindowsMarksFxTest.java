@@ -161,7 +161,7 @@ class TwoWindowsMarksFxTest {
         await("window A to show B's note", () -> notesIn(bufferA).equals(List.of("from A", "from B")));
 
         // What survives a restart is the file, not the map in memory.
-        assertTrue(FxTestSupport.callOnFx(fx.shared::flushWrites));
+        assertTrue(fx.shared.flushWrites()); // from the test thread: the FX thread never waits for the writer
         ConfigManager reread = new ConfigManager(fx.configDir);
         reread.load();
         try {
