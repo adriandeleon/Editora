@@ -145,6 +145,7 @@ class PickerKeymapFxTest {
     @Test
     void theCommandPaletteLegendAndChordsFollowAKeymapSwitch() throws Exception {
         CommandPalette palette = FxTestSupport.field(fx.controller, "palette");
+        FxTestSupport.runOnFx(palette::ensureBuilt); // the card is made on the first show
         Label hint = field(palette, "hint");
         Label chip = field(palette, "prefixChip");
         useKeymap("emacs");

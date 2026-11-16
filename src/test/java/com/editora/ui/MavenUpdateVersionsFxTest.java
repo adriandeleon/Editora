@@ -110,7 +110,7 @@ class MavenUpdateVersionsFxTest {
     }
 
     private static MavenProjectCoordinator coordinator(RecordingHost host, Ops ops) throws Exception {
-        return FxTestSupport.callOnFx(() -> new MavenProjectCoordinator(host, ops, new BuildOutputPanel()));
+        return FxTestSupport.callOnFx(() -> new MavenProjectCoordinator(host, ops, new BuildOutput()));
     }
 
     @Test

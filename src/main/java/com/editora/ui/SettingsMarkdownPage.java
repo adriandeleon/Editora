@@ -53,14 +53,19 @@ final class SettingsMarkdownPage {
     }
 
     private java.util.function.Supplier<String> markdownLintConfigNote = () -> "";
-    private final Label markdownLintConfigNoteLabel = new Label();
+    /** Made with the page ({@link #build}); null while Settings has never been shown. */
+    private @Nullable Label markdownLintConfigNoteLabel;
 
     void refreshMarkdownLintConfigNote() {
+        Label label = markdownLintConfigNoteLabel;
+        if (label == null) {
+            return; // the page reads the note when it is built
+        }
         String note = markdownLintConfigNote.get();
         boolean show = note != null && !note.isBlank();
-        markdownLintConfigNoteLabel.setText(show ? note : "");
-        markdownLintConfigNoteLabel.setVisible(show);
-        markdownLintConfigNoteLabel.setManaged(show);
+        label.setText(show ? note : "");
+        label.setVisible(show);
+        label.setManaged(show);
     }
 
     /** The Markdown settings page: editing (format bar), preview/PDF (math), and linting (enable + per-rule). */
@@ -258,12 +263,14 @@ final class SettingsMarkdownPage {
                 "markdown lint fix issues on save automatic format");
         // A project's .markdownlint file changes which of the rules below apply to the active file; say so
         // here too, or a rule ticked in this list that the project switches off looks broken.
-        markdownLintConfigNoteLabel.getStyleClass().add("settings-hint");
-        markdownLintConfigNoteLabel.setWrapText(true);
+        Label configNote = new Label();
+        markdownLintConfigNoteLabel = configNote;
+        configNote.getStyleClass().add("settings-hint");
+        configNote.setWrapText(true);
         refreshMarkdownLintConfigNote();
         // Straight into the card, no row around it: hidden, it takes no room (a wrapping row left a blank gap).
-        markdownLintConfigNoteLabel.getStyleClass().add("settings-row");
-        lint.body().getChildren().add(markdownLintConfigNoteLabel);
+        configNote.getStyleClass().add("settings-row");
+        lint.body().getChildren().add(configNote);
         w.cardRow(
                 lint,
                 Category.MARKDOWN,

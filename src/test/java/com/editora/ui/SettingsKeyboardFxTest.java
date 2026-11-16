@@ -18,7 +18,6 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
-import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 import org.fxmisc.richtext.CodeArea;
@@ -82,8 +81,7 @@ class SettingsKeyboardFxTest {
 
     /** The chord label the Keymaps list shows for {@code commandId}. */
     private static String listedChord(SettingsWindow window, String commandId) {
-        Map<String, HBox> rows = SettingsRig.control(window, "shortcutRowsById");
-        List<Label> labels = all(rows.get(commandId), Label.class, new ArrayList<>());
+        List<Label> labels = all(SettingsRig.shortcutRow(window, commandId), Label.class, new ArrayList<>());
         return labels.get(1).getText();
     }
 
@@ -131,46 +129,46 @@ class SettingsKeyboardFxTest {
             });
             FxTestSupport.drainFx();
             try {
-                VBox list = SettingsRig.control(window, "shortcutListBox");
-                Map<String, HBox> rows = SettingsRig.control(window, "shortcutRowsById");
+                // The rows are the cells of a virtualized list: the list is the one Tab stop, its own selection is
+                // the row the arrow keys are on, and a row has nodes only while it is on screen.
+                ListView<SettingsWindow.Shortcut> list = SettingsRig.shortcutList(window);
                 HBox[] second = new HBox[1];
                 String[] id = new String[1];
                 FxTestSupport.runOnFx(() -> {
-                    assertTrue(list.getChildren().size() > 100, "the command rows");
-                    long tabStops = list.getChildren().stream()
-                            .filter(Node::isFocusTraversable)
-                            .count();
-                    assertEquals(1, tabStops, "the list is one Tab stop, not one per command");
-                    HBox first = (HBox) list.getChildren().get(0);
-                    assertTrue(first.isFocusTraversable(), "Tab reaches the list");
-                    first.requestFocus();
-                    javafx.event.Event.fireEvent(first, press(KeyCode.DOWN));
-                    second[0] = (HBox) list.getChildren().get(1);
-                    assertSame(second[0], stage[0].getScene().getFocusOwner(), "Down moves to the next row");
-                    assertTrue(second[0].isFocusTraversable(), "and takes the Tab stop with it");
-                    assertFalse(first.isFocusTraversable());
-                    id[0] = rows.entrySet().stream()
-                            .filter(e -> e.getValue() == second[0])
-                            .findFirst()
-                            .orElseThrow()
-                            .getKey();
+                    assertTrue(list.getItems().size() > 100, "the command rows");
+                    assertTrue(list.isFocusTraversable(), "Tab reaches the list");
+                    HBox first = SettingsRig.shortcutRow(
+                            window, list.getItems().get(0).id());
+                    assertFalse(first.isFocusTraversable(), "the list is one Tab stop, not one per command");
+                    list.requestFocus();
+                    list.getSelectionModel().select(0);
+                    javafx.event.Event.fireEvent(list, press(KeyCode.DOWN));
+                    assertEquals(1, list.getSelectionModel().getSelectedIndex(), "Down moves to the next row");
+                    assertSame(list, stage[0].getScene().getFocusOwner(), "and the keyboard stays in the list");
+                    id[0] = list.getItems().get(1).id();
+                    second[0] = SettingsRig.shortcutRow(window, id[0]);
+                    assertFalse(second[0].isFocusTraversable());
                     assertTrue(all(second[0], Button.class, new ArrayList<>()).isEmpty());
-                    javafx.event.Event.fireEvent(second[0], press(KeyCode.ENTER));
+                    javafx.event.Event.fireEvent(list, press(KeyCode.ENTER));
                 });
                 FxTestSupport.drainFx();
                 FxTestSupport.runOnFx(() -> {
-                    HBox selected = rows.get(id[0]);
-                    assertNotSame(second[0], selected, "the list was rebuilt");
+                    HBox selected = SettingsRig.shortcutRow(window, id[0]);
+                    assertNotSame(second[0], selected, "the row was built again");
                     assertEquals(
                             3,
                             all(selected, Button.class, new ArrayList<>()).size(),
                             "Enter selects the row and reveals Record, Reset and Remove");
-                    assertSame(selected, stage[0].getScene().getFocusOwner(), "focus stays on the selected row");
-                    javafx.event.Event.fireEvent(selected, press(KeyCode.ENTER));
+                    assertSame(list, stage[0].getScene().getFocusOwner(), "focus stays in the list");
+                    assertEquals(
+                            id[0], list.getSelectionModel().getSelectedItem().id(), "on the selected row");
+                    javafx.event.Event.fireEvent(list, press(KeyCode.ENTER));
                 });
                 FxTestSupport.drainFx();
+                FxTestSupport.runOnFx(() -> SettingsRig.shortcutRow(window, id[0])); // the row is built by a layout
+                FxTestSupport.drainFx();
                 FxTestSupport.runOnFx(() -> {
-                    HBox recording = rows.get(id[0]);
+                    HBox recording = SettingsRig.shortcutRow(window, id[0]);
                     TextField capture =
                             all(recording, TextField.class, new ArrayList<>()).get(0);
                     assertSame(capture, stage[0].getScene().getFocusOwner(), "a second Enter starts recording");
@@ -183,9 +181,11 @@ class SettingsKeyboardFxTest {
                 FxTestSupport.runOnFx(() -> {
                     assertNotNull(chordOf(window, id[0]), "Enter saved the recorded chord");
                     assertEquals(chordOf(window, id[0]), listedChord(window, id[0]), "and the list shows it");
-                    assertSame(rows.get(id[0]), stage[0].getScene().getFocusOwner(), "focus returns to the row");
+                    assertSame(list, stage[0].getScene().getFocusOwner(), "focus returns to the list");
+                    assertEquals(
+                            id[0], list.getSelectionModel().getSelectedItem().id(), "on the row");
                     assertTrue(
-                            all(rows.get(id[0]), TextField.class, new ArrayList<>())
+                            all(SettingsRig.shortcutRow(window, id[0]), TextField.class, new ArrayList<>())
                                     .isEmpty(),
                             "recording is over");
                 });

@@ -62,7 +62,11 @@ public final class StatusBar extends HBox {
 
     private final ProgressBar backgroundProgress = new ProgressBar(0);
 
-    private final MessageLogPopup messageLogPopup = new MessageLogPopup();
+    /** Built by {@link #messageLogPopup()} the first time the Message Log is opened. */
+    private @Nullable MessageLogPopup messageLogPopup;
+
+    private @Nullable Runnable onOpenDoctor;
+    private @Nullable OverlayHost messageLogHost;
     /** Git branch + ahead/behind, "No VCS" outside a repository, "Git off" when disabled; opens the dropdown. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
     /** The node id of the checks segment — the checks list card anchors itself to it. */
@@ -540,32 +544,56 @@ public final class StatusBar extends HBox {
 
     /** Gives the message-log popup an "Open Doctor" button running {@code action}. */
     public void setOnOpenDoctor(Runnable action) {
-        messageLogPopup.setOnOpenDoctor(action);
+        onOpenDoctor = action;
+        if (messageLogPopup != null) {
+            messageLogPopup.setOnOpenDoctor(action);
+        }
     }
 
     /** Injects the shared in-scene overlay host into the message-log popup. */
     public void setOverlayHost(OverlayHost overlayHost) {
-        messageLogPopup.setOverlayHost(overlayHost);
+        messageLogHost = overlayHost;
+        if (messageLogPopup != null) {
+            messageLogPopup.setOverlayHost(overlayHost);
+        }
+    }
+
+    /** The message-log popup, built now if this is its first use, with what was injected before it existed. */
+    private MessageLogPopup messageLogPopup() {
+        MessageLogPopup popup = messageLogPopup;
+        if (popup == null) {
+            popup = new MessageLogPopup();
+            if (onOpenDoctor != null) {
+                popup.setOnOpenDoctor(onOpenDoctor);
+            }
+            if (messageLogHost != null) {
+                popup.setOverlayHost(messageLogHost);
+            }
+            messageLogPopup = popup;
+        }
+        return popup;
     }
 
     /** Message Log: Clear: empties the session's message log, open or not. */
     public void clearMessageLog() {
         messageLog.clear();
-        messageLogPopup.clear();
+        if (messageLogPopup != null) {
+            messageLogPopup.clear();
+        }
     }
 
     /** Toggles the session message-log popup (anchored just above the echo area). */
     public void showMessageLog() {
         Window owner = getScene() == null ? null : getScene().getWindow();
         if (owner != null) {
-            messageLogPopup.toggle(owner, echo, messageLog);
+            messageLogPopup().toggle(owner, echo, messageLog);
             markMessagesRead(); // opening the log is the user having had a chance to see them
         }
     }
 
     /** Copies the messages selected in the open Message Log; false when it is closed or nothing is selected. */
     public boolean copySelectedMessages() {
-        return messageLogPopup.copySelection();
+        return messageLogPopup != null && messageLogPopup.copySelection();
     }
 
     /**

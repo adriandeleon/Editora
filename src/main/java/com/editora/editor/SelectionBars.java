@@ -148,6 +148,9 @@ final class SelectionBars {
         }
         aiActionsBar.setEditable(b.isEditable());
         javafx.scene.Node bar = aiActionsBar.node();
+        // Styled here only when it has just been put in this pane or shown again: while it stays up and follows
+        // the selection or a scroll, the pulse keeps its styles and its size does not change (PERF-10).
+        boolean placedNow = bar.getParent() != targetPane || !bar.isVisible();
         if (bar.getParent() != targetPane) {
             if (bar.getParent() instanceof javafx.scene.layout.AnchorPane ap) {
                 ap.getChildren().remove(bar);
@@ -155,7 +158,9 @@ final class SelectionBars {
             targetPane.getChildren().add(bar);
         }
         bar.setVisible(true);
-        bar.applyCss();
+        if (placedNow) {
+            bar.applyCss();
+        }
         double w = bar.prefWidth(-1);
         double h = bar.prefHeight(-1);
         double x = Math.max(0, Math.min(local.getMinX(), Math.max(0, targetPane.getWidth() - w)));

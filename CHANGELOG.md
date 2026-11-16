@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code, and choosing it on an array or object shows all the numbers in it that way. The choice stays at the next stop
   and in the next session until the window closes, and Copy Value copies what you see. It works with every debugger,
   including those that ignore Show Numbers as Hexadecimal (CodeLLDB, Delve, js-debug).
+- **A copy button on the Markdown preview's code blocks.** Point at a code block in the preview and a copy button
+  shows in its top right corner, beside the language; one click copies the block's code, and a check mark says it
+  worked. Fenced and indented blocks both have it; hover and completion popups do not.
 - **Set Value on a watch.** Right-click a watch while the program is paused and choose Set Value… to give its
   expression a new value — a variable, a field, an element — as IntelliJ and Visual Studio allow. Python and
   JavaScript set the expression directly; Java, Go and C/C++ set the variable a watch names, or (Java) evaluate the
@@ -696,6 +699,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Three long lists build only the rows on screen.** The shortcut list in Settings ▸ Keymaps, the list of a
+  pull request's checks and the crontab preview made a row for every command, check or job, and the shortcut list
+  made them all again at each key typed in its filter. Each is now a list that builds the rows it shows.
+  - Shortcuts: the list is still one Tab stop, the arrow keys, Home and End walk it, Enter or Space selects a row
+    and a second Enter records, Delete unbinds. A command title too long for its row ends in an ellipsis where it
+    used to wrap.
+  - Checks: the list is one Tab stop. The arrow keys move along the checks and Enter opens the selected check's
+    failure log, or its page on GitHub when it did not fail; the links of the rows on screen are still Tab stops.
+  - Crontab: the preview reads as before; a row's text wraps to the preview's width.
+- **A window builds less before it shows.** The cards of the command palette and the other pickers, the Settings
+  window, the Message Log, the Doctor page and the shared Output console are now built the first time each is
+  opened (the Output console also by the first build or Git command that writes to it), and the Welcome page only
+  in a window that opens on no file.
+
 - **Editora asks before more removals that used to happen at once.** Each of these now asks first, names what
   goes, and keeps it when you press Cancel or Enter: deleting a Git branch that is fully merged (a branch with
   unmerged commits is still asked about once, with the count); Remove All for the trusted folders; Reset draft
@@ -975,6 +992,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     that had remote images on keeps loading them.
 
 ### Fixed
+
+- **View: Split Tool Window Side shows its picker.** The command found the tool windows that could join a side and
+  then showed nothing: its picker had never been given the place it opens in.
 
 - **Six small stalls and wrong answers under load.**
   - The debugger checks in Settings could show an older answer over a newer one when a path was changed

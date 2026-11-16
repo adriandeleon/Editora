@@ -312,8 +312,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final Map<BuildTool, ToolWindow> buildToolWindows = new java.util.EnumMap<>(BuildTool.class);
     /** The shared tabbed "Output" window — one tab per build tool that runs (Maven/npm/Cargo/Go/Gradle),
      *  fed by every {@link BuildCoordinator}; its stripe appears when any tool's marker is detected, and it
-     *  auto-opens on a run. */
-    final BuildOutputPanel buildOutputPanel = new BuildOutputPanel();
+     *  auto-opens on a run. The panel is built by its first open or its first tab ({@link BuildOutput}). */
+    final BuildOutput buildOutputPanel = new BuildOutput();
 
     ToolWindow buildOutputToolWindow;
 
@@ -393,7 +393,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     RecentFiles recentFiles;
 
     private final RecentFilesCheck recentCheck = new RecentFilesCheck();
-    /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
+    /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}).
+     *  Built by {@link #welcomePane()} when that tab first opens: a window that opens on files builds none. */
+    @Nullable
     WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
     @Nullable
@@ -748,7 +750,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         previews.applyMarkdownLint(); // push Markdown-lint enabled state to buffers (on by default)
         fileWorkflows.applyAdminSaveSupport(); // detect the elevation tool (pkexec/osascript) for save-as-admin (off by
         // default)
-        setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
         fileWorkflows.autoSaveIdleTimer.setOnFinished(e -> fileWorkflows.autoSaveAllDirty());
@@ -969,12 +970,15 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Builds the {@link WelcomePane} and wires its callbacks. The pane is shown in its own real tab
+     * The {@link WelcomePane}, built and wired on its first use. The pane is shown in its own real tab
      * (see {@link #addWelcomeTab()}); the tab strip handles activation/switching/closing for free, so
      * there is no overlay or visibility juggling.
      */
-    private void setupWelcome() {
-        welcomePane = new WelcomePane(
+    private WelcomePane welcomePane() {
+        if (welcomePane != null) {
+            return welcomePane;
+        }
+        WelcomePane pane = new WelcomePane(
                 registry,
                 keymap,
                 recentFiles,
@@ -986,15 +990,17 @@ public class MainController implements com.editora.mcp.McpBridge {
                 config::getConnections, // saved SFTP sites (most-recent first); empty hides the section
                 remoteCoordinator::connect, // pick a site → prefilled connect form
                 config.isDev() ? com.editora.AppInfo.gitCommitAsync() : null); // commit: --dev only, off-thread
-        welcomePane.setProjectOpener(this::switchToProject);
-        welcomePane.setRecentRemover(path -> Platform.runLater(() -> {
+        pane.setProjectOpener(this::switchToProject);
+        pane.setRecentRemover(path -> Platform.runLater(() -> {
             confirmRemoveRecent(path);
-            welcomePane.refresh();
+            pane.refresh();
         }));
-        welcomePane.setCustomizeSource(
+        pane.setCustomizeSource(
                 () -> com.editora.command.KeymapManager.displayName(
                         config.getSettings().getKeymap()),
                 () -> config.getSettings().getTheme());
+        welcomePane = pane;
+        return pane;
     }
 
     /**
@@ -1002,6 +1008,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Clone actions track the current state. Used at startup with no session and by {@code view.welcome}.
      */
     private void addWelcomeTab() {
+        WelcomePane welcomePane = welcomePane();
         welcomePane.refresh();
         welcomePane.setFontScale(config.getSettings().getFontZoom()); // match the current text zoom (#540)
         if (welcomeTab != null && editorArea.contains(welcomeTab)) {
@@ -2272,7 +2279,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 tr("toolwindow.buildOutput"),
                 ToolWindow.Side.BOTTOM,
                 Icons::tools,
-                buildOutputPanel,
+                buildOutputPanel::panel, // built on first open, or by the first tab written while closed
                 "tool.buildOutput");
         testResultsToolWindow =
                 toolWindow("testResults", ToolWindow.Side.BOTTOM, Icons::testResults, testRunCoordinator::panel);

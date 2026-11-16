@@ -76,6 +76,11 @@ public final class MenuIcons {
                 "M7.0 5.5h5.0a1.5 1.5 0 0 1 1.5 1.5v5.0a1.5 1.5 0 0 1 -1.5 1.5h-5.0a1.5 1.5 0 0 1 -1.5 -1.5v-5.0a1.5 1.5 0 0 1 1.5 -1.5zM3 10.5V3.6A1.1 1.1 0 0 1 4.1 2.5H11");
     }
 
+    /** UI Kit line "check" — mirrors {@code Icons.check}: something just worked (a code block was copied). */
+    public static Node check() {
+        return line("M3 8.6l3.2 3.2L13 4.6");
+    }
+
     /** UI Kit line "paste" — mirrors {@code Icons.paste} (toolbar + Edit menu). */
     public static Node paste() {
         return line(

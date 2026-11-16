@@ -18,8 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Every list, tree and table in the app's windows has a right-click menu (MENU-05, Pauta 6.0.1), or is one the rule
- * leaves out, named here with the reason. Read from the source: a control declared {@code X<…> name = new X<>…}
- * passes when its file gives {@code name} a menu, through {@link ListRowCommands#install}, {@link RowMenus#install},
+ * leaves out, named here with the reason. Read from the source: a control declared {@code X<…> name = new X<>…},
+ * or made so in the method that builds its card on first use ({@code name = new X<>…}), passes when its file gives {@code name} a menu, through {@link ListRowCommands#install}, {@link RowMenus#install},
  * {@code setContextMenu}, {@code setOnContextMenuRequested}, or {@link RowContextMenu} for a menu on its cells.
  */
 @Tag("guard")
@@ -41,6 +41,10 @@ class RowMenuCoverageTest {
             Map.entry("MultiSelectPicker.list", "picker"),
             Map.entry("RecipientPicker.list", "picker"),
             Map.entry("MacroSettingsPane.commands", "the picker list of the Choose Command dialog"),
+            Map.entry("ChecksListCard.list", "the list of an overlay card; a row's actions are the links in it"),
+            Map.entry(
+                    "SettingsKeymapsPage.shortcutList",
+                    "a row's actions are the buttons the selected row shows (Record, Reset, Remove), each a command"),
             // Pickers whose rows have a menu all the same, opened from the cell (BranchPopup.rowMenu, StashCell).
             Map.entry("BranchPopup.list", "picker; its cells open the row menu"),
             Map.entry("GitStashPopup.list", "picker; its cells open the row menu"),
@@ -48,13 +52,16 @@ class RowMenuCoverageTest {
             // Lists that only navigate, switching what their view shows: outside the rule.
             Map.entry("DirectoryReviewPane.files", "navigation: picks the file whose diff is shown"),
             Map.entry("PatchReviewPane.files", "navigation: picks the file whose diff is shown"),
+            Map.entry("SettingsWindow.sidebar", "navigation: picks the Settings page that is shown"),
             // The tree previews answer the right-click on their holder (BufferPreview.showTreePreviewContextMenu).
             Map.entry("StructuredTree.tree", "the preview holder's menu (Export PDF, Print); no row actions"),
-            Map.entry("XmlTree.tree", "the preview holder's menu (Export PDF, Print); no row actions"));
+            Map.entry("XmlTree.tree", "the preview holder's menu (Export PDF, Print); no row actions"),
+            Map.entry("CrontabPreview.list", "the preview holder's menu (Export PDF, Print); a read-out, no rows"));
 
-    private static final Pattern DECLARATION =
-            Pattern.compile("(?:ListView|TreeView|TableView|TreeTableView)<[^=;]*?>\\s+(\\w+)\\s*=\\s*new\\s+"
-                    + "(?:ListView|TreeView|TableView|TreeTableView)<");
+    private static final Pattern DECLARATION = Pattern.compile(
+            "(?:(?:ListView|TreeView|TableView|TreeTableView)<[^=;]*?>\\s+|^\\s+(?:this\\.)?)"
+                    + "(\\w+)\\s*=\\s*new\\s+(?:ListView|TreeView|TableView|TreeTableView)<",
+            Pattern.MULTILINE);
 
     @Test
     void everyListTreeAndTableHasARightClickMenuOrIsLeftOutForAReason() throws IOException {

@@ -85,18 +85,22 @@ public class CommandPalette {
      */
     private java.util.function.Function<Command, @Nullable String> disabledReason = c -> null;
 
-    private final TextField input = new TextField();
+    // The card's nodes are made by build(), on the first show(): a window that never opens the palette holds none.
+    private TextField input;
     /** The input row's chord chip: the chord bound to {@code palette.show}. */
-    private final Label prefixChip = new Label();
+    private Label prefixChip;
     /** The navigation legend under the list; rebuilt from the live keymap (see {@link #refreshKeyHints}). */
-    private final Label hint = new Label();
+    private Label hint;
     /** The raw chord token that opens the highlighted command's docs, or null if the keymap leaves none free. */
     private @Nullable String docsChord;
 
-    private final ListView<Command> list = new ListView<>();
+    private ListView<Command> list;
     private final ObservableList<Command> items = FXCollections.observableArrayList();
     /** One-line description of the highlighted command, shown above the navigation hint. */
-    private final Label desc = new Label();
+    private Label desc;
+
+    /** Whether {@link #build} has run. */
+    private boolean built;
 
     /** The palette card (header + input + list + hint); shown via the shared {@link OverlayHost}. */
     private VBox content;
@@ -123,7 +127,6 @@ public class CommandPalette {
         this.keymap = keymap;
         this.commandToKey = keymap.displayChords();
         this.enabledPolicy = enabledPolicy;
-        build();
     }
 
     private boolean isEnabled(Command c) {
@@ -133,8 +136,10 @@ public class CommandPalette {
     /** Rebuilds the chord hints from the current keymap (after a live keymap switch). */
     public void refreshBindings() {
         this.commandToKey = keymap.displayChords();
-        refreshKeyHints();
-        list.refresh();
+        if (built) { // an unbuilt card reads the chords when it is built
+            refreshKeyHints();
+            list.refresh();
+        }
     }
 
     /** The prefix chip, the docs key and the legend — everything on the card that names a key. */
@@ -164,7 +169,21 @@ public class CommandPalette {
         return VISIBLE_ROWS * ROW_HEIGHT + insets;
     }
 
+    /** Builds the card now if nothing has yet: the first show does, and a test that reads the card before one. */
+    void ensureBuilt() {
+        if (!built) {
+            build();
+            built = true;
+        }
+    }
+
+    @Initializer
     private void build() {
+        input = new TextField();
+        prefixChip = new Label();
+        hint = new Label();
+        list = new ListView<>();
+        desc = new Label();
         input.setPromptText(tr("palette.prompt"));
         list.setItems(items);
         // A whole number of rows: a fixed 280px cut the eighth row in half.
@@ -432,6 +451,7 @@ public class CommandPalette {
         if (overlayHost == null) {
             return; // setOverlayHost() not called yet
         }
+        ensureBuilt();
         input.clear();
         filter("");
         showing.set(true);

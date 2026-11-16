@@ -61,17 +61,20 @@ public final class BuildActionsPopup {
     private record ToggleRow(BuildAction.Toggle toggle) implements Row {}
 
     private final Labels labels;
-    private final Label titleLabel;
-    private final TextField search = new TextField();
-    private final ListView<Row> list = new ListView<>();
+    // The card's nodes are made by build(), on the first show: a build tool whose actions nobody opened holds none.
+    private Label titleLabel;
+    private TextField search;
+    private ListView<Row> list;
     /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
-    private final Label hint = new Label();
+    private Label hint;
+
+    private boolean built;
 
     private final ObservableList<Row> items = FXCollections.observableArrayList();
     private List<Row> all = List.of();
 
     private @Nullable OverlayHost overlayHost;
-    private final VBox content;
+    private VBox content;
     private boolean showing;
     private long lastHiddenAt;
 
@@ -91,7 +94,22 @@ public final class BuildActionsPopup {
 
     public BuildActionsPopup(Labels labels) {
         this.labels = labels;
-        this.titleLabel = new Label(labels.title());
+    }
+
+    /** Builds the card now if nothing has yet: the first show does, and a test that reads the card before one. */
+    void ensureBuilt() {
+        if (!built) {
+            build();
+            built = true;
+        }
+    }
+
+    @Initializer
+    private void build() {
+        titleLabel = new Label(labels.title());
+        search = new TextField();
+        list = new ListView<>();
+        hint = new Label();
         search.setPromptText(labels.searchPrompt());
         list.setItems(items);
         UiZoom.prefHeight(list, 400);
@@ -200,6 +218,7 @@ public final class BuildActionsPopup {
     }
 
     private void prepare(BuildActionsProvider provider, Set<String> toggles) {
+        ensureBuilt();
         this.provider = provider;
         this.activeToggles = toggles == null ? new LinkedHashSet<>() : toggles;
         hint.setText(PickerKeys.legend(PickerKeys.hint("run", "↵"))); // per show: follows a keymap switch

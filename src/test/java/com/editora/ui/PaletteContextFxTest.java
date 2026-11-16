@@ -38,7 +38,10 @@ class PaletteContextFxTest {
     @SuppressWarnings("unchecked")
     private static Map<String, Boolean> verdicts(MainController controller, String... ids) throws Exception {
         CommandPalette palette = FxTestSupport.field(controller, "palette");
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, ""));
+        FxTestSupport.runOnFx(() -> {
+            palette.ensureBuilt(); // the card is made on the first show
+            FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, "");
+        });
         List<Command> items = FxTestSupport.field(palette, "items");
         // The snapshot the pass above took — the same one the cells render against.
         Predicate<Command> enabled = FxTestSupport.field(palette, "enabledSnapshot");

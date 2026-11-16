@@ -413,7 +413,9 @@ public final class PdfViewerPane implements TabContent {
         double fy = img.getHeight() > 0 ? clamp01(inImage.getY() / img.getHeight()) : 0.5;
 
         setZoom(next);
-        scroll.applyCss();
+        if (scroll.getSkin() == null) { // never styled yet; a zoom changes sizes, not styles (PERF-10)
+            scroll.applyCss();
+        }
         scroll.layout();
 
         Bounds after = imageView.getBoundsInParent();

@@ -65,10 +65,11 @@ public class QuickOpen<T> {
     /** A fixed list height (px) with natural row heights, instead of hugging the rows; 0 = hug (the default). */
     private double fixedListHeight;
 
-    private final TextField input = new TextField();
-    private final ListView<T> list = new ListView<>();
+    // The card's nodes are made by build(), on the first show(): a picker nobody has opened holds none.
+    private TextField input;
+    private ListView<T> list;
     /** The key legend under the list; rebuilt from the live keymap each time the picker is shown. */
-    private final Label hint = new Label();
+    private Label hint;
 
     /** Supplies the value currently in force, pre-selected on open (see {@link #setCurrentItem}). */
     private java.util.function.@Nullable Supplier<T> currentItem;
@@ -79,7 +80,7 @@ public class QuickOpen<T> {
     private @Nullable String emptyText;
 
     /** Shown in place of the rows while there are none. */
-    private final Label emptyLabel = new Label();
+    private Label emptyLabel;
 
     private List<T> all = List.of();
 
@@ -91,7 +92,16 @@ public class QuickOpen<T> {
 
     private @Nullable Runnable onPreviewCancelled;
 
-    private final Label header = new Label();
+    private Label header;
+
+    /** The title over the list and the query field's prompt, kept for {@link #build}. */
+    private String title;
+
+    private final String prompt;
+
+    /** Whether {@link #build} has run: the setters that reach a node check it and otherwise only keep the value. */
+    private boolean built;
+
     /** Whether this showing ended in a choice — so cancelling restores and choosing does not. */
     private boolean chosen;
 
@@ -128,7 +138,8 @@ public class QuickOpen<T> {
         this.detail = detail;
         this.searchKey = searchKey == null ? label : searchKey;
         this.onChoose = onChoose;
-        build(title, prompt);
+        this.title = title;
+        this.prompt = prompt;
     }
 
     /** A key that acts on the highlighted row and keeps the picker open: the list is read again after it. */
@@ -160,7 +171,9 @@ public class QuickOpen<T> {
      */
     public void setPlaceholder(String text) {
         emptyText = text;
-        emptyLabel.setText(placeholderText());
+        if (built) {
+            emptyLabel.setText(placeholderText());
+        }
     }
 
     /** The sentence for a list with no rows: nothing to choose from at all, or nothing that matches what was typed. */
@@ -173,7 +186,10 @@ public class QuickOpen<T> {
 
     /** The title over the list: one picker serves two commands (Insert Snippet, Surround With — ET2). */
     public void setTitle(String title) {
-        header.setText(title);
+        this.title = title;
+        if (built) {
+            header.setText(title);
+        }
     }
 
     /** Runs {@code onCancelled} when the picker is dismissed without choosing (the caret put back — ET2). */
@@ -223,7 +239,7 @@ public class QuickOpen<T> {
     public void setPreferredSize(double width, int minVisibleRows) {
         this.cardWidth = width;
         this.minRows = Math.max(1, Math.min(minVisibleRows, MAX_VISIBLE));
-        if (content != null) {
+        if (built) {
             UiZoom.prefWidth(content, width);
             UiZoom.maxSize(content, width, Region.USE_PREF_SIZE);
             resizeList();
@@ -237,19 +253,46 @@ public class QuickOpen<T> {
      */
     public void setFixedListHeight(double height) {
         this.fixedListHeight = height;
-        UiZoom.follow(list, "cellSize", () -> list.setFixedCellSize(Region.USE_COMPUTED_SIZE)); // replaces build's
-        resizeList();
+        if (built) {
+            followCellSize();
+            resizeList();
+        }
     }
 
-    private void build(String title, String prompt) {
+    /** Rows of {@link #CELL_HEIGHT}, or their natural height under {@link #setFixedListHeight}. */
+    private void followCellSize() {
+        UiZoom.follow(
+                list,
+                "cellSize",
+                () -> list.setFixedCellSize(fixedListHeight > 0 ? Region.USE_COMPUTED_SIZE : UiZoom.px(CELL_HEIGHT)));
+    }
+
+    /** Builds the card now if nothing has yet: the first show does, and a test that reads the card before one. */
+    void ensureBuilt() {
+        if (!built) {
+            build();
+            built = true;
+        }
+    }
+
+    @Initializer
+    private void build() {
+        input = new TextField();
+        list = new ListView<>();
+        hint = new Label();
+        emptyLabel = new Label();
+        header = new Label();
         input.setPromptText(prompt);
         list.setItems(items);
         emptyLabel.getStyleClass().add("palette-hint");
         emptyLabel.setWrapText(true);
+        if (emptyText != null) {
+            emptyLabel.setText(placeholderText());
+        }
         list.setPlaceholder(emptyLabel);
         // Hug the result count: a fixed cell size lets the list size to its rows, capped at MAX_VISIBLE
         // (then it scrolls), so the popup isn't a fixed-tall box with empty space for a few matches.
-        UiZoom.follow(list, "cellSize", () -> list.setFixedCellSize(UiZoom.px(CELL_HEIGHT)));
+        followCellSize();
         items.addListener((javafx.collections.ListChangeListener<T>) c -> resizeList());
         list.setCellFactory(v -> new ItemCell());
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
@@ -382,6 +425,7 @@ public class QuickOpen<T> {
         if (overlayHost == null) {
             return;
         }
+        ensureBuilt();
         all = itemsSupplier.get();
         List<String> legend = new ArrayList<>();
         legend.add(PickerKeys.hint("select", "↵"));

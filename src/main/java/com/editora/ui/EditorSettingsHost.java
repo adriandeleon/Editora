@@ -96,7 +96,7 @@ final class EditorSettingsHost implements EditorSettingsCoordinator.Host {
     }
 
     @Override
-    public BuildOutputPanel buildOutputPanel() {
+    public BuildOutput buildOutputPanel() {
         return mc.buildOutputPanel;
     }
 
@@ -111,7 +111,7 @@ final class EditorSettingsHost implements EditorSettingsCoordinator.Host {
     }
 
     @Override
-    public WelcomePane welcomePane() {
+    public @Nullable WelcomePane welcomePane() {
         return mc.welcomePane;
     }
 

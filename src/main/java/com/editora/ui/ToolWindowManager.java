@@ -185,7 +185,9 @@ public class ToolWindowManager {
      * the icons a tab-strip's height below the text they are meant to sit beside.
      *
      * <p>The skin (and so the {@code .tab-header-area} node) is built during the first CSS pass, which has
-     * not necessarily happened when the editor area first joins a scene — hence the bounded retry.
+     * not happened when the editor area first joins a scene. The header is looked for again after each of the
+     * scene's own pulses until it is there (a bounded number of them), rather than by styling the whole editor
+     * area here to force the skin (PERF-10): the pulse styles it once, for the first frame.
      */
     private void alignVerticalStripesWithEditorText(Node editorArea) {
         editorArea.sceneProperty().addListener((obs, old, scene) -> {
@@ -202,9 +204,14 @@ public class ToolWindowManager {
         if (stripeInsetBound || attemptsLeft <= 0 || editorArea.getScene() == null) {
             return;
         }
-        editorArea.applyCss();
         if (!(editorArea.lookup(".tab-header-area") instanceof Region header)) {
-            Platform.runLater(() -> bindStripeTopInset(editorArea, attemptsLeft - 1));
+            javafx.scene.Scene scene = editorArea.getScene();
+            Runnable[] afterPulse = new Runnable[1];
+            afterPulse[0] = () -> {
+                scene.removePostLayoutPulseListener(afterPulse[0]);
+                bindStripeTopInset(editorArea, attemptsLeft - 1);
+            };
+            scene.addPostLayoutPulseListener(afterPulse[0]);
             return;
         }
         stripeInsetBound = true;

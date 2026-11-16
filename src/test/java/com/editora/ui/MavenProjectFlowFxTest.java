@@ -1406,7 +1406,7 @@ class MavenProjectFlowFxTest {
         final Host host = new Host();
         final Ops ops = new Ops();
         final StackPane overlayRoot = new StackPane();
-        final BuildOutputPanel output;
+        final BuildOutput output;
         final MavenProjectCoordinator coordinator;
         final String mvn;
         private final Stage stage;
@@ -1422,7 +1422,7 @@ class MavenProjectFlowFxTest {
             assertTrue(fakeMvn.toFile().setExecutable(true));
             mvn = fakeMvn.toString();
             host.settings.setMavenCommand(mvn);
-            output = FxTestSupport.callOnFx(BuildOutputPanel::new);
+            output = FxTestSupport.callOnFx(BuildOutput::new);
             coordinator = FxTestSupport.callOnFx(() -> new MavenProjectCoordinator(host, ops, output));
             FxTestSupport.runOnFx(() -> coordinator.setRunnerForTest((workingDir, argv, listener) -> {
                 throw new AssertionError("this test must not launch Maven: " + argv);
@@ -1605,7 +1605,7 @@ class MavenProjectFlowFxTest {
         }
 
         private BuildToolPanel consolePanel() {
-            Map<Object, BuildToolPanel> consoles = FxTestSupport.field(output, "consoles");
+            Map<Object, BuildToolPanel> consoles = FxTestSupport.field(output.panel(), "consoles");
             BuildToolPanel console = consoles.get(coordinator);
             assertNotNull(console, "the wizard has no console tab yet");
             return console;

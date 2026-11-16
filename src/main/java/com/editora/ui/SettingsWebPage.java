@@ -35,6 +35,8 @@ final class SettingsWebPage {
 
     @Initializer
     void buildControls() {
+        htmlBrowserCombo = new ComboBox<>();
+        httpNodeStatus = new ToolStatusRow("node");
         httpCheck = new CheckBox(tr("settings.httpClient.enable"));
         httpCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setHttpClientSupport(now);
@@ -84,11 +86,11 @@ final class SettingsWebPage {
     private Spinner<Integer> httpScriptTimeoutSpinner;
     private CheckBox htmlPreviewCheck;
     /** The browser HTML Live Preview opens (ids from {@link com.editora.web.Browsers}); filled off the FX thread. */
-    private final ComboBox<String> htmlBrowserCombo = new ComboBox<>();
+    private ComboBox<String> htmlBrowserCombo;
 
     private final Map<String, String> htmlBrowserNames = new java.util.HashMap<>();
     private boolean htmlBrowsersDetected; // until then a stored id is not "missing", just not looked up yet
-    private final ToolStatusRow httpNodeStatus = new ToolStatusRow("node");
+    private ToolStatusRow httpNodeStatus;
 
     /** LANGUAGES & TOOLS ▸ Web: HTML live preview + the built-in HTTP client (merged). */
     VBox build() {

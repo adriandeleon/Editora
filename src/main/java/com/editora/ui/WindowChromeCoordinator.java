@@ -358,6 +358,7 @@ final class WindowChromeCoordinator {
         host.navigation().structurePalette.setOverlayHost(host.overlayHost());
         host.navigation().openFilesPalette.setOverlayHost(host.overlayHost());
         host.navigation().toolWindowPalette.setOverlayHost(host.overlayHost());
+        host.navigation().splitToolWindowPalette.setOverlayHost(host.overlayHost());
         host.navigation().undoHistoryPalette.setOverlayHost(host.overlayHost());
         host.indexCoordinator().setOverlayHost(host.overlayHost());
         searchEverywherePopup = new SearchEverywherePopup(host.overlayHost(), host.searchEverywhereOps());

@@ -31,6 +31,17 @@ class MarkdownRendererTest {
     }
 
     @Test
+    void aFencesLanguageIsTheFirstWordOfItsInfoString() {
+        assertEquals("java", MarkdownRenderer.fenceLanguage("java"));
+        assertEquals("js", MarkdownRenderer.fenceLanguage(" js title=\"a.js\""));
+        assertEquals("python", MarkdownRenderer.fenceLanguage("{.python}"));
+        assertEquals("r", MarkdownRenderer.fenceLanguage("{r, echo=FALSE}"));
+        assertEquals("", MarkdownRenderer.fenceLanguage(null));
+        assertEquals("", MarkdownRenderer.fenceLanguage(""));
+        assertEquals("", MarkdownRenderer.fenceLanguage("x".repeat(25)), "too long to be a language");
+    }
+
+    @Test
     void tableColumnWeightReservesSpaceForCellPadding() {
         assertEquals(8, MarkdownRenderer.tableColumnWeight(5), "ID and Smoke-sized columns");
         assertEquals(11, MarkdownRenderer.tableColumnWeight(8), "Priority-sized columns");

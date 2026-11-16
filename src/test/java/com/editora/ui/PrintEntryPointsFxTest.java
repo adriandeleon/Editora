@@ -43,7 +43,10 @@ class PrintEntryPointsFxTest {
     /** The palette's live enabled-predicate verdict for each of {@code ids} (as {@code PaletteContextFxTest}). */
     private static Map<String, Boolean> verdicts(MainController controller, String... ids) throws Exception {
         CommandPalette palette = FxTestSupport.field(controller, "palette");
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, ""));
+        FxTestSupport.runOnFx(() -> {
+            palette.ensureBuilt(); // the card is made on the first show
+            FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, "");
+        });
         List<Command> items = FxTestSupport.field(palette, "items");
         Predicate<Command> enabled = FxTestSupport.field(palette, "enabledSnapshot");
         return FxTestSupport.callOnFx(() -> {

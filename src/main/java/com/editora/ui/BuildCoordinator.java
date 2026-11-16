@@ -93,7 +93,7 @@ final class BuildCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final BuildService service = new BuildService();
-    private final BuildOutputPanel panel; // the shared tabbed "Output" window (this tool gets its own tab)
+    private final BuildOutput panel; // the shared tabbed "Output" window (this tool gets its own tab)
     /** The tasks-tree tool window content, built on its first open; see {@link #tasksPanel()}. */
     private @Nullable BuildActionsTree tree;
 
@@ -162,7 +162,7 @@ final class BuildCoordinator {
      *  streamed output for the JDWP banner). Cleared when the run ends. */
     private java.util.function.@Nullable BiConsumer<String, Boolean> outputWatcher;
 
-    BuildCoordinator(BuildTool tool, CoordinatorHost host, Ops ops, BuildOutputPanel sharedConsole) {
+    BuildCoordinator(BuildTool tool, CoordinatorHost host, Ops ops, BuildOutput sharedConsole) {
         this.tool = tool;
         this.host = host;
         this.ops = ops;

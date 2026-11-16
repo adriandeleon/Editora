@@ -74,7 +74,10 @@ class ToolbarCustomizeModeFxTest {
         FxTestSupport.runOnFx(() -> {
             FxTestSupport.<ContextMenu>field(toolbar, "contextMenu").hide();
             SettingsWindow window = FxTestSupport.field(fx.controller, "settingsWindow");
-            FxTestSupport.<Stage>field(window, "stage").hide();
+            javafx.stage.Window shown = window.stageIfShowing(); // null when the test never opened Settings
+            if (shown != null) {
+                shown.hide();
+            }
         });
         fx.dispose();
     }

@@ -39,8 +39,11 @@ class CommandPaletteDisabledFxTest {
         CommandPalette palette = FxTestSupport.callOnFx(
                 () -> new CommandPalette(reg, new KeymapManager(), c -> !c.id().startsWith("git."))); // git.* disabled
 
-        // Populate the results with an empty query.
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, ""));
+        // Populate the results with an empty query (the card is made on the first show).
+        FxTestSupport.runOnFx(() -> {
+            palette.ensureBuilt();
+            FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, "");
+        });
 
         // Both commands are listed — the disabled one is shown, not hidden.
         List<Command> items = FxTestSupport.field(palette, "items");
@@ -69,6 +72,7 @@ class CommandPaletteDisabledFxTest {
         CommandPalette palette = FxTestSupport.callOnFx(
                 () -> new CommandPalette(reg, new KeymapManager(), c -> !c.id().startsWith("git.")));
         FxTestSupport.runOnFx(() -> {
+            palette.ensureBuilt();
             FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, ""); // one pass: what can run now
             ListView<Command> list = FxTestSupport.field(palette, "list");
             javafx.scene.control.ListCell<Command> cell = list.getCellFactory().call(list);
