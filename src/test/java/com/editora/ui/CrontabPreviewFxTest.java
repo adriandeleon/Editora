@@ -95,9 +95,15 @@ class CrontabPreviewFxTest {
                 assertFalse(all.contains("/opt/job-4999.sh"), "a job far down has no node yet");
 
                 list.scrollTo(5_001);
-                scene.getRoot().layout();
+                // A virtualized list may take more than one layout pass to build the rows it scrolled to (macOS CI
+                // needed a second): laid out again, a few times at most, until the last row has its node.
                 List<String> end = new ArrayList<>();
-                collect(live, end);
+                for (int pass = 0; pass < 5 && !end.contains("/opt/job-4999.sh"); pass++) {
+                    scene.getRoot().applyCss();
+                    scene.getRoot().layout();
+                    end.clear();
+                    collect(live, end);
+                }
                 assertTrue(end.contains("/opt/job-4999.sh"), "scrolled to the end, the last job is there to read");
                 assertTrue(live.lookupAll(".crontab-job").size() < 60, "and still only the rows on screen");
 
