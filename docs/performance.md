@@ -100,6 +100,39 @@ last values it knew meanwhile, and the user's for a root never read), the agent 
 project's `.editora/settings.json` writes (`project-settings-write`) and the shared run configurations.
 `StoresOffFxThreadFxTest` drives these paths and checks that none of their `BlockingSites` is heard on the FX thread.
 
+The programs Editora starts follow it too (PERF-01, Pauta 6.0.1). `RunService` and `BuildService` start on a virtual
+thread per start (`run-start`, `build-start`): the PATH lookup, `BusyExecutable.start` (and its retry sleep), the
+container or WSL target's start and `ProcessRegistry.track`. The press returns at once; `isRunning()` is true from
+it, so a second press starts nothing; a Stop, typed input or End Input meanwhile is kept and applied once the
+program has started; `onStart` is queued on the pump before the first line (`OutputPump.postStart`, after which a
+drop notice comes) and a failure comes back as `onError` on the FX thread. The debugged program's start
+(`Debuggee.start`) answers with a future. Lower down, a ledger write asked on the FX thread is queued on the
+`editora-process-reaper` thread, and so is `killTree`'s walk of the process table; `augmentedPath()` is never built on
+the FX thread (a cold one answers with the inherited PATH and the extra folders, and starts the warm-up, which the
+launch's config-prefetch thread also starts); `GitService.gitAvailable()` never probed answers true there and probes
+on `git-version-probe`; a local Run in Terminal opens through `Factory.background`; the MCP endpoint file is written
+on `mcp-endpoint`. Planning reads moved with them: a build's wrapper, trust summary and JDK environment
+(`BuildCoordinator.plan` on `build-plan`, under a `planning` guard), a Java debug launch's main class, package clause,
+class-file check and launch config (`java-launch-plan`), a Kotlin program's plan and jar (`RunCoordinator.offFx`,
+under `locatingProgram`), Maven Update Versions' pom read, the Git Log's shallow check, a shell tab's close question
+and the Project panel's confirmed delete (`project-delete`, `gio trash` included). Each names its `BlockingSites`;
+`ProcessesOffFxThreadFxTest` drives Run (a Java file, a script, Stop), Run in Terminal, Maven and Gradle builds, Git,
+gpg, the Doctor, Update Versions and a mapped folder's program, and `DebugProgramConsoleFxTest` a Java debug launch.
+Every Run and Debug launch reads what it plans by on a thread of its own before it goes on on the FX thread: a
+script configuration (`ScriptConfigPlan`, `run-config-plan`), a JVM script, a native, Go or Rust file, a Java
+configuration, the build before a launch, the Maven classpath, Run File (`run-file-plan`) and the gutter's main class in
+`RunCoordinator` (its `planner`, a test seam); Debug's adapters file, `launch.json` and `tasks.json`, configurations,
+Go, Rust, C/C++ and C# roots, Kotlin, Debug File's lookups and Debug via Build Tool through `DebugPlanning` (`planner`,
+static, a test seam). Small stats asked again and again on the FX thread answer from `perf/Looked`, a memory a plan's
+look refreshes (`JavaProjectRoot.find`, `JdkToolchain.isGone`, `inheritedJavaExecutable`, `BuildBeforeLaunch.toolAt`,
+`JavaLaunchPlan.Inputs`, a bare name on PATH, a build wrapper, the trust question's summary; detection warms the
+wrapper and the summary for the tasks tree's header and the Settings row). A window close's question about busy
+terminals answers from each local shell's watcher and the last answer of a remote host; the MCP server binds on
+`mcp-start`. What still reads the disk on the FX thread: the first look at a key no plan looked at (each named to
+`BlockingSites`), Debug's core dump and C# assembly stats, Git's path stats (clone destination, `nearestRepository`,
+untracked folders), Diff's and the Doctor's single stats, a New Maven Project's follow-up (`afterGenerate`), and a
+remote terminal never asked yet (left out of the close question).
+
 ### 2. Debounce and coalesce
 
 Re-highlighting is debounced; overlay/ruler/minimap redraws coalesce to **one per pulse** with

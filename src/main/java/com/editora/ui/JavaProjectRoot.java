@@ -24,9 +24,15 @@ final class JavaProjectRoot {
         if (file == null) {
             return null;
         }
-        List<String> markers = new ArrayList<>();
-        markers.addAll(BuildTool.MAVEN.markers());
-        markers.addAll(BuildTool.GRADLE.markers());
-        return RootResolver.findMarkerRoot(file, markers, true);
+        return FOUND.get(file);
     }
+
+    /** The walk up the folders: off the FX thread by a launch's plan, answered from memory on it (PERF-01). */
+    private static final com.editora.perf.Looked<Path, Path> FOUND =
+            new com.editora.perf.Looked<>("JavaProjectRoot.find", file -> {
+                List<String> markers = new ArrayList<>();
+                markers.addAll(BuildTool.MAVEN.markers());
+                markers.addAll(BuildTool.GRADLE.markers());
+                return RootResolver.findMarkerRoot(file, markers, true);
+            });
 }

@@ -39,12 +39,18 @@ public final class JdkToolchain {
         if (home.isEmpty()) {
             return false;
         }
-        try {
-            return !java.nio.file.Files.isRegularFile(Path.of(javaExecutable(home)));
-        } catch (RuntimeException e) {
-            return false; // not a path this machine reads: left to the launch
-        }
+        return Boolean.TRUE.equals(GONE.get(home));
     }
+
+    /** The stat of a JDK's {@code java}: off the FX thread by a launch's plan, from memory on it (PERF-01). */
+    private static final com.editora.perf.Looked<String, Boolean> GONE =
+            new com.editora.perf.Looked<>("JdkToolchain.isGone", home -> {
+                try {
+                    return !java.nio.file.Files.isRegularFile(Path.of(javaExecutable(home)));
+                } catch (RuntimeException e) {
+                    return false; // not a path this machine reads: left to the launch
+                }
+            });
 
     /**
      * The {@code java} a launch uses with no JDK selected (review D18): {@code $JAVA_HOME/bin/java} when
@@ -57,13 +63,20 @@ public final class JdkToolchain {
         if (home.isEmpty()) {
             return "";
         }
-        try {
-            Path executable = Path.of(home).resolve("bin").resolve(isWindows() ? "java.exe" : "java");
-            return Files.isRegularFile(executable) ? executable.toString() : "";
-        } catch (RuntimeException notAPath) {
-            return "";
-        }
+        String found = INHERITED.get(home);
+        return found == null ? "" : found;
     }
+
+    /** {@code $JAVA_HOME/bin/java} when it is there: off the FX thread by a plan, from memory on it (PERF-01). */
+    private static final com.editora.perf.Looked<String, String> INHERITED =
+            new com.editora.perf.Looked<>("JdkToolchain.inheritedJavaExecutable", home -> {
+                try {
+                    Path executable = Path.of(home).resolve("bin").resolve(isWindows() ? "java.exe" : "java");
+                    return Files.isRegularFile(executable) ? executable.toString() : "";
+                } catch (RuntimeException notAPath) {
+                    return "";
+                }
+            });
 
     /** {@link #javaExecutable} of the selected JDK, else {@link #inheritedJavaExecutable} of this process's environment. */
     public static String javaExecutableOrInherited(String jdkHome) {

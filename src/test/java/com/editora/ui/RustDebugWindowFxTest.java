@@ -42,6 +42,8 @@ class RustDebugWindowFxTest {
 
     @BeforeAll
     void setUp() throws Exception {
+        // Debug's plans read in place: these tests read what a command said as soon as it returns.
+        DebugPlanning.planner = (name, task) -> task.run();
         assumeFalse(java.io.File.pathSeparatorChar == ';', "the stand-ins are shell scripts");
         FxTestSupport.bootToolkit();
         adapter = new FakeDebugAdapter(false);
@@ -91,6 +93,7 @@ class RustDebugWindowFxTest {
 
     @AfterAll
     void tearDown() throws Exception {
+        DebugPlanning.planner = (name, task) -> Thread.ofVirtual().name(name).start(task);
         if (fx != null) {
             fx.dispose();
         }

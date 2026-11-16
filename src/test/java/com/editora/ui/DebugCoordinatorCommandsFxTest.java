@@ -266,6 +266,9 @@ class DebugCoordinatorCommandsFxTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        // Debug's and Run's plans read in place: these tests read what a command said as soon as it returns.
+        // ProcessesOffFxThreadFxTest and DebugProgramConsoleFxTest drive the real planner threads.
+        DebugPlanning.planner = (name, task) -> task.run();
         Files.writeString(project.resolve("pom.xml"), "<project/>\n");
         adapter = FakeDebugAdapter.javaDebug();
         replies.put("vscode.java.startDebugSession", adapter.port());
@@ -294,6 +297,7 @@ class DebugCoordinatorCommandsFxTest {
 
     @AfterEach
     void tearDown() throws Exception {
+        DebugPlanning.planner = (name, task) -> Thread.ofVirtual().name(name).start(task);
         FxTestSupport.runOnFx(() -> {
             debug.shutdown();
             dap.shutdown();

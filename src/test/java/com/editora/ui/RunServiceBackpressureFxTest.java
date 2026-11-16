@@ -264,11 +264,12 @@ class RunServiceBackpressureFxTest {
             }
         });
 
-        assertTrue(started.await(5, TimeUnit.SECONDS));
-        Process process = awaitProcess(service);
+        Process process = awaitProcess(service); // started off the FX thread, which is busy
         assertTrue(process.waitFor(15, TimeUnit.SECONDS));
         releaseFx.countDown();
         assertTrue(exited.await(10, TimeUnit.SECONDS));
+        assertTrue(started.await(1, TimeUnit.SECONDS));
+        assertEquals("start", events.get(0), "onStart comes before any output, once the UI is free");
 
         assertTrue(events.contains("[output truncated while the UI was busy]"));
         assertTrue(events.size() < 5_000, "the FX queue must stay bounded, got " + events.size());
@@ -320,12 +321,12 @@ class RunServiceBackpressureFxTest {
                 Thread.currentThread().interrupt();
             }
         });
-        assertTrue(started.await(5, TimeUnit.SECONDS));
-        Process process = awaitProcess(service);
+        Process process = awaitProcess(service); // started off the FX thread, which is busy
         assertTrue(process.waitFor(30, TimeUnit.SECONDS));
         Thread.sleep(300);
         releaseFx.countDown();
         assertTrue(exited.await(20, TimeUnit.SECONDS));
+        assertTrue(started.await(1, TimeUnit.SECONDS));
 
         List<String> all = new ArrayList<>(lines);
         assertTrue(all.contains(com.editora.process.OutputPump.OUTPUT_DROPPED), "the flood did overflow");

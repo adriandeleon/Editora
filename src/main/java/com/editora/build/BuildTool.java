@@ -661,6 +661,22 @@ public enum BuildTool {
      */
     private static @Nullable Path wrapperFile(
             Path root, Path projectRoot, boolean isWindows, String unixName, String windowsName) {
+        return WRAPPERS.get(new WrapperKey(root, projectRoot, isWindows, unixName, windowsName));
+    }
+
+    private record WrapperKey(
+            Path root, @Nullable Path projectRoot, boolean isWindows, String unixName, String windowsName) {}
+
+    /**
+     * The wrapper lookups: made off the FX thread by detection and by a build's or a launch's plan, answered from
+     * memory on it — the tasks tree's header, the Settings row, a build before a launch (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<WrapperKey, Path> WRAPPERS = new com.editora.perf.Looked<>(
+            "BuildTool.wrapperFile",
+            k -> lookWrapperFile(k.root(), k.projectRoot(), k.isWindows(), k.unixName(), k.windowsName()));
+
+    private static @Nullable Path lookWrapperFile(
+            Path root, @Nullable Path projectRoot, boolean isWindows, String unixName, String windowsName) {
         if (!com.editora.process.ExecTargets.runsHere(root)) {
             isWindows = false; // a remote host, a container, WSL: POSIX, whatever this machine is
         }

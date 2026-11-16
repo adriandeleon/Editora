@@ -240,10 +240,16 @@ class MainControllerWindowFxTest {
                     ButtonBar.ButtonData.OK_DONE, () -> FxTestSupport.invoke(controller, "toggleMcpSupport"));
             assertEquals(1, asked.size());
             assertTrue(settings.isMcpSupport());
-            com.editora.mcp.McpServer server = (com.editora.mcp.McpServer) getStatic("mcpServer");
-            assertNotNull(server);
-            assertTrue(server.isRunning());
+            assertNotNull(getStatic("mcpServer"));
             assertSame(controller, getStatic("mcpOwner"));
+        });
+        // The server binds and starts off the FX thread (PERF-01); the status bar says so when it lands.
+        com.editora.mcp.McpServer server =
+                (com.editora.mcp.McpServer) FxTestSupport.callOnFx(() -> getStatic("mcpServer"));
+        awaitRunning(server, true);
+        FxTestSupport.runOnFx(() -> {
+            Label indicator = statusSegment("mcp");
+            assertTrue(server.isRunning());
             assertTrue(indicator.isVisible());
             assertEquals(tr("status.toggle.mcp", tr("common.on")), echoNow());
             assertTrue(server.url().startsWith("http://127.0.0.1:"), "loopback only: " + server.url());
@@ -257,15 +263,15 @@ class MainControllerWindowFxTest {
                     copied);
 
             // Off again needs no notice.
-            asked = SettingsRig.answering(
+            List<SettingsRig.Shown> asked = SettingsRig.answering(
                     ButtonBar.ButtonData.OK_DONE, () -> FxTestSupport.invoke(controller, "toggleMcpSupport"));
             assertEquals(List.of(), asked);
             assertFalse(settings.isMcpSupport());
-            assertFalse(server.isRunning());
             assertNull(getStatic("mcpServer"));
             assertFalse(indicator.isVisible());
             assertEquals(tr("status.toggle.mcp", tr("common.off")), echoNow());
         });
+        awaitRunning(server, false);
     }
 
     @Test
@@ -274,7 +280,11 @@ class MainControllerWindowFxTest {
         FxTestSupport.runOnFx(() -> {
             settings.setMcpSupport(true);
             FxTestSupport.invoke(controller, "applyMcpSupport");
-            com.editora.mcp.McpServer server = (com.editora.mcp.McpServer) getStatic("mcpServer");
+        });
+        com.editora.mcp.McpServer server =
+                (com.editora.mcp.McpServer) FxTestSupport.callOnFx(() -> getStatic("mcpServer"));
+        awaitRunning(server, true);
+        FxTestSupport.runOnFx(() -> {
             assertSame(controller, getStatic("mcpOwner"));
             String url = server.url();
 
@@ -297,9 +307,9 @@ class MainControllerWindowFxTest {
             // Switched off: the window that owns it now is the one that stops it.
             settings.setMcpSupport(false);
             FxTestSupport.invoke(second, "applyMcpSupport");
-            assertFalse(server.isRunning());
             assertNull(getStatic("mcpOwner"));
         });
+        awaitRunning(server, false);
     }
 
     @Test
@@ -307,15 +317,32 @@ class MainControllerWindowFxTest {
         FxTestSupport.runOnFx(() -> {
             settings.setMcpSupport(true);
             FxTestSupport.invoke(controller, "applyMcpSupport");
-            com.editora.mcp.McpServer server = (com.editora.mcp.McpServer) getStatic("mcpServer");
-            assertTrue(server.isRunning());
-
+        });
+        com.editora.mcp.McpServer server =
+                (com.editora.mcp.McpServer) FxTestSupport.callOnFx(() -> getStatic("mcpServer"));
+        awaitRunning(server, true);
+        FxTestSupport.runOnFx(() -> {
             FxTestSupport.invoke(controller, "stopMcpIfOwner");
-            assertFalse(server.isRunning());
             assertNull(getStatic("mcpServer"));
             assertNull(getStatic("mcpOwner"));
             settings.setMcpSupport(false);
         });
+        awaitRunning(server, false);
+    }
+
+    /** Waits, off the FX thread, for the server's start or stop made in the background to land. */
+    private void awaitRunning(com.editora.mcp.McpServer server, boolean running) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (server.isRunning() != running && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertEquals(running, server.isRunning(), running ? "the server started" : "the server stopped");
+        if (running) { // the status bar is told on the FX thread just after
+            while (!FxTestSupport.callOnFx(() -> statusSegment("mcp").isVisible()) && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+        }
+        FxTestSupport.drainFx();
     }
 
     // --- projects --------------------------------------------------------------------------------

@@ -347,6 +347,28 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     }
 
     /**
+     * As {@link #started}, for a program that is still being started off the FX thread (PERF-01, Pauta 6.0.1): Stop
+     * already applies, the input waits for {@link #runningAs}, so what is typed follows the command line.
+     */
+    public void starting(@Nullable String label) {
+        started(label);
+        input.setDisable(true);
+        endInputButton.setDisable(true);
+    }
+
+    /**
+     * The program a run {@link #starting} with has started as {@code commandLine}: the header names it, and the
+     * input opens. The console is not cleared again.
+     */
+    public void runningAs(String commandLine) {
+        status.setText(tr("run.running", commandLine));
+        if (running.get()) {
+            input.setDisable(false);
+            endInputButton.setDisable(false);
+        }
+    }
+
+    /**
      * Writes the command line that was started as the console's first, muted line — which interpreter ran,
      * with which flags, on which file — the way IDEs open a run's console.
      */

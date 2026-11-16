@@ -88,8 +88,27 @@ public final class RunService {
      * "running" forever.
      */
     public boolean isRunning() {
-        return current != null;
+        return current != null || starting;
     }
+
+    /**
+     * True from {@link #runInDir} until the program has started (or failed to) on the {@code run-start} thread
+     * (PERF-01, Pauta 6.0.1: the PATH lookup, the start and the ledger write never run on the FX thread). A second
+     * press meanwhile finds the service running and starts nothing.
+     */
+    private volatile boolean starting;
+
+    /** Stop was pressed while the program was being started: it is ended as soon as it has started. */
+    private volatile boolean stopWhileStarting;
+
+    /** {@link #shutdown} came while a start was under way: the program is ended and nothing is reported. */
+    private volatile boolean shutDown;
+
+    /** {@link #closeInput} came while the program was being started. */
+    private volatile boolean closeInputWhenStarted;
+
+    /** Where a program is started: a virtual thread per start. TEST SEAM — a test may hold the starts. */
+    java.util.concurrent.Executor starter = com.editora.process.BlockingTasks.named("run-start");
 
     /** The running process's id, or {@code -1} when nothing is running. */
     public long pid() {
@@ -120,15 +139,38 @@ public final class RunService {
     }
 
     /**
+     * Guards the hand-over from {@code starting} to {@link #current} against input sent meanwhile: what is typed
+     * (or ended) while the program is being started is kept, and written once it has started, in order.
+     */
+    private final Object inputLock = new Object();
+
+    /** Lines sent while the program was being started, in order; written as soon as it has started. */
+    private final List<String> pendingInput = new java.util.ArrayList<>();
+
+    /**
      * Writes one line to the running process's stdin (for programs reading the console, e.g. a compact
-     * source file calling {@code IO.readln}). Lines arrive in the order they were sent. No-op when nothing
-     * is running.
+     * source file calling {@code IO.readln}). Lines arrive in the order they were sent; one sent while the program
+     * is being started is written once it has started. No-op when nothing is running.
      */
     public void sendInput(String line) {
-        Process p = current;
-        if (p == null || !p.isAlive() || line == null) {
+        if (line == null) {
             return;
         }
+        Process p;
+        synchronized (inputLock) {
+            p = current;
+            if (p == null && starting) {
+                pendingInput.add(line);
+                return;
+            }
+        }
+        if (p == null || !p.isAlive()) {
+            return;
+        }
+        write(p, line);
+    }
+
+    private void write(Process p, String line) {
         stdinWriter.execute(() -> {
             try {
                 byte[] bytes = inputLine(
@@ -144,14 +186,24 @@ public final class RunService {
     /**
      * Closes the running process's stdin, so anything that reads it sees end of input instead of waiting for
      * text nobody can type — for a child started where there is no console input field (a debug session's
-     * before-launch step), or when the user ends the input. Lines already sent are written first. No-op
-     * when nothing is running.
+     * before-launch step), or when the user ends the input. Lines already sent are written first; asked while the
+     * program is being started, it is done once it has started. No-op when nothing is running.
      */
     public void closeInput() {
-        Process p = current;
-        if (p == null) {
-            return;
+        Process p;
+        synchronized (inputLock) {
+            p = current;
+            if (p == null && starting) {
+                closeInputWhenStarted = true;
+                return;
+            }
         }
+        if (p != null) {
+            close(p);
+        }
+    }
+
+    private void close(Process p) {
         stdinWriter.execute(() -> {
             try {
                 p.getOutputStream().close();
@@ -159,6 +211,21 @@ public final class RunService {
                 // already gone
             }
         });
+    }
+
+    /** Makes {@code process} the running one and writes what was typed, or ended, while it was being started. */
+    private void publish(Process process) {
+        synchronized (inputLock) {
+            current = process; // before starting is cleared: isRunning() never reads false in between
+            starting = false;
+            for (String line : pendingInput) {
+                write(process, line);
+            }
+            pendingInput.clear();
+            if (closeInputWhenStarted) {
+                close(process);
+            }
+        }
     }
 
     /**
@@ -294,32 +361,82 @@ public final class RunService {
         if (argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }
+        synchronized (inputLock) {
+            starting = true;
+            pendingInput.clear();
+            closeInputWhenStarted = false;
+        }
+        stopWhileStarting = false;
+        shutDown = false;
         int gen = pump.begin();
         boolean remote = workingDir != null && !com.editora.process.ExecTargets.runsHere(workingDir);
+        boolean merge = mergeErrorStream;
+        // Copies: the caller may reuse its lists, and the start reads them later on its own thread.
+        List<String> program = new java.util.ArrayList<>(argv);
+        java.util.Map<String, String> environment =
+                env == null ? java.util.Map.of() : new java.util.LinkedHashMap<>(env); // a null value unsets
+        starter.execute(() -> start(gen, workingDir, program, environment, remote, merge, listener));
+    }
+
+    /**
+     * Finds, starts and tracks the program on the {@code run-start} thread, then hands it to the readers. What the
+     * listener hears keeps its order: {@code onStart} is queued on the pump before the first line of output, and a
+     * start that fails reports {@code onError} on the FX thread as before.
+     */
+    private void start(
+            int gen,
+            @Nullable Path workingDir,
+            List<String> argv,
+            java.util.Map<String, String> env,
+            boolean remote,
+            boolean merge,
+            Listener listener) {
         // Elsewhere (a remote host, a container, WSL) the program is found on that PATH, and nothing of this
         // machine's environment goes.
-        List<String> command = remote ? argv : ProcessRunner.resolveExecutable(argv);
+        List<String> command;
         Process process;
         try {
+            command = remote ? argv : ProcessRunner.resolveExecutable(argv);
             process = remote
                     ? startRemote(workingDir, command, env)
                     : com.editora.process.BusyExecutable.start(
-                            processBuilder(workingDir, command, env).redirectErrorStream(mergeErrorStream));
+                            processBuilder(workingDir, command, env).redirectErrorStream(merge));
             // Track it: the JVM shutdown hook + the orphan reaper only know about tracked processes, so an
             // untracked long-lived program (a dev server) outlived the app and wasn't reaped on the next launch.
             com.editora.process.ProcessRegistry.track(process);
-        } catch (IOException e) {
-            listener.onError(e.getMessage() == null ? e.toString() : e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            String message = e.getMessage() == null ? e.toString() : e.getMessage();
+            Platform.runLater(() -> {
+                synchronized (inputLock) {
+                    starting = false;
+                    pendingInput.clear();
+                }
+                if (!shutDown) {
+                    listener.onError(message);
+                }
+            });
             return;
         }
-        current = process;
+        if (shutDown) {
+            synchronized (inputLock) {
+                starting = false;
+                pendingInput.clear();
+            }
+            com.editora.process.ProcessRegistry.killTree(process);
+            return;
+        }
         posixShell = isPosixShell(argv.get(0));
         // Python and Node (and the package managers that start it) get SIGINT first, so a KeyboardInterrupt or a
         // process.on('SIGINT') handler runs its cleanup before the grace-period kill.
         interruptOnStop = !remote
                 && (com.editora.run.PythonLaunch.isPythonProgram(argv.get(0))
                         || NodeRunPlan.interruptsOnStop(argv.get(0)));
-        listener.onStart(commandLine(command));
+        publish(process);
+        if (stopWhileStarting) {
+            stop(); // Stop came while it was starting: it starts, is ended, and its exit is reported as usual
+        }
+        String shown = commandLine(command);
+        pump.postStart(gen, () -> listener.onStart(shown));
         OutputPump.Sink sink = new OutputPump.Sink() {
             @Override
             public void line(String text, boolean stderr) {
@@ -415,6 +532,10 @@ public final class RunService {
      */
     public void stop() {
         Process p = current;
+        if (p == null && starting) {
+            stopWhileStarting = true; // ended as soon as it has started
+            p = current; // unless it started meanwhile, past the start thread's look at the flag
+        }
         if (p != null && p.isAlive()) {
             if (interruptOnStop) {
                 // Python: SIGINT first (KeyboardInterrupt), so cleanup runs; killed after the grace period.
@@ -427,6 +548,7 @@ public final class RunService {
 
     /** Final owner shutdown: stop the process and discard callbacks queued for a window that is closing. */
     public void shutdown() {
+        shutDown = true;
         pump.cancel();
         Process p = current;
         current = null;

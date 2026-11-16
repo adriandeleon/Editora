@@ -116,11 +116,11 @@ class BuildServiceBackpressureFxTest {
                 service.run(Path.of("."), javaCommand("tail"), recorder);
                 awaitQuietly(releaseFx);
             });
-            assertTrue(recorder.started.await(10, TimeUnit.SECONDS));
-            Process process = awaitProcess(service);
+            Process process = awaitProcess(service); // started off the FX thread, which is busy
             assertTrue(process.waitFor(30, TimeUnit.SECONDS), "the tool has exited while the UI was busy");
             releaseFx.countDown();
             assertTrue(recorder.exited.await(30, TimeUnit.SECONDS));
+            assertTrue(recorder.started.await(1, TimeUnit.SECONDS), "onStart came first, once the UI was free");
 
             List<String> events = List.copyOf(recorder.events);
             assertEquals("exit:0", events.get(events.size() - 1), "nothing is delivered after the exit");
@@ -150,8 +150,7 @@ class BuildServiceBackpressureFxTest {
                 service.run(Path.of("."), javaCommand(), recorder);
                 awaitQuietly(releaseFx);
             });
-            assertTrue(recorder.started.await(10, TimeUnit.SECONDS));
-            Process process = awaitProcess(service);
+            Process process = awaitProcess(service); // started off the FX thread, which is busy
             // 2 MB of output against a 256 KB queue and a 64 KB pipe: with backpressure the child cannot
             // finish while the UI is blocked. Unbounded, it finished at once and the lines piled up.
             assertFalse(
@@ -204,8 +203,7 @@ class BuildServiceBackpressureFxTest {
                 service.run(Path.of("."), javaCommand(), recorder);
                 awaitQuietly(releaseFx);
             });
-            assertTrue(recorder.started.await(10, TimeUnit.SECONDS));
-            Process process = awaitProcess(service);
+            Process process = awaitProcess(service); // started off the FX thread, which is busy
 
             service.shutdown(); // off the FX thread, as a window close racing a flood would be
             assertTrue(process.waitFor(30, TimeUnit.SECONDS), "shutdown kills the build");
@@ -228,13 +226,20 @@ class BuildServiceBackpressureFxTest {
         }
     }
 
-    /** {@code current} is published on the FX thread before {@code onStart}, so it is set once started fired. */
-    private static Process awaitProcess(BuildService service) {
-        Process process = FxTestSupport.field(service, "current");
-        if (process == null) {
-            throw new AssertionError("build process never started");
+    /**
+     * The build's process, once the {@code build-start} thread has published it: the start is off the FX thread
+     * (PERF-01), so it is there while the FX thread is still busy, and {@code onStart} follows on that thread.
+     */
+    private static Process awaitProcess(BuildService service) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Process process = FxTestSupport.field(service, "current");
+            if (process != null) {
+                return process;
+            }
+            Thread.sleep(10);
         }
-        return process;
+        throw new AssertionError("build process never started");
     }
 
     private static boolean isWindows() {

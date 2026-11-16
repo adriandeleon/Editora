@@ -56,8 +56,23 @@ public final class BuildService {
      * "running" forever.
      */
     public boolean isRunning() {
-        return current != null;
+        return current != null || starting;
     }
+
+    /**
+     * True from {@link #run} until the build has started (or failed to) on the {@code build-start} thread
+     * (PERF-01, Pauta 6.0.1). A second press meanwhile finds the service running and starts nothing.
+     */
+    private volatile boolean starting;
+
+    /** Stop was pressed while the build was being started: it is ended as soon as it has started. */
+    private volatile boolean stopWhileStarting;
+
+    /** {@link #shutdown} came while a start was under way: the build is ended and nothing is reported. */
+    private volatile boolean shutDown;
+
+    /** Where a build is started: a virtual thread per start. TEST SEAM — a test may hold the starts. */
+    java.util.concurrent.Executor starter = com.editora.process.BlockingTasks.named("build-start");
 
     /** Launches {@code argv} in {@code workingDir} and streams output to {@code listener}. Refuses to start
      *  if a previous run is still alive (stop it first). All listener callbacks run on the FX thread. */
@@ -83,24 +98,61 @@ public final class BuildService {
         if (workingDir == null || argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }
+        starting = true;
+        stopWhileStarting = false;
+        shutDown = false;
         int gen = pump.begin();
         boolean remote = !com.editora.process.ExecTargets.runsHere(workingDir);
-        List<String> command = remote ? argv : ProcessRunner.resolveExecutable(argv);
+        // Copies: the caller may reuse its lists, and the start reads them later on its own thread.
+        List<String> program = List.copyOf(argv);
+        Map<String, String> env = environment == null ? Map.of() : new java.util.LinkedHashMap<>(environment);
+        starter.execute(() -> start(gen, workingDir, program, env, remote, listener));
+    }
+
+    /**
+     * Finds, starts and tracks the build on the {@code build-start} thread, then hands it to the readers.
+     * {@code onStart} is queued on the pump before the first line of output; a failed start reports
+     * {@code onError} on the FX thread.
+     */
+    private void start(
+            int gen,
+            Path workingDir,
+            List<String> argv,
+            Map<String, String> environment,
+            boolean remote,
+            Listener listener) {
+        List<String> command;
         Process process;
         try {
+            command = remote ? argv : ProcessRunner.resolveExecutable(argv);
             // A remote build runs on its host, long-lived so Stop and a lost connection end the whole tree.
             process = remote
                     ? com.editora.run.RunService.startRemote(workingDir, command, environment)
                     : BusyExecutable.start(processBuilder(workingDir, command, environment));
             com.editora.process.ProcessRegistry.track(process); // so the shutdown hook / reaper can kill it
-
-        } catch (IOException e) {
-            listener.onError(e.getMessage() == null ? e.toString() : e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            String message = e.getMessage() == null ? e.toString() : e.getMessage();
+            javafx.application.Platform.runLater(() -> {
+                starting = false;
+                if (!shutDown) {
+                    listener.onError(message);
+                }
+            });
             return;
         }
-        current = process;
+        if (shutDown) {
+            starting = false;
+            com.editora.process.ProcessRegistry.killTree(process);
+            return;
+        }
         interruptOnStop = !remote && com.editora.run.NodeRunPlan.interruptsOnStop(command.get(0));
-        listener.onStart(String.join(" ", command));
+        current = process; // before starting is cleared: isRunning() never reads false in between
+        starting = false;
+        if (stopWhileStarting) {
+            stop();
+        }
+        String shown = String.join(" ", command);
+        pump.postStart(gen, () -> listener.onStart(shown));
         OutputPump.Sink sink = listener::onOutput;
         OutputPump.Feed stdout = pump.start(process.getInputStream(), false, gen, sink);
         OutputPump.Feed stderr = pump.start(process.getErrorStream(), true, gen, sink);
@@ -142,6 +194,10 @@ public final class BuildService {
      */
     public void stop() {
         Process p = current;
+        if (p == null && starting) {
+            stopWhileStarting = true; // ended as soon as it has started
+            p = current; // unless it started meanwhile, past the start thread's look at the flag
+        }
         if (p != null && p.isAlive()) {
             if (interruptOnStop) {
                 // npm/pnpm/yarn/bun scripts: SIGINT first, as Ctrl+C in a terminal, so a script's own
@@ -155,6 +211,7 @@ public final class BuildService {
 
     /** Final owner shutdown: stop the process and discard callbacks queued for a window that is closing. */
     public void shutdown() {
+        shutDown = true;
         pump.cancel();
         Process p = current;
         current = null;

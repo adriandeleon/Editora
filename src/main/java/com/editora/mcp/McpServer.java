@@ -48,7 +48,7 @@ public final class McpServer {
     /** Replaced by {@link #newToken()}; read on every request's worker thread. */
     private volatile String token;
 
-    private @Nullable HttpServer server;
+    private volatile @Nullable HttpServer server;
     private @Nullable ExecutorService pool;
 
     public McpServer(McpBridge bridge, Path configDir) {
@@ -85,12 +85,13 @@ public final class McpServer {
         return server.getAddress().getPort();
     }
 
-    public synchronized boolean isRunning() {
+    public boolean isRunning() {
         return server != null;
     }
 
-    public synchronized int port() {
-        return server == null ? -1 : server.getAddress().getPort();
+    public int port() {
+        HttpServer s = server;
+        return s == null ? -1 : s.getAddress().getPort();
     }
 
     public String token() {
@@ -109,8 +110,9 @@ public final class McpServer {
     }
 
     /** The loopback endpoint URL, or {@code ""} when not running. */
-    public synchronized String url() {
-        return server == null ? "" : "http://127.0.0.1:" + port() + "/mcp";
+    public String url() {
+        int port = port();
+        return port < 0 ? "" : "http://127.0.0.1:" + port + "/mcp";
     }
 
     /** Stops the server + its thread pool and removes the endpoint file (idempotent). */
@@ -123,11 +125,54 @@ public final class McpServer {
             pool.shutdownNow();
             pool = null;
         }
+        Path file = configDir.resolve(ENDPOINT_FILE);
+        endpointFile(() -> {
+            com.editora.perf.BlockingSites.enter("McpServer.stop");
+            try {
+                Files.deleteIfExists(file);
+            } catch (IOException ignored) {
+                // best-effort cleanup; a file left behind is reaped at the next launch (its pid is gone)
+            }
+        });
+    }
+
+    /**
+     * The endpoint file's writes and its delete, in the order asked, on a thread of their own (PERF-01, Pauta 6.0.1:
+     * Start, New Token and Stop are asked on the FX thread). One daemon thread, made at the first use.
+     */
+    private static final java.util.concurrent.ExecutorService ENDPOINT_IO = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "mcp-endpoint");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * Runs {@code work} on {@code mcp-endpoint}: queued when asked on the FX thread, waited for on any other (so a
+     * caller there finds the file as it left it, as before).
+     */
+    private static void endpointFile(Runnable work) {
+        java.util.concurrent.Future<?> done;
         try {
-            Files.deleteIfExists(configDir.resolve(ENDPOINT_FILE));
-        } catch (IOException ignored) {
-            // best-effort cleanup
+            done = ENDPOINT_IO.submit(work);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            work.run();
+            return;
         }
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            return;
+        }
+        try {
+            done.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException e) {
+            LOG.log(Level.WARNING, "Could not update " + ENDPOINT_FILE, e.getCause());
+        }
+    }
+
+    /** TEST SEAM — waits until the endpoint file's queued writes and deletes are done. */
+    static void awaitEndpointFileForTest() throws Exception {
+        ENDPOINT_IO.submit(() -> {}).get(30, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     // --- request handling -------------------------------------------------------------------------
@@ -235,16 +280,20 @@ public final class McpServer {
         // recorded pid + start instant let reapStaleEndpoint tell a live server from a dead one, safely
         // against a reused PID (mirrors ProcessRegistry.reapOrphans).
         node.put("pid", ProcessHandle.current().pid());
-        currentProcessStartMillis().ifPresent(ms -> node.put("startMillis", ms));
-        try {
-            Path file = configDir.resolve(ENDPOINT_FILE);
-            Files.createDirectories(configDir);
-            restrictToOwner(configDir, "rwx------");
-            mapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), node);
-            restrictToOwner(file, "rw-------");
-        } catch (IOException e) {
-            LOG.log(Level.WARNING, "Could not write " + ENDPOINT_FILE, e);
-        }
+        Path dir = configDir;
+        endpointFile(() -> {
+            com.editora.perf.BlockingSites.enter("McpServer.writeEndpointFile");
+            currentProcessStartMillis().ifPresent(ms -> node.put("startMillis", ms));
+            try {
+                Path file = dir.resolve(ENDPOINT_FILE);
+                Files.createDirectories(dir);
+                restrictToOwner(dir, "rwx------");
+                mapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), node);
+                restrictToOwner(file, "rw-------");
+            } catch (IOException e) {
+                LOG.log(Level.WARNING, "Could not write " + ENDPOINT_FILE, e);
+            }
+        });
     }
 
     /** This JVM process's start instant as epoch millis, if the OS exposes it. */

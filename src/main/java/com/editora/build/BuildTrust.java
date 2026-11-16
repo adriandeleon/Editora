@@ -73,6 +73,18 @@ public final class BuildTrust {
     }
 
     public static Summary describe(BuildTool tool, Path root, @Nullable Path wrapper, String projectOverride) {
+        Summary known = DESCRIBED.get(new Asked(tool, root, wrapper, projectOverride));
+        return known != null ? known : look(tool, root, wrapper, projectOverride);
+    }
+
+    private record Asked(
+            BuildTool tool, Path root, @Nullable Path wrapper, String projectOverride) {}
+
+    /** What the question lists: read off the FX thread by a build's plan and by detection, from memory on it. */
+    private static final com.editora.perf.Looked<Asked, Summary> DESCRIBED = new com.editora.perf.Looked<>(
+            "BuildTrust.describe", a -> look(a.tool(), a.root(), a.wrapper(), a.projectOverride()));
+
+    private static Summary look(BuildTool tool, Path root, @Nullable Path wrapper, String projectOverride) {
         List<String> items = new ArrayList<>();
         if (wrapper != null) {
             items.add(tr("trust.item.wrapper", wrapper.getFileName().toString()));

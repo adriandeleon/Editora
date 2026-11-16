@@ -86,9 +86,31 @@ public final class ReadPromptShim {
         return env;
     }
 
+    /** Writes the shim now, on this thread (the launch's PATH warm-up), so a Run on the FX thread finds it. */
+    public static void prepare() {
+        file();
+    }
+
+    private static boolean onFxThread() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
     /** The shim written once per process to a temp file (deleted on exit); null when that failed. */
     static @Nullable Path file() {
         Path f = written;
+        if (onFxThread()) {
+            // PERF-01 (Pauta 6.0.1): the FX thread neither checks nor writes the file. It takes the one written
+            // (by the PATH warm-up, or an earlier run off the thread); with none yet, it is written for next time.
+            if (f == null) {
+                Thread.ofVirtual().name("read-prompt-shim").start(ReadPromptShim::file);
+            }
+            return f;
+        }
+        com.editora.perf.BlockingSites.enter("ReadPromptShim.file");
         if (f != null && Files.isRegularFile(f)) {
             return f;
         }

@@ -657,8 +657,10 @@ final class TerminalCoordinator {
     }
 
     /**
-     * Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run. Elsewhere it opens off the FX
-     * thread: an SSH channel waits on the host (and on a free long-lived slot), which froze the editor.
+     * Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run, always off the FX thread
+     * (PERF-01, Pauta 6.0.1): elsewhere an SSH channel waits on the host (and on a free long-lived slot), which froze
+     * the editor; here the PATH lookup, the fork and the ledger write are no work for it either. A program that
+     * cannot start ends its tab with the error, as one elsewhere does.
      */
     static TerminalConnector.Factory programConnector(
             @Nullable Path directory, List<String> argv, java.util.Map<String, String> env) {
@@ -670,7 +672,7 @@ final class TerminalCoordinator {
                 return new ChannelConnector(channel, remote.id());
             });
         }
-        return (columns, rows) -> {
+        return TerminalConnector.Factory.background((columns, rows) -> {
             LocalPtyConnector connector =
                     LocalShell.startProgram(argv, directory == null ? "" : directory.toString(), columns, rows, env);
             try {
@@ -680,7 +682,7 @@ final class TerminalCoordinator {
                         .warning("terminal program " + connector.pid() + " is not tracked: " + e);
             }
             return connector;
-        };
+        });
     }
 
     /**

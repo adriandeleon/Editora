@@ -378,6 +378,9 @@ class RunConfigurationCommandsFxTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        // Debug's and Run's plans read in place: these tests read what a command said as soon as it returns.
+        // ProcessesOffFxThreadFxTest and DebugProgramConsoleFxTest drive the real planner threads.
+        DebugPlanning.planner = (name, task) -> task.run();
         config = new ConfigManager(Files.createDirectories(dir.resolve("config")));
         registry = new CommandRegistry();
         lspManager = new LspManager((f, d) -> {}, (t, m) -> {});
@@ -397,6 +400,7 @@ class RunConfigurationCommandsFxTest {
             dap.configure(true, dir.resolve("no-plugin-here").toString());
             debug = new DebugCoordinator(windowHost, dap, lspManager, lsp, new DebugOps());
             run = new RunCoordinator(windowHost, new RunOps(opened));
+            run.planner = (name, task) -> task.run();
             coordinator = new RunConfigurationCoordinator(new Host());
             coordinator.sharedFiles = Runnable::run; // the shared file read and written in place: results at once
             coordinator.runConfigEditor = name -> opened.add("editor:" + name);
@@ -406,6 +410,7 @@ class RunConfigurationCommandsFxTest {
 
     @AfterEach
     void tearDown() throws Exception {
+        DebugPlanning.planner = (name, task) -> Thread.ofVirtual().name(name).start(task);
         FxTestSupport.runOnFx(() -> {
             run.shutdown();
             debug.shutdown();

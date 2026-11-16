@@ -539,6 +539,12 @@ public final class GitService {
         if (cached != null && cached.command().equals(command) && onFxThread()) {
             return cached.available(); // expired, but a probe is a process: the next lane task renews it
         }
+        if (onFxThread()) {
+            // Never probed (a command given before the first refresh's lane task): a probe is a process, never
+            // started or waited for here (PERF-01, Pauta 6.0.1). Taken as there until the probe, started now, says.
+            Thread.ofVirtual().name("git-version-probe").start(() -> probeVersion(command));
+            return true;
+        }
         probeVersion(command);
         Availability probed = gitAvailable;
         return probed != null && probed.available();

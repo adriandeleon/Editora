@@ -165,20 +165,46 @@ final class RunOpsHost implements RunCoordinator.Ops {
 
     @Override
     public boolean mavenProjectAt(java.nio.file.Path root) {
-        return root != null && java.nio.file.Files.isRegularFile(root.resolve("pom.xml"));
+        return root != null && buildFiles(root)[0];
     }
 
     @Override
     public boolean gradleProjectAt(java.nio.file.Path root) {
-        if (root == null) {
-            return false;
+        return root != null && buildFiles(root)[1];
+    }
+
+    /**
+     * Whether a folder holds a pom ({@code [0]}) and Gradle build files ({@code [1]}), as last looked. A launch's
+     * plan looks off the FX thread, which refreshes the answer; the FX thread then answers from it (PERF-01, Pauta
+     * 6.0.1), and looks itself only for a folder no plan has looked at.
+     */
+    private static final java.util.Map<java.nio.file.Path, boolean[]> BUILD_FILES =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Whether {@code root} holds a pom, as last looked ({@link #buildFiles}). */
+    static boolean isMavenProject(java.nio.file.Path root) {
+        return buildFiles(root)[0];
+    }
+
+    static boolean[] buildFiles(java.nio.file.Path root) {
+        boolean[] known = BUILD_FILES.get(root);
+        if (known != null && javafx.application.Platform.isFxApplicationThread()) {
+            return known;
         }
+        com.editora.perf.BlockingSites.enter("RunOpsHost.buildFiles");
+        boolean gradle = false;
         for (String m : List.of("build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")) {
             if (java.nio.file.Files.isRegularFile(root.resolve(m))) {
-                return true;
+                gradle = true;
+                break;
             }
         }
-        return false;
+        boolean[] now = {java.nio.file.Files.isRegularFile(root.resolve("pom.xml")), gradle};
+        if (BUILD_FILES.size() > 256) {
+            BUILD_FILES.clear(); // a bound: the folders of a session, not of all time
+        }
+        BUILD_FILES.put(root, now);
+        return now;
     }
 
     @Override
@@ -197,6 +223,15 @@ final class RunOpsHost implements RunCoordinator.Ops {
             List<String> result = com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome, executable, scope);
             Platform.runLater(() -> cb.accept(result));
         });
+    }
+
+    @Override
+    public void warmBuildExecutable(BuildTool tool, java.nio.file.Path root) {
+        for (BuildCoordinator c : mc.buildCoordinators) {
+            if (c.tool() == tool) {
+                c.warmTrustedExecutable(root, mc.projectRoot());
+            }
+        }
     }
 
     @Override
@@ -220,14 +255,20 @@ final class RunOpsHost implements RunCoordinator.Ops {
 
     @Override
     public void runGradleRunTask(java.nio.file.Path root) {
-        String task = com.editora.build.SpringBoot.gradleRunTask(
-                com.editora.build.SpringBoot.readGradleBuildFile(root)); // bootRun for Spring Boot
-        for (BuildCoordinator c : mc.buildCoordinators) {
-            if (c.tool() == BuildTool.GRADLE && c.isEnabled() && c.isDetected()) {
-                c.runTask(List.of(task), List.of());
-                return;
-            }
-        }
+        // The build script is read off the FX thread (PERF-01, Pauta 6.0.1): bootRun for Spring Boot.
+        DebugPlanning.offFx(
+                "gradle-run-task",
+                () -> com.editora.build.SpringBoot.gradleRunTask(
+                        com.editora.build.SpringBoot.readGradleBuildFile(root)),
+                a -> {
+                    String task = a.value();
+                    for (BuildCoordinator c : mc.buildCoordinators) {
+                        if (task != null && c.tool() == BuildTool.GRADLE && c.isEnabled() && c.isDetected()) {
+                            c.runTask(List.of(task), List.of());
+                            return;
+                        }
+                    }
+                });
     }
 
     @Override

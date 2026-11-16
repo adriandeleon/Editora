@@ -110,8 +110,7 @@ class OutputPumpContractFxTest {
                 service.run(Path.of("."), sh("echo one; echo two"), first);
                 awaitQuietly(releaseFx);
             });
-            assertTrue(first.started.await(10, TimeUnit.SECONDS));
-            Process process = FxTestSupport.field(service, "current");
+            Process process = awaitCurrent(service); // started off the FX thread, which is busy
             assertTrue(process.waitFor(30, TimeUnit.SECONDS));
             Thread.sleep(300); // the waiter has joined the readers and queued the exit behind the busy UI
 
@@ -121,6 +120,7 @@ class OutputPumpContractFxTest {
 
             releaseFx.countDown();
             assertTrue(first.exited.await(30, TimeUnit.SECONDS), "the first run's exit is delivered");
+            assertEquals(0, first.started.getCount(), "its start was reported too");
             assertEquals(List.of("one", "two", "exit:0"), List.copyOf(first.events));
             FxTestSupport.runOnFx(() -> assertFalse(service.isRunning()));
         } finally {
@@ -146,8 +146,7 @@ class OutputPumpContractFxTest {
                         Path.of("."), sh("i=0; while [ $i -lt 1000 ]; do echo line $i; i=$((i+1)); done"), recorder);
                 awaitQuietly(releaseFx);
             });
-            assertTrue(recorder.started.await(10, TimeUnit.SECONDS));
-            Process process = FxTestSupport.field(service, "current");
+            Process process = awaitCurrent(service); // started off the FX thread, which is busy
             assertTrue(process.waitFor(30, TimeUnit.SECONDS));
             Thread.sleep(300);
             releaseFx.countDown();
@@ -171,5 +170,18 @@ class OutputPumpContractFxTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** The build's process once the {@code build-start} thread has published it (PERF-01: not on the FX thread). */
+    private static Process awaitCurrent(BuildService service) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Process process = FxTestSupport.field(service, "current");
+            if (process != null) {
+                return process;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("the build never started");
     }
 }

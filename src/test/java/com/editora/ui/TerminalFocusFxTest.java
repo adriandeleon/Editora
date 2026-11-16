@@ -124,6 +124,13 @@ class TerminalFocusFxTest {
             FxTestSupport.runOnFx(
                     () -> terminals.panel().activeView().getSession().sendString("sleep 30\n"));
             await(() -> com.editora.terminal.RunningProgram.in(shell).contains("sleep"), "sleep running");
+            // The close question asks the shell's watcher, which reads /proc off the FX thread (PERF-01).
+            await(
+                    () -> call(() -> {
+                        var seen = terminals.panel().activeView().runningPrograms();
+                        return seen != null && seen.contains("sleep");
+                    }),
+                    "the watcher saw it");
 
             java.util.concurrent.CountDownLatch cancel =
                     w.answer(com.editora.i18n.Messages.tr("terminal.closeWindow.header"), "Cancel");

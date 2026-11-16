@@ -76,6 +76,7 @@ final class ChildProcesses {
     // them are read.
 
     private static Optional<List<Long>> linux(long pid) throws IOException {
+        com.editora.perf.BlockingSites.enter("ChildProcesses.linux");
         Path tasks = Path.of("/proc", Long.toString(pid), "task");
         // The kernel lacks the file altogether, as against the process having gone: only the
         // first is a reason to fall back.
