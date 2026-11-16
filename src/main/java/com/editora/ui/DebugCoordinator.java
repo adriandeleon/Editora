@@ -251,6 +251,9 @@ final class DebugCoordinator {
         /** Saves Settings' Don't step into filters ({@code debugStepFilterList}). */
         default void persistDebugStepFilters(List<com.editora.dap.StepFilter> filters) {}
 
+        /** Saves Go's Hide Runtime Goroutines and goroutine filter ({@code debugGo…}). */
+        default void persistGoGoroutines(boolean hideRuntime, String filter) {}
+
         /** The per-file breakpoint map ({@code breakpoints.json}); path-string → that file's breakpoints. */
         Map<String, List<Breakpoint>> breakpointMap();
 
@@ -1287,6 +1290,7 @@ final class DebugCoordinator {
         dap().setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         dap().setPythonSubprocesses(s.isDebugPythonSubprocesses()); // shared by every session, from its next launch
         dap().setEvaluationTimeLimit(s.getDebugEvaluationTimeLimit()); // told to each debugger as its session starts
+        goroutines().apply(); // Go: which goroutines Delve lists, a running session's at once
         dap().setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dap().setProgramTerminal(s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
         dap().setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
@@ -2716,6 +2720,21 @@ final class DebugCoordinator {
             @Override
             public void parallelStacks() {
                 DebugCoordinator.this.parallelStacks();
+            }
+
+            @Override
+            public boolean runtimeGoroutinesHidden() {
+                return goroutines().runtimeHidden();
+            }
+
+            @Override
+            public void toggleRuntimeGoroutines() {
+                goroutines().toggleRuntime();
+            }
+
+            @Override
+            public void filterGoroutines() {
+                goroutines().filter();
             }
 
             @Override
@@ -9231,6 +9250,24 @@ final class DebugCoordinator {
     }
 
     private @Nullable StepFilterCommands stepFilterCommands;
+
+    private @Nullable GoroutineCommands goroutineCommands;
+
+    /** Go's goroutines in the Threads view. */
+    GoroutineCommands goroutines() {
+        GoroutineCommands c = goroutineCommands;
+        if (c == null) {
+            c = new GoroutineCommands(this, host, ops);
+            goroutineCommands = c;
+        }
+        return c;
+    }
+
+    /** Lists the session's threads again in its Threads view. */
+    void refreshThreads() {
+        DebugSession session = s();
+        dap().threads(list -> inSession(session, () -> panel().setThreads(list, dap().currentThreadId())));
+    }
 
     StepFilterCommands stepFilters() {
         StepFilterCommands c = stepFilterCommands;

@@ -85,6 +85,9 @@ final class DapSettings {
     /** The evaluation time limit in seconds, 0 for none ({@link EvaluationLimits}): told to each session as it starts. */
     volatile int evaluationTimeLimit = EvaluationLimits.DEFAULT_SECONDS;
 
+    /** Go: which goroutines Delve lists and how it names them ({@link GoGoroutines}); told to each Go session. */
+    volatile GoGoroutines.Options goGoroutines = GoGoroutines.Options.DEFAULT;
+
     /**
      * Set when the running jdtls already advertises the java-debug commands — some distributions (e.g. Homebrew's
      * jdtls) ship and auto-load the plugin, so there is no jar to find and nothing to inject, yet debugging works.

@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Go goroutines your way in the Threads view.** A Go program's runtime goroutines (the garbage collector's
+  workers, the finalizer) are left out of the Threads view, and a goroutine started under pprof labels shows them in
+  its name (`[Go 20 job:resize-0] main.worker`). Right-click the Threads view to show the runtime's goroutines again or
+  to filter them with Delve's own filter (`-with label job=*`); the change applies to the running program at once and
+  is kept. Settings → Debugging → Go goroutines holds all three.
 - **Show Value As.** Right-click a number in the Variables view or a watch and choose Show Value As ▸ Decimal,
   Hexadecimal, Binary, Octal or Character to see that one value that way, while the others stay as they are. A
   negative number shows as its two's complement for its type (`-42` as an `int` is `0xffffffd6`), a `char` shows its

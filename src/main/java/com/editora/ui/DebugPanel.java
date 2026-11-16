@@ -161,6 +161,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Parallel Stacks (Threads view and call stack menus): every thread's stack merged into one tree. */
         default void parallelStacks() {}
 
+        /** Go: whether the runtime's own goroutines are left out of the Threads view. */
+        default boolean runtimeGoroutinesHidden() {
+            return false;
+        }
+
+        /** Go, the Threads view's Hide Runtime Goroutines: on or off, for the window and its sessions. */
+        default void toggleRuntimeGoroutines() {}
+
+        /** Go, the Threads view's Filter Goroutines…: asks for Delve's goroutine filter. */
+        default void filterGoroutines() {}
+
         /** Threads view → Show Frames: shows suspended thread {@code thread}'s call stack and variables. */
         default void showThread(DapModels.ThreadStatus thread) {
             selectThread(thread.id());
@@ -1901,6 +1912,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         menu.getItems().clear();
         DapModels.ThreadStatus t = threadList.getSelectionModel().getSelectedItem();
         if (t == null) {
+            menu.getItems().addAll(goroutineItems()); // a Go session's list, even with no thread chosen
             return;
         }
         if (t.paused()) {
@@ -1920,6 +1932,26 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             menu.getItems().add(pause);
         }
         menu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), threadDumpItem(), parallelStacksItem());
+        menu.getItems().addAll(goroutineItems());
+    }
+
+    /**
+     * A Go session's Hide Runtime Goroutines and Filter Goroutines… (GoLand's and VS Code's goroutine options, through
+     * Delve's own), after a separator; none for another language.
+     */
+    private List<javafx.scene.control.MenuItem> goroutineItems() {
+        if (!com.editora.dap.DebugLanguages.GO.id().equals(actions.language())) {
+            return List.of();
+        }
+        javafx.scene.control.CheckMenuItem hide =
+                new javafx.scene.control.CheckMenuItem(tr("debugpanel.hideRuntimeGoroutines"));
+        hide.setSelected(actions.runtimeGoroutinesHidden());
+        hide.setOnAction(e -> actions.toggleRuntimeGoroutines());
+        com.editora.editor.MenuChords.tag(hide, "debug.toggleRuntimeGoroutines");
+        javafx.scene.control.MenuItem filter = new javafx.scene.control.MenuItem(tr("debugpanel.filterGoroutines"));
+        filter.setOnAction(e -> actions.filterGoroutines());
+        com.editora.editor.MenuChords.tag(filter, "debug.filterGoroutines");
+        return List.of(new javafx.scene.control.SeparatorMenuItem(), hide, filter);
     }
 
     /** Thread Dump…, in the Threads view's menu and the call stack's. */

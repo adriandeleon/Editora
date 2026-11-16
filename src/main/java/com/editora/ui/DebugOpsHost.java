@@ -285,6 +285,13 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public void persistGoGoroutines(boolean hideRuntime, String filter) {
+        mc.config.getSettings().setDebugGoHideRuntimeGoroutines(hideRuntime);
+        mc.config.getSettings().setDebugGoGoroutineFilter(filter);
+        mc.config.save();
+    }
+
+    @Override
     public java.util.Map<String, List<com.editora.config.Breakpoint>> breakpointMap() {
         return mc.config.getBreakpoints();
     }

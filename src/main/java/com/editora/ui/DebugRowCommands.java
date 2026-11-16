@@ -49,6 +49,8 @@ final class DebugRowCommands {
             "debug.showSelectedThreadFrames",
             "debug.resumeSelectedThread",
             "debug.pauseSelectedThread",
+            "debug.toggleRuntimeGoroutines",
+            "debug.filterGoroutines",
             "debug.copyCallStack",
             "debug.clearConsole");
 
