@@ -149,11 +149,7 @@ final class NotesCoordinator {
 
             @Override
             public void deleteAll(String projectKey, String fileKey) {
-                if (Confirm.ask(
-                        host.window(),
-                        tr("dialog.note.deleteConfirm.title"),
-                        tr("dialog.note.deleteAllConfirm.content", fileNameOf(fileKey)),
-                        tr("confirm.action.delete"))) {
+                if (Confirm.ask(host.window(), deleteAllQuestion(fileNameOf(fileKey)))) {
                     noteDeleteAll(projectKey, fileKey);
                 }
             }
@@ -659,13 +655,27 @@ final class NotesCoordinator {
 
     /** Confirms (native dialog) before running a destructive note delete from the editor popup. */
     private void confirmDelete(Runnable onConfirm) {
-        if (Confirm.ask(
-                host.window(),
-                tr("dialog.note.deleteConfirm.title"),
-                tr("dialog.note.deleteConfirm.content"),
-                tr("confirm.action.delete"))) {
+        if (Confirm.ask(host.window(), deleteQuestion())) {
             onConfirm.run();
         }
+    }
+
+    /** The words of the question before one note is deleted. */
+    static Confirm.Question deleteQuestion() {
+        return new Confirm.Question(
+                tr("dialog.note.deleteConfirm.title"),
+                null,
+                tr("dialog.note.deleteConfirm.content"),
+                tr("confirm.action.delete"));
+    }
+
+    /** The words of the question before every note of the file named {@code fileName} is deleted. */
+    static Confirm.Question deleteAllQuestion(String fileName) {
+        return new Confirm.Question(
+                tr("dialog.note.deleteConfirm.title"),
+                null,
+                tr("dialog.note.deleteAllConfirm.content", fileName),
+                tr("confirm.action.delete"));
     }
 
     /** Edit the personal note at the caret — the one whose span contains the caret, else the first on the

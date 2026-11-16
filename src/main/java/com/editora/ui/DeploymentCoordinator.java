@@ -461,20 +461,17 @@ final class DeploymentCoordinator {
         @Override
         public Conflicts conflicts(List<String> files) {
             return onFx(() -> {
-                ButtonType overwrite = new ButtonType(tr("dialog.deploy.overwrite"), ButtonBar.ButtonData.OK_DONE);
-                ButtonType keep = new ButtonType(tr("dialog.deploy.keepHost"), ButtonBar.ButtonData.OTHER);
+                Confirm.Choice words = conflictsQuestion(files);
+                ButtonType overwrite = new ButtonType(words.answer(0), ButtonBar.ButtonData.OK_DONE);
+                ButtonType keep = new ButtonType(words.answer(1), ButtonBar.ButtonData.OTHER);
                 ButtonType cancel = Dialogs.cancel();
-                Alert alert = Dialogs.styled(new Alert(
-                        Alert.AlertType.WARNING,
-                        tr("dialog.deploy.conflicts.content", list(files)),
-                        overwrite,
-                        keep,
-                        cancel));
+                Alert alert =
+                        Dialogs.styled(new Alert(Alert.AlertType.WARNING, words.message(), overwrite, keep, cancel));
                 alert.initOwner(host.window());
-                alert.setTitle(tr("dialog.deploy.conflicts.title"));
-                alert.setHeaderText(tr("dialog.deploy.conflicts.header", files.size()));
+                alert.setTitle(words.title());
+                alert.setHeaderText(words.header());
                 Dialogs.destructive(alert, overwrite);
-                ButtonType answer = alert.showAndWait().orElse(cancel);
+                ButtonType answer = Dialogs.showAndWait(alert).orElse(cancel);
                 return answer == overwrite
                         ? Conflicts.OVERWRITE
                         : answer == keep ? Conflicts.KEEP_HOST : Conflicts.CANCEL;
@@ -483,14 +480,30 @@ final class DeploymentCoordinator {
 
         @Override
         public boolean overwriteExisting(List<String> files) {
-            return onFx(() -> Confirm.ask(
-                    host.window(),
-                    new Confirm.Question(
-                            tr("dialog.deploy.existing.title"),
-                            tr("dialog.deploy.existing.header", files.size()),
-                            tr("dialog.deploy.existing.content", list(files)),
-                            tr("dialog.deploy.replace"))));
+            return onFx(() -> Confirm.ask(host.window(), existingFilesQuestion(files)));
         }
+    }
+
+    /** The words of the question before a first deploy replaces {@code files} already in the host's folder. */
+    static Confirm.Question existingFilesQuestion(List<String> files) {
+        return new Confirm.Question(
+                tr("dialog.deploy.existing.title"),
+                tr("dialog.deploy.existing.header", files.size()),
+                tr("dialog.deploy.existing.content", list(files)),
+                tr("dialog.deploy.replace"));
+    }
+
+    /**
+     * The words of the question about {@code files} that changed on the host since the last deploy. Its answers:
+     * Overwrite (0), Keep the Host's (1).
+     */
+    static Confirm.Choice conflictsQuestion(List<String> files) {
+        return Confirm.choice(
+                tr("dialog.deploy.conflicts.title"),
+                tr("dialog.deploy.conflicts.header", files.size()),
+                tr("dialog.deploy.conflicts.content", list(files)),
+                tr("dialog.deploy.overwrite"),
+                tr("dialog.deploy.keepHost"));
     }
 
     /** Up to a dozen names, one per line, and how many more. */

@@ -195,11 +195,7 @@ final class RemoteCoordinator {
                 @Override
                 public void remove(RemoteConnection c) {
                     // The same question Settings asks before the same removal.
-                    if (Confirm.ask(
-                            host.window(),
-                            tr("settings.remote.remove"),
-                            tr("settings.remote.deleteConfirm", c.displayLabel()),
-                            tr("settings.remote.delete"))) {
+                    if (Confirm.ask(host.window(), RemoteSitesPane.deleteQuestion(c.displayLabel()))) {
                         ops.removeConnection(c.id());
                     }
                 }
@@ -314,7 +310,7 @@ final class RemoteCoordinator {
         UiZoom.minWidth(alert.getDialogPane(), 560);
         askingDialog = alert;
         try {
-            return alert.showAndWait().orElse(cancel) == connect;
+            return Dialogs.showAndWait(alert).orElse(cancel) == connect;
         } finally {
             askingDialog = null;
         }
@@ -482,7 +478,7 @@ final class RemoteCoordinator {
         alert.getDialogPane().setContent(area);
         UiZoom.minWidth(alert.getDialogPane(), 600);
         alert.setResizable(true);
-        alert.showAndWait();
+        Dialogs.showAndWait(alert);
     }
 
     /** Lines {@code text} takes when wrapped at about {@code width} characters. Pure. */
@@ -990,7 +986,7 @@ final class RemoteCoordinator {
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.remoteDisconnect.title"));
         alert.setHeaderText(tr("dialog.remoteDisconnect.header"));
-        return alert.showAndWait().orElse(cancel) == disconnect;
+        return Dialogs.showAndWait(alert).orElse(cancel) == disconnect;
     }
 
     /**
@@ -1117,7 +1113,7 @@ final class RemoteCoordinator {
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.remoteExec.title"));
         alert.setHeaderText(tr("dialog.remoteExec.header", conn.host()));
-        return alert.showAndWait().orElse(notNow) == allow;
+        return Dialogs.showAndWait(alert).orElse(notNow) == allow;
     }
 
     /** What {@link #recheckExecution} last saw: the setting, this window's host's agreement and its tools. */

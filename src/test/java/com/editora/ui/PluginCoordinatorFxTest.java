@@ -353,8 +353,42 @@ class PluginCoordinatorFxTest {
             assertTrue(Files.exists(second.pluginsDir().resolve("greeter")), "declined: nothing is removed");
             assertTrue(second.enabled("greeter"));
 
-            // E3: it runs in this session (its jar may be open): switched off now, deleted at the next start.
-            FxTestSupport.runOnFx(() -> second.coordinator.uninstall("greeter"));
+            // The same question as the app asks it, answered through the hook with no window.
+            second.coordinator.setConfirmForTest(q -> (boolean)
+                    FxTestSupport.call(second.coordinator, "confirmDialog", new Class<?>[] {Question.class}, q));
+            try (DialogAnswers answers =
+                    DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
+                FxTestSupport.runOnFx(() -> second.coordinator.uninstall("greeter"));
+                Dialogs.Asked asked = answers.only();
+                assertEquals(tr("dialog.plugins.uninstallHeader", "Greeter"), asked.header());
+                assertTrue(asked.content().contains("greeter"), "the folder is named: " + asked.content());
+                assertEquals(
+                        List.of(
+                                new Dialogs.Answer(
+                                        tr("dialog.plugins.removeButton"),
+                                        javafx.scene.control.ButtonBar.ButtonData.OK_DONE,
+                                        false,
+                                        true),
+                                new Dialogs.Answer(
+                                        tr("dialog.cancel"),
+                                        javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE,
+                                        true,
+                                        false)),
+                        asked.answers(),
+                        "Remove is red and never the default; Cancel is");
+                assertTrue(Files.exists(second.pluginsDir().resolve("greeter")), "Cancel removes nothing");
+                assertTrue(second.enabled("greeter"));
+
+                answers.nowClosing();
+                FxTestSupport.runOnFx(() -> second.coordinator.uninstall("greeter"));
+                assertTrue(second.enabled("greeter"), "closing the question removes nothing");
+                assertFalse(Files.exists(second.pluginsDir().resolve(".remove-greeter")));
+
+                // E3: it runs in this session (its jar may be open): switched off now, deleted at the next start.
+                answers.nowPressing(tr("dialog.plugins.removeButton"));
+                FxTestSupport.runOnFx(() -> second.coordinator.uninstall("greeter"));
+                assertEquals(3, answers.asked().size());
+            }
             assertEquals(List.of(), second.errors);
             assertTrue(Files.exists(second.pluginsDir().resolve(".remove-greeter")), "marked for the next start");
             assertFalse(second.enabled("greeter"), "the consent to run it is gone at once");

@@ -740,7 +740,7 @@ final class InstallCoordinator {
         a.initOwner(host.window());
         a.setTitle(tr("dialog.install.title"));
         a.setHeaderText(null);
-        return a.showAndWait()
+        return Dialogs.showAndWait(a)
                 .filter(r -> r == javafx.scene.control.ButtonType.OK)
                 .isPresent();
     }
@@ -751,7 +751,7 @@ final class InstallCoordinator {
         a.setTitle(tr("dialog.install.title"));
         a.setHeaderText(null);
         a.setContentText(message);
-        a.showAndWait();
+        Dialogs.showAndWait(a);
     }
 
     private static boolean isWindows() {

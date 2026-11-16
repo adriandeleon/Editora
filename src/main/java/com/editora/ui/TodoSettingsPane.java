@@ -192,9 +192,14 @@ final class TodoSettingsPane {
 
     /** Asks before a pattern is deleted; Cancel is the default button, so Enter keeps it. */
     private static boolean confirmDelete(Node owner, String label) {
-        return Confirm.ask(
-                owner.getScene() == null ? null : owner.getScene().getWindow(),
+        return Confirm.ask(owner.getScene() == null ? null : owner.getScene().getWindow(), deleteQuestion(label));
+    }
+
+    /** The words of the question before the TODO pattern shown as {@code label} is deleted. */
+    static Confirm.Question deleteQuestion(String label) {
+        return new Confirm.Question(
                 tr("settings.todo.deleteTitle"),
+                null,
                 tr("settings.todo.deleteConfirm", label),
                 tr("settings.todo.delete"));
     }

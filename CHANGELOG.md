@@ -906,6 +906,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pause stops the whole Java program.** It suspended only the thread on screen, and the program's other threads
   kept running. Continue after a Pause resumes every thread.
 
+- **Refactor:** every dialog that is answered with a button is shown through `Dialogs.showAndWait`, or
+  `Dialogs.show` where it must not block, which a test answers with no window (`Dialogs.answerWith`,
+  `DialogAnswers`), and every question before a destructive action takes its words from a static function
+  (`Confirm.Question`, `Confirm.Choice`). No dialog looks or behaves differently (CONF-12, Pauta 6.0.1).
 - **Refactor:** Go to Implementation's picker-row text (`implementationLabel`, `implementationDetail`,
   `libraryPackage`) moved from `LspCoordinator` to a new `ImplementationTargets`, which brings `LspCoordinator` back
   under the 10,000-line `SourceFileSizeTest` limit it crossed in #1445.

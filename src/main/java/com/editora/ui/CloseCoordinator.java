@@ -73,7 +73,7 @@ final class CloseCoordinator {
         ButtonType close = new ButtonType(tr("dialog.close"));
         ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(close, cancel);
-        Optional<ButtonType> result = alert.showAndWait();
+        Optional<ButtonType> result = Dialogs.showAndWait(alert);
         return result.isPresent() && result.get() == close;
     }
 
@@ -85,7 +85,7 @@ final class CloseCoordinator {
         ButtonType save = alert.getButtonTypes().get(0);
         ButtonType discard = alert.getButtonTypes().get(1);
         ButtonType cancel = alert.getButtonTypes().get(2);
-        Optional<ButtonType> result = alert.showAndWait();
+        Optional<ButtonType> result = Dialogs.showAndWait(alert);
         if (result.isEmpty() || result.get() == cancel) {
             return false;
         }
@@ -104,7 +104,7 @@ final class CloseCoordinator {
         ButtonType save = alert.getButtonTypes().get(0);
         ButtonType discard = alert.getButtonTypes().get(1);
         ButtonType cancel = alert.getButtonTypes().get(2);
-        Optional<ButtonType> result = alert.showAndWait();
+        Optional<ButtonType> result = Dialogs.showAndWait(alert);
         if (result.isEmpty() || result.get() == cancel) {
             return false;
         }
@@ -112,14 +112,40 @@ final class CloseCoordinator {
                 || result.get() == save && content.saveBeforeClose() && !content.hasUnsavedChanges();
     }
 
+    /**
+     * The words of the unsaved-changes question about the tab titled {@code title}. Its answers: Save (0), worded by
+     * {@code saveKey}, and Discard (1).
+     */
+    static Confirm.Choice unsavedQuestion(String title, String saveKey) {
+        return Confirm.choice(
+                tr("dialog.unsaved.title"),
+                tr("dialog.unsaved.header", title),
+                null,
+                tr(saveKey),
+                tr("dialog.discard"));
+    }
+
+    /**
+     * The words of "Quit?", naming the terminals ({@code busy}, "title (program)") that quitting ends. Its answer:
+     * Quit (0).
+     */
+    static Confirm.Choice quitQuestion(java.util.List<String> busy) {
+        return Confirm.choice(
+                tr("dialog.quit.title"),
+                tr("dialog.quit.header"),
+                busy.isEmpty() ? null : tr("terminal.closeWindow.running", "• " + String.join("\n• ", busy)),
+                tr("dialog.quit.button"));
+    }
+
     private Alert unsavedAlert(String title, String saveKey) {
+        Confirm.Choice words = unsavedQuestion(title, saveKey);
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(stage);
-        alert.setTitle(tr("dialog.unsaved.title"));
-        alert.setHeaderText(tr("dialog.unsaved.header", title));
-        alert.setContentText(null);
-        ButtonType save = new ButtonType(tr(saveKey));
-        ButtonType discard = new ButtonType(tr("dialog.discard"));
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
+        alert.setContentText(words.message());
+        ButtonType save = new ButtonType(words.answer(0));
+        ButtonType discard = new ButtonType(words.answer(1));
         ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(save, discard, cancel);
         MainController.styleUnsavedChangesButtons(alert, save, discard);
@@ -135,18 +161,18 @@ final class CloseCoordinator {
 
     /** "Quit?", saying which terminals ({@code busy}, "title (program)") quitting ends. */
     boolean confirmQuit(java.util.List<String> busy) {
+        Confirm.Choice words = quitQuestion(busy);
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
         alert.initOwner(stage);
-        alert.setTitle(tr("dialog.quit.title"));
-        alert.setHeaderText(tr("dialog.quit.header"));
-        alert.setContentText(
-                busy.isEmpty() ? null : tr("terminal.closeWindow.running", "• " + String.join("\n• ", busy)));
-        ButtonType quit = new ButtonType(tr("dialog.quit.button"));
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
+        alert.setContentText(words.message());
+        ButtonType quit = new ButtonType(words.answer(0));
         ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(quit, cancel);
         MainController.styleQuitButtonAsDanger(alert, quit);
         Dialogs.destructive(alert, quit); // red, never the default: Cancel is the default button
-        Optional<ButtonType> result = alert.showAndWait();
+        Optional<ButtonType> result = Dialogs.showAndWait(alert);
         return result.isPresent() && result.get() == quit;
     }
 

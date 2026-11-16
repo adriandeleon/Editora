@@ -322,14 +322,19 @@ final class GitStashCoordinator {
 
     // --- drop / branch -----------------------------------------------------------------------------
 
+    /** The words of the question before the stash {@code ref} is dropped, with its {@code subject} when it has one. */
+    static Confirm.Question dropQuestion(String ref, String subject) {
+        String described = subject.isBlank() ? ref : ref + " — " + subject;
+        return new Confirm.Question(
+                tr("stash.picker.dropTitle"), null, tr("dialog.stashDrop.confirm", described), tr("dialog.stashDrop"));
+    }
+
     /** Confirms, then drops {@code entry} from the repository at {@code root} (the one it was listed from). */
     void drop(@Nullable Path root, StashEntry entry) {
         if (root == null) {
             return;
         }
-        String described = entry.subject().isBlank() ? entry.ref() : entry.ref() + " — " + entry.subject();
-        if (!git.confirmDestructive(
-                tr("stash.picker.dropTitle"), tr("dialog.stashDrop.confirm", described), tr("dialog.stashDrop"))) {
+        if (!git.confirmDestructive(dropQuestion(entry.ref(), entry.subject()))) {
             return;
         }
         String[] args = {"stash", "drop", entry.ref()};

@@ -440,6 +440,15 @@ final class MacroSettingsPane extends HBox {
         refresh();
     }
 
+    /** The words of the question before the macro shown as {@code name} is deleted. */
+    static Confirm.Question deleteQuestion(String name) {
+        return new Confirm.Question(
+                tr("settings.macro.deleteConfirmTitle"),
+                null,
+                tr("settings.macro.deleteConfirm", name),
+                tr("confirm.action.delete"));
+    }
+
     private void deleteSelected() {
         Macro sel = list.getSelectionModel().getSelectedItem();
         if (sel == null) {
@@ -447,9 +456,7 @@ final class MacroSettingsPane extends HBox {
         }
         if (!Confirm.ask(
                 getScene() == null ? null : getScene().getWindow(),
-                tr("settings.macro.deleteConfirmTitle"),
-                tr("settings.macro.deleteConfirm", MacroCoordinator.displayName(sel)),
-                tr("confirm.action.delete"))) {
+                deleteQuestion(MacroCoordinator.displayName(sel)))) {
             return;
         }
         if (host.shortcuts() != null) {

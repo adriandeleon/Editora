@@ -550,7 +550,7 @@ final class SettingsSyncPage {
                 confirm.initOwner(w.stage);
                 confirm.setTitle(tr("settings.cat.sync"));
                 confirm.setHeaderText(tr("dialog.sync.connect.header"));
-                if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                if (Dialogs.showAndWait(confirm).orElse(ButtonType.CANCEL) != ButtonType.OK) {
                     refreshSyncControls();
                     return;
                 }

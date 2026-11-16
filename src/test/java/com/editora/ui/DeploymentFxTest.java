@@ -269,6 +269,52 @@ class DeploymentFxTest {
         assertEquals("notes, edited here since", Files.readString(served.resolve("src/notes.txt")));
     }
 
+    /** The question as the app asks it, answered through the hook with no window. */
+    @Test
+    void theChangedOnTheHostQuestionIsAnsweredWithNoDialog() throws Exception {
+        assertNotNull(deploy(new Console()));
+        Files.writeString(served.resolve("src/notes.txt"), "edited on the host, longer");
+        deployments.decisions = new DeploymentCoordinator(new Host()).decisions; // the dialogs, as in the app
+        Confirm.Choice words = DeploymentCoordinator.conflictsQuestion(List.of("src/notes.txt"));
+
+        try (DialogAnswers answers = DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            deploy(new Console());
+            Dialogs.Asked asked = answers.only();
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.header(), asked.header());
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(
+                                    words.answer(0), javafx.scene.control.ButtonBar.ButtonData.OK_DONE, false, true),
+                            new Dialogs.Answer(
+                                    words.answer(1), javafx.scene.control.ButtonBar.ButtonData.OTHER, false, false),
+                            new Dialogs.Answer(
+                                    words.cancel(),
+                                    javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE,
+                                    true,
+                                    false)),
+                    asked.answers(),
+                    "Overwrite is red and never the default; Cancel is");
+            assertEquals(
+                    "edited on the host, longer",
+                    Files.readString(served.resolve("src/notes.txt")),
+                    "Cancel overwrites nothing");
+
+            answers.nowClosing();
+            deploy(new Console());
+            assertEquals(
+                    "edited on the host, longer",
+                    Files.readString(served.resolve("src/notes.txt")),
+                    "closing the question overwrites nothing");
+
+            answers.nowPressing(words.answer(0));
+            assertNotNull(deploy(new Console()));
+            assertEquals(3, answers.asked().size());
+            assertEquals("notes", Files.readString(served.resolve("src/notes.txt")), "Overwrite sends the project's");
+        }
+    }
+
     @Test
     void aFirstDeployIntoAFolderWithOtherFilesAsksBeforeReplacingThem() throws Exception {
         Files.createDirectories(served.resolve("src"));

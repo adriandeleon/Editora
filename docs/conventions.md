@@ -152,6 +152,35 @@ A control that works with the mouse but cannot be reached, seen or named from th
   words and that one removal asked once. A question whose words have a count, a choice or a name is built by a
   static function that returns the `Confirm.Question` (`DebugPanel.removeAllWatchesQuestion(int)`), asked only
   when something would be lost, from the one method every entry point of the removal shares.
+- **Every dialog that is answered with a button is shown through `Dialogs.showAndWait(dialog)`**, never through
+  its own `showAndWait()` (CONF-12, Pauta 6.0.1), errors and information included. `DialogShownThroughHookTest`, a
+  guard, reads the source for one that is not, and counts the form dialogs that keep their own call (fields and a
+  result of their own, a text prompt). With no hook set the method is `dialog.showAndWait()`. In a test,
+  `Dialogs.answerWith(asked -> …)` answers instead and no window opens: the hook is given `Dialogs.Asked` (title,
+  header, content text, and each answer in order with its label, its `ButtonData` role, whether it is the default
+  button and whether it is red) and returns one of those answers, or `null` to close the dialog as Escape does.
+  The caller gets that button's own `ButtonType`, so a result compared with `==` works the same. `Asked` also
+  carries the dialog, for a test that has to tick a check box the caller reads afterwards.
+  `DialogAnswers.pressing(role)`, `.pressing(label)`, `.closing()` and `.with(function)` do this for a `try` block
+  and keep what was asked; they answer `Confirm` questions too, unless `ConfirmAnswers` is answering those. The
+  hook is a test seam: nothing in `src/main` sets it. `FxDialogs` stays for a test of the shown window itself
+  (focus, the drawn order of the buttons) and for the form dialogs. A dialog that must not block its caller (one
+  asked while the windows are still being restored, or beside an editor that stays usable) is shown through
+  `Dialogs.show(dialog, onResult)`, never its own `show()` with an `onHidden` of its own; the guard reads for
+  `show()` on a variable the file declares as a dialog. With the hook set it shows nothing either: the hook is
+  asked at once and `onResult` gets the answer on a later pulse (`Platform.runLater`), because a shown dialog
+  also answers only after `show()` has returned, so a test drains the FX thread before it asserts the outcome.
+- **The words of a question before a destructive action come from pure code.** Every such question, asked through
+  `Confirm.ask` or in a dialog of its own, takes its title, header, text and button labels, with every count, name
+  and list in them, from a static function of its class that needs no dialog and no toolkit: it returns a
+  `Confirm.Question` (one action and Cancel) or a `Confirm.Choice` (several answers, a Cancel worded for the
+  question, no text, or no title), as `BookmarkCoordinator.removeQuestion(line)`,
+  `CloseCoordinator.unsavedQuestion(title, saveKey)` and `ExternalChangePrompt.question(fileName, dirty)` do. A call
+  site passes that value on (`Confirm.ask(owner, removeQuestion(line))`, `git().confirmDestructive(question)`,
+  `settings.askBeforeLoss(question)`) and never words the question in the call. The code that builds a dialog of
+  its own reads the words from the value. `ConfirmWordsTest` calls every such function; a new
+  one gets a case there, and a test that answers the question through `DialogAnswers` and asserts that only its
+  action acts.
 - **A small, frequent removal records an undo instead of asking** (CONF-01, Pauta 6.0.1): one watch, a breakpoint
   that carries details, a key binding, a dictionary word. The one method every entry point of the removal shares
   calls `host.removalUndo().removed(removedSentence, restoredSentence, restore)`

@@ -4635,8 +4635,7 @@ final class DebugCoordinator {
                 // JVM) is replaced or kept, as before.
                 boolean both = active && !preparing;
                 Retarget answer = askRetarget(
-                        tr(both ? "dialog.debug.retargetBothQuestion" : phase.retargetKey, label, path.getFileName()),
-                        both);
+                        DebugRetargetPrompt.question(both, phase.retargetKey, label, path.getFileName()), both);
                 switch (answer) {
                     case BOTH -> {
                         openSession(); // the launch asked for is the new session's
@@ -4747,33 +4746,7 @@ final class DebugCoordinator {
         if (confirmRetarget != null) {
             return confirmRetarget.test(question) ? Retarget.STOP : Retarget.CANCEL;
         }
-        javafx.scene.control.ButtonType both = new javafx.scene.control.ButtonType(
-                tr("dialog.debug.retargetBoth"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.ButtonType stop = new javafx.scene.control.ButtonType(
-                tr("dialog.debug.retargetStop"),
-                bothOffered
-                        ? javafx.scene.control.ButtonBar.ButtonData.OTHER
-                        : javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.ButtonType cancel = Dialogs.cancel();
-        List<javafx.scene.control.ButtonType> buttons =
-                bothOffered ? List.of(both, stop, cancel) : List.of(stop, cancel);
-        javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                question,
-                buttons.toArray(javafx.scene.control.ButtonType[]::new)));
-        alert.setTitle(tr(bothOffered ? "dialog.debug.retargetBothTitle" : "dialog.debug.retargetTitle"));
-        alert.setHeaderText(null);
-        if (host.window() != null) {
-            alert.initOwner(host.window());
-        }
-        // Stopping ends the program being debugged: its button is red and never the default. Where running
-        // both is offered, that safe answer stays the default; otherwise Cancel is.
-        Dialogs.destructive(alert, stop);
-        if (bothOffered) {
-            Dialogs.defaultTo(alert, both);
-        }
-        javafx.scene.control.ButtonType answer = alert.showAndWait().orElse(cancel);
-        return answer == both ? Retarget.BOTH : answer == stop ? Retarget.STOP : Retarget.CANCEL;
+        return DebugRetargetPrompt.ask(host.window(), question, bothOffered);
     }
 
     /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */

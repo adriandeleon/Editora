@@ -164,7 +164,7 @@ final class MermaidCoordinator {
                     err.setTitle(tr("dialog.mermaidExport.title"));
                     err.setHeaderText(tr("status.mermaid.exportFailed", ""));
                     err.setContentText(msg);
-                    err.showAndWait();
+                    Dialogs.showAndWait(err);
                 }
             });
         });

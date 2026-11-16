@@ -222,7 +222,7 @@ final class GitPatchCoordinator {
         area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 4));
         area.getStyleClass().add("git-error-text");
         alert.getDialogPane().setContent(area);
-        return alert.showAndWait().orElse(cancel) == retry;
+        return Dialogs.showAndWait(alert).orElse(cancel) == retry;
     }
 
     private @Nullable Path askPatchFile() {

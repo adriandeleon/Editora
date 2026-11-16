@@ -357,6 +357,61 @@ class SaveDecisionsFxTest {
         }
     }
 
+    /** The same question answered through the hook, with no window: every answer, and the question closed. */
+    @Test
+    void theChangedOnDiskQuestionOfASaveIsAnsweredWithNoDialog() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope();
+                DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FileWorkflowCoordinator workflows = workflows(fx);
+            Path file = Files.writeString(dir.resolve("shared.txt"), "v1\n");
+            EditorBuffer buffer = open(async, fx, file);
+            FxTestSupport.runOnFx(() -> buffer.getArea().appendText("mine\n"));
+            Files.writeString(file, "v2, written by another program\n");
+
+            run(fx, "file.save");
+            settle(async, workflows);
+            Dialogs.Asked asked = answers.only();
+            Confirm.Choice words = ExternalChangePrompt.saveConflictQuestion("shared.txt");
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.header(), asked.header());
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(words.answer(0), ButtonBar.ButtonData.LEFT, false, true),
+                            new Dialogs.Answer(words.answer(1), ButtonBar.ButtonData.OK_DONE, true, false),
+                            new Dialogs.Answer(words.cancel(), ButtonBar.ButtonData.CANCEL_CLOSE, false, false)),
+                    asked.answers(),
+                    "Reload, which discards the edits, is red and never the default; Keep Mine is the default");
+            assertEquals("v2, written by another program\n", Files.readString(file), "Cancel writes nothing");
+            assertEquals("v1\nmine\n", FxTestSupport.callOnFx(buffer::getContent), "and discards nothing");
+
+            answers.nowClosing();
+            run(fx, "file.save");
+            settle(async, workflows);
+            assertEquals(2, answers.asked().size());
+            assertEquals("v2, written by another program\n", Files.readString(file), "closing it writes nothing");
+            assertEquals("v1\nmine\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+
+            answers.nowPressing(words.answer(1));
+            run(fx, "file.save");
+            settle(async, workflows);
+            assertEquals("v1\nmine\n", Files.readString(file), "Keep Mine overwrites the file");
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+
+            // Reload, on a fresh change: the edits are discarded for the file's text.
+            FxTestSupport.runOnFx(() -> buffer.getArea().appendText("more of mine\n"));
+            Files.writeString(file, "v3, written by another program\n");
+            answers.nowPressing(words.answer(0));
+            run(fx, "file.save");
+            settle(async, workflows);
+            assertEquals(4, answers.asked().size());
+            assertEquals("v3, written by another program\n", Files.readString(file));
+            assertEquals("v3, written by another program\n", FxTestSupport.callOnFx(buffer::getContent));
+        }
+    }
+
     @Test
     void choosingReloadTakesTheDiskVersionAndWritesNothing() throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
@@ -456,6 +511,55 @@ class SaveDecisionsFxTest {
                         hex(Files.readAllBytes(copies.findFirst().orElseThrow())),
                         "the bytes as they were are kept before they are rewritten");
             }
+        }
+    }
+
+    /** The binary-data warning answered through the hook, with no window. */
+    @Test
+    void theBinaryDataWarningIsAnsweredWithNoDialog() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope();
+                DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FileWorkflowCoordinator workflows = workflows(fx);
+            byte[] original = installer();
+            Path file = Files.write(dir.resolve("installer.run"), original);
+            EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+                EditorBuffer loading = new EditorBuffer();
+                loading.setPath(file);
+                workflows.loadInto(loading, file);
+                addBuffer(fx, loading);
+                return loading;
+            });
+            FxTestSupport.runOnFx(() -> buffer.getArea().insertText(0, "#"));
+
+            run(fx, "file.save");
+            settle(async, workflows);
+            Dialogs.Asked asked = answers.only();
+            Confirm.Question words = FileWorkflowCoordinator.mixedBinaryQuestion("installer.run", "LF");
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.header(), asked.header());
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE, false, false),
+                            new Dialogs.Answer(words.action(), ButtonBar.ButtonData.OTHER, false, false)),
+                    asked.answers());
+            assertEquals(hex(original), hex(Files.readAllBytes(file)), "Cancel: not one byte is changed");
+
+            answers.nowClosing();
+            run(fx, "file.save");
+            settle(async, workflows);
+            assertEquals(2, answers.asked().size(), "a no is not remembered: asked again");
+            assertEquals(hex(original), hex(Files.readAllBytes(file)), "closing the warning changes nothing");
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+
+            answers.nowPressing(words.action());
+            run(fx, "file.save");
+            settle(async, workflows);
+            byte[] saved = Files.readAllBytes(file);
+            assertEquals('#', saved[0]);
+            assertFalse(new String(saved, StandardCharsets.ISO_8859_1).contains("\r"), "one line ending throughout");
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
         }
     }
 

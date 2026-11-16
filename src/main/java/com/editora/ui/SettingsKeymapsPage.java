@@ -149,21 +149,58 @@ final class SettingsKeymapsPage {
      * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
      */
     private boolean confirmResetAllShortcuts() {
-        ButtonType reset = Dialogs.action(tr("confirm.action.reset"));
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr(
-                        "dialog.shortcut.resetAll.body",
+        return Confirm.ask(
+                w.stage,
+                resetAllQuestion(
                         com.editora.command.KeymapManager.displayName(com.editora.command.KeymapManager.resolveName(
                                 config.getSettings().getKeymap()))),
-                reset,
-                Dialogs.cancel()));
-        confirm.initOwner(w.stage);
-        confirm.setTitle(tr("dialog.shortcut.resetAll.title"));
-        confirm.setHeaderText(null);
-        UiZoom.minWidth(confirm.getDialogPane(), 460);
-        Dialogs.destructive(confirm, reset);
-        return confirm.showAndWait().orElse(Dialogs.cancelOf(confirm)) == reset;
+                460);
+    }
+
+    /** The words of the question before every custom binding of the keymap shown as {@code keymap} is dropped. */
+    static Confirm.Question resetAllQuestion(String keymap) {
+        return new Confirm.Question(
+                tr("dialog.shortcut.resetAll.title"),
+                null,
+                tr("dialog.shortcut.resetAll.body", keymap),
+                tr("confirm.action.reset"));
+    }
+
+    /**
+     * The words of the question before {@code chord} is bound although it is taken: {@code taken} has one
+     * {@link #conflictLine} for each binding the new one affects.
+     */
+    static Confirm.Question bindConflictQuestion(String chord, List<String> taken) {
+        StringBuilder affected = new StringBuilder();
+        for (String line : taken) {
+            affected.append("\n   ").append(line);
+        }
+        return new Confirm.Question(
+                tr("dialog.shortcut.conflict.title"),
+                null,
+                tr("dialog.shortcut.conflict.body", chord, affected.toString()),
+                tr("confirm.action.bind"));
+    }
+
+    /**
+     * The words of the question before the command titled {@code commandTitle} is reset to its default chord, which
+     * other commands hold: {@code taken} has one {@link #conflictLine} for each.
+     */
+    static Confirm.Question reclaimQuestion(String commandTitle, List<String> taken) {
+        StringBuilder lines = new StringBuilder();
+        for (String line : taken) {
+            lines.append("\n   ").append(line);
+        }
+        return new Confirm.Question(
+                tr("dialog.shortcut.conflict.title"),
+                null,
+                tr("dialog.shortcut.reclaim.body", commandTitle, lines.toString()),
+                tr("confirm.action.reset"));
+    }
+
+    /** One binding a new one would replace: its chord as shown, and the title of the command it runs. */
+    static String conflictLine(String chord, String commandTitle) {
+        return chord + "  —  " + commandTitle;
     }
 
     /**
@@ -382,17 +419,11 @@ final class SettingsKeymapsPage {
     private void resetShortcut(ShortcutActions actions, String commandId) {
         List<com.editora.command.KeybindingEdits.Conflict> taken = actions.takenDefaults(commandId);
         if (!taken.isEmpty()) {
-            StringBuilder lines = new StringBuilder();
+            List<String> lines = new java.util.ArrayList<>();
             for (var c : taken) {
-                lines.append("\n   ")
-                        .append(actions.display(c.chord()))
-                        .append("  —  ")
-                        .append(titleOf(actions, c.commandId()));
+                lines.add(conflictLine(actions.display(c.chord()), titleOf(actions, c.commandId())));
             }
-            if (!w.askBeforeLoss(
-                    tr("dialog.shortcut.conflict.title"),
-                    tr("dialog.shortcut.reclaim.body", titleOf(actions, commandId), lines.toString()),
-                    tr("confirm.action.reset"))) {
+            if (!w.askBeforeLoss(reclaimQuestion(titleOf(actions, commandId), lines))) {
                 return;
             }
         }
@@ -424,25 +455,12 @@ final class SettingsKeymapsPage {
         }
         List<com.editora.command.KeybindingEdits.Conflict> conflicts = w.shortcutActions.conflicts(seq, commandId);
         if (!conflicts.isEmpty()) {
-            StringBuilder affected = new StringBuilder();
+            List<String> taken = new java.util.ArrayList<>();
             for (var c : conflicts) {
-                affected.append("\n   ")
-                        .append(w.shortcutActions.display(c.chord()))
-                        .append("  —  ")
-                        .append(titleOf(w.shortcutActions, c.commandId()));
+                taken.add(
+                        conflictLine(w.shortcutActions.display(c.chord()), titleOf(w.shortcutActions, c.commandId())));
             }
-            ButtonType bind = Dialogs.action(tr("confirm.action.bind"));
-            Alert confirm = Dialogs.styled(new Alert(
-                    Alert.AlertType.CONFIRMATION,
-                    tr("dialog.shortcut.conflict.body", w.shortcutActions.display(seq), affected.toString()),
-                    bind,
-                    Dialogs.cancel()));
-            confirm.initOwner(w.stage);
-            confirm.setTitle(tr("dialog.shortcut.conflict.title"));
-            confirm.setHeaderText(null);
-            UiZoom.minWidth(confirm.getDialogPane(), 460);
-            Dialogs.destructive(confirm, bind);
-            if (confirm.showAndWait().orElse(Dialogs.cancelOf(confirm)) != bind) {
+            if (!Confirm.ask(w.stage, bindConflictQuestion(w.shortcutActions.display(seq), taken), 460)) {
                 return false;
             }
         }
@@ -552,7 +570,7 @@ final class SettingsKeymapsPage {
         Alert a = Dialogs.styled(new Alert(Alert.AlertType.WARNING, message, ButtonType.OK));
         a.initOwner(w.stage);
         a.setHeaderText(null);
-        a.showAndWait();
+        Dialogs.showAndWait(a);
     }
 
     /**

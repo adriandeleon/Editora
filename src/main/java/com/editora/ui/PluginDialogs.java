@@ -58,7 +58,7 @@ final class PluginDialogs {
         alert.getDialogPane().setContent(content);
         // Cancel is the default: Enter on a dialog that appeared mid-typing must not arm code.
         Dialogs.defaultTo(alert, cancel);
-        return alert.showAndWait().orElse(cancel) == accept;
+        return Dialogs.showAndWait(alert).orElse(cancel) == accept;
     }
 
     /** A question that destroys nothing, with its own accept label ("Download"). */
@@ -83,7 +83,7 @@ final class PluginDialogs {
         if (destructive) {
             Dialogs.destructive(alert, accept);
         }
-        return alert.showAndWait().orElse(cancel) == accept;
+        return Dialogs.showAndWait(alert).orElse(cancel) == accept;
     }
 
     /** An error: {@code summary} as the header, {@code detail} in a box sized for its wrapped lines. */
@@ -102,7 +102,7 @@ final class PluginDialogs {
         area.setPrefRowCount(Math.min(14, rows(body)));
         area.getStyleClass().add("git-error-text");
         alert.getDialogPane().setContent(area);
-        alert.showAndWait();
+        Dialogs.showAndWait(alert);
     }
 
     /**

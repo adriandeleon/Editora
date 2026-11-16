@@ -5,13 +5,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ScrollPane;
@@ -22,7 +20,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
-import javafx.stage.Window;
 
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
@@ -88,18 +85,6 @@ class SettingsKeyboardFxTest {
         Map<String, HBox> rows = SettingsRig.control(window, "shortcutRowsById");
         List<Label> labels = all(rows.get(commandId), Label.class, new ArrayList<>());
         return labels.get(1).getText();
-    }
-
-    /** Presses the next dialog's button of kind {@code answer}: its Cancel, or its named action. */
-    private static void answerNextAlert(ButtonBar.ButtonData answer, boolean[] seen) {
-        Platform.runLater(() -> {
-            for (Window w : Window.getWindows().stream().toList()) {
-                if (w.getScene() != null && w.getScene().getRoot() instanceof DialogPane pane) {
-                    seen[0] = true;
-                    FxDialogs.button(pane, answer).fire();
-                }
-            }
-        });
     }
 
     private interface Body {
@@ -275,16 +260,29 @@ class SettingsKeyboardFxTest {
             }
             assertNotNull(resetAll);
 
-            boolean[] asked = {false};
-            answerNextAlert(ButtonBar.ButtonData.CANCEL_CLOSE, asked);
-            resetAll.fire();
-            assertTrue(asked[0], "a confirmation was shown");
-            assertEquals(custom, chordOf(window, "file.save"), "Cancel keeps the custom binding");
+            // Answered through the hook, with no window: Cancel, closing the question, then its action.
+            try (DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+                resetAll.fire();
+                Dialogs.Asked question = answers.only();
+                assertEquals(
+                        com.editora.i18n.Messages.tr("dialog.shortcut.resetAll.title"),
+                        question.title(),
+                        "a confirmation was asked");
+                assertEquals(
+                        com.editora.i18n.Messages.tr("confirm.action.reset"),
+                        question.answer(ButtonBar.ButtonData.OK_DONE).label());
+                assertTrue(question.answer(ButtonBar.ButtonData.OK_DONE).destructive());
+                assertTrue(question.answer(ButtonBar.ButtonData.CANCEL_CLOSE).isDefault(), "Enter keeps them");
+                assertEquals(custom, chordOf(window, "file.save"), "Cancel keeps the custom binding");
 
-            asked[0] = false;
-            answerNextAlert(ButtonBar.ButtonData.OK_DONE, asked);
-            resetAll.fire();
-            assertTrue(asked[0]);
+                answers.nowClosing();
+                resetAll.fire();
+                assertEquals(custom, chordOf(window, "file.save"), "closing the question keeps it too");
+
+                answers.nowPressing(ButtonBar.ButtonData.OK_DONE);
+                resetAll.fire();
+                assertEquals(3, answers.asked().size(), "asked each time");
+            }
             assertNotEquals(custom, chordOf(window, "file.save"), "Reset resets it");
             assertEquals(chordOf(window, "file.save"), listedChord(window, "file.save"));
         });

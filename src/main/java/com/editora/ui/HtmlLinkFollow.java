@@ -270,6 +270,6 @@ final class HtmlLinkFollow {
         ask.initOwner(host.window());
         ask.setTitle(tr("dialog.html.openWeb.title"));
         ask.setHeaderText(null);
-        return ask.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == open;
+        return Dialogs.showAndWait(ask).orElse(javafx.scene.control.ButtonType.CANCEL) == open;
     }
 }

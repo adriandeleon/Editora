@@ -2159,7 +2159,7 @@ final class DiffCoordinator {
         ask.initOwner(host.window());
         ask.setTitle(tr("merge.edited.title"));
         ask.setHeaderText(null);
-        javafx.scene.control.ButtonType chosen = ask.showAndWait().orElse(cancel);
+        javafx.scene.control.ButtonType chosen = Dialogs.showAndWait(ask).orElse(cancel);
         return chosen == git
                 ? MergeSource.GIT_VERSIONS
                 : chosen == file ? MergeSource.FILE_MARKERS : MergeSource.CANCEL;

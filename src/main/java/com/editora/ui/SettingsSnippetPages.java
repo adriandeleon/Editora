@@ -87,10 +87,18 @@ final class SettingsSnippetPages {
             this::confirmTemplateRemovalDialog;
 
     private boolean confirmTemplateRemovalDialog(com.editora.template.Template t) {
-        String name = t.name() == null || t.name().isBlank() ? t.id() : t.name();
-        return w.askBeforeLoss(
+        return w.askBeforeLoss(removeTemplateQuestion(t.name(), t.id()));
+    }
+
+    /**
+     * The words of the question before the user template {@code id} is removed: its name (its id when it has
+     * none) and its file.
+     */
+    static Confirm.Question removeTemplateQuestion(@Nullable String name, String id) {
+        return new Confirm.Question(
                 tr("settings.template.remove"),
-                tr("settings.template.removeConfirm", name, t.id() + ".json"),
+                null,
+                tr("settings.template.removeConfirm", name == null || name.isBlank() ? id : name, id + ".json"),
                 tr("confirm.action.remove"));
     }
 
@@ -111,10 +119,7 @@ final class SettingsSnippetPages {
                         this::confirmSnippetSave,
                         SettingsSnippetPages::highlightSnippetBody,
                         SettingsSnippetPages::installEmacsKeys,
-                        name -> w.askBeforeLoss(
-                                tr("settings.lists.deleteTitle"),
-                                tr("settings.lists.deleteConfirm", name),
-                                tr("confirm.action.delete"))));
+                        name -> w.askBeforeLoss(SettingsWindow.deleteEntryQuestion(name))));
         reloadSnippets = snippetsEditor::reload;
         w.cardRow(
                 mainCard,
@@ -128,13 +133,22 @@ final class SettingsSnippetPages {
         return p;
     }
 
+    /**
+     * The words of the question before a snippet is saved although {@code message} says what the save loses. Its
+     * answer: Save (0). It has no title of its own: the dialog keeps the one JavaFX gives a confirmation.
+     */
+    static Confirm.Choice snippetSaveQuestion(String message) {
+        return Confirm.choice(null, null, message, tr("confirm.action.save"));
+    }
+
     private boolean confirmSnippetSave(String message) {
-        ButtonType save = Dialogs.action(tr("confirm.action.save"));
-        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, message, save, Dialogs.cancel()));
+        Confirm.Choice words = snippetSaveQuestion(message);
+        ButtonType save = Dialogs.action(words.answer(0));
+        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, words.message(), save, Dialogs.cancel()));
         a.initOwner(w.stage);
-        a.setHeaderText(null);
+        a.setHeaderText(words.header());
         Dialogs.destructive(a, save);
-        return a.showAndWait().orElse(Dialogs.cancelOf(a)) == save;
+        return Dialogs.showAndWait(a).orElse(Dialogs.cancelOf(a)) == save;
     }
 
     /** Another window (or a save in the editor) changed a user snippet file: the open Snippets page re-reads it. */
@@ -472,11 +486,8 @@ final class SettingsSnippetPages {
                 templateRegistry.deleteUserTemplate(t.id());
                 w.markSyncDirty();
             } catch (java.io.IOException ex) {
-                Dialogs.styled(new Alert(
-                                Alert.AlertType.ERROR,
-                                tr("settings.template.saveFailed", ex.getMessage()),
-                                ButtonType.OK))
-                        .showAndWait();
+                Dialogs.showAndWait(Dialogs.styled(new Alert(
+                        Alert.AlertType.ERROR, tr("settings.template.saveFailed", ex.getMessage()), ButtonType.OK)));
                 return;
             }
             templateUserIds.remove(t.id());
@@ -542,9 +553,8 @@ final class SettingsSnippetPages {
             w.markSyncDirty();
             return true;
         } catch (java.io.IOException e) {
-            Dialogs.styled(new Alert(
-                            Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK))
-                    .showAndWait();
+            Dialogs.showAndWait(Dialogs.styled(new Alert(
+                    Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK)));
             return false;
         }
     }

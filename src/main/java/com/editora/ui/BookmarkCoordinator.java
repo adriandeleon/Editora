@@ -412,6 +412,24 @@ final class BookmarkCoordinator {
 
     // --- editor + command entry points ---------------------------------------------------------------
 
+    /** The words of the question before the bookmark on {@code line} (0-based; said 1-based) is removed. */
+    static Confirm.Question removeQuestion(int line) {
+        return new Confirm.Question(
+                tr("dialog.removeBookmark.title"),
+                null,
+                tr("dialog.removeBookmark.body", line + 1),
+                tr("confirm.action.remove"));
+    }
+
+    /** The words of the question before every bookmark of the file shown as {@code fileName} is deleted. */
+    static Confirm.Question deleteFileQuestion(String fileName) {
+        return new Confirm.Question(
+                tr("bookmarks.deleteFileTitle"),
+                null,
+                tr("bookmarks.deleteFileBody", fileName),
+                tr("confirm.action.delete"));
+    }
+
     /**
      * Handles the editor right-click menu's bookmark item: adds a bookmark on an unbookmarked line, or asks
      * for confirmation before removing an existing one. (The keyboard toggle {@code C-c m} removes without a
@@ -419,11 +437,7 @@ final class BookmarkCoordinator {
      */
     void onBookmarkToggleRequest(EditorBuffer buffer, int line) {
         if (buffer.getBookmarkManager().isBookmarked(line)) {
-            if (Confirm.ask(
-                    host.window(),
-                    tr("dialog.removeBookmark.title"),
-                    tr("dialog.removeBookmark.body", line + 1),
-                    tr("confirm.action.remove"))) {
+            if (Confirm.ask(host.window(), removeQuestion(line))) {
                 buffer.removeBookmark(line);
             }
         } else {
@@ -444,12 +458,7 @@ final class BookmarkCoordinator {
                     .findFirst()
                     .orElse(null);
             boolean hasNote = was != null && was.note() != null && !was.note().isBlank();
-            if (hasNote
-                    && !Confirm.ask(
-                            host.window(),
-                            tr("dialog.removeBookmark.title"),
-                            tr("dialog.removeBookmark.body", line + 1),
-                            tr("confirm.action.remove"))) {
+            if (hasNote && !Confirm.ask(host.window(), removeQuestion(line))) {
                 return;
             }
             RemovedLine at = RemovedLine.of(b, line);
@@ -560,11 +569,7 @@ final class BookmarkCoordinator {
         if (b == null || b.getBookmarkManager().snapshot().isEmpty()) {
             return;
         }
-        if (Confirm.ask(
-                host.window(),
-                tr("bookmarks.deleteFileTitle"),
-                tr("bookmarks.deleteFileBody", b.getTitle()),
-                tr("confirm.action.delete"))) {
+        if (Confirm.ask(host.window(), deleteFileQuestion(b.getTitle()))) {
             b.clearBookmarks();
         }
     }

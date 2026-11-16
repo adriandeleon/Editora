@@ -2915,12 +2915,34 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         confirm.setTitle(tr("project.fileOperationTitle"));
         confirm.setHeaderText(null);
         Dialogs.defaultTo(confirm, cancel);
-        return confirm.showAndWait().orElse(cancel) == move;
+        return Dialogs.showAndWait(confirm).orElse(cancel) == move;
     }
 
     /** The question before deleting for good what the trash could not take. */
     private boolean confirmPermanentDeleteDialog(String message) {
-        return Confirm.ask(dialogOwner(), tr("project.fileOperationTitle"), message, tr("confirm.action.delete"));
+        return Confirm.ask(dialogOwner(), permanentDeleteQuestion(message));
+    }
+
+    /**
+     * The words of the question before what the trash refused is deleted for good: the one file of {@code refused}
+     * by name, or how many, and the trash's {@code reason}.
+     */
+    static Confirm.Question permanentDeleteQuestion(List<Path> refused, @Nullable String reason) {
+        return permanentDeleteQuestion(
+                refused.size() == 1
+                        ? tr("project.trashFailedBody", refused.get(0).getFileName(), reason)
+                        : tr("project.trashFailedMultiBody", refused.size(), reason));
+    }
+
+    /** {@link #permanentDeleteQuestion(List, String)} for a sentence already made. */
+    static Confirm.Question permanentDeleteQuestion(String message) {
+        return new Confirm.Question(tr("project.fileOperationTitle"), null, message, tr("confirm.action.delete"));
+    }
+
+    /** The words of the question before {@code files} are deleted, {@code trashed} of them to the trash. */
+    static Confirm.Question deleteFilesQuestion(List<Path> files, int trashed) {
+        return new Confirm.Question(
+                tr("project.deleteFileTitle"), null, deleteQuestion(files, trashed), tr("confirm.action.delete"));
     }
 
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
@@ -3665,11 +3687,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     private boolean confirmDelete(List<Path> files) {
         int trashed = trashCount(files, deleteOperations);
-        return Confirm.ask(
-                dialogOwner(),
-                tr("project.deleteFileTitle"),
-                deleteQuestion(files, trashed),
-                tr("confirm.action.delete"));
+        return Confirm.ask(dialogOwner(), deleteFilesQuestion(files, trashed));
     }
 
     /** How many of {@code files} a delete would move to the trash rather than delete for good. */
@@ -4072,10 +4090,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             deleted++;
         }
         if (!refusedByTrash.isEmpty()) {
-            String question = refusedByTrash.size() == 1
-                    ? tr("project.trashFailedBody", refusedByTrash.get(0).getFileName(), trashRefusal)
-                    : tr("project.trashFailedMultiBody", refusedByTrash.size(), trashRefusal);
-            boolean permanently = confirmPermanentDelete.test(question);
+            boolean permanently = confirmPermanentDelete.test(
+                    permanentDeleteQuestion(refusedByTrash, trashRefusal).message());
             for (Path file : refusedByTrash) {
                 if (!permanently) {
                     failed.add(file); // kept, by the user's choice
@@ -4158,7 +4174,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         alert.initOwner(dialogOwner());
         alert.setTitle(tr("project.fileErrorTitle"));
         alert.setHeaderText(null);
-        alert.showAndWait();
+        Dialogs.showAndWait(alert);
     }
 
     /**

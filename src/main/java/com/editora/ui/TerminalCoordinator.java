@@ -399,13 +399,34 @@ final class TerminalCoordinator {
 
     /** One question listing every busy terminal; {@code action} names the button that ends them. */
     static boolean confirmEndingTerminals(javafx.stage.Window owner, List<String> busy, String action) {
-        return Confirm.ask(
-                owner,
-                new Confirm.Question(
-                        tr("terminal.close.title"),
-                        tr("terminal.closeWindow.header"),
-                        "• " + String.join("\n• ", busy),
-                        action));
+        return Confirm.ask(owner, endTerminalsQuestion(busy, action));
+    }
+
+    /**
+     * The words of the one question that lists every busy terminal ({@code busy}, "title (program)") before they
+     * are ended; {@code action} is its button's label.
+     */
+    static Confirm.Question endTerminalsQuestion(List<String> busy, String action) {
+        return new Confirm.Question(
+                tr("terminal.close.title"),
+                tr("terminal.closeWindow.header"),
+                "• " + String.join("\n• ", busy),
+                action);
+    }
+
+    /**
+     * The words of the question before the terminal titled {@code title} is closed while {@code programs} run in
+     * it: the first few are named.
+     */
+    static Confirm.Question closeQuestion(String title, List<String> programs) {
+        String running = programs.size() <= RunningProgram.MAX_NAMED
+                ? String.join(", ", programs)
+                : String.join(", ", programs.subList(0, RunningProgram.MAX_NAMED)) + ", …";
+        return new Confirm.Question(
+                tr("terminal.close.title"),
+                null,
+                tr("terminal.close.running", title, running),
+                tr("terminal.close.confirm"));
     }
 
     /** Ends every shell (window closing). */
@@ -681,7 +702,7 @@ final class TerminalCoordinator {
                 .setContent(new javafx.scene.layout.VBox(
                         10, new javafx.scene.control.Label(tr("terminal.paste.lines", lines)), dontAsk));
         Dialogs.defaultTo(confirm, cancel); // it destroys nothing, so Paste is not red; Enter still keeps the text out
-        boolean ok = confirm.showAndWait().orElse(cancel) == paste;
+        boolean ok = Dialogs.showAndWait(confirm).orElse(cancel) == paste;
         if (ok && dontAsk.isSelected()) {
             host.settings().setTerminalConfirmMultilinePaste(false);
             host.requestSave();
@@ -693,13 +714,6 @@ final class TerminalCoordinator {
 
     /** Asks before ending a shell that is running something; Cancel is the default, so Enter keeps it. */
     private boolean confirmClose(String title, List<String> programs) {
-        String running = programs.size() <= RunningProgram.MAX_NAMED
-                ? String.join(", ", programs)
-                : String.join(", ", programs.subList(0, RunningProgram.MAX_NAMED)) + ", …";
-        return Confirm.ask(
-                host.window(),
-                tr("terminal.close.title"),
-                tr("terminal.close.running", title, running),
-                tr("terminal.close.confirm"));
+        return Confirm.ask(host.window(), closeQuestion(title, programs));
     }
 }

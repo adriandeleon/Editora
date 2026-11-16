@@ -124,19 +124,15 @@ class SettingsListEditorsFxTest {
         return closed.get();
     }
 
-    /** Runs {@code action}, answering the dialog it opens with {@code answer}; returns the dialog's text. */
+    /**
+     * Runs {@code action}, answering the dialog it asks with {@code answer} through the hook, with no window;
+     * returns the dialog's text (null when it asked nothing).
+     */
     private static String answeringDialogs(ButtonBar.ButtonData answer, Runnable action) {
-        java.util.concurrent.atomic.AtomicReference<String> text = new java.util.concurrent.atomic.AtomicReference<>();
-        Platform.runLater(() -> {
-            for (Window win : List.copyOf(Window.getWindows())) {
-                if (win.getScene() != null && win.getScene().getRoot() instanceof DialogPane pane && win.isShowing()) {
-                    text.set(pane.getContentText());
-                    FxDialogs.button(pane, answer).fire();
-                }
-            }
-        });
-        action.run();
-        return text.get();
+        try (DialogAnswers answers = DialogAnswers.pressing(answer)) {
+            action.run();
+            return answers.asked().isEmpty() ? null : answers.only().content();
+        }
     }
 
     /** Whether any keymap's stored bindings, shared or the Mac's own, name {@code commandId}. */
@@ -179,7 +175,22 @@ class SettingsListEditorsFxTest {
                 String asked = answeringDialogs(ButtonBar.ButtonData.CANCEL_CLOSE, remove::fire);
                 assertEquals(tr("settings.externalTool.confirmDelete", name), asked);
                 assertEquals(1, fx.shared.getSettings().getExternalTools().size(), "Cancel keeps the tool");
-                answeringDialogs(ButtonBar.ButtonData.OK_DONE, remove::fire);
+                try (DialogAnswers answers = DialogAnswers.closing()) {
+                    remove.fire();
+                    Dialogs.Asked question = answers.only();
+                    assertEquals(
+                            List.of(
+                                    new Dialogs.Answer(
+                                            tr("confirm.action.delete"), ButtonBar.ButtonData.OK_DONE, false, true),
+                                    new Dialogs.Answer(
+                                            tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE, true, false)),
+                            question.answers(),
+                            "a red Delete that is not the default, and Cancel as the default");
+                    assertEquals(1, fx.shared.getSettings().getExternalTools().size(), "closing the question keeps it");
+                }
+                assertEquals(
+                        tr("settings.externalTool.confirmDelete", name),
+                        answeringDialogs(ButtonBar.ButtonData.OK_DONE, remove::fire));
                 assertEquals(0, fx.shared.getSettings().getExternalTools().size(), "Delete deletes it");
                 FxTestSupport.<Stage>field(w, "stage").hide();
             });

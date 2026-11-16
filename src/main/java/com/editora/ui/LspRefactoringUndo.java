@@ -314,7 +314,7 @@ final class LspRefactoringUndo {
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.lsp.renameWithoutEdits.title"));
         confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
+        return Dialogs.showAndWait(confirm).orElse(javafx.scene.control.ButtonType.CANCEL)
                 == javafx.scene.control.ButtonType.OK;
     }
 
@@ -383,7 +383,7 @@ final class LspRefactoringUndo {
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.lsp.undoRefactoring.title"));
         confirm.setHeaderText(null);
-        var chosen = confirm.showAndWait().orElse(cancel);
+        var chosen = Dialogs.showAndWait(confirm).orElse(cancel);
         return chosen == all
                 ? RefactoringUndoChoice.ALL_FILES
                 : chosen == one ? RefactoringUndoChoice.THIS_FILE : RefactoringUndoChoice.CANCEL;
