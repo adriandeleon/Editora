@@ -104,7 +104,17 @@ class CrontabPreviewFxTest {
                     end.clear();
                     collect(live, end);
                 }
-                assertTrue(end.contains("/opt/job-4999.sh"), "scrolled to the end, the last job is there to read");
+                javafx.scene.control.skin.VirtualFlow<?> flow =
+                        (javafx.scene.control.skin.VirtualFlow<?>) live.lookup(".virtual-flow");
+                assertTrue(
+                        end.contains("/opt/job-4999.sh"),
+                        "scrolled to the end, the last job is there to read; list " + list.getWidth() + "x"
+                                + list.getHeight() + ", rows "
+                                + (flow == null || flow.getFirstVisibleCell() == null
+                                        ? "none"
+                                        : flow.getFirstVisibleCell().getIndex() + ".."
+                                                + flow.getLastVisibleCell().getIndex())
+                                + ", last labels " + end.subList(Math.max(0, end.size() - 4), end.size()));
                 assertTrue(live.lookupAll(".crontab-job").size() < 60, "and still only the rows on screen");
 
                 // The picture an export takes holds every job: it is drawn once, off screen.
