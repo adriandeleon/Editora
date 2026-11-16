@@ -62,7 +62,7 @@
              (CVE-2026-94002, SFTP client memory exhaustion). -->
         <sshd.version>2.20.1</sshd.version>
         <!-- Bouncy Castle: MINA SSHD's EdDSA provider (ed25519 keys and host keys). See docs/dependencies.md. -->
-        <bouncycastle.version>1.86</bouncycastle.version>
+        <bouncycastle.version>1.87</bouncycastle.version>
         <slf4j.version>2.0.20</slf4j.version>
         <!-- Integrated terminal (ADR 0014; see docs/dependencies.md). JediTerm core is the VT/xterm emulator,
              published only to JetBrains' own repository, so it is vendored in m2-repo like RichTextFX. pty4j
