@@ -136,7 +136,8 @@ with status 2 (`App.unknownOption`, pure). One dash or two makes no difference. 
 - A new option goes into `KNOWN_FLAGS`, `VALUE_OPTIONS` or `KNOWN_PREFIXES` in `App`, and into `helpText`;
   until it is there the launch is refused.
 
-`App.start` calls `SharedConfig.claimInstance()` before any window is built. The claim is an OS file lock
+The launch calls `SharedConfig.claimInstance()` before any window is built, on its config-prefetch thread
+(`App.loadForFirstWindow`), before the config is loaded. The claim is an OS file lock
 on `<configDir>/instance.lock` ([`InstanceLock`](../../src/main/java/com/editora/config/InstanceLock.java)),
 released by the operating system when the holder dies, so a crash never leaves a stale claim:
 

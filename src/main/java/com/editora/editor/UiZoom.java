@@ -258,6 +258,20 @@ public final class UiZoom {
         });
     }
 
+    /**
+     * Builds the copies of {@code sheets} at {@code atPercent} ahead of their first use, on the calling thread:
+     * the launch does it on its config-prefetch thread for the sheets its first window is built with, so the FX
+     * thread finds them made. Nothing to do at 100%.
+     */
+    public static void prepare(List<String> sheets, int atPercent) {
+        int clamped = Settings.clampUiZoom(atPercent);
+        for (String sheet : sheets) {
+            if (sheet != null) {
+                sheet(sheet, clamped);
+            }
+        }
+    }
+
     /** The 100% sheet behind {@code url}: itself, unless it is a copy {@link #sheet} made. */
     public static String base(String url) {
         return BASES.getOrDefault(url, url);
@@ -269,6 +283,7 @@ public final class UiZoom {
     }
 
     private static @Nullable String build(String base, int atPercent) {
+        com.editora.perf.BlockingSites.enter("UiZoom.build");
         try {
             URL url = base.contains(":") ? URI.create(base).toURL() : UiZoom.class.getResource(base);
             if (url == null) {

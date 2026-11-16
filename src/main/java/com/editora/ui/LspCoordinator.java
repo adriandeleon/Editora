@@ -2154,7 +2154,8 @@ final class LspCoordinator {
     /** Hands the XML servers their settings (Settings → LSP → XML), each folder's trust read again (XML review D3). */
     void applyXmlSettings() {
         com.editora.config.ConfigManager config = ops.config();
-        com.editora.lsp.XmlBundledSchemas.ensure(config == null ? null : config.getConfigDir()); // the POM XSDs (D12)
+        // The POM XSDs (D12): written by the launch off the FX thread, kept in place on a thread of their own.
+        com.editora.lsp.XmlBundledSchemas.ensureInBackground(config == null ? null : config.getConfigDir());
         lspManager.setXmlSettings(
                 com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
         XmlOutline.setLimit(host.settings().getXmlSymbolLimit()); // the outline without the server too (C9)

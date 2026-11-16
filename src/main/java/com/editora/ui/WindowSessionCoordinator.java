@@ -657,24 +657,41 @@ final class WindowSessionCoordinator {
         pendingAfterRestore = () -> {
             Path leftPath = left == null ? null : left.toAbsolutePath().normalize();
             Path rightPath = right == null ? null : right.toAbsolutePath().normalize();
-            if (leftPath == null || rightPath == null || !readableDiffPath(leftPath) || !readableDiffPath(rightPath)) {
-                Path bad = !readableDiffPath(leftPath) ? leftPath : rightPath;
-                host.chrome().exitDiffUiMode();
-                suppressWelcome = false;
-                host.showWelcomeIfNoTabs();
-                host.setStatus(tr("status.diff.unreadable", bad == null ? "" : bad));
-                return;
-            }
-            if (Files.isDirectory(leftPath) != Files.isDirectory(rightPath)) {
-                host.chrome().exitDiffUiMode();
-                suppressWelcome = false;
-                host.showWelcomeIfNoTabs();
-                host.setStatus(tr("status.diff.pathTypeMismatch"));
-                return;
-            }
-            host.diffCoordinator().comparePaths(leftPath, rightPath);
+            // The two paths are any the user typed: looked at off the FX thread, the answer applied on it.
+            java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> diffPathProblem(leftPath, rightPath),
+                            com.editora.process.BlockingTasks.named("diff-paths"))
+                    .thenAcceptAsync(
+                            problem -> startDiff(leftPath, rightPath, problem), javafx.application.Platform::runLater);
         };
         openInitialBuffer();
+    }
+
+    /**
+     * What is wrong with the two {@code --diff-ui} operands: {@code null} when both are readable and of one
+     * kind, else the status message to show. Blocking: it looks at the disk.
+     */
+    static @Nullable String diffPathProblem(@Nullable Path leftPath, @Nullable Path rightPath) {
+        com.editora.perf.BlockingSites.enter("diff-paths");
+        if (leftPath == null || rightPath == null || !readableDiffPath(leftPath) || !readableDiffPath(rightPath)) {
+            Path bad = !readableDiffPath(leftPath) ? leftPath : rightPath;
+            return tr("status.diff.unreadable", bad == null ? "" : bad);
+        }
+        if (Files.isDirectory(leftPath) != Files.isDirectory(rightPath)) {
+            return tr("status.diff.pathTypeMismatch");
+        }
+        return null;
+    }
+
+    private void startDiff(@Nullable Path leftPath, @Nullable Path rightPath, @Nullable String problem) {
+        if (problem != null || leftPath == null || rightPath == null) {
+            host.chrome().exitDiffUiMode();
+            suppressWelcome = false;
+            host.showWelcomeIfNoTabs();
+            host.setStatus(problem == null ? "" : problem);
+            return;
+        }
+        host.diffCoordinator().comparePaths(leftPath, rightPath);
     }
 
     static boolean readableDiffPath(@Nullable Path path) {
@@ -763,17 +780,42 @@ final class WindowSessionCoordinator {
         if (hasJavaOpen) {
             return; // an open Java tab already gives the launch something to route through
         }
+        List<Path> candidates = new java.util.ArrayList<>();
         for (String relative : com.editora.run.MainClassSource.candidates(fqn)) {
-            Path candidate = root.resolve(relative);
-            if (java.nio.file.Files.isRegularFile(candidate)) {
-                if (hasAnyTab) {
-                    host.openBackgroundBuffer(candidate); // don't steal the tab the session restored
-                } else {
-                    host.fileWorkflows().openPath(candidate);
-                }
-                return;
+            candidates.add(root.resolve(relative));
+        }
+        boolean background = hasAnyTab;
+        // The candidates are looked at off the FX thread; the one found is opened on it.
+        mainClassLookup = java.util.concurrent.CompletableFuture.supplyAsync(
+                        () -> firstRegularFile(candidates),
+                        com.editora.process.BlockingTasks.named("main-class-source"))
+                .thenAcceptAsync(
+                        found -> {
+                            if (found == null) {
+                                return;
+                            }
+                            if (background) {
+                                host.openBackgroundBuffer(found); // don't steal the tab the session restored
+                            } else {
+                                host.fileWorkflows().openPath(found);
+                            }
+                        },
+                        javafx.application.Platform::runLater);
+    }
+
+    /** The last {@link #openMainClassForRunConfig} in flight, done once its file is opened (a test waits on it). */
+    java.util.concurrent.CompletableFuture<Void> mainClassLookup =
+            java.util.concurrent.CompletableFuture.completedFuture(null);
+
+    /** The first of {@code candidates} that is a regular file, or {@code null}. Blocking: it looks at the disk. */
+    static @Nullable Path firstRegularFile(List<Path> candidates) {
+        com.editora.perf.BlockingSites.enter("main-class-source");
+        for (Path candidate : candidates) {
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
             }
         }
+        return null;
     }
 
     /** The main class of this window's selected Java run configuration (else the first one), or null. */

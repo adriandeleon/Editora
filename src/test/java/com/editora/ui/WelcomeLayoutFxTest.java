@@ -156,17 +156,28 @@ class WelcomeLayoutFxTest {
         recents.add(Files.createFile(notes.resolve("todo.md"))); // newest
         List<Project> openedProjects = new ArrayList<>();
 
+        WelcomePane[] made = new WelcomePane[1];
         FxTestSupport.runOnFx(() -> {
             WelcomePane pane = pane(recents, new CommandRegistry(), () -> List.of(siteProject, notesProject, gone));
             pane.setProjectOpener(openedProjects::add);
             pane.refresh();
             layout(pane, 1280, 800, 1.0);
-
-            List<String> numbered =
-                    pane.numberedEntries().stream().map(Hyperlink::getText).toList();
-            // notes has the newest file, so it leads; a project whose folder is gone is not offered.
-            assertEquals(List.of("notes", "site", "todo.md", "index.html"), numbered);
-            link(pane, "notes").fire();
+            made[0] = pane;
+        });
+        // Whether a folder is gone is learnt off the FX thread; the page is built again when the answer lands.
+        List<String> numbered = List.of();
+        for (int i = 0; i < 200; i++) {
+            numbered = FxTestSupport.callOnFx(() ->
+                    made[0].numberedEntries().stream().map(Hyperlink::getText).toList());
+            if (!numbered.contains("gone")) {
+                break;
+            }
+            Thread.sleep(25);
+        }
+        // notes has the newest file, so it leads; a project whose folder is gone is not offered.
+        assertEquals(List.of("notes", "site", "todo.md", "index.html"), numbered);
+        FxTestSupport.runOnFx(() -> {
+            link(made[0], "notes").fire();
             assertEquals(List.of(notesProject), openedProjects);
         });
     }

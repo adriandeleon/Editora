@@ -169,6 +169,7 @@ public class ProjectManager {
         if (holdingFailedIndex) {
             return false;
         }
+        com.editora.perf.BlockingSites.enter("ProjectManager.openSetIsComplete");
         try (java.nio.file.DirectoryStream<Path> copies =
                 Files.newDirectoryStream(configDir, INDEX_FILE_NAME + ".*bak*")) {
             return !copies.iterator().hasNext();

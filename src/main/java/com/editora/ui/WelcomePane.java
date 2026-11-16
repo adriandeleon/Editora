@@ -245,11 +245,11 @@ public final class WelcomePane extends Region implements TabContent {
     /** A small app logo for the Welcome tab header (null if the icon resource is missing). */
     @Override
     public @Nullable Node icon() {
-        var in = getClass().getResourceAsStream("/com/editora/icons/icon-16.png");
-        if (in == null) {
+        javafx.scene.image.Image image = AppIcons.icon(16);
+        if (image == null) {
             return null;
         }
-        javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(new javafx.scene.image.Image(in));
+        javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(image);
         UiZoom.follow(view, () -> {
             view.setFitWidth(UiZoom.px(14));
             view.setFitHeight(UiZoom.px(14));
@@ -328,6 +328,7 @@ public final class WelcomePane extends Region implements TabContent {
 
         List<Path> files = shownRecentFiles();
         List<Project> recentProjects = shownProjects(files);
+        revalidateOnDisk();
         List<RemoteConnection> sites = remoteSites == null ? List.of() : remoteSites.get();
         boolean firstRun = files.isEmpty() && recentProjects.isEmpty();
 
@@ -365,18 +366,47 @@ public final class WelcomePane extends Region implements TabContent {
         }
         List<Project> all = projects.get().stream()
                 .filter(p -> !p.root().isBlank() && !p.id().isEmpty())
-                .filter(WelcomePane::rootExists)
+                .filter(this::rootExists)
                 .toList();
         return WelcomeText.recentProjects(
                 all, recent, file -> RecentProject.containing(file, all).orElse(null));
     }
 
-    private static boolean rootExists(Project p) {
+    private boolean rootExists(Project p) {
         try {
             Path root = p.rootPath();
-            return root != null && (!Vfs.isLocal(root) || java.nio.file.Files.isDirectory(root));
+            return root != null && !rootCheck.isMissing(root); // as last checked, off the FX thread
         } catch (RuntimeException e) {
             return false;
+        }
+    }
+
+    /**
+     * Which recent files and project roots are gone, learnt off the FX thread (PERF-01, Pauta 6.0.1): the page
+     * is built from the last answer (an entry not checked yet is shown), and built again when an answer differs.
+     */
+    private final RecentFilesCheck fileCheck = new RecentFilesCheck();
+
+    private final RecentFilesCheck rootCheck = new RecentFilesCheck(
+            Thread::startVirtualThread, javafx.application.Platform::runLater, java.nio.file.Files::isDirectory);
+
+    private void revalidateOnDisk() {
+        if (recentFiles != null) {
+            fileCheck.revalidate(recentFiles, this::refresh);
+        }
+        if (onOpenProject != null && projects != null && projectsEnabled.getAsBoolean()) {
+            List<Path> roots = new ArrayList<>();
+            for (Project p : projects.get()) {
+                try {
+                    Path root = p.root().isBlank() ? null : p.rootPath();
+                    if (root != null) {
+                        roots.add(root);
+                    }
+                } catch (RuntimeException e) {
+                    // not a path: rootExists leaves it out
+                }
+            }
+            rootCheck.revalidate(roots, this::refresh);
         }
     }
 
@@ -414,9 +444,7 @@ public final class WelcomePane extends Region implements TabContent {
     private List<Path> shownRecentFiles() {
         // Same filter as the toolbar dropdown: a file that has since been deleted must not be offered here
         // either. Remote entries are kept unchecked — see RecentFiles.showable.
-        return recentFiles == null
-                ? List.of()
-                : RecentFiles.showable(recentFiles.getList(), Vfs::isLocal, java.nio.file.Files::exists);
+        return recentFiles == null ? List.of() : fileCheck.showable(recentFiles.getList());
     }
 
     private VBox recentList(List<Path> shown) {
@@ -694,11 +722,11 @@ public final class WelcomePane extends Region implements TabContent {
     }
 
     private @Nullable Node logo() {
-        var in = getClass().getResourceAsStream("/com/editora/icons/icon-128.png");
-        if (in == null) {
+        javafx.scene.image.Image image = AppIcons.icon(128);
+        if (image == null) {
             return null;
         }
-        javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(new javafx.scene.image.Image(in));
+        javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(image);
         view.setFitWidth(UiZoom.px(64 * zoom));
         view.setFitHeight(UiZoom.px(64 * zoom));
         view.setPreserveRatio(true);

@@ -52,6 +52,9 @@ final class InstallOpsHost implements InstallCoordinator.Ops {
 
     @Override
     public void reapplyToolSupport() {
+        // An install put a copy in place (or a failed one left the old): what was kept of the disk is stale.
+        LspServerCommands.forgetOwnCopies();
+        com.editora.dap.DebugAdapterLocator.forgetLocated();
         mc.lspManager.invalidateDetection();
         mc.lspCoordinator.applySupport();
         mc.debugCoordinator.applySupport();

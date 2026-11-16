@@ -16,7 +16,14 @@ public final class AppInfo {
     /** The version — the single source is {@code pom.xml}'s {@code <version>}, Maven-filtered into
      *  {@code build-info.properties} and read here, so a bump touches only the pom. Between releases the
      *  pom (and so this) carries a {@code -SNAPSHOT} suffix — see {@link #isSnapshot()}. */
-    public static final String VERSION = loadVersion();
+    public static final String VERSION;
+
+    private static final Properties BUILD_INFO;
+
+    static {
+        BUILD_INFO = readBuildInfo();
+        VERSION = loadVersion();
+    }
     /** Maven's marker for an unreleased development version, appended to the pom right after each release. */
     private static final String SNAPSHOT_SUFFIX = "-SNAPSHOT";
     /** Project home page (the website's custom domain). */
@@ -80,57 +87,52 @@ public final class AppInfo {
         return "https://github.com/" + GITHUB_REPO + "/releases/tag/v" + version;
     }
 
+    /**
+     * The bundled {@code build-info.properties}, read once, when this class is first used (empty when it is
+     * missing). The launch first uses the class on its config-prefetch thread ({@link #load()}), so the version,
+     * the edition and the build time are in memory before the FX thread asks.
+     */
+    private static Properties readBuildInfo() {
+        com.editora.perf.BlockingSites.enter("AppInfo build-info");
+        Properties props = new Properties();
+        try (InputStream in = AppInfo.class.getResourceAsStream("/com/editora/build-info.properties")) {
+            if (in != null) {
+                props.load(in);
+            }
+        } catch (IOException ignored) {
+            // the fallbacks below serve
+        }
+        return props;
+    }
+
+    /** Reads the build information now, on the calling thread, if nothing has yet. */
+    public static void load() {
+        // Calling a static method initializes the class, which is the read.
+    }
+
     /** The Maven-filtered project version (single source: {@code pom.xml}'s {@code <version>}); falls back
      *  to {@code "0.0.0"} for an unfiltered run that bypassed Maven resource filtering (e.g. straight from
      *  an IDE) — every real build (incl. {@code mvn javafx:run} and the dist image) filters it. */
     private static String loadVersion() {
-        try (InputStream in = AppInfo.class.getResourceAsStream("/com/editora/build-info.properties")) {
-            if (in != null) {
-                Properties props = new Properties();
-                props.load(in);
-                String v = props.getProperty("build.version", "");
-                // Unfiltered (e.g. run straight from an IDE) leaves the literal Maven placeholder.
-                if (!v.isEmpty() && !v.startsWith("${")) {
-                    return v;
-                }
-            }
-        } catch (IOException ignored) {
-            // fall through to the dev fallback
-        }
-        return "0.0.0";
+        String v = BUILD_INFO.getProperty("build.version", "");
+        // Unfiltered (e.g. run straight from an IDE) leaves the literal Maven placeholder.
+        return !v.isEmpty() && !v.startsWith("${") ? v : "0.0.0";
     }
 
     /** One Maven-filtered value of {@code build-info.properties}, or {@code fallback} for an unfiltered run. */
     private static String loadProperty(String key, String fallback) {
-        try (InputStream in = AppInfo.class.getResourceAsStream("/com/editora/build-info.properties")) {
-            if (in != null) {
-                Properties props = new Properties();
-                props.load(in);
-                String v = props.getProperty(key, "");
-                if (!v.isBlank() && !v.startsWith("${")) {
-                    return v.strip();
-                }
-            }
-        } catch (IOException ignored) {
-            // fall through to the fallback
-        }
-        return fallback;
+        String v = BUILD_INFO.getProperty(key, "");
+        return !v.isBlank() && !v.startsWith("${") ? v.strip() : fallback;
     }
 
     /** The Maven-filtered build timestamp; falls back gracefully for unfiltered/dev runs. */
     public static String buildTime() {
-        try (InputStream in = AppInfo.class.getResourceAsStream("/com/editora/build-info.properties")) {
-            if (in == null) {
-                return "unknown";
-            }
-            Properties props = new Properties();
-            props.load(in);
-            String time = props.getProperty("build.time", "");
-            // Unfiltered (e.g. run straight from an IDE) leaves the literal Maven placeholder.
-            return time.isEmpty() || time.startsWith("${") ? "(dev build)" : time;
-        } catch (IOException e) {
+        if (BUILD_INFO.isEmpty()) {
             return "unknown";
         }
+        String time = BUILD_INFO.getProperty("build.time", "");
+        // Unfiltered (e.g. run straight from an IDE) leaves the literal Maven placeholder.
+        return time.isEmpty() || time.startsWith("${") ? "(dev build)" : time;
     }
 
     /**

@@ -59,20 +59,8 @@ public final class Mermaid {
      */
     static List<String> command(String configured, String defaultCommand) {
         String raw = configured == null || configured.isBlank() ? defaultCommand : configured.strip();
-        if (isExistingFile(raw)) {
-            return List.of(raw);
-        }
-        List<String> tokens = com.editora.run.ProgramArgs.tokenize(raw);
-        return tokens.isEmpty() ? List.of(raw) : List.copyOf(tokens);
-    }
-
-    /** True when {@code raw} names a file that exists — i.e. it is a path, not a command line. */
-    private static boolean isExistingFile(String raw) {
-        try {
-            return !raw.isBlank() && Files.isRegularFile(Path.of(raw));
-        } catch (RuntimeException e) {
-            return false; // not a parseable path (a command line with odd chars)
-        }
+        // Whole when it names a file, else its tokens; the file is looked at only when that decides (kept).
+        return raw.isBlank() ? List.of(raw) : com.editora.process.ConfiguredCommand.argv(raw);
     }
 
     /**

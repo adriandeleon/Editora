@@ -693,6 +693,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **More of start-up's disk work is done off the UI thread.** Opening the session log, the claim on the config
+  folder, cleaning up after a crashed run, reading your own themes, the recent files and the search history, making
+  the zoomed stylesheets and checking the installed language servers, debuggers and configured tools now happen on
+  the thread that loads the settings while the toolkit starts, before the first window is built. Windows restored
+  after the first read their sessions in the background, later windows reuse the app icons, and the Welcome page
+  checks which recent files and projects still exist in the background. A window opened by a command still reads
+  its session on the UI thread.
+
 - **Three long lists build only the rows on screen.** The shortcut list in Settings ▸ Keymaps, the list of a
   pull request's checks and the crontab preview made a row for every command, check or job, and the shortcut list
   made them all again at each key typed in its filter. Each is now a list that builds the rows it shows.

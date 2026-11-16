@@ -559,7 +559,7 @@ public final class DapManager {
             String jsPath) {
         shared.enabled = enabled;
         shared.pluginPath = javaPluginPath == null ? "" : javaPluginPath;
-        shared.bundlePaths = enabled ? locate() : List.of();
+        shared.bundlePaths = enabled ? locateKept() : List.of();
         shared.pythonEnabled = pythonEnabled;
         shared.pythonCommand = pythonCommand == null ? "" : pythonCommand;
         shared.jsEnabled = jsEnabled;
@@ -695,6 +695,18 @@ public final class DapManager {
         return DebugAdapterLocator.locate(shared.pluginPath, home())
                 .map(p -> List.of(p.toString()))
                 .orElse(List.of());
+    }
+
+    /** {@link #locate}, as kept since it was last looked up ({@link DebugAdapterLocator#locateKept}). */
+    private List<String> locateKept() {
+        return DebugAdapterLocator.locateKept(shared.pluginPath, home())
+                .map(p -> List.of(p.toString()))
+                .orElse(List.of());
+    }
+
+    /** Looks the java-debug plugin up for {@code configuredPath} now, on the calling thread: the launch's warm-up. */
+    public static void prepareLocate(String configuredPath) {
+        DebugAdapterLocator.prepareLocate(configuredPath, home());
     }
 
     private static Path home() {

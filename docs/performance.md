@@ -470,6 +470,24 @@ keep the show path free of work the user is not waiting for; measure against the
   (`config/SessionScan`, handed over by `ConfigManager.setStartupSessionScan` and taken once by
   `WindowSessionCoordinator.openInitialBuffer`, which therefore stats nothing on FX). A window built any other
   way reads and scans inline, with the same rules.
+- **`start()` waits once, and touches no disk of the user's** (PERF-01, Pauta 6.0.1). The prefetch thread
+  (`App.loadForFirstWindow`) also claims the config dir before loading it, opens the session log (what was
+  logged before is in memory and written first), reads the process ledgers and reaps a crashed run's servers,
+  removes a stale MCP endpoint (`StartupPrep`), and reads what the first window's set-up used to read
+  (`ui/FirstWindowPrep`): the user's themes, the zoomed copies of the window's sheets (`UiZoom.prepare`), the
+  recent files and search history, the build information (`AppInfo.load`), the first window's project settings
+  (handed over by `ConfigManager.setStartupProjectSettings`), the bundled XML schemas and the loose-files root,
+  and the facts the window's `applySupport` calls ask of the disk: Editora's own server copies
+  (`LspServerCommands`), the java-debug plugin (`DebugAdapterLocator.locateKept`) and whether a configured tool
+  path is a file (`ConfiguredCommand.argv`, which asks only when the answer decides). Those facts are kept in a
+  `perf/ProbeCache`, so a later window and every settings apply answer from memory; an install forgets them
+  (`InstallOpsHost.reapplyToolSupport`). The fallback in `takeBootstrap` runs the same `loadForFirstWindow`
+  inline. Restored windows after the first have their sessions (and project settings) read on a
+  `window-session-read` thread while the first one paints; a window's turn waits for its read without blocking.
+  The window icons are read once (`AppIcons`); the Welcome page checks its recent files and project folders
+  off the thread (`RecentFilesCheck`); `--diff-ui`'s operands, the run configuration's main class and the
+  `.gitignore` walk of a window joining a shared Java server are looked at on threads of their own. The places
+  name themselves to `perf/BlockingSites`, which `StartupOffFxThreadFxTest` listens to through a real launch.
 - **Probes wait for the first painted frame.** `perf/AfterFirstPaint` is held by `App.start` before the first
   window and released by the frame after the first content lands (`FileWorkflowCoordinator.firstPainted`, the
   same two-tick timer as the `FIRST_PAINT` mark) or, for a window that never loads content that way, by

@@ -88,6 +88,10 @@ public final class XmlBundledSchemas {
             return null;
         }
         Path catalog = cache.resolve("schemas").resolve(CATALOG);
+        if (VERIFIED.contains(catalog)) {
+            return catalog; // written or checked by ensure in this run: no look at the disk
+        }
+        com.editora.perf.BlockingSites.enter("XmlBundledSchemas.catalogBeside");
         return Files.isRegularFile(catalog) ? catalog : null;
     }
 
@@ -129,6 +133,7 @@ public final class XmlBundledSchemas {
         if (configDir == null) {
             return null;
         }
+        com.editora.perf.BlockingSites.enter("XmlBundledSchemas.ensure");
         Path dir = dir(configDir);
         try {
             Files.createDirectories(dir);
@@ -143,6 +148,26 @@ public final class XmlBundledSchemas {
             return null;
         }
     }
+
+    /**
+     * {@link #ensure} on a thread of its own, as a window's set-up and every settings apply ask for it: the
+     * launch ensured them on its config-prefetch thread, and this keeps them so should something remove them
+     * while the editor runs. A run already in flight for {@code configDir} is not doubled.
+     */
+    public static void ensureInBackground(@Nullable Path configDir) {
+        if (configDir == null || !ENSURING.add(configDir)) {
+            return;
+        }
+        com.editora.process.BlockingTasks.named("xml-schemas").execute(() -> {
+            try {
+                ensure(configDir);
+            } finally {
+                ENSURING.remove(configDir);
+            }
+        });
+    }
+
+    private static final java.util.Set<Path> ENSURING = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /** The bytes of a shipped schema, read once. */
     private static byte[] resource(String file) throws IOException {

@@ -73,6 +73,11 @@ class OpenMainClassOnProjectOpenFxTest {
             FxTestSupport.call(state, "setSelectedRunConfig", new Class[] {String.class}, cfg.name());
             FxTestSupport.invoke(FxTestSupport.field(fx.controller, "sessions"), "openMainClassForRunConfig");
         });
+        // The candidate files are looked at off the FX thread, and the one found is opened back on it.
+        WindowSessionCoordinator sessions =
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "sessions"));
+        sessions.mainClassLookup.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
     }
 
     private boolean javaTabOpen(String fileName) throws Exception {

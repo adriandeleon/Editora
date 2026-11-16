@@ -47,8 +47,9 @@ final class UserThemes {
 
     private static final long MAX_CSS_BYTES = 4L * 1024 * 1024; // ignore absurdly large files
 
-    private static Map<String, Entry> controlThemes = Map.of();
-    private static Map<String, Entry> editorThemes = Map.of();
+    // Volatile: the launch scans on its config-prefetch thread; the windows read them on the FX thread.
+    private static volatile Map<String, Entry> controlThemes = Map.of();
+    private static volatile Map<String, Entry> editorThemes = Map.of();
 
     private UserThemes() {}
 
@@ -59,6 +60,7 @@ final class UserThemes {
             editorThemes = Map.of();
             return;
         }
+        com.editora.perf.BlockingSites.enter("UserThemes.load");
         controlThemes = scan(configDir.resolve("themes"), true);
         editorThemes = scan(configDir.resolve("editor-themes"), false);
     }

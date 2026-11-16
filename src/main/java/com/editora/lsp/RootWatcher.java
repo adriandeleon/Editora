@@ -89,6 +89,7 @@ final class RootWatcher implements AutoCloseable {
             Consumer<List<LspManager.WatchedFile>> sink,
             java.util.function.Predicate<Path> reported,
             boolean skipOutputs) {
+        com.editora.perf.BlockingSites.enter("RootWatcher.start");
         try {
             if (!Files.isDirectory(root) || root.getFileSystem() != FileSystems.getDefault()) {
                 return null;
