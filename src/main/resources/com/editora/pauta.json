@@ -117,23 +117,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-08",
       "kind": "pending",
-      "reason": "The crontab preview and the pull-request checks card build every row at once, which slows down with very long lists.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
-      "rule": "PERF-10",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-10",
-      "kind": "pending",
-      "reason": "Two places recompute styles for a large part of the window more often than needed, the shortcut list in Settings among them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
-      "rule": "PERF-14",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-14",
-      "kind": "pending",
-      "reason": "The Output panel is built with the window even when it is never opened.",
+      "reason": "The Markdown preview keeps the nodes of every block of the document, and a few other views build a row for each item of a list or rebuild a whole document on each key.",
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {

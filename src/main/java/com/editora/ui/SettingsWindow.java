@@ -173,7 +173,7 @@ public class SettingsWindow {
     /** Finds and filters the rows below (built with the pages); see {@link SettingsSearch}. */
     private SettingsSearch search;
 
-    private final SettingsFileNotes fileNotes = new SettingsFileNotes(); // Advanced: hand edits of settings.json
+    private SettingsFileNotes fileNotes; // Advanced: hand edits of settings.json
 
     private Label searchEmpty; // "no settings match …", shown in place of the page
 
@@ -194,7 +194,7 @@ public class SettingsWindow {
     private final Runnable onShowDebugLog;
 
     /** The Workspace page's trusted-folder list + its backing store accessor (null until wired). */
-    private final ListView<String> trustedFoldersList = new ListView<>();
+    private ListView<String> trustedFoldersList;
 
     private @Nullable TrustActions trustActions;
 
@@ -204,7 +204,12 @@ public class SettingsWindow {
     private final java.util.List<BuildCoordinator> buildCoordinators;
     private final com.editora.lsp.LspManager lspManager;
     private final com.editora.dap.DapManager dapManager;
-    final Stage stage = new Stage();
+    /**
+     * The window. Like every control below it is made by {@link #build}, on the first {@link #show}: a main window
+     * whose Settings were never opened holds no Settings stage, page or control. What can run before that checks
+     * {@link #built} first.
+     */
+    Stage stage;
 
     // --- controls (same set as before, regrouped into pages) ---
     private ComboBox<String> languageCombo;
@@ -251,7 +256,7 @@ public class SettingsWindow {
     private CheckBox javaFormatOnSaveCheck;
     private CheckBox javaCleanupOnSaveCheck;
     /** "4 chosen": how many clean-ups Clean Up File and clean-up on save run. */
-    private final Label javaCleanupsCount = new Label();
+    private Label javaCleanupsCount;
 
     private CheckBox pasteImportsCheck;
     private CheckBox smartSemicolonCheck;
@@ -345,8 +350,8 @@ public class SettingsWindow {
 
     private final java.util.Map<BuildTool, CheckBox> buildToolChecks = new java.util.EnumMap<>(BuildTool.class);
     private final java.util.Map<BuildTool, TextField> buildToolCommandFields = new java.util.EnumMap<>(BuildTool.class);
-    private final ComboBox<JdkChoice> mavenJdkCombo = new ComboBox<>();
-    private final TextField mavenArchetypeCatalogField = new TextField();
+    private ComboBox<JdkChoice> mavenJdkCombo;
+    private TextField mavenArchetypeCatalogField;
     private final java.util.Map<BuildTool, Label> buildToolStatusLabels = new java.util.EnumMap<>(BuildTool.class);
     private CheckBox ripgrepCheck;
     private TextField encryptionGpgPathField;
@@ -676,6 +681,12 @@ public class SettingsWindow {
 
     /** Repopulates the Trusted Folders list from the store (after a revoke, or a newly granted trust). */
     public void refreshTrustedFolders() {
+        if (built) { // an unbuilt window reads the store when its list is made
+            fillTrustedFolders();
+        }
+    }
+
+    private void fillTrustedFolders() {
         trustedFoldersList.getItems().setAll(trustActions == null ? List.of() : trustActions.trustedRoots());
     }
 
@@ -705,7 +716,7 @@ public class SettingsWindow {
     }
 
     public void show(Window owner) {
-        if (!stage.isShowing()) {
+        if (!built || !stage.isShowing()) {
             gitProbedFor = null; // git may have been installed or removed while the window was closed
         }
         if (!built) {
@@ -757,6 +768,11 @@ public class SettingsWindow {
 
     @Initializer
     private void build(Window owner) {
+        stage = new Stage();
+        overlay = new OverlayHost();
+        modifiedOnly = new javafx.scene.control.ToggleButton(tr("settings.search.modifiedOnly"));
+        restartNote = new Label();
+        restartBox = UiZoom.spacing(new HBox(), 8);
         stage.setTitle(tr("settings.window.title"));
         // The window is non-modal: a store can change while it is open but in the background.
         stage.focusedProperty().addListener((o, was, now) -> {
@@ -944,6 +960,17 @@ public class SettingsWindow {
     // --- control construction (logic unchanged from the flat window) -----------------------------
 
     private void buildControls() {
+        // The controls the pages are laid out from that were once made with the window object.
+        fileNotes = new SettingsFileNotes();
+        trustedFoldersList = new ListView<>();
+        javaCleanupsCount = new Label();
+        mavenJdkCombo = new ComboBox<>();
+        mavenArchetypeCatalogField = new TextField();
+        scopeUi = new ProjectScopeSettings(
+                this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, () -> stage);
+        scopeUi.setProjectName(projectName);
+        trimOnSaveCombo = scopeUi.projectOnlyCombo("editor.trimTrailingWhitespace");
+        finalNewlineCombo = scopeUi.projectOnlyCombo("editor.insertFinalNewline");
         languageCombo = new ComboBox<>();
         languageCombo.getItems().add(""); // "" = automatic (system language)
         languageCombo.getItems().addAll(com.editora.i18n.Messages.available().keySet());
@@ -3639,6 +3666,7 @@ public class SettingsWindow {
         cardRow(trust, Category.ADVANCED, trustNote, "workspace trust build wrapper mvnw gradlew security");
         UiZoom.prefHeight(trustedFoldersList, 120);
         trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
+        fillTrustedFolders(); // the store as it is now: nothing filled this list while the window was unbuilt
         Button revoke = new Button(tr("settings.trustedFolders.revoke"));
         Button revokeAll =
                 FocusCommands.press(new Button(tr("settings.trustedFolders.revokeAll")), "settings.revokeAllTrust");
@@ -4198,7 +4226,7 @@ public class SettingsWindow {
     }
 
     /** This window's in-scene card host: a picker Settings asks with opens over Settings, not over the editor. */
-    private final OverlayHost overlay = new OverlayHost();
+    private OverlayHost overlay;
 
     /** The picker for the settings backup to put back, newest first, each named by its dated file. */
     private void chooseBackup(java.util.List<java.nio.file.Path> backups, Consumer<java.nio.file.Path> onChosen) {
@@ -4266,18 +4294,23 @@ public class SettingsWindow {
      * Project scope (F4): the User / Project switch, the two save rules that exist only per project, and how
      * this window reaches its project (its {@link LspCoordinator}, which owns the window's project scope).
      */
-    final ProjectScopeSettings scopeUi = new ProjectScopeSettings(
-            this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, () -> stage);
+    ProjectScopeSettings scopeUi;
 
-    private final ComboBox<String> trimOnSaveCombo = scopeUi.projectOnlyCombo("editor.trimTrailingWhitespace");
-    private final ComboBox<String> finalNewlineCombo = scopeUi.projectOnlyCombo("editor.insertFinalNewline");
+    private ComboBox<String> trimOnSaveCombo;
+    private ComboBox<String> finalNewlineCombo;
+
+    /** How the User / Project bar names the window's project, kept for {@link #build}. */
+    private java.util.function.Supplier<String> projectName = () -> null;
 
     @Nullable
     LspCoordinator projectLsp;
 
     /** How the User / Project bar names the window's project: the name the main window's title shows. */
     void setProjectName(java.util.function.Supplier<String> projectName) {
-        scopeUi.setProjectName(projectName);
+        this.projectName = projectName;
+        if (built) {
+            scopeUi.setProjectName(projectName);
+        }
     }
 
     /** Injected by MainController: the window's language-server coordinator, which owns its project scope. */
@@ -5056,10 +5089,9 @@ public class SettingsWindow {
 
     private SettingsModified modified; // which rows differ from their defaults (built with the pages)
     private Map<Object, Integer> modifiedPerPage = Map.of();
-    private final javafx.scene.control.ToggleButton modifiedOnly =
-            new javafx.scene.control.ToggleButton(tr("settings.search.modifiedOnly"));
-    private final Label restartNote = new Label();
-    private final HBox restartBox = UiZoom.spacing(new HBox(), 8);
+    private javafx.scene.control.ToggleButton modifiedOnly;
+    private Label restartNote;
+    private HBox restartBox;
 
     @Nullable
     Runnable onRestart;

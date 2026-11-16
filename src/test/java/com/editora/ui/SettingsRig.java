@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 import javafx.application.Platform;
@@ -16,6 +17,7 @@ import javafx.scene.control.DialogPane;
 import javafx.scene.control.Labeled;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -107,6 +109,7 @@ final class SettingsRig implements AutoCloseable {
         window.show(owner);
     }
 
+    /** The Settings stage; null until the first show builds the window. */
     Stage stage() {
         return FxTestSupport.field(window, "stage");
     }
@@ -129,6 +132,63 @@ final class SettingsRig implements AutoCloseable {
             return FxTestSupport.field(owner, name);
         }
         throw new IllegalArgumentException("no field '" + name + "' on the Settings window or its pages");
+    }
+
+    /** The Keymaps page's shortcut list: a virtualized list, so only the rows on screen have nodes. */
+    static ListView<SettingsWindow.Shortcut> shortcutList(SettingsWindow window) {
+        return control(window, "shortcutList");
+    }
+
+    /** The command ids of every row the shortcut list holds as filtered, in order, on screen or not. */
+    static List<String> shortcutIds(SettingsWindow window) {
+        return shortcutList(window).getItems().stream()
+                .map(SettingsWindow.Shortcut::id)
+                .toList();
+    }
+
+    /**
+     * The row the shortcut list shows for {@code commandId}, as it is now: the window is laid out first (a row
+     * is made again by the layout that follows a change), and the list is scrolled to the row when it is not on
+     * screen. Null when the filter leaves the command out. FX thread.
+     */
+    static HBox shortcutRow(SettingsWindow window, String commandId) {
+        ListView<SettingsWindow.Shortcut> list = shortcutList(window);
+        Map<String, HBox> rows = control(window, "shortcutRowsById");
+        int at = shortcutIds(window).indexOf(commandId);
+        if (at < 0) {
+            return null;
+        }
+        if (list.getScene() == null) {
+            // Another page is showing: a list that is not on screen has no rows to read. Open its page.
+            ListView<Object> sidebar = control(window, "sidebar");
+            sidebar.getItems().stream()
+                    .filter(item ->
+                            item instanceof Enum<?> category && category.name().equals("KEYMAPS"))
+                    .findFirst()
+                    .ifPresent(sidebar.getSelectionModel()::select);
+        }
+        layOut(list);
+        HBox row = rows.get(commandId);
+        if (row == null || row.getScene() == null) {
+            list.scrollTo(at);
+            layOut(list);
+            row = rows.get(commandId);
+        }
+        return row;
+    }
+
+    /**
+     * Styles and lays out the window and then {@code list} itself, as a pulse would: a page sits in a scroll pane,
+     * whose content is laid out on its own and not from the scene's root.
+     */
+    static void layOut(ListView<?> list) {
+        javafx.scene.Parent root =
+                list.getScene() == null ? list : list.getScene().getRoot();
+        root.applyCss();
+        root.layout();
+        list.layout();
+        list.applyCss(); // the rows the layout has just made
+        list.layout();
     }
 
     /** Opens the page of the category whose enum constant is {@code name} and returns its content. */
@@ -341,7 +401,13 @@ final class SettingsRig implements AutoCloseable {
     @Override
     public void close() throws Exception {
         try {
-            FxTestSupport.runOnFx(() -> stage().hide());
+            FxTestSupport.runOnFx(() -> {
+                javafx.stage.Window shown =
+                        window.stageIfShowing(); // null when the test never opened Settings: nothing was built
+                if (shown != null) {
+                    shown.hide();
+                }
+            });
         } finally {
             fx.dispose();
         }

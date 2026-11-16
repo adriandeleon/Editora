@@ -41,6 +41,11 @@ final class SettingsRenderToolPages {
 
     @Initializer
     void buildControls() {
+        mmdcStatus = new ToolStatusRow("mmdc");
+        maidStatus = new ToolStatusRow("maid");
+        typstStatus = new ToolStatusRow("typst");
+        dotStatus = new ToolStatusRow("dot");
+        plantumlStatus = new ToolStatusRow("plantuml");
         mermaidCheck = new CheckBox(tr("settings.enableMermaid"));
         mermaidCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setMermaidSupport(now);
@@ -103,16 +108,16 @@ final class SettingsRenderToolPages {
     private TextField mmdcPathField;
 
     private TextField maidPathField;
-    private final ToolStatusRow mmdcStatus = new ToolStatusRow("mmdc");
-    private final ToolStatusRow maidStatus = new ToolStatusRow("maid");
+    private ToolStatusRow mmdcStatus;
+    private ToolStatusRow maidStatus;
     private CheckBox diagramCheck;
     private TextField dotPathField;
     private TextField plantumlPathField;
     private CheckBox typstCheck;
     private TextField typstPathField;
-    private final ToolStatusRow typstStatus = new ToolStatusRow("typst");
-    private final ToolStatusRow dotStatus = new ToolStatusRow("dot");
-    private final ToolStatusRow plantumlStatus = new ToolStatusRow("plantuml");
+    private ToolStatusRow typstStatus;
+    private ToolStatusRow dotStatus;
+    private ToolStatusRow plantumlStatus;
 
     VBox mermaidPage() {
         VBox p = w.page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));

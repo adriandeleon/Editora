@@ -2067,6 +2067,7 @@ final class MapCardLinks {
             g.setLineWidth(1.5);
             for (Edge edge : edges) {
                 boolean visible = shown && edge.target.isVisible() && edge.target.getWidth() > 0;
+                boolean shownNow = visible && !edge.label.isVisible();
                 edge.label.setVisible(visible);
                 if (!visible) {
                     edge.drawn = new double[0];
@@ -2080,7 +2081,9 @@ final class MapCardLinks {
                 g.setLineDashes(via == Via.NAME ? new double[] {6, 5} : null); // by name: dashed
                 g.strokeLine(ends[0], ends[1], ends[2], ends[3]);
                 arrowHead(g, ends);
-                edge.label.applyCss();
+                if (shownNow || edge.label.getSkin() == null) { // not on every repaint of a pan or a zoom
+                    edge.label.applyCss();
+                }
                 edge.label.autosize();
                 double mx = (ends[0] + ends[2]) / 2;
                 double my = (ends[1] + ends[3]) / 2;
@@ -2091,11 +2094,14 @@ final class MapCardLinks {
 
         private void placeChip(boolean shown, double[] a) {
             boolean visible = shown && !more.isEmpty();
+            boolean shownNow = visible && !chip.isVisible();
             chip.setVisible(visible);
             if (!visible) {
                 return;
             }
-            chip.applyCss();
+            if (shownNow || chip.getSkin() == null) { // not on every repaint of a pan or a zoom (PERF-10)
+                chip.applyCss();
+            }
             chip.autosize();
             double y = a[1] - chip.getHeight() - 4; // on the card's top edge, by its title
             if (y < 0) {

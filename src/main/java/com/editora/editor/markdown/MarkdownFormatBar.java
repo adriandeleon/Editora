@@ -165,6 +165,9 @@ public final class MarkdownFormatBar {
             node.setVisible(false);
             return false;
         }
+        // Styled here only when it has just been put in this pane or shown again, not each time it follows the
+        // selection or a scroll (PERF-10).
+        boolean placedNow = node.getParent() != pane || !node.isVisible();
         if (node.getParent() != pane) {
             if (node.getParent() instanceof javafx.scene.layout.AnchorPane old) {
                 old.getChildren().remove(node);
@@ -173,7 +176,9 @@ public final class MarkdownFormatBar {
         }
         sync();
         node.setVisible(true);
-        node.applyCss();
+        if (placedNow) {
+            node.applyCss();
+        }
         // In a pane narrower than the bar the controls wrap onto a second row instead of being cut off.
         double room = Math.max(UiZoom.px(60), pane.getWidth());
         node.setPrefWrapLength(

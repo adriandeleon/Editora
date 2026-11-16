@@ -2795,8 +2795,11 @@ final class ProjectMapPreview extends StackPane {
         // The bar sits inside the text, next to the caret on the side the selection is not on (as a Markdown
         // buffer's does), in the card's own unzoomed units: it is drawn at the map's zoom with the card.
         javafx.geometry.Bounds text = frame.localToParent(textPane.getBoundsInParent());
+        boolean shownNow = !selectionBar.isVisible();
         selectionBar.setVisible(true);
-        selectionBar.applyCss();
+        if (shownNow) { // while it stays up and follows the selection, the pulse keeps its styles (PERF-10)
+            selectionBar.applyCss();
+        }
         double width = Math.min(selectionBar.prefWidth(-1), Math.max(UiZoom.px(60), text.getWidth()));
         double height = selectionBar.prefHeight(width);
         var selection = editor.getSelection();

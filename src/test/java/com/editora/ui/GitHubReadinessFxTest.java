@@ -257,7 +257,9 @@ class GitHubReadinessFxTest {
     @Test
     @Order(6)
     void stoppingTheCiLogKillsGh() throws Exception {
-        BuildOutputPanel output = FxTestSupport.field(fx.controller, "buildOutputPanel");
+        BuildOutputPanel output =
+                FxTestSupport.callOnFx(() -> FxTestSupport.<BuildOutput>field(fx.controller, "buildOutputPanel")
+                        .panel());
         GitHubPanel panel = FxTestSupport.field(fx.controller, "githubPanel");
         Node spinner = FxTestSupport.field(panel, "busy");
         FxTestSupport.runOnFx(() -> toolWindows.open(githubWindow)); // its first fetch binds the spinner

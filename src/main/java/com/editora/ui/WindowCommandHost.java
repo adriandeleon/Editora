@@ -150,7 +150,7 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public BuildOutputPanel buildOutputPanel() {
+    public BuildOutput buildOutputPanel() {
         return mc.buildOutputPanel;
     }
 

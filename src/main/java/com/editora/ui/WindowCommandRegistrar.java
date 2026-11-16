@@ -107,7 +107,7 @@ final class WindowCommandRegistrar {
 
         UndoHistoryPanel undoHistoryPanel();
 
-        BuildOutputPanel buildOutputPanel();
+        BuildOutput buildOutputPanel();
 
         ToolWindow fileHistoryToolWindow();
 

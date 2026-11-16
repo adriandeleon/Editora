@@ -63,6 +63,7 @@ class PolishFxTest {
         }
         FxTestSupport.runOnFx(() -> {
             CommandPalette palette = new CommandPalette(reg, new KeymapManager(), c -> true);
+            palette.ensureBuilt(); // the card is made on the first show
             javafx.scene.layout.VBox card = FxTestSupport.field(palette, "content");
             Stage stage = new Stage();
             stage.setScene(styled(new javafx.scene.layout.StackPane(card), 640, 520));

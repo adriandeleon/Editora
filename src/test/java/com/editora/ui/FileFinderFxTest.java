@@ -69,6 +69,7 @@ class FileFinderFxTest {
             finder = FxTestSupport.callOnFx(() -> pickDirectory
                     ? new FileFinder(() -> root, chosen::add, true, "Choose Folder")
                     : new FileFinder(() -> root, chosen::add));
+            FxTestSupport.runOnFx(finder::ensureBuilt); // the card is made on the first show: the fields below are its
             input = FxTestSupport.field(finder, "input");
             list = FxTestSupport.field(finder, "list");
             items = FxTestSupport.field(finder, "items");

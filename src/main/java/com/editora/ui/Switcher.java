@@ -40,14 +40,18 @@ public class Switcher {
 
     private static final int MAX_VISIBLE = 12;
 
-    private final ListView<Tab> filesList = new ListView<>();
+    private ListView<Tab> filesList;
     /** The key legend under the list; rebuilt from the live keymap each time the switcher is shown. */
-    private final Label hint = new Label();
+    private Label hint;
     /** The keymap command whose chord also closes the highlighted file (Emacs {@code C-d}); Backspace/Delete always do. */
     private static final String CLOSE_COMMAND = "edit.deleteChar";
 
-    private final Label pathLabel = new Label();
+    private Label pathLabel;
     private VBox root;
+
+    /** Whether {@link #build} has run: the card is made the first time the switcher is shown. */
+    private boolean built;
+
     /** Shared in-scene overlay host (injected by MainController) + shown state. */
     private @Nullable OverlayHost overlayHost;
 
@@ -62,10 +66,21 @@ public class Switcher {
         this.activeTabSupplier = activeTabSupplier;
         this.activateTab = activateTab;
         this.closeTab = closeTab;
-        build();
     }
 
+    /** Builds the card now if nothing has yet: the first show does, and a test that reads the card before one. */
+    void ensureBuilt() {
+        if (!built) {
+            build();
+            built = true;
+        }
+    }
+
+    @Initializer
     private void build() {
+        filesList = new ListView<>();
+        hint = new Label();
+        pathLabel = new Label();
         // Hug the open-file count (capped at MAX_VISIBLE, then scroll) so a few tabs don't leave a tall
         // empty box; width is set per-show from the longest path. Resizes as tabs are listed/closed.
         UiZoom.follow(filesList, () -> filesList.setFixedCellSize(UiZoom.px(CELL_HEIGHT)));
@@ -147,6 +162,7 @@ public class Switcher {
     }
 
     public void show(Window owner, boolean reverse) {
+        ensureBuilt();
         List<Tab> tabs = tabsSupplier.get();
         hint.setText(PickerKeys.legend(
                 PickerKeys.hint("open", "↵"),

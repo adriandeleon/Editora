@@ -13,7 +13,6 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -21,7 +20,6 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
-import javafx.scene.layout.VBox;
 
 import com.editora.command.KeybindingEdits;
 import com.editora.config.Settings;
@@ -35,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -407,14 +406,25 @@ class SettingsListsFxTest {
         return keys;
     }
 
-    private List<Node> rows() {
-        VBox box = rig.control("shortcutListBox");
-        return box.getChildren();
+    /** The command ids of the rows the shortcut list holds, in order: the list is virtualized, so not their nodes. */
+    private List<String> rows() {
+        return SettingsRig.shortcutIds(rig.window);
     }
 
+    /** The row on screen for {@code id}, laid out as it is now. */
     private HBox row(String id) {
-        Map<String, HBox> byId = rig.control("shortcutRowsById");
-        return byId.get(id);
+        return SettingsRig.shortcutRow(rig.window, id);
+    }
+
+    /** Whether the list shows command {@code id}'s row inside its own bounds right now. */
+    private boolean onScreen(ListView<SettingsWindow.Shortcut> list, String id) {
+        Map<String, HBox> shown = rig.control("shortcutRowsById");
+        HBox row = shown.get(id);
+        if (row == null || row.getScene() == null) {
+            return false;
+        }
+        javafx.geometry.Bounds inList = list.sceneToLocal(row.localToScene(row.getBoundsInLocal()));
+        return inList.getMinY() >= -1 && inList.getMaxY() <= list.getHeight() + 1;
     }
 
     private static void click(Node node) {
@@ -471,7 +481,8 @@ class SettingsListsFxTest {
             assertEquals(1, rows().size(), "by title");
             filter.setText("m-q");
             assertEquals(1, rows().size(), "by chord");
-            assertSame(row("file.special"), rows().get(0));
+            assertEquals("file.special", rows().get(0));
+            assertNotNull(row("file.special"), "and it is the row on screen");
             filter.setText("no command is called this");
             assertEquals(0, rows().size());
             filter.setText("");
@@ -501,7 +512,10 @@ class SettingsListsFxTest {
 
             click(row("cmd.3"));
             assertEquals(0, SettingsRig.all(row("cmd.1"), Button.class).size(), "one selected row at a time");
-            assertTrue(row("cmd.3").isFocusTraversable(), "the selected row is the list's one Tab stop");
+            ListView<SettingsWindow.Shortcut> list = SettingsRig.shortcutList(rig.window);
+            assertTrue(list.isFocusTraversable(), "the list is the one Tab stop");
+            assertEquals("cmd.3", list.getSelectionModel().getSelectedItem().id(), "on the selected row");
+            assertFalse(row("cmd.3").isFocusTraversable());
             assertFalse(row("cmd.0").isFocusTraversable());
 
             SettingsRig.button(row("cmd.3"), tr("settings.shortcuts.reset")).fire();
@@ -518,42 +532,113 @@ class SettingsListsFxTest {
             rig.page("KEYMAPS");
             rig.stage().getScene().getRoot().applyCss();
             rig.stage().getScene().getRoot().layout();
-            ScrollPane scroll = rig.control("shortcutScroll");
-            List<Node> all = rows();
-            Node first = all.get(0);
-            Node last = all.get(all.size() - 1);
+            // The rows are the cells of a virtualized list: the keyboard is on the list, and the row the arrow
+            // keys are on is the list's own selection.
+            ListView<SettingsWindow.Shortcut> list = SettingsRig.shortcutList(rig.window);
+            int last = list.getItems().size() - 1;
+            java.util.function.IntSupplier at = () -> list.getSelectionModel().getSelectedIndex();
 
-            first.requestFocus();
-            assertSame(first, rig.stage().getScene().getFocusOwner());
+            list.requestFocus();
+            list.getSelectionModel().select(0);
+            assertSame(list, rig.stage().getScene().getFocusOwner());
 
-            KeyEvent up = key(KeyCode.UP);
-            Event.fireEvent(first, up);
-            assertSame(first, rig.stage().getScene().getFocusOwner(), "Up on the first row stays in the list");
+            Event.fireEvent(list, key(KeyCode.UP));
+            assertEquals(0, at.getAsInt(), "Up on the first row stays in the list");
+            assertSame(list, rig.stage().getScene().getFocusOwner());
 
-            Event.fireEvent(first, key(KeyCode.END));
-            assertSame(last, rig.stage().getScene().getFocusOwner());
-            assertTrue(scroll.getVvalue() > 0, "the row the keyboard moved to is scrolled into view");
-            assertTrue(last.isFocusTraversable());
-            assertFalse(first.isFocusTraversable(), "the Tab stop moved with the focus");
+            Event.fireEvent(list, key(KeyCode.END));
+            assertEquals(last, at.getAsInt());
+            SettingsRig.layOut(list);
+            assertTrue(onScreen(list, "cmd." + last), "the row the keyboard moved to is scrolled into view");
+            assertFalse(onScreen(list, "cmd.0"), "which the first row no longer is");
+            assertSame(list, rig.stage().getScene().getFocusOwner(), "the Tab stop is still the list");
 
-            Event.fireEvent(last, key(KeyCode.DOWN));
-            assertSame(last, rig.stage().getScene().getFocusOwner(), "Down on the last row stays in the list");
+            Event.fireEvent(list, key(KeyCode.DOWN));
+            assertEquals(last, at.getAsInt(), "Down on the last row stays in the list");
+            assertSame(list, rig.stage().getScene().getFocusOwner());
 
-            Event.fireEvent(last, key(KeyCode.UP));
-            assertSame(all.get(all.size() - 2), rig.stage().getScene().getFocusOwner());
+            Event.fireEvent(list, key(KeyCode.UP));
+            assertEquals(last - 1, at.getAsInt());
 
-            Event.fireEvent(all.get(all.size() - 2), key(KeyCode.HOME));
-            assertSame(first, rig.stage().getScene().getFocusOwner());
-            assertEquals(0.0, scroll.getVvalue(), 1e-9, "and back to the top");
+            Event.fireEvent(list, key(KeyCode.HOME));
+            assertEquals(0, at.getAsInt());
+            SettingsRig.layOut(list);
+            assertTrue(onScreen(list, "cmd.0"), "and back to the top");
 
             // A chord is not navigation: Ctrl+End belongs to whoever binds it.
-            Event.fireEvent(first, ctrl(KeyCode.END));
-            assertSame(first, rig.stage().getScene().getFocusOwner());
-            Event.fireEvent(first, key(KeyCode.A)); // nor is a letter
-            assertSame(first, rig.stage().getScene().getFocusOwner());
+            Event.fireEvent(list, ctrl(KeyCode.END));
+            assertEquals(0, at.getAsInt());
+            Event.fireEvent(list, key(KeyCode.A)); // nor is a letter
+            assertEquals(0, at.getAsInt());
+            assertSame(list, rig.stage().getScene().getFocusOwner());
 
+            Node first = list;
             Event.fireEvent(first, key(KeyCode.SPACE)); // Space selects, like Enter
             assertTrue(row("cmd.0").getStyleClass().contains("shortcut-row-selected"));
+        });
+    }
+
+    /**
+     * PERF-08 (Pauta 6.0.1): the list builds a row for what is on screen, however many commands there are, and a
+     * key typed in the filter builds the rows it leaves on screen, not one for every command that matches.
+     */
+    @Test
+    void theShortcutListBuildsOnlyTheRowsOnScreenAndAFilterKeyDoesNotRebuildThemAll() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.window.setShortcutActions(keys(5_000));
+            rig.show();
+            rig.page("KEYMAPS");
+            rig.stage().getScene().getRoot().applyCss();
+            rig.stage().getScene().getRoot().layout();
+            ListView<SettingsWindow.Shortcut> list = SettingsRig.shortcutList(rig.window);
+            assertEquals(5_000, list.getItems().size(), "every command is a row of the list");
+            int onScreen = list.lookupAll(".shortcut-row").size();
+            assertTrue(onScreen > 0 && onScreen < 100, "rows with nodes: " + onScreen);
+            assertEquals(
+                    "Title of cmd.0", SettingsRig.texts(row("cmd.0")).get(0), "the first row is the first command");
+
+            Object page = FxTestSupport.field(rig.window, "keymapsPage");
+            TextField filter = rig.control("shortcutFilter");
+            int before = FxTestSupport.<Integer>field(page, "shortcutRowsBuilt");
+            for (String typed : List.of("c", "cm", "cmd", "cmd.", "cmd.4")) {
+                filter.setText(typed);
+                SettingsRig.layOut(list);
+            }
+            int built = FxTestSupport.<Integer>field(page, "shortcutRowsBuilt") - before;
+            assertTrue(rows().size() > 1_000, "the filter still lists every match: " + rows().size());
+            assertTrue(built > 0 && built < 5 * 100, "rows built by five keys in the filter: " + built);
+            assertTrue(list.lookupAll(".shortcut-row").size() < 100);
+        });
+    }
+
+    /** PERF-10: the arrow keys keep the row they are on in view, with no restyle of the list to find where it is. */
+    @Test
+    void walkingTheShortcutListWithTheArrowKeysKeepsTheRowInView() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.window.setShortcutActions(keys(450));
+            rig.show();
+            rig.page("KEYMAPS");
+            rig.stage().getScene().getRoot().applyCss();
+            rig.stage().getScene().getRoot().layout();
+            ListView<SettingsWindow.Shortcut> list = SettingsRig.shortcutList(rig.window);
+            list.requestFocus();
+            list.getSelectionModel().select(0);
+            for (int i = 1; i <= 300; i++) {
+                Event.fireEvent(list, key(KeyCode.DOWN));
+                list.layout(); // the layout a pulse does, and no more
+                assertEquals(i, list.getSelectionModel().getSelectedIndex());
+                assertTrue(onScreen(list, "cmd." + i), "Down to row " + i + " left it out of view");
+            }
+            for (int i = 299; i >= 250; i--) {
+                Event.fireEvent(list, key(KeyCode.UP));
+                list.layout();
+                assertTrue(onScreen(list, "cmd." + i), "Up to row " + i + " left it out of view");
+            }
+            // Selecting a row far down (Enter) builds its buttons and leaves it where it is, in view.
+            Event.fireEvent(list, key(KeyCode.ENTER));
+            assertEquals(3, SettingsRig.all(row("cmd.250"), Button.class).size());
+            assertTrue(onScreen(list, "cmd.250"));
+            assertEquals(250, list.getSelectionModel().getSelectedIndex());
         });
     }
 

@@ -55,12 +55,18 @@ class SwitcherFxTest {
         final List<Tab> activated = new ArrayList<>();
         final List<Tab> closed = new ArrayList<>();
         Tab active = editedTab;
-        final Switcher switcher = new Switcher(() -> tabs, () -> active, activated::add, closed::add);
+        final Switcher switcher = built(new Switcher(() -> tabs, () -> active, activated::add, closed::add));
         final ListView<Tab> list = FxTestSupport.field(switcher, "filesList");
         final Label footer = FxTestSupport.field(switcher, "pathLabel");
         final VBox root = FxTestSupport.field(switcher, "root");
         final Stage stage = new Stage();
         final OverlayHost host = new OverlayHost();
+
+        /** The switcher with its card made, as its first show would: the fields above are that card's. */
+        private static Switcher built(Switcher switcher) {
+            switcher.ensureBuilt();
+            return switcher;
+        }
 
         Rig() {
             saved.setPath(savedPath);

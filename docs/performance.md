@@ -159,6 +159,13 @@ style-only change that still ended a succession — skips the draw and the snaps
   line and fetches, scans and draws text only per row of the column. Rows a whole pixel or taller are still
   drawn per line, which is at most a column's height of them.
 - Avoid O(document) work on an edit or a scroll.
+- A list the user or the data can grow is a virtualized control, which builds nodes for the rows on screen
+  only (PERF-08, Pauta 6.0.1): the Settings shortcut list (a row per command; a key in its filter builds a
+  row for each place on screen whose shortcut changed, not one per match, and selecting a row rebuilds that
+  row and the one that was selected), the pull-request checks card and the live crontab preview are
+  `ListView`s. A row with wrapping text binds its labels' maximum width to the list's, or the cell cannot
+  say how tall it is (`CrontabPreview`, `MessageLogPopup`). The picture an export takes of a preview
+  (`CrontabPreview.content`) is off screen and holds every row.
 - **Never** call `getCharacterBoundsOnScreen` synchronously inside a layout/viewport event.
 - **Never** ask `getCharacterBoundsOnScreen` for an **empty** range — it allocates a blinking
   `CaretNode` whose timer is never stopped, permanently leaking a pulse receiver. Measure a
@@ -197,6 +204,15 @@ style-only change that still ended a succession — skips the draw and the snaps
 - Keep token rules as the compound `.text.<class>` selector (see
   [`styles/syntax.css`](../src/main/resources/com/editora/styles/syntax.css)).
 - Coalesce adjacent same-style spans (`SpanMerger`) before `setStyleSpans`.
+- `applyCss()` is for a small node measured before the pulse styles it (a card, a row, a label), never for
+  a list, a page or the editor area, and not on every key or scroll (PERF-10, Pauta 6.0.1). To act on
+  geometry the pulse has not laid out yet, wait for it (`Scene.addPostLayoutPulseListener`, once) instead of
+  forcing a pass: `ToolWindowManager` finds the tab header that way, not by styling the editor area. A bar or
+  a label that follows the selection or a pan is styled when it is put there or shown, not each time it
+  moves (`SelectionBars`, `MarkdownFormatBar`, `MapCardLinks`). `MarkdownPreview` styles the whole preview
+  in one call only when every block in it is new; otherwise the new blocks, or at the end of a sliced build
+  the blocks no layout has reached. See
+  [gotchas.md](gotchas.md#applycss-restyles-everything-below-the-node-it-is-called-on).
 
 ### 5. Preserve the large/huge-file guards
 
@@ -410,11 +426,24 @@ keep the show path free of work the user is not waiting for; measure against the
   (Bookmarks, Notes, File History, Remote Sites, Problems' diagnostics map, the Git status/operation/refusal
   the Commit panel shows, the Project tree's root, Git status and active file) or forces the build because
   the push *is* the feature being used (a run's console output, search results, a debug session's events,
-  a test run). The one exception is the shared build `Output` console: an empty `TabPane` that every build
-  coordinator and the Git transcript write to from the first command, so it stays eager.
-  `LazyToolWindowsFxTest` fails when a closed window has built its panel, and opens each one to prove it
-  still works. The console fonts follow the same rule: `EditorSettingsCoordinator.applyFontsAndPerBufferView`
+  a test run). The shared build `Output` console, which every build coordinator and the Git transcript write
+  to while it is closed, is held by `BuildOutput`: the panel is built by the window's first open or by the
+  first write that needs a tab (`started`, `logCommand`, `commandStarted`), whichever comes first, so nothing
+  written is lost and the window shows the panel that was written to; the font and the link handlers set
+  before that are kept and handed over at the build. `LazyToolWindowsFxTest` fails when a closed window has
+  built its panel, and opens each one to prove it still works. The console fonts follow the same rule: `EditorSettingsCoordinator.applyFontsAndPerBufferView`
   hands the font to the coordinator (`setOutputFont`/`setConsoleFont`), which applies it when the panel exists.
+- **Nothing else the first window does not show is built before it** (PERF-14, Pauta 6.0.1). A picker's
+  overlay card (`QuickOpen`, `CommandPalette`, `FileFinder`, `Switcher`, `SearchEverywherePopup`,
+  `BranchPopup`, `BuildActionsPopup`) is built by its first `show` (`ensureBuilt`); the setters that reach a
+  node before then keep the value for the build. The Settings window makes its stage and every control in
+  `SettingsWindow.build`, on the first `show`; the Message Log popup, the Doctor page and the Welcome page
+  (when the window opens on a file) are built by the accessor that first shows them. `FirstWindowOnlyFxTest`
+  builds a window, walks everything the controller and the window manager hold, and fails on a window other
+  than the main stage or a node that is not in the scene, apart from the parts of controls the window does
+  show that it names with a reason (menu rows, a right-click menu, a tooltip, a toolbar or stripe button
+  not placed now). A new picker, dialog or secondary window follows the same shape: nothing in the
+  constructor, everything in the method the first show calls.
 - **Only the fonts the first frame needs are registered before it.** `App.start` calls
   `Fonts.loadForFirstPaint(editorFamily)` — Inter (the chrome), JetBrains Mono (`app.css`'s monospace
   fallback) and the configured editor family — and arms `Fonts.loadRemainingAfterNextPaint()`, which parses the

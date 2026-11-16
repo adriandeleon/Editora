@@ -70,10 +70,13 @@ public class FileFinder {
     /** True once the user moved the highlight in the current listing (it no longer just sits on row one). */
     private boolean highlightMoved;
 
-    private final TextField input = new TextField();
-    private final ListView<Path> list = new ListView<>();
+    // The card's nodes are made by build(), on the first show(): a finder nobody has opened holds none.
+    private TextField input;
+    private ListView<Path> list;
     /** The key legend under the list; rebuilt from the live keymap each time the finder is shown. */
-    private final Label hint = new Label();
+    private Label hint;
+
+    private boolean built;
 
     private final ObservableList<Path> items = FXCollections.observableArrayList();
 
@@ -103,10 +106,21 @@ public class FileFinder {
         this.onChoose = onChoose;
         this.pickDirectory = pickDirectory;
         this.title = title;
-        build();
     }
 
+    /** Builds the card now if nothing has yet: the first show does, and a test that reads the card before one. */
+    void ensureBuilt() {
+        if (!built) {
+            build();
+            built = true;
+        }
+    }
+
+    @Initializer
     private void build() {
+        input = new TextField();
+        list = new ListView<>();
+        hint = new Label();
         input.setPromptText(tr("filefinder.prompt"));
         list.setItems(items);
         UiZoom.prefHeight(list, LIST_HEIGHT);
@@ -149,6 +163,7 @@ public class FileFinder {
         if (overlayHost == null) {
             return;
         }
+        ensureBuilt();
         Path dir = startDir.get();
         currentDir = null;
         listing = DirectoryListing.UNREADABLE;

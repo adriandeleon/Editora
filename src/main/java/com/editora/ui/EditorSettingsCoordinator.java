@@ -51,12 +51,14 @@ final class EditorSettingsCoordinator {
         @Nullable
         WindowManager windowManager();
 
-        BuildOutputPanel buildOutputPanel();
+        BuildOutput buildOutputPanel();
 
         DebugCoordinator debugCoordinator();
 
         HistoryCoordinator historyCoordinator();
 
+        /** The Welcome page once its tab has been opened, else null. */
+        @Nullable
         WelcomePane welcomePane();
 
         @Nullable
@@ -684,8 +686,8 @@ final class EditorSettingsCoordinator {
         if (host.settingsWindow() != null) {
             host.settingsWindow().syncThemes();
         }
-        if (host.welcomeTab() != null) {
-            host.welcomePane().refresh(); // its Customize block names the theme
+        if (host.welcomeTab() != null && host.welcomePane() instanceof WelcomePane welcome) {
+            welcome.refresh(); // its Customize block names the theme
         }
         host.setStatus(tr("status.appTheme", name));
     }
@@ -1392,8 +1394,8 @@ final class EditorSettingsCoordinator {
         applyFontsAndPerBufferView(settings);
         // If the Welcome tab is open, rebuild it so its Open Folder / Clone actions track the
         // Projects/Git toggles that may have just changed (a font-only zoom skips this rebuild).
-        if (host.welcomeTab() != null) {
-            host.welcomePane().refresh();
+        if (host.welcomeTab() != null && host.welcomePane() instanceof WelcomePane welcome) {
+            welcome.refresh();
         }
     }
 
@@ -1470,8 +1472,8 @@ final class EditorSettingsCoordinator {
                 diff.setFont(settings.getFontFamily(), consoleFont); // text zoom applies inside a Diff tab too (#533)
             }
         }
-        if (host.welcomeTab() != null) {
-            host.welcomePane().setFontScale(settings.getFontZoom()); // scale Welcome text to the current zoom (#540)
+        if (host.welcomeTab() != null && host.welcomePane() instanceof WelcomePane welcome) {
+            welcome.setFontScale(settings.getFontZoom()); // scale Welcome text to the current zoom (#540)
         }
         if (host.doctorTab() != null) {
             host.doctorCoordinator().pane().setFontScale(settings.getFontZoom()); // scale the Doctor tab like Welcome

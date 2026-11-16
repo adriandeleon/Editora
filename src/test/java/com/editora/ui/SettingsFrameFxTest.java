@@ -565,6 +565,8 @@ class SettingsFrameFxTest {
                 sidebar.getSelectionModel().select(category(sidebar, "KEYMAPS"));
                 Stage stage = FxTestSupport.field(window, "stage");
                 stage.getScene().getRoot().applyCss();
+                stage.getScene().getRoot().layout(); // the rows on screen are made by the list's layout
+                stage.getScene().getRoot().applyCss();
                 Node chip = stage.getScene().getRoot().lookup(".shortcut-chord");
                 assertTrue(chip != null, "a bound command shows its chord");
                 javafx.scene.paint.Color ink =
