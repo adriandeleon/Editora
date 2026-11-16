@@ -631,10 +631,11 @@ public final class MarkdownRenderer {
                 return printCodeBlock(
                         code, ctx.assets() == null ? null : ctx.assets().runs(f.getInfo(), code));
             }
-            return languageLabelled(highlightedCodeBlock(f.getLiteral(), f.getInfo()), f.getInfo());
+            return codeCorner(highlightedCodeBlock(f.getLiteral(), f.getInfo()), f.getInfo(), ctx);
         }
         if (node instanceof IndentedCodeBlock i) {
-            return codeBlock(i.getLiteral(), ctx); // indented blocks carry no language → plain
+            // Indented blocks carry no language: plain, with only the copy button in the corner.
+            return ctx.print() ? codeBlock(i.getLiteral(), ctx) : codeCorner(codeBlock(i.getLiteral()), null, ctx);
         }
         if (node instanceof ThematicBreak) {
             Separator s = new Separator();
@@ -1475,28 +1476,46 @@ public final class MarkdownRenderer {
     static final String LANGUAGE_KEY = "editora.md.language";
 
     /**
-     * A fenced block with a language gets its name in the top right corner ({@code ```java} says "java"): the
-     * first word of the info string, as written. A block without one is returned as it is.
+     * A code block's corner: the fence's language ({@code ```java} says "java"), the first word of the info
+     * string as written, and a copy button that shows while the pointer is over the block. A popup (a hover's
+     * signature, a completion's documentation) gets no copy button; a block with neither is returned as it is.
      */
-    private static Node languageLabelled(Node block, String info) {
+    private static Node codeCorner(Node block, @Nullable String info, RenderContext ctx) {
+        String language = fenceLanguage(info);
+        String code = block.hasProperties() && block.getProperties().get(CODE_KEY) instanceof String s ? s : null;
+        boolean copy = !ctx.popup() && code != null;
+        if (language.isEmpty() && !copy) {
+            return block;
+        }
+        HBox corner = new HBox();
+        corner.getStyleClass().add("md-code-corner");
+        corner.setAlignment(Pos.CENTER_RIGHT);
+        corner.setPickOnBounds(false); // between the button and the label, a press still selects the code
+        corner.setMaxSize(javafx.scene.layout.Region.USE_PREF_SIZE, javafx.scene.layout.Region.USE_PREF_SIZE);
+        StackPane wrap = new StackPane(block, corner);
+        wrap.getStyleClass().add("md-code-wrap");
+        StackPane.setAlignment(corner, Pos.TOP_RIGHT);
+        if (copy && code != null) {
+            corner.getChildren().add(CodeCopyButton.create(code, wrap.hoverProperty()));
+            wrap.getProperties().put(CODE_KEY, code);
+        }
+        if (!language.isEmpty()) {
+            Label label = new Label(language);
+            label.getStyleClass().add("md-code-lang");
+            label.setMouseTransparent(true);
+            corner.getChildren().add(label);
+            wrap.getProperties().put(LANGUAGE_KEY, language);
+        }
+        return wrap;
+    }
+
+    /** The language a fence's info string names: its first word, "" for none or one too long to be one. Pure. */
+    static String fenceLanguage(@Nullable String info) {
         String language = info == null ? "" : info.strip().split("\\s+", 2)[0];
         if (language.startsWith("{")) { // ```{.python} / ```{r, echo=FALSE}
             language = language.replaceAll("^\\{\\.?|[,}].*$", "");
         }
-        if (language.isEmpty() || language.length() > 24) {
-            return block;
-        }
-        Label label = new Label(language);
-        label.getStyleClass().add("md-code-lang");
-        label.setMouseTransparent(true);
-        StackPane wrap = new StackPane(block, label);
-        wrap.getStyleClass().add("md-code-wrap");
-        StackPane.setAlignment(label, Pos.TOP_RIGHT);
-        wrap.getProperties().put(LANGUAGE_KEY, language);
-        if (block.hasProperties() && block.getProperties().containsKey(CODE_KEY)) {
-            wrap.getProperties().put(CODE_KEY, block.getProperties().get(CODE_KEY));
-        }
-        return wrap;
+        return language.length() > 24 ? "" : language;
     }
 
     /** Node property marking a picture or diagram that a click opens enlarged. */

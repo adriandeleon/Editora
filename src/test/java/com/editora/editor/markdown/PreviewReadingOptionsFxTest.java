@@ -178,6 +178,34 @@ class PreviewReadingOptionsFxTest {
     }
 
     @Test
+    void everyCodeBlockHasACopyButtonThatShowsOnHover() throws Exception {
+        open("```java\nint x = 1;\n```\n\n```\nno language\n```\n\n    indented\n", null);
+        EditorFx.onFx(() -> {
+            java.util.List<javafx.scene.control.Button> buttons =
+                    pane.preview().column().lookupAll("." + CodeCopyButton.STYLE).stream()
+                            .map(javafx.scene.control.Button.class::cast)
+                            .toList();
+            assertEquals(3, buttons.size(), "fenced with and without a language, and indented");
+            javafx.scene.control.Button button = buttons.get(0);
+            assertFalse(button.isVisible(), "hidden until the pointer is over the block");
+            assertFalse(button.isManaged(), "and takes no room beside the language then");
+            assertFalse(button.isFocusTraversable());
+            assertNotNull(button.getAccessibleText(), "named for a screen reader");
+
+            button.fire();
+            assertEquals(
+                    "int x = 1;",
+                    javafx.scene.input.Clipboard.getSystemClipboard().getString());
+            assertTrue(button.getStyleClass().contains(CodeCopyButton.COPIED), "a check mark says it worked");
+            buttons.get(2).fire();
+            assertEquals(
+                    "indented",
+                    javafx.scene.input.Clipboard.getSystemClipboard().getString());
+        });
+        close();
+    }
+
+    @Test
     void theColumnWidthAndTheFontSizeAreTheReadersChoice() throws Exception {
         open("# Heading\n\nBody.\n", null);
         EditorFx.onFx(() -> {
