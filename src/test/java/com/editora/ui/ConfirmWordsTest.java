@@ -185,31 +185,40 @@ class ConfirmWordsTest {
         assertAction(readOnly, "dialog.saveReadOnly.overwrite");
     }
 
+    /** This file system's root ({@code /}, or the drive on Windows), so the sample paths are absolute everywhere. */
+    private static Path root() {
+        return Path.of("").toAbsolutePath().getRoot();
+    }
+
     @Test
     void anEditThatDestroysFilesListsEachPathAndWhatHappensToIt() {
+        Path home = root().resolve("home").resolve("me");
+        Path app = home.resolve("app");
+        String sep = app.getFileSystem().getSeparator();
         Confirm.Question q = LspWorkspaceEdits.destructiveEditQuestion(
                 List.of(
                         new WorkspaceEditHazards.Hazard(
-                                Path.of("/home/me/app/old"), WorkspaceEditHazards.Kind.DELETE_DIRECTORY, null),
+                                app.resolve("old"), WorkspaceEditHazards.Kind.DELETE_DIRECTORY, null),
                         new WorkspaceEditHazards.Hazard(
-                                Path.of("/home/me/app/Main.java"), WorkspaceEditHazards.Kind.OVERWRITE, null)),
-                path -> path.replace("/home/me", "~"));
+                                app.resolve("Main.java"), WorkspaceEditHazards.Kind.OVERWRITE, null)),
+                path -> com.editora.config.PathDisplay.collapseHome(path, home.toString()));
         assertEquals(tr("dialog.lsp.destructiveEdit.title"), q.title());
         assertEquals(tr("dialog.lsp.destructiveEdit.header"), q.header());
         assertEquals(
-                tr("dialog.lsp.destructiveEdit.deleteFolder", "~/app/old") + "\n"
-                        + tr("dialog.lsp.destructiveEdit.overwrite", "~/app/Main.java"),
+                tr("dialog.lsp.destructiveEdit.deleteFolder", "~" + sep + "app" + sep + "old") + "\n"
+                        + tr("dialog.lsp.destructiveEdit.overwrite", "~" + sep + "app" + sep + "Main.java"),
                 q.message());
         assertAction(q, "dialog.lsp.destructiveEdit.apply");
     }
 
     @Test
     void anInterruptedRefactoringListsTenFilesAndCountsTheRest() {
-        List<Path> two = List.of(Path.of("/p/A.java"), Path.of("/p/B.java"));
+        Path p = root().resolve("p");
+        List<Path> two = List.of(p.resolve("A.java"), p.resolve("B.java"));
         Confirm.Choice restore = LspWorkspaceEdits.interruptedEditQuestion(two, false, path -> path);
         assertEquals(tr("dialog.lsp.interruptedEdit.title"), restore.title());
         assertEquals(tr("dialog.lsp.interruptedEdit.header"), restore.header());
-        assertEquals("/p/A.java\n/p/B.java", restore.message());
+        assertEquals(two.get(0) + "\n" + two.get(1), restore.message());
         assertActions(restore.answers(), "dialog.lsp.interruptedEdit.restore", "dialog.lsp.interruptedEdit.keep");
         assertEquals(tr("dialog.lsp.interruptedEdit.later"), restore.cancel(), "its Cancel is Not Now");
 
@@ -218,12 +227,15 @@ class ConfirmWordsTest {
         assertActions(remove.answers(), "dialog.lsp.interruptedEdit.remove", "dialog.lsp.interruptedEdit.keep");
 
         List<Path> many = java.util.stream.IntStream.range(0, 13)
-                .mapToObj(i -> Path.of("/p/F" + i + ".java"))
+                .mapToObj(i -> p.resolve("F" + i + ".java"))
                 .toList();
         String listed = LspWorkspaceEdits.interruptedEditQuestion(many, false, path -> path)
                 .message();
         assertEquals(11, listed.lines().count(), listed);
-        assertTrue(listed.contains("/p/F9.java") && !listed.contains("/p/F10.java"), listed);
+        assertTrue(
+                listed.contains(p.resolve("F9.java").toString())
+                        && !listed.contains(p.resolve("F10.java").toString()),
+                listed);
         assertTrue(listed.endsWith("\n+3"), "and how many more: " + listed);
     }
 
