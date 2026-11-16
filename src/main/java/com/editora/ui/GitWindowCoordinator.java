@@ -117,11 +117,38 @@ final class GitWindowCoordinator {
     java.util.function.BiPredicate<String, String> tagDeleteConfirmer = this::confirmTagDelete;
 
     private boolean confirmTagDelete(String tag, String root) {
-        return host.git()
-                .confirmDestructive(
-                        tr("dialog.deleteTag.title"),
-                        tr("dialog.deleteTag.content", tag, root),
-                        tr("dialog.deleteTag.action"));
+        return host.git().confirmDestructive(deleteTagQuestion(tag, root));
+    }
+
+    /** The words of the question before the tag {@code tag} of the repository {@code root} is deleted. */
+    static Confirm.Question deleteTagQuestion(String tag, String root) {
+        return new Confirm.Question(
+                tr("dialog.deleteTag.title"),
+                null,
+                tr("dialog.deleteTag.content", tag, root),
+                tr("dialog.deleteTag.action"));
+    }
+
+    /**
+     * The words of the question before a reset in {@code mode} moves {@code branch} to {@code shortHash} and leaves
+     * commits behind ({@code left}).
+     */
+    static Confirm.Question resetQuestion(
+            String mode, String shortHash, String branch, Path root, com.editora.git.GitService.LeftBehind left) {
+        return new Confirm.Question(
+                tr("dialog.gitReset.title"),
+                null,
+                GitHeadMoveWarning.resetPrompt(mode, shortHash, branch, root, left),
+                tr("hard".equals(mode) ? "dialog.gitReset.hard" : "dialog.gitReset.title"));
+    }
+
+    /** The words of the question before checking out {@code shortHash} leaves commits behind ({@code left}). */
+    static Confirm.Question checkoutCommitQuestion(String shortHash, com.editora.git.GitService.LeftBehind left) {
+        return new Confirm.Question(
+                tr("dialog.gitCheckout.title"),
+                null,
+                GitHeadMoveWarning.checkoutPrompt(shortHash, left),
+                tr("dialog.gitCheckout.action"));
     }
 
     /** IntelliJ-style branch dropdown (actions + Local/Remote branches), anchored to the status bar. */
@@ -725,11 +752,7 @@ final class GitWindowCoordinator {
         String shortHash = com.editora.git.GitFormat.shortHash(hash);
         host.git().service().commitsLeftBehind(root, hash, true, left -> {
             if (GitHeadMoveWarning.resetNeedsConfirmation(mode, left)
-                    && !host.git()
-                            .confirmDestructive(
-                                    tr("dialog.gitReset.title"),
-                                    GitHeadMoveWarning.resetPrompt(mode, shortHash, branch, root, left),
-                                    tr("hard".equals(mode) ? "dialog.gitReset.hard" : "dialog.gitReset.title"))) {
+                    && !host.git().confirmDestructive(resetQuestion(mode, shortHash, branch, root, left))) {
                 return;
             }
             gitMutateIn(root, tr("status.git.reset", mode, shortHash), "reset", "--" + mode, hash);
@@ -748,11 +771,7 @@ final class GitWindowCoordinator {
         String shortHash = com.editora.git.GitFormat.shortHash(hash);
         host.git().service().commitsLeftBehind(root, hash, false, left -> {
             if (GitHeadMoveWarning.checkoutNeedsConfirmation(left)
-                    && !host.git()
-                            .confirmDestructive(
-                                    tr("dialog.gitCheckout.title"),
-                                    GitHeadMoveWarning.checkoutPrompt(shortHash, left),
-                                    tr("dialog.gitCheckout.action"))) {
+                    && !host.git().confirmDestructive(checkoutCommitQuestion(shortHash, left))) {
                 return;
             }
             gitMutateIn(root, tr("status.git.checkedOutDetached", shortHash), "checkout", hash);

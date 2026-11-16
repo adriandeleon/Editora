@@ -1463,12 +1463,30 @@ public final class DiffViewerPane implements TabContent {
         });
     }
 
+    /**
+     * Reset draft: the result's text goes back to what it was before the edits. The edits cannot be brought
+     * back (the draft's undo history is cleared), so it asks first; a draft with no edits is left as it is.
+     */
     private void resetResult() {
         if (!resultEditing || resultArea == null) {
             return;
         }
+        if (java.util.Objects.equals(resultArea.getText(), resultBaselineText)) {
+            return; // nothing would be lost
+        }
+        javafx.stage.Window owner =
+                root.getScene() == null ? null : root.getScene().getWindow();
+        if (!Confirm.ask(owner, resetResultQuestion())) {
+            return;
+        }
         setResultText(resultBaselineText, true);
         onResultEdited.accept(resultBaselineText);
+    }
+
+    /** The question before the draft's edits are discarded. Pure. */
+    static Confirm.Question resetResultQuestion() {
+        return new Confirm.Question(
+                tr("diff.resetResult.confirmTitle"), null, tr("diff.resetResult.confirm"), tr("confirm.action.reset"));
     }
 
     private void updateResultControls() {
@@ -2484,10 +2502,15 @@ public final class DiffViewerPane implements TabContent {
         String otherText = editableSide == EditableSide.RIGHT ? leftText : rightText;
         javafx.stage.Window owner =
                 root.getScene() == null ? null : root.getScene().getWindow();
-        if (Confirm.ask(
-                owner, tr("diff.applyAll.confirmTitle"), tr("diff.applyAll.confirm"), tr("confirm.action.replace"))) {
+        if (Confirm.ask(owner, applyAllQuestion())) {
             deliverApply(otherText);
         }
+    }
+
+    /** The words of the question before Apply All replaces the whole editable file with the other side. */
+    static Confirm.Question applyAllQuestion() {
+        return new Confirm.Question(
+                tr("diff.applyAll.confirmTitle"), null, tr("diff.applyAll.confirm"), tr("confirm.action.replace"));
     }
 
     private void deliverApply(String text) {

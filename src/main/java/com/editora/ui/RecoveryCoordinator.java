@@ -622,9 +622,14 @@ final class RecoveryCoordinator {
 
     private boolean askDiscard(int count) {
         // Enter and Escape both keep the records: only a click on Discard deletes them.
-        return Confirm.ask(
-                host.window(),
+        return Confirm.ask(host.window(), discardQuestion(count));
+    }
+
+    /** The words of the question before {@code count} recovery records are discarded. */
+    static Confirm.Question discardQuestion(int count) {
+        return new Confirm.Question(
                 tr("recovery.discard.confirmTitle"),
+                null,
                 tr("recovery.discard.confirm", count),
                 tr("recovery.discard.button"));
     }

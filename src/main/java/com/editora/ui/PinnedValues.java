@@ -110,8 +110,30 @@ final class PinnedValues {
             host.setStatus(tr("status.debug.pinsFull", PinManager.MAX_PER_LINE));
             return;
         }
+        int index = pins.expressions(line).indexOf(expression);
         boolean pinned = pins.toggle(line, expression);
-        host.setStatus(tr(pinned ? "status.debug.pinned" : "status.debug.unpinned", expression, line + 1));
+        if (pinned || !had) {
+            host.setStatus(tr(pinned ? "status.debug.pinned" : "status.debug.unpinned", expression, line + 1));
+            return;
+        }
+        // It may have been typed in the prompt, which the same key does not bring back: Undo Last Removal does.
+        RemovedLine at = RemovedLine.of(b, line);
+        host.removalUndo()
+                .removed(
+                        tr("status.debug.unpinned", expression, at.documentLine() + 1),
+                        tr("status.debug.pinRestored", expression, at.documentLine() + 1),
+                        () -> restorePin(at, index, expression));
+    }
+
+    /**
+     * Pins {@code expression} to its line again, at {@code index} among the line's values. False, changing nothing,
+     * when the tab was closed, the line cannot take it back ({@link RemovedLine#viewLine}), the expression is pinned
+     * there again, or the line is full.
+     */
+    boolean restorePin(RemovedLine at, int index, String expression) {
+        EditorBuffer b = at.buffer(host);
+        int line = b == null ? -1 : at.viewLine(b);
+        return b != null && line >= 0 && b.getPinManager().pinAt(line, index, expression);
     }
 
     /** Debug: Unpin Values on Line — removes every value pinned to the caret's line. */
@@ -121,11 +143,32 @@ final class PinnedValues {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (b.getPinManager().clearLine(line)) {
-            host.setStatus(tr("status.debug.unpinnedLine", line + 1));
-        } else {
+        List<String> expressions = List.copyOf(b.getPinManager().expressions(line));
+        if (!b.getPinManager().clearLine(line)) {
             host.setStatus(tr("status.debug.noPins", line + 1));
+            return;
         }
+        // The expressions were typed or picked one by one: Undo Last Removal pins them again, in their order.
+        RemovedLine at = RemovedLine.of(b, line);
+        host.removalUndo()
+                .removed(
+                        tr("status.debug.unpinnedLine", at.documentLine() + 1),
+                        tr("status.debug.pinsRestored", at.documentLine() + 1),
+                        () -> restorePins(at, expressions));
+    }
+
+    /**
+     * Pins {@code expressions} to their line again. False, changing nothing, when the tab was closed, the line cannot
+     * take them back ({@link RemovedLine#viewLine}), or a value was pinned to it since.
+     */
+    boolean restorePins(RemovedLine at, List<String> expressions) {
+        EditorBuffer b = at.buffer(host);
+        int line = b == null ? -1 : at.viewLine(b);
+        if (b == null || line < 0 || !b.getPinManager().expressions(line).isEmpty()) {
+            return false;
+        }
+        expressions.forEach(expression -> b.getPinManager().toggle(line, expression));
+        return true;
     }
 
     /**

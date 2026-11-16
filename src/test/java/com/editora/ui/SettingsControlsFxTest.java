@@ -667,7 +667,22 @@ class SettingsControlsFxTest {
             mcp.setSelected(true);
             assertTrue(SettingsRig.texts(page).contains(tr("settings.mcp.running", "http://127.0.0.1:4242/mcp")));
             SettingsRig.button(page, tr("settings.mcp.copy")).fire();
-            SettingsRig.button(page, tr("settings.mcp.newToken")).fire();
+            // New Token locks out every agent set up with the current one, so it asks first: Cancel keeps the token.
+            try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                SettingsRig.button(page, tr("settings.mcp.newToken")).fire();
+                assertEquals(
+                        List.of(new Confirm.Question(
+                                "New MCP Token",
+                                null,
+                                "Replace the MCP token with a new one? Agents set up with the current token stop"
+                                        + " working until they are given the endpoint command again.",
+                                "Replace")),
+                        questions.asked());
+                assertEquals(0, rotated[0], "Cancel makes no new token");
+                questions.answer(true);
+                SettingsRig.button(page, tr("settings.mcp.newToken")).fire();
+                assertEquals(2, questions.asked().size());
+            }
             assertEquals(1, copied[0]);
             assertEquals(1, rotated[0]);
             assertFalse(SettingsRig.texts(page).stream().anyMatch(t -> t.contains("Off by default")));

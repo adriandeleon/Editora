@@ -210,14 +210,36 @@ final class ProjectMapTrailEditor extends VBox {
         }
     }
 
+    /** Remove, Delete and the menu row: the selected stop goes, written to the trail at once, so it asks first. */
     void removeSelected() {
         int index = stops.getSelectionModel().getSelectedIndex();
         List<MapTrails.Stop> items = new ArrayList<>(stops.getItems());
         if (index < 0 || index >= items.size()) {
             return;
         }
+        MapTrails.Stop stop = items.get(index);
+        javafx.stage.Window owner = getScene() == null ? null : getScene().getWindow();
+        if (!Confirm.ask(
+                owner,
+                removeStopQuestion(
+                        ProjectMapTrails.stopTitle(stop), !stop.note().isBlank()))) {
+            return;
+        }
         items.remove(index);
         save(items);
+    }
+
+    /** The question before the stop titled {@code title} leaves its trail, saying so when a note goes too. Pure. */
+    static Confirm.Question removeStopQuestion(String title, boolean hasNote) {
+        return new Confirm.Question(
+                tr("project.map.trails.editor.removeStopTitle"),
+                null,
+                tr(
+                        hasNote
+                                ? "project.map.trails.editor.removeStopConfirm.note"
+                                : "project.map.trails.editor.removeStopConfirm",
+                        title),
+                tr("confirm.action.remove"));
     }
 
     private void renameSelected() {

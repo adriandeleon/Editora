@@ -142,7 +142,13 @@ class ListRowMenusFxTest {
             list.getSelectionModel().select(0);
             remove = row(menuOf(list), ListRowCommands.REMOVE);
             assertFalse(remove.isDisable());
-            remove.fire();
+            try (ConfirmAnswers questions = ConfirmAnswers.confirming()) {
+                remove.fire();
+                assertEquals(
+                        List.of(TypeRenderersEditor.removeQuestion("java.util.List")),
+                        questions.asked(),
+                        "the row asks what the Remove button asks, once");
+            }
             assertTrue(list.getItems().isEmpty(), "the row did what the Remove button does");
             assertEquals(1, saved.size(), "and stored it as the button does");
         });

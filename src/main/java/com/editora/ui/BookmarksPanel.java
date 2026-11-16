@@ -560,9 +560,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private void deleteMark(MarkRow m) {
         if (Confirm.ask(
                 getScene() == null ? null : getScene().getWindow(),
-                tr("dialog.removeBookmark.title"),
-                tr("dialog.removeBookmark.body", m.bm().line() + 1),
-                tr("confirm.action.remove"))) {
+                BookmarkCoordinator.removeQuestion(m.bm().line()))) {
             actions.delete(m.projectKey(), m.file(), m.bm().line());
         }
     }
@@ -570,9 +568,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private void deleteFile(FileRow f) {
         if (Confirm.ask(
                 getScene() == null ? null : getScene().getWindow(),
-                tr("bookmarks.deleteFileTitle"),
-                tr("bookmarks.deleteFileBody", PathDisplay.fileName(f.file())),
-                tr("confirm.action.delete"))) {
+                BookmarkCoordinator.deleteFileQuestion(PathDisplay.fileName(f.file())))) {
             actions.deleteAll(f.projectKey(), f.file());
         }
     }

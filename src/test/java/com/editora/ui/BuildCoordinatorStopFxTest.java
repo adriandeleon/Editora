@@ -209,6 +209,54 @@ class BuildCoordinatorStopFxTest {
         waitUntil(() -> !c.isRunning(), "cleanup");
     }
 
+    /** The question itself, answered through the hook with no window: only its action stops the running build. */
+    @Test
+    void theStopAndRunQuestionIsAnsweredWithNoDialog(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        BuildCoordinator c = sleepingMaven(host, new BuildOutputPanel(), dir);
+        try (DialogAnswers answers = DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+            waitUntil(c::isRunning, "the first build started");
+
+            FxTestSupport.runOnFx(() -> c.runTask(List.of("verify", "-DskipTests"), List.of()));
+            Dialogs.Asked asked = answers.only();
+            Confirm.Question words =
+                    BuildCoordinator.stopAndRunQuestion(BuildTool.MAVEN.displayName(), "verify -DskipTests");
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.header(), asked.header());
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(
+                                    words.action(), javafx.scene.control.ButtonBar.ButtonData.OK_DONE, false, true),
+                            new Dialogs.Answer(
+                                    tr("dialog.cancel"),
+                                    javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE,
+                                    true,
+                                    false)),
+                    asked.answers());
+            assertEquals(tr("status.build.busy", BuildTool.MAVEN.displayName()), host.lastStatus());
+            assertTrue(c.isRunning() && List.of("compile").equals(lastTaskArgs(c)), "Cancel: still the first build");
+
+            answers.nowClosing();
+            FxTestSupport.runOnFx(() -> c.runTask(List.of("verify", "-DskipTests"), List.of()));
+            assertTrue(c.isRunning() && List.of("compile").equals(lastTaskArgs(c)), "closed: still the first build");
+
+            answers.nowPressing(words.action());
+            FxTestSupport.runOnFx(() -> c.runTask(List.of("verify", "-DskipTests"), List.of()));
+            waitUntil(
+                    () -> c.isRunning() && List.of("verify", "-DskipTests").equals(lastTaskArgs(c)),
+                    "the second build started once the first one's exit was delivered");
+            assertTrue(
+                    host.statuses.contains(tr("status.build.stopped", BuildTool.MAVEN.displayName())),
+                    "the first build was stopped on the way: " + host.statuses);
+            assertEquals(3, answers.asked().size());
+        } finally {
+            FxTestSupport.runOnFx(c::stop);
+            waitUntil(() -> !c.isRunning(), "cleanup");
+        }
+    }
+
     @Test
     void decliningStopAndRunLeavesTheRunningBuildAlone(@TempDir Path dir) throws Exception {
         FakeHost host = new FakeHost();

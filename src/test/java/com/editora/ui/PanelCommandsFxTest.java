@@ -506,7 +506,12 @@ class PanelCommandsFxTest {
             FxTestSupport.<javafx.scene.control.ComboBox<?>>field(http, "historyCombo")
                     .hide();
             assertFalse(clear.isDisable(), "a kept response can be cleared");
-            assertTrue(run("http.clearHistory", http, status));
+            // The command asks what the row asks, once; with nothing kept (above) there was nothing to ask.
+            try (ConfirmAnswers questions = ConfirmAnswers.confirming()) {
+                assertTrue(run("http.clearHistory", http, status));
+                assertEquals(List.of(HttpClientPanel.clearQuestion(1)), questions.asked());
+            }
+            assertTrue(http.history().isEmpty());
 
             HierarchyPanel hierarchy =
                     new HierarchyPanel((HierarchyPanel.Loader) java.lang.reflect.Proxy.newProxyInstance(

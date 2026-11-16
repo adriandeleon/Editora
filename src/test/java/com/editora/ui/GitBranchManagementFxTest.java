@@ -24,6 +24,7 @@ import com.editora.git.GitRemotes;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
 import com.editora.git.GitWorktrees;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,10 +48,15 @@ class GitBranchManagementFxTest {
         FxTestSupport.bootToolkit();
     }
 
+    @AfterEach
+    void showQuestionsAgain() {
+        Confirm.answerWith(null);
+    }
+
     // --- delete ------------------------------------------------------------------------------------
 
     @Test
-    void aMergedBranchIsDeletedWithoutAQuestion(@TempDir Path dir) throws Exception {
+    void aMergedBranchIsDeletedAfterOnePlainQuestion(@TempDir Path dir) throws Exception {
         GitTestRepo repo = repoWithCommit(dir);
         repo.git("branch", "done");
 
@@ -58,12 +64,96 @@ class GitBranchManagementFxTest {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             GitBranchCoordinator branches = branches(fx, repo, "main", "");
             CountDownLatch deleted = watchStatus(fx, tr("status.git.deletedBranch", "done")::equals);
+            List<Confirm.Question> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+            Confirm.answerWith(question -> {
+                asked.add(question);
+                return true;
+            });
 
             FxTestSupport.runOnFx(() -> branches.deleteBranch(repo.root, "main", "done"));
             async.await(deleted, "branch deletion");
 
             assertFalse(hasBranch(repo, "done"));
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            tr("dialog.deleteBranch.title"),
+                            null,
+                            tr("dialog.deleteBranch.merged", "done"),
+                            tr("confirm.action.delete"))),
+                    asked,
+                    "one question, the plain one: nothing would be left on no branch");
         }
+    }
+
+    @Test
+    void cancellingThePlainQuestionKeepsTheMergedBranch(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = repoWithCommit(dir);
+        repo.git("branch", "done");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitBranchCoordinator branches = branches(fx, repo, "main", "");
+            CountDownLatch kept = watchStatus(fx, tr("status.git.branchKept", "done")::equals);
+            List<Confirm.Question> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+            Confirm.answerWith(question -> {
+                asked.add(question);
+                return false;
+            });
+
+            FxTestSupport.runOnFx(() -> branches.deleteBranch(repo.root, "main", "done"));
+            async.await(kept, "kept branch");
+
+            assertTrue(hasBranch(repo, "done"));
+            assertEquals(List.of(GitBranchCoordinator.deleteBranchQuestion("done", 0)), asked);
+        }
+    }
+
+    @Test
+    void anUnmergedBranchIsAskedAboutOnceWithTheDangerQuestion(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = repoWithUnmergedTopic(dir);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitBranchCoordinator branches = branches(fx, repo, "main", "");
+            CountDownLatch deleted = watchStatus(fx, tr("status.git.deletedBranch", "topic")::equals);
+            List<Confirm.Question> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+            Confirm.answerWith(question -> {
+                asked.add(question);
+                return true;
+            });
+
+            FxTestSupport.runOnFx(() -> branches.deleteBranch(repo.root, "main", "topic"));
+            async.await(deleted, "forced branch deletion");
+
+            assertFalse(hasBranch(repo, "topic"));
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            tr("dialog.deleteBranch.title"),
+                            null,
+                            tr("dialog.deleteBranch.unmerged.many", "topic", 2),
+                            tr("dialog.deleteBranch.force"))),
+                    asked,
+                    "the plain question is not asked before the danger one");
+        }
+    }
+
+    /** The words of the question, from how many commits the checked-out branch lacks. */
+    @Test
+    void theDeleteQuestionSaysWhatHappensToTheCommits() {
+        Confirm.Question merged = GitBranchCoordinator.deleteBranchQuestion("done", 0);
+        assertEquals(tr("dialog.deleteBranch.title"), merged.title());
+        assertEquals("Delete the branch done? Its commits are all on the current branch.", merged.message());
+        assertEquals(tr("confirm.action.delete"), merged.action());
+
+        Confirm.Question one = GitBranchCoordinator.deleteBranchQuestion("topic", 1);
+        assertEquals(tr("dialog.deleteBranch.unmerged.one", "topic", 1), one.message());
+        assertEquals(tr("dialog.deleteBranch.force"), one.action());
+        assertEquals(
+                tr("dialog.deleteBranch.unmerged.many", "topic", 3),
+                GitBranchCoordinator.deleteBranchQuestion("topic", 3).message());
+        Confirm.Question unknown = GitBranchCoordinator.deleteBranchQuestion("topic", -1);
+        assertEquals(tr("dialog.deleteBranch.unmerged.unknown", "topic"), unknown.message());
+        assertEquals(tr("dialog.deleteBranch.force"), unknown.action());
     }
 
     @Test
@@ -359,6 +449,68 @@ class GitBranchManagementFxTest {
             assertEquals(rev(d.repo(), "main"), remoteRev(d.remote(), "main"));
             assertTrue(Files.exists(d.repo().root.resolve("theirs.txt")), "the other commit was merged in");
             assertTrue(Files.exists(d.repo().root.resolve("mine.txt")));
+        }
+    }
+
+    /** The same question answered through the hook, with no window: Cancel and a closed question force nothing. */
+    @Test
+    void theRejectedPushQuestionIsAnsweredWithNoDialog(@TempDir Path dir) throws Exception {
+        Diverged d = diverged(dir);
+        d.repo().git("fetch", "-q", "origin"); // the lease is on what this repository last saw
+        String theirs = remoteRev(d.remote(), "main");
+
+        try (AsyncTestScope async = new AsyncTestScope();
+                DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitBranchCoordinator branches = branches(fx, d.repo(), "main", "origin/main");
+
+            FxTestSupport.runOnFx(() -> {
+                applyRepo(fx, d.repo(), "main", "origin/main");
+                branches.push();
+            });
+            SaveGuardsFxTest.awaitOnFx(
+                    async, "the rejected push's question", () -> answers.asked().size() == 1);
+            async.awaitFx();
+            Dialogs.Asked asked = answers.only();
+            Confirm.Choice words = GitBranchCoordinator.rejectedPushQuestion("main", "origin/main");
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(words.answer(0), ButtonBar.ButtonData.YES, true, false),
+                            new Dialogs.Answer(words.answer(1), ButtonBar.ButtonData.OTHER, false, true),
+                            new Dialogs.Answer(words.cancel(), ButtonBar.ButtonData.CANCEL_CLOSE, false, false)),
+                    asked.answers(),
+                    "pulling is the default; forcing is red and never the default");
+            assertEquals(theirs, remoteRev(d.remote(), "main"), "Cancel: the remote branch is as it was");
+
+            answers.clear();
+            answers.nowClosing();
+            FxTestSupport.runOnFx(() -> {
+                applyRepo(fx, d.repo(), "main", "origin/main"); // the window re-read its (empty) git state
+                branches.push();
+            });
+            SaveGuardsFxTest.awaitOnFx(
+                    async,
+                    "the rejected push's question, again",
+                    () -> answers.asked().size() == 1);
+            async.awaitFx();
+            assertEquals(
+                    tr("status.git.pushRejected"),
+                    FxTestSupport.callOnFx(() -> FxTestSupport.<Label>field(
+                                    FxTestSupport.<StatusBar>field(fx.controller, "statusBar"), "echo")
+                            .getText()));
+            assertEquals(1, answers.asked().size());
+            assertEquals(theirs, remoteRev(d.remote(), "main"), "closing the question forces nothing either");
+
+            answers.nowPressing(words.answer(1));
+            CountDownLatch forced = watchStatus(fx, tr("status.gitDone", tr("gitlabel.pushForce"))::equals);
+            FxTestSupport.runOnFx(() -> {
+                applyRepo(fx, d.repo(), "main", "origin/main"); // the window re-read its (empty) git state
+                branches.push();
+            });
+            async.await(forced, "forced push");
+            assertEquals(rev(d.repo(), "main"), remoteRev(d.remote(), "main"), "the remote branch was replaced");
         }
     }
 

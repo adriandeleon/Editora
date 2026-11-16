@@ -226,6 +226,112 @@ class CloseCoordinatorFxTest {
         }
     }
 
+    // --- the same questions answered through the hook, with no window ----------------------------------------
+
+    @Test
+    void theUnsavedQuestionOfATabIsAnsweredWithNoDialog() throws Exception {
+        try (WindowRig w = new WindowRig();
+                DialogAnswers answers =
+                        DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            CloseCoordinator closes = w.controller.closes;
+            Confirm.Choice words = CloseCoordinator.unsavedQuestion("Request 1", "dialog.close");
+
+            Form cancelled = new Form();
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmClose(tabOf(cancelled))), "Cancel keeps the tab");
+            Dialogs.Asked asked = answers.only();
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.header(), asked.header());
+            assertEquals(
+                    java.util.List.of(
+                            new Dialogs.Answer(
+                                    words.answer(0), javafx.scene.control.ButtonBar.ButtonData.OTHER, true, false),
+                            new Dialogs.Answer(
+                                    words.answer(1), javafx.scene.control.ButtonBar.ButtonData.OTHER, false, true),
+                            new Dialogs.Answer(
+                                    words.cancel(),
+                                    javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE,
+                                    false,
+                                    false)),
+                    asked.answers(),
+                    "the save action is the default; Discard is red and never the default");
+            assertEquals(0, cancelled.saves);
+
+            answers.nowClosing();
+            Form closed = new Form();
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmClose(tabOf(closed))), "so does closing it");
+            assertEquals(0, closed.saves);
+
+            answers.nowPressing(tr("dialog.discard"));
+            Form discarded = new Form();
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmClose(tabOf(discarded))));
+            assertEquals(0, discarded.saves, "Discard does not save");
+            assertTrue(discarded.unsaved);
+
+            answers.nowPressing(words.answer(0));
+            Form saved = new Form();
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmClose(tabOf(saved))));
+            assertEquals(1, saved.saves, "the content's own save action saves");
+            assertEquals(4, answers.asked().size());
+        }
+    }
+
+    @Test
+    void theUnsavedQuestionOfAFileAndTheQuitQuestionAreAnsweredWithNoDialog(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("draft.txt"), "saved text\n");
+        try (WindowRig w = new WindowRig();
+                DialogAnswers answers =
+                        DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            EditorBuffer buffer = w.open(file);
+            FxTestSupport.runOnFx(() -> buffer.getArea().appendText("unsaved"));
+            CloseCoordinator closes = w.controller.closes;
+            Confirm.Choice words = CloseCoordinator.unsavedQuestion("draft.txt", "dialog.save");
+
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmCloseIfDirty(buffer)), "Cancel keeps the tab");
+            assertEquals(words.header(), answers.only().header());
+            assertEquals(
+                    java.util.List.of(words.answer(0), words.answer(1), words.cancel()),
+                    answers.only().answers().stream().map(Dialogs.Answer::label).toList());
+            answers.nowClosing();
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmCloseIfDirty(buffer)), "so does closing it");
+
+            answers.nowPressing(words.answer(1));
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmCloseIfDirty(buffer)), "Discard lets it close");
+            assertEquals("saved text\n", Files.readString(file), "and writes nothing");
+
+            answers.nowPressing(words.answer(0));
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmCloseIfDirty(buffer)), "Save saves, then closes");
+            assertEquals("saved text\nunsaved", Files.readString(file));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+
+            // Quit, naming the terminals it ends.
+            answers.clear();
+            answers.nowPressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
+            java.util.List<String> busy = java.util.List.of("Terminal 1 (vim)");
+            Confirm.Choice quit = CloseCoordinator.quitQuestion(busy);
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmQuit(busy)), "Cancel does not quit");
+            Dialogs.Asked asked = answers.only();
+            assertEquals(quit.title(), asked.title());
+            assertEquals(quit.header(), asked.header());
+            assertEquals(quit.message(), asked.content());
+            assertTrue(asked.content().contains("Terminal 1 (vim)"));
+            assertEquals(
+                    java.util.List.of(
+                            new Dialogs.Answer(
+                                    quit.answer(0), javafx.scene.control.ButtonBar.ButtonData.OTHER, false, true),
+                            new Dialogs.Answer(
+                                    quit.cancel(),
+                                    javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE,
+                                    true,
+                                    false)),
+                    asked.answers(),
+                    "Quit is red and never the default; Cancel is");
+            answers.nowClosing();
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmQuit(busy)), "nor does closing the question");
+            answers.nowPressing(quit.answer(0));
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmQuit(busy)));
+        }
+    }
+
     private static Form cleanForm() {
         Form form = new Form();
         form.unsaved = false;

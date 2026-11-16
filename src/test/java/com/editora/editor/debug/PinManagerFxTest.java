@@ -44,6 +44,34 @@ class PinManagerFxTest {
     }
 
     @Test
+    void aValuePinnedAtAPlaceGoesThereUnlessItIsThereOrTheLineIsFull() throws Exception {
+        onFx(() -> {
+            CodeArea area = new CodeArea("int a = 1;\nint b = 2;\n");
+            PinManager pins = new PinManager(area);
+            int[] changes = {0};
+            pins.toggle(1, "a");
+            pins.toggle(1, "b");
+            pins.setOnChanged(() -> changes[0]++);
+            assertTrue(pins.pinAt(1, 1, " a + b "));
+            assertEquals(List.of("a", "a + b", "b"), pins.expressions(1));
+            assertTrue(pins.pinAt(1, 9, "last"), "past the end: at the end");
+            assertEquals(List.of("a", "a + b", "b", "last"), pins.expressions(1));
+            assertEquals(2, changes[0]);
+
+            assertFalse(pins.pinAt(1, 0, "b"), "pinned there already");
+            assertFalse(pins.pinAt(1, 0, "fifth"), "the line holds " + PinManager.MAX_PER_LINE);
+            assertFalse(pins.pinAt(7, 0, "a"), "no such line");
+            assertFalse(pins.pinAt(0, 0, "  "), "nothing to pin");
+            assertEquals(List.of("a", "a + b", "b", "last"), pins.expressions(1));
+            assertEquals(List.of(), pins.expressions(0));
+            assertEquals(2, changes[0], "a refusal changes nothing");
+
+            assertTrue(pins.pinAt(0, 3, "a"), "an empty line takes it");
+            assertEquals(List.of("a"), pins.expressions(0));
+        });
+    }
+
+    @Test
     void aPinTogglesAndFollowsItsLineThroughEdits() throws Exception {
         onFx(() -> {
             CodeArea area = new CodeArea("int a = 1;\nint b = 2;\nint c = a + b;\n");

@@ -655,7 +655,7 @@ final class NavigationCoordinator {
         ask.initOwner(host.stage());
         ask.setTitle(tr("dialog.related.createTest.title"));
         ask.setHeaderText(null);
-        return ask.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == create;
+        return Dialogs.showAndWait(ask).orElse(javafx.scene.control.ButtonType.CANCEL) == create;
     }
 
     /**
@@ -771,15 +771,28 @@ final class NavigationCoordinator {
         }
     }
 
-    /** Removes every manual fold range in the active buffer. */
+    /** Removes every manual fold range in the active buffer, after a question that names how many there are. */
     void removeManualFolds() {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             return;
         }
+        int folds = buffer.getFoldManager().manualRegions().size();
+        if (folds > 0 && !Confirm.ask(host.stage(), removeManualFoldsQuestion(folds, buffer.getTitle()))) {
+            return;
+        }
         int n = buffer.removeManualFolds();
         host.persistFolds(buffer);
         host.setStatus(tr("status.fold.manualRemoved", n));
+    }
+
+    /** The question before the {@code folds} manual fold ranges of the file titled {@code file} are removed. Pure. */
+    static Confirm.Question removeManualFoldsQuestion(int folds, String file) {
+        return new Confirm.Question(
+                tr("dialog.removeManualFolds.title"),
+                null,
+                tr("dialog.removeManualFolds.confirm", folds, file),
+                tr("confirm.action.remove"));
     }
 
     void foldAllExcept() {

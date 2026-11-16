@@ -391,6 +391,6 @@ final class MarkdownLinkUpdater {
         ButtonType update = new ButtonType(tr("markdown.links.update.apply"), ButtonBar.ButtonData.OK_DONE);
         ButtonType leave = new ButtonType(tr("markdown.links.update.skip"), ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(update, leave);
-        return alert.showAndWait().filter(update::equals).isPresent();
+        return Dialogs.showAndWait(alert).filter(update::equals).isPresent();
     }
 }

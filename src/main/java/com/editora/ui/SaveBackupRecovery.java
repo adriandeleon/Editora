@@ -18,6 +18,7 @@ import javafx.stage.Stage;
 
 import com.editora.config.SharedConfig;
 import com.editora.io.SaveBackups;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -110,39 +111,30 @@ public final class SaveBackupRecovery {
         String when = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
                 .withZone(ZoneId.systemDefault())
                 .format(leftover.modified());
+        Confirm.Choice words = question(offer.state(), leftover.target(), leftover.backup(), when);
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.WARNING));
         if (owner != null && owner.isShowing()) {
             alert.initOwner(owner);
         }
-        alert.setTitle(tr("dialog.saveBackup.title"));
-        ButtonType later = new ButtonType(tr("dialog.saveBackup.later"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        ButtonType restore = new ButtonType(tr("dialog.saveBackup.restore"), ButtonBar.ButtonData.OK_DONE);
-        ButtonType delete = new ButtonType(tr(discardLabelKey(offer.state())), ButtonBar.ButtonData.OTHER);
+        alert.setTitle(words.title());
+        alert.setHeaderText(words.header());
+        alert.setContentText(words.message());
+        ButtonType later = new ButtonType(words.cancel(), ButtonBar.ButtonData.CANCEL_CLOSE);
+        // Restore is in the dialog only where there is a file to restore the backup over.
+        ButtonType restore = new ButtonType(restorable ? words.answer(0) : "", ButtonBar.ButtonData.OK_DONE);
+        ButtonType delete = new ButtonType(words.answer(words.answers().size() - 1), ButtonBar.ButtonData.OTHER);
         if (restorable) {
-            alert.setHeaderText(tr("dialog.saveBackup.header", leftover.target()));
-            alert.setContentText(tr(
-                    offer.state() == SaveBackups.State.TARGET_MISSING
-                            ? "dialog.saveBackup.contentMissing"
-                            : "dialog.saveBackup.content",
-                    leftover.backup(),
-                    when));
             alert.getButtonTypes().setAll(restore, delete, later);
             // Deleting the backup is red and never the default. Restore, which keeps the earlier contents,
             // stays the default button, as Save does in the unsaved-changes question.
             Dialogs.destructive(alert, delete);
             Dialogs.defaultTo(alert, restore);
         } else {
-            alert.setHeaderText(tr("dialog.saveBackup.headerUnknown"));
-            alert.setContentText(tr(
-                    "dialog.saveBackup.contentUnknown",
-                    leftover.target() == null ? leftover.backup().getFileName() : leftover.target(),
-                    leftover.backup(),
-                    when));
             alert.getButtonTypes().setAll(later, delete);
             Dialogs.destructive(alert, delete); // red, never the default: Decide Later is the default button
         }
-        alert.setOnHidden(closed -> {
-            ButtonType choice = alert.getResult();
+        // Not showAndWait: this runs while the windows are still being restored.
+        Dialogs.show(alert, choice -> {
             if (choice == restore) {
                 restore(leftover, dir, owner);
             } else if (choice == delete) {
@@ -150,7 +142,35 @@ public final class SaveBackupRecovery {
             }
             askNext(offers, dir, owner);
         });
-        alert.show(); // not showAndWait: this runs while the windows are still being restored
+    }
+
+    /**
+     * The words of the question about one leftover backup, written {@code when}. Where the file it was taken from
+     * differs or is gone ({@code state}) its answers are Restore (0) and the button that deletes the backup (1),
+     * worded by {@link #discardLabelKey}; where the file is unknown or out of reach, that button alone (0). Its
+     * Cancel is Decide Later.
+     */
+    static Confirm.Choice question(SaveBackups.State state, @Nullable String target, Path backup, String when) {
+        String delete = tr(discardLabelKey(state));
+        if (actionFor(state, true) == Action.OFFER_RESTORE) {
+            return new Confirm.Choice(
+                    tr("dialog.saveBackup.title"),
+                    tr("dialog.saveBackup.header", target),
+                    tr(
+                            state == SaveBackups.State.TARGET_MISSING
+                                    ? "dialog.saveBackup.contentMissing"
+                                    : "dialog.saveBackup.content",
+                            backup,
+                            when),
+                    List.of(tr("dialog.saveBackup.restore"), delete),
+                    tr("dialog.saveBackup.later"));
+        }
+        return new Confirm.Choice(
+                tr("dialog.saveBackup.title"),
+                tr("dialog.saveBackup.headerUnknown"),
+                tr("dialog.saveBackup.contentUnknown", target == null ? backup.getFileName() : target, backup, when),
+                List.of(delete),
+                tr("dialog.saveBackup.later"));
     }
 
     private static void restore(SaveBackups.Leftover leftover, Path dir, Stage owner) {
@@ -169,7 +189,7 @@ public final class SaveBackupRecovery {
                             "dialog.saveBackup.restoreFailedContent",
                             String.valueOf(failed.getMessage()),
                             leftover.backup()));
-                    error.show();
+                    Dialogs.show(error);
                 });
             }
         });

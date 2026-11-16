@@ -321,14 +321,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1574"
     },
     {
-      "rule": "CONF-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-01",
-      "kind": "pending",
-      "reason": "A few removals still happen at once with no question and no undo, such as deleting a merged Git branch.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
       "rule": "CONF-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-07",
@@ -342,14 +334,6 @@
       "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-11",
       "kind": "pending",
       "reason": "The Force Push command can be run directly, without a rejected push first.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
-      "rule": "CONF-12",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-12",
-      "kind": "pending",
-      "reason": "Some confirmation questions cannot be answered automatically in tests.",
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {

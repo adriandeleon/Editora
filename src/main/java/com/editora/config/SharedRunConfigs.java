@@ -86,15 +86,39 @@ public final class SharedRunConfigs {
         save(mapper, projectRoot, configs, List.of());
     }
 
+    /**
+     * Whether {@link #save} would replace a file that says something else: the project has the shared file and its
+     * content is not what {@code configs} and {@code deployments} write (white space aside). False when there is no
+     * file yet, or it already holds exactly this; true for a file that cannot be read as JSON, which a save replaces.
+     */
+    public static boolean wouldReplace(
+            ObjectMapper mapper, Path projectRoot, List<RunConfiguration> configs, List<Deployment> deployments) {
+        Path file = fileFor(projectRoot);
+        if (!Files.exists(file)) {
+            return false;
+        }
+        try {
+            return !mapper.readTree(Files.readAllBytes(file))
+                    .equals(mapper.readTree(mapper.writeValueAsBytes(stored(configs, deployments))));
+        } catch (IOException | RuntimeException e) {
+            return true;
+        }
+    }
+
+    private static Stored stored(List<RunConfiguration> configs, List<Deployment> deployments) {
+        Stored stored = new Stored();
+        stored.configurations = new ArrayList<>(configs);
+        stored.deployments = deployments == null || deployments.isEmpty() ? null : new ArrayList<>(deployments);
+        return stored;
+    }
+
     /** Writes {@code configs} and {@code deployments} into the project, creating {@code .editora/} if needed. */
     public static void save(
             ObjectMapper mapper, Path projectRoot, List<RunConfiguration> configs, List<Deployment> deployments)
             throws IOException {
         Path file = fileFor(projectRoot);
         Files.createDirectories(file.getParent());
-        Stored stored = new Stored();
-        stored.configurations = new ArrayList<>(configs);
-        stored.deployments = deployments == null || deployments.isEmpty() ? null : new ArrayList<>(deployments);
+        Stored stored = stored(configs, deployments);
         // Temp file + atomic move, like every other config store: a crash mid-write must not leave a
         // truncated file, and this one lives in the user's repository where a corrupt file is worse still.
         // ConfigDurabilityTest enforces this for every store.
@@ -130,6 +154,50 @@ public final class SharedRunConfigs {
             byName.put(d.name(), d);
         }
         return new ArrayList<>(byName.values());
+    }
+
+    /**
+     * What {@link #merge} would overwrite: the {@code existing} configurations that {@code incoming} has under
+     * the same name with different content, in their order. One that comes back unchanged is not among them,
+     * and neither is anything new. Empty when the merge only adds.
+     */
+    public static List<RunConfiguration> replaced(List<RunConfiguration> existing, List<RunConfiguration> incoming) {
+        Map<String, RunConfiguration> last = new LinkedHashMap<>();
+        for (RunConfiguration c : incoming) {
+            last.put(c.name(), c);
+        }
+        Map<String, RunConfiguration> kept = new LinkedHashMap<>();
+        for (RunConfiguration c : existing) {
+            kept.put(c.name(), c); // as merge does: the last of a name is the one this window has
+        }
+        List<RunConfiguration> out = new ArrayList<>();
+        for (RunConfiguration c : kept.values()) {
+            RunConfiguration other = last.get(c.name());
+            if (other != null && !other.equals(c)) {
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    /** {@link #replaced} for deployments: what {@link #mergeDeployments} would overwrite. */
+    public static List<Deployment> replacedDeployments(List<Deployment> existing, List<Deployment> incoming) {
+        Map<String, Deployment> last = new LinkedHashMap<>();
+        for (Deployment d : incoming) {
+            last.put(d.name(), d);
+        }
+        Map<String, Deployment> kept = new LinkedHashMap<>();
+        for (Deployment d : existing) {
+            kept.put(d.name(), d);
+        }
+        List<Deployment> out = new ArrayList<>();
+        for (Deployment d : kept.values()) {
+            Deployment other = last.get(d.name());
+            if (other != null && !other.equals(d)) {
+                out.add(d);
+            }
+        }
+        return out;
     }
 
     /** On-disk shape: an object rather than a bare array, so a version or other keys can be added later. */

@@ -89,21 +89,23 @@ final class SettingsResetFlow {
         live.setHistoryMaxTotalMb(Math.max(totalMb, live.getHistoryMaxTotalMb()));
     }
 
+    /** The words of the question before every setting is reset, naming the backup file it writes first. */
+    static Confirm.Question resetQuestion(String backupFileName) {
+        return new Confirm.Question(
+                tr("settings.reset.title"),
+                tr("settings.reset.header"),
+                tr("settings.reset.confirm", backupFileName),
+                tr("settings.reset.button"));
+    }
+
     /** Asks (Cancel is the default), writes the backup it names, then resets and applies. */
     void resetAll(Window owner) {
         LocalDateTime now = LocalDateTime.now();
         Path file = config.getSettingsFile();
         if (!Confirm.ask(
                 owner,
-                new Confirm.Question(
-                        tr("settings.reset.title"),
-                        tr("settings.reset.header"),
-                        tr(
-                                "settings.reset.confirm",
-                                SettingsResetBackup.target(file, now)
-                                        .getFileName()
-                                        .toString()),
-                        tr("settings.reset.button")))) {
+                resetQuestion(
+                        SettingsResetBackup.target(file, now).getFileName().toString()))) {
             return;
         }
         Path backup = backUp(owner, now);
@@ -124,7 +126,7 @@ final class SettingsResetFlow {
             none.initOwner(owner);
             none.setTitle(tr("settings.restore.title"));
             none.setHeaderText(null);
-            none.showAndWait();
+            Dialogs.showAndWait(none);
             return;
         }
         chooser.choose(backups, source -> restoreFrom(owner, source));
@@ -183,6 +185,6 @@ final class SettingsResetFlow {
         failed.initOwner(owner);
         failed.setTitle(tr("settings.reset.title"));
         failed.setHeaderText(null);
-        failed.showAndWait();
+        Dialogs.showAndWait(failed);
     }
 }

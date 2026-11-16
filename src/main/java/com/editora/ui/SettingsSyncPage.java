@@ -97,6 +97,24 @@ final class SettingsSyncPage {
         }
     }
 
+    /** The question before the password or token is taken out of the stored repository URL. Pure. */
+    static Confirm.Question removeCredentialsQuestion() {
+        return new Confirm.Question(
+                tr("settings.sync.credentials.removeTitle"),
+                null,
+                tr("settings.sync.credentials.removeConfirm"),
+                tr("confirm.action.remove"));
+    }
+
+    /** The question before sync is disconnected: what goes from this computer, and what stays. Pure. */
+    static Confirm.Question disconnectQuestion() {
+        return new Confirm.Question(
+                tr("settings.sync.disconnect.title"),
+                null,
+                tr("settings.sync.disconnect.confirm"),
+                tr("confirm.action.disconnect"));
+    }
+
     /** SYSTEM ▸ Sync: the repository, what is synced, when, and how the last run went. */
     VBox build() {
         VBox p = w.page(tr("settings.cat.sync"), tr("settings.sync.subtitle"));
@@ -107,8 +125,13 @@ final class SettingsSyncPage {
         Button removeSecret =
                 FocusCommands.press(new Button(tr("settings.sync.credentials.remove")), "sync.removeStoredCredentials");
         removeSecret.setOnAction(e -> {
-            String clean = com.editora.sync.SyncEngine.withoutCredentials(
-                    config.getSettings().getSyncRepoUrl());
+            String stored = config.getSettings().getSyncRepoUrl();
+            // The password or token is kept nowhere else: asked before it goes (a URL without one loses nothing).
+            if (com.editora.sync.SyncEngine.hasCredentials(stored)
+                    && !Confirm.ask(w.stage, removeCredentialsQuestion())) {
+                return;
+            }
+            String clean = com.editora.sync.SyncEngine.withoutCredentials(stored);
             config.getSettings().setSyncRepoUrl(clean);
             urlField.setText(clean);
             syncSettingsChanged(); // saves; the clone's remote is rewritten at the next sync
@@ -174,6 +197,9 @@ final class SettingsSyncPage {
         syncConnectButton.setOnAction(e -> connectSync());
         syncDisconnectButton = FocusCommands.press(new Button(tr("settings.sync.disconnect")), "sync.disconnect");
         syncDisconnectButton.setOnAction(e -> {
+            if (!Confirm.ask(w.stage, disconnectQuestion())) {
+                return;
+            }
             config.getSettings().setSyncEnabled(false);
             config.save();
             if (settingsSync != null) {
@@ -524,7 +550,7 @@ final class SettingsSyncPage {
                 confirm.initOwner(w.stage);
                 confirm.setTitle(tr("settings.cat.sync"));
                 confirm.setHeaderText(tr("dialog.sync.connect.header"));
-                if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                if (Dialogs.showAndWait(confirm).orElse(ButtonType.CANCEL) != ButtonType.OK) {
                     refreshSyncControls();
                     return;
                 }

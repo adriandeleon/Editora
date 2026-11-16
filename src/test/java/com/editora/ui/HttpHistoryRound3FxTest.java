@@ -242,8 +242,11 @@ class HttpHistoryRound3FxTest {
         run(second, b2, 1);
         FxTestSupport.runOnFx(() -> first.runRequest(b1, 4));
         awaitHit("GET /slow");
-        FxTestSupport.runOnFx(
-                () -> second.panelForTest(b2).controlsForTest().clearItem().fire());
+        try (ConfirmAnswers questions = ConfirmAnswers.confirming()) { // Clear asks first: one response is kept
+            FxTestSupport.runOnFx(
+                    () -> second.panelForTest(b2).controlsForTest().clearItem().fire());
+            assertEquals(List.of(HttpClientPanel.clearQuestion(1)), questions.asked());
+        }
         HttpHistorySync.awaitIdleForTest();
         slow.countDown();
         await(() -> !first.isRunningForTest(b1));

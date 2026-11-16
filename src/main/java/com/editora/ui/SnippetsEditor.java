@@ -306,7 +306,7 @@ final class SnippetsEditor {
             if (cur.source() == Source.USER
                     && manager != null // a USER row comes from the manager
                     && manager.userEntryHasComments(language, cur.name())
-                    && !hooks.confirm().test(tr("settings.snippet.commentsLost", cur.name()))) {
+                    && !hooks.confirm().test(commentsLostMessage(cur.name()))) {
                 return; // comments inside this one entry cannot be kept; the user chose to keep them
             }
             String keep = newName;
@@ -514,6 +514,11 @@ final class SnippetsEditor {
             hooks.warn().accept(tr("settings.snippet.saveFailed", e.getMessage()));
             return false;
         }
+    }
+
+    /** What saving the snippet {@code name} loses: the comments inside its entry in the user's file. */
+    static String commentsLostMessage(String name) {
+        return tr("settings.snippet.commentsLost", name);
     }
 
     /** Marks {@code field} red with {@code why} as its tooltip and accessible help, or clears that when null. */

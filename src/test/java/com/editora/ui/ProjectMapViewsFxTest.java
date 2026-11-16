@@ -260,7 +260,10 @@ class ProjectMapViewsFxTest {
                 assertTrue(h.view().workingSets.save("One"));
                 assertTrue(h.view().workingSets.save("Two"));
                 FxTestSupport.call(h.surface(), "select", new Class<?>[] {Path.class}, h.readme());
-                assertTrue(h.view().workingSets.save(" one "));
+                try (ConfirmAnswers questions = ConfirmAnswers.confirming()) {
+                    assertTrue(h.view().workingSets.save(" one "));
+                    assertEquals(1, questions.asked().size(), "the set shows something else: asked once");
+                }
                 assertEquals(
                         List.of("One", "Two"),
                         written.get().stream()
@@ -271,6 +274,40 @@ class ProjectMapViewsFxTest {
                         tr("project.map.status.workingSet.updated", "One"),
                         h.said().getLast());
                 assertFalse(h.view().workingSets.save("  "), "a blank name saves nothing");
+            });
+        }
+    }
+
+    /** Saving over a set asks only when the set shows something else, and Cancel keeps the set as it was. */
+    @Test
+    void savingUnderATakenNameAsksBeforeItReplacesADifferentView() throws Exception {
+        try (Harness h = open(project(), true)) {
+            AtomicReference<List<ProjectMapWorkingSet>> written = new AtomicReference<>();
+            FxTestSupport.runOnFx(() -> {
+                h.view().setRememberedWorkingSets(List.of(), written::set);
+                assertTrue(h.view().workingSets.save("One"));
+                String selected = written.get().getFirst().getState().getSelected();
+                try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                    assertTrue(h.view().workingSets.save("One"), "the same view again: saved, nothing lost");
+                    assertEquals(List.of(), questions.asked());
+
+                    FxTestSupport.call(h.surface(), "select", new Class<?>[] {Path.class}, h.readme());
+                    int saidBefore = h.said().size();
+                    assertFalse(h.view().workingSets.save("one"), "Cancel saves nothing");
+                    assertEquals(
+                            List.of(new Confirm.Question(
+                                    "Replace Working Set",
+                                    null,
+                                    "Replace the working set “One” with what the Project Map shows now? This cannot"
+                                            + " be undone.",
+                                    "Replace")),
+                            questions.asked());
+                    assertEquals(selected, written.get().getFirst().getState().getSelected(), "the set is kept");
+                    assertEquals(saidBefore, h.said().size(), "and nothing claims it was updated");
+
+                    assertTrue(h.view().workingSets.save("Other"), "a new name replaces nothing");
+                    assertEquals(1, questions.asked().size());
+                }
             });
         }
     }
@@ -497,9 +534,30 @@ class ProjectMapViewsFxTest {
                 assertEquals(1, editor.list().getSelectionModel().getSelectedIndex(), "the moved stop stays selected");
                 editor.retitle(0, "Start here");
                 editor.renote(0, "  first  ");
+                // Removing a stop is written at once, so it asks first, by the stop's title: Cancel keeps it.
                 editor.list().getSelectionModel().select(2);
-                editor.removeSelected();
+                try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+                    editor.removeSelected();
+                    assertEquals(
+                            List.of(new Confirm.Question(
+                                    "Remove Stop",
+                                    null,
+                                    "Remove the stop “Two” from the trail? This cannot be undone.",
+                                    "Remove")),
+                            questions.asked());
+                    assertEquals(
+                            List.of("Start here", "Three", "Two"),
+                            titles(project, "edit-me"),
+                            "Cancel removes nothing");
+                    questions.answer(true);
+                    editor.removeSelected();
+                    assertEquals(2, questions.asked().size(), "asked once for the removal");
+                }
                 assertEquals(List.of("Start here", "Three"), titles(project, "edit-me"));
+                // A stop that has a note says the note goes with it.
+                assertEquals(
+                        "Remove the stop “Three” and its note from the trail? This cannot be undone.",
+                        ProjectMapTrailEditor.removeStopQuestion("Three", true).message());
                 assertEquals(
                         "first", read(project, "edit-me").stops().getFirst().note());
 

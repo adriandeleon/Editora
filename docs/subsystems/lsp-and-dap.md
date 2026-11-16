@@ -1600,6 +1600,26 @@ it; Settings' list is [`ui/StepFiltersEditor`](../../src/main/java/com/editora/u
 `StepFiltersWindowFxTest` covers the step out and the command against `FakeDebugAdapter` (as rdbg);
 `StepFiltersProbeFxTest` steps into a filtered call on debugpy (a module), java-debug (a class), js-debug (a file) and
 Delve (`strings.*`, stepped out of by Editora) and stops back in the caller.
+**The evaluation time limit** (Settings → Debugging → Evaluating expressions → Time limit, `debugEvaluationTimeLimit`,
+10 s by default, schema 174) keeps an expression that runs the program — a watch, the Debug console, a hover or Quick
+Evaluate that calls a function — from holding the stopped thread for good: the debugger stops the call and puts the
+frame back, so the program stays paused where it was and the next expression is evaluated there.
+[`dap/EvaluationLimits`](../../src/main/java/com/editora/dap/EvaluationLimits.java) tells each debugger as a session
+starts (`DapManager.setEvaluationTimeLimit`): GDB on its command line, before `-i dap` (`set direct-call-timeout`,
+`set indirect-call-timeout` for a breakpoint's condition, and `set unwind-on-timeout on`), and debugpy's launch through
+pydevd's `PYDEVD_INTERRUPT_THREAD_TIMEOUT` in the program's environment, which interrupts the evaluating thread with
+`KeyboardInterrupt` (a busy loop, a `sleep` and a long comprehension alike; an attach is not told, the program having
+started without it; a launch.json's own value is kept). Editora waits for an answer past the limit, never under 30 s
+(`EvaluationLimits.wait`, `DapClient.setEvaluationWait`), and an answer that does not come says the program is still
+running the expression after that long. CodeLLDB stops a call in a watch or a hover by itself, in under a second,
+whatever its `evaluationTimeout` says, and its Debug console takes LLDB commands, whose `expr` waits for good unless
+given `-t`. java-debug, js-debug and Delve have no limit: a call there that never returns holds the session until it is
+stopped. DAP's `cancel` was probed as the way out and is none: of the debuggers here only GDB and CodeLLDB advertise
+`supportsCancelRequest`; GDB ignores it during an inferior call (and Pause did not bring it back), and CodeLLDB
+interrupts the call but its frame then evaluates nothing. `EvaluationTimeLimitProbeFxTest` (limit 3 s) calls a function
+that takes a second (answered) and one that never returns (stopped within the limit, the program still paused on the
+same line, `x` read after it) on GDB and debugpy, and on CodeLLDB checks its own stop; a run with the limit off fell
+back to Editora's 30 s wait on both. `SettingsEvaluationTimeLimitFxTest` covers the Settings row.
 **Exception breakpoints** (IntelliJ's Java Exception Breakpoints, Visual Studio's Exception Settings; Debug: Add
 Exception Breakpoint…, and rows of Debug: Exception Breakpoints… after the adapter's filters) stop on an exception
 of a named type, when a condition holds. A [`config/ExceptionBreakpoint`](../../src/main/java/com/editora/config/ExceptionBreakpoint.java)

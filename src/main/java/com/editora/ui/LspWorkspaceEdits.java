@@ -344,7 +344,12 @@ final class LspWorkspaceEdits {
     java.util.function.Predicate<List<com.editora.lsp.WorkspaceEditHazards.Hazard>> destructiveEditConfirmer =
             this::confirmDestructiveEdit;
 
-    private boolean confirmDestructiveEdit(List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards) {
+    /**
+     * The words of the question before an edit nobody previewed deletes a folder or replaces a file: one line for
+     * each of {@code hazards}, its path as {@code shown} writes it.
+     */
+    static Confirm.Question destructiveEditQuestion(
+            List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards, java.util.function.UnaryOperator<String> shown) {
         StringBuilder lines = new StringBuilder();
         for (var hazard : hazards) {
             lines.append(lines.isEmpty() ? "" : "\n")
@@ -352,20 +357,54 @@ final class LspWorkspaceEdits {
                             hazard.kind() == com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY
                                     ? "dialog.lsp.destructiveEdit.deleteFolder"
                                     : "dialog.lsp.destructiveEdit.overwrite",
-                            ops.homeCollapsed(hazard.path().toString())));
+                            shown.apply(hazard.path().toString())));
         }
-        javafx.scene.control.ButtonType apply = new javafx.scene.control.ButtonType(
-                tr("dialog.lsp.destructiveEdit.apply"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        return new Confirm.Question(
+                tr("dialog.lsp.destructiveEdit.title"),
+                tr("dialog.lsp.destructiveEdit.header"),
+                lines.toString(),
+                tr("dialog.lsp.destructiveEdit.apply"));
+    }
+
+    /**
+     * The words of the question about a refactoring that was interrupted: up to ten of {@code originals}, as
+     * {@code shown} writes them, and how many more. Its answers: Restore (0), or Remove Old Copies when the
+     * refactoring was {@code committed}, and Leave As Is (1). Its Cancel is Not Now.
+     */
+    static Confirm.Choice interruptedEditQuestion(
+            List<Path> originals, boolean committed, java.util.function.UnaryOperator<String> shown) {
+        StringBuilder lines = new StringBuilder();
+        int listed = Math.min(10, originals.size());
+        for (int i = 0; i < listed; i++) {
+            lines.append(i == 0 ? "" : "\n").append(shown.apply(originals.get(i).toString()));
+        }
+        if (originals.size() > listed) {
+            lines.append("\n+").append(originals.size() - listed);
+        }
+        return new Confirm.Choice(
+                tr("dialog.lsp.interruptedEdit.title"),
+                tr(committed ? "dialog.lsp.interruptedEdit.headerCommitted" : "dialog.lsp.interruptedEdit.header"),
+                lines.toString(),
+                List.of(
+                        tr(committed ? "dialog.lsp.interruptedEdit.remove" : "dialog.lsp.interruptedEdit.restore"),
+                        tr("dialog.lsp.interruptedEdit.keep")),
+                tr("dialog.lsp.interruptedEdit.later"));
+    }
+
+    private boolean confirmDestructiveEdit(List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards) {
+        Confirm.Question words = destructiveEditQuestion(hazards, ops::homeCollapsed);
+        javafx.scene.control.ButtonType apply =
+                new javafx.scene.control.ButtonType(words.action(), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
         javafx.scene.control.ButtonType cancel = Dialogs.cancel();
         javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.WARNING, lines.toString(), cancel, apply));
+                javafx.scene.control.Alert.AlertType.WARNING, words.message(), cancel, apply));
         confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.lsp.destructiveEdit.title"));
-        confirm.setHeaderText(tr("dialog.lsp.destructiveEdit.header"));
+        confirm.setTitle(words.title());
+        confirm.setHeaderText(words.header());
         UiZoom.minWidth(confirm.getDialogPane(), 520);
         // The edit deletes or overwrites files: its button is red, and Enter answers Cancel, the default.
         Dialogs.destructive(confirm, apply);
-        return confirm.showAndWait().orElse(cancel) == apply;
+        return Dialogs.showAndWait(confirm).orElse(cancel) == apply;
     }
 
     /**
@@ -1143,36 +1182,21 @@ final class LspWorkspaceEdits {
     }
 
     private InterruptedEditChoice promptInterruptedEdit(com.editora.lsp.WorkspaceEditJournal.Interrupted interrupted) {
-        List<Path> originals = interrupted.originals();
-        StringBuilder lines = new StringBuilder();
-        int shown = Math.min(10, originals.size());
-        for (int i = 0; i < shown; i++) {
-            lines.append(i == 0 ? "" : "\n")
-                    .append(ops.homeCollapsed(originals.get(i).toString()));
-        }
-        if (originals.size() > shown) {
-            lines.append("\n+").append(originals.size() - shown);
-        }
-        javafx.scene.control.ButtonType act = new javafx.scene.control.ButtonType(
-                tr(
-                        interrupted.committed()
-                                ? "dialog.lsp.interruptedEdit.remove"
-                                : "dialog.lsp.interruptedEdit.restore"),
-                javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.ButtonType keep = new javafx.scene.control.ButtonType(
-                tr("dialog.lsp.interruptedEdit.keep"), javafx.scene.control.ButtonBar.ButtonData.OTHER);
+        Confirm.Choice words =
+                interruptedEditQuestion(interrupted.originals(), interrupted.committed(), ops::homeCollapsed);
+        javafx.scene.control.ButtonType act =
+                new javafx.scene.control.ButtonType(words.answer(0), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.ButtonType keep =
+                new javafx.scene.control.ButtonType(words.answer(1), javafx.scene.control.ButtonBar.ButtonData.OTHER);
         javafx.scene.control.ButtonType later = new javafx.scene.control.ButtonType(
-                tr("dialog.lsp.interruptedEdit.later"), javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
+                words.cancel(), javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
         javafx.scene.control.Alert ask = Dialogs.styled(new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.WARNING, lines.toString(), later, keep, act));
+                javafx.scene.control.Alert.AlertType.WARNING, words.message(), later, keep, act));
         ask.initOwner(host.window());
-        ask.setTitle(tr("dialog.lsp.interruptedEdit.title"));
-        ask.setHeaderText(tr(
-                interrupted.committed()
-                        ? "dialog.lsp.interruptedEdit.headerCommitted"
-                        : "dialog.lsp.interruptedEdit.header"));
+        ask.setTitle(words.title());
+        ask.setHeaderText(words.header());
         UiZoom.minWidth(ask.getDialogPane(), 560);
-        javafx.scene.control.ButtonType answer = ask.showAndWait().orElse(later);
+        javafx.scene.control.ButtonType answer = Dialogs.showAndWait(ask).orElse(later);
         if (answer == act) {
             return interrupted.committed() ? InterruptedEditChoice.REMOVE : InterruptedEditChoice.RESTORE;
         }

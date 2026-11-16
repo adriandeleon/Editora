@@ -216,9 +216,11 @@ final class SettingsSpellPage {
             String sel = words.getSelectionModel().getSelectedItem();
             if (sel != null) {
                 config.removeUserWord(sel);
-                w.markSyncDirty();
-                refreshDictionaryList();
-                w.apply(); // live-apply: the removed word must start being flagged again right away
+                dictionaryChanged(); // the removed word must start being flagged again right away
+                w.removalUndo.removed(
+                        tr("status.spell.wordRemoved", sel),
+                        tr("status.spell.wordRestored", sel),
+                        () -> restoreWord(sel));
             }
         });
 
@@ -234,6 +236,26 @@ final class SettingsSpellPage {
         VBox box = UiZoom.spacing(new VBox(dictionaryList, addRow, UiZoom.spacing(new HBox(remove), 6)), 6);
         UiZoom.maxWidth(box, 440);
         return box;
+    }
+
+    /** The personal dictionary changed here: synced, listed again and applied live to the spell overlays. */
+    private void dictionaryChanged() {
+        w.markSyncDirty();
+        refreshDictionaryList();
+        w.apply();
+    }
+
+    /**
+     * Puts a removed word back in the personal dictionary (the list is sorted, so it has no place to keep). False,
+     * changing nothing, when the word is in the dictionary again.
+     */
+    boolean restoreWord(String word) {
+        if (config.getUserDictionary().contains(word)) {
+            return false;
+        }
+        config.addUserWord(word);
+        dictionaryChanged();
+        return true;
     }
 
     /** Reloads the Personal Dictionary list from the shared user-word set (sorted), preserving selection. */

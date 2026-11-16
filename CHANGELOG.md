@@ -38,6 +38,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expression a new value — a variable, a field, an element — as IntelliJ and Visual Studio allow. Python and
   JavaScript set the expression directly; Java, Go and C/C++ set the variable a watch names, or (Java) evaluate the
   assignment. The other watches are evaluated again at once.
+- **An evaluation time limit.** A watch, a Debug console line or a hover that calls a function which never returns
+  no longer holds the paused program for good: with GDB and Python's debugger, the call is stopped after the time
+  limit (10 s by default, Settings → Debugging → Evaluating expressions), the program stays paused on the same line,
+  and the next expression is evaluated there. CodeLLDB already stops such a call in a watch or hover by itself; Java,
+  JavaScript and Go have no limit to set, and Editora still stops waiting after 30 s and says the program is still
+  running the expression.
+- **Undo Last Removal.** Some things you make are removed with one key and no question, because a question each time
+  would be tiresome: a watch, a breakpoint that has a condition, a log message, a hit count, a group or a filter, a
+  method breakpoint or field watchpoint with a condition, an exception breakpoint, a value pinned to a line or all of
+  a line's, a bookmark with a mnemonic, a key binding you removed or reset, a word of your personal dictionary, a
+  setting put back to its default and a project's value taken off a setting. Each of these now tells you so in the
+  status bar, and Edit: Undo Last Removal (Edit menu and Command Palette; it has no key until you give it one) puts
+  the last one back as it was: in its place in the list, with its condition, its paused state or its mnemonic. It
+  keeps the twenty newest removals of a window, until the window closes. When what was removed can no longer go back
+  where it was (the file was closed, the line reads something else, the key runs another command now, a new breakpoint
+  is on the line), it says so and changes nothing. A plain breakpoint or bookmark is not recorded: the key that
+  removed it sets it again. A removal made in Settings is said in the editor window's status bar and is undone from
+  the editor window.
+
 - **Don't step into.** Name the code Step Into should go over — a class or package (`com.shop.util.*`), a module
   (`requests`), a function (`fmt.*`, `std::*`) or a file (`**/vendor/**`) — in Settings → Debugging, or right-click a
   frame in the call stack and choose Don't Step Into This…, which offers its class, file, package or namespace. Java,
@@ -671,6 +690,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Editora asks before more removals that used to happen at once.** Each of these now asks first, names what
+  goes, and keeps it when you press Cancel or Enter: deleting a Git branch that is fully merged (a branch with
+  unmerged commits is still asked about once, with the count); Remove All for the trusted folders; Reset draft
+  in a diff's result editor, when the draft has edits; Remove All Watches and Unmark All Objects in the debugger;
+  deleting a run configuration, and removing one, a deployment, a compound or a type renderer from its list;
+  removing a stop from a Project Map trail and deleting a working set; Restore Default Layout for the tool
+  windows and for the toolbar, unless the layout already is the default one; Remove from URL and Disconnect on the
+  Sync page; New Token for the MCP server; Revert on the Macros page, when the macro has unsaved changes; Remove
+  Manual Fold Ranges, when the file has any; and Clear in the HTTP panel, when it keeps responses. Importing run configurations from the project asks only when
+  it would replace a configuration or a deployment of this window with a different one, and says how many.
+  Exporting them asks only when the project's shared file is there and says something else, and saving a Project
+  Map working set under a name already taken asks only when that set shows something else.
 - **A menu bar row that cannot run says why.** A command with nothing to act on, or whose feature is switched
   off, stays grayed in its menu as before, but hovering it now shows the reason, the same sentence the Command
   Palette gives ("the active file is not inside a Git repository"), a screen reader hears it with the row, and
@@ -885,6 +916,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pause stops the whole Java program.** It suspended only the thread on screen, and the program's other threads
   kept running. Continue after a Pause resumes every thread.
 
+- **Refactor:** every dialog that is answered with a button is shown through `Dialogs.showAndWait`, or
+  `Dialogs.show` where it must not block, which a test answers with no window (`Dialogs.answerWith`,
+  `DialogAnswers`), and every question before a destructive action takes its words from a static function
+  (`Confirm.Question`, `Confirm.Choice`). No dialog looks or behaves differently (CONF-12, Pauta 6.0.1).
 - **Refactor:** Go to Implementation's picker-row text (`implementationLabel`, `implementationDetail`,
   `libraryPackage`) moved from `LspCoordinator` to a new `ImplementationTargets`, which brings `LspCoordinator` back
   under the 10,000-line `SourceFileSizeTest` limit it crossed in #1445.

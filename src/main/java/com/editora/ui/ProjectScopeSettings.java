@@ -218,7 +218,15 @@ final class ProjectScopeSettings {
         if (loading.getAsBoolean()) {
             return true;
         }
-        Path root = scope.get().root();
+        store(scope.get().root(), key, value);
+        return true;
+    }
+
+    /**
+     * Writes {@code value} (null or blank = remove) as {@code key} of the project in {@code root}, then has every
+     * window read the file again. False when the file could not be written, which a message says.
+     */
+    private boolean store(Path root, String key, @Nullable Object value) {
         int dot = key.indexOf('.');
         String section = switch (key.substring(0, dot)) {
             case "build" -> "buildCommands";
@@ -230,18 +238,50 @@ final class ProjectScopeSettings {
             ProjectSettingsFile.set(root, section, key.substring(dot + 1), stored);
         } catch (ProjectSettingsFile.NewerFileException e) {
             error(tr("settings.scope.newerFile", ProjectSettings.fileFor(root).toString()));
-            return true;
+            return false;
         } catch (java.io.IOException | RuntimeException e) {
             error(tr(
                     "settings.scope.writeFailed",
                     ProjectSettings.fileFor(root).toString(),
                     String.valueOf(e.getMessage())));
-            return true;
+            return false;
         }
         scope.get().reload();
         applied.run();
         refresh();
         return true;
+    }
+
+    /** Where "Use my setting" records how to bring the project's value back (see {@link RemovalUndo}). */
+    private Supplier<@Nullable RemovalUndo> removalUndo = () -> null;
+
+    void setRemovalUndo(Supplier<@Nullable RemovalUndo> removalUndo) {
+        this.removalUndo = removalUndo;
+    }
+
+    /**
+     * "Use my setting" on a row (Project mode): the project's value of {@code key} is removed, with no question;
+     * Undo Last Removal writes it back.
+     */
+    private void useMine(String key) {
+        Path root = scope.get().root();
+        Object was = valueOf(scope.get().settings(), key);
+        write(key, null);
+        RemovalUndo undo = removalUndo.get();
+        if (undo != null && root != null && was != null && valueOf(scope.get().settings(), key) == null) {
+            undo.removed(
+                    tr("status.settings.projectValueRemoved"),
+                    tr("status.settings.projectValueRestored"),
+                    () -> restoreProjectValue(root, key, was));
+        }
+    }
+
+    /**
+     * Writes the project's value {@code was} of {@code key} back. False, changing nothing, when the window shows
+     * another project now, the project has a value for the key again, or its file could not be written.
+     */
+    boolean restoreProjectValue(Path root, String key, Object was) {
+        return root.equals(scope.get().root()) && valueOf(scope.get().settings(), key) == null && store(root, key, was);
     }
 
     /**
@@ -305,7 +345,7 @@ final class ProjectScopeSettings {
                         own ? tr(trusted ? "settings.scope.setHere" : "settings.scope.setHereUntrusted") : null);
                 state.setModified(own);
                 state.setResetLabel(own ? tr("settings.scope.useMine") : null);
-                state.setResetAction(own ? () -> write(key, null) : null);
+                state.setResetAction(own ? () -> useMine(key) : null);
             } else {
                 // The language-server cards say what the project changes in a line of their own.
                 boolean lsp = key.startsWith("lsp");
@@ -339,7 +379,7 @@ final class ProjectScopeSettings {
                     javafx.scene.control.Alert.AlertType.ERROR, message, javafx.scene.control.ButtonType.OK));
             failed.initOwner(owner.get());
             failed.setHeaderText(null);
-            failed.showAndWait();
+            Dialogs.showAndWait(failed);
         });
     }
 

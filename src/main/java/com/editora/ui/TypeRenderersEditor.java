@@ -130,12 +130,22 @@ final class TypeRenderersEditor {
         });
     }
 
+    /** Remove, Delete and the menu row: the selected renderer goes, saved at once, so it asks first. */
     private void removeSelected() {
         int at = list.getSelectionModel().getSelectedIndex();
-        if (at >= 0) {
+        if (at >= 0 && Confirm.ask(hooks.owner().get(), removeQuestion(TypeRenderers.label(items.get(at))))) {
             items.remove(at);
             save();
         }
+    }
+
+    /** The question before the renderer listed as {@code label} ({@code Money (java)}) is removed. Pure. */
+    static Confirm.Question removeQuestion(String label) {
+        return new Confirm.Question(
+                tr("typerenderer.removeTitle"),
+                null,
+                tr("typerenderer.removeConfirm", label),
+                tr("confirm.action.remove"));
     }
 
     private void save() {

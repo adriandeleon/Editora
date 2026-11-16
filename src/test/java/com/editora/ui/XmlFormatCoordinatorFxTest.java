@@ -222,6 +222,52 @@ class XmlFormatCoordinatorFxTest {
         assertEquals(text, FxTestSupport.callOnFx(b::getContent));
     }
 
+    /** The large-file question as the app asks it, answered through the hook with no window. */
+    @Test
+    void theLargeFileFormatQuestionIsAnsweredWithNoDialog() throws Exception {
+        status.clear();
+        String text = "<a><b>x</b><b>y</b><b>z</b></a>";
+        EditorBuffer b = xml(text);
+        FxTestSupport.runOnFx(() -> b.setLargeFile(true));
+        XmlFormatCoordinator f = coordinator(b);
+        try (DialogAnswers answers = DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
+            FxTestSupport.runOnFx(() -> f.formatActive());
+            waitForStatus(tr("status.xml.formatSkipped"));
+            Dialogs.Asked asked = answers.only();
+            Confirm.Question words = XmlFormatCoordinator.growthQuestion(FxTestSupport.callOnFx(b::getTitle), 1, 5);
+            assertEquals(words.title(), asked.title());
+            assertEquals(words.header(), asked.header());
+            assertEquals(words.message(), asked.content());
+            assertEquals(
+                    List.of(
+                            new Dialogs.Answer(
+                                    words.action(), javafx.scene.control.ButtonBar.ButtonData.OK_DONE, false, true),
+                            new Dialogs.Answer(
+                                    tr("dialog.cancel"),
+                                    javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE,
+                                    true,
+                                    false)),
+                    asked.answers());
+            assertEquals(text, FxTestSupport.callOnFx(b::getContent), "Cancel leaves the file as it was");
+
+            status.clear();
+            answers.nowClosing();
+            FxTestSupport.runOnFx(() -> f.formatActive());
+            waitForStatus(tr("status.xml.formatSkipped"));
+            assertEquals(text, FxTestSupport.callOnFx(b::getContent), "so does closing the question");
+
+            status.clear();
+            answers.nowPressing(words.action());
+            // A buffer with no undo is only changed once its text is kept: this one's copy always succeeds.
+            FxTestSupport.runOnFx(() ->
+                    NoUndoGuard.install(b, new NoUndoGuard((buffer, label) -> NoUndoGuard.Copy.STORED, said -> {})));
+            FxTestSupport.runOnFx(() -> f.formatActive());
+            waitForStatus(tr("status.xml.formatted"));
+            assertEquals(5, FxTestSupport.callOnFx(b::getContent).lines().count(), "Format formats it");
+            assertEquals(3, answers.asked().size());
+        }
+    }
+
     /**
      * XML/pom review 4, C35: switching tabs mid-format discarded it as "the file changed", and Format Document in the
      * other tab said "Already formatting". Each tab now formats on its own, and the first goes into its own tab.

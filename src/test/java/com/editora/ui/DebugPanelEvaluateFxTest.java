@@ -272,14 +272,18 @@ class DebugPanelEvaluateFxTest {
             assertEquals(List.of(), panel.getPausedWatches());
             assertEquals(before + 1, watchChanges, "persisted");
 
-            item(
-                            menuFor(tree().getRoot()
-                                    .getChildren()
-                                    .getFirst()
-                                    .getChildren()
-                                    .getFirst()),
-                            tr("debugpanel.removeAllWatches"))
-                    .fire();
+            // Remove All Watches asks first, naming the two watches.
+            try (ConfirmAnswers questions = ConfirmAnswers.confirming()) {
+                item(
+                                menuFor(tree().getRoot()
+                                        .getChildren()
+                                        .getFirst()
+                                        .getChildren()
+                                        .getFirst()),
+                                tr("debugpanel.removeAllWatches"))
+                        .fire();
+                assertEquals(List.of(DebugPanel.removeAllWatchesQuestion(2)), questions.asked());
+            }
             assertEquals(List.of(), panel.getWatches());
         });
     }

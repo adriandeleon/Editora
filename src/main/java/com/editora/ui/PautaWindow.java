@@ -279,6 +279,6 @@ final class PautaWindow {
 
     /** Shows the window, modal to its owner, and returns when it is closed, like About. */
     void show() {
-        dialog.showAndWait();
+        Dialogs.showAndWait(dialog);
     }
 }

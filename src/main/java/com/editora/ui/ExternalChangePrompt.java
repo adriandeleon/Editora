@@ -1,13 +1,45 @@
 package com.editora.ui;
 
+import java.util.List;
+
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 
-/** Keyboard defaults of the "modified outside Editora" prompt. */
+import static com.editora.i18n.Messages.tr;
+
+/** The words and the keyboard defaults of the "modified outside Editora" prompt. */
 final class ExternalChangePrompt {
 
     private ExternalChangePrompt() {}
+
+    /**
+     * The words of the question asked when {@code fileName} changed on disk under an open tab. Its answer: Reload
+     * (0), which discards the tab's unsaved edits when it is {@code dirty}. Its Cancel is Keep (Keep Mine when
+     * dirty).
+     */
+    static Confirm.Choice question(String fileName, boolean dirty) {
+        return new Confirm.Choice(
+                tr("dialog.externalChange.title"),
+                tr("dialog.externalChange.header", fileName),
+                tr(dirty ? "dialog.externalChange.dirty" : "dialog.externalChange.clean"),
+                List.of(tr("dialog.externalChange.reload")),
+                tr(dirty ? "dialog.externalChange.keepMine" : "dialog.externalChange.keep"));
+    }
+
+    /**
+     * The words of the question asked when a save finds that {@code fileName} changed on its host since it was
+     * loaded. Its answers: Reload (0), which discards the unsaved edits, and Keep Mine (1), which overwrites the
+     * file.
+     */
+    static Confirm.Choice saveConflictQuestion(String fileName) {
+        return Confirm.choice(
+                tr("dialog.externalChange.title"),
+                tr("dialog.externalChange.header", fileName),
+                tr("dialog.externalChange.dirty"),
+                tr("dialog.externalChange.reload"),
+                tr("dialog.externalChange.keepMine"));
+    }
 
     /**
      * For a buffer with unsaved edits, Reload discards them. The prompt appears on focus gain, often while

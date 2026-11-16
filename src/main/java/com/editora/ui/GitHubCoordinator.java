@@ -1283,7 +1283,7 @@ final class GitHubCoordinator {
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.github.title"));
         confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return Dialogs.showAndWait(confirm).orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
     /** Opens one PR file as a read-only side-by-side diff tab (base ↔ head), reusing {@link DiffCoordinator}. */
@@ -1697,7 +1697,7 @@ final class GitHubCoordinator {
         area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
         area.getStyleClass().add("git-error-text");
         alert.getDialogPane().setContent(area);
-        alert.showAndWait();
+        Dialogs.showAndWait(alert);
     }
 
     void shutdown() {

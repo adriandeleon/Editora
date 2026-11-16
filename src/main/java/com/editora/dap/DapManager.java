@@ -486,6 +486,14 @@ public final class DapManager {
         shared.pythonSubprocesses = on;
     }
 
+    /**
+     * The evaluation time limit in seconds, 0 for none ({@link EvaluationLimits}): a session started from now on tells
+     * its debugger (GDB's command line, debugpy's launch), and waits a little longer for an answer.
+     */
+    public void setEvaluationTimeLimit(int seconds) {
+        shared.evaluationTimeLimit = Math.max(0, seconds);
+    }
+
     /** The Debugging setting's Node.js for JavaScript sessions ("" = automatic). */
     public void setNodePath(String nodePath) {
         shared.nodePath = nodePath == null ? "" : nodePath.strip();
@@ -2347,6 +2355,9 @@ public final class DapManager {
             throws Exception {
         int port = external.transport() == ExternalAdapter.Transport.PORT_ARGUMENT ? freePort() : -1;
         List<String> argv = new ArrayList<>(external.argv(executable, port));
+        if (language == DebugLanguages.GDB) {
+            argv.addAll(1, EvaluationLimits.gdbArguments(shared.evaluationTimeLimit)); // before -i dap
+        }
         argv.addAll(programTail);
         if (argv.getFirst().endsWith(".js")) {
             argv.addFirst(adapterNode()); // a Node.js adapter (vscode-php-debug), on the Node.js Settings names
@@ -4872,7 +4883,8 @@ public final class DapManager {
                         String r = full == null ? null : full.result();
                         cb.accept(
                                 e != null
-                                        ? ConsoleEvaluation.failure(isTimeout(e) ? stillEvaluating() : msg(e))
+                                        ? ConsoleEvaluation.failure(
+                                                isTimeout(e) ? stillEvaluating(c.evaluationWaitSeconds()) : msg(e))
                                         : ConsoleEvaluation.value(r == null ? "" : r));
                     }
                 }));
@@ -4931,7 +4943,12 @@ public final class DapManager {
 
     /** What a console evaluation that timed out says: it has not failed, the program is still running it. */
     static String stillEvaluating() {
-        return tr("debug.eval.stillRunning", DapClient.requestTimeoutSeconds());
+        return stillEvaluating(DapClient.requestTimeoutSeconds());
+    }
+
+    /** {@link #stillEvaluating()} after {@code seconds} of waiting (the session's {@link EvaluationLimits#wait}). */
+    static String stillEvaluating(long seconds) {
+        return tr("debug.eval.stillRunning", seconds);
     }
 
     /** Full evaluate (result + expandable reference + type) for watches and the hover value popup.
@@ -4958,7 +4975,9 @@ public final class DapManager {
                         cb.accept(
                                 e != null
                                         ? DapModels.EvalResult.failure(
-                                                code && isTimeout(e) ? stillEvaluating() : msg(e))
+                                                code && isTimeout(e)
+                                                        ? stillEvaluating(c.evaluationWaitSeconds())
+                                                        : msg(e))
                                         : (r == null ? new DapModels.EvalResult("", 0, null) : r));
                     }
                 }));
@@ -5725,7 +5744,10 @@ public final class DapManager {
             candidate.setExtraExceptionFilters(exceptionExtras()); // its language's exception breakpoints need
             String language = sessionLanguage;
             List<String> skips = StepFilters.patterns(shared.stepFilters, language);
-            candidate.setLaunchDecorator(args -> StepFilters.decorate(language, args, skips)); // Don't step into
+            int limit = shared.evaluationTimeLimit;
+            candidate.setLaunchDecorator( // Don't step into, and the evaluation time limit
+                    args -> EvaluationLimits.decorate(StepFilters.decorate(language, args, skips), limit));
+            candidate.setEvaluationWait(EvaluationLimits.wait(limit));
             candidate.setHexValues(shared.hexValues);
             client = candidate;
             return true;

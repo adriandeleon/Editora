@@ -380,7 +380,7 @@ final class LspRefactorings {
         UiZoom.minWidth(confirm.getDialogPane(), 520);
         // The move may break code: Enter cancels.
         Dialogs.defaultTo(confirm, cancel);
-        return confirm.showAndWait().orElse(cancel) == proceed;
+        return Dialogs.showAndWait(confirm).orElse(cancel) == proceed;
     }
 
     private com.google.gson.JsonObject refactorEdit(

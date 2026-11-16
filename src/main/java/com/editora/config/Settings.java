@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 173;
+    public static final int SCHEMA_VERSION = 174;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -890,6 +890,12 @@ public class Settings {
     private boolean debugPythonSubprocesses = true;
     /** Debug History: how many stops a session keeps to go back to (0 = none). In memory only, never saved. */
     private int debugHistoryStops = 200;
+    /**
+     * The time limit, in seconds, on an evaluation that runs the program (a watch, the Debug console, a hover): a call
+     * that never returns is stopped by the debugger and the program stays paused where it was. Told to GDB and
+     * debugpy as a session starts ({@code EvaluationLimits}); 0 leaves each debugger to its own.
+     */
+    private int debugEvaluationTimeLimit = 10;
     /**
      * Visual Studio's PerfTips: after a step or Continue, the time the program ran until it stopped, shown faintly
      * after the line it stopped on.
@@ -3652,6 +3658,17 @@ public class Settings {
 
     /** The most stops Debug History may keep. */
     public static final int MAX_DEBUG_HISTORY_STOPS = 5_000;
+
+    public int getDebugEvaluationTimeLimit() {
+        return Math.max(0, Math.min(debugEvaluationTimeLimit, MAX_DEBUG_EVALUATION_TIME_LIMIT));
+    }
+
+    public void setDebugEvaluationTimeLimit(int seconds) {
+        this.debugEvaluationTimeLimit = Math.max(0, Math.min(seconds, MAX_DEBUG_EVALUATION_TIME_LIMIT));
+    }
+
+    /** The longest evaluation time limit, in seconds. */
+    public static final int MAX_DEBUG_EVALUATION_TIME_LIMIT = 3_600;
 
     public boolean isDebugStepTiming() {
         return debugStepTiming;

@@ -121,7 +121,7 @@ final class DiagramCoordinator {
                     err.setTitle(tr("dialog.diagramExport.title"));
                     err.setHeaderText(tr("status.diagram.exportFailed", ""));
                     err.setContentText(msg);
-                    err.showAndWait();
+                    Dialogs.showAndWait(err);
                 }
             });
         });

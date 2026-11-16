@@ -112,6 +112,15 @@ public final class BookmarkManager implements LineMarks.Carrier {
         fireChanged();
     }
 
+    /**
+     * Puts {@code bookmark} on its line as it is, note and mnemonic included (a removed bookmark coming back); the
+     * line's text is captured again.
+     */
+    public void add(Bookmark bookmark) {
+        byLine.put(bookmark.line(), bookmark.withLineText(captureLineText(bookmark.line())));
+        fireChanged();
+    }
+
     public void remove(int line) {
         if (byLine.remove(line) != null) {
             fireChanged();

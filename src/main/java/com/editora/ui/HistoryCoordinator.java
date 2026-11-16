@@ -431,9 +431,7 @@ final class HistoryCoordinator {
                     return;
                 }
                 Predicate<HistoryRetention.Impact> asked = confirmPendingLimits;
-                boolean apply = asked == null
-                        ? confirmTightening(impact, host.window(), tr("dialog.history.limits.pending") + "\n\n")
-                        : asked.test(impact);
+                boolean apply = asked == null ? confirmTightening(impact, host.window(), true) : asked.test(impact);
                 if (apply) {
                     historyService.acknowledge(configured);
                     sweepIfDue();
@@ -554,15 +552,56 @@ final class HistoryCoordinator {
     }
 
     private boolean confirmTightening(HistoryRetention.Impact impact, javafx.stage.Window owner) {
-        return confirmTightening(impact, owner, "");
+        return confirmTightening(impact, owner, false);
     }
 
-    private boolean confirmTightening(HistoryRetention.Impact impact, javafx.stage.Window owner, String preface) {
+    private boolean confirmTightening(HistoryRetention.Impact impact, javafx.stage.Window owner, boolean pending) {
         return Confirm.ask(
                 owner != null && owner.isShowing() ? owner : host.window(),
+                limitsQuestion(impact.revisions(), impact.files(), pending));
+    }
+
+    /**
+     * The words of the question before tighter history limits delete {@code revisions} revisions of {@code files}
+     * files; {@code pending} when the limits were set earlier and are asked about now, which it says first.
+     */
+    static Confirm.Question limitsQuestion(int revisions, int files, boolean pending) {
+        return new Confirm.Question(
                 tr("dialog.history.limits.title"),
-                preface + tr("dialog.history.limits.confirm", impact.revisions(), impact.files()),
+                null,
+                (pending ? tr("dialog.history.limits.pending") + "\n\n" : "")
+                        + tr("dialog.history.limits.confirm", revisions, files),
                 tr("dialog.history.purge.button"));
+    }
+
+    /**
+     * The words of the question before every revision of one file is deleted: how many, the file's name, and how
+     * many other files ({@code sharing}) keep text they share with it.
+     */
+    static Confirm.Question purgeFileQuestion(int count, String fileName, int sharing) {
+        String question = tr("dialog.history.purgeFile.confirm", count, fileName);
+        if (sharing > 0) {
+            question += "\n\n" + tr("dialog.history.purgeFile.shared", sharing);
+        }
+        return purgeQuestion(question);
+    }
+
+    /** The words of the question before every revision of the project's history is deleted. */
+    static Confirm.Question purgeProjectQuestion(int count, int files) {
+        return purgeQuestion(tr("dialog.history.purgeProject.confirm", count, files));
+    }
+
+    private static Confirm.Question purgeQuestion(String message) {
+        return new Confirm.Question(tr("dialog.history.purge.title"), null, message, tr("dialog.history.purge.button"));
+    }
+
+    /** The words of the question before a restore replaces the existing file {@code fileName}. */
+    static Confirm.Question restoreOverwriteQuestion(String fileName) {
+        return new Confirm.Question(
+                tr("history.menu.restore"),
+                null,
+                tr("history.restoreOverwrite", fileName),
+                tr("confirm.action.overwrite"));
     }
 
     /** A private copy of the whole index, for work on the history worker. */
@@ -653,14 +692,11 @@ final class HistoryCoordinator {
             return;
         }
         Path name = Path.of(key).getFileName();
-        String question = tr("dialog.history.purgeFile.confirm", count, name == null ? key : name);
-        int sharing = filesSharingSnapshots(key);
-        if (sharing > 0) {
-            // Save As gives the copy the history of the file it came from, and bodies are stored once by
-            // content: deleting this file's rows does not take the text away from those.
-            question += "\n\n" + tr("dialog.history.purgeFile.shared", sharing);
-        }
-        if (!(confirmPurgeAnswer == null ? confirmPurge(question) : confirmPurgeAnswer.test(question))) {
+        // Save As gives the copy the history of the file it came from, and bodies are stored once by content:
+        // deleting this file's rows does not take the text away from those, and the question says so.
+        Confirm.Question question =
+                purgeFileQuestion(count, name == null ? key : name.toString(), filesSharingSnapshots(key));
+        if (!(confirmPurgeAnswer == null ? confirmPurge(question) : confirmPurgeAnswer.test(question.message()))) {
             return;
         }
         // Re-read after the modal dialog: revisions recorded while it was open are purged too. Every
@@ -715,8 +751,8 @@ final class HistoryCoordinator {
             host.setStatus(tr("status.history.nothingToPurge"));
             return;
         }
-        String question = tr("dialog.history.purgeProject.confirm", count, files);
-        if (!(confirmPurgeAnswer == null ? confirmPurge(question) : confirmPurgeAnswer.test(question))) {
+        Confirm.Question question = purgeProjectQuestion(count, files);
+        if (!(confirmPurgeAnswer == null ? confirmPurge(question) : confirmPurgeAnswer.test(question.message()))) {
             return;
         }
         Map<String, List<HistoryRevision>> bucket = ops.historyMap();
@@ -736,8 +772,8 @@ final class HistoryCoordinator {
         host.setStatus(tr(ops.canCollectNow() ? "status.history.purged" : "status.history.purgedPending", removed));
     }
 
-    private boolean confirmPurge(String message) {
-        return Confirm.ask(host.window(), tr("dialog.history.purge.title"), message, tr("dialog.history.purge.button"));
+    private boolean confirmPurge(Confirm.Question question) {
+        return Confirm.ask(host.window(), question);
     }
 
     /** Sets the history tool window's availability (local file + feature on) and reloads its list. */
@@ -1322,7 +1358,7 @@ final class HistoryCoordinator {
         confirm.initOwner(host.window());
         confirm.setTitle(tr("history.menu.restore"));
         confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(cancel) == restore;
+        return Dialogs.showAndWait(confirm).orElse(cancel) == restore;
     }
 
     /**
@@ -1719,11 +1755,7 @@ final class HistoryCoordinator {
     }
 
     private boolean confirmRestoreOverwrite(Path file) {
-        return Confirm.ask(
-                host.window(),
-                tr("history.menu.restore"),
-                tr("history.restoreOverwrite", file.getFileName()),
-                tr("confirm.action.overwrite"));
+        return Confirm.ask(host.window(), restoreOverwriteQuestion(String.valueOf(file.getFileName())));
     }
 
     static boolean writeRestoredContent(

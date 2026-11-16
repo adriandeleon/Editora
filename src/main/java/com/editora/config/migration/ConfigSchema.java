@@ -411,7 +411,10 @@ public enum ConfigSchema {
                     // children as expressions). Additive.
                     Map.entry(171, (Migration) ConfigMigrations::identity),
                     // v172→173: + debugStepFilterList ([]) — Don't step into: code Step Into goes over. Additive.
-                    Map.entry(172, (Migration) ConfigMigrations::identity)),
+                    Map.entry(172, (Migration) ConfigMigrations::identity),
+                    // v173→174: + debugEvaluationTimeLimit (10) — the debugger stops an evaluation that runs the
+                    // program past it. Additive: absent is the default.
+                    Map.entry(173, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

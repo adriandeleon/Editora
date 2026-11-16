@@ -236,9 +236,24 @@ final class ToolWindowsSettingsPane {
         place.accept(bySide);
     }
 
-    /** Puts the layout back to that of a fresh window, then shows it. */
-    void restoreDefaultLayout() {
+    /**
+     * Restore Default Layout: puts the layout back to that of a fresh window, then shows it. It asks first (the
+     * question belongs to {@code owner}), unless the layout already is the default one and nothing would change.
+     */
+    void restoreDefaultLayout(javafx.stage.@Nullable Window owner) {
+        if (!tools.isDefaultLayout() && !Confirm.ask(owner, restoreLayoutQuestion())) {
+            return;
+        }
         tools.resetLayout();
         load();
+    }
+
+    /** The question before the tool windows go back to their default places. Pure. */
+    static Confirm.Question restoreLayoutQuestion() {
+        return new Confirm.Question(
+                tr("settings.toolWindows.restore.title"),
+                null,
+                tr("settings.toolWindows.restore.confirm"),
+                tr("confirm.action.restore"));
     }
 }

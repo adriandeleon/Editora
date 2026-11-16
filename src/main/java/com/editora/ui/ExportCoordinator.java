@@ -50,7 +50,7 @@ final class ExportCoordinator {
     Consumer<com.editora.print.PrintService.Result> printReporter = r -> reportPrint(r);
     /** Shows the "no printer" dialog and returns the button chosen; tests answer without showing it. */
     java.util.function.Function<Alert, java.util.Optional<javafx.scene.control.ButtonType>> noPrinterPrompt =
-            Alert::showAndWait;
+            Dialogs::showAndWait;
     /** The size and zoom this window's Print Preview had last time (this session only). */
     private final PrintPreview.Memory previewMemory = new PrintPreview.Memory();
 
@@ -1112,9 +1112,9 @@ final class ExportCoordinator {
         host.setStatus(tr("status.html.exportFailed", msg));
         Alert alert = failureAlert(tr("dialog.htmlExport.title"), tr("dialog.htmlExport.failed"), msg);
         if (modal) {
-            alert.showAndWait();
+            Dialogs.showAndWait(alert);
         } else {
-            alert.show();
+            Dialogs.show(alert);
         }
     }
 
@@ -1217,13 +1217,7 @@ final class ExportCoordinator {
 
     /** Asks whether an export may replace {@code file}; the wording is Save As's. */
     private boolean confirmReplace(java.io.File file) {
-        return Confirm.ask(
-                dialogOwner(),
-                new Confirm.Question(
-                        tr("dialog.saveAs.overwrite.title"),
-                        tr("dialog.saveAs.overwrite.header", file.getName()),
-                        tr("dialog.saveAs.overwrite.content"),
-                        tr("confirm.action.overwrite")));
+        return Confirm.ask(dialogOwner(), FileWorkflowCoordinator.overwriteQuestion(file.getName()));
     }
 
     /** Exports the active Markwhen buffer's parsed timeline to a JSON file (preview menu + palette). */
@@ -1270,8 +1264,7 @@ final class ExportCoordinator {
         } else {
             String msg = failureDetail(r.message());
             host.setStatus(tr("status.pdf.exportFailed", msg));
-            failureAlert(tr("dialog.pdfExport.title"), tr("dialog.pdfExport.failed"), msg)
-                    .showAndWait();
+            Dialogs.showAndWait(failureAlert(tr("dialog.pdfExport.title"), tr("dialog.pdfExport.failed"), msg));
         }
     }
 
@@ -1346,8 +1339,7 @@ final class ExportCoordinator {
         } else {
             String msg = failureDetail(r.message());
             host.setStatus(tr("status.office.exportFailed", msg));
-            failureAlert(tr("dialog.officeExport.title"), tr("dialog.officeExport.failed"), msg)
-                    .showAndWait();
+            Dialogs.showAndWait(failureAlert(tr("dialog.officeExport.title"), tr("dialog.officeExport.failed"), msg));
         }
     }
 
@@ -1652,8 +1644,7 @@ final class ExportCoordinator {
         } else {
             String msg = failureDetail(r.message());
             host.setStatus(tr("status.print.failed", msg));
-            failureAlert(tr("dialog.print.title"), tr("dialog.print.failed"), msg)
-                    .showAndWait();
+            Dialogs.showAndWait(failureAlert(tr("dialog.print.title"), tr("dialog.print.failed"), msg));
         }
     }
 

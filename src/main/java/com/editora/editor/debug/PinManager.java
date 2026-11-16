@@ -110,6 +110,27 @@ public final class PinManager implements LineMarks.Carrier {
         return pinned;
     }
 
+    /**
+     * Pins {@code expression} to {@code line} at {@code index} among the line's values (at the end, when the line
+     * holds fewer now): a value that was unpinned, back in its place. False, changing nothing, when the line is past
+     * the end of the text, holds the expression already, or holds {@link #MAX_PER_LINE}.
+     */
+    public boolean pinAt(int line, int index, String expression) {
+        String expr = expression == null ? "" : expression.strip();
+        if (expr.isEmpty() || line < 0 || line >= area.getParagraphs().size()) {
+            return false;
+        }
+        PinnedLine p = byLine.get(line);
+        List<String> list = new ArrayList<>(p == null ? List.of() : p.expressions());
+        if (list.contains(expr) || list.size() >= MAX_PER_LINE) {
+            return false;
+        }
+        list.add(Math.max(0, Math.min(index, list.size())), expr);
+        byLine.put(line, new PinnedLine(line, list, captureLineText(line)));
+        fireChanged();
+        return true;
+    }
+
     /** Removes every pin on {@code line}; whether there was one. */
     public boolean clearLine(int line) {
         if (byLine.remove(line) == null) {

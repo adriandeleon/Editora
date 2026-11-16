@@ -685,8 +685,69 @@ final class GitCoordinator {
      * what will be lost, the confirming button is labelled with the action and styled {@code danger}, and
      * Cancel is the safe default.
      */
-    boolean confirmDestructive(String title, String message, String actionLabel) {
-        return Confirm.ask(host.window(), title, message, actionLabel);
+    boolean confirmDestructive(Confirm.Question question) {
+        return Confirm.ask(host.window(), question);
+    }
+
+    /** The words of the question before files that still hold conflict markers ({@code marked}) are staged. */
+    static Confirm.Question stageConflictQuestion(List<String> marked) {
+        return new Confirm.Question(
+                tr("dialog.stageConflict.title"),
+                null,
+                marked.size() == 1
+                        ? tr("dialog.stageConflict.message", marked.get(0))
+                        : tr("dialog.stageConflict.messageMany", marked.size(), marked.get(0)),
+                tr("dialog.stageConflict.action"));
+    }
+
+    /** The words of the Discard question, around the sentence that says what is lost. */
+    static Confirm.Question discardQuestion(String prompt) {
+        return new Confirm.Question(tr("dialog.discard.title"), null, prompt, tr("dialog.discard"));
+    }
+
+    /** The words of the question before every change is discarded: {@code tracked} files and {@code untracked}. */
+    static Confirm.Question discardAllQuestion(int tracked, int untracked) {
+        return new Confirm.Question(
+                tr("dialog.discardAll.title"),
+                null,
+                tr("dialog.discardAll.message", tracked, untracked),
+                tr("dialog.discardAll.action"));
+    }
+
+    /** The words of the question before the operation under way (named {@code name}) skips a commit. */
+    static Confirm.Question skipOperationQuestion(String name) {
+        return new Confirm.Question(
+                tr("dialog.skipOperation.title", name),
+                null,
+                tr("dialog.skipOperation.message", name),
+                tr("dialog.skipOperation.action"));
+    }
+
+    /** The words of the question before the operation under way is aborted, saying what its kind loses. */
+    static Confirm.Question abortOperationQuestion(GitOperation.Kind kind) {
+        String name = operationName(kind);
+        String lost = switch (kind) {
+            case MERGE -> tr("dialog.abortOperation.merge");
+            case REBASE -> tr("dialog.abortOperation.rebase");
+            case CHERRY_PICK -> tr("dialog.abortOperation.cherryPick");
+            default -> tr("dialog.abortOperation.revert");
+        };
+        return new Confirm.Question(
+                tr("dialog.abortOperation.title", name), null, lost, tr("dialog.abortOperation.action", name));
+    }
+
+    /**
+     * The words of the question before one side ({@code side}, also the button's label) is taken for the conflicted
+     * {@code paths}: the one path by name, or how many.
+     */
+    static Confirm.Question acceptSideQuestion(String side, List<String> paths) {
+        return new Confirm.Question(
+                tr("dialog.acceptSide.title"),
+                null,
+                paths.size() == 1
+                        ? tr("dialog.acceptSide.message", side, paths.get(0))
+                        : tr("dialog.acceptSide.messageMany", side, paths.size()),
+                side);
     }
 
     /**
@@ -738,10 +799,7 @@ final class GitCoordinator {
         if (marked.isEmpty()) {
             return true;
         }
-        String message = marked.size() == 1
-                ? tr("dialog.stageConflict.message", marked.get(0))
-                : tr("dialog.stageConflict.messageMany", marked.size(), marked.get(0));
-        return confirmDestructive(tr("dialog.stageConflict.title"), message, tr("dialog.stageConflict.action"));
+        return confirmDestructive(stageConflictQuestion(marked));
     }
 
     /** The unmerged paths {@code pathspecs} select whose file on disk still contains conflict markers. */
@@ -899,7 +957,7 @@ final class GitCoordinator {
      * nothing else could bring them back), and only then runs the commands.
      */
     private void confirmAndDiscard(Path root, Discard discard, String prompt, List<Path> untrackedFiles) {
-        if (!confirmDestructive(tr("dialog.discard.title"), prompt, tr("dialog.discard"))) {
+        if (!confirmDestructive(discardQuestion(prompt))) {
             return;
         }
         captureThenDiscard(root, discard, discardSuccessMessage(discard), untrackedFiles);
@@ -1076,9 +1134,7 @@ final class GitCoordinator {
             return;
         }
         if (!confirmDestructive(
-                tr("dialog.discardAll.title"),
-                tr("dialog.discardAll.message", all.tracked(), all.untracked().size()),
-                tr("dialog.discardAll.action"))) {
+                discardAllQuestion(all.tracked(), all.untracked().size()))) {
             return;
         }
         String successMessage =
@@ -1291,10 +1347,7 @@ final class GitCoordinator {
             return;
         }
         String name = operationName(op.kind());
-        if (confirmDestructive(
-                tr("dialog.skipOperation.title", name),
-                tr("dialog.skipOperation.message", name),
-                tr("dialog.skipOperation.action"))) {
+        if (confirmDestructive(skipOperationQuestion(name))) {
             runOperationStep(root, op, op.skipArgs(), tr("status.git.operationSkipped", name));
         }
     }
@@ -1311,14 +1364,7 @@ final class GitCoordinator {
             return;
         }
         String name = operationName(op.kind());
-        String lost = switch (op.kind()) {
-            case MERGE -> tr("dialog.abortOperation.merge");
-            case REBASE -> tr("dialog.abortOperation.rebase");
-            case CHERRY_PICK -> tr("dialog.abortOperation.cherryPick");
-            default -> tr("dialog.abortOperation.revert");
-        };
-        if (confirmDestructive(
-                tr("dialog.abortOperation.title", name), lost, tr("dialog.abortOperation.action", name))) {
+        if (confirmDestructive(abortOperationQuestion(op.kind()))) {
             runOperationStep(root, op, op.abortArgs(), tr("status.git.operationAborted", name));
         }
     }
@@ -1358,10 +1404,8 @@ final class GitCoordinator {
             return;
         }
         String side = tr(acceptSideKey(operation.kind(), ours));
-        String message = entries.size() == 1
-                ? tr("dialog.acceptSide.message", side, entries.get(0).path())
-                : tr("dialog.acceptSide.messageMany", side, entries.size());
-        if (!confirmDestructive(tr("dialog.acceptSide.title"), message, side)) {
+        if (!confirmDestructive(acceptSideQuestion(
+                side, entries.stream().map(GitStatus.FileEntry::path).toList()))) {
             return;
         }
         List<String> affected = entries.stream().map(GitStatus.FileEntry::path).toList();
@@ -1589,7 +1633,7 @@ final class GitCoordinator {
         ask.initOwner(host.window());
         ask.setTitle(tr("dialog.pullDiverged.title"));
         ask.setHeaderText(null);
-        ButtonType chosen = ask.showAndWait().orElse(cancel);
+        ButtonType chosen = Dialogs.showAndWait(ask).orElse(cancel);
         return chosen == rebase ? GitPullMode.REBASE : chosen == merge ? GitPullMode.MERGE : null;
     }
 
@@ -1943,7 +1987,7 @@ final class GitCoordinator {
         area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
         area.getStyleClass().add("git-error-text");
         alert.getDialogPane().setContent(area);
-        alert.showAndWait();
+        Dialogs.showAndWait(alert);
     }
 
     /** What a git failure from the closed window {@code window} says in another window: {@code detail} on one line. */

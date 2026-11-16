@@ -74,6 +74,7 @@ com.editora.ui.ExceptionBreakpointsProbeFxTest
 com.editora.ui.PythonDataProbeFxTest
 com.editora.ui.StepFiltersProbeFxTest
 com.editora.ui.WatchSetValueProbeFxTest
+com.editora.ui.EvaluationTimeLimitProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

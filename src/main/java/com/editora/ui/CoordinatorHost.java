@@ -49,6 +49,9 @@ interface CoordinatorHost {
 
     void setStatus(@Nullable String message);
 
+    /** The window's small removals, which Edit: Undo Last Removal takes back (see {@link RemovalUndo}). */
+    RemovalUndo removalUndo();
+
     /** Reports a failure: coloured in the echo line and flagged unread until the message log is opened. */
     void setError(@Nullable String message);
 

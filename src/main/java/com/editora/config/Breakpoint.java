@@ -516,6 +516,21 @@ public record Breakpoint(
                 newFilters);
     }
 
+    /**
+     * Whether it carries something typed or chosen beyond its line: a condition, a log message, a hit count, a group,
+     * a filter, the breakpoint it waits for, an id another one waits for, or the lambdas it stops in. Toggling such a
+     * breakpoint off loses that, where a plain one comes back with the same key.
+     */
+    @JsonIgnore
+    public boolean carriesDetails() {
+        return isLogpoint()
+                || isConditional()
+                || !group.isEmpty()
+                || !triggeredBy.isEmpty()
+                || !id.isEmpty()
+                || !lambdas.isEmpty();
+    }
+
     /** Whether a filter says where its hits count. */
     @JsonIgnore
     public boolean isFiltered() {

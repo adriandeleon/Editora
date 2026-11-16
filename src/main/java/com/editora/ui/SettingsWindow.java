@@ -483,6 +483,22 @@ public class SettingsWindow {
     private @Nullable Consumer<String> onStatus;
 
     /**
+     * Where a small removal made in this window (a dictionary word, a row put back to its default) records how to
+     * come back: the owning editor window's {@link RemovalUndo}, whose status bar says so and whose Edit: Undo Last
+     * Removal takes it back. Until the owner gives its own, one that says it through {@link #setStatusSink}.
+     */
+    RemovalUndo removalUndo = new RemovalUndo(text -> {
+        if (onStatus != null && text != null) {
+            onStatus.accept(text);
+        }
+    });
+
+    /** See {@link #removalUndo}. */
+    void setRemovalUndo(RemovalUndo removalUndo) {
+        this.removalUndo = removalUndo;
+    }
+
+    /**
      * Changes the three Local History retention limits on behalf of this window's spinners. Lowering one
      * deletes revisions, so the implementation ({@code HistoryCoordinator.changeLimits}) writes the settings
      * only once it knows nothing would go or the user confirmed what would; {@code done} gets whether it did.
@@ -873,6 +889,7 @@ public class SettingsWindow {
 
         VBox root = new VBox(0, scopeUi.bar(), body, buttons);
         scopeUi.setRows(() -> rows.stream().map(SettingsSearch.Row::node).toList());
+        scopeUi.setRemovalUndo(() -> removalUndo); // "Use my setting" on a row records there too
         registerScopedControls();
         javafx.geometry.Dimension2D size = preferredSize(owner);
         root.setPrefWidth(size.getWidth());
@@ -1711,17 +1728,24 @@ public class SettingsWindow {
     java.util.function.@Nullable BiPredicate<String, String> confirmLoss;
 
     /**
-     * Asks before a step that loses something. The red button carries {@code action}, the step's own verb, and
-     * Cancel is the default answer.
+     * Asks {@code question} before a step that loses something. The red button carries its action, the step's
+     * own verb, and Cancel is the default answer.
      */
-    boolean askBeforeLoss(String title, String body, String action) {
+    boolean askBeforeLoss(Confirm.Question question) {
         java.util.function.BiPredicate<String, String> answer = confirmLoss;
         if (answer != null) {
-            return answer.test(title, body);
+            return answer.test(question.title(), question.message());
         }
-        Alert confirm = Confirm.dialog(stage, new Confirm.Question(title, null, body, action));
-        UiZoom.minWidth(confirm.getDialogPane(), 460);
-        return Confirm.confirmed(confirm, confirm.showAndWait());
+        return Confirm.ask(stage, question, 460);
+    }
+
+    /** The words of the question before the entry {@code name} of a Settings list (a snippet, an abbreviation) is deleted. */
+    static Confirm.Question deleteEntryQuestion(String name) {
+        return new Confirm.Question(
+                tr("settings.lists.deleteTitle"),
+                null,
+                tr("settings.lists.deleteConfirm", name),
+                tr("confirm.action.delete"));
     }
 
     /** Refreshes this window's toolbar selector after the separate editor persists a change. */
@@ -3230,18 +3254,23 @@ public class SettingsWindow {
         return externalToolsEditor;
     }
 
+    /**
+     * The words of "Delete “name”?" for an external tool. Its answer: Delete (0). It has no title of its own: the
+     * dialog keeps the one JavaFX gives a confirmation.
+     */
+    static Confirm.Choice deleteExternalToolQuestion(String name) {
+        return Confirm.choice(null, null, tr("settings.externalTool.confirmDelete", name), tr("confirm.action.delete"));
+    }
+
     /** "Delete “name”?" with Cancel as the default button, so Enter does not delete. */
     private boolean confirmDelete(String name) {
-        ButtonType delete = Dialogs.action(tr("confirm.action.delete"));
-        Alert a = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("settings.externalTool.confirmDelete", name),
-                delete,
-                Dialogs.cancel()));
+        Confirm.Choice words = deleteExternalToolQuestion(name);
+        ButtonType delete = Dialogs.action(words.answer(0));
+        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, words.message(), delete, Dialogs.cancel()));
         a.initOwner(stage);
-        a.setHeaderText(null);
+        a.setHeaderText(words.header());
         Dialogs.destructive(a, delete);
-        return a.showAndWait().orElse(Dialogs.cancelOf(a)) == delete;
+        return Dialogs.showAndWait(a).orElse(Dialogs.cancelOf(a)) == delete;
     }
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
@@ -3263,10 +3292,7 @@ public class SettingsWindow {
                                 config,
                                 this::apply,
                                 keymapsPage::macroWarn,
-                                name -> askBeforeLoss(
-                                        tr("settings.lists.deleteTitle"),
-                                        tr("settings.lists.deleteConfirm", name),
-                                        tr("confirm.action.delete"))))
+                                name -> askBeforeLoss(deleteEntryQuestion(name))))
                         .node(),
                 "abbrev abbreviation expand text replacement snippet shortcut dictionary emacs");
         return p;
@@ -3538,7 +3564,7 @@ public class SettingsWindow {
                 new Button(tr("settings.toolbar.restoreDefault")), "settings.restoreToolWindowLayout");
         restore.setOnAction(e -> {
             if (toolWindowSettings != null) { // made below, before the page shows
-                toolWindowSettings.restoreDefaultLayout();
+                toolWindowSettings.restoreDefaultLayout(stage);
             }
         });
         cardRow(
@@ -3629,7 +3655,8 @@ public class SettingsWindow {
             }
         });
         revokeAll.setOnAction(e -> {
-            if (trustActions != null) {
+            int folders = trustedFoldersList.getItems().size();
+            if (trustActions != null && folders > 0 && Confirm.ask(stage, revokeAllTrustQuestion(folders))) {
                 trustActions.revokeAll();
                 refreshTrustedFolders();
             }
@@ -3649,6 +3676,15 @@ public class SettingsWindow {
                 Category.ADVANCED,
                 UiZoom.spacing(new HBox(revoke, revokeAll), 8),
                 "workspace trust revoke remove trusted folder");
+    }
+
+    /** The question before every trusted folder is taken off the list, naming how many there are. Pure. */
+    static Confirm.Question revokeAllTrustQuestion(int folders) {
+        return new Confirm.Question(
+                tr("settings.trustedFolders.revokeAll.title"),
+                null,
+                tr("settings.trustedFolders.revokeAll.confirm", folders),
+                tr("confirm.action.remove"));
     }
 
     private VBox advancedPage() {
@@ -4975,10 +5011,7 @@ public class SettingsWindow {
         modifiedPerPage = modified.refresh(
                 rows,
                 config.getSettings(),
-                keys -> {
-                    SettingsModified.reset(config.getSettings(), keys);
-                    commitReset(); // saves, applies, re-reads every control
-                },
+                this::resetRow,
                 scopeUi::marksRow); // Project mode marks its own rows (the project's values)
         List<String> restart = RestartPending.changed(config.getSettings());
         restartNote.setText(tr("settings.restart.pending", restart.size()));
@@ -4987,6 +5020,38 @@ public class SettingsWindow {
         if (modifiedOnly.isSelected() || SettingsSearch.wantsModified(searchField.getText())) {
             filter(searchField.getText()); // a row put back to its default leaves the list
         }
+    }
+
+    /**
+     * Reset to default on one row: its {@code keys} go back to their defaults, with no question. When a value
+     * differed, Undo Last Removal puts the row's values back.
+     */
+    private void resetRow(java.util.Set<String> keys) {
+        Settings settings = config.getSettings();
+        boolean differed = SettingsModified.modifiedKeys(settings).stream().anyMatch(keys::contains);
+        com.fasterxml.jackson.databind.node.ObjectNode previous = SettingsModified.values(settings, keys);
+        SettingsModified.reset(settings, keys);
+        commitReset(); // saves, applies, re-reads every control
+        if (differed) {
+            removalUndo.removed(
+                    tr("status.settings.rowReset"),
+                    tr("status.settings.rowRestored"),
+                    () -> restoreRow(keys, previous));
+        }
+    }
+
+    /**
+     * Puts a reset row's {@code previous} values back, through what every settings change goes through (saved,
+     * applied, every control read again). False, changing nothing, when one of {@code keys} was changed again since.
+     */
+    boolean restoreRow(java.util.Set<String> keys, com.fasterxml.jackson.databind.node.ObjectNode previous) {
+        Settings settings = config.getSettings();
+        if (SettingsModified.modifiedKeys(settings).stream().anyMatch(keys::contains)) {
+            return false;
+        }
+        SettingsModified.restore(settings, previous);
+        commitReset();
+        return true;
     }
 
     private SettingsModified modified; // which rows differ from their defaults (built with the pages)

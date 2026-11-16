@@ -2542,10 +2542,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (!marks.isEmpty()) {
             javafx.scene.control.MenuItem unmarkAll = new javafx.scene.control.MenuItem(tr("debugpanel.unmarkAll"));
             com.editora.editor.MenuChords.tag(unmarkAll, "debug.unmarkAllObjects");
-            unmarkAll.setOnAction(e -> {
-                marks.clear();
-                variables.refresh();
-            });
+            unmarkAll.setOnAction(e -> unmarkAll());
             menu.getItems().add(unmarkAll);
         }
         javafx.scene.control.CheckMenuItem hex = new javafx.scene.control.CheckMenuItem(tr("debugpanel.hexValues"));
@@ -2604,25 +2601,109 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /**
+     * Removes one watch (its row's menu, Delete on it, the command) with no question: Undo Last Removal puts it back
+     * where it was, paused when it was paused.
+     */
     private void removeWatch(String expr) {
-        if (watches.remove(expr)) {
-            if (!watches.contains(expr)) {
-                pausedWatches.remove(expr);
-            }
-            onWatchesChanged.run();
-            refreshWatchesNode();
+        int index = watches.indexOf(expr);
+        if (index < 0) {
+            return;
+        }
+        boolean paused = pausedWatches.contains(expr);
+        watches.remove(index);
+        if (!watches.contains(expr)) {
+            pausedWatches.remove(expr);
+        }
+        onWatchesChanged.run();
+        refreshWatchesNode();
+        RemovalUndo undo = removalUndo;
+        if (undo != null) {
+            // Weak: the window's removals outlive a closed session, and must not keep its panel.
+            java.lang.ref.WeakReference<DebugPanel> panel = new java.lang.ref.WeakReference<>(this);
+            undo.removed(tr("status.debug.watchRemoved", expr), tr("status.debug.watchRestored", expr), () -> {
+                DebugPanel p = panel.get();
+                return p != null && p.restoreWatch(expr, index, paused);
+            });
         }
     }
 
-    /** Remove All Watches (the Variables menu, IntelliJ's): the list emptied in one step. */
+    /**
+     * Puts a removed watch back at {@code index} (the end, when the list is shorter now), {@code paused} as it was.
+     * False, changing nothing, when this panel's session is gone: the window's watches are another panel's by now.
+     */
+    private boolean restoreWatch(String expr, int index, boolean paused) {
+        if (!stillShown.getAsBoolean()) {
+            return false;
+        }
+        watches.add(Math.min(index, watches.size()), expr);
+        if (paused) {
+            pausedWatches.add(expr);
+        }
+        onWatchesChanged.run();
+        refreshWatchesNode();
+        return true;
+    }
+
+    /** Where a removed watch records how to come back (null: nowhere, a panel built by a test). */
+    private @Nullable RemovalUndo removalUndo;
+
+    /** Whether this panel is still one of the window's (its session was not closed). */
+    private java.util.function.BooleanSupplier stillShown = () -> true;
+
+    /**
+     * Gives the panel the window's {@link RemovalUndo}; {@code stillShown} says whether the panel is still one of the
+     * window's when a removal is taken back.
+     */
+    void setRemovalUndo(RemovalUndo undo, java.util.function.BooleanSupplier stillShown) {
+        this.removalUndo = undo;
+        this.stillShown = stillShown;
+    }
+
+    /**
+     * Remove All Watches (the Variables menu, IntelliJ's): the list emptied in one step, after a question that
+     * names how many go.
+     */
     void removeAllWatches() {
-        if (watches.isEmpty()) {
+        if (watches.isEmpty() || !Confirm.ask(owner(), removeAllWatchesQuestion(watches.size()))) {
             return;
         }
         watches.clear();
         pausedWatches.clear();
         onWatchesChanged.run();
         refreshWatchesNode();
+    }
+
+    /** The question before every watch is removed, naming how many there are. Pure. */
+    static Confirm.Question removeAllWatchesQuestion(int watches) {
+        return new Confirm.Question(
+                tr("debugpanel.removeAllWatches"),
+                null,
+                tr("debugpanel.removeAllWatches.confirm", watches),
+                tr("confirm.action.remove"));
+    }
+
+    /** Unmark All Objects: every label of the session taken off, after a question that names how many go. */
+    void unmarkAll() {
+        if (marks.isEmpty() || !Confirm.ask(owner(), unmarkAllQuestion(marks.size()))) {
+            return;
+        }
+        marks.clear();
+        variables.refresh();
+    }
+
+    /** The question before every object's label is taken off, naming how many objects carry one. Pure. */
+    static Confirm.Question unmarkAllQuestion(int marked) {
+        return new Confirm.Question(
+                tr("debugpanel.unmarkAll"),
+                null,
+                tr("debugpanel.unmarkAll.confirm", marked),
+                tr("confirm.action.remove"));
+    }
+
+    /** The window a question of this panel belongs to (the main window, or the panel's own when it floats). */
+    private javafx.stage.@Nullable Window owner() {
+        return getScene() == null ? null : getScene().getWindow();
     }
 
     /** Adds {@code expression} to Watches as it is (the evaluate field's button, a result row's menu). */

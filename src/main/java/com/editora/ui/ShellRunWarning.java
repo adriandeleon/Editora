@@ -86,8 +86,7 @@ final class ShellRunWarning {
         ButtonType anyway = new ButtonType(tr("run.shellWarning.runAnyway"), ButtonBar.ButtonData.OTHER);
         ButtonType cancel = Dialogs.cancel();
         alert.getButtonTypes().setAll(canFix ? List.of(convert, anyway, cancel) : List.of(anyway, cancel));
-        alert.setOnHidden(e -> {
-            ButtonType chosen = alert.getResult();
+        Dialogs.show(alert, chosen -> {
             if (chosen == convert) {
                 fix(buffer, hazards);
                 run.run();
@@ -95,7 +94,6 @@ final class ShellRunWarning {
                 run.run();
             }
         });
-        alert.show();
         return alert;
     }
 }

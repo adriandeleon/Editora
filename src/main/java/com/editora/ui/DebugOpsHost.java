@@ -62,7 +62,7 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
         }
         TrustPrompts.Prompt prompt = TrustPrompts.buildProject(
                 mc.stage, root, new com.editora.build.BuildTrust.Summary(root, null, "", items));
-        if (prompt.alert().showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) != prompt.trust()) {
+        if (Dialogs.showAndWait(prompt.alert()).orElse(javafx.scene.control.ButtonType.CANCEL) != prompt.trust()) {
             return false;
         }
         mc.config.getTrustStore().trust(root);

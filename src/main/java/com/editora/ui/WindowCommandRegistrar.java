@@ -68,6 +68,8 @@ final class WindowCommandRegistrar {
 
         StatusBar statusBar();
 
+        RemovalUndo removalUndo();
+
         SettingsWindow settingsWindow();
 
         com.editora.snippet.SnippetManager snippets();
@@ -3209,6 +3211,8 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("edit.queryReplaceRegexp", host.editing()::queryReplaceRegexp));
         host.registry().register(Command.of("edit.undo", host.editing()::onUndo));
         host.registry().register(Command.of("edit.redo", host.editing()::onRedo));
+        // The small removals that ask nothing (a watch, a breakpoint with a condition, a key binding): the newest back.
+        host.registry().register(Command.of(RemovalUndo.COMMAND, host.removalUndo()::undoLast));
         // A console's or the terminal's find bar the keyboard is in closes on it, as the editor's does.
         host.registry().register(Command.of("edit.cancel", () -> barOr(host, "edit.cancel", host::cancel)));
         host.registry().register(Command.of("edit.completion", host.editing()::triggerCompletion));

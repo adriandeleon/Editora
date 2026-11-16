@@ -1152,7 +1152,7 @@ final class AgentCoordinator implements AcpClient.Host {
             buttons[options.size()] = Dialogs.cancel();
             alert.getButtonTypes().setAll(buttons);
             guardPermissionDialog(alert, buttons, safePermissionChoice(options));
-            var result = alert.showAndWait();
+            var result = Dialogs.showAndWait(alert);
             String optionId = null;
             if (result.isPresent()) {
                 for (int i = 0; i < options.size(); i++) {

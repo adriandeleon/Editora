@@ -73,9 +73,25 @@ class DebugCompoundsWindowFxTest {
                 List.of("Client"),
                 config.getWorkspaceState().getRunCompounds().getFirst().configurations());
 
+        // Remove is saved at once, so it asks first, naming the compound: Cancel keeps it.
         Button remove = (Button) stage.getScene().lookup("#compound-remove");
-        FxTestSupport.runOnFx(remove::fire);
+        try (ConfirmAnswers questions = ConfirmAnswers.cancelling()) {
+            FxTestSupport.runOnFx(remove::fire);
+            assertEquals(
+                    List.of(new Confirm.Question(
+                            "Remove Compound",
+                            null,
+                            "Remove the compound “Both”? Its run configurations stay. This cannot be undone.",
+                            "Remove")),
+                    questions.asked());
+            assertEquals(1, config.getWorkspaceState().getRunCompounds().size(), "Cancel removes nothing");
+
+            questions.answer(true);
+            FxTestSupport.runOnFx(remove::fire);
+            assertEquals(2, questions.asked().size());
+        }
         assertTrue(config.getWorkspaceState().getRunCompounds().isEmpty());
+        assertEquals(1, config.getWorkspaceState().getRunConfigurations().size(), "its configurations stay");
         FxTestSupport.runOnFx(stage::close);
     }
 
