@@ -30,6 +30,9 @@ class AppConfigPrefetchTest {
     @AfterEach
     void restoreEnglish() {
         Messages.init("en"); // the catalog is process-wide; leave it as the other tests expect
+        // The prefetch also opened the session log and pointed the process ledger at the temporary folder.
+        com.editora.ui.DebugLog.detachFileForTest();
+        com.editora.process.ProcessRegistry.setLedgerFile(null);
     }
 
     private static CompletableFuture<?> prefetch(Path dir, CountDownLatch gate) {

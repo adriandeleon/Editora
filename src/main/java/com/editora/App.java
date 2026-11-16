@@ -65,12 +65,11 @@ public class App extends Application {
         var rawArgs = getParameters().getRaw();
         // One shared resolver, so this can never disagree with the single-instance claim in main() about
         // which directory (and therefore which instance) this launch belongs to.
-        Bootstrap boot = takeBootstrap(ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs)));
+        Bootstrap boot = takeBootstrap(ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs)), rawArgs);
         ConfigManager bootstrap = boot.manager();
         Settings settings = boot.settings();
         SharedConfig shared = bootstrap.shared();
         sharedConfig = shared;
-        com.editora.dap.DebugAdapterLocator.setEditoraConfigDir(shared.getConfigDir()); // its installed java-debug
         com.editora.perf.Startup.mark(com.editora.perf.Startup.CONFIG_LOADED);
         // Register the bundled fonts the first frame can show (the UI chrome's, app.css's monospace default
         // and the configured editor family) before any UI/CSS uses them; the other families load after the
@@ -80,27 +79,9 @@ public class App extends Application {
         // Flush any pending off-thread settings/session writes on exit, covering paths where persistSession()
         // doesn't run (the normal quit already flushes via its blocking config.save()).
         Runtime.getRuntime().addShutdownHook(new Thread(shared::flushWrites, "config-flush"));
-        // Mirror captured logs to a session file in the config dir so a packaged build's log survives a
-        // crash and can be attached to a bug report (the in-memory capture was installed in main()).
-        com.editora.ui.DebugLog.attachFile(shared.getConfigDir());
+        // The session log, the instance claim, the orphan reaping, the stale MCP endpoint, the user's themes and
+        // the rest of the disk work for the first window were done by the config-prefetch thread (StartupPrep).
 
-        // Claim the config dir. A launch that is not forwarded (--new-instance, --disable-plugins, or one that
-        // could not reach the running editor) is a second process on the same directory; only the first
-        // may garbage-collect shared data, and WindowManager tells the user of a later one about the other.
-        shared.claimInstance();
-        // Point the spawned-server ledger at the config dir and reap any LSP/DAP server leaked by a
-        // previous run that died too hard for the shutdown hook to fire (SIGKILL, power loss). Must run
-        // before any window builds (which can start servers) so we don't race a fresh server's startup.
-        // Only a dead owner's children are reaped: a live second instance's servers are left alone.
-        com.editora.process.ProcessRegistry.setLedgerFile(shared.getConfigDir().resolve("spawned-servers.txt"));
-        // Programs a crashed run left in a container or a WSL distribution: ending the launcher here did not end
-        // them there. Each row says how to reach them; the target checks the pid is still the one recorded.
-        com.editora.process.ProcessRegistry.registerOrphanReaper(
-                com.editora.container.ContainerExecTarget.ORPHAN_KIND,
-                com.editora.container.ContainerExecTarget::reapOrphan);
-        com.editora.process.ProcessRegistry.registerOrphanReaper(
-                com.editora.wsl.WslExecTarget.ORPHAN_KIND, com.editora.wsl.WslExecTarget::reapOrphan);
-        com.editora.process.ProcessRegistry.reapOrphans();
         // Commands for a remote folder run on its host only while the user's setting allows it.
         com.editora.process.ExecTargets.setRemoteEnabled(
                 () -> shared.getSettings().isRemoteExecution());
@@ -111,9 +92,6 @@ public class App extends Application {
         // Folders inside a WSL distribution (\\wsl.localhost\…): their tools run in it once allowed. Registered on
         // every OS: the resolver only reads a path's text, and only Windows has paths that begin that way.
         com.editora.process.ExecTargets.registerMapped(com.editora.wsl.WslTargets.shared());
-        // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking
-        // token. Reaped by the stamped pid + start instant, before any MCP server starts this session (#464).
-        com.editora.mcp.McpServer.reapStaleEndpoint(shared.getConfigDir());
 
         // Localize the UI: pick the language (explicit setting, else system, else English) and load the
         // message catalog before any UI text is created. A change takes effect on the next launch.
@@ -132,10 +110,9 @@ public class App extends Application {
             java.util.Locale.setDefault(locale);
         }
 
-        // Discover user-defined themes from <configDir>/themes + /editor-themes before the theme is applied,
-        // so a user theme saved as the active one resolves on launch (see ui/UserThemes).
-        Themes.loadUserThemes(shared.getConfigDir());
-        // The UI zoom is set before any sheet is named: every window built from here on is built at it.
+        // The user-defined themes (<configDir>/themes + /editor-themes) were read by the prefetch thread, so a
+        // user theme saved as the active one resolves here. The UI zoom is set before any sheet is named: every
+        // window built from here on is built at it (the zoomed copies of its sheets were made by that thread).
         com.editora.editor.UiZoom.init(settings.getUiZoom());
         Application.setUserAgentStylesheet(Themes.userAgentStylesheetFor(settings.getTheme()));
         // Each window is told whether that theme is light or dark as it opens, so the frame and the window
@@ -548,24 +525,7 @@ public class App extends Application {
                     try {
                         warmConfigLoad(configDir);
                         loadGate.await();
-                        ConfigManager manager = new ConfigManager(configDir);
-                        Settings settings = manager.load();
-                        // The AI keys live in the system keychain; asking it may block, so it happens here.
-                        manager.shared().useSecretStore(com.editora.secrets.SecretStores.forThisMachine());
-                        // The message catalog (a few hundred KB of properties) is parsed here too rather than
-                        // on the FX thread: this thread already has the setting that selects the language.
-                        // Completing the future publishes it — start() reads no message before join().
-                        String language = uiLanguage(settings);
-                        com.editora.i18n.Messages.init(language);
-                        // The bundled pauta.json is parsed here as well, so About and the Pauta window read
-                        // no resource on the FX thread.
-                        com.editora.PautaConformance.exceptions();
-                        SharedConfig shared = manager.shared();
-                        com.editora.plugin.PluginManager plugins = com.editora.ui.WindowManager.discoverPlugins(shared);
-                        manager.setStartupSessionScan(com.editora.config.SessionScan.of(
-                                manager.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
-                        ConfigManager projectWindow = prefetchProjectWindow(shared, args);
-                        future.complete(new Bootstrap(manager, settings, language, plugins, projectWindow));
+                        future.complete(loadForFirstWindow(configDir, args));
                     } catch (Throwable e) { // NOSONAR: deliberately broad — see takeBootstrap
                         future.completeExceptionally(e);
                     }
@@ -574,6 +534,50 @@ public class App extends Application {
         t.setDaemon(true);
         t.start();
         return future;
+    }
+
+    /**
+     * Everything the first window needs read, written or decided before it is shown, in order: the
+     * config-prefetch thread's work, which {@code start()} waits for once (PERF-01, PERF-16, Pauta 6.0.1).
+     * Blocking. {@link #takeBootstrap}'s fallback runs it inline when the prefetch failed.
+     */
+    static Bootstrap loadForFirstWindow(java.nio.file.Path configDir, java.util.List<String> args) {
+        ConfigManager manager = new ConfigManager(configDir);
+        SharedConfig shared = manager.shared();
+        // Claim the config dir before anything is loaded or written in it. A launch that is not forwarded
+        // (--new-instance, --disable-plugins, or one that could not reach the running editor) is a second
+        // process on the same directory; only the first may garbage-collect shared data, and WindowManager
+        // tells the user of a later one about the other.
+        shared.claimInstance();
+        try {
+            Settings settings = manager.load();
+            StartupPrep.beforeAnyServer(shared);
+            // The AI keys live in the system keychain; asking it may block, so it happens here.
+            shared.useSecretStore(com.editora.secrets.SecretStores.forThisMachine());
+            // The message catalog (a few hundred KB of properties) is parsed here too rather than on the FX thread:
+            // this thread already has the setting that selects the language. Completing the future publishes it —
+            // start() reads no message before join().
+            String language = uiLanguage(settings);
+            com.editora.i18n.Messages.init(language);
+            // The bundled pauta.json is parsed here as well, so About and the Pauta window read no resource on the
+            // FX thread.
+            com.editora.PautaConformance.exceptions();
+            com.editora.plugin.PluginManager plugins = com.editora.ui.WindowManager.discoverPlugins(shared);
+            manager.setStartupSessionScan(com.editora.config.SessionScan.of(
+                    manager.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
+            ConfigManager projectWindow = prefetchProjectWindow(shared, args);
+            StartupPrep.forFirstWindow(shared, UI_FONT_CSS);
+            return new Bootstrap(manager, settings, language, plugins, projectWindow);
+        } catch (RuntimeException | Error e) {
+            // A failed prefetch is loaded again inline by takeBootstrap, on a config of its own: let go of this
+            // one's claim (and its writer), or that config would take itself for a second instance.
+            try {
+                shared.shutdown();
+            } catch (RuntimeException ignored) {
+                // the inline load reports what is wrong
+            }
+            throw e;
+        }
     }
 
     /**
@@ -604,16 +608,17 @@ public class App extends Application {
      * when that window is the default one (its session is the bootstrap's) or has no session file yet.
      */
     private static @Nullable ConfigManager prefetchProjectWindow(SharedConfig shared, java.util.List<String> args) {
-        java.nio.file.Path stateFile = com.editora.ui.WindowManager.primaryWindowStateFile(
-                shared, projectArg(args), singleWindowArg(args) != null);
-        if (stateFile == null || !java.nio.file.Files.isRegularFile(stateFile)) {
+        boolean single = singleWindowArg(args) != null;
+        java.nio.file.Path stateFile =
+                com.editora.ui.WindowManager.primaryWindowStateFile(shared, projectArg(args), single);
+        if (stateFile == null) {
             return null;
         }
-        ConfigManager config = new ConfigManager(shared, stateFile);
-        config.setWorkspaceStateFile(stateFile);
-        config.setStartupSessionScan(com.editora.config.SessionScan.of(
-                config.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
-        return config;
+        // With its project's settings, so the window's project scope reads no file on the FX thread either.
+        com.editora.config.Project project =
+                com.editora.ui.WindowManager.primaryWindowProject(shared, projectArg(args), single);
+        return com.editora.ui.WindowManager.readWindowConfig(
+                shared, stateFile, project == null ? null : project.rootPath());
     }
 
     /**
@@ -627,7 +632,7 @@ public class App extends Application {
      * on the same arguments, so a mismatch should be impossible, and if it ever were possible, silently
      * using another directory's settings is the worst outcome available.
      */
-    private static Bootstrap takeBootstrap(java.nio.file.Path configDir) {
+    private static Bootstrap takeBootstrap(java.nio.file.Path configDir, java.util.List<String> args) {
         CompletableFuture<Bootstrap> future = configPrefetch;
         configPrefetch = null; // one-shot: a second window must not reuse the first launch's load
         if (future != null) {
@@ -640,11 +645,9 @@ public class App extends Application {
                 // Prefetch failed; fall through so the inline load raises it the way it always has.
             }
         }
-        ConfigManager manager = new ConfigManager(configDir);
-        Settings settings = manager.load();
-        manager.shared().useSecretStore(com.editora.secrets.SecretStores.forThisMachine());
-        // null language: the catalog is still to be loaded; null plugins/project window: read on FX as before
-        return new Bootstrap(manager, settings, null, null, null);
+        // The same work the prefetch thread does, here on the FX thread: PERF-16's gap, and only when the
+        // prefetch failed or the app was entered without main().
+        return loadForFirstWindow(configDir, args);
     }
 
     /**

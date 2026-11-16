@@ -111,6 +111,7 @@ public class ProjectSettings {
             // a remote folder is not yet keyed for this: none for now.
             return new ProjectSettings();
         }
+        com.editora.perf.BlockingSites.enter("ProjectSettings.load");
         Path file = fileFor(projectRoot);
         ObjectMapper mapper = JSON;
         if (!Files.isReadable(file)) {

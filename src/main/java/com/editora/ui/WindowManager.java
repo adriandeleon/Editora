@@ -251,6 +251,35 @@ public class WindowManager {
      */
     public static @Nullable Path primaryWindowStateFile(
             SharedConfig shared, @Nullable String projectArg, boolean singleWindow) {
+        String primary = primaryWindowKey(shared, projectArg, singleWindow);
+        if (primary == null || primary.isEmpty()) {
+            return null;
+        }
+        if (WindowKeys.isUntitled(primary)) {
+            return shared.getConfigDir().resolve("windows").resolve(WindowKeys.untitledSessionFileName(primary));
+        }
+        Project p = primaryWindowProject(shared, projectArg, singleWindow);
+        return p == null ? null : shared.projects().stateFile(p);
+    }
+
+    /** The project of the window {@link #primaryWindowStateFile} names, or {@code null} when it has none. */
+    public static @Nullable Project primaryWindowProject(
+            SharedConfig shared, @Nullable String projectArg, boolean singleWindow) {
+        String primary = primaryWindowKey(shared, projectArg, singleWindow);
+        if (primary == null || primary.isEmpty() || WindowKeys.isUntitled(primary)) {
+            return null;
+        }
+        for (Project p : shared.projects().list()) {
+            if (p.id().equals(primary)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    /** The key of the window {@link #launch} builds first; {@code null} when it cannot be told ahead. */
+    private static @Nullable String primaryWindowKey(
+            SharedConfig shared, @Nullable String projectArg, boolean singleWindow) {
         if (singleWindow) {
             return null;
         }
@@ -265,20 +294,8 @@ public class WindowManager {
             cliId = cli.id();
         }
         LinkedHashSet<String> toOpen = WindowKeys.restoreKeys(pm.openProjectIds(), projectsOn, cliId);
-        String primary = WindowKeys.primaryKey(
+        return WindowKeys.primaryKey(
                 cliId, toOpen, pm.active() == null ? null : pm.active().id());
-        if (primary == null || primary.isEmpty()) {
-            return null;
-        }
-        if (WindowKeys.isUntitled(primary)) {
-            return shared.getConfigDir().resolve("windows").resolve(WindowKeys.untitledSessionFileName(primary));
-        }
-        for (Project p : pm.list()) {
-            if (p.id().equals(primary)) {
-                return pm.stateFile(p);
-            }
-        }
-        return null;
     }
 
     // --- what settings sync needs of the windows ---
@@ -488,6 +505,8 @@ public class WindowManager {
                     isPrimary ? newFile : null,
                     isPrimary && simple);
         }
+        // The windows still to come have their sessions read now, off the FX thread, while the first one paints.
+        pendingRestore.forEach(this::readAhead);
         shared.saveProjectsQueued(); // the open set + active project; written on the config writer, not here
         // Against the whole restore set, and now rather than when the last window exists: a window the user
         // opens while the rest are still being built has a session file this set does not know about.
@@ -601,7 +620,22 @@ public class WindowManager {
         if (restorePaused || pendingRestore.isEmpty()) {
             return; // a cancelled quit reschedules; an emptied queue was finished by whoever emptied it
         }
+        java.util.concurrent.CompletableFuture<ConfigManager> read =
+                pendingRestore.peek().stateFile() == null
+                        ? null
+                        : readsAhead.get(pendingRestore.peek().stateFile());
+        if (read != null && !read.isDone()) {
+            // Its session is still being read: carry on when it lands, rather than wait for it here.
+            read.handle((config, error) -> null)
+                    .thenRunAsync(
+                            () -> restoreScheduler.accept(this::buildNextRestoredWindow),
+                            javafx.application.Platform::runLater);
+            return;
+        }
         PendingWindow next = pendingRestore.poll();
+        if (findHolder(next.key()) != null && next.stateFile() != null) {
+            readsAhead.remove(next.stateFile()); // opened by hand meanwhile: that window read its own
+        }
         if (findHolder(next.key()) == null) { // else opened by hand while it was waiting
             Holder focused = actuallyFocusedHolder();
             buildRestoredWindow(next, List.of(), false, false, null, false);
@@ -617,10 +651,60 @@ public class WindowManager {
         }
     }
 
+    /**
+     * The sessions of the restored windows not built yet, being read (or read) off the FX thread by
+     * {@link #readAhead}, by session file. {@link #buildWindow} takes a window's from here.
+     */
+    private final java.util.Map<Path, java.util.concurrent.CompletableFuture<ConfigManager>> readsAhead =
+            new java.util.HashMap<>();
+
+    /**
+     * Starts reading {@code w}'s session, and its project's settings, on a thread of their own: what
+     * {@link #buildWindow} would otherwise read on the FX thread when the window's turn comes.
+     */
+    private void readAhead(PendingWindow w) {
+        Path stateFile = w.stateFile();
+        if (stateFile == null) {
+            return; // the default window: its session is the bootstrap's
+        }
+        Path root = w.project() == null ? null : w.project().rootPath();
+        readsAhead.put(
+                stateFile,
+                java.util.concurrent.CompletableFuture.supplyAsync(
+                        () -> readWindowConfig(shared, stateFile, root),
+                        com.editora.process.BlockingTasks.named("window-session-read")));
+    }
+
+    /**
+     * A window's config over {@code stateFile}, its session read and scanned, and {@code projectRoot}'s project
+     * settings attached when there is one: blocking, for a thread other than the FX thread. The launch's
+     * prefetch reads its first window's this way too.
+     */
+    public static ConfigManager readWindowConfig(SharedConfig shared, Path stateFile, @Nullable Path projectRoot) {
+        ConfigManager config = new ConfigManager(shared, stateFile);
+        config.setWorkspaceStateFile(stateFile);
+        config.setStartupSessionScan(com.editora.config.SessionScan.of(
+                config.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
+        if (projectRoot != null) {
+            config.setStartupProjectSettings(projectRoot, com.editora.config.ProjectSettings.load(projectRoot));
+        }
+        return config;
+    }
+
+    /** The session {@link #readAhead} read for {@code stateFile}, when it read one and it is ready; else null. */
+    private @Nullable ConfigManager takeReadAhead(Path stateFile) {
+        java.util.concurrent.CompletableFuture<ConfigManager> read = readsAhead.remove(stateFile);
+        if (read == null || !read.isDone() || read.isCompletedExceptionally()) {
+            return null; // not read ahead, or it failed: buildWindow reads it, and reports what is wrong
+        }
+        return read.join(); // done: no wait
+    }
+
     /** Runs what waits for the whole restore set to exist: the persisted open set, focus, queued launches. */
     private void finishRestore() {
         bootstrapConfig = null; // the launch is over; see the field
         bootstrapProjectConfig = null;
+        readsAhead.clear();
         if (findHolder(restoreFocusKey) == null && !windows.isEmpty()) {
             restoreFocusKey = windows.get(0).key(); // the chosen primary failed to build — focus whatever opened
         }
@@ -1676,6 +1760,9 @@ public class WindowManager {
             // A no-project window normally uses the default workspace-state.json (stateFile null); a project
             // OR an extra "untitled" no-project window passes its own session file so windows never clobber.
             ConfigManager config = stateFile == null ? takeBootstrapConfig() : takeBootstrapProjectConfig(stateFile);
+            if (config == null && stateFile != null) {
+                config = takeReadAhead(stateFile); // a restored window's, read while the windows before it painted
+            }
             if (config == null) {
                 config = stateFile == null ? new ConfigManager(shared) : new ConfigManager(shared, stateFile);
                 config.setWorkspaceStateFile(config.getWorkspaceStateFile()); // load this window's session
@@ -1895,15 +1982,18 @@ public class WindowManager {
      * run configurations because {@code projects.json} was zero-length, truncated or written by a newer build.
      */
     private void gcOrphanWindowSessions(java.util.Collection<String> openKeys) {
-        if (!projects().openSetIsComplete()) {
-            return;
-        }
+        ProjectManager pm = projects();
         Path dir = windowsDir();
         java.util.Set<String> keys = java.util.Set.copyOf(openKeys);
-        // The listing and the deletes are disk I/O with nothing on screen waiting for them: a virtual thread,
-        // off the FX thread the first frame is about to be painted on. The set is decided here, now.
+        // The check for a set-aside index, the listing and the deletes are disk I/O with nothing on screen
+        // waiting for them: a virtual thread, off the FX thread the first frame is about to be painted on. The
+        // set is decided here, now.
         sessionGc = java.util.concurrent.CompletableFuture.runAsync(
-                () -> sweepOrphanSessions(dir, keys),
+                () -> {
+                    if (pm.openSetIsComplete()) {
+                        sweepOrphanSessions(dir, keys);
+                    }
+                },
                 r -> Thread.ofVirtual().name("session-gc").start(r));
     }
 
@@ -2052,10 +2142,10 @@ public class WindowManager {
 
     /** Adds the app icon (multiple sizes) so it shows in the title bar, dock, and taskbar. */
     private static void loadAppIcons(Stage stage) {
-        for (int size : new int[] {16, 32, 48, 128, 256, 512}) {
-            var in = WindowManager.class.getResourceAsStream("/com/editora/icons/icon-" + size + ".png");
-            if (in != null) {
-                stage.getIcons().add(new javafx.scene.image.Image(in));
+        for (int size : AppIcons.WINDOW_SIZES) {
+            javafx.scene.image.Image icon = AppIcons.icon(size); // read for the first window, kept for the rest
+            if (icon != null) {
+                stage.getIcons().add(icon);
             }
         }
     }

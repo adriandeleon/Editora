@@ -71,20 +71,8 @@ public final class TypstRenderer {
         // absolute path — so a home directory with a space (/Users/John Smith/…) made every render die with
         // Cannot run program "/Users/John". Anything else tokenizes quote-aware, so a multi-token command
         // still works. (Same fix as DiagramRenderer.command.)
-        if (isExistingFile(raw)) {
-            return List.of(raw);
-        }
-        List<String> tokens = com.editora.run.ProgramArgs.tokenize(raw);
-        return tokens.isEmpty() ? List.of(raw) : List.copyOf(tokens);
-    }
-
-    /** True when {@code raw} names a file that exists — i.e. it is a path, not a command line. */
-    private static boolean isExistingFile(String raw) {
-        try {
-            return !raw.isBlank() && Files.isRegularFile(Path.of(raw));
-        } catch (RuntimeException e) {
-            return false;
-        }
+        // Whole when it names a file, else its tokens; the file is looked at only when that decides (kept).
+        return raw.isBlank() ? List.of(raw) : com.editora.process.ConfiguredCommand.argv(raw);
     }
 
     /**

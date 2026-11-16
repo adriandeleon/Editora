@@ -82,6 +82,7 @@ final class InstanceLock implements AutoCloseable {
 
     /** Claims {@code configDir} for this process. Never throws and never blocks on another process. */
     static InstanceLock claim(Path configDir) {
+        com.editora.perf.BlockingSites.enter("InstanceLock.claim");
         FileChannel channel;
         try {
             Files.createDirectories(configDir);

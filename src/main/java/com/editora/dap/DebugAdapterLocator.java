@@ -121,6 +121,32 @@ public final class DebugAdapterLocator {
         return scanNewest(candidateServerDirs(home));
     }
 
+    /** What {@link #locateKept} is asked: the configured plugin path and the home folder. */
+    private record LocateKey(String configuredPath, Path home) {}
+
+    /**
+     * {@link #locate} answers, kept: a window's set-up and every settings apply ask it on the FX thread, and it
+     * lists the VS Code extension folders. The launch fills it off the FX thread ({@link #prepareLocate}); an
+     * install {@linkplain #forgetLocated forgets} it.
+     */
+    private static final com.editora.perf.ProbeCache<LocateKey, Optional<Path>> LOCATED =
+            new com.editora.perf.ProbeCache<>("java-debug-locate", key -> locate(key.configuredPath(), key.home()));
+
+    /** {@link #locate}, from what is kept when it was looked up before in this run. */
+    public static Optional<Path> locateKept(String configuredPath, Path home) {
+        return LOCATED.get(new LocateKey(configuredPath == null ? "" : configuredPath, home));
+    }
+
+    /** Looks the plugin up now, on the calling thread, and keeps the answer: the launch's warm-up. */
+    public static void prepareLocate(String configuredPath, Path home) {
+        LOCATED.prepare(new LocateKey(configuredPath == null ? "" : configuredPath, home));
+    }
+
+    /** Drops what {@link #locateKept} kept: an install changed what is on disk. */
+    public static void forgetLocated() {
+        LOCATED.forget();
+    }
+
     /** This launch's config folder (set once at startup); null: only the default folders are searched. */
     private static volatile @Nullable Path editoraConfigDir;
 

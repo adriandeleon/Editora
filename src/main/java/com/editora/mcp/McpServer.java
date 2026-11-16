@@ -260,6 +260,7 @@ public final class McpServer {
      * live server (a concurrent instance) from a stale file, safely against a reused PID (#464).
      */
     public static void reapStaleEndpoint(Path configDir) {
+        com.editora.perf.BlockingSites.enter("McpServer.reapStaleEndpoint");
         Path file = configDir.resolve(ENDPOINT_FILE);
         if (!Files.isRegularFile(file)) {
             return;

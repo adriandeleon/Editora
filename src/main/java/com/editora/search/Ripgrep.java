@@ -1,7 +1,5 @@
 package com.editora.search;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,18 +29,10 @@ public final class Ripgrep {
      */
     public static List<String> command(String configured) {
         String raw = configured == null || configured.isBlank() ? DEFAULT_COMMAND : configured.strip();
-        if (raw.chars().anyMatch(Character::isWhitespace) && isFile(raw)) {
+        if (raw.chars().anyMatch(Character::isWhitespace) && com.editora.process.ConfiguredCommand.isFileKept(raw)) {
             return List.of(raw);
         }
         return List.of(raw.split("\\s+"));
-    }
-
-    private static boolean isFile(String raw) {
-        try {
-            return Files.isRegularFile(Path.of(raw));
-        } catch (RuntimeException notAPath) {
-            return false;
-        }
     }
 
     /**

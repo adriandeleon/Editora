@@ -54,7 +54,11 @@ final class ProjectScope {
         }
         if (!r.equals(cachedRoot)) {
             cachedRoot = r;
-            cache = ProjectSettings.load(r);
+            // Read with the window's session, off the FX thread, when the window was built from one that was
+            // read ahead (the launch's first window, a restored one); else read now.
+            ConfigManager c = config.get();
+            ProjectSettings ahead = c == null ? null : c.takeStartupProjectSettings(r);
+            cache = ahead != null ? ahead : ProjectSettings.load(r);
         }
         return cache;
     }

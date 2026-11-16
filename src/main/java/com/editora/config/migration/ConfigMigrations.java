@@ -109,6 +109,7 @@ public final class ConfigMigrations {
         if (file == null) {
             return defaults;
         }
+        com.editora.perf.BlockingSites.enter("readVersioned " + file.getFileName());
         restoreSetAsideCopy(file, mapper, defaults, schema, problems);
         if (!Files.isReadable(file)) {
             return defaults;

@@ -58,8 +58,8 @@ sequenceDiagram
     main->>main: DebugLog.install() + uncaught handler
     main->>main: prefetchConfig() (warm-up), SingleInstance.start(), open the load gate
     main->>start: launch()
-    start->>start: takeBootstrap() (config, catalog, plugins, first session), pin classloader
-    start->>start: ProcessRegistry.reapOrphans(), AfterFirstPaint.hold()
+    start->>start: takeBootstrap() (claim, config, session log, orphan reap, catalog, plugins, first session, StartupPrep)
+    start->>start: pin classloader, AfterFirstPaint.hold()
     start->>WM: launch()  (restore previously-open windows: primary first, the rest one per painted frame)
     loop each window to open
         WM->>MC: buildWindow()

@@ -197,6 +197,7 @@ public final class DebugLog {
         if (configDir == null) {
             return;
         }
+        com.editora.perf.BlockingSites.enter("DebugLog.attachFile");
         synchronized (LOCK) {
             try {
                 Path path = configDir.resolve(SESSION_FILE);
@@ -227,7 +228,7 @@ public final class DebugLog {
     }
 
     /** TEST SEAM — stops mirroring and closes the session file, so a test can delete the folder it attached. */
-    static void detachFileForTest() {
+    public static void detachFileForTest() {
         synchronized (LOCK) {
             if (file != null) {
                 file.close();

@@ -313,13 +313,14 @@ final class PluginCoordinator {
             Contributions c = new Contributions(d);
             try {
                 // Declarative: snippet/template source dirs (per-window registries) + keymap (shared).
-                Path snDir = d.dir().resolve("snippets");
-                if (Files.isDirectory(snDir)) {
+                // Which of them exist was looked up when the launch discovered the plugins, off the FX thread.
+                Path snDir = pluginManager.assetDir(d, "snippets");
+                if (snDir != null) {
                     snippets.addExtraSourceDir(snDir);
                     addedAssets = true;
                 }
-                Path tplDir = d.dir().resolve("templates");
-                if (Files.isDirectory(tplDir)) {
+                Path tplDir = pluginManager.assetDir(d, "templates");
+                if (tplDir != null) {
                     templates.addExtraSourceDir(tplDir);
                     addedAssets = true;
                 }

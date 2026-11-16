@@ -54,12 +54,20 @@ final class RecentFilesCheck {
      * request supersedes an older one still in flight.
      */
     void revalidate(RecentFiles recent, Runnable onChanged) {
+        revalidate(recent == null ? List.of() : recent.getList(), onChanged);
+    }
+
+    /** Whether the last completed check found {@code path} missing (an unchecked path is not). */
+    boolean isMissing(Path path) {
+        return missing.contains(path);
+    }
+
+    /** As {@link #revalidate(RecentFiles, Runnable)}, for any list of paths (the Welcome page's project roots). */
+    void revalidate(List<Path> paths, Runnable onChanged) {
         List<Path> local = new ArrayList<>();
-        if (recent != null) {
-            for (Path path : recent.getList()) {
-                if (path != null && Vfs.isLocal(path)) {
-                    local.add(path);
-                }
+        for (Path path : paths) {
+            if (path != null && Vfs.isLocal(path)) {
+                local.add(path);
             }
         }
         long mine = ++generation;

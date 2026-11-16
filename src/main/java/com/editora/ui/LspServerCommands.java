@@ -143,8 +143,44 @@ final class LspServerCommands {
      *  JSON command (review A9, review 2 A3, HTML A2), on the Maven JDK ({@code jdkHome}). Pure but for file lookups. */
     static String withOwnCopy(
             String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
-        String raw = command == null ? "" : command;
-        String jdk = jdkHome == null ? "" : jdkHome;
+        return OWN_COPIES.get(
+                new OwnCopyKey(serverId, command == null ? "" : command, configDir, jdkHome == null ? "" : jdkHome));
+    }
+
+    /** What {@link #withOwnCopy} is asked: a server, its configured command, the config folder and the JDK. */
+    record OwnCopyKey(String serverId, String raw, @Nullable Path configDir, String jdk) {}
+
+    /**
+     * The probes behind {@link #withOwnCopy}, kept: a window's set-up and every settings apply ask for all 26
+     * servers, twice, and each probe stats files under the config folder. The launch fills it off the FX thread
+     * ({@link #prepareOwnCopies}); an install {@linkplain #forgetOwnCopies forgets} it.
+     */
+    private static final com.editora.perf.ProbeCache<OwnCopyKey, String> OWN_COPIES =
+            new com.editora.perf.ProbeCache<>("lsp-own-copies", LspServerCommands::probeOwnCopy);
+
+    /** Looks up, on the calling thread, every server's launch command for {@code s}: the launch's warm-up. */
+    static void prepareOwnCopies(com.editora.config.Settings s, @Nullable Path configDir) {
+        String jdk = s.getMavenJdkHome() == null ? "" : s.getMavenJdkHome();
+        commandsForAllServers(s)
+                .forEach((id, command) ->
+                        OWN_COPIES.prepare(new OwnCopyKey(id, command == null ? "" : command, configDir, jdk)));
+    }
+
+    /** Looks at every kept launch command again, off the FX thread; {@code onChange} when one moved. */
+    static void refreshOwnCopies(Runnable onChange) {
+        OWN_COPIES.refresh(onChange);
+    }
+
+    /** Drops the kept launch commands: an install or removal changed what is on disk. */
+    static void forgetOwnCopies() {
+        OWN_COPIES.forget();
+    }
+
+    private static String probeOwnCopy(OwnCopyKey key) {
+        String serverId = key.serverId();
+        String raw = key.raw();
+        String jdk = key.jdk();
+        Path configDir = key.configDir();
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
             String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
             return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);

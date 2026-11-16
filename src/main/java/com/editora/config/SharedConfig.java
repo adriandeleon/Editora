@@ -140,7 +140,8 @@ public class SharedConfig {
     private volatile boolean historyIndexIntact = true;
 
     /** What {@link #load()} could not read as written, held until a window shows it (see {@link #takeLoadProblems}). */
-    private final List<ConfigLoadProblem> loadProblems = new ArrayList<>();
+    // Synchronized: a restored window's session is read on a thread of its own while the FX thread takes these.
+    private final List<ConfigLoadProblem> loadProblems = java.util.Collections.synchronizedList(new ArrayList<>());
     /**
      * Files that must not be written this session: each holds content this build did not load (it is newer
      * than this build, or unreadable) and could not be copied aside, so saving would destroy the only copy.
@@ -489,8 +490,10 @@ public class SharedConfig {
         if (problem.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT && alreadyReported(problem.backup())) {
             return; // said once, when the newer build first came back; the copy is the user's to deal with
         }
-        if (!loadProblems.contains(problem)) { // a session file is read at bootstrap and again by its window
-            loadProblems.add(problem);
+        synchronized (loadProblems) {
+            if (!loadProblems.contains(problem)) { // a session file is read at bootstrap and again by its window
+                loadProblems.add(problem);
+            }
         }
         if (problem.mustNotOverwrite()) {
             writeProtected.add(problem.file());
@@ -540,9 +543,11 @@ public class SharedConfig {
      * that fell back to defaults, and files that will not be saved this session ({@link #isWriteProtected}).
      */
     public List<ConfigLoadProblem> takeLoadProblems() {
-        List<ConfigLoadProblem> taken = List.copyOf(loadProblems);
-        loadProblems.clear();
-        return taken;
+        synchronized (loadProblems) {
+            List<ConfigLoadProblem> taken = List.copyOf(loadProblems);
+            loadProblems.clear();
+            return taken;
+        }
     }
 
     /** True when {@code file} is not written this session because its unread content has no backup. */
@@ -1513,8 +1518,9 @@ public class SharedConfig {
         // First, so that "lost" is judged on the index an older build may have set aside.
         ConfigMigrations.restoreSetAsideCopy(index, json, new HistoryStore(), ConfigSchema.HISTORY, problems::add);
         boolean lost = HistoryIndexGuard.lostIndex(index, getHistoryBlobsDir());
+        historyFileSeen = Files.exists(index);
         HistoryStore loaded;
-        if (lost && Files.exists(index)) {
+        if (lost && historyFileSeen) {
             // Zero-length beside stored revision bodies: a write the OS never flushed, not "no history yet".
             problems.add(ConfigMigrations.unreadable(index));
             loaded = new HistoryStore();
@@ -1597,6 +1603,13 @@ public class SharedConfig {
         }
     }
 
+    /**
+     * Whether the Local History index file is known to exist: it did when the history was loaded, or this
+     * process has queued a write of it since. Kept so {@link #historyLimitsAcknowledged} asks no disk on the FX
+     * thread (a window's set-up reaches it).
+     */
+    private volatile boolean historyFileSeen;
+
     /** The limits in force changed: keep them with the index, for the next start. */
     private void historyLimitsAcknowledged(HistoryRetention.RetentionPolicy policy) {
         HistoryStore.Limits limits =
@@ -1606,7 +1619,7 @@ public class SharedConfig {
             store.setAcknowledgedLimits(limits);
             // With no history at all there is nothing a stricter limit could delete, and no reason to create
             // an index for the sake of this note: it is written with the first revision.
-            if (!store.ledger().listsNothing() || Files.exists(getHistoryFile())) {
+            if (!store.ledger().listsNothing() || historyFileSeen) {
                 saveHistory();
             }
         }
@@ -1625,6 +1638,7 @@ public class SharedConfig {
      * counted ({@link HistoryHashLedger}), and serializing happens on the writer thread.
      */
     public void saveHistory(@Nullable Consumer<Boolean> completion) {
+        historyFileSeen = true;
         HistoryStore store = historyStore;
         HistoryStore.Snapshot snapshot = store.snapshot();
         long publication = store.ledger().publish();

@@ -297,17 +297,34 @@ public final class LspManager {
     /** Sets the shared root of loose JavaScript/TypeScript files (see {@link #looseRoot}). */
     public void setLooseRoot(@Nullable Path root) {
         Path next = root == null ? null : root.toAbsolutePath().normalize();
-        if (next != null && !next.equals(looseRoot)) {
-            // Made now, not at the first start: a session key names a folder with a trailing slash only once it
-            // exists, so a root created after its first key was taken would get a second session.
-            try {
-                Files.createDirectories(next);
-            } catch (java.io.IOException e) {
-                LOG.log(java.util.logging.Level.FINE, "Could not create the loose-files root " + next, e);
-                next = null;
-            }
+        if (next != null && !next.equals(looseRoot) && !makeLooseRoot(next)) {
+            next = null;
         }
         looseRoot = next;
+    }
+
+    /** The loose-files roots made in this run: each window's manager sets the same one. */
+    private static final java.util.Set<Path> MADE_LOOSE_ROOTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Makes the loose-files root {@code root} (absolute, normalized) unless this run already did. Made before any
+     * session starts, not at the first start: a session key names a folder with a trailing slash only once it
+     * exists, so a root created after its first key was taken would get a second session. The launch makes it on
+     * its config-prefetch thread, so a window's set-up on the FX thread finds it made.
+     */
+    public static boolean makeLooseRoot(Path root) {
+        if (MADE_LOOSE_ROOTS.contains(root)) {
+            return true;
+        }
+        com.editora.perf.BlockingSites.enter("LspManager.makeLooseRoot");
+        try {
+            Files.createDirectories(root);
+            MADE_LOOSE_ROOTS.add(root);
+            return true;
+        } catch (java.io.IOException e) {
+            LOG.log(java.util.logging.Level.FINE, "Could not create the loose-files root " + root, e);
+            return false;
+        }
     }
 
     /** The shared root of loose JavaScript/TypeScript files, or null. */
@@ -1945,7 +1962,11 @@ public final class LspManager {
             return prev;
         }
         clientOf.put(session, client);
-        watching.ensureRootWatcher(session.root(), session.serverId());
+        // The tree walk (a stat and a read of each folder's .gitignore) is off the FX thread this join runs on.
+        Path watchRoot = session.root();
+        String watchServer = session.serverId();
+        com.editora.process.BlockingTasks.named("lsp-root-watcher")
+                .execute(() -> watching.ensureRootWatcher(watchRoot, watchServer));
         if (session.isInitialized()) {
             // the project's own problems first, so its verdict can name them (seventh review CR2)
             session.projectDiagnostics().forEach(client.diagnostics::accept);

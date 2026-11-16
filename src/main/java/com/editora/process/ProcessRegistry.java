@@ -644,6 +644,7 @@ public final class ProcessRegistry {
         if (legacy == null) {
             return;
         }
+        com.editora.perf.BlockingSites.enter("ProcessRegistry.reapOrphans");
         int reaped = 0;
         List<LedgerEntry> remoteOrphans = new ArrayList<>();
         for (Path file : ledgerFiles(legacy)) {

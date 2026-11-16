@@ -430,6 +430,33 @@ public class ConfigManager {
         return scan != null && scan.covers(workspaceState.getOpenFiles()) ? scan : null;
     }
 
+    /** See {@link #setStartupProjectSettings}. */
+    private @Nullable Path startupProjectRoot;
+
+    private @Nullable ProjectSettings startupProjectSettings;
+
+    /**
+     * Attaches the project settings of {@code root}, read off the FX thread by whoever read this window's
+     * session, for {@link #takeStartupProjectSettings} to hand to the window's project scope the first time it
+     * asks for them.
+     */
+    public void setStartupProjectSettings(Path root, ProjectSettings settings) {
+        this.startupProjectRoot = root;
+        this.startupProjectSettings = settings;
+    }
+
+    /**
+     * The attached project settings when they are of {@code root}, else {@code null}; either way they are
+     * detached, so a later read (an edited file, a reload) goes to the disk.
+     */
+    public @Nullable ProjectSettings takeStartupProjectSettings(Path root) {
+        ProjectSettings settings = startupProjectSettings;
+        Path of = startupProjectRoot;
+        startupProjectSettings = null;
+        startupProjectRoot = null;
+        return settings != null && root.equals(of) ? settings : null;
+    }
+
     public WorkspaceState getWorkspaceState() {
         return workspaceState;
     }

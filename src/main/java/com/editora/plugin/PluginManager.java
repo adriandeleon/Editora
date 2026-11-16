@@ -151,8 +151,40 @@ public final class PluginManager {
         pendingUpdates = Map.copyOf(updates);
         pendingRemovals = Set.copyOf(removals);
         if (launch) {
+            // Which launch-set plugins bring snippets or templates: each window asks when it applies them.
+            Set<Path> assetDirs = new java.util.HashSet<>();
+            for (PluginDescriptor d : descriptors) {
+                for (String sub : ASSET_DIRS) {
+                    Path assets = d.dir().resolve(sub);
+                    if (Files.isDirectory(assets)) {
+                        assetDirs.add(assets);
+                    }
+                }
+            }
+            launchAssetDirs = Set.copyOf(assetDirs);
             launchSet = descriptors;
         }
+    }
+
+    /** The folders of a plugin that hold declarative assets, which {@link #assetDir} answers for. */
+    private static final List<String> ASSET_DIRS = List.of("snippets", "templates");
+
+    /** The {@link #ASSET_DIRS} of the launch set that exist, looked up by the launch's {@link #discover}. */
+    private volatile Set<Path> launchAssetDirs = Set.of();
+
+    /**
+     * {@code d}'s {@code snippets} or {@code templates} folder when it exists, else {@code null}. Answered from
+     * what the launch's {@link #discover} found for a launch-set plugin, so a window applying its plugins on the
+     * FX thread looks at no disk; any other folder is looked up now.
+     */
+    public @Nullable Path assetDir(PluginDescriptor d, String sub) {
+        Path assets = d.dir().resolve(sub);
+        List<PluginDescriptor> set = launchSet;
+        if (set != null && ASSET_DIRS.contains(sub) && set.contains(d)) {
+            return launchAssetDirs.contains(assets) ? assets : null;
+        }
+        com.editora.perf.BlockingSites.enter("PluginManager.assetDir");
+        return Files.isDirectory(assets) ? assets : null;
     }
 
     /** The version a waiting update declares ("" when unknown). */
