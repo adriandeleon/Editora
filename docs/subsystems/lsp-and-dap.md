@@ -1467,9 +1467,30 @@ stepped thread. The "Suspend all threads when one stops" setting is java-debug's
 other file an empty breakpoint set and the caret's file only the cursor line, then resumes; the next stop's
 `clearTempBreakpoint` sends the real sets again (`forceRunMuted`). *Show Numbers as Hexadecimal*
 (`DapManager.setHexValues`) puts `format: {hex: true}` on every `variables` and `evaluate` request of the session and
-the next ones (java-debug and debugpy honour it; js-debug ignores it), and forgets the stop's cached answers. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
+the next ones (java-debug, debugpy and GDB honour it; js-debug, CodeLLDB and Delve ignore it), and forgets the stop's cached answers. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
 installed adapters in a real window (a worker thread's output stops while paused), along with temporary breakpoints
 and changed-value marks: `./mvnw test -Dtest=DebugQuickWinsProbeFxTest -Dgroups=probe -Dlsp.probe=true`.
+**Show Value As** (IntelliJ's and CLion's *View as*, Visual Studio's format specifiers; the Variables view's
+right-click *Show Value As ▸ As the Debugger Shows It / Decimal / Hexadecimal / Binary / Octal / Character*, and the
+row commands `debug.showSelectedAs{Default,Decimal,Hex,Binary,Octal,Character}` in `DebugRowCommands`) shows one whole
+number in a radix of its own, where *Show Numbers as Hexadecimal* is all or nothing (and is honoured by java-debug,
+debugpy and GDB only: CodeLLDB, Delve and js-debug ignore `format.hex`). It is Editora's: the debugger's text is read
+and written again by [`dap/NumberViews`](../../src/main/java/com/editora/dap/NumberViews.java) (pure), so it works the
+same with every adapter. Each writes a number its own way, and `ValueFormatsProbeFxTest` saw each: a plain number
+(js-debug's BigInt `42n`), hexadecimal from the global switch (debugpy `-0x2a`, java-debug `0xffffffffffffffd6` for an
+`int`, GDB `0xffffffd6`), Delve's `255 = 0xff`, GDB's character `65 'A'`, CodeLLDB's `'A'` and `'\xff'`, java-debug's
+bare `A` for a `char`. The type, in the session's language, gives the width and sign (`NumberViews.width`: a JVM
+`char` is 16 bits unsigned, Go's `byte` a `uint8`, Rust's `char` 32 bits, C's `char` 8 bits signed; Python's `int` and
+JavaScript's `number` have none), so a negative number is its two's complement in hexadecimal, binary and octal, and a
+hexadecimal value is read back in that width. GDB and Delve name no type: there a negative number keeps its sign
+(`-0x2a`) and GDB's hexadecimal reads as unsigned. Booleans, floats, strings and objects are not numbers; the submenu
+is grayed for them, saying why (KBD-04), and offered on an array or object, whose numbers it then shows that way until
+one has its own. The choice is kept by the session's language and the value's expression (`DebugPanel.formatKey`: the
+adapter's `evaluateName`, the path of names, a watch's text) in the window's map (`DebugCoordinator.valueFormats`,
+every session's panel; not saved), so it holds at the next stop and in the next session; the cell draws
+`DebugPanel.shown`, and Copy Value copies what is shown. `ShowValueAsFxTest` (a scripted panel) covers the menu, an
+array's elements, a watch, Copy Value, the grayed row and the commands; `ValueFormatsProbeFxTest` runs the commands
+in a window on java-debug, debugpy, Delve, GDB, CodeLLDB and js-debug.
 **Method breakpoints and field watchpoints** ([`config/MemberBreakpoint`](../../src/main/java/com/editora/config/MemberBreakpoint.java),
 [`ui/MemberBreakpointCommands`](../../src/main/java/com/editora/ui/MemberBreakpointCommands.java)) are java-debug's
 DAP function and data breakpoints, both named `pkg.Class#member` (the binary class name, `Outer$Inner`). A method

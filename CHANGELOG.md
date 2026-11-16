@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Show Value As.** Right-click a number in the Variables view or a watch and choose Show Value As ▸ Decimal,
+  Hexadecimal, Binary, Octal or Character to see that one value that way, while the others stay as they are. A
+  negative number shows as its two's complement for its type (`-42` as an `int` is `0xffffffd6`), a `char` shows its
+  code, and choosing it on an array or object shows all the numbers in it that way. The choice stays at the next stop
+  and in the next session until the window closes, and Copy Value copies what you see. It works with every debugger,
+  including those that ignore Show Numbers as Hexadecimal (CodeLLDB, Delve, js-debug).
 - **A copy button on the Markdown preview's code blocks.** Point at a code block in the preview and a copy button
   shows in its top right corner, beside the language; one click copies the block's code, and a check mark says it
   worked. Fenced and indented blocks both have it; hover and completion popups do not.
