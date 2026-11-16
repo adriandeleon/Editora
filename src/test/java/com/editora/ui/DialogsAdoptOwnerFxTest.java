@@ -5,12 +5,14 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,16 +36,20 @@ class DialogsAdoptOwnerFxTest {
             main.setX(40);
             main.setY(30);
             main.show();
+            main.requestFocus();
+            // Other tests in this JVM may leave a stage showing (and focused): the dialog goes over the front one.
+            Window front = WindowPlacement.frontWindow();
+            assertNotNull(front);
             Alert alert = Dialogs.styled(new Alert(Alert.AlertType.ERROR, "It failed.", ButtonType.OK));
             try {
                 Dialogs.show(alert);
-                assertSame(main, alert.getOwner(), "it took the window that was showing");
+                assertSame(front, alert.getOwner(), "it took the window in front");
                 double dialogCentreX = alert.getX() + alert.getWidth() / 2;
-                double mainCentreX = main.getX() + main.getWidth() / 2;
-                assertEquals(mainCentreX, dialogCentreX, 2, "centred across the window, not the screen");
+                double frontCentreX = front.getX() + front.getWidth() / 2;
+                assertEquals(frontCentreX, dialogCentreX, 2, "centred across the window, not the screen");
                 double dialogCentreY = alert.getY() + alert.getHeight() / 2;
                 assertTrue(
-                        dialogCentreY > main.getY() && dialogCentreY < main.getY() + main.getHeight(),
+                        dialogCentreY > front.getY() && dialogCentreY < front.getY() + front.getHeight(),
                         "and inside it top to bottom: " + dialogCentreY);
             } finally {
                 alert.close();
