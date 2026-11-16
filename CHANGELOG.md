@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An evaluation time limit.** A watch, a Debug console line or a hover that calls a function which never returns
+  no longer holds the paused program for good: with GDB and Python's debugger, the call is stopped after the time
+  limit (10 s by default, Settings → Debugging → Evaluating expressions), the program stays paused on the same line,
+  and the next expression is evaluated there. CodeLLDB already stops such a call in a watch or hover by itself; Java,
+  JavaScript and Go have no limit to set, and Editora still stops waiting after 30 s and says the program is still
+  running the expression.
 - **Undo Last Removal.** Some things you make are removed with one key and no question, because a question each time
   would be tiresome: a watch, a breakpoint that has a condition, a log message, a hit count, a group or a filter, a
   method breakpoint or field watchpoint with a condition, an exception breakpoint, a value pinned to a line or all of
