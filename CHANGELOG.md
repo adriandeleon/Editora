@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Set Value on a watch.** Right-click a watch while the program is paused and choose Set Value… to give its
+  expression a new value — a variable, a field, an element — as IntelliJ and Visual Studio allow. Python and
+  JavaScript set the expression directly; Java, Go and C/C++ set the variable a watch names, or (Java) evaluate the
+  assignment. The other watches are evaluated again at once.
 - **An evaluation time limit.** A watch, a Debug console line or a hover that calls a function which never returns
   no longer holds the paused program for good: with GDB and Python's debugger, the call is stopped after the time
   limit (10 s by default, Settings → Debugging → Evaluating expressions), the program stays paused on the same line,

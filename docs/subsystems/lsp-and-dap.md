@@ -1532,6 +1532,15 @@ Every field walks one history (`DebugPanelText.History(shared)`: one list, a pla
 workspace's `debugEvaluateHistory`. Watches can be paused (`debugPausedWatches`, `ValueNote.PAUSED`): listed, not
 evaluated at each stop, with Evaluate Once for the stop shown. `DebugPanelEvaluateFxTest`, `DebugEvaluateWindowFxTest`,
 `DebugExpressionFieldFxTest` and `QuickEvaluateFxTest` cover them with fake adapters.
+**Set Value on a watch** (its menu, or `debug.setValue` with the watch selected; IntelliJ's and Visual Studio's) assigns
+a value to the watch's expression while the program is paused and the watch has a value at this stop
+(`DebugPanel.settableWatch`: not paused, not failed). `DapManager.setExpression` asks the debugger's `setExpression`
+where it has one (`DapClient.supportsSetExpression`: debugpy, js-debug); else, when the watch names a variable of the
+scopes shown (`DebugPanel.scopeHolding` gives that scope's reference), it sets that variable (`setVariable`: java-debug,
+Delve, CodeLLDB — with the existing fallback to an assignment for a type java-debug cannot set); else it evaluates
+`expression = value` in the frame shown (java-debug's `o.n`). Then every watch and value shown is evaluated again.
+`DebugPanelWatchesFxTest` covers the panel's side; `WatchSetValueProbeFxTest` sets `x` and `o.n` and reads them back on
+debugpy, java-debug and js-debug, and `x` on Delve.
 **Debug History** ([`ui/DebugHistory`](../../src/main/java/com/editora/ui/DebugHistory.java), "time travel lite") keeps
 each stop as it was shown, so the Debug window can go back to it after the program has run on. Nothing is asked of
 the adapter for it: no DAP adapter Editora drives supports `stepBack`, and an earlier stop's values cannot be fetched

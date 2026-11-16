@@ -2014,6 +2014,31 @@ public final class DapClient implements IDebugProtocolClient {
                                 count(r.getIndexedVariables())));
     }
 
+    /** Whether the adapter assigns to an expression ({@code setExpression}: a watch's Set Value). */
+    public boolean supportsSetExpression() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsSetExpression());
+    }
+
+    /**
+     * Assigns {@code value} to {@code expression} in frame {@code frameId} (none when negative): DAP's {@code
+     * setExpression}. The answer is the value it has now.
+     */
+    public CompletableFuture<String> setExpression(String expression, String value, int frameId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.setExpression(expression, value, frameId);
+        }
+        org.eclipse.lsp4j.debug.SetExpressionArguments a = new org.eclipse.lsp4j.debug.SetExpressionArguments();
+        a.setExpression(expression);
+        a.setValue(value);
+        if (frameId >= 0) {
+            a.setFrameId(frameId);
+        }
+        return timed(server().setExpression(a))
+                .thenApply(r -> r == null || r.getValue() == null ? value : r.getValue());
+    }
+
     public CompletableFuture<String> setVariable(int variablesReference, String name, String value) {
         DapClient session = target();
         if (session != this) {
