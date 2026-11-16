@@ -94,6 +94,26 @@ final class SettingsDebugPage {
             config.getSettings().setDebugShowToString(now);
             w.apply();
         });
+        debugPythonTemplatesCombo = new ComboBox<>();
+        debugPythonTemplatesCombo.getItems().setAll(com.editora.dap.PythonTemplates.Mode.values());
+        debugPythonTemplatesCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(com.editora.dap.PythonTemplates.Mode mode) {
+                return mode == null ? "" : tr("settings.debug.pythonTemplates." + mode.setting());
+            }
+
+            @Override
+            public com.editora.dap.PythonTemplates.Mode fromString(String label) {
+                return com.editora.dap.PythonTemplates.Mode.AUTO;
+            }
+        });
+        debugPythonTemplatesCombo.valueProperty().addListener((obs, was, now) -> {
+            if (w.loading || now == null) {
+                return;
+            }
+            config.getSettings().setDebugPythonTemplates(now.setting());
+            w.apply();
+        });
         debugPythonSubprocessesCheck = new CheckBox(tr("settings.debug.pythonSubprocesses"));
         debugPythonSubprocessesCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugPythonSubprocesses(now);
@@ -278,6 +298,9 @@ final class SettingsDebugPage {
     private CheckBox debugSuspendAllThreadsCheck;
     private CheckBox debugStepTimingCheck;
     private CheckBox debugPythonSubprocessesCheck;
+    /** Python: breakpoints in Django and Jinja templates (Automatic, On, Off). */
+    private ComboBox<com.editora.dap.PythonTemplates.Mode> debugPythonTemplatesCombo;
+
     private TextField debugExceptionTypesField;
     /** C and C++ debugging, on the Rust card: they run on the same CodeLLDB. */
     private CheckBox debugCppCheck;
@@ -487,6 +510,13 @@ final class SettingsDebugPage {
                         debugPythonSubprocessesCheck,
                         tr("settings.debug.pythonSubprocesses.hint"),
                         "debug python subprocess child process multiprocessing pool fork session");
+                w.controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.pythonTemplates"),
+                        tr("settings.debug.pythonTemplates.hint"),
+                        debugPythonTemplatesCombo,
+                        "debug python django jinja jinja2 flask template breakpoint html");
             }
             if ("rust".equals(dbg.id())) {
                 w.checkRow(
@@ -769,6 +799,7 @@ final class SettingsDebugPage {
         debugShowToStringCheck.setSelected(settings.isDebugShowToString());
         debugSuspendAllThreadsCheck.setSelected(settings.isDebugSuspendAllThreads());
         debugPythonSubprocessesCheck.setSelected(settings.isDebugPythonSubprocesses());
+        debugPythonTemplatesCombo.setValue(com.editora.dap.PythonTemplates.Mode.of(settings.getDebugPythonTemplates()));
         debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
         debugCppCheck.setSelected(settings.isCppDebugEnabled());
         debugCppDebuggerCombo.setValue(settings.getCppDebugger());

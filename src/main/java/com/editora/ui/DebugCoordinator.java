@@ -1289,6 +1289,7 @@ final class DebugCoordinator {
         forEachPanel(panel -> panel.history().setCapacity(historyStops)); // fewer forgets the oldest now
         dap().setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         dap().setPythonSubprocesses(s.isDebugPythonSubprocesses()); // shared by every session, from its next launch
+        dap().setPythonTemplates(com.editora.dap.PythonTemplates.Mode.of(s.getDebugPythonTemplates()));
         dap().setEvaluationTimeLimit(s.getDebugEvaluationTimeLimit()); // told to each debugger as its session starts
         goroutines().apply(); // Go: which goroutines Delve lists, a running session's at once
         dap().setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)

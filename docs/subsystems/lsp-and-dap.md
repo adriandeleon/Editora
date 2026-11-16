@@ -1510,6 +1510,22 @@ running Go session at once. A filter can leave out the goroutine the program sto
 `GoroutinesWindowFxTest` (a stand-in `dlv` relaying to `FakeDebugAdapter`) checks the launch arguments, the console
 commands and that nothing is sent again when nothing changed; `GoGoroutinesProbeFxTest` stops a program with three
 labelled workers and checks the list Delve gives with the defaults, with runtime goroutines shown, and filtered.
+**Breakpoints in Django and Jinja templates** (PyCharm's template debugging, VS Code's `"django"` and `"jinja"`) are
+debugpy's: its `django` and `jinja` launch and attach switches. A breakpoint in a template file already reaches
+debugpy (every file's breakpoints are sent), but without the switches a Django template's is never hit and a Jinja
+one stops at the wrong place — the line of that number in the Python Jinja compiles the template to, with that
+module's variables. With them, the call stack's top frame is the template (`Django Template`, `template`) on the
+breakpoint's line, and Variables shows its context (`name`, `items`, a loop's `i` and `forloop`).
+[`dap/PythonTemplates`](../../src/main/java/com/editora/dap/PythonTemplates.java) (pure) puts them in a `type: python`
+or `debugpy` request, last in `publishClient`'s launch decorator, as Settings → Debugging → Python → *Template
+breakpoints* (`debugPythonTemplates`, schema 176) says: *Automatic* (default) looks at the launch's folder (its `cwd`,
+else its program's) and up to four above it (`detect`, reading through `DapManager.templatesIn`): a `manage.py`, or
+Django named in `requirements*.txt`, `pyproject.toml`, `Pipfile`, `setup.cfg`, `setup.py` or `environment.yml`, turns
+`django` on; Jinja2, Flask or Quart named there turns `jinja` on. *Django and Jinja* turns both on, *Off* neither; a
+launch.json's own values are kept, and a remote folder (not on this machine) finds nothing. `PythonTemplatesTest`
+covers detection and the switches; `PythonTemplatesWindowFxTest` sends a launch through the window's manager to
+`FakeDebugAdapter` with Automatic and Off; `PythonTemplatesProbeFxTest` stops on a Jinja and a Django template's loop
+line in a real program (CI installs both into `~/.cache/editora/templates-venv`).
 **Method breakpoints and field watchpoints** ([`config/MemberBreakpoint`](../../src/main/java/com/editora/config/MemberBreakpoint.java),
 [`ui/MemberBreakpointCommands`](../../src/main/java/com/editora/ui/MemberBreakpointCommands.java)) are java-debug's
 DAP function and data breakpoints, both named `pkg.Class#member` (the binary class name, `Outer$Inner`). A method
