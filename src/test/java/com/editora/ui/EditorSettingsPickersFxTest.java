@@ -7,7 +7,6 @@ import java.util.List;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
-import javafx.stage.Stage;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
@@ -60,7 +59,10 @@ class EditorSettingsPickersFxTest {
     void tearDown() throws Exception {
         try {
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.<Stage>field(settingsWindow, "stage").hide();
+                javafx.stage.Window shown = settingsWindow.stageIfShowing(); // null when the test never opened Settings
+                if (shown != null) {
+                    shown.hide();
+                }
                 javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(Themes.DEFAULT));
             });
         } finally {

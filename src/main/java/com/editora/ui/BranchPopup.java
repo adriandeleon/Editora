@@ -97,14 +97,17 @@ public final class BranchPopup {
             Runnable run)
             implements Row {}
 
-    private final Label titleLabel = new Label(tr("branchpopup.title"));
+    // The card's nodes are made by build(), on the first show: a window that never opens the dropdown holds none.
+    private Label titleLabel;
     /** Remote URL shown in the header (origin's), ellipsized; empty when there's no remote. */
-    private final Label remoteUrlLabel = new Label();
+    private Label remoteUrlLabel;
 
-    private final TextField search = new TextField();
-    private final ListView<Row> list = new ListView<>();
+    private TextField search;
+    private ListView<Row> list;
     /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
-    private final Label hint = new Label();
+    private Label hint;
+
+    private boolean built;
 
     private final ObservableList<Row> items = FXCollections.observableArrayList();
     private List<Row> all = List.of();
@@ -141,7 +144,23 @@ public final class BranchPopup {
     /** The secondary menu that is up, so a second request (or hiding the dropdown) can take it down. */
     private javafx.scene.control.@Nullable ContextMenu rowMenu;
 
-    public BranchPopup() {
+    public BranchPopup() {}
+
+    /** Builds the card now if nothing has yet: the first show does, and a test that reads the card before one. */
+    void ensureBuilt() {
+        if (!built) {
+            build();
+            built = true;
+        }
+    }
+
+    @Initializer
+    private void build() {
+        titleLabel = new Label(tr("branchpopup.title"));
+        remoteUrlLabel = new Label();
+        search = new TextField();
+        list = new ListView<>();
+        hint = new Label();
         search.setPromptText(tr("branchpopup.searchPrompt"));
         list.setItems(items);
         UiZoom.prefHeight(list, LIST_HEIGHT);
@@ -245,6 +264,7 @@ public final class BranchPopup {
             Consumer<String> onCheckoutLocal,
             Consumer<String> onCheckoutRemote,
             java.util.function.Function<BranchRef, List<RowAction>> rowActions) {
+        ensureBuilt();
         this.rowActions = rowActions == null ? branch -> List.of() : rowActions;
         List<Row> rows = new ArrayList<>();
         List<Row> section = new ArrayList<>();
@@ -341,6 +361,7 @@ public final class BranchPopup {
      * "Clone Git repository…". Opened from the always-visible status-bar segment.
      */
     public void showNoVcs(Window owner, Node anchor, Runnable onClone) {
+        ensureBuilt();
         titleLabel.setText(tr("branchpopup.noVcs"));
         remoteUrlLabel.setText("");
         remoteUrlLabel.setTooltip(null);

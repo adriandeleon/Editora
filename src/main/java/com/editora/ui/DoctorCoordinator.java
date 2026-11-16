@@ -169,7 +169,8 @@ final class DoctorCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final DoctorService service = new DoctorService();
-    private final DoctorPane pane;
+    /** Built by {@link #pane()} the first time Doctor is opened: a window that never opens it never builds it. */
+    private @Nullable DoctorPane pane;
 
     /** Test seam: when set, probes resolve synchronously through this — no subprocess ever spawns. */
     @Nullable
@@ -178,7 +179,20 @@ final class DoctorCoordinator {
     DoctorCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
-        this.pane = new DoctorPane(new DoctorPane.Actions() {
+    }
+
+    /** The Doctor pane, built now if this is its first use. */
+    DoctorPane pane() {
+        DoctorPane built = pane;
+        if (built == null) {
+            built = newPane();
+            pane = built;
+        }
+        return built;
+    }
+
+    private DoctorPane newPane() {
+        return new DoctorPane(new DoctorPane.Actions() {
             @Override
             public void refresh() {
                 runChecks();
@@ -232,37 +246,33 @@ final class DoctorCoordinator {
         });
     }
 
-    DoctorPane pane() {
-        return pane;
-    }
-
     /**
      * Builds the catalog for the current state and (re)runs every probe. Rows keep their last result, marked as
      * being checked again, until the new one lands (review C3), and the pane learns when the run is done.
      */
     void runChecks() {
         List<DoctorService.CheckSpec> specs = buildSpecs();
-        pane.setMachine(remoteTarget());
-        pane.setFontScale(host.settings().getFontZoom());
-        pane.beginRun(specs.stream().map(DoctorService.CheckSpec::placeholder).toList());
+        pane().setMachine(remoteTarget());
+        pane().setFontScale(host.settings().getFontZoom());
+        pane().beginRun(specs.stream().map(DoctorService.CheckSpec::placeholder).toList());
         if (probeOverrideForTest != null) {
             for (DoctorService.CheckSpec spec : specs) {
                 if (spec.probe() != null) {
-                    pane.updateCheck(probeOverrideForTest.apply(spec));
+                    pane().updateCheck(probeOverrideForTest.apply(spec));
                 }
             }
             runDone();
             return;
         }
-        service.run(specs, pane::updateCheck, this::runDone);
+        service.run(specs, pane()::updateCheck, this::runDone);
     }
 
     private void runDone() {
-        pane.endRun();
+        pane().endRun();
         if (newerReport != null) {
             int failed = newerReport;
             newerReport = null;
-            long found = pane.currentChecks().stream()
+            long found = pane().currentChecks().stream()
                     .filter(c -> c.status() == com.editora.doctor.DoctorStatus.OK && c.update())
                     .count();
             host.setStatus(
@@ -295,7 +305,7 @@ final class DoctorCoordinator {
      */
     void checkNewer() {
         List<LatestVersions.Source> sources = new ArrayList<>();
-        for (DoctorCheck c : pane.currentChecks()) {
+        for (DoctorCheck c : pane().currentChecks()) {
             LatestVersions.Source source = latestSourceFor(c.id());
             if (source != null && c.status() == com.editora.doctor.DoctorStatus.OK) {
                 sources.add(source);
@@ -305,13 +315,13 @@ final class DoctorCoordinator {
             host.setStatus(tr("status.doctor.newerNothing"));
             return;
         }
-        pane.checkingNewer(true);
+        pane().checkingNewer(true);
         host.setStatus(tr("status.doctor.newerChecking"));
         Thread.ofVirtual().name("doctor-newer-versions").start(() -> {
             LatestVersions.Found found = latestLookupForTest.apply(sources);
             javafx.application.Platform.runLater(() -> {
                 latestKnown.putAll(found.latest());
-                pane.checkingNewer(false);
+                pane().checkingNewer(false);
                 newerReport = found.failed();
                 runChecks();
             });
@@ -392,9 +402,9 @@ final class DoctorCoordinator {
     }
 
     private void install(DoctorCheck check) {
-        pane.installStarted(check.id()); // the row's button reads "Installing…" until the installer reports back
+        pane().installStarted(check.id()); // the row's button reads "Installing…" until the installer reports back
         Consumer<Boolean> done = ok -> {
-            pane.installFinished(check.id());
+            pane().installFinished(check.id());
             runChecks(); // re-probe either way so the row reflects the outcome; the page keeps its results meanwhile
         };
         boolean update = check.update(); // Update: replace an install older than its pin, not only a missing one

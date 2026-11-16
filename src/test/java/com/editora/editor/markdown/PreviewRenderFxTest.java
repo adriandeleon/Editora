@@ -56,6 +56,32 @@ class PreviewRenderFxTest {
         return EditorFx.call(EditorFx.field(buffer, "previewPanes"), "structuredContentHolder");
     }
 
+    /**
+     * The text a preview shows. A preview that is a virtualized list (the crontab's) has nodes for the rows on
+     * screen only, and this buffer is in no window: its rows are read through the list's own cell factory.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static String shownText(javafx.scene.Node holder) {
+        StringBuilder text = new StringBuilder(EditorFx.textOf(holder));
+        for (javafx.scene.Node node : holder.lookupAll(".list-view")) {
+            javafx.scene.control.ListView list = (javafx.scene.control.ListView) node;
+            for (Object item : list.getItems()) {
+                javafx.scene.control.ListCell cell =
+                        (javafx.scene.control.ListCell) list.getCellFactory().call(list);
+                try {
+                    java.lang.reflect.Method update =
+                            cell.getClass().getDeclaredMethod("updateItem", Object.class, boolean.class);
+                    update.setAccessible(true);
+                    update.invoke(cell, item, false);
+                } catch (ReflectiveOperationException e) {
+                    throw new AssertionError(e);
+                }
+                text.append(EditorFx.textOf(cell.getGraphic()));
+            }
+        }
+        return text.toString();
+    }
+
     private static ScrollPane pane(EditorBuffer buffer) {
         return EditorFx.call(EditorFx.field(buffer, "previewPanes"), "previewPane");
     }
@@ -123,7 +149,7 @@ class PreviewRenderFxTest {
         EditorBuffer buffer = ref[0];
         awaitTree(buffer, () -> buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
         EditorFx.onFx(() -> {
-            String shown = EditorFx.textOf(treeHolder(buffer));
+            String shown = shownText(treeHolder(buffer));
             assertTrue(shown.contains(expected), "the digest names \"" + expected + "\": " + shown);
             assertFalse(buffer.previewShowsError());
             assertEquals(List.of("PREVIEW"), modeChanges);

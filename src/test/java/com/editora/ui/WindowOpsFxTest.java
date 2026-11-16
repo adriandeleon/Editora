@@ -66,7 +66,10 @@ class WindowOpsFxTest {
         try {
             FxTestSupport.runOnFx(() -> {
                 SettingsWindow window = FxTestSupport.field(controller, "settingsWindow");
-                FxTestSupport.<Stage>field(window, "stage").hide();
+                javafx.stage.Window shown = window.stageIfShowing(); // null when the test never opened Settings
+                if (shown != null) {
+                    shown.hide();
+                }
             });
         } finally {
             async.close();

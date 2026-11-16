@@ -18,7 +18,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
@@ -462,8 +461,9 @@ class SettingsFollowUpsFxTest {
     }
 
     private static String listedChord(SettingsWindow window, String commandId) {
-        Map<String, HBox> rows = SettingsRig.control(window, "shortcutRowsById");
-        return all(rows.get(commandId), Label.class, new ArrayList<>()).get(1).getText();
+        return all(SettingsRig.shortcutRow(window, commandId), Label.class, new ArrayList<>())
+                .get(1)
+                .getText();
     }
 
     /** The chord label of the Macros page's key-binding row (its first child; the buttons follow). */

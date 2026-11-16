@@ -685,9 +685,9 @@ class PluginCoordinatorFxTest {
             byte[] zip = greeterZip("1.0", false);
             rig.web.serve(ZIP_URL, zip);
             SettingsWindow w = FxTestSupport.field(rig.fx.controller, "settingsWindow");
-            javafx.stage.Stage stage = FxTestSupport.field(w, "stage");
             rig.settings().setPluginRegistryUrl(INDEX_URL); // before Settings shows it (its field commits on blur)
             FxTestSupport.runOnFx(() -> w.show(FxTestSupport.field(rig.fx.controller, "stage")));
+            javafx.stage.Stage stage = FxTestSupport.field(w, "stage"); // made by the first show
 
             rig.browse(index(zip, ""), false); // refused: unsigned
             assertTrue(FxTestSupport.callOnFx(stage::isShowing), "Settings stays, the refusal is shown");

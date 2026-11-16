@@ -80,6 +80,16 @@ class SettingsShortcutsFxTest {
         return FxTestSupport.field(w, "stage");
     }
 
+    /**
+     * A key pressed with the keyboard on {@code commandId}'s row: the rows are the cells of a list, so the key
+     * goes to the list while that row is the one the arrow keys are on.
+     */
+    static void pressOnRow(SettingsWindow w, String commandId, KeyCode code) {
+        javafx.scene.control.ListView<SettingsWindow.Shortcut> list = SettingsRig.shortcutList(w);
+        list.getSelectionModel().select(SettingsRig.shortcutIds(w).indexOf(commandId));
+        press(list, code);
+    }
+
     static void press(Node target, KeyCode code) {
         target.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, false, false, false, false));
     }
@@ -135,8 +145,7 @@ class SettingsShortcutsFxTest {
     }
 
     static HBox row(SettingsWindow w, String commandId) {
-        Map<String, HBox> rows = SettingsRig.control(w, "shortcutRowsById");
-        return rows.get(commandId);
+        return SettingsRig.shortcutRow(w, commandId); // the list is virtualized: scrolled to the row first
     }
 
     /** The chord (or "unbound") label a list row shows. */
@@ -150,9 +159,11 @@ class SettingsShortcutsFxTest {
 
     /** Enter on a row selects it; a second Enter starts recording. Returns the capture field. */
     static TextField record(SettingsWindow w, String commandId) throws Exception {
-        FxTestSupport.runOnFx(() -> press(row(w, commandId), KeyCode.ENTER));
+        FxTestSupport.runOnFx(() -> pressOnRow(w, commandId, KeyCode.ENTER));
         FxTestSupport.drainFx();
-        FxTestSupport.runOnFx(() -> press(row(w, commandId), KeyCode.ENTER));
+        FxTestSupport.runOnFx(() -> pressOnRow(w, commandId, KeyCode.ENTER));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> row(w, commandId)); // the recording row is built by a layout
         FxTestSupport.drainFx();
         return FxTestSupport.callOnFx(
                 () -> all(row(w, commandId), TextField.class, new ArrayList<>()).get(0));
@@ -222,13 +233,13 @@ class SettingsShortcutsFxTest {
         try (var fx = cua()) {
             SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "KEYMAPS"));
             String chord = rawChord(fx, "file.save");
-            FxTestSupport.runOnFx(() -> press(row(w, "file.save"), KeyCode.DELETE));
+            FxTestSupport.runOnFx(() -> pressOnRow(w, "file.save", KeyCode.DELETE));
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {
                 assertNull(rawChord(fx, "file.save"), "nothing runs File: Save any more");
                 assertEquals("", overrides(fx).get(chord), "its default chord is suppressed");
                 assertEquals(tr("settings.shortcuts.unbound"), listed(w, "file.save"));
-                press(row(w, "file.save"), KeyCode.ENTER); // select it: Remove is there, and greyed
+                pressOnRow(w, "file.save", KeyCode.ENTER); // select it: Remove is there, and greyed
             });
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {
@@ -253,7 +264,7 @@ class SettingsShortcutsFxTest {
                 FxTestSupport.call(FxTestSupport.field(w, "keymapsPage"), "refreshShortcuts", new Class<?>[] {});
                 java.util.function.BiPredicate<String, String> answer = (title, body) -> asked.add(body);
                 setField(w, "confirmLoss", answer);
-                press(row(w, "file.open"), KeyCode.ENTER);
+                pressOnRow(w, "file.open", KeyCode.ENTER);
             });
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {

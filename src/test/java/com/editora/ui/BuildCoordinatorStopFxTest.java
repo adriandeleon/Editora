@@ -121,7 +121,7 @@ class BuildCoordinatorStopFxTest {
     }
 
     /** A Maven coordinator whose "mvn" is a script that sleeps until killed, in a detected pom.xml folder. */
-    private static BuildCoordinator sleepingMaven(FakeHost host, BuildOutputPanel console, Path dir) throws Exception {
+    private static BuildCoordinator sleepingMaven(FakeHost host, BuildOutput console, Path dir) throws Exception {
         Path script = dir.resolve("fake-mvn.sh");
         Files.writeString(script, "#!/bin/sh\necho started\nsleep 30\n");
         Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwxr-xr-x"));
@@ -145,7 +145,7 @@ class BuildCoordinatorStopFxTest {
     @Test
     void stopEndsAsStoppedNotAsTheKilledProcessesExitCode(@TempDir Path dir) throws Exception {
         FakeHost host = new FakeHost();
-        BuildOutputPanel console = new BuildOutputPanel();
+        BuildOutput console = new BuildOutput();
         BuildCoordinator c = sleepingMaven(host, console, dir);
 
         FxTestSupport.runOnFx(() -> c.runTask(List.of("clean", "verify"), List.of()));
@@ -159,13 +159,13 @@ class BuildCoordinatorStopFxTest {
         assertFalse(
                 host.statuses.contains(tr("status.build.exit", BuildTool.MAVEN.displayName(), 143)),
                 "no 'exited with code 143' anywhere: " + host.statuses);
-        assertEquals(tr("run.stopped"), FxTestSupport.callOnFx(() -> consoleHeader(console)));
+        assertEquals(tr("run.stopped"), FxTestSupport.callOnFx(() -> consoleHeader(console.panel())));
     }
 
     @Test
     void aStoppedTestRunTellsTheTestResultsHookItWasStopped(@TempDir Path dir) throws Exception {
         FakeHost host = new FakeHost();
-        BuildCoordinator c = sleepingMaven(host, new BuildOutputPanel(), dir);
+        BuildCoordinator c = sleepingMaven(host, new BuildOutput(), dir);
         RecordingHook hook = new RecordingHook();
         c.setTestRunHook(hook);
 
@@ -182,7 +182,7 @@ class BuildCoordinatorStopFxTest {
     @Test
     void aSecondRunWhileBusyOffersStopAndRunAndStartsFromTheStoppedBuildsExit(@TempDir Path dir) throws Exception {
         FakeHost host = new FakeHost();
-        BuildCoordinator c = sleepingMaven(host, new BuildOutputPanel(), dir);
+        BuildCoordinator c = sleepingMaven(host, new BuildOutput(), dir);
         List<String> asked = new ArrayList<>();
         c.setStopAndRunPrompt((toolName, task) -> {
             asked.add(toolName + ": " + task);
@@ -213,7 +213,7 @@ class BuildCoordinatorStopFxTest {
     @Test
     void theStopAndRunQuestionIsAnsweredWithNoDialog(@TempDir Path dir) throws Exception {
         FakeHost host = new FakeHost();
-        BuildCoordinator c = sleepingMaven(host, new BuildOutputPanel(), dir);
+        BuildCoordinator c = sleepingMaven(host, new BuildOutput(), dir);
         try (DialogAnswers answers = DialogAnswers.pressing(javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE)) {
             FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
             waitUntil(c::isRunning, "the first build started");
@@ -260,7 +260,7 @@ class BuildCoordinatorStopFxTest {
     @Test
     void decliningStopAndRunLeavesTheRunningBuildAlone(@TempDir Path dir) throws Exception {
         FakeHost host = new FakeHost();
-        BuildCoordinator c = sleepingMaven(host, new BuildOutputPanel(), dir);
+        BuildCoordinator c = sleepingMaven(host, new BuildOutput(), dir);
         c.setStopAndRunPrompt((toolName, task) -> false);
 
         FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));

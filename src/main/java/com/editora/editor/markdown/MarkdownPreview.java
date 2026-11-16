@@ -83,9 +83,6 @@ public final class MarkdownPreview {
 
     private double anchorLine = -1;
 
-    /** With more new blocks than this in one render, styling the document once is cheaper than each block. */
-    private static final int RESTYLE_ALL_ABOVE = 24;
-
     /** For {@link #show}: keep on screen what is on screen (the block at the top stays at the top). */
     static final double KEEP_VIEW = -1;
 
@@ -843,7 +840,8 @@ public final class MarkdownPreview {
             }
             return;
         }
-        if (pane.getContent() != root) {
+        boolean placedNow = pane.getContent() != root;
+        if (placedNow) {
             double v = pane.getVvalue();
             pane.setContent(root);
             if (line < 0) {
@@ -857,7 +855,10 @@ public final class MarkdownPreview {
             // there has no size yet). Not applyCss() on anything higher: it restyles every node below the one
             // it is called on, clean or not, and each restyled text asks for layout again — for one new block
             // in a long document that was the whole cost of the render this class exists to avoid.
-            if (fresh.size() > RESTYLE_ALL_ABOVE) {
+            // The whole preview is styled in one call only when every block in it is new (a first render) or it
+            // has only just been put in the scene: then nothing already styled is styled again. Otherwise each
+            // new block is styled by itself.
+            if (lastReused == 0 || placedNow) {
                 root.applyCss();
             } else {
                 fresh.forEach(Node::applyCss);
@@ -921,7 +922,7 @@ public final class MarkdownPreview {
         if (line >= 0 && pane != null && anchorUntil != 0) { // (0: the reader has scrolled meanwhile)
             javafx.scene.Parent top =
                     pane.getScene() == null ? pane : pane.getScene().getRoot();
-            root.applyCss();
+            styleUnlaidBlocks();
             top.layout();
             anchorLine = line;
             anchorUntil = System.nanoTime() + ANCHOR_HOLD_NANOS;
@@ -929,6 +930,32 @@ public final class MarkdownPreview {
         }
         find.reapply();
         shows.set(shows.get() + 1);
+    }
+
+    /**
+     * Styles the blocks no layout pass has reached yet: the slices appended since the last pulse. The blocks
+     * before them were styled by the pulses between the slices, and styling the whole document again from its
+     * root is the O(document) pass the sliced build exists to avoid (PERF-10). When not even the first block has
+     * been laid out, nothing under the root has been styled and the root is styled once.
+     */
+    private void styleUnlaidBlocks() {
+        List<Node> blocks = column.getChildren();
+        if (blocks.isEmpty() || unlaid(blocks.get(0))) {
+            root.applyCss();
+            return;
+        }
+        for (Node block : blocks) {
+            if (unlaid(block)) {
+                block.applyCss();
+            }
+        }
+    }
+
+    /** Whether {@code block} still waits for a layout pass (a leaf has no flag to ask: it counts as waiting). */
+    private static boolean unlaid(Node block) {
+        return !(block instanceof javafx.scene.Parent parent)
+                || parent.isNeedsLayout()
+                || parent.getChildrenUnmodifiable().isEmpty();
     }
 
     /** A block just built, with its images sized for the current zoom. */

@@ -101,21 +101,24 @@ final class SearchEverywherePopup {
     private final OverlayHost overlayHost;
     private final Ops ops;
 
-    private final TextField input = new TextField();
-    private final ListView<Row> list = new ListView<>();
+    // The card's nodes are made by build(), on the first show(): a window that never searches holds none.
+    private TextField input;
+    private ListView<Row> list;
     /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
-    private final Label hint = new Label();
+    private Label hint;
     /** The raw chord token that opens the highlighted row's docs, or null if the keymap leaves none free. */
     private @Nullable String docsChord;
     /** The chord that shows the highlighted file on the Project Map (E9), or null if the keymap leaves none free. */
     private @Nullable String mapChord;
 
     private final ObservableList<Row> rows = FXCollections.observableArrayList();
-    private final Label status = new Label();
+    private Label status;
     /** The highlighted row's longer explanation — one fixed line, so the card cannot jitter. */
-    private final Label desc = new Label();
+    private Label desc;
 
-    private final VBox card;
+    private VBox card;
+
+    private boolean built;
 
     /** Typing is cheap, but a query can trigger the first project walk; debounce so it happens once. */
     private final PauseTransition debounce = new PauseTransition(Duration.millis(120));
@@ -128,11 +131,24 @@ final class SearchEverywherePopup {
     SearchEverywherePopup(OverlayHost overlayHost, Ops ops) {
         this.overlayHost = overlayHost;
         this.ops = ops;
-        this.card = build();
         debounce.setOnFinished(e -> refresh());
     }
 
-    private VBox build() {
+    /** Builds the card now if nothing has yet: the first show does, and a test that reads the card before one. */
+    void ensureBuilt() {
+        if (!built) {
+            build();
+            built = true;
+        }
+    }
+
+    @Initializer
+    private void build() {
+        input = new TextField();
+        list = new ListView<>();
+        hint = new Label();
+        status = new Label();
+        desc = new Label();
         input.setPromptText(tr("searchEverywhere.prompt"));
         input.getStyleClass().add("palette-input");
         input.textProperty().addListener((o, a, b) -> debounce.playFromStart());
@@ -156,8 +172,8 @@ final class SearchEverywherePopup {
         UiZoom.prefWidth(box, CARD_WIDTH);
         UiZoom.maxSize(box, CARD_WIDTH, Region.USE_PREF_SIZE);
         box.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        card = box;
         resizeList();
-        return box;
     }
 
     private void resizeList() {
@@ -169,6 +185,7 @@ final class SearchEverywherePopup {
     }
 
     void show(String seed) {
+        ensureBuilt();
         var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
         docsChord = PickerKeys.freeChord(keymap, "C-h", "f1", "S-f1"); // as the command palette
         mapChord = PickerKeys.freeChord(keymap, "M-enter", "S-enter", "M-m");

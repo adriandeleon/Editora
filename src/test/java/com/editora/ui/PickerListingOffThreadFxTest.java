@@ -49,7 +49,11 @@ class PickerListingOffThreadFxTest {
         Path beta = Files.writeString(fast.resolve("beta.txt"), "");
 
         try (AsyncTestScope async = new AsyncTestScope()) {
-            FileFinder finder = FxTestSupport.callOnFx(() -> new FileFinder(() -> root, p -> {}));
+            FileFinder finder = FxTestSupport.callOnFx(() -> {
+                FileFinder made = new FileFinder(() -> root, p -> {});
+                made.ensureBuilt(); // the card is made on the first show
+                return made;
+            });
             TextField input = FxTestSupport.field(finder, "input");
             ObservableList<Path> items = FxTestSupport.field(finder, "items");
             List<Path> reads = new CopyOnWriteArrayList<>();

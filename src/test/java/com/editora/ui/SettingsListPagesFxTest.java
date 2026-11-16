@@ -11,7 +11,6 @@ import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -328,7 +327,7 @@ class SettingsListPagesFxTest {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "KEYMAPS"));
             FxTestSupport.runOnFx(() -> {
-                ScrollPane scroll = SettingsRig.control(w, "shortcutScroll");
+                javafx.scene.control.ListView<?> scroll = SettingsRig.shortcutList(w);
                 stage(w).setHeight(760);
                 double small = scroll.getPrefHeight();
                 stage(w).setHeight(1000);

@@ -172,7 +172,7 @@ final class MavenProjectCoordinator {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private final BuildOutputPanel output;
+    private final BuildOutput output;
     private final BuildService service = new BuildService();
     private Runner runner = (dir, argv, listener) -> service.run(dir, argv, mavenEnvironment(), listener);
 
@@ -192,7 +192,7 @@ final class MavenProjectCoordinator {
      */
     private static final java.util.Set<String> SESSION_TRUSTED = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    MavenProjectCoordinator(CoordinatorHost host, Ops ops, BuildOutputPanel output) {
+    MavenProjectCoordinator(CoordinatorHost host, Ops ops, BuildOutput output) {
         this.host = host;
         this.ops = ops;
         this.output = output;

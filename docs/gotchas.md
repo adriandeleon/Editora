@@ -324,7 +324,10 @@ parent in that state pushes it down to **every** descendant, clean or not; each 
 reports new layout bounds, so its parent asks for layout and the whole tree is measured again. Call it
 on the nodes that are new (`MarkdownPreview.show` does: `fresh.forEach(Node::applyCss)`), never on the
 scene root or a big container, when all you need is the new nodes styled before measuring. The pulse's
-own CSS pass *is* incremental; `layout()` is too.
+own CSS pass *is* incremental; `layout()` is too. When the new nodes are not known (slices appended since
+the last pulse), the ones still waiting for layout are (`MarkdownPreview.styleUnlaidBlocks`); and when the
+code only needs geometry the pulse is about to make, a one-shot `Scene.addPostLayoutPulseListener` waits
+for it without styling anything.
 
 ## A `VBox` measures every width-biased child on every layout pass
 

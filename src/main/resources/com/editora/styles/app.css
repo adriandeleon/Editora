@@ -1032,6 +1032,17 @@
 
 /* Crontab schedule preview — theme-aware via AtlantaFX semantic colors. */
 .crontab-preview-scroll { -fx-background-color: -color-bg-default; }
+/* The live crontab preview: the rows of .crontab-preview in a virtualized list that looks as that column does.
+   A read-out: a row is not selected, hovered or focused. The cell's bottom padding is the column's spacing. */
+.crontab-preview-list { -fx-background-color: -color-bg-default; -fx-border-width: 0; -fx-padding: 10; }
+.crontab-preview-list .list-cell,
+.crontab-preview-list .list-cell:hover,
+.crontab-preview-list .list-cell:selected,
+.crontab-preview-list .list-cell:focused {
+    -fx-padding: 0 0 2 0;
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+}
 .crontab-preview { -fx-background-color: -color-bg-default; -fx-padding: 10; -fx-spacing: 2; }
 .crontab-header { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 8 0; }
 .crontab-assign { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; }
@@ -4897,6 +4908,16 @@
 .http-panel .http-run-pill.http-run-partial { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
 .http-panel .http-run-pill.http-run-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
 .http-panel .http-run-detail { -fx-text-fill: -color-fg-muted; }
+/* The pull-request checks card: one row per check, in a virtualized list that looks as the rows did in a column. */
+.github-checks-list { -fx-background-color: transparent; -fx-border-width: 0; -fx-padding: 0; }
+.github-checks-list .list-cell { -fx-padding: 1 0 1 0; -fx-background-color: transparent; }
+.github-checks-list .list-cell:filled:selected { -fx-background-color: -state-sel; }
+/* From the keyboard the focused row is outlined (the selection alone does not say the list has focus). */
+.github-checks-list:focus-visible .list-cell:focused {
+    -fx-border-color: -focus-ring;
+    -fx-border-width: 1;
+    -fx-border-radius: 4;
+}
 .http-panel .http-run-tests-note { -fx-text-fill: -state-red; }
 .http-panel .http-run-rows {
     -fx-fixed-cell-size: 2em;
@@ -5761,6 +5782,20 @@
 }
 /* :focused, not :focus-visible — the arrow keys move between rows with requestFocus(). */
 .shortcut-row-clickable:focused {
+    -fx-border-color: -color-accent-emphasis;
+}
+/* The shortcut rows are the cells of a virtualized list: the list is plain, a cell's bottom padding is the gap the
+   rows had, and the row the arrow keys are on (the list's own selection) wears the focus ring while the list has
+   the keyboard. */
+.shortcut-list { -fx-background-color: transparent; -fx-border-width: 0; -fx-padding: 0; }
+.shortcut-list .list-cell,
+.shortcut-list .list-cell:selected,
+.shortcut-list .list-cell:focused {
+    -fx-padding: 0 0 2 0;
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+}
+.shortcut-list:focused .list-cell:filled:selected .shortcut-row-clickable {
     -fx-border-color: -color-accent-emphasis;
 }
 .shortcut-row-clickable:hover {

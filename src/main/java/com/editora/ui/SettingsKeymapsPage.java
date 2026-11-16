@@ -5,14 +5,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -80,12 +82,22 @@ final class SettingsKeymapsPage {
     private final Map<String, Label> chordChips = new java.util.LinkedHashMap<>();
 
     TextField shortcutFilter; // filters the shortcut list
-    private @Nullable VBox shortcutListBox; // rebuilt from shortcutActions.rows() on each change/filter
+    /**
+     * The shortcuts, one row for each command the filter lets through, in a virtualized list (PERF-08, Pauta
+     * 6.0.1): about 450 commands, more with plugins and macros, and only the rows on screen have nodes. The list is
+     * one Tab stop; its own selection is the row the arrow keys are on.
+     */
+    private @Nullable ListView<Shortcut> shortcutList;
+
     private @Nullable String recordingCommandId; // command id whose row is currently capturing a chord, or null
     private @Nullable String selectedShortcutId; // command id of the selected row (shows its Record/Reset), or null
-    private @Nullable ScrollPane shortcutScroll;
-    private final Map<String, HBox> shortcutRowsById = new HashMap<>(); // the rows currently in the list
-    private @Nullable HBox shortcutTabStop; // the one row Tab lands on; the arrow keys move between rows
+    private final Map<String, HBox> shortcutRowsById = new HashMap<>(); // the rows on screen, by command id
+    /** The list's cells, as many as fit on screen (weakly held: a cell the list lets go of is forgotten). */
+    private final java.util.Set<ShortcutCell> shortcutCells =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /** How many rows have been built since the page was: a filter keystroke builds the rows on screen only. */
+    int shortcutRowsBuilt;
 
     /** The Macros page's editor (see {@link MacroSettingsPane}); null until that page is built. */
     private @Nullable MacroSettingsPane macroPane;
@@ -111,19 +123,27 @@ final class SettingsKeymapsPage {
         shortcutFilter = new TextField();
         shortcutFilter.setPromptText(tr("settings.shortcuts.filter"));
         shortcutFilter.textProperty().addListener((o, was, now) -> refreshShortcuts());
-        shortcutListBox = UiZoom.spacing(new VBox(), 2);
-        shortcutListBox.getStyleClass().add("shortcut-list");
-        ScrollPane scroll = new ScrollPane(shortcutListBox);
-        shortcutScroll = scroll;
-        scroll.setFitToWidth(true);
+        ListView<Shortcut> shortcutList = new ListView<>();
+        this.shortcutList = shortcutList;
+        shortcutList.getStyleClass().add("shortcut-list");
+        shortcutList.setCellFactory(view -> new ShortcutCell());
+        shortcutList.addEventHandler(KeyEvent.KEY_PRESSED, this::onShortcutListKey);
+        // Tab lands on the selected row (the one that shows Record and Reset), else on the first.
+        shortcutList.focusedProperty().addListener((o, was, now) -> {
+            if (now
+                    && shortcutList.getSelectionModel().isEmpty()
+                    && !shortcutList.getItems().isEmpty()) {
+                shortcutList.getSelectionModel().select(Math.max(0, indexOfShortcut(selectedShortcutId)));
+            }
+        });
         // The list takes the height the window has (a fixed 320 px showed ~13 of ~900 rows above empty space).
-        scroll.prefHeightProperty()
+        shortcutList
+                .prefHeightProperty()
                 .bind(javafx.beans.binding.Bindings.max(
                         UiZoom.factorProperty().multiply(320),
                         w.stage
                                 .heightProperty()
                                 .subtract(UiZoom.factorProperty().multiply(415))));
-        scroll.getStyleClass().add("shortcut-scroll");
         Label note = SettingsWindow.note(tr("settings.shortcuts.note"));
         note.setWrapText(true);
         Button resetAll =
@@ -134,7 +154,7 @@ final class SettingsKeymapsPage {
                 refreshShortcuts();
             }
         });
-        VBox box = UiZoom.spacing(new VBox(note, shortcutFilter, scroll, resetAll), 6);
+        VBox box = UiZoom.spacing(new VBox(note, shortcutFilter, shortcutList, resetAll), 6);
         w.cardRow(
                 sec,
                 Category.KEYMAPS,
@@ -204,50 +224,182 @@ final class SettingsKeymapsPage {
     }
 
     /**
-     * Rebuilds the shortcut list from the backend, honoring the filter, and refills the chord chips on the
-     * other pages (both show the live keymap, so they go stale together). The list part is a no-op until the
-     * backend is set and the page is built.
+     * Fills the shortcut list from the backend, honoring the filter, and refills the chord chips on the other
+     * pages (both show the live keymap, so they go stale together). Only the rows on screen are built, here and
+     * as the list scrolls. The list part is a no-op until the backend is set and the page is built.
      */
     void refreshShortcuts() {
         refreshShortcuts(null);
     }
 
-    /** {@link #refreshShortcuts()}, then moves keyboard focus to {@code focusId}'s row (rebuilding drops it). */
+    /** {@link #refreshShortcuts()}, then moves the keyboard to {@code focusId}'s row, in the list. */
     private void refreshShortcuts(@Nullable String focusId) {
         refreshChordChips();
         if (macroPane != null && macroNote != null) { // built together on the Macros page
             macroPane.refreshKeybinding();
             macroNote.setText(macroNoteText());
         }
-        if (shortcutListBox == null || w.shortcutActions == null) {
+        ListView<Shortcut> list = shortcutList;
+        if (list == null || w.shortcutActions == null) {
             return;
         }
-        shortcutListBox.getChildren().clear();
-        shortcutRowsById.clear();
-        shortcutTabStop = null;
         String q = shortcutFilter == null ? "" : shortcutFilter.getText();
         String typedChord = com.editora.command.ChordQuery.parse(q);
         String chordShown = typedChord == null ? null : w.shortcutActions.display(typedChord);
+        List<Shortcut> shown = new java.util.ArrayList<>();
         for (Shortcut s : w.shortcutActions.rows()) {
             if (shortcutMatches(s, q, chordShown)) {
-                HBox row = shortcutRow(s, w.shortcutActions, shortcutListBox);
-                shortcutRowsById.put(s.id(), row);
-                shortcutListBox.getChildren().add(row);
+                shown.add(s);
             }
         }
-        // One Tab stop for the whole list (the selected row, else the first); the arrow keys move within it.
-        // ~450 separate Tab stops would put "Reset all shortcuts" and the footer out of reach instead.
-        HBox stop = shortcutRowsById.get(selectedShortcutId);
-        if (stop == null && !shortcutListBox.getChildren().isEmpty()) {
-            stop = (HBox) shortcutListBox.getChildren().get(0);
+        Shortcut cursor = list.getSelectionModel().getSelectedItem();
+        String keep = focusId != null ? focusId : cursor == null ? null : cursor.id();
+        list.getItems().setAll(shown);
+        // The list builds a row again when its shortcut changes. A row that became the selected or the recording
+        // row, or stopped being it, has the same shortcut and other controls: the rows on screen are asked.
+        List.copyOf(shortcutCells).forEach(ShortcutCell::restate);
+        int at = indexOfShortcut(keep);
+        if (at >= 0) {
+            list.getSelectionModel().select(at);
         }
-        if (stop != null && !stop.getStyleClass().contains("shortcut-row-recording")) {
-            stop.setFocusTraversable(true);
-            shortcutTabStop = stop;
+        if (focusId != null && at >= 0) {
+            revealShortcut(at);
+            javafx.application.Platform.runLater(list::requestFocus);
         }
-        HBox focus = focusId == null ? null : shortcutRowsById.get(focusId);
-        if (focus != null) {
-            javafx.application.Platform.runLater(focus::requestFocus);
+    }
+
+    /** The place of command {@code id} in the list as filtered, or -1. */
+    private int indexOfShortcut(@Nullable String id) {
+        ListView<Shortcut> list = shortcutList;
+        if (list == null || id == null) {
+            return -1;
+        }
+        List<Shortcut> items = list.getItems();
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).id().equals(id)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Scrolls the list just far enough to show row {@code index}; a row already in view stays where it is. */
+    private void revealShortcut(int index) {
+        ListView<Shortcut> list = shortcutList;
+        if (list == null) {
+            return;
+        }
+        if (list.lookup(".virtual-flow") instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
+            flow.scrollTo(index);
+        } else {
+            list.scrollTo(index); // not laid out yet: the list opens on the row
+        }
+    }
+
+    /**
+     * The keys of the list itself (a key pressed on a row's own Record or Reset button is the button's): Enter and
+     * Space select the row the arrow keys are on, or start recording when it is selected already; Delete and
+     * Backspace unbind it. The arrow keys, Home and End are the list's own and stop at either end.
+     */
+    private void onShortcutListKey(KeyEvent e) {
+        ListView<Shortcut> list = shortcutList;
+        ShortcutActions actions = w.shortcutActions;
+        if (list == null
+                || actions == null
+                || e.getTarget() != list
+                || e.isControlDown()
+                || e.isAltDown()
+                || e.isMetaDown()) {
+            return;
+        }
+        Shortcut s = list.getSelectionModel().getSelectedItem();
+        if (s == null) {
+            return;
+        }
+        if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.SPACE) {
+            selectShortcut(s.id());
+            e.consume();
+        } else if (e.getCode() == KeyCode.DELETE || e.getCode() == KeyCode.BACK_SPACE) {
+            if (s.chord() != null) {
+                removeShortcut(actions, s.id());
+            }
+            e.consume();
+        }
+    }
+
+    /** Selects command {@code id}'s row (it shows Record, Reset and Remove); on the selected row, starts recording. */
+    private void selectShortcut(String id) {
+        if (id.equals(selectedShortcutId)) {
+            recordingCommandId = id; // a second Enter on the selected row starts recording
+            refreshShortcuts();
+        } else {
+            selectedShortcutId = id;
+            refreshShortcuts(id);
+        }
+    }
+
+    /** A row of the list: the shortcut's own line, built for the rows on screen only. */
+    private final class ShortcutCell extends ListCell<Shortcut> {
+        private @Nullable String shownId;
+        private @Nullable HBox shownRow;
+        private boolean shownSelected;
+        private boolean shownRecording;
+
+        ShortcutCell() {
+            setPrefWidth(0); // never wider than the list
+            shortcutCells.add(this);
+        }
+
+        /** Builds the row again when it became, or stopped being, the selected or the recording row. */
+        void restate() {
+            ListView<Shortcut> list = getListView();
+            Shortcut s = getItem();
+            ShortcutActions actions = w.shortcutActions;
+            int at = getIndex();
+            if (isEmpty() || s == null || actions == null || list == null || !isVisible()) {
+                return;
+            }
+            if (at < 0
+                    || at >= list.getItems().size()
+                    || !s.equals(list.getItems().get(at))) {
+                return; // the list has another shortcut for this row: its next layout shows it
+            }
+            if (shownSelected != s.id().equals(selectedShortcutId)
+                    || shownRecording != s.id().equals(recordingCommandId)) {
+                show(s, actions);
+            }
+        }
+
+        private void show(Shortcut s, ShortcutActions actions) {
+            if (shownId != null && shortcutRowsById.get(shownId) == shownRow) {
+                shortcutRowsById.remove(shownId);
+            }
+            HBox row = shortcutRow(s, actions);
+            shownId = s.id();
+            shownRow = row;
+            shownSelected = s.id().equals(selectedShortcutId);
+            shownRecording = s.id().equals(recordingCommandId);
+            shortcutRowsById.put(s.id(), row);
+            setGraphic(row);
+            setAccessibleText(s.title() + ", " + (s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord()));
+        }
+
+        @Override
+        protected void updateItem(Shortcut s, boolean empty) {
+            super.updateItem(s, empty);
+            setText(null);
+            ShortcutActions actions = w.shortcutActions;
+            if (empty || s == null || actions == null) {
+                if (shownId != null && shortcutRowsById.get(shownId) == shownRow) {
+                    shortcutRowsById.remove(shownId);
+                }
+                shownId = null;
+                shownRow = null;
+                setGraphic(null);
+                setAccessibleText(null);
+                return;
+            }
+            show(s, actions);
         }
     }
 
@@ -272,13 +424,14 @@ final class SettingsKeymapsPage {
     }
 
     /** A single command row — either the static chord + Record/Reset buttons, or a live capture field. */
-    private HBox shortcutRow(Shortcut s, ShortcutActions actions, VBox list) {
+    private HBox shortcutRow(Shortcut s, ShortcutActions actions) {
+        shortcutRowsBuilt++;
         HBox row = UiZoom.spacing(new HBox(), 8);
         row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         row.getStyleClass().add("shortcut-row");
         Label title = new Label(s.title());
         title.setMaxWidth(Double.MAX_VALUE);
-        title.setWrapText(true);
+        title.setMinWidth(0); // a row of a list has one height: a title too long for it ends in an ellipsis
         HBox.setHgrow(title, Priority.ALWAYS);
 
         if (s.id().equals(recordingCommandId)) {
@@ -307,63 +460,13 @@ final class SettingsKeymapsPage {
             UiZoom.minWidth(chord, 150);
             row.getChildren().addAll(title, chord);
             // Record/Reset are shown only for the selected row, keeping the list uncluttered. A click
-            // selects a row; from the keyboard the arrow keys walk the rows and Enter/Space selects.
+            // selects a row; from the keyboard the arrow keys walk the rows and Enter/Space selects
+            // (onShortcutListKey).
             row.getStyleClass().add("shortcut-row-clickable");
-            row.setAccessibleRole(javafx.scene.AccessibleRole.LIST_ITEM);
-            row.setAccessibleText(s.title() + ", " + chordText);
             Button record = new Button(tr("settings.shortcuts.record"));
-            Runnable select = () -> {
-                if (s.id().equals(selectedShortcutId)) {
-                    record.fire(); // a second Enter on the selected row starts recording
-                } else {
-                    selectedShortcutId = s.id();
-                    refreshShortcuts(s.id());
-                }
-            };
             row.setOnMouseClicked(e -> {
                 if (!s.id().equals(selectedShortcutId)) {
-                    select.run();
-                }
-            });
-            row.focusedProperty().addListener((o, was, now) -> {
-                if (now) {
-                    if (shortcutTabStop != null && shortcutTabStop != row) {
-                        shortcutTabStop.setFocusTraversable(false);
-                    }
-                    row.setFocusTraversable(true);
-                    shortcutTabStop = row;
-                    scrollShortcutIntoView(row);
-                }
-            });
-            row.addEventHandler(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-                if (e.getTarget() != row || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
-                    return; // a key pressed on the row's own Record/Reset button is the button's
-                }
-                List<Node> all = list.getChildren();
-                int target = switch (e.getCode()) {
-                    // On the first row Up stays put, as Down does on the last one: left to the
-                    // toolkit it moved the focus out of the list, to the filter field above it.
-                    case UP -> Math.max(0, all.indexOf(row) - 1);
-                    case DOWN -> all.indexOf(row) + 1;
-                    case HOME -> 0;
-                    case END -> all.size() - 1;
-                    default -> -1;
-                };
-                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
-                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
-                    select.run();
-                    e.consume();
-                } else if (e.getCode() == javafx.scene.input.KeyCode.DELETE
-                        || e.getCode() == javafx.scene.input.KeyCode.BACK_SPACE) {
-                    if (s.chord() != null) {
-                        removeShortcut(actions, s.id());
-                    }
-                    e.consume();
-                } else if (target >= 0) {
-                    if (target < all.size()) {
-                        all.get(target).requestFocus();
-                    }
-                    e.consume(); // also at either end: Down on the last row must not jump out of the list
+                    selectShortcut(s.id());
                 }
             });
             if (s.id().equals(selectedShortcutId)) {
@@ -385,28 +488,6 @@ final class SettingsKeymapsPage {
             }
         }
         return row;
-    }
-
-    /** Scrolls the shortcut list just far enough to show {@code row} (focus moved to it from the keyboard). */
-    private void scrollShortcutIntoView(Node row) {
-        if (shortcutScroll == null || shortcutListBox == null) { // built together
-            return;
-        }
-        shortcutListBox.applyCss();
-        shortcutListBox.layout();
-        double contentHeight = shortcutListBox.getHeight();
-        double viewHeight = shortcutScroll.getViewportBounds().getHeight();
-        if (contentHeight <= viewHeight) {
-            return;
-        }
-        double range = contentHeight - viewHeight;
-        double top = shortcutScroll.getVvalue() * range;
-        javafx.geometry.Bounds b = row.getBoundsInParent();
-        if (b.getMinY() < top) {
-            shortcutScroll.setVvalue(b.getMinY() / range);
-        } else if (b.getMaxY() > top + viewHeight) {
-            shortcutScroll.setVvalue((b.getMaxY() - viewHeight) / range);
-        }
     }
 
     /** Unbinds a command from the list (its Remove button, or Delete on its row). */

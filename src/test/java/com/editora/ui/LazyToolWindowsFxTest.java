@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -27,13 +28,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LazyToolWindowsFxTest {
-
-    /**
-     * Built with the window on purpose: the shared Output console is an empty TabPane (its per-tool tabs are
-     * made when a tool first runs) that every build coordinator and the Git transcript write to from the
-     * first command on, closed or not.
-     */
-    private static final java.util.Set<String> EAGER = java.util.Set.of("buildOutput");
 
     @BeforeAll
     void setUp() throws Exception {
@@ -59,14 +53,14 @@ class LazyToolWindowsFxTest {
             ToolWindowManager manager = FxTestSupport.field(fx.controller, "toolWindows");
             List<String> builtWhileClosed = new ArrayList<>();
             for (ToolWindow tw : manager.getRegisteredToolWindows()) {
-                if (EAGER.contains(tw.getId())) {
-                    continue;
-                }
                 if (!manager.isOpen(tw) && tw.contentIfBuilt() != null) {
                     builtWhileClosed.add(tw.getId());
                 }
             }
             assertTrue(builtWhileClosed.isEmpty(), "panels built although their window is closed: " + builtWhileClosed);
+            // The shared Output console is built by its first tab as well as by its window: neither has happened.
+            BuildOutput output = FxTestSupport.field(fx.controller, "buildOutputPanel");
+            assertNull(output.panelIfBuilt(), "the Output console is built by its first open or its first tab");
             // The window registers the whole set; a lazily built one must not have been lost on the way.
             assertTrue(
                     manager.getRegisteredToolWindows().size() >= 20,
@@ -151,6 +145,93 @@ class LazyToolWindowsFxTest {
             assertNotNull(git);
             javafx.scene.Node aiButton = FxTestSupport.field(git, "aiCommitButton");
             assertTrue(aiButton.isVisible(), "the availability recorded while closed is applied at build");
+            assertTrue(failures.isEmpty(), "FX-thread failures: " + failures);
+        }
+    }
+
+    /**
+     * The Output console is the one panel written to while its window is closed (every build, the Git
+     * transcript). The first write that needs a tab builds it; what was written is there, in order, when the
+     * window opens, and the window shows that same panel.
+     */
+    @Test
+    void outputWrittenWhileTheOutputWindowIsClosedIsThereInOrderWhenItOpens() throws Exception {
+        List<Throwable> failures = watchFxThread();
+        Object maven = new Object();
+        Object git = new Object();
+        try (FxWindowFixture fx = FxWindowFixture.create()) {
+            MainController c = fx.controller;
+            ToolWindowManager manager = FxTestSupport.field(c, "toolWindows");
+            ToolWindow window = FxTestSupport.field(c, "buildOutputToolWindow");
+            BuildOutput output = FxTestSupport.field(c, "buildOutputPanel");
+            assertNull(output.panelIfBuilt());
+
+            FxTestSupport.runOnFx(() -> {
+                // What can arrive before any tab exists builds nothing and is dropped, as the panel drops it.
+                output.setOutputFont("JetBrains Mono", 13);
+                output.appendOutput(maven, "nobody started this", false);
+                assertFalse(output.hasTabs());
+                assertNull(output.panelIfBuilt(), "a font and a line for no tab must not build the panel");
+
+                output.started(maven, "Maven", "mvn verify", com.editora.build.OutputStyle.passthrough(), () -> {});
+                for (int i = 1; i <= 200; i++) {
+                    output.appendOutput(maven, "line " + i, false);
+                }
+                output.finished(maven, 0);
+                output.logCommand(
+                        git,
+                        "Git",
+                        new com.editora.process.CommandLog.Entry(List.of("git", "push"), 0, "pushed\n", "", 7));
+                output.logCommand(
+                        git,
+                        "Git",
+                        new com.editora.process.CommandLog.Entry(List.of("git", "fetch"), 0, "fetched\n", "", 7));
+            });
+            assertFalse(FxTestSupport.callOnFx(() -> manager.isOpen(window)), "writing must not open the window");
+            assertNull(window.contentIfBuilt(), "the window has not asked for its panel yet");
+            BuildOutputPanel written = output.panelIfBuilt();
+            assertNotNull(written, "the first tab built the panel");
+
+            FxTestSupport.runOnFx(() -> {
+                manager.setAvailable(window, true);
+                manager.open(window, false);
+            });
+            settle();
+            assertSame(written, window.contentIfBuilt(), "the window shows the panel that was written to");
+            assertNotNull(written.getScene());
+            List<String> text = FxTestSupport.callOnFx(() -> {
+                assertEquals(
+                        List.of("Maven", "Git"),
+                        written.getTabs().stream()
+                                .map(javafx.scene.control.Tab::getText)
+                                .toList(),
+                        "one tab for each writer, in the order they first wrote");
+                List<String> consoles = new ArrayList<>();
+                for (javafx.scene.control.Tab tab : written.getTabs()) {
+                    BuildToolPanel console = (BuildToolPanel) tab.getContent();
+                    FxTestSupport.invoke(FxTestSupport.field(console, "appender"), "flush");
+                    consoles.add(FxTestSupport.<org.fxmisc.richtext.CodeArea>field(console, "output")
+                            .getText());
+                }
+                return consoles;
+            });
+            String build = text.get(0);
+            int at = -1;
+            for (int i = 1; i <= 200; i++) {
+                int next = build.indexOf("line " + i + "\n", at + 1);
+                assertTrue(next > at, "line " + i + " is missing or out of order");
+                at = next;
+            }
+            assertFalse(build.contains("nobody started this"));
+            String transcript = text.get(1);
+            assertTrue(
+                    transcript.indexOf("$ git push") >= 0
+                            && transcript.indexOf("pushed") > transcript.indexOf("$ git push")
+                            && transcript.indexOf("$ git fetch") > transcript.indexOf("pushed")
+                            && transcript.indexOf("fetched") > transcript.indexOf("$ git fetch"),
+                    "the transcript keeps its commands in order: " + transcript);
+            // The font set while nothing was built reached the consoles made later.
+            assertEquals("JetBrains Mono", FxTestSupport.<String>field(written, "fontFamily"));
             assertTrue(failures.isEmpty(), "FX-thread failures: " + failures);
         }
     }

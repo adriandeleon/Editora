@@ -102,7 +102,7 @@ class SettingsFollowsFxTest {
     void aWindowThatWasNeverOpenedIgnoresEveryRequestToFollow() throws Exception {
         FxTestSupport.runOnFx(() -> {
             everySync();
-            assertFalse(rig.stage().isShowing());
+            assertNull(rig.stage(), "not even the stage was made for it");
             assertNull(rig.control("sidebar"), "nothing was built for it");
             assertEquals(List.of(), rig.applied);
         });
@@ -532,7 +532,7 @@ class SettingsFollowsFxTest {
                 assertTrue(stage.isShowing());
                 rig.window.showRunConfigs(null, rig.owner);
                 assertSame(first, rig.control("runConfigurationsWindow"));
-                assertFalse(rig.stage().isShowing(), "Run Configurations does not open Settings");
+                assertNull(rig.window.stageIfShowing(), "Run Configurations does not open Settings");
             } finally {
                 stage.hide();
             }

@@ -533,7 +533,8 @@ class GitHubCommandsFxTest {
 
     /** The status line above the CI console. FX thread. */
     private String ciConsoleStatus() {
-        Object panel = FxTestSupport.field(w.fx.controller, "buildOutputPanel");
+        Object panel = FxTestSupport.<BuildOutput>field(w.fx.controller, "buildOutputPanel")
+                .panel();
         Map<Object, Object> consoles = FxTestSupport.field(panel, "consoles");
         return FxTestSupport.<javafx.scene.control.Label>field(consoles.get(github), "status")
                 .getText();
@@ -541,7 +542,11 @@ class GitHubCommandsFxTest {
 
     /** The text of the Output window's CI console ({@code ""} before the first log). FX thread. */
     private String ciConsole() {
-        Object panel = FxTestSupport.field(w.fx.controller, "buildOutputPanel");
+        Object panel = FxTestSupport.<BuildOutput>field(w.fx.controller, "buildOutputPanel")
+                .panelIfBuilt();
+        if (panel == null) {
+            return ""; // nothing has run in this window: the Output panel is not built yet
+        }
         Map<Object, Object> consoles = FxTestSupport.field(panel, "consoles");
         Object console = consoles.get(github);
         return console == null

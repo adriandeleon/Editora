@@ -41,7 +41,8 @@ class ScalaBuildRunProbeFxTest {
 
     /** All the build consoles' text. */
     private static String consoles(MainController c) {
-        BuildOutputPanel panel = FxTestSupport.field(c, "buildOutputPanel");
+        BuildOutputPanel panel =
+                FxTestSupport.<BuildOutput>field(c, "buildOutputPanel").panel();
         StringBuilder out = new StringBuilder();
         for (Tab t : panel.getTabs()) {
             if (t.getContent() instanceof BuildToolPanel tool) {

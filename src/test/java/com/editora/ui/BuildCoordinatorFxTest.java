@@ -146,7 +146,7 @@ class BuildCoordinatorFxTest {
 
     /** A fresh shared console for each coordinator under test (the panel content isn't asserted here). */
     private static BuildCoordinator coordinator(BuildTool tool, FakeHost host, BuildCoordinator.Ops ops) {
-        return new BuildCoordinator(tool, host, ops, new BuildOutputPanel());
+        return new BuildCoordinator(tool, host, ops, new BuildOutput());
     }
 
     private static final String VALID_POM = """
