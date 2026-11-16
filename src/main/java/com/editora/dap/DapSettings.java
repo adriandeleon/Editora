@@ -88,6 +88,9 @@ final class DapSettings {
     /** Go: which goroutines Delve lists and how it names them ({@link GoGoroutines}); told to each Go session. */
     volatile GoGoroutines.Options goGoroutines = GoGoroutines.Options.DEFAULT;
 
+    /** Python: breakpoints in Django and Jinja templates ({@link PythonTemplates}); told to each Python session. */
+    volatile PythonTemplates.Mode pythonTemplates = PythonTemplates.Mode.AUTO;
+
     /**
      * Set when the running jdtls already advertises the java-debug commands — some distributions (e.g. Homebrew's
      * jdtls) ship and auto-load the plugin, so there is no jar to find and nothing to inject, yet debugging works.

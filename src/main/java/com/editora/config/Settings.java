@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 175;
+    public static final int SCHEMA_VERSION = 176;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -888,6 +888,11 @@ public class Settings {
      * debugger, as before.
      */
     private boolean debugPythonSubprocesses = true;
+    /**
+     * Python: breakpoints in Django and Jinja templates — "auto" (each engine's when the project uses it), "on" or
+     * "off" ({@code PythonTemplates}): debugpy's {@code django} and {@code jinja} switches.
+     */
+    private String debugPythonTemplates = "auto";
     /** Debug History: how many stops a session keeps to go back to (0 = none). In memory only, never saved. */
     private int debugHistoryStops = 200;
     /**
@@ -3690,6 +3695,15 @@ public class Settings {
 
     public void setDebugGoGoroutineFilter(String filter) {
         this.debugGoGoroutineFilter = filter == null ? "" : filter.strip();
+    }
+
+    public String getDebugPythonTemplates() {
+        return com.editora.dap.PythonTemplates.Mode.of(debugPythonTemplates).setting();
+    }
+
+    public void setDebugPythonTemplates(String mode) {
+        this.debugPythonTemplates =
+                com.editora.dap.PythonTemplates.Mode.of(mode).setting();
     }
 
     public int getDebugEvaluationTimeLimit() {
