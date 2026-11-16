@@ -20,12 +20,14 @@ on:
   release:
     types: [published]
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   notify:
     if: github.event_name == 'release' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     continue-on-error: true
     steps:
       - name: Send repository_dispatch
