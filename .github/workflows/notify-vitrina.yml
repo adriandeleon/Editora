@@ -1,0 +1,43 @@
+name: notify-vitrina
+
+# Asks the Vitrina apt repository (adriandeleon/vitrina) to rebuild now rather than at its daily
+# run, once a release goes live. Copy this file to .github/workflows/ in each app.
+#
+# Two triggers, because the apps publish releases in two ways:
+#   - workflow_run: release.yml publishes the release itself with the workflow token, and a
+#     release published with that token fires no `release` event in other workflows.
+#   - release published: release.yml opens a draft and a human publishes it.
+# A rebuild that finds nothing new is harmless, so an app that fires both is fine.
+#
+# Needs VITRINA_TOKEN, a fine-grained token with Contents read/write on adriandeleon/vitrina.
+# Without it, or if the call fails, nothing else is affected and the repository picks the
+# release up within a day.
+
+on:
+  workflow_run:
+    workflows: [Release, release]
+    types: [completed]
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  notify:
+    if: github.event_name == 'release' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Send repository_dispatch
+        env:
+          GH_TOKEN: ${{ secrets.VITRINA_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || github.event.workflow_run.head_branch }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::VITRINA_TOKEN is not set; the apt repository picks this release up at its daily rebuild"
+            exit 0
+          fi
+          gh api repos/adriandeleon/vitrina/dispatches \
+            -f event_type=app-released \
+            -f "client_payload[repo]=${{ github.repository }}" \
+            -f "client_payload[tag]=$TAG"
