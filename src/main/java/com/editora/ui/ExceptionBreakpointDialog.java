@@ -41,7 +41,7 @@ final class ExceptionBreakpointDialog {
         final ComboBox<String> language = new ComboBox<>();
         final TextField condition = new TextField();
         final CheckBox enabled = new CheckBox(tr("exceptionbp.enabled"));
-        final GridPane node = new GridPane();
+        final GridPane node = Dialogs.labelColumn(new GridPane());
 
         Form(ExceptionBreakpoint initial) {
             List<String> ids = new ArrayList<>();

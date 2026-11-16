@@ -169,7 +169,8 @@ class EvaluationTimeLimitProbeFxTest {
             long seconds = (System.nanoTime() - start) / 1_000_000_000L;
             assertTrue(stopped.failed(), "a call that never returns is stopped: " + stopped.result());
             assertTrue(seconds <= LIMIT + 3, "stopped by the debugger, not Editora's wait: " + seconds + " s");
-            assertEquals(DapManager.State.SUSPENDED, call(dap::state), "the program stays paused");
+            // GDB answers the evaluation before it says the program stopped again: paused soon after, not running on.
+            await("the program paused again", 10, () -> call(dap::state) == DapManager.State.SUSPENDED);
             assertEquals(line, call(() -> debug.panel().callStack().getFirst().line()), "where it was");
 
             int now = call(() -> debug.panel().selectedFrameId());

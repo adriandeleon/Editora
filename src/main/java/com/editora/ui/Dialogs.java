@@ -255,6 +255,20 @@ final class Dialogs {
         return cancel;
     }
 
+    /**
+     * Keeps a form's first column — its field labels — as wide as its widest label: a label shrinks to "Ty…" before a
+     * field that grows gives up any width, so a dialog narrower than its form cut them (Customize Rendering…).
+     */
+    static <G extends javafx.scene.layout.GridPane> G labelColumn(G grid) {
+        javafx.scene.layout.ColumnConstraints labels = new javafx.scene.layout.ColumnConstraints();
+        labels.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+        labels.setHgrow(javafx.scene.layout.Priority.NEVER);
+        javafx.scene.layout.ColumnConstraints fields = new javafx.scene.layout.ColumnConstraints();
+        fields.setHgrow(javafx.scene.layout.Priority.ALWAYS);
+        grid.getColumnConstraints().setAll(labels, fields);
+        return grid;
+    }
+
     /** Sets {@code dialog} up as the class comment says (once) and returns it. */
     static <D extends Dialog<?>> D styled(D dialog) {
         DialogPane pane = dialog.getDialogPane();

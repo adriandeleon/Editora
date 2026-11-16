@@ -7848,7 +7848,7 @@ final class DebugCoordinator {
             c.setTooltip(hint);
         }
 
-        GridPane grid = new GridPane();
+        GridPane grid = Dialogs.labelColumn(new GridPane());
         UiZoom.gaps(grid, 8, 8);
         // The line the breakpoint is on: the card covers the editor, often that very line (review 2 C106).
         Label lineText = new Label(
@@ -7867,7 +7867,7 @@ final class DebugCoordinator {
         grid.add(group, 1, 5);
         // The filters show on a toggle beside the switches, on when the breakpoint has one: most breakpoints have
         // none, and the form keeps its height (DebugReviewCWindowFxTest).
-        GridPane filterGrid = new GridPane();
+        GridPane filterGrid = Dialogs.labelColumn(new GridPane());
         UiZoom.gaps(filterGrid, 8, 8);
         filterGrid.add(new Label(tr("dialog.debug.threadFilterLabel")), 0, 0);
         filterGrid.add(threadFilter, 1, 0);
@@ -8070,7 +8070,7 @@ final class DebugCoordinator {
         Label lineText = new Label(
                 BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
         lineText.getStyleClass().add("debug-breakpoint-line");
-        GridPane grid = new GridPane();
+        GridPane grid = Dialogs.labelColumn(new GridPane());
         UiZoom.gaps(grid, 8, 8);
         grid.add(lineText, 0, 0, 2, 1);
         grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 1);

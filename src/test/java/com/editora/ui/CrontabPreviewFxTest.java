@@ -96,9 +96,30 @@ class CrontabPreviewFxTest {
 
                 list.scrollTo(5_001);
                 scene.getRoot().layout();
+                // ListView.scrollTo puts the row at the top by estimated row heights; with macOS's taller rows it
+                // stopped one row short of the end (rows 4994..5000). The flow's own scrollTo brings the row fully
+                // into view, laid out until it has its node.
+                javafx.scene.control.skin.VirtualFlow<?> flow =
+                        (javafx.scene.control.skin.VirtualFlow<?>) live.lookup(".virtual-flow");
                 List<String> end = new ArrayList<>();
-                collect(live, end);
-                assertTrue(end.contains("/opt/job-4999.sh"), "scrolled to the end, the last job is there to read");
+                for (int pass = 0; pass < 5 && !end.contains("/opt/job-4999.sh"); pass++) {
+                    if (pass > 0 && flow != null) {
+                        flow.scrollTo(5_001);
+                    }
+                    scene.getRoot().applyCss();
+                    scene.getRoot().layout();
+                    end.clear();
+                    collect(live, end);
+                }
+                assertTrue(
+                        end.contains("/opt/job-4999.sh"),
+                        "scrolled to the end, the last job is there to read; list " + list.getWidth() + "x"
+                                + list.getHeight() + ", rows "
+                                + (flow == null || flow.getFirstVisibleCell() == null
+                                        ? "none"
+                                        : flow.getFirstVisibleCell().getIndex() + ".."
+                                                + flow.getLastVisibleCell().getIndex())
+                                + ", last labels " + end.subList(Math.max(0, end.size() - 4), end.size()));
                 assertTrue(live.lookupAll(".crontab-job").size() < 60, "and still only the rows on screen");
 
                 // The picture an export takes holds every job: it is drawn once, off screen.

@@ -99,7 +99,7 @@ final class BreakpointGroups {
             return;
         }
         ComboBox<String> group = groupField(bp.group());
-        GridPane grid = new GridPane();
+        GridPane grid = Dialogs.labelColumn(new GridPane());
         UiZoom.gaps(grid, 8, 8);
         Label lineText = new Label(
                 BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
