@@ -454,9 +454,14 @@ class WindowOpsFxTest {
             assertEquals(shared, elsewhere.getPath());
             assertNull(agent.bufferInAnotherWindow(mine), "open nowhere");
 
-            int before = agent.sessionHistory().size();
             agent.rememberSession("session-1", dir.toString(), "Fix the parser", 1_000L, "claude");
-            assertEquals(before + 1, agent.sessionHistory().size());
+        });
+        // The history's first read runs on a thread of its own; the entry lands after it.
+        SettingsRig.awaitFx(
+                "the remembered session",
+                () -> !agent.sessionHistory().isEmpty()
+                        && "session-1".equals(agent.sessionHistory().get(0).sessionId()));
+        FxTestSupport.runOnFx(() -> {
             assertEquals("session-1", agent.sessionHistory().get(0).sessionId());
             assertEquals("Fix the parser", agent.sessionHistory().get(0).label());
 

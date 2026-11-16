@@ -118,11 +118,68 @@ public final class ConfigWriter {
     private final Map<Path, PendingWrite> failed = new LinkedHashMap<>();
 
     public ConfigWriter() {
-        this(Executors.newSingleThreadExecutor(r -> {
+        this.io = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "config-writer");
             t.setDaemon(true);
+            writerThread = t;
             return t;
-        }));
+        });
+    }
+
+    /** The thread the production executor runs on, once it exists; {@code null} for an injected executor. */
+    private volatile @Nullable Thread writerThread;
+
+    /** Whether the calling thread is this writer's own thread (a wait for itself there would never end). */
+    boolean onWriterThread() {
+        return Thread.currentThread() == writerThread;
+    }
+
+    /**
+     * Set once the app is quitting ({@link #shutdown}, or {@link #quitting()} from the quit path): from then on
+     * the FX thread may wait for the writer (PERF-01, Pauta 6.0.1: the last save at quit). Before that, a wait
+     * on the FX thread is a bug, and {@link #flush} says so.
+     */
+    private volatile boolean quitting;
+
+    /** The app is quitting: the FX thread may now make the last save and wait for it. */
+    public void quitting() {
+        quitting = true;
+    }
+
+    /**
+     * Runs {@code task} on the writer thread after everything queued before it (writes and tasks alike), in the
+     * order tasks are handed over. For work that belongs with the writes but is not a write of its own: a
+     * comparison made against the settings last written, a read that must see the writes queued before it. Once
+     * the writer has shut down the task runs on the calling thread, as the only writer left (on a thread of its
+     * own when that is the FX thread).
+     */
+    public void run(Runnable task) {
+        Runnable guarded = () -> {
+            try {
+                task.run();
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "Config writer task failed", e);
+            }
+        };
+        try {
+            io.execute(() -> {
+                synchronized (writerLock) {
+                    guarded.run();
+                }
+            });
+        } catch (RejectedExecutionException shutDown) {
+            // The writer is gone (the app quit): run it as the only writer left, never on the FX thread.
+            Runnable late = () -> {
+                synchronized (writerLock) {
+                    guarded.run();
+                }
+            };
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                Thread.ofVirtual().name("config-writer-late").start(late);
+            } else {
+                late.run();
+            }
+        }
     }
 
     /**
@@ -258,8 +315,21 @@ public final class ConfigWriter {
         }
     }
 
-    /** Blocks until every queued write has been performed (a durable save, an export, or app exit). */
+    /**
+     * Blocks until every queued write has been performed (a durable save, an export, or app exit). Not for the
+     * FX thread, except while the app quits (PERF-01, Pauta 6.0.1); a wait there at any other time is logged as
+     * the bug it is, and fails an assertion in a test. Called on the writer thread itself it does not wait (it
+     * could not end): what it would wait for runs after the task in progress.
+     */
     public boolean flush() {
+        if (onWriterThread()) {
+            return true;
+        }
+        if (!quitting && javafx.application.Platform.isFxApplicationThread()) {
+            IllegalStateException where = new IllegalStateException("waited for the config writer on the FX thread");
+            LOG.log(Level.SEVERE, "A config write was waited for on the FX thread outside the quit", where);
+            assert false : where.getMessage();
+        }
         try {
             // Wait for all queued drains, then give every write that failed earlier one more attempt: this is
             // the durable path (quit, export), and the disk may have recovered since.
@@ -290,6 +360,33 @@ public final class ConfigWriter {
         }
     }
 
+    /**
+     * Waits until everything queued so far has been tried, without trying again what failed earlier (each failure
+     * is reported once, by the write that met it): how a caller that is not the FX thread waits for its own save.
+     * Returns whether no write is left failed. On the writer thread, or once the writer is gone, it does not wait.
+     */
+    boolean awaitQueued() {
+        if (onWriterThread()) {
+            return !hasFailedWrites();
+        }
+        if (!quitting && javafx.application.Platform.isFxApplicationThread()) {
+            IllegalStateException where = new IllegalStateException("waited for the config writer on the FX thread");
+            LOG.log(Level.SEVERE, "A config write was waited for on the FX thread outside the quit", where);
+            assert false : where.getMessage();
+        }
+        try {
+            io.submit(() -> {}).get(flushTimeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException shutDown) {
+            return flush(); // the writer is gone: flush's fallback writes what is left on this thread
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+        return !hasFailedWrites();
+    }
+
     /** True when no file's latest write is still failed and none was refused since the last flush. */
     private boolean settled() {
         boolean refused = failureSinceFlush.getAndSet(false);
@@ -308,6 +405,13 @@ public final class ConfigWriter {
             failed.clear();
         }
         drain();
+    }
+
+    /** Whether any write failed and is still waiting to be retried. */
+    boolean hasFailedWrites() {
+        synchronized (lock) {
+            return !failed.isEmpty();
+        }
     }
 
     /** Whether a write of {@code file} failed and is still waiting to be retried. */
@@ -457,6 +561,7 @@ public final class ConfigWriter {
 
     private static void writeAtomicOrThrow(Path file, byte[] bytes, AtomicFileWrite.FileOperations files)
             throws IOException {
+        com.editora.perf.BlockingSites.enter("config write " + file.getFileName());
         Path parent = file.getParent();
         if (parent != null) {
             files.createDirectories(parent);
@@ -547,6 +652,7 @@ public final class ConfigWriter {
      * interrupted or raced by a caller-thread drain.
      */
     public boolean shutdown() {
+        quitting = true;
         io.shutdown();
         return flush();
     }

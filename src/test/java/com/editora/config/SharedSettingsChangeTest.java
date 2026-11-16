@@ -28,14 +28,18 @@ class SharedSettingsChangeTest {
         a.load();
         ConfigManager b = window(a.shared(), "b");
         List<ConfigManager> reported = new ArrayList<>();
+        a.shared().setFxThreadForTest(Runnable::run); // the comparison's answer, handed over where it is made
         a.shared().setOnSettingsChanged(reported::add);
         a.shared().markSettingsApplied();
 
+        // The comparison runs on the config writer's thread after the write: each save is waited for.
         a.saveAsync();
+        a.shared().awaitWrites();
         assertTrue(reported.isEmpty(), "a save that changed no preference reports nothing");
 
         a.getSettings().setShowLineNumbers(!a.getSettings().isShowLineNumbers());
         b.saveAsync();
+        a.shared().awaitWrites();
         assertEquals(List.of(b), reported, "reported with the window whose save carried it");
 
         a.saveAsync();
@@ -48,6 +52,7 @@ class SharedSettingsChangeTest {
         ConfigManager only = new ConfigManager(dir);
         only.load();
         List<ConfigManager> reported = new ArrayList<>();
+        only.shared().setFxThreadForTest(Runnable::run);
         only.shared().setOnSettingsChanged(reported::add);
 
         only.getSettings().setTabSize(8);
@@ -61,6 +66,7 @@ class SharedSettingsChangeTest {
         ConfigManager a = new ConfigManager(dir);
         a.load();
         List<ConfigManager> reported = new ArrayList<>();
+        a.shared().setFxThreadForTest(Runnable::run);
         a.shared().setOnSettingsChanged(reported::add);
         a.shared().markSettingsApplied();
 
@@ -76,6 +82,7 @@ class SharedSettingsChangeTest {
         ConfigManager a = new ConfigManager(dir);
         a.load();
         List<ConfigManager> reported = new ArrayList<>();
+        a.shared().setFxThreadForTest(Runnable::run);
         a.shared().setOnSettingsChanged(reported::add);
         a.shared().markSettingsApplied();
 

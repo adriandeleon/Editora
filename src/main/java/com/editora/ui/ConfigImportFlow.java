@@ -166,14 +166,18 @@ final class ConfigImportFlow {
     /** Makes the open windows show what was imported, for the parts that can change without a restart. */
     private void reloadLive(Set<Part> parts) {
         if (parts.stream().anyMatch(Part::inSettingsFile)) {
-            windows.settingsFileSaved(); // re-reads settings.json and applies it everywhere, keymap included
+            windows.settingsFileSaved(status -> {}); // re-reads settings.json and applies it everywhere, keymap too
         }
         if (parts.contains(Part.ABBREVIATIONS)) {
-            shared.reloadAbbreviations();
-            windows.broadcastSettingsApplied(); // each buffer holds its own copy of the abbreviation map
+            // each buffer holds its own copy of the abbreviation map: re-applied once the file is read
+            shared.reloadAbbreviations(windows::broadcastSettingsApplied);
         }
-        if (parts.contains(Part.DICTIONARY) && shared.reloadUserDictionary()) {
-            windows.broadcastUserDictionaryChanged();
+        if (parts.contains(Part.DICTIONARY)) {
+            shared.reloadUserDictionary(changed -> {
+                if (changed) {
+                    windows.broadcastUserDictionaryChanged();
+                }
+            });
         }
         if (parts.contains(Part.SNIPPETS)) {
             windows.broadcastSnippetsChanged(null);

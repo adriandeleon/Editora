@@ -1,9 +1,7 @@
 package com.editora.ui;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 import javafx.application.Platform;
 
@@ -97,6 +95,20 @@ final class SnippetCoordinator {
         buffer.setSnippetOfferProvider((lang, prefix) -> manager.byPrefix(buffer.snippetLanguage(lang), prefix));
         buffer.setSnippetTabExpansion(host.settings().isSnippetTabExpansion());
         buffer.setSnippetHooks(file -> ops.projectRoot(), progress -> sessionMoved(buffer, progress));
+        // A Tab before a language's snippets are in memory waits for them rather than missing them.
+        buffer.setSnippetLoading(new com.editora.editor.SnippetLoading() {
+            @Override
+            public boolean loaded(String language) {
+                return manager.isLoaded(buffer.snippetLanguage(language));
+            }
+
+            @Override
+            public void whenLoaded(String language, Runnable then) {
+                manager.whenLoaded(buffer.snippetLanguage(language), then);
+            }
+        });
+        // Its language's snippet files are read now, off the FX thread, so its first Tab finds them in memory.
+        manager.warm(buffer.snippetLanguage(buffer.getLanguage()));
     }
 
     /** Re-applies {@code Settings.snippetTabExpansion} to every open buffer. */
@@ -148,7 +160,16 @@ final class SnippetCoordinator {
         if (b == null) {
             return;
         }
-        var all = manager.forLanguage(b.snippetLanguage(b.getLanguage()));
+        String language = b.snippetLanguage(b.getLanguage());
+        // The picker waits for the language's files when they are not loaded yet (read off the FX thread).
+        manager.whenLoaded(language, () -> showPicker(b, language, title, onCancelled));
+    }
+
+    private void showPicker(EditorBuffer b, String language, String title, Runnable onCancelled) {
+        if (b != host.activeBuffer()) {
+            return; // the user moved on while the snippets loaded
+        }
+        var all = manager.forLanguage(language);
         if (all.isEmpty()) {
             host.setStatus(tr("status.noSnippets"));
             return;
@@ -197,27 +218,35 @@ final class SnippetCoordinator {
         EditorBuffer b = host.activeBuffer();
         String lang = b == null ? "global" : b.getLanguage();
         Path file = manager.userFile(lang);
-        try {
-            if (!Files.exists(file)) {
-                Files.createDirectories(file.getParent());
-                Files.writeString(file, USER_SNIPPET_TEMPLATE);
-            }
-            ops.openPath(file);
-            host.setStatus(tr("status.editingSnippets", lang));
-        } catch (IOException e) {
-            host.setStatus(tr("status.snippetOpenFailed", e.getMessage()));
-        }
+        // Seeded on the snippet thread (PERF-01, Pauta 6.0.1); opened when that is done.
+        manager.later(
+                m -> {
+                    if (!Files.exists(file)) {
+                        Files.createDirectories(file.getParent());
+                        Files.writeString(file, USER_SNIPPET_TEMPLATE);
+                    }
+                },
+                failure -> {
+                    if (failure != null) {
+                        host.setStatus(tr("status.snippetOpenFailed", failure.getMessage()));
+                        return;
+                    }
+                    ops.openPath(file);
+                    host.setStatus(tr("status.editingSnippets", lang));
+                });
     }
 
     /** The Reload Snippets command: re-reads everything here and in the other windows, and says what is wrong. */
     void reload() {
         manager.reload();
-        List<Problem> problems = manager.checkUserFiles(); // each one is reported by the listener
-        ops.settingsWindow().reloadSnippetsPage();
-        ops.broadcast();
-        if (problems.isEmpty()) {
-            host.setStatus(tr("status.snippetsReloaded"));
-        }
+        // Re-read on the snippet thread; each problem is reported by the listener.
+        manager.checkUserFilesLater(problems -> {
+            ops.settingsWindow().reloadSnippetsPage();
+            ops.broadcast();
+            if (problems.isEmpty()) {
+                host.setStatus(tr("status.snippetsReloaded"));
+            }
+        });
     }
 
     /** Another window changed a user snippet file: this window's cache and Settings page follow, quietly. */
@@ -233,17 +262,19 @@ final class SnippetCoordinator {
             return;
         }
         manager.reload();
-        boolean broken = manager.wholeFileProblem(language) != null; // loads the file; problems are reported
-        ops.settingsWindow().reloadSnippetsPage();
-        ops.broadcast();
-        if (!broken && manager.checkUserFiles().stream().noneMatch(p -> p.file().equals(manager.userFile(language)))) {
-            host.setStatus(tr("status.snippetFileReloaded", file.getFileName()));
-        }
+        // Loads the file on the snippet thread; problems are reported by the listener.
+        manager.checkUserFilesLater(problems -> {
+            ops.settingsWindow().reloadSnippetsPage();
+            ops.broadcast();
+            if (problems.stream().noneMatch(p -> p.file().equals(manager.userFile(language)))) {
+                host.setStatus(tr("status.snippetFileReloaded", file.getFileName()));
+            }
+        });
     }
 
     /** Reads the user snippet files off the FX thread once the window is up, so a broken one is known now. */
     void checkUserFilesAtStartup() {
-        Thread.ofVirtual().name("snippet-file-check").start(manager::checkUserFiles);
+        manager.checkUserFilesLater(problems -> {}); // each problem is reported by the listener
     }
 
     /** One line for the error channel: the file, what is wrong, and where. No parser internals. */

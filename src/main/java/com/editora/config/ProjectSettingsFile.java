@@ -32,11 +32,70 @@ public final class ProjectSettingsFile {
     private ProjectSettingsFile() {}
 
     /**
+     * The one thread project settings files are written on, in the order the writes were asked for (PERF-01,
+     * Pauta 6.0.1: a Settings row in Project scope, a toggle, Edit Project Settings are FX handlers).
+     */
+    private static final java.util.concurrent.ExecutorService WRITES =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    Thread.ofPlatform().daemon().name("project-settings-write").factory());
+
+    /**
+     * {@link #set} on the project settings writer's thread; {@code done} is told on the FX thread, with the
+     * failure or {@code null}.
+     */
+    public static void setLater(
+            Path projectRoot,
+            String section,
+            String key,
+            @Nullable Object value,
+            java.util.function.Consumer<@Nullable IOException> done) {
+        later(() -> set(projectRoot, section, key, value), done);
+    }
+
+    /** File work on a project's settings, which may fail. */
+    @FunctionalInterface
+    public interface Work {
+        void run() throws IOException;
+    }
+
+    /**
+     * Runs {@code work} on the project settings writer's thread, after every write asked for before it, and tells
+     * {@code done} on the FX thread, with the failure or {@code null}.
+     */
+    public static void later(Work work, java.util.function.Consumer<@Nullable IOException> done) {
+        writes.execute(() -> {
+            IOException failure = null;
+            try {
+                work.run();
+            } catch (IOException e) {
+                failure = e;
+            } catch (RuntimeException e) {
+                failure = new IOException(e.getMessage(), e);
+            }
+            IOException result = failure;
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                done.accept(result); // written in place (a test's seam)
+            } else {
+                javafx.application.Platform.runLater(() -> done.accept(result));
+            }
+        });
+    }
+
+    /** Where {@link #later} runs its work: the writer thread, or in place for a test. */
+    private static volatile java.util.concurrent.Executor writes = WRITES;
+
+    /** TEST SEAM — {@code true} writes project settings files in place (on the caller's thread); false restores. */
+    public static void writeInPlaceForTest(boolean inPlace) {
+        writes = inPlace ? Runnable::run : WRITES;
+    }
+
+    /**
      * Sets {@code section.key} (or the top-level {@code key} when {@code section} is null) to {@code value} —
      * a String, Boolean, Integer, List of Integers or Map of language → List of Integers — or removes it when
      * {@code value} is null, then writes the file atomically. Creates the file (and {@code .editora/}) when absent.
      */
     public static void set(Path projectRoot, String section, String key, @Nullable Object value) throws IOException {
+        com.editora.perf.BlockingSites.enter("ProjectSettingsFile.set");
         Path file = ProjectSettings.migrateLegacyForEditing(projectRoot);
         ObjectNode root = read(file);
         JsonNode v = root.get("version");

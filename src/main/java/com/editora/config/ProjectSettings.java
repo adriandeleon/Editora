@@ -136,6 +136,7 @@ public class ProjectSettings {
      * file is kept as {@code settings.toml.migrated}.
      */
     public static Path migrateLegacyForEditing(Path projectRoot) throws java.io.IOException {
+        com.editora.perf.BlockingSites.enter("ProjectSettings.migrateLegacyForEditing");
         Path file = fileFor(projectRoot);
         if (Files.exists(file)) {
             return file;

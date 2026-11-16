@@ -248,7 +248,17 @@ class SettingsRealWindowFxTest {
             FxTestSupport.runOnFx(() -> {
                 Region advanced = page("ADVANCED");
                 Button reset = (Button) SettingsRig.button(advanced, tr("settings.resetDefaults"));
-                List<SettingsRig.Shown> shown = SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, reset::fire);
+                // The backup is tried on the config writer's thread: the failure is said when that lands.
+                int[] asked = {0};
+                List<SettingsRig.Shown> shown = SettingsRig.answering(
+                        question -> {
+                            asked[0]++;
+                            return ButtonBar.ButtonData.OK_DONE;
+                        },
+                        () -> {
+                            reset.fire();
+                            SettingsRig.pumpUntil(() -> asked[0] >= 2);
+                        });
                 assertEquals(2, shown.size(), "the question, then why it was not done");
                 // The question names the backup it is about to write.
                 assertTrue(shown.get(0)

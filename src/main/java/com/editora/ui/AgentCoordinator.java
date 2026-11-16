@@ -122,6 +122,11 @@ final class AgentCoordinator implements AcpClient.Host {
 
         /** The persisted resume history, most-recently-used first (backs the resume picker). */
         ObservableList<AgentSessionHistory.Entry> sessionHistory();
+
+        /** Hands {@link #sessionHistory()} to {@code then} on the FX thread once it is read (it may be read late). */
+        default void withSessionHistory(java.util.function.Consumer<ObservableList<AgentSessionHistory.Entry>> then) {
+            then.accept(sessionHistory());
+        }
     }
 
     private final CoordinatorHost host;
@@ -574,8 +579,8 @@ final class AgentCoordinator implements AcpClient.Host {
     /** {@code agent.resumeSession}: opens a picker over the persisted session history to reopen a past
      *  chat. Palette-gated like {@link #pickModel}/{@link #pickMode}. */
     void resumeSessionPicker() {
-        ifAgent(() -> {
-            if (ops.sessionHistory().isEmpty()) {
+        ifAgent(() -> ops.withSessionHistory(history -> {
+            if (history.isEmpty()) {
                 host.setStatus(tr("status.agent.noHistory"));
                 return;
             }
@@ -588,7 +593,7 @@ final class AgentCoordinator implements AcpClient.Host {
                     this::resumeSession);
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
-        });
+        }));
     }
 
     /** Reopens a past chat: tears down the current session, spawns a fresh process, and drives

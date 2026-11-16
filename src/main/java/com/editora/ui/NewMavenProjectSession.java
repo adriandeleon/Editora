@@ -41,9 +41,20 @@ final class NewMavenProjectSession {
             GeneratedProject.@Nullable MainClass main) {
         Project project = projects.createOrGet(name, root);
         projects.save();
-        seed(projects, config, project, root, name, main);
-        if (windows != null) {
-            windows.openOrFocus(project);
+        // The seeding looks at the new folder and writes the project's session: off the FX thread (PERF-01, Pauta
+        // 6.0.1), on the thread a window's session is read on, and the window opens once it is done.
+        java.util.concurrent.Executor work =
+                windows != null ? windows.sessionReads : com.editora.process.BlockingTasks.named("maven-seed");
+        java.util.concurrent.CompletableFuture<Void> seeded = java.util.concurrent.CompletableFuture.runAsync(
+                () -> seed(projects, config, project, root, name, main), work);
+        if (windows == null) {
+            return;
+        }
+        if (seeded.isDone() && javafx.application.Platform.isFxApplicationThread()) {
+            windows.openOrFocus(project); // seeded before the executor returned (a test's seam)
+        } else {
+            seeded.whenComplete(
+                    (done, failure) -> javafx.application.Platform.runLater(() -> windows.openOrFocus(project)));
         }
     }
 
@@ -73,6 +84,8 @@ final class NewMavenProjectSession {
      * archetype's main: a plain classpath launch of it dies with "JavaFX runtime components are missing",
      * and the run-configuration model has no "Maven goal" type that could hold {@code javafx:run} — so no
      * configuration is seeded, and the wizard says to run it from the Maven tool window instead.
+     *
+     * <p>Blocking: it looks at the folder and writes the session file, so it runs off the FX thread.
      */
     static void seed(
             ProjectManager projects,
@@ -133,7 +146,7 @@ final class NewMavenProjectSession {
             }
             state.setOpenFiles(open);
             state.setActiveFile(open.get(0).getPath());
-            seeded.save();
+            seeded.saveSession();
         } catch (RuntimeException e) {
             // The project is generated and open either way; a missing configuration is a papercut, not a
             // reason to fail the whole flow.

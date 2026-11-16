@@ -104,7 +104,10 @@ class LspProjectOverridesFxTest {
         host.settings.setRustLspEnabled(false); // the user switched rust-analyzer off
         ops = new FakeOps();
         ops.projectRoot = project;
-        FxTestSupport.runOnFx(() -> coordinator = new LspCoordinator(host, manager, ops));
+        FxTestSupport.runOnFx(() -> {
+            coordinator = new LspCoordinator(host, manager, ops);
+            coordinator.projectScope().reads = Runnable::run; // the project file read in place: values at once
+        });
     }
 
     @AfterEach
@@ -209,6 +212,7 @@ class LspProjectOverridesFxTest {
         });
         assertEquals(PROJECT_JDTLS, configuredJava());
         assertTrue(config.getTrustStore().isTrusted(project));
+        config.shared().awaitWrites(); // written on the config writer's thread
         assertTrue(
                 Files.readString(config.shared().getTrustFile())
                         .contains(project.toRealPath().getFileName().toString()),

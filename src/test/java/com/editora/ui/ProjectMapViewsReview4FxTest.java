@@ -71,6 +71,7 @@ class ProjectMapViewsReview4FxTest {
         }
 
         ProjectMapTrails trails() {
+            view.trails.io = Runnable::run; // trail files read and written in place: the result is there at once
             return view.trails;
         }
 
@@ -124,6 +125,7 @@ class ProjectMapViewsReview4FxTest {
         Queue<String> answers = new ArrayDeque<>();
         Harness h = FxTestSupport.callOnFx(() -> {
             ProjectMapView view = new ProjectMapView(path -> {}, path -> false, path -> false);
+            view.trails.io = Runnable::run; // trail files read and written in place: results land at once
             view.setOnStatus(said::add);
             view.setViewsPrompt((title, label, initial, onAccept) -> {
                 String answer = answers.poll();
@@ -206,6 +208,7 @@ class ProjectMapViewsReview4FxTest {
         remembered.setOffsetY(-123.0);
         Harness restarted = FxTestSupport.callOnFx(() -> {
             ProjectMapView view = new ProjectMapView(path -> {}, path -> false, path -> false);
+            view.trails.io = Runnable::run; // trail files read and written in place: results land at once
             Stage stage = new Stage();
             stage.setScene(new Scene(new StackPane(view), 700, 480));
             stage.show();
@@ -372,6 +375,7 @@ class ProjectMapViewsReview4FxTest {
                 panel.openMapWindow(false);
             });
             ProjectMapView view = FxTestSupport.field(panel, "mapView");
+            FxTestSupport.runOnFx(() -> view.trails.io = Runnable::run); // the trail read in place: play answers
             waitForFx(() -> panel.isMapShowing() && view.trails.play("Cmd", 0));
             FxTestSupport.runOnFx(() -> {
                 registry.get("projectMap.trailNext").orElseThrow().run();

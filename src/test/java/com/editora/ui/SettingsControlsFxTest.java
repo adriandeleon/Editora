@@ -603,6 +603,7 @@ class SettingsControlsFxTest {
             assertEquals("es", settings.getUiLanguage());
         });
         // The choice is on disk: it is read before any window exists on the next start.
+        rig.config.shared().awaitWrites(); // written on the config writer's thread
         assertTrue(java.nio.file.Files.readString(rig.config.getSettingsFile()).contains("\"es\""));
     }
 

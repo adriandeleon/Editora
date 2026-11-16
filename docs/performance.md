@@ -79,6 +79,27 @@ A picked file is measured before it is read: Import Breakpoints refuses a file o
 Every thread is named and a daemon: `Thread.ofPlatform().daemon().name(…)` for a platform thread, and a
 virtual thread or a virtual-thread executor is given a name too (`Thread.ofVirtual().name(…)`).
 
+The config and project stores follow the same shape (PERF-01, Pauta 6.0.1). A save made on the FX thread takes a
+copy of the store (`config/Snapshots`: field by field, no JSON) and hands it to the `config-writer` thread, which
+serializes, hashes, merges with another process's write (`StoreSync`) and writes it, in order per file, a later
+save replacing one still queued. That covers `ConfigManager.save()`/`saveAsync()`, `SharedConfig.saveSettings()`,
+the eight `save…` stores, `ProjectManager.save()` and `dictionary.txt` (the shared word set changes at once, the
+file later). The FX thread never waits for the writer: `flushWrites()`/`awaitWrites()` are for tests, background
+tasks (export, import, Settings sync) and the quit, where `Application.stop()` → `SharedConfig.shutdown()` makes the
+last save; a wait on the FX thread before `quitting()` logs SEVERE and fails an assertion. A save made on any other
+thread still waits for its write, as before. What the writer works out for the FX thread comes back through
+`Platform.runLater` under a generation guard: the settings change a save carried (compared on the writer, against
+what every window last applied), another process's dictionary words, a re-read `settings.json` (applied with
+`Snapshots.assignFields`; a settings save made while one is under way is held until it lands), a backup taken
+after a save (`SharedConfig.afterWrites`). Reads that used to happen in place also land later: a window a command
+opens is built when its session is read (`WindowManager.openWhenRead`, which waits for the writes queued before it
+and joins a second ask for the same window), a project's `.editora/settings.json` (`ProjectScope`, which answers the
+last values it knew meanwhile, and the user's for a root never read), the agent session history, the snippet files
+(warmed per buffer on `snippet-files`; a cold language answers from what is loaded), the templates
+(`template-files`), the Map trails (`map-trails-io`; the menu shows a Loading… row until its listing lands), the
+project's `.editora/settings.json` writes (`project-settings-write`) and the shared run configurations.
+`StoresOffFxThreadFxTest` drives these paths and checks that none of their `BlockingSites` is heard on the FX thread.
+
 ### 2. Debounce and coalesce
 
 Re-highlighting is debounced; overlay/ruler/minimap redraws coalesce to **one per pulse** with

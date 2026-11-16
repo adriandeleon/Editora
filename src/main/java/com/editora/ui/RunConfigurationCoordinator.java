@@ -595,26 +595,74 @@ final class RunConfigurationCoordinator {
             return;
         }
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        List<com.editora.config.Deployment> deployments =
-                host.config().getWorkspaceState().getDeployments();
+        // Copies: compared, serialized and written off the FX thread (PERF-01, Pauta 6.0.1) while the window goes on.
+        List<com.editora.config.RunConfiguration> exported = com.editora.config.Snapshots.copy(configs);
+        List<com.editora.config.Deployment> deployments = com.editora.config.Snapshots.copy(
+                host.config().getWorkspaceState().getDeployments());
         // The file is the project's, shared through its repository: one that says something else is asked about.
-        if (com.editora.config.SharedRunConfigs.wouldReplace(mapper, root, configs, deployments)
-                && !Confirm.ask(
-                        host.stage(),
-                        exportReplaceQuestion(host.homeCollapsed(com.editora.config.SharedRunConfigs.fileFor(root)
-                                .toString())))) {
-            return;
-        }
-        try {
-            com.editora.config.SharedRunConfigs.save(mapper, root, configs, deployments);
-            host.setStatus(tr(
-                    "status.run.configsExported",
-                    configs.size(),
-                    host.homeCollapsed(
-                            com.editora.config.SharedRunConfigs.fileFor(root).toString())));
-        } catch (java.io.IOException e) {
-            host.setError(tr("status.run.configsExportFailed", e.getMessage()));
-        }
+        sharedFileWork(
+                () -> com.editora.config.SharedRunConfigs.wouldReplace(mapper, root, exported, deployments),
+                (replaces, ignored) -> {
+                    if (Boolean.TRUE.equals(replaces)
+                            && !Confirm.ask(
+                                    host.stage(),
+                                    exportReplaceQuestion(
+                                            host.homeCollapsed(com.editora.config.SharedRunConfigs.fileFor(root)
+                                                    .toString())))) {
+                        return;
+                    }
+                    sharedFileWork(
+                            () -> {
+                                com.editora.config.SharedRunConfigs.save(mapper, root, exported, deployments);
+                                return Boolean.TRUE;
+                            },
+                            (saved, failure) -> {
+                                if (failure != null) {
+                                    host.setError(tr("status.run.configsExportFailed", failure.getMessage()));
+                                    return;
+                                }
+                                host.setStatus(tr(
+                                        "status.run.configsExported",
+                                        exported.size(),
+                                        host.homeCollapsed(com.editora.config.SharedRunConfigs.fileFor(root)
+                                                .toString())));
+                            });
+                });
+    }
+
+    /** Where the shared file is read and written: a thread of its own (a seam: a test may do it in place). */
+    java.util.concurrent.Executor sharedFiles = com.editora.process.BlockingTasks.named("shared-run-configs");
+
+    /** File work on the project's shared run configurations, which may fail. */
+    @FunctionalInterface
+    interface SharedFileWork<T> {
+        T run() throws java.io.IOException;
+    }
+
+    /**
+     * Runs {@code work} on a thread of its own and hands its result, or its failure, to {@code then} on the FX
+     * thread: the shared file is in the project, which may be on a slow mount.
+     */
+    private <T> void sharedFileWork(
+            SharedFileWork<T> work, java.util.function.BiConsumer<@Nullable T, java.io.@Nullable IOException> then) {
+        sharedFiles.execute(() -> {
+            T result = null;
+            java.io.IOException failure = null;
+            try {
+                result = work.run();
+            } catch (java.io.IOException e) {
+                failure = e;
+            } catch (RuntimeException e) {
+                failure = new java.io.IOException(e.getMessage(), e);
+            }
+            T value = result;
+            java.io.IOException failed = failure;
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                then.accept(value, failed); // done in place (a test's seam)
+            } else {
+                javafx.application.Platform.runLater(() -> then.accept(value, failed));
+            }
+        });
     }
 
     /**
@@ -639,8 +687,27 @@ final class RunConfigurationCoordinator {
             host.setStatus(tr("status.run.configsNeedProject"));
             return;
         }
-        List<com.editora.config.RunConfiguration> incoming =
-                com.editora.config.SharedRunConfigs.load(new com.fasterxml.jackson.databind.ObjectMapper(), root);
+        // Read off the FX thread (PERF-01, Pauta 6.0.1); merged into this window's when it lands.
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        sharedFileWork(
+                () -> new SharedRead(
+                        com.editora.config.SharedRunConfigs.load(mapper, root),
+                        com.editora.config.SharedRunConfigs.loadDeployments(mapper, root)),
+                (read, failure) -> {
+                    if (read != null) {
+                        importRunConfigs(root, read.configs(), read.deployments());
+                    }
+                });
+    }
+
+    /** What the project's shared file holds: its run configurations and deployments. */
+    private record SharedRead(
+            List<com.editora.config.RunConfiguration> configs, List<com.editora.config.Deployment> deployments) {}
+
+    private void importRunConfigs(
+            Path root,
+            List<com.editora.config.RunConfiguration> incoming,
+            List<com.editora.config.Deployment> incomingDeployments) {
         if (incoming.isEmpty()) {
             host.setStatus(tr(
                     "status.run.noSharedConfigs",
@@ -648,8 +715,6 @@ final class RunConfigurationCoordinator {
                             com.editora.config.SharedRunConfigs.fileFor(root).toString())));
             return;
         }
-        List<com.editora.config.Deployment> incomingDeployments = com.editora.config.SharedRunConfigs.loadDeployments(
-                new com.fasterxml.jackson.databind.ObjectMapper(), root);
         // An import that only adds asks nothing; one that would change what this window has says how much.
         int replacedConfigs = com.editora.config.SharedRunConfigs.replaced(
                         host.config().getWorkspaceState().getRunConfigurations(), incoming)

@@ -29,6 +29,7 @@ class ShellSnippetFxTest {
     /** Types {@code trigger} at the end of {@code content}, presses Tab, returns the text. */
     private static String expand(Path config, String content, String trigger) throws Exception {
         SnippetManager snippets = new SnippetManager(new ConfigManager(config));
+        snippets.fileWork = Runnable::run; // the snippet files read in place: the first Tab finds them
         return FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
             b.setLanguageOverride("shell");

@@ -218,38 +218,40 @@ final class ProjectScopeSettings {
         if (loading.getAsBoolean()) {
             return true;
         }
-        store(scope.get().root(), key, value);
+        store(scope.get().root(), key, value, () -> {});
         return true;
     }
 
     /**
-     * Writes {@code value} (null or blank = remove) as {@code key} of the project in {@code root}, then has every
-     * window read the file again. False when the file could not be written, which a message says.
+     * Writes {@code value} (null or blank = remove) as {@code key} of the project in {@code root}, off the FX
+     * thread (PERF-01, Pauta 6.0.1); when it is written, has every window read the file again and runs
+     * {@code stored}. When it could not be written a message says so, and {@code stored} does not run.
      */
-    private boolean store(Path root, String key, @Nullable Object value) {
+    private void store(Path root, String key, @Nullable Object value, Runnable stored) {
         int dot = key.indexOf('.');
         String section = switch (key.substring(0, dot)) {
             case "build" -> "buildCommands";
             case "debug" -> "debugTools";
             default -> key.substring(0, dot);
         };
-        Object stored = value instanceof String s && s.isBlank() ? null : value;
-        try {
-            ProjectSettingsFile.set(root, section, key.substring(dot + 1), stored);
-        } catch (ProjectSettingsFile.NewerFileException e) {
-            error(tr("settings.scope.newerFile", ProjectSettings.fileFor(root).toString()));
-            return false;
-        } catch (java.io.IOException | RuntimeException e) {
-            error(tr(
-                    "settings.scope.writeFailed",
-                    ProjectSettings.fileFor(root).toString(),
-                    String.valueOf(e.getMessage())));
-            return false;
-        }
-        scope.get().reload();
-        applied.run();
-        refresh();
-        return true;
+        Object toStore = value instanceof String s && s.isBlank() ? null : value;
+        ProjectSettingsFile.setLater(root, section, key.substring(dot + 1), toStore, failure -> {
+            if (failure instanceof ProjectSettingsFile.NewerFileException) {
+                error(tr(
+                        "settings.scope.newerFile",
+                        ProjectSettings.fileFor(root).toString()));
+            } else if (failure != null) {
+                error(tr(
+                        "settings.scope.writeFailed",
+                        ProjectSettings.fileFor(root).toString(),
+                        String.valueOf(failure.getMessage())));
+            } else {
+                scope.get().reload();
+                applied.run();
+                refresh();
+                stored.run();
+            }
+        });
     }
 
     /** Where "Use my setting" records how to bring the project's value back (see {@link RemovalUndo}). */
@@ -266,14 +268,23 @@ final class ProjectScopeSettings {
     private void useMine(String key) {
         Path root = scope.get().root();
         Object was = valueOf(scope.get().settings(), key);
-        write(key, null);
-        RemovalUndo undo = removalUndo.get();
-        if (undo != null && root != null && was != null && valueOf(scope.get().settings(), key) == null) {
-            undo.removed(
-                    tr("status.settings.projectValueRemoved"),
-                    tr("status.settings.projectValueRestored"),
-                    () -> restoreProjectValue(root, key, was));
+        if (!projectMode() || loading.getAsBoolean() || root == null) {
+            write(key, null);
+            return;
         }
+        store(
+                root,
+                key,
+                null,
+                () -> { // the undo is offered once the value is really gone from the file
+                    RemovalUndo undo = removalUndo.get();
+                    if (undo != null && was != null) {
+                        undo.removed(
+                                tr("status.settings.projectValueRemoved"),
+                                tr("status.settings.projectValueRestored"),
+                                () -> restoreProjectValue(root, key, was));
+                    }
+                });
     }
 
     /**
@@ -281,7 +292,11 @@ final class ProjectScopeSettings {
      * another project now, the project has a value for the key again, or its file could not be written.
      */
     boolean restoreProjectValue(Path root, String key, Object was) {
-        return root.equals(scope.get().root()) && valueOf(scope.get().settings(), key) == null && store(root, key, was);
+        if (!root.equals(scope.get().root()) || valueOf(scope.get().settings(), key) != null) {
+            return false;
+        }
+        store(root, key, was, () -> {}); // written off the FX thread; a failure says so itself
+        return true;
     }
 
     /**

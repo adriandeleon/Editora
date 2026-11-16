@@ -339,20 +339,7 @@ final class SettingsSnippetPages {
             // Save under the new id first: a rename that deleted the old file and then failed to write the
             // new one lost the template. The wizard labels are not in this form, so they are carried over.
             com.editora.template.Template toSave = updated.withLabels(cur.labels());
-            if (!saveTemplate(toSave)) {
-                id.setText(oldId);
-                return;
-            }
-            // templateUserIds come from templateRegistry
-            if (!oldId.equals(newId) && templateUserIds.contains(oldId) && templateRegistry != null) {
-                try {
-                    templateRegistry.deleteUserTemplate(oldId); // renamed: drop the old override file
-                    w.markSyncDirty();
-                } catch (java.io.IOException ignored) {
-                    // best-effort: the template is safe under its new id either way
-                }
-                templateUserIds.remove(oldId);
-            }
+            // The row shows the edit at once; the file is written on the template thread (PERF-01, Pauta 6.0.1).
             templateUserIds.add(newId); // editing a bundled or plugin template makes it a user override
             loadingTemplate = true;
             try {
@@ -361,6 +348,33 @@ final class SettingsSnippetPages {
                 loadingTemplate = false;
             }
             list.refresh();
+            boolean renamedOverride = !oldId.equals(newId) && templateUserIds.contains(oldId);
+            if (renamedOverride) {
+                templateUserIds.remove(oldId);
+            }
+            saveTemplate(toSave, saved -> {
+                if (!saved) {
+                    id.setText(oldId);
+                    if (renamedOverride) {
+                        templateUserIds.add(oldId); // its old file is still there
+                    }
+                    return;
+                }
+                com.editora.template.TemplateRegistry registry = templateRegistry;
+                if (renamedOverride && registry != null) {
+                    // renamed: drop the old override file, best-effort (the template is safe under its new id)
+                    registry.later(
+                            r -> {
+                                r.deleteUserTemplate(oldId);
+                                return Boolean.TRUE;
+                            },
+                            (done, failure) -> {
+                                if (failure == null) {
+                                    w.markSyncDirty();
+                                }
+                            });
+                }
+            });
         };
         java.util.function.Consumer<TextField> wire = tf -> {
             tf.setOnAction(e -> commit.run());
@@ -413,10 +427,11 @@ final class SettingsSnippetPages {
             }
         });
 
-        Runnable loadTemplates = () -> {
+        // Read on the template thread (PERF-01, Pauta 6.0.1); the list fills when it lands, then {@code after} runs.
+        java.util.function.Consumer<Runnable> loadTemplatesThen = after -> readTemplates(merged -> {
             loadingTemplate = true;
             try {
-                templateItems.setAll(mergedTemplates());
+                templateItems.setAll(merged);
             } finally {
                 loadingTemplate = false;
             }
@@ -426,17 +441,20 @@ final class SettingsSnippetPages {
             } else {
                 form.setDisable(true);
             }
-        };
+            after.run();
+        });
+        Runnable loadTemplates = () -> loadTemplatesThen.accept(() -> {});
 
         reloadTemplates = () -> { // another window's Settings may have added or removed a template
             com.editora.template.Template sel = list.getSelectionModel().getSelectedItem();
-            loadTemplates.run();
-            for (int k = 0; sel != null && k < templateItems.size(); k++) {
-                if (java.util.Objects.equals(sel.id(), templateItems.get(k).id())) {
-                    list.getSelectionModel().select(k);
-                    break;
+            loadTemplatesThen.accept(() -> {
+                for (int k = 0; sel != null && k < templateItems.size(); k++) {
+                    if (java.util.Objects.equals(sel.id(), templateItems.get(k).id())) {
+                        list.getSelectionModel().select(k);
+                        break;
+                    }
                 }
-            }
+            });
         };
 
         Button add = FocusCommands.press(new Button(tr("settings.template.add")), "settings.addTemplate");
@@ -454,7 +472,7 @@ final class SettingsSnippetPages {
                     nid, tr("settings.template.newName"), "", "", "${name}.txt", "${cursor}", null);
             templateUserIds.add(nid);
             templateItems.add(t);
-            saveTemplate(t);
+            saveTemplate(t, saved -> {});
             list.getSelectionModel().select(templateItems.size() - 1);
             id.requestFocus();
             id.selectAll();
@@ -482,17 +500,24 @@ final class SettingsSnippetPages {
             if (!confirmTemplateRemoval.test(t)) {
                 return;
             }
-            try {
-                templateRegistry.deleteUserTemplate(t.id());
-                w.markSyncDirty();
-            } catch (java.io.IOException ex) {
-                Dialogs.showAndWait(Dialogs.styled(new Alert(
-                        Alert.AlertType.ERROR, tr("settings.template.saveFailed", ex.getMessage()), ButtonType.OK)));
-                return;
-            }
-            templateUserIds.remove(t.id());
-            templateItems.remove(t);
-            loadTemplates.run(); // re-derive: a removed override reverts to its bundled template
+            templateRegistry.later(
+                    r -> {
+                        r.deleteUserTemplate(t.id());
+                        return Boolean.TRUE;
+                    },
+                    (done, ex) -> {
+                        if (ex != null) {
+                            Dialogs.showAndWait(Dialogs.styled(new Alert(
+                                    Alert.AlertType.ERROR,
+                                    tr("settings.template.saveFailed", ex.getMessage()),
+                                    ButtonType.OK)));
+                            return;
+                        }
+                        w.markSyncDirty();
+                        templateUserIds.remove(t.id());
+                        templateItems.remove(t);
+                        loadTemplates.run(); // re-derive: a removed override reverts to its bundled template
+                    });
         });
         // Its right-click menu: Copy, and the Remove button's action (MENU-05).
         ListRowCommands.install(
@@ -522,41 +547,72 @@ final class SettingsSnippetPages {
      * both. Rebuilds {@link #templateUserIds} (the ids that are user-owned: writable and removable); every
      * other row is tagged with where it comes from.
      */
-    private java.util.List<com.editora.template.Template> mergedTemplates() {
-        templateUserIds.clear();
-        if (templateRegistry == null) {
-            return java.util.List.of();
+    private void readTemplates(java.util.function.Consumer<java.util.List<com.editora.template.Template>> then) {
+        com.editora.template.TemplateRegistry registry = templateRegistry;
+        if (registry == null) {
+            templateUserIds.clear();
+            then.accept(java.util.List.of());
+            return;
         }
+        registry.later(
+                r -> new TemplateSources(r.userTemplates(), r.bundledTemplates(), r.pluginTemplates()),
+                (sources, failure) -> then.accept(mergedTemplates(
+                        sources == null
+                                ? new TemplateSources(java.util.List.of(), java.util.List.of(), java.util.List.of())
+                                : sources)));
+    }
+
+    /** The three sources the Templates page shows, as read on the template thread. */
+    private record TemplateSources(
+            java.util.List<com.editora.template.Template> user,
+            java.util.List<com.editora.template.Template> bundled,
+            java.util.List<com.editora.template.Template> plugin) {}
+
+    private java.util.List<com.editora.template.Template> mergedTemplates(TemplateSources sources) {
+        templateUserIds.clear();
         java.util.LinkedHashMap<String, com.editora.template.Template> userById = new java.util.LinkedHashMap<>();
-        for (com.editora.template.Template u : templateRegistry.userTemplates()) {
+        for (com.editora.template.Template u : sources.user()) {
             userById.put(u.id(), u);
             templateUserIds.add(u.id());
         }
         java.util.LinkedHashMap<String, com.editora.template.Template> merged = new java.util.LinkedHashMap<>();
-        for (com.editora.template.Template b : templateRegistry.bundledTemplates()) {
+        for (com.editora.template.Template b : sources.bundled()) {
             merged.put(b.id(), b);
         }
-        for (com.editora.template.Template plugin : templateRegistry.pluginTemplates()) {
+        for (com.editora.template.Template plugin : sources.plugin()) {
             merged.put(plugin.id(), plugin);
         }
         merged.putAll(userById); // the user's own file always wins
         return new java.util.ArrayList<>(merged.values());
     }
 
-    /** Writes {@code t} to the user's templates folder; false (after saying why) when that failed. */
-    private boolean saveTemplate(com.editora.template.Template t) {
-        if (templateRegistry == null) {
-            return false;
+    /**
+     * Writes {@code t} to the user's templates folder on the template thread (PERF-01, Pauta 6.0.1), then tells
+     * {@code then} whether it was written; says why when it was not.
+     */
+    private void saveTemplate(com.editora.template.Template t, java.util.function.Consumer<Boolean> then) {
+        com.editora.template.TemplateRegistry registry = templateRegistry;
+        if (registry == null) {
+            then.accept(false);
+            return;
         }
-        try {
-            templateRegistry.saveUserTemplate(t);
-            w.markSyncDirty();
-            return true;
-        } catch (java.io.IOException e) {
-            Dialogs.showAndWait(Dialogs.styled(new Alert(
-                    Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK)));
-            return false;
-        }
+        registry.later(
+                r -> {
+                    r.saveUserTemplate(t);
+                    return Boolean.TRUE;
+                },
+                (done, e) -> {
+                    if (e != null) {
+                        Dialogs.showAndWait(Dialogs.styled(new Alert(
+                                Alert.AlertType.ERROR,
+                                tr("settings.template.saveFailed", e.getMessage()),
+                                ButtonType.OK)));
+                        then.accept(false);
+                        return;
+                    }
+                    w.markSyncDirty();
+                    then.accept(true);
+                });
     }
 
     private void formRow(javafx.scene.layout.GridPane form, int rowIndex, String labelText, javafx.scene.Node field) {

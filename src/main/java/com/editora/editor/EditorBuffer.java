@@ -5175,6 +5175,11 @@ public class EditorBuffer implements TabContent {
         snippetKeys.setSnippetProvider(provider);
     }
 
+    /** How Tab learns whether a language's snippets are loaded, and waits for them (see BufferSnippets). */
+    public void setSnippetLoading(SnippetLoading loading) {
+        snippetKeys.setSnippetLoading(loading);
+    }
+
     public void setSnippetOfferProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
         snippetKeys.setSnippetOfferProvider(provider);
     }

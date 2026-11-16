@@ -133,6 +133,7 @@ class ProjectMapViewsFxTest {
         List<String> said = new CopyOnWriteArrayList<>();
         Harness h = FxTestSupport.callOnFx(() -> {
             ProjectMapView view = new ProjectMapView(path -> {}, path -> false, path -> false);
+            view.trails.io = Runnable::run; // trail files read and written in place: results land at once
             view.setOnStatus(said::add);
             view.setViewsPrompt((title, label, initial, onAccept) -> {
                 String answer = answers.poll();
@@ -449,6 +450,7 @@ class ProjectMapViewsFxTest {
     private Harness openRemembering(Path project, ProjectMapState remembered) throws Exception {
         return FxTestSupport.callOnFx(() -> {
             ProjectMapView view = new ProjectMapView(path -> {}, path -> false, path -> false);
+            view.trails.io = Runnable::run; // trail files read and written in place: results land at once
             Stage stage = new Stage();
             stage.setScene(new Scene(new StackPane(view), 1100, 780));
             stage.show();

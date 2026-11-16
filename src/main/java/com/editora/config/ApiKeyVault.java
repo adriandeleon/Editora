@@ -84,7 +84,7 @@ public final class ApiKeyVault {
                 }
             }
         } catch (SecretStoreException | RuntimeException e) {
-            vault.fallBack(e);
+            vault.fallBack(e, settings);
             settings.useApiKeyVault(vault);
             return vault;
         }
@@ -103,7 +103,7 @@ public final class ApiKeyVault {
         return vault;
     }
 
-    private boolean changed;
+    private volatile boolean changed;
 
     /** Whether {@link #open} or a later call changed the settings fields, so {@code settings.json} needs saving. */
     public boolean settingsChanged() {
@@ -144,6 +144,11 @@ public final class ApiKeyVault {
      * has then fallen back and the caller keeps the key in the settings field.
      */
     boolean put(AiProvider provider, String key) {
+        return put(provider, key, settings);
+    }
+
+    /** As {@link #put(AiProvider, String)}; a fall-back puts the keys held back into {@code fallBackInto}. */
+    private boolean put(AiProvider provider, String key, @Nullable Settings fallBackInto) {
         String value = key == null ? "" : key;
         if (value.equals(get(provider))) {
             return true;
@@ -157,14 +162,16 @@ public final class ApiKeyVault {
             }
             return true;
         } catch (SecretStoreException | RuntimeException e) {
-            fallBack(e);
+            fallBack(e, fallBackInto);
             return false;
         }
     }
 
     /**
      * Moves a key that appeared in the settings fields (a hand-edited {@code settings.json} re-read) into the
-     * keychain. Returns whether the fields changed.
+     * keychain. Returns whether the fields changed. Only {@code s} is changed, never the settings the vault is
+     * bound to: the re-read runs on the config writer's thread on a fresh {@code Settings} that the FX thread
+     * adopts later, so a keychain that refuses puts the keys it held back into {@code s} (PERF-01, Pauta 6.0.1).
      */
     boolean absorb(Settings s) {
         if (!inKeychain()) {
@@ -173,7 +180,7 @@ public final class ApiKeyVault {
         boolean moved = false;
         for (AiProvider p : PROVIDERS) {
             String raw = s.rawApiKey(p);
-            if (!raw.isBlank() && put(p, raw) && inKeychain()) {
+            if (!raw.isBlank() && put(p, raw, s) && inKeychain()) {
                 s.setRawApiKey(p, "");
                 moved = true;
             }
@@ -191,12 +198,14 @@ public final class ApiKeyVault {
         keys.put(provider, value);
     }
 
-    /** Keys go back to the settings fields; the keychain is not used again this session. */
-    private void fallBack(Exception e) {
+    /**
+     * Keys go back to the settings fields of {@code s} (the bound settings, on the thread that owns them, or a
+     * re-read copy the FX thread adopts later); the keychain is not used again this session.
+     */
+    private void fallBack(Exception e, @Nullable Settings s) {
         LOG.log(Level.WARNING, "System keychain not used for API keys: " + e.getMessage());
         failure = String.valueOf(e.getMessage());
         storage = Storage.SETTINGS_FILE;
-        Settings s = settings;
         if (s != null) {
             for (AiProvider p : PROVIDERS) {
                 String held = keys.get(p);

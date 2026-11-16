@@ -98,6 +98,10 @@ final class FxWindowFixture implements AutoCloseable {
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
+            // A window a command opens has its session read in place here, so a test gets it back at once; the
+            // read off the FX thread is StoresOffFxThreadFxTest's.
+            wm.sessionReads = FxWindowFixture::readAndWait;
+            wm.builtForTest = FxWindowFixture::readInPlace;
             MainController controller = wm.buildWindowForTest(zen, expert, simple, targets, noSession);
             onBuilt.accept(controller);
             return new FxWindowFixture(dir, shared, wm, controller);
@@ -145,10 +149,53 @@ final class FxWindowFixture implements AutoCloseable {
     private static final String EXPORT_DIR_PREFIX = "editora-fx-exports";
 
     /**
+     * A window's session read on a thread of its own (so it waits for the config writes queued before it, as the
+     * app's does) while the command waits for it: the window is built before the command returns.
+     */
+    static void readAndWait(Runnable read) {
+        try {
+            Thread.ofVirtual().name("window-session-read").start(read).join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Has a test window do in place, on the FX thread, the file work the app hands to threads of its own
+     * (PERF-01, Pauta 6.0.1): snippet and template files, project settings, shared run configurations. A test
+     * then sees the result as its step returns, as it did before the work left the FX thread; the work off the
+     * FX thread itself is StoresOffFxThreadFxTest's.
+     */
+    static void readInPlace(MainController controller) {
+        if (controller.snippetCoordinator != null) {
+            controller.snippetCoordinator.manager().fileWork = Runnable::run;
+        }
+        if (controller.templateActions.templates != null) {
+            controller.templateActions.templates.fileWork = Runnable::run;
+        }
+        controller.lspCoordinator.projectScope().reads = Runnable::run;
+        controller.runConfigurations.sharedFiles = Runnable::run;
+    }
+
+    /**
      * Boot a default window after {@code beforeWindows} has prepared the shared config — the place where
      * {@code App.start} does its own pre-window wiring (claiming the config dir, for one).
      */
     static FxWindowFixture create(Path dir, Consumer<SharedConfig> beforeWindows) throws Exception {
+        return create(dir, beforeWindows, true);
+    }
+
+    /**
+     * As {@link #create(Path, Consumer)}, but the window does its file work where the app does it: off the FX
+     * thread, on the threads that own it (StoresOffFxThreadFxTest).
+     */
+    static FxWindowFixture createWithFileWorkOffThread(Path dir, Consumer<SharedConfig> beforeWindows)
+            throws Exception {
+        return create(dir, beforeWindows, false);
+    }
+
+    private static FxWindowFixture create(Path dir, Consumer<SharedConfig> beforeWindows, boolean inPlace)
+            throws Exception {
         return FxTestSupport.callOnFx(() -> {
             boolean fresh = !savesLanguageServers(dir);
             ConfigManager bootstrap = new ConfigManager(dir);
@@ -162,6 +209,12 @@ final class FxWindowFixture implements AutoCloseable {
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
+            if (inPlace) {
+                // A window a command opens has its session read in place here, so a test gets it back at once;
+                // the read off the FX thread is StoresOffFxThreadFxTest's.
+                wm.sessionReads = FxWindowFixture::readAndWait;
+                wm.builtForTest = FxWindowFixture::readInPlace;
+            }
             MainController controller = wm.buildWindowForTest();
             return new FxWindowFixture(dir, shared, wm, controller);
         });
@@ -197,6 +250,10 @@ final class FxWindowFixture implements AutoCloseable {
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
+            // A window a command opens has its session read in place here, so a test gets it back at once; the
+            // read off the FX thread is StoresOffFxThreadFxTest's.
+            wm.sessionReads = FxWindowFixture::readAndWait;
+            wm.builtForTest = FxWindowFixture::readInPlace;
             MainController controller = wm.buildDiffWindowForTest(new WindowManager.DiffUiRequest(left, right));
             onBuilt.accept(controller);
             return new FxWindowFixture(dir, shared, wm, controller);

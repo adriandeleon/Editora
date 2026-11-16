@@ -4718,9 +4718,10 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Coalesces config writes to one per FX pulse and performs the disk I/O <em>off</em> the FX thread.
      * Many actions (especially a single Settings apply, which runs ~10 field setters back-to-back) request
      * a save several times in the same pulse; this collapses such a burst into a single end-of-pulse
-     * {@code saveAsync()} — which serializes a consistent snapshot on the FX thread, then writes it on the
+     * {@code saveAsync()} — which copies a consistent snapshot on the FX thread, then serializes and writes it on the
      * shared {@code ConfigWriter}'s daemon thread (further coalesced per file). No data-loss risk: the
-     * durable flush on quit goes through {@link #persistSession()}'s blocking {@code config.save()}, and all
+     * durable flush on quit is {@code Application.stop()}'s wait for the writer (after {@link #persistSession()}
+     * queued the session), and all
      * settings/session writes funnel through the one ordered writer queue, so an async write can never land
      * after and clobber that durable one.
      */
@@ -5458,17 +5459,25 @@ public class MainController implements com.editora.mcp.McpBridge {
             setError(tr("status.project.settingsNeedProject"));
             return;
         }
-        try {
-            Path file = com.editora.config.ProjectSettings.migrateLegacyForEditing(root);
-            if (!java.nio.file.Files.exists(file)) {
-                java.nio.file.Files.createDirectories(file.getParent());
-                java.nio.file.Files.writeString(file, tr("project.settings.template"));
-            }
-            fileWorkflows.openPath(file);
-            lspCoordinator.reloadProjectSettings(); // an edit here should take effect without a restart
-        } catch (java.io.IOException e) {
-            setError(tr("status.project.settingsFailed", e.getMessage()));
-        }
+        // Converted and seeded off the FX thread (PERF-01, Pauta 6.0.1); opened when that is done.
+        Path file = com.editora.config.ProjectSettings.fileFor(root);
+        String template = tr("project.settings.template");
+        com.editora.config.ProjectSettingsFile.later(
+                () -> {
+                    com.editora.config.ProjectSettings.migrateLegacyForEditing(root);
+                    if (!java.nio.file.Files.exists(file)) {
+                        java.nio.file.Files.createDirectories(file.getParent());
+                        java.nio.file.Files.writeString(file, template);
+                    }
+                },
+                failure -> {
+                    if (failure != null) {
+                        setError(tr("status.project.settingsFailed", failure.getMessage()));
+                        return;
+                    }
+                    fileWorkflows.openPath(file);
+                    lspCoordinator.reloadProjectSettings(); // an edit here should take effect without a restart
+                });
     }
 
     // ---- Personal Notes ----
@@ -5523,10 +5532,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     void exportConfig() {
-        // Saved HTTP responses (bodies, URLs) and AI API keys are asked about, off by default.
-        boolean askHttp = config.shared().hasHttpHistory(),
-                askKeys = config.shared().hasApiKeys(),
-                askPluginData = config.shared().hasPluginData();
+        // Saved HTTP responses (bodies, URLs) and AI API keys are asked about, off by default. Whether there are
+        // any is a listing of the config folder: made off the FX thread, the question asked when it lands.
+        var shared = config.shared();
+        java.util.concurrent.CompletableFuture.supplyAsync(
+                        () -> new boolean[] {shared.hasHttpHistory(), shared.hasPluginData()},
+                        com.editora.process.BlockingTasks.named("export-config-scan"))
+                .thenAcceptAsync(
+                        found -> exportConfig(found[0], config.shared().hasApiKeys(), found[1]), Platform::runLater);
+    }
+
+    private void exportConfig(boolean askHttp, boolean askKeys, boolean askPluginData) {
         var choice = askHttp || askKeys || askPluginData
                 ? ExportConfigDialog.ask(stage, askHttp, askKeys, askPluginData)
                 : java.util.Optional.of(new ExportConfigDialog.Choice(false, false, false));

@@ -489,6 +489,10 @@ class SettingsFrameFxTest {
             assertTrue(seen[0].contains("settings.json.before-reset-"), "the dialog names the backup: " + seen[0]);
             assertTrue(seen[0].contains(com.editora.i18n.Messages.tr("settings.restore.button")), "and how to undo it");
             assertEquals("true", seen[1], "Enter cancels");
+            // The backup is written on the config writer's thread first; the reset follows when it lands.
+            SettingsRig.awaitFx(
+                    "the reset",
+                    () -> config.getSettings().getFontSize() == new com.editora.config.Settings().getFontSize());
             FxTestSupport.runOnFx(() -> {
                 assertEquals(
                         new com.editora.config.Settings().getFontSize(),
@@ -501,9 +505,17 @@ class SettingsFrameFxTest {
 
             // Restore from Backup… puts the reset settings back (and backs up the defaults first).
             // The backup is asked for in a picker over the Settings window itself, newest first.
+            FxTestSupport.runOnFx(() -> ((SettingsResetFlow) FxTestSupport.call(window, "resetFlow", new Class<?>[0]))
+                    .restore(FxTestSupport.<Stage>field(window, "stage")));
+            // The backups are listed off the FX thread; the picker shows when the list lands.
+            SettingsRig.awaitFx("the backup picker", () -> {
+                try {
+                    return OverlayDriver.card(FxTestSupport.<OverlayHost>field(window, "overlay")) != null;
+                } catch (RuntimeException | AssertionError notYet) {
+                    return false;
+                }
+            });
             FxTestSupport.runOnFx(() -> {
-                ((SettingsResetFlow) FxTestSupport.call(window, "resetFlow", new Class<?>[0]))
-                        .restore(FxTestSupport.<Stage>field(window, "stage"));
                 javafx.scene.Node card = OverlayDriver.card(FxTestSupport.<OverlayHost>field(window, "overlay"));
                 @SuppressWarnings("unchecked")
                 javafx.scene.control.ListView<java.nio.file.Path> backups =
@@ -511,6 +523,8 @@ class SettingsFrameFxTest {
                 assertEquals(SettingsResetFlow.backups(config.getSettingsFile()), List.copyOf(backups.getItems()));
                 OverlayDriver.pick(card, backups.getItems().get(0));
             });
+            // Backed up, copied back and re-read on the config writer's thread; applied when that lands.
+            SettingsRig.awaitFx("the restore", () -> config.getSettings().getFontSize() == 21);
             FxTestSupport.runOnFx(() -> {
                 assertEquals(21, config.getSettings().getFontSize(), "the backup is in force again");
                 Spinner<Integer> fontSize = FxTestSupport.field(window, "fontSize");

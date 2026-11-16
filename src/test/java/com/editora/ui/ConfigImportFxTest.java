@@ -115,6 +115,9 @@ class ConfigImportFxTest {
         assertNull(outcome.failure(), outcome.failure());
         assertEquals(1, run.getKey().leftOut());
         assertEquals(EnumSet.of(Part.MACROS), outcome.needRestart(), "only macros wait for a restart");
+        // The abbreviations are re-read on the config writer and applied on FX when the read lands.
+        fx.shared.awaitWrites();
+        FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
             assertEquals(19, fx.shared.getSettings().getFontSize(), "preferences apply at once");
             assertTrue(

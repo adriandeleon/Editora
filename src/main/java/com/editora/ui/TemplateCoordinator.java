@@ -290,7 +290,16 @@ final class TemplateCoordinator {
     }
 
     private void pickTemplate(String title, Predicate<Template> filter, Consumer<Template> onChoose) {
-        TemplateRegistry.Loaded loaded = templates().load();
+        // Read on the template thread (PERF-01, Pauta 6.0.1); the picker shows when the list lands.
+        templates().later(TemplateRegistry::load, (loaded, failure) -> {
+            if (loaded != null) {
+                pickTemplate(title, filter, onChoose, loaded);
+            }
+        });
+    }
+
+    private void pickTemplate(
+            String title, Predicate<Template> filter, Consumer<Template> onChoose, TemplateRegistry.Loaded loaded) {
         List<Template> all = loaded.templates().stream().filter(filter).toList();
         if (all.isEmpty()) {
             host.setStatus(tr("status.noTemplates"));
@@ -1025,12 +1034,16 @@ final class TemplateCoordinator {
 
     /** {@code template.reload}: re-reads every source and reports the files that had to be skipped. */
     void reloadTemplates() {
-        TemplateRegistry.Loaded loaded = templates().load();
-        if (loaded.problems().isEmpty()) {
-            host.setStatus(tr("status.templatesReloaded"));
-        } else {
-            host.setError(problemsMessage(loaded.problems()));
-        }
+        templates().later(TemplateRegistry::load, (loaded, failure) -> {
+            if (loaded == null) {
+                return;
+            }
+            if (loaded.problems().isEmpty()) {
+                host.setStatus(tr("status.templatesReloaded"));
+            } else {
+                host.setError(problemsMessage(loaded.problems()));
+            }
+        });
     }
 
     /** "2 template files were skipped — a.json: reason; b.json: reason". */
@@ -1068,30 +1081,50 @@ final class TemplateCoordinator {
      * The chosen JSON opens in the editor. Nothing is created until a row that says so is chosen.
      */
     void editUserTemplates() {
-        QuickOpen<EditRow> picker = new QuickOpen<>(
-                tr("template.edit.title"),
-                tr("template.picker.prompt"),
-                this::editRows,
-                EditRow::label,
-                EditRow::detail,
-                row -> row.action().run());
-        picker.setPreferredSize(820, 8);
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.stage());
+        // The folders are read on the template thread (PERF-01, Pauta 6.0.1); the picker shows when they land.
+        templates().later(TemplateCoordinator::readEditData, (data, failure) -> {
+            if (data == null) {
+                return;
+            }
+            List<EditRow> rows = editRows(data);
+            QuickOpen<EditRow> picker = new QuickOpen<>(
+                    tr("template.edit.title"),
+                    tr("template.picker.prompt"),
+                    () -> rows,
+                    EditRow::label,
+                    EditRow::detail,
+                    row -> row.action().run());
+            picker.setPreferredSize(820, 8);
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.stage());
+        });
     }
 
+    /** What the Edit User Templates picker lists, as read from the folders. */
+    record EditData(TemplateRegistry.Loaded loaded, List<Template> userTemplates, List<Path> userFiles) {}
+
+    /** Reads {@link EditData}: blocking, for the template thread. */
+    static EditData readEditData(TemplateRegistry registry) {
+        return new EditData(registry.load(), registry.userTemplates(), registry.userFiles());
+    }
+
+    /** The picker's rows, read now (blocking: for a test). */
     List<EditRow> editRows() {
-        TemplateRegistry.Loaded loaded = templates().load();
+        return editRows(readEditData(templates()));
+    }
+
+    List<EditRow> editRows(EditData data) {
+        TemplateRegistry.Loaded loaded = data.loaded();
         Map<Path, TemplateRegistry.Problem> broken = new LinkedHashMap<>();
         for (TemplateRegistry.Problem p : loaded.problems()) {
             broken.put(p.file(), p);
         }
         Map<String, Template> userById = new LinkedHashMap<>();
-        for (Template t : templates().userTemplates()) {
+        for (Template t : data.userTemplates()) {
             userById.put(t.id(), t);
         }
         List<EditRow> rows = new ArrayList<>();
-        for (Path file : templates().userFiles()) {
+        for (Path file : data.userFiles()) {
             String fileName = file.getFileName().toString();
             String id = fileName.substring(0, fileName.lastIndexOf('.'));
             TemplateRegistry.Problem problem = broken.get(file);
@@ -1114,28 +1147,34 @@ final class TemplateCoordinator {
     }
 
     private void customize(Template t) {
-        try {
-            openTemplateFile(templates().duplicateToUser(t));
-        } catch (IOException e) {
-            host.setError(tr("status.templateOpenFailed", e.getMessage()));
-        }
+        templates().later(r -> r.duplicateToUser(t), this::openOrSay);
     }
 
-    /** Writes a starter template under a free id and opens it. */
+    /** Writes a starter template under a free id (on the template thread) and opens it. */
     private void newUserTemplate() {
-        try {
-            Set<String> taken =
-                    templates().load().templates().stream().map(Template::id).collect(Collectors.toSet());
-            String id = "my-template";
-            for (int n = 2; taken.contains(id) || Files.exists(templates().userFile(id)); n++) {
-                id = "my-template-" + n;
-            }
-            Path file = templates().userDir().resolve(id + ".json");
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, USER_TEMPLATE_EXAMPLE, java.nio.file.StandardOpenOption.CREATE_NEW);
+        templates()
+                .later(
+                        r -> {
+                            Set<String> taken = r.load().templates().stream()
+                                    .map(Template::id)
+                                    .collect(Collectors.toSet());
+                            String id = "my-template";
+                            for (int n = 2; taken.contains(id) || Files.exists(r.userFile(id)); n++) {
+                                id = "my-template-" + n;
+                            }
+                            Path file = r.userDir().resolve(id + ".json");
+                            Files.createDirectories(file.getParent());
+                            Files.writeString(file, USER_TEMPLATE_EXAMPLE, java.nio.file.StandardOpenOption.CREATE_NEW);
+                            return file;
+                        },
+                        this::openOrSay);
+    }
+
+    private void openOrSay(@Nullable Path file, @Nullable IOException failure) {
+        if (file != null) {
             openTemplateFile(file);
-        } catch (IOException e) {
-            host.setError(tr("status.templateOpenFailed", e.getMessage()));
+        } else {
+            host.setError(tr("status.templateOpenFailed", failure == null ? "" : failure.getMessage()));
         }
     }
 

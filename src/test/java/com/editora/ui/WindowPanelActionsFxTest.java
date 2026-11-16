@@ -128,6 +128,7 @@ class WindowPanelActionsFxTest {
             settings.setNotesSupport(false);
             assertFalse(markers.personalNotesEnabled());
         });
+        fx.shared.awaitWrites(); // written on the config writer's thread
         assertTrue(
                 Files.readString(fx.configDir.resolve("bookmarks.json")).contains("marked.txt"),
                 "a bookmark is saved when it is set");
