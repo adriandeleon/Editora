@@ -1016,6 +1016,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Windows open centred on the editor window.** The detached Agent window opened in the middle of the screen,
+  and a few error alerts (a template that failed to save, any dialog asked with no window behind it) did too. They
+  now open over the editor window in front, centred on it, as Settings, Run Configurations and the debugger windows
+  already did. A floating tool window opened for the first time is also kept wholly on the editor's screen.
 - **View: Split Tool Window Side shows its picker.** The command found the tool windows that could join a side and
   then showed nothing: its picker had never been given the place it opens in.
 
