@@ -481,6 +481,25 @@ public final class DapManager {
         shared.programConsole = programConsole;
     }
 
+    /** Template breakpoints for the Python sessions started from now on ({@link PythonTemplates}). */
+    public void setPythonTemplates(PythonTemplates.Mode mode) {
+        shared.pythonTemplates = mode == null ? PythonTemplates.Mode.AUTO : mode;
+    }
+
+    /** What the project in {@code dir} uses, read from its files (none for a folder not on this machine). */
+    static PythonTemplates.Found templatesIn(@Nullable Path dir) {
+        return PythonTemplates.detect(
+                dir,
+                file -> {
+                    try {
+                        return Files.isRegularFile(file) && Files.size(file) < 512_000 ? Files.readString(file) : null;
+                    } catch (Exception e) {
+                        return null;
+                    }
+                },
+                Files::isRegularFile);
+    }
+
     /** Whether a Python launch debugs its subprocesses too, each in a session of its own; from the next launch on. */
     public void setPythonSubprocesses(boolean on) {
         shared.pythonSubprocesses = on;
@@ -5933,9 +5952,14 @@ public final class DapManager {
             int limit = shared.evaluationTimeLimit;
             GoGoroutines.Options goroutines = shared.goGoroutines;
             liveGoGoroutines = goroutines;
-            candidate.setLaunchDecorator( // Don't step into, the evaluation time limit, Go's goroutine options
-                    args -> GoGoroutines.decorate(
-                            EvaluationLimits.decorate(StepFilters.decorate(language, args, skips), limit), goroutines));
+            PythonTemplates.Mode templates = shared.pythonTemplates;
+            candidate.setLaunchDecorator( // Don't step into, the evaluation time limit, Go's goroutines, templates
+                    args -> PythonTemplates.decorate(
+                            GoGoroutines.decorate(
+                                    EvaluationLimits.decorate(StepFilters.decorate(language, args, skips), limit),
+                                    goroutines),
+                            templates,
+                            DapManager::templatesIn));
             candidate.setEvaluationWait(EvaluationLimits.wait(limit));
             candidate.setHexValues(shared.hexValues);
             client = candidate;
