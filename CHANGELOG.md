@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Show Value As.** Right-click a number in the Variables view or a watch and choose Show Value As ▸ Decimal,
+  Hexadecimal, Binary, Octal or Character to see that one value that way, while the others stay as they are. A
+  negative number shows as its two's complement for its type (`-42` as an `int` is `0xffffffd6`), a `char` shows its
+  code, and choosing it on an array or object shows all the numbers in it that way. The choice stays at the next stop
+  and in the next session until the window closes, and Copy Value copies what you see. It works with every debugger,
+  including those that ignore Show Numbers as Hexadecimal (CodeLLDB, Delve, js-debug).
 - **Set Value on a watch.** Right-click a watch while the program is paused and choose Set Value… to give its
   expression a new value — a variable, a field, an element — as IntelliJ and Visual Studio allow. Python and
   JavaScript set the expression directly; Java, Go and C/C++ set the variable a watch names, or (Java) evaluate the

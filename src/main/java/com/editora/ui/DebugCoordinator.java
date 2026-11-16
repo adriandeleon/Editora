@@ -2684,6 +2684,11 @@ final class DebugCoordinator {
             }
 
             @Override
+            public java.util.Map<String, com.editora.dap.NumberViews.Radix> valueFormats() {
+                return valueFormats; // Show Value As: the window's, every session's
+            }
+
+            @Override
             public void openText(String title, String text, String language) {
                 ops.openReadOnlyDoc(title, text, language);
             }
@@ -3473,6 +3478,9 @@ final class DebugCoordinator {
 
     /** The launch.json configuration last started, by launch.json: the picker offers it first. */
     private final java.util.Map<Path, String> lastConfiguration = new java.util.HashMap<>();
+
+    /** Show Value As: the radix chosen for each value, by language and expression, while the window is open. */
+    private final java.util.Map<String, com.editora.dap.NumberViews.Radix> valueFormats = new java.util.HashMap<>();
 
     /** The user's {@code debug-adapters.json}: the config folder's (null without one). */
     private @Nullable Path userAdaptersFile() {

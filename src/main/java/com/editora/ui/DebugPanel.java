@@ -321,6 +321,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         /** Show numbers in hexadecimal ({@code on}) or decimal, and fetch the values shown again. */
         default void setHexValues(boolean on) {}
+
+        /**
+         * Show Value As: the radix chosen for each value, by its language and expression, kept for the window (every
+         * session's panel shares it); null: this panel keeps its own.
+         */
+        default java.util.@Nullable Map<String, com.editora.dap.NumberViews.Radix> valueFormats() {
+            return null;
+        }
     }
 
     private final Actions actions;
@@ -583,6 +591,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             this(name, value, type, ref, parentRef, kind, named, indexed, failed, null);
         }
 
+        /** This row with {@code shown} as its value (Show Value As). */
+        VarRow withValue(String shown) {
+            return new VarRow(name, shown, type, ref, parentRef, kind, named, indexed, failed, note, evaluateName);
+        }
+
         /** Not loaded within the stop's budget: a click (or expanding it) loads it (B201). */
         boolean notLoaded() {
             return note == DapModels.ValueNote.NOT_LOADED;
@@ -822,7 +835,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 setGraphic(
                         empty || row == null
                                 ? null
-                                : renderRow(row, changed(getTreeItem(), row), marks.labelOf(row.value())));
+                                : renderRow(
+                                        shown(getTreeItem(), row),
+                                        changed(getTreeItem(), row),
+                                        marks.labelOf(row.value())));
             }
         });
         // Watches interactions: double-click "+ Add watch…" adds, double-click a watch edits; the
@@ -870,7 +886,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     e.consume();
                 }
             } else if (e.getCode() == javafx.scene.input.KeyCode.C && e.isShortcutDown() && selectedRow() != null) {
-                copyToClipboard(DebugPanelText.copyValue(selectedRow().value())); // review C7
+                copyToClipboard(DebugPanelText.copyValue(shownOf(selectedRow()).value())); // review C7, as shown
                 e.consume();
             } else if (e.getCode() == javafx.scene.input.KeyCode.DELETE
                     && selectedRow() != null
@@ -2407,8 +2423,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             // Review C7: a value could not be copied at all, and Add Watch started from an empty prompt.
             javafx.scene.control.MenuItem copyValue = new javafx.scene.control.MenuItem(tr("debugpanel.copyValue"));
             com.editora.editor.MenuChords.tag(copyValue, "debug.copySelectedValue");
-            copyValue.setOnAction(e ->
-                    copyToClipboard(row.kind() == Kind.EXCEPTION ? row.name() : DebugPanelText.copyValue(row.value())));
+            VarRow shownRow = shownOf(row);
+            copyValue.setOnAction(e -> copyToClipboard(
+                    row.kind() == Kind.EXCEPTION ? row.name() : DebugPanelText.copyValue(shownRow.value())));
             menu.getItems().add(copyValue);
             if (row.kind() != Kind.EXCEPTION) {
                 javafx.scene.control.MenuItem copyName = new javafx.scene.control.MenuItem(tr("debugpanel.copyName"));
@@ -2486,6 +2503,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 menu.getItems().addAll(markItems(row));
                 if (StringViews.isString(row.value())) {
                     menu.getItems().add(viewAsMenu(row));
+                }
+                if (!row.failed()) {
+                    menu.getItems().add(showAsMenu(variables.getSelectionModel().getSelectedItem()));
                 }
                 if (row.ref() > 0
                         && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.RESULT)) {
@@ -2892,6 +2912,139 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    // --- Show Value As: a number in the radix chosen for it --------------------------------------------
+
+    /** The radixes Show Value As offers, with each one's command. */
+    private static final List<com.editora.dap.NumberViews.Radix> RADIXES =
+            List.of(com.editora.dap.NumberViews.Radix.values());
+
+    /** Show Value As kept by this panel when the host keeps none ({@link Actions#valueFormats}). */
+    private final java.util.Map<String, com.editora.dap.NumberViews.Radix> ownFormats = new java.util.HashMap<>();
+
+    private java.util.Map<String, com.editora.dap.NumberViews.Radix> formats() {
+        java.util.Map<String, com.editora.dap.NumberViews.Radix> host = actions.valueFormats();
+        return host != null ? host : ownFormats;
+    }
+
+    /** The command that shows the selected value in {@code radix} ({@code debug.showSelectedAsHex}…). */
+    static String showAsCommand(com.editora.dap.NumberViews.Radix radix) {
+        return switch (radix) {
+            case DEFAULT -> "debug.showSelectedAsDefault";
+            case DECIMAL -> "debug.showSelectedAsDecimal";
+            case HEX -> "debug.showSelectedAsHex";
+            case BINARY -> "debug.showSelectedAsBinary";
+            case OCTAL -> "debug.showSelectedAsOctal";
+            case CHARACTER -> "debug.showSelectedAsCharacter";
+        };
+    }
+
+    /**
+     * What a value's radix is kept by: the session's language and the value's expression (a watch's or the evaluate
+     * field's text), so the same value keeps it at the next stop and in the next session. Null for a row that is no
+     * value.
+     */
+    private @Nullable String formatKey(@Nullable TreeItem<VarRow> item) {
+        if (item == null || item.getValue() == null) {
+            return null;
+        }
+        VarRow r = item.getValue();
+        String e = switch (r.kind()) {
+            case VARIABLE -> expression(item);
+            case WATCH, RESULT -> r.name();
+            default -> null;
+        };
+        return e == null || e.isBlank() ? null : actions.language() + "\0" + e;
+    }
+
+    /**
+     * The radix chosen for {@code item}'s value, or for the nearest value above it: one chosen for an array or an
+     * object is its elements' and fields' too, until one of them has its own.
+     */
+    com.editora.dap.NumberViews.Radix radixFor(@Nullable TreeItem<VarRow> item) {
+        java.util.Map<String, com.editora.dap.NumberViews.Radix> formats = formats();
+        if (formats.isEmpty()) {
+            return com.editora.dap.NumberViews.Radix.DEFAULT;
+        }
+        for (TreeItem<VarRow> i = item; i != null && i.getValue() != null; i = i.getParent()) {
+            String key = formatKey(i);
+            if (key == null) {
+                break;
+            }
+            com.editora.dap.NumberViews.Radix r = formats.get(key);
+            if (r != null) {
+                return r;
+            }
+        }
+        return com.editora.dap.NumberViews.Radix.DEFAULT;
+    }
+
+    /** {@code row} as shown: its value in the radix chosen for it, when it is a whole number. */
+    VarRow shown(@Nullable TreeItem<VarRow> item, VarRow row) {
+        if (row.failed() || (row.kind() != Kind.VARIABLE && row.kind() != Kind.WATCH && row.kind() != Kind.RESULT)) {
+            return row;
+        }
+        com.editora.dap.NumberViews.Radix radix = radixFor(item);
+        if (radix == com.editora.dap.NumberViews.Radix.DEFAULT) {
+            return row;
+        }
+        String formatted = com.editora.dap.NumberViews.format(row.value(), row.type(), actions.language(), radix);
+        return formatted == null ? row : row.withValue(formatted);
+    }
+
+    /** {@code row}, the selected one, as shown. */
+    private VarRow shownOf(VarRow row) {
+        return shown(variables.getSelectionModel().getSelectedItem(), row);
+    }
+
+    /** The selected row as shown (Copy Value copies what is on screen). */
+    private @Nullable VarRow shownSelected() {
+        TreeItem<VarRow> item = variables.getSelectionModel().getSelectedItem();
+        VarRow row = item == null ? null : item.getValue();
+        return row == null ? null : shown(item, row);
+    }
+
+    /**
+     * Show Value As ▸ As the Debugger Shows It, Decimal, Hexadecimal, Binary, Octal, Character: for a whole number,
+     * and for an array or object, whose numbers it shows that way. Grayed, saying why, for any other value.
+     */
+    private javafx.scene.control.Menu showAsMenu(TreeItem<VarRow> item) {
+        javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("debugpanel.showAs"));
+        VarRow row = item == null ? null : item.getValue();
+        String key = formatKey(item);
+        boolean number =
+                row != null && com.editora.dap.NumberViews.isNumber(row.value(), row.type(), actions.language());
+        com.editora.dap.NumberViews.Radix current = radixFor(item);
+        javafx.scene.control.ToggleGroup group = new javafx.scene.control.ToggleGroup();
+        for (com.editora.dap.NumberViews.Radix radix : RADIXES) {
+            javafx.scene.control.RadioMenuItem choice = new javafx.scene.control.RadioMenuItem(
+                    tr("debugpanel.showAs." + radix.name().toLowerCase(java.util.Locale.ROOT)));
+            choice.setToggleGroup(group);
+            choice.setSelected(radix == current);
+            com.editora.editor.MenuChords.tag(choice, showAsCommand(radix));
+            choice.setOnAction(e -> showAs(key, radix));
+            menu.getItems().add(choice);
+        }
+        boolean offered = key != null && row != null && (number || row.ref() > 0);
+        com.editora.editor.RowReasons.when(menu, offered, "debugpanel.showAs.notANumber");
+        for (javafx.scene.control.MenuItem choice : menu.getItems()) {
+            com.editora.editor.RowReasons.when(choice, offered, "debugpanel.showAs.notANumber");
+        }
+        return menu;
+    }
+
+    /** Shows the value kept by {@code key} (and the numbers under it) in {@code radix}, from now on. */
+    private void showAs(@Nullable String key, com.editora.dap.NumberViews.Radix radix) {
+        if (key == null) {
+            return;
+        }
+        if (radix == com.editora.dap.NumberViews.Radix.DEFAULT) {
+            formats().remove(key);
+        } else {
+            formats().put(key, radix);
+        }
+        variables.refresh();
+    }
+
     /** How View As shows a string. */
     enum ViewAs {
         JSON("json"),
@@ -3020,7 +3173,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** The Variables tree's selected row, its value copied (the {@code debug.copyValue} command). */
     public void copySelectedValue() {
-        VarRow row = selectedRow();
+        VarRow row = shownSelected();
         if (row != null) {
             copyToClipboard(DebugPanelText.copyValue(row.value()));
         }
