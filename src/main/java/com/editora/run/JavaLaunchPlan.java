@@ -82,14 +82,19 @@ public record JavaLaunchPlan(
          * project, the host's configured JDK, this machine's environment for {@code $NAME}.
          */
         public static Inputs of(Path root, String mavenJdkSetting) {
-            boolean maven;
-            try {
-                maven = root != null && java.nio.file.Files.isRegularFile(root.resolve("pom.xml"));
-            } catch (RuntimeException e) {
-                maven = false;
-            }
+            boolean maven = root != null && Boolean.TRUE.equals(POM_AT.get(root));
             return of(root, mavenJdkSetting, maven);
         }
+
+        /** The pom's stat: off the FX thread by a launch's plan, answered from memory on it (PERF-01). */
+        private static final com.editora.perf.Looked<Path, Boolean> POM_AT =
+                new com.editora.perf.Looked<>("JavaLaunchPlan.Inputs", root -> {
+                    try {
+                        return java.nio.file.Files.isRegularFile(root.resolve("pom.xml"));
+                    } catch (RuntimeException e) {
+                        return false;
+                    }
+                });
 
         /** As {@link #of(Path, String)}, told whether {@code root} is a Maven project. */
         public static Inputs of(Path root, String mavenJdkSetting, boolean maven) {

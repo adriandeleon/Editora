@@ -130,6 +130,9 @@ final class RunCoordinator {
         /** Whether {@code root} holds a Gradle build file ({@code build.gradle[.kts]}). */
         boolean gradleProjectAt(Path root);
 
+        /** Looks, on this (a plan's) thread, at what {@link #buildExecutable} asks of the disk for {@code root}. */
+        default void warmBuildExecutable(com.editora.build.BuildTool tool, Path root) {}
+
         /** Resolves the Maven module's launch classpath off-thread ({@code mvn compile
          *  dependency:build-classpath} + {@code target/classes}); delivers null/empty on failure. FX thread. */
         void resolveMavenClasspath(Path root, Consumer<List<String>> cb);
@@ -410,15 +413,6 @@ final class RunCoordinator {
         return gate == null || ops.buildExecutable(gate.tool(), gate.root()) != null;
     }
 
-    /** The workspace-trust gate Run File on {@code path} has to pass ({@link RunTrust#forFile}), or null. */
-    private RunTrust.@Nullable Gate fileTrustGate(EditorBuffer buffer, Path path) {
-        if ("scala".equals(buffer.getLanguage()) && !com.editora.process.ExecTargets.runsHere(path)) {
-            return null; // Scala CLI is given a remote file alone (scalaCliInputs)
-        }
-        return RunTrust.forFile(
-                buffer.getLanguage(), path, buffer.getContent(), ops.projectRoot(), java.nio.file.Files::isRegularFile);
-    }
-
     /**
      * Runs a test command (pytest, unittest) in this console: its lines and exit also go to {@code hooks}, and
      * Rerun repeats it through {@code rerun}. False, having said why, when another program is running or a
@@ -512,36 +506,51 @@ final class RunCoordinator {
         // executables mean nothing.
         boolean remote = com.editora.vfs.Vfs.isRemote(cwd);
         boolean elsewhere = !com.editora.process.ExecTargets.runsHere(cwd);
-        Path script = RunConfigWorkingDirectory.script(cfg, configRoot(), cwd);
-        if (!remote) {
-            // Checked here, so the message names what is missing: a missing directory used to surface as
-            // "Cannot run program /usr/bin/bash … No such file or directory", blaming bash.
-            if (!java.nio.file.Files.isDirectory(cwd)) {
-                host.setStatus(tr("status.run.workingDirMissing", cfg.name(), cwd.toString()));
-                ops.editConfiguration(cfg.name());
-                return;
-            }
-            if (script != null && !java.nio.file.Files.isRegularFile(script)) {
-                host.setStatus(tr("status.run.scriptMissing", cfg.name(), script.toString()));
-                ops.editConfiguration(cfg.name());
-                return;
-            }
+        Path root = configRoot();
+        Path projectRoot = ops.projectRoot();
+        // What the configuration names on the disk is looked at off the FX thread (PERF-01, Pauta 6.0.1): the
+        // script, the folder, an env @file, the shebang, the interpreter.
+        offFx(
+                "run-config-plan",
+                () -> ScriptConfigPlan.of(cfg, root, projectRoot, cwd, remote, elsewhere),
+                plan -> runScriptConfigPlanned(cfg, args, cwd, remote, elsewhere, plan));
+    }
+
+    /** {@link #runScriptConfig} once its plan has been read off the FX thread. */
+    private void runScriptConfigPlanned(
+            RunConfiguration cfg,
+            List<String> args,
+            Path cwd,
+            boolean remote,
+            boolean elsewhere,
+            ScriptConfigPlan plan) {
+        Path script = plan.script();
+        if (plan.dirMissing()) {
+            // Checked before the launch, so the message names what is missing: a missing directory used to
+            // surface as "Cannot run program /usr/bin/bash … No such file or directory", blaming bash.
+            host.setStatus(tr("status.run.workingDirMissing", cfg.name(), cwd.toString()));
+            ops.editConfiguration(cfg.name());
+            return;
         }
-        java.util.Map<String, String> env;
-        try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), inheritedVariables(elsewhere), cwd);
-        } catch (ProgramArgs.UnclosedQuoteException e) {
+        if (plan.scriptMissing() && script != null) {
+            host.setStatus(tr("status.run.scriptMissing", cfg.name(), script.toString()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (plan.envError() instanceof ProgramArgs.UnclosedQuoteException e) {
             host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
             ops.editConfiguration(cfg.name());
             return;
-        } catch (com.editora.run.EnvVars.EnvFileException e) {
+        }
+        if (plan.envError() instanceof com.editora.run.EnvVars.EnvFileException e) {
             host.setStatus(
                     tr("status.run.envFileUnreadable", cfg.name(), e.file().toString()));
             ops.editConfiguration(cfg.name());
             return;
         }
+        java.util.Map<String, String> env = plan.env();
         if (ScriptRunCommand.isPython(cfg.type())) {
-            runPythonConfig(cfg, cwd, script, args, env, remote);
+            runPythonConfig(cfg, cwd, script, args, env, remote, plan.firstLine());
             return;
         }
         if (ScriptRunCommand.isJvmScript(cfg.type())) {
@@ -557,10 +566,7 @@ final class RunCoordinator {
                 reportIncomplete(cfg, "status.run.configNeedsTarget"); // a target that is no valid path
                 return;
             }
-            String missing = elsewhere
-                    ? null
-                    : com.editora.run.MissingProgram.missingInterpreter(
-                            cfg.interpreter(), p -> java.nio.file.Files.isRegularFile(java.nio.file.Path.of(p)));
+            String missing = plan.missingInterpreter();
             if (missing != null) {
                 // The configuration's own Interpreter names a file that is not there: say so and open the form,
                 // rather than "Node.js was not found (node) — set it in Settings" (review C104).
@@ -593,8 +599,10 @@ final class RunCoordinator {
         if (ScriptRunCommand.NPM.equals(cfg.type())) {
             // The project's own package manager (pnpm-lock.yaml → pnpm …), as the npm tool window runs it, and the
             // npm command setting when it is for that manager.
-            com.editora.build.NpmPackageManager.Detection detected =
-                    com.editora.build.BuildTool.npmManager(cwd, ops.projectRoot());
+            com.editora.build.NpmPackageManager.Detection detected = plan.npm();
+            if (detected == null) {
+                return; // not reached: an npm configuration's plan detects its manager
+            }
             String override = host.settings().getNpmCommand();
             List<String> manager = com.editora.build.BuildExecutable.resolve(
                     List.of(),
@@ -631,20 +639,21 @@ final class RunCoordinator {
             streamRun(cfg.name(), cwd, ScriptRunCommand.build(cfg.type(), cfg.target(), args), env, script);
             return;
         }
-        // A shell script runs under what its shebang asks for, unless the configuration names an interpreter.
-        // Reading the first line of a file on a remote host is a network round trip, so that one is off FX.
-        java.util.function.Consumer<String> launch = firstLine -> {
-            ShellCommand.Launch shell;
-            try {
-                shell = ShellCommand.launch(
-                        firstLine, cfg.target(), cfg.interpreter(), cfg.interpreterOptions(), existsHere(elsewhere));
-            } catch (ProgramArgs.UnclosedQuoteException e) {
+        // A shell script runs under what its shebang asks for, unless the configuration names an interpreter; the
+        // plan read its first line and looked for the interpreter and the shebang's folder.
+        {
+            if (plan.shellError() instanceof ProgramArgs.UnclosedQuoteException e) {
                 host.setStatus(tr("status.run.optionsUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
                 ops.editConfiguration(cfg.name());
                 return;
             }
-            Path dir = shebangDir(shell, cwd, remote); // a file check: not over the network
+            ShellCommand.Launch shell = plan.shell();
+            if (shell == null) {
+                return; // not reached: a shell configuration's plan has its launch or its error
+            }
+            Path dir = plan.shebangDir();
             if (dir == null) {
+                host.setStatus(tr("status.run.shebangDirMissing", String.valueOf(plan.missingShebangDir())));
                 return;
             }
             streamRun(
@@ -665,15 +674,7 @@ final class RunCoordinator {
                             shell),
                     shellEnvironment(shell, env, elsewhere), // this machine's variables only when it runs here
                     script);
-        };
-        if (!remote) {
-            launch.accept(firstLine(script));
-            return;
         }
-        Thread.ofVirtual().name("run-shebang").start(() -> {
-            String line = firstLine(script);
-            javafx.application.Platform.runLater(() -> launch.accept(line));
-        });
     }
 
     /**
@@ -686,7 +687,8 @@ final class RunCoordinator {
             @Nullable Path script,
             List<String> args,
             java.util.Map<String, String> env,
-            boolean remote) {
+            boolean remote,
+            @Nullable String firstLine) {
         List<String> options;
         try {
             options = ProgramArgs.parse(cfg.interpreterOptions());
@@ -705,7 +707,7 @@ final class RunCoordinator {
                 target,
                 module,
                 args,
-                module || remote ? null : firstLine(script),
+                module || remote ? null : firstLine,
                 cfg.interpreter(),
                 options,
                 ops.pythonInterpreterChoice(),
@@ -749,66 +751,94 @@ final class RunCoordinator {
             java.util.Map<String, String> env,
             boolean elsewhere) {
         String language = cfg.type();
-        // Leiningen, the Clojure CLI and Babashka load the project in the folder they run in: asked first, before
-        // anything is looked up, so "no" runs nothing at all.
-        RunTrust.Gate gate = com.editora.run.JvmScriptRun.trustGate(
-                language, script, cfg.workingDir().isBlank() && script != null ? null : cwd);
-        if (!trusted(gate)) {
-            return;
-        }
-        String toolName = script == null
-                ? com.editora.run.JvmScriptRun.tool(language)
-                : com.editora.run.JvmScriptRun.tool(language, script);
-        String tool = elsewhere || toolName == null ? toolName : com.editora.run.JvmTools.locate(toolName);
-        if (tool == null) {
-            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(toolName)));
-            return;
-        }
         String jdkHome = !cfg.jdkHome().isBlank()
                 ? cfg.jdkHome()
                 : elsewhere ? remoteJdkHome(cwd) : host.settings().getMavenJdkHome();
-        java.util.Map<String, String> launch = new java.util.LinkedHashMap<>(
-                elsewhere ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath()));
-        launch.putAll(env);
-        String target = script != null
-                ? com.editora.process.ExecTargets.forPath(script).toTargetPath(script)
-                : cfg.target().strip();
-        if (com.editora.run.KotlinRun.shape(target) == com.editora.run.KotlinRun.Shape.PROGRAM
-                && ScriptRunCommand.KOTLIN.equals(language)) {
-            if (elsewhere || script == null) {
-                host.setStatus(tr("status.run.kotlinProgramRemote"));
-                return;
-            }
-            java.util.Map<String, String> programEnv =
-                    new java.util.LinkedHashMap<>(JdkToolchain.environment(jdkHome, processPath()));
-            programEnv.putAll(env);
-            String java = JdkToolchain.javaExecutable(jdkHome);
-            runKotlinProgram(
-                    cfg.name(),
-                    script,
-                    cwd,
-                    java.isBlank() ? "java" : java,
-                    ProgramArgs.tokenize(cfg.vmArgs()),
-                    args,
-                    programEnv,
-                    tool);
-            return;
-        }
-        com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
-                language,
-                toolName,
-                tool,
-                script,
-                target,
-                args,
-                cfg.vmArgs(),
-                false,
-                launch,
-                elsewhere ? java.util.Map.of() : System.getenv());
-        Path dir = cfg.workingDir().isBlank() && how.directory() != null ? how.directory() : cwd;
-        pendingTrustGate = gate;
-        streamRun(cfg.name(), dir, how.argv(), how.env(), script);
+        // The script's head (for the trust question), the tool and the project the launch is planned by are read
+        // off the FX thread (PERF-01, Pauta 6.0.1); the question and the launch are made back on it.
+        offFx(
+                "run-jvm-script-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("JvmScriptRun.plan");
+                    // Leiningen, the Clojure CLI and Babashka load the project in the folder they run in: asked
+                    // first, before anything runs, so "no" runs nothing at all.
+                    RunTrust.Gate gate = com.editora.run.JvmScriptRun.trustGate(
+                            language, script, cfg.workingDir().isBlank() && script != null ? null : cwd);
+                    String toolName = script == null
+                            ? com.editora.run.JvmScriptRun.tool(language)
+                            : com.editora.run.JvmScriptRun.tool(language, script);
+                    String tool = elsewhere || toolName == null ? toolName : com.editora.run.JvmTools.locate(toolName);
+                    java.util.Map<String, String> launch = new java.util.LinkedHashMap<>(
+                            elsewhere
+                                    ? remoteJdkEnvironment(jdkHome)
+                                    : JdkToolchain.environment(jdkHome, processPath()));
+                    launch.putAll(env);
+                    String target = script != null
+                            ? com.editora.process.ExecTargets.forPath(script).toTargetPath(script)
+                            : cfg.target().strip();
+                    boolean kotlinProgram =
+                            com.editora.run.KotlinRun.shape(target) == com.editora.run.KotlinRun.Shape.PROGRAM
+                                    && ScriptRunCommand.KOTLIN.equals(language);
+                    com.editora.run.JvmScriptRun.Launch how = tool == null || kotlinProgram
+                            ? null
+                            : com.editora.run.JvmScriptRun.launch(
+                                    language,
+                                    toolName,
+                                    tool,
+                                    script,
+                                    target,
+                                    args,
+                                    cfg.vmArgs(),
+                                    false,
+                                    launch,
+                                    elsewhere ? java.util.Map.of() : System.getenv());
+                    return new JvmScriptPlan(gate, toolName, tool, kotlinProgram, how, launch);
+                },
+                plan -> {
+                    if (!trusted(plan.gate())) {
+                        return;
+                    }
+                    String tool = plan.tool();
+                    if (tool == null) {
+                        host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(plan.toolName())));
+                        return;
+                    }
+                    if (plan.kotlinProgram()) {
+                        if (elsewhere || script == null) {
+                            host.setStatus(tr("status.run.kotlinProgramRemote"));
+                            return;
+                        }
+                        java.util.Map<String, String> programEnv = plan.env(); // the JDK's, then the config's
+                        String java = JdkToolchain.javaExecutable(jdkHome);
+                        runKotlinProgram(
+                                cfg.name(),
+                                script,
+                                cwd,
+                                java.isBlank() ? "java" : java,
+                                ProgramArgs.tokenize(cfg.vmArgs()),
+                                args,
+                                programEnv,
+                                tool);
+                        return;
+                    }
+                    com.editora.run.JvmScriptRun.Launch how = plan.how();
+                    if (how == null) {
+                        return; // not reached: a tool that is there has its launch
+                    }
+                    Path dir = cfg.workingDir().isBlank() && how.directory() != null ? how.directory() : cwd;
+                    pendingTrustGate = plan.gate();
+                    streamRun(cfg.name(), dir, how.argv(), how.env(), script);
+                });
     }
+
+    /** What a JVM-script configuration's Run read off the FX thread: its trust gate, its tool and its launch. */
+    private record JvmScriptPlan(
+            RunTrust.@Nullable Gate gate,
+            @Nullable String toolName,
+            @Nullable String tool,
+            boolean kotlinProgram,
+            com.editora.run.JvmScriptRun.@Nullable Launch how,
+            java.util.Map<String, String> env) {}
 
     /**
      * Runs Kotlin program {@code source}: compiled by {@code kotlinc} into a jar cached by its content (in the Run
@@ -825,13 +855,28 @@ final class RunCoordinator {
             List<String> args,
             java.util.Map<String, String> env,
             String kotlinc) {
-        com.editora.run.KotlinBuild.Plan plan;
-        try {
-            plan = com.editora.run.KotlinBuild.plan(source, kotlinc, host.configDir());
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("status.run.failed", e.getMessage()));
-            return;
-        }
+        // The source is read and hashed, and the jar cache looked at, off the FX thread (PERF-01, Pauta 6.0.1).
+        Path configDir = host.configDir();
+        offFx(
+                "kotlin-run-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("KotlinBuild.plan");
+                    return com.editora.run.KotlinBuild.plan(source, kotlinc, configDir);
+                },
+                plan -> runKotlinPlan(label, source, cwd, javaExecutable, jvmOptions, args, env, kotlinc, plan));
+    }
+
+    /** {@link #runKotlinProgram} once its plan is known: compiles when it must, then runs the jar. */
+    private void runKotlinPlan(
+            String label,
+            Path source,
+            @Nullable Path cwd,
+            String javaExecutable,
+            List<String> jvmOptions,
+            List<String> args,
+            java.util.Map<String, String> env,
+            String kotlinc,
+            com.editora.run.KotlinBuild.Plan plan) {
         List<String> command = com.editora.run.KotlinRun.programArgv(
                 javaExecutable, jvmOptions, plan.jar().toString(), args);
         Runnable launch = () -> {
@@ -851,17 +896,68 @@ final class RunCoordinator {
                 cwd,
                 env,
                 compileConsole(source.getParent(), true), // kotlinc's error lines name the file: links resolve
-                () -> {
-                    try {
-                        com.editora.run.KotlinBuild.finish(plan);
-                    } catch (java.io.IOException e) {
-                        host.setStatus(tr("status.run.failed", e.getMessage()));
-                        return;
-                    }
-                    launch.run();
-                });
+                () -> offFx(
+                        "kotlin-run-finish",
+                        () -> {
+                            com.editora.perf.BlockingSites.enter("KotlinBuild.finish");
+                            com.editora.run.KotlinBuild.finish(plan);
+                            return plan;
+                        },
+                        done -> launch.run()));
         ops.onRunStateChanged(); // the compile is running now: the toolbar's Stop button applies to it
     }
+
+    /**
+     * Runs {@code work} — the disk work a Run plans its program by — on a virtual thread called {@code thread}
+     * (PERF-01, Pauta 6.0.1), then {@code then} with its answer on the FX thread. Meanwhile the console counts as
+     * running (a second Run is refused, Stop drops the answer); a failure is said in the status line, as a failed
+     * plan was.
+     */
+    private <T> void offFx(String thread, java.util.concurrent.Callable<T> work, Consumer<T> then) {
+        locatingProgram = true;
+        long generation = ++locateGeneration;
+        ops.onRunStateChanged();
+        planner.accept(thread, () -> {
+            T value = null;
+            Exception error = null;
+            try {
+                value = work.call();
+            } catch (Exception e) {
+                error = e;
+            }
+            T answer = value;
+            Exception failed = error;
+            Runnable land = () -> {
+                if (generation != locateGeneration || !locatingProgram) {
+                    return; // stopped meanwhile
+                }
+                locatingProgram = false;
+                ops.onRunStateChanged();
+                if (failed != null || answer == null) {
+                    host.setStatus(tr("status.run.failed", failed == null ? "" : String.valueOf(failed.getMessage())));
+                    return;
+                }
+                then.accept(answer);
+            };
+            onFxThread(land);
+        });
+    }
+
+    /** {@code action} now on the FX thread (a plan made in place, a test's planner), else later on it. */
+    private static void onFxThread(Runnable action) {
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            action.run();
+        } else {
+            javafx.application.Platform.runLater(action);
+        }
+    }
+
+    /**
+     * Where a Run's plan is read: a virtual thread named for it. TEST SEAM — a test that drives the coordinator
+     * directly may plan in place ({@code (name, task) -> task.run()}), and then the plan lands at once.
+     */
+    java.util.function.BiConsumer<String, Runnable> planner =
+            (name, task) -> Thread.ofVirtual().name(name).start(task);
 
     /**
      * The Run console as a compile before a program shows itself in it: its command line and output, and how it
@@ -969,10 +1065,21 @@ final class RunCoordinator {
     /** A C or C++ file: {@link com.editora.dap.NativeBuild}'s plan for it, then the program that made. */
     private void runNative(CompiledRun run, boolean cpp) {
         Path source = run.source();
-        Path cmake = com.editora.dap.NativeBuild.cmakeRoot(source);
-        Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(source) : null;
-        com.editora.dap.NativeBuild.Plan plan =
-                com.editora.dap.NativeBuild.plan(source, cpp, cmake, make, builtProgramsDir());
+        Path programs = builtProgramsDir();
+        // The project's build files are looked for off the FX thread (PERF-01, Pauta 6.0.1).
+        offFx(
+                "run-native-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("NativeBuild.plan");
+                    Path cmake = com.editora.dap.NativeBuild.cmakeRoot(source);
+                    Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(source) : null;
+                    return java.util.Optional.ofNullable(
+                            com.editora.dap.NativeBuild.plan(source, cpp, cmake, make, programs));
+                },
+                planned -> runNativePlanned(run, source, planned.orElse(null)));
+    }
+
+    private void runNativePlanned(CompiledRun run, Path source, com.editora.dap.NativeBuild.@Nullable Plan plan) {
         if (plan == null) {
             host.setStatus(tr("status.run.compiledHeaderAlone", source.getFileName()));
             return;
@@ -990,25 +1097,26 @@ final class RunCoordinator {
         if (!saveBuffersUnder(plan.root(), List.of("c", "cpp"))) {
             return;
         }
-        try {
-            if (plan.buildDir() != null) {
-                com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
-            }
-            if (plan.output() != null && plan.output().getParent() != null) {
-                java.nio.file.Files.createDirectories(plan.output().getParent());
-            }
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("status.run.failed", e.getMessage()));
-            return;
-        }
         String missing = tr("status.run.compiledNoProgram", source.getFileName());
-        buildThenRun(
-                run,
-                plan.root(),
-                plan.steps(),
-                "status.run.compiledBuild",
-                () -> Built.of(com.editora.dap.NativeBuild.executable(plan, source), missing),
-                plan.root());
+        offFx(
+                "run-native-prepare",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("NativeBuild.requestCodemodel");
+                    if (plan.buildDir() != null) {
+                        com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
+                    }
+                    if (plan.output() != null && plan.output().getParent() != null) {
+                        java.nio.file.Files.createDirectories(plan.output().getParent());
+                    }
+                    return plan;
+                },
+                ready -> buildThenRun(
+                        run,
+                        plan.root(),
+                        plan.steps(),
+                        "status.run.compiledBuild",
+                        () -> Built.of(com.editora.dap.NativeBuild.executable(plan, source), missing),
+                        plan.root()));
     }
 
     /**
@@ -1023,21 +1131,41 @@ final class RunCoordinator {
         if (folder == null) {
             return; // not reached: the source is absolute
         }
-        if (!com.editora.dap.GoLaunch.isTestFile(source)) {
-            String declared;
-            try {
-                // (On disk it is what is on screen: the launch saved the file's own tab first.)
-                declared = com.editora.dap.GoLaunch.packageName(java.nio.file.Files.readString(source));
-            } catch (java.io.IOException e) {
-                declared = null; // unreadable: go says so
-            }
-            if (declared != null && !"main".equals(declared)) {
-                host.setStatus(tr("status.run.goNotMain", source.getFileName(), declared));
-                ops.editConfiguration(run.label()); // to the Source file field: another file is what would run
-                return;
-            }
+        // The package clause and the module are read off the FX thread (PERF-01, Pauta 6.0.1).
+        offFx(
+                "run-go-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("GoLaunch.plan");
+                    String declared = null;
+                    if (!com.editora.dap.GoLaunch.isTestFile(source)) {
+                        try {
+                            // (On disk it is what is on screen: the launch saved the file's own tab first.)
+                            declared = com.editora.dap.GoLaunch.packageName(java.nio.file.Files.readString(source));
+                        } catch (java.io.IOException e) {
+                            declared = null; // unreadable: go says so
+                        }
+                    }
+                    Path module = com.editora.dap.GoLaunch.moduleRoot(source);
+                    if (module != null) {
+                        ops.warmBuildExecutable(com.editora.build.BuildTool.GO, module);
+                    }
+                    return new GoPlan(declared, module);
+                },
+                plan -> runGoPlanned(run, source, folder, plan));
+    }
+
+    /** What a Go Run read off the FX thread: the file's package clause and its module's root. */
+    private record GoPlan(
+            @Nullable String declared, @Nullable Path module) {}
+
+    private void runGoPlanned(CompiledRun run, Path source, Path folder, GoPlan planned) {
+        String declared = planned.declared();
+        if (declared != null && !"main".equals(declared)) {
+            host.setStatus(tr("status.run.goNotMain", source.getFileName(), declared));
+            ops.editConfiguration(run.label()); // to the Source file field: another file is what would run
+            return;
         }
-        Path module = com.editora.dap.GoLaunch.moduleRoot(source);
+        Path module = planned.module();
         List<String> go = module != null
                 ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
                 : com.editora.build.BuildExecutable.resolve(
@@ -1048,27 +1176,29 @@ final class RunCoordinator {
         if (!saveBuffersUnder(module != null ? module : folder, List.of("go"))) {
             return;
         }
-        Path output = com.editora.dap.NativeBuild.outputFor(source, builtProgramsDir());
-        try {
-            java.nio.file.Files.createDirectories(builtProgramsDir());
-            java.nio.file.Files.deleteIfExists(output); // the last build's program is not this one's
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("status.run.failed", e.getMessage()));
-            return;
-        }
+        Path programs = builtProgramsDir();
+        Path output = com.editora.dap.NativeBuild.outputFor(source, programs);
         String missing = tr("status.run.compiledNoProgram", source.getFileName());
-        buildThenRun(
-                run,
-                folder,
-                List.of(com.editora.dap.GoLaunch.buildArgv(go, source, module != null, output)),
-                "status.run.compiledBuild",
-                // A program, not a package's archive (what go writes for a package whose clause was not read).
-                () -> Built.of(
-                        java.nio.file.Files.isRegularFile(output) && java.nio.file.Files.isExecutable(output)
-                                ? output
-                                : null,
-                        missing),
-                folder);
+        offFx(
+                "run-go-prepare",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("GoLaunch.prepare");
+                    java.nio.file.Files.createDirectories(programs);
+                    java.nio.file.Files.deleteIfExists(output); // the last build's program is not this one's
+                    return output;
+                },
+                ready -> buildThenRun(
+                        run,
+                        folder,
+                        List.of(com.editora.dap.GoLaunch.buildArgv(go, source, module != null, output)),
+                        "status.run.compiledBuild",
+                        // A program, not a package's archive (what go writes for a package whose clause was not read).
+                        () -> Built.of(
+                                java.nio.file.Files.isRegularFile(output) && java.nio.file.Files.isExecutable(output)
+                                        ? output
+                                        : null,
+                                missing),
+                        folder));
     }
 
     /**
@@ -1078,29 +1208,53 @@ final class RunCoordinator {
      */
     private void runRust(CompiledRun run) {
         Path source = run.source();
-        Path root = com.editora.dap.RustLaunch.packageRoot(source);
-        if (root == null) {
-            host.setStatus(tr("status.run.rustNoPackage", source.getFileName()));
-            return;
-        }
-        List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
-        if (cargo == null) {
-            return; // the package was not trusted: nothing is built
-        }
-        if (!saveBuffersUnder(root, List.of("rust"))) {
-            return;
-        }
-        String text;
-        try {
-            text = java.nio.file.Files.readString(source);
-        } catch (java.io.IOException e) {
-            text = ""; // unreadable: Cargo says so
-        }
-        boolean hasProgram =
-                java.nio.file.Files.isRegularFile(root.resolve("src").resolve("main.rs"))
-                        || java.nio.file.Files.isDirectory(root.resolve("src").resolve("bin"));
-        // No caret picks a test: a test file runs all its tests.
-        com.editora.dap.RustLaunch.Plan plan = com.editora.dap.RustLaunch.plan(root, source, text, -1, hasProgram);
+        // The package, then the file and the package's programs, are read off the FX thread (PERF-01, Pauta 6.0.1).
+        offFx(
+                "run-rust-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("RustLaunch.packageRoot");
+                    Path found = com.editora.dap.RustLaunch.packageRoot(source);
+                    if (found != null) {
+                        ops.warmBuildExecutable(com.editora.build.BuildTool.CARGO, found);
+                    }
+                    return java.util.Optional.ofNullable(found);
+                },
+                found -> {
+                    Path root = found.orElse(null);
+                    if (root == null) {
+                        host.setStatus(tr("status.run.rustNoPackage", source.getFileName()));
+                        return;
+                    }
+                    List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
+                    if (cargo == null) {
+                        return; // the package was not trusted: nothing is built
+                    }
+                    if (!saveBuffersUnder(root, List.of("rust"))) {
+                        return;
+                    }
+                    offFx(
+                            "run-rust-plan",
+                            () -> {
+                                com.editora.perf.BlockingSites.enter("RustLaunch.plan");
+                                String text;
+                                try {
+                                    text = java.nio.file.Files.readString(source);
+                                } catch (java.io.IOException e) {
+                                    text = ""; // unreadable: Cargo says so
+                                }
+                                boolean hasProgram = java.nio.file.Files.isRegularFile(
+                                                root.resolve("src").resolve("main.rs"))
+                                        || java.nio.file.Files.isDirectory(
+                                                root.resolve("src").resolve("bin"));
+                                // No caret picks a test: a test file runs all its tests.
+                                return com.editora.dap.RustLaunch.plan(root, source, text, -1, hasProgram);
+                            },
+                            plan -> runRustPlanned(run, source, root, cargo, plan));
+                });
+    }
+
+    private void runRustPlanned(
+            CompiledRun run, Path source, Path root, List<String> cargo, com.editora.dap.RustLaunch.Plan plan) {
         List<String> build = new ArrayList<>(cargo);
         build.addAll(plan.buildArgs());
         List<String> json = new ArrayList<>(cargo);
@@ -1761,39 +1915,63 @@ final class RunCoordinator {
      */
     private void buildBeforeLaunch(
             Path root, Path source, String configuredStep, String label, String jdkHome, Consumer<Boolean> then) {
-        com.editora.build.BuildTool tool = null;
-        if (com.editora.process.ExecTargets.runsHere(root)) {
-            tool = ops.mavenProjectAt(root)
-                    ? com.editora.build.BuildTool.MAVEN
-                    : ops.gradleProjectAt(root) ? com.editora.build.BuildTool.GRADLE : null;
-        }
-        if (tool == null || !BuildBeforeLaunch.wanted(host.settings().isBuildBeforeRun(), configuredStep, tool)) {
-            then.accept(false);
-            return;
-        }
-        List<String> executable = ops.buildExecutable(tool, root);
-        if (executable == null) {
-            return; // the trust gate said why
-        }
-        // Maven: from the module's reactor when one lists it (its uninstalled siblings compile first), with
-        // the tasks tree's profiles and flags (reviews D5, D13).
-        List<String> extra = tool == com.editora.build.BuildTool.MAVEN
-                ? BuildBeforeLaunch.mavenExtraArgs(
-                        com.editora.maven.MavenReactor.describeOnDisk(root, ops.projectRoot()),
-                        null,
-                        ops.mavenToggleArgs())
-                : List.of();
-        List<String> argv =
-                BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, root), extra);
-        beforeLaunch.run(
-                host,
-                new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
-                root,
-                javaEnvironment(root, jdkHome, null),
-                stepConsole(root),
-                () -> then.accept(true));
-        ops.onRunStateChanged();
+        boolean buildBeforeRun = host.settings().isBuildBeforeRun();
+        Path project = ops.projectRoot();
+        // Which build tool, its reactor and whether the source is a test are read off the FX thread (PERF-01,
+        // Pauta 6.0.1); the trust question and the step are back on it.
+        offFx(
+                "run-build-before-launch-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("BuildBeforeLaunch.plan");
+                    com.editora.build.BuildTool tool = null;
+                    if (com.editora.process.ExecTargets.runsHere(root)) {
+                        tool = ops.mavenProjectAt(root)
+                                ? com.editora.build.BuildTool.MAVEN
+                                : ops.gradleProjectAt(root) ? com.editora.build.BuildTool.GRADLE : null;
+                    }
+                    if (tool == null || !BuildBeforeLaunch.wanted(buildBeforeRun, configuredStep, tool)) {
+                        return new BuildFirstPlan(null, null, false);
+                    }
+                    ops.warmBuildExecutable(tool, root); // its wrapper and trust, for the FX thread next
+                    return new BuildFirstPlan(
+                            tool,
+                            tool == com.editora.build.BuildTool.MAVEN
+                                    ? com.editora.maven.MavenReactor.describeOnDisk(root, project)
+                                    : null,
+                            BuildBeforeLaunch.isTestSource(source, root));
+                },
+                plan -> {
+                    com.editora.build.BuildTool tool = plan.tool();
+                    if (tool == null) {
+                        then.accept(false);
+                        return;
+                    }
+                    List<String> executable = ops.buildExecutable(tool, root);
+                    if (executable == null) {
+                        return; // the trust gate said why
+                    }
+                    // Maven: from the module's reactor when one lists it (its uninstalled siblings compile first),
+                    // with the tasks tree's profiles and flags (reviews D5, D13).
+                    List<String> extra = tool == com.editora.build.BuildTool.MAVEN
+                            ? BuildBeforeLaunch.mavenExtraArgs(plan.reactor(), null, ops.mavenToggleArgs())
+                            : List.of();
+                    List<String> argv = BuildBeforeLaunch.compileArgv(tool, executable, plan.test(), extra);
+                    beforeLaunch.run(
+                            host,
+                            new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
+                            root,
+                            javaEnvironment(root, jdkHome, null),
+                            stepConsole(root),
+                            () -> then.accept(true));
+                    ops.onRunStateChanged();
+                });
     }
+
+    /** What the build before a launch read off the FX thread: the tool (null: no build), the reactor, a test. */
+    private record BuildFirstPlan(
+            com.editora.build.@Nullable BuildTool tool,
+            com.editora.maven.MavenReactor.@Nullable Reactor reactor,
+            boolean test) {}
 
     /**
      * Resolves the Maven classpath of {@code root} for a launch of the class declared in {@code source}, then
@@ -1834,30 +2012,31 @@ final class RunCoordinator {
         }
         List<String> toggles = ops.mavenToggleArgs();
         Path boundary = ops.projectRoot();
+        // Planning reads the reactor's poms and makes the classpath file (on a host it asks whether its temp folder
+        // is in view): off the FX thread, here as there (PERF-01, Pauta 6.0.1).
         if (!com.editora.process.ExecTargets.runsHere(root)) {
-            // Planning asks the host whether its temp folder is in view: off the FX thread.
-            host.setStatus(tr("status.run.resolveClasspath", label));
-            Thread.ofVirtual().name("editora-maven-plan").start(() -> {
-                com.editora.maven.MavenClasspathResolver.Plan plan;
-                try {
-                    plan = com.editora.maven.MavenClasspathResolver.plan(root, boundary, executable, toggles, scope);
-                } catch (java.io.IOException | RuntimeException e) {
-                    javafx.application.Platform.runLater(() -> host.setStatus(
-                            tr("status.run.resolveClasspathFailed", label, String.valueOf(e.getMessage()))));
-                    return;
-                }
-                javafx.application.Platform.runLater(() -> runResolution(plan, root, jdkHome, label, then, false));
-            });
-            return;
+            host.setStatus(tr("status.run.resolveClasspath", label)); // a host can take a while to answer
         }
-        com.editora.maven.MavenClasspathResolver.Plan plan;
-        try {
-            plan = com.editora.maven.MavenClasspathResolver.plan(root, boundary, executable, toggles, scope);
-        } catch (java.io.IOException | RuntimeException e) {
-            host.setStatus(tr("status.run.resolveClasspathFailed", label, String.valueOf(e.getMessage())));
-            return;
-        }
-        runResolution(plan, root, jdkHome, label, then, false);
+        planner.accept("editora-maven-plan", () -> {
+            com.editora.perf.BlockingSites.enter("MavenClasspathResolver.plan");
+            com.editora.maven.MavenClasspathResolver.Plan plan;
+            try {
+                plan = com.editora.maven.MavenClasspathResolver.plan(root, boundary, executable, toggles, scope);
+            } catch (java.io.IOException | RuntimeException e) {
+                onFxThread(() ->
+                        host.setStatus(tr("status.run.resolveClasspathFailed", label, String.valueOf(e.getMessage()))));
+                return;
+            }
+            onFxThread(() -> runResolution(plan, root, jdkHome, label, then, false));
+        });
+    }
+
+    /** Deletes what {@code plan} made, off the FX thread. */
+    private static void discardLater(com.editora.maven.MavenClasspathResolver.Plan plan) {
+        Thread.ofVirtual().name("editora-maven-discard").start(() -> {
+            com.editora.perf.BlockingSites.enter("MavenClasspathResolver.discard");
+            com.editora.maven.MavenClasspathResolver.discard(plan);
+        });
     }
 
     /**
@@ -1872,7 +2051,7 @@ final class RunCoordinator {
             Consumer<List<String>> then,
             boolean retried) {
         if (consoleRunning()) {
-            com.editora.maven.MavenClasspathResolver.discard(plan);
+            discardLater(plan);
             host.setStatus(tr("status.run.busy"));
             return;
         }
@@ -1920,18 +2099,26 @@ final class RunCoordinator {
                                     () -> runResolution(plan.singleModule(), root, jdkHome, label, then, true));
                             return;
                         }
-                        com.editora.maven.MavenClasspathResolver.discard(plan); // the step said why
+                        discardLater(plan); // the step said why
                     }
                 },
-                () -> {
-                    List<String> cp = com.editora.maven.MavenClasspathResolver.finish(plan);
-                    if (cp == null || cp.isEmpty()) {
-                        host.setStatus(
-                                tr("status.run.resolveClasspathFailed", label, tr("status.run.noClasspathWritten")));
-                        return;
-                    }
-                    then.accept(cp);
-                });
+                () -> offFx(
+                        "editora-maven-classpath",
+                        () -> {
+                            com.editora.perf.BlockingSites.enter("MavenClasspathResolver.finish");
+                            List<String> cp = com.editora.maven.MavenClasspathResolver.finish(plan);
+                            return cp == null ? List.<String>of() : cp;
+                        },
+                        cp -> {
+                            if (cp.isEmpty()) {
+                                host.setStatus(tr(
+                                        "status.run.resolveClasspathFailed",
+                                        label,
+                                        tr("status.run.noClasspathWritten")));
+                                return;
+                            }
+                            then.accept(cp);
+                        }));
         ops.onRunStateChanged();
     }
 
@@ -2022,18 +2209,47 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.configNeedsJavaFile"));
             return;
         }
-        Path root = ops.javaProjectRoot(routing);
-        if (root == null) {
-            host.setStatus(tr("status.run.noProject"));
-            return;
-        }
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.isDirty() && RemoteExec.runsFor(b.getPath()) && !ops.saveBuffer(b)) {
             return; // save whatever the user was editing before launching, as before
         }
-        // One plan for Run and Debug (review D9): working directory, JDK, environment and arguments.
-        com.editora.run.JavaLaunchPlan.Result planned =
-                com.editora.run.JavaLaunchPlan.forConfiguration(cfg, javaLaunchInputs(root));
+        // The project, its build files, an env @file and the Maven module are read off the FX thread (PERF-01,
+        // Pauta 6.0.1): one plan for Run and Debug (review D9), working directory, JDK, environment and arguments.
+        String settingsJdk = host.settings().getMavenJdkHome();
+        Path project = ops.projectRoot();
+        offFx(
+                "run-java-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("JavaLaunchPlan.plan");
+                    Path root = ops.javaProjectRoot(routing);
+                    if (root == null) {
+                        return new JavaConfigPlan(null, false, null, null, "");
+                    }
+                    boolean maven = ops.mavenProjectAt(root);
+                    var planned = com.editora.run.JavaLaunchPlan.forConfiguration(
+                            cfg, com.editora.run.JavaLaunchPlan.Inputs.of(root, settingsJdk, maven));
+                    Path module = maven ? mavenModuleOf(root, project, cfg) : null;
+                    String inherited = maven ? JdkToolchain.inheritedJavaExecutable(System.getenv()) : "";
+                    return new JavaConfigPlan(root, maven, planned, module, inherited);
+                },
+                ready -> runJavaConfigPlanned(cfg, routing, ready));
+    }
+
+    /** What a Java configuration's Run read off the FX thread. {@code root} null: the file is in no project. */
+    private record JavaConfigPlan(
+            @Nullable Path root,
+            boolean maven,
+            com.editora.run.JavaLaunchPlan.@Nullable Result planned,
+            @Nullable Path module,
+            String inheritedJava) {}
+
+    private void runJavaConfigPlanned(RunConfiguration cfg, Path routing, JavaConfigPlan ready) {
+        Path root = ready.root();
+        com.editora.run.JavaLaunchPlan.Result planned = ready.planned();
+        if (root == null || planned == null) {
+            host.setStatus(tr("status.run.noProject"));
+            return;
+        }
         com.editora.run.JavaLaunchPlan plan = planned.plan();
         if (plan == null) {
             reportPlanProblem(cfg, planned.problem());
@@ -2092,13 +2308,11 @@ final class RunCoordinator {
                     });
                 });
             });
-        } else if (ops.mavenProjectAt(root)) {
+        } else if (ready.maven() && ready.module() != null) {
             // The configuration's module, not the routing file's (review D12); with no JDK selected, the java
             // of the JAVA_HOME Maven compiled with (review D18).
-            Path module = mavenModuleOf(root, cfg);
-            String java = !javaOverride.isBlank()
-                    ? javaOverride
-                    : onHost ? "java" : JdkToolchain.inheritedJavaExecutable(System.getenv());
+            Path module = ready.module();
+            String java = !javaOverride.isBlank() ? javaOverride : onHost ? "java" : ready.inheritedJava();
             resolveMavenClasspath(
                     module,
                     module.equals(root) ? routing : module,
@@ -2121,11 +2335,10 @@ final class RunCoordinator {
      * else the reactor {@code root} belongs to, else {@code root} alone); {@code root} — the routing file's
      * module — when nothing matches.
      */
-    private Path mavenModuleOf(Path root, RunConfiguration cfg) {
+    private Path mavenModuleOf(Path root, @Nullable Path project, RunConfiguration cfg) {
         if (!com.editora.process.ExecTargets.runsHere(root)) {
             return root;
         }
-        Path project = ops.projectRoot();
         Path start = project != null && ops.mavenProjectAt(project) && root.startsWith(project) ? project : null;
         if (start == null) {
             com.editora.maven.MavenReactor.Reactor reactor =
@@ -2169,7 +2382,23 @@ final class RunCoordinator {
             return;
         }
         Path routing = b.getPath();
-        Path root = ops.javaProjectRoot(routing);
+        // The project and its build files are looked for off the FX thread (PERF-01, Pauta 6.0.1).
+        offFx(
+                "run-main-class-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("JavaProjectRoot.find");
+                    Path found = ops.javaProjectRoot(routing);
+                    if (found != null) {
+                        ops.mavenProjectAt(found); // looked at here: the FX thread then answers from it
+                        ops.gradleProjectAt(found);
+                    }
+                    return java.util.Optional.ofNullable(found);
+                },
+                found -> startMainClassRunPlanned(b, routing, found.orElse(null), targetFqn));
+    }
+
+    private void startMainClassRunPlanned(
+            EditorBuffer b, Path routing, @Nullable Path root, @Nullable String targetFqn) {
         if (root == null) {
             host.setStatus(tr("status.run.noProject"));
             return;
@@ -2546,14 +2775,85 @@ final class RunCoordinator {
 
     /** Runs {@code buffer} (already known to be runnable): save, pick the launcher, maybe ask for arguments. */
     private void startFileRun(EditorBuffer buffer, boolean promptArgs, boolean trace) {
-        if ("scala".equals(buffer.getLanguage()) && buffer.getPath() != null && scalaBuildOwner(buffer.getPath())) {
-            // A file of an sbt or Mill build runs as part of it, in that tool's window (not the Run console).
-            if (buffer.isDirty() && !ops.saveBuffer(buffer)) {
-                return;
-            }
-            runScalaThroughBuild(buffer, buffer.getPath(), promptArgs);
+        Path early = buffer.getPath();
+        if ("scala".equals(buffer.getLanguage()) && early != null && com.editora.process.ExecTargets.runsHere(early)) {
+            // Which build owns the file is a folder walk: off the FX thread (PERF-01, Pauta 6.0.1).
+            Path project = ops.projectRoot();
+            planner.accept("run-file-scala-owner", () -> {
+                com.editora.perf.BlockingSites.enter("ScalaRun.ownerOf");
+                boolean built = scalaBuildOwner(early, project);
+                onFxThread(() -> {
+                    if (!built) {
+                        startFileRunNow(buffer, promptArgs, trace);
+                        return;
+                    }
+                    // A file of an sbt or Mill build runs as part of it, in that tool's window (not the Run console).
+                    if (buffer.isDirty() && !ops.saveBuffer(buffer)) {
+                        return;
+                    }
+                    runScalaThroughBuild(buffer, early, promptArgs);
+                });
+            });
             return;
         }
+        startFileRunNow(buffer, promptArgs, trace);
+    }
+
+    /**
+     * What Run on a file reads before it starts, off the FX thread (PERF-01, Pauta 6.0.1): the trust question's
+     * project files, the JVM language's tool, the shebang's launch with its interpreter and folder, Scala CLI's
+     * inputs.
+     */
+    private record FilePlan(
+            RunTrust.@Nullable Gate gate,
+            @Nullable String jvmTool,
+            ShellCommand.@Nullable Launch shell,
+            @Nullable Path shellDir,
+            @Nullable Path missingShellDir,
+            @Nullable List<String> scalaInputs) {}
+
+    private FilePlan planFile(
+            String language,
+            Path path,
+            String content,
+            String firstLine,
+            boolean shellFile,
+            boolean trace,
+            @Nullable Path project) {
+        com.editora.perf.BlockingSites.enter("RunCoordinator.planFile");
+        RunTrust.Gate gate = "scala".equals(language) && !com.editora.process.ExecTargets.runsHere(path)
+                ? null // Scala CLI is given a remote file alone (scalaCliInputs)
+                : RunTrust.forFile(language, path, content, project, java.nio.file.Files::isRegularFile);
+        String tool = jvmTool(language, path);
+        ShellCommand.Launch shell = null;
+        Path dir = path.getParent();
+        Path missing = null;
+        if (shellFile) {
+            boolean remote = !com.editora.process.ExecTargets.runsHere(path);
+            // The shebang decides the interpreter and its flags, as running ./script would.
+            shell = ShellCommand.launch(firstLine, path.getFileName().toString(), "", "", existsHere(remote));
+            if (trace) {
+                shell = ShellCommand.withTrace(shell);
+            }
+            String chdir = shell.chdir();
+            if (chdir != null && !chdir.isBlank() && dir != null) {
+                Path to = dir.resolve(chdir).normalize();
+                if (!com.editora.vfs.Vfs.isRemote(path) && !java.nio.file.Files.isDirectory(to)) {
+                    dir = null;
+                    missing = to;
+                } else {
+                    dir = to;
+                }
+            }
+        }
+        List<String> scala = "scala".equals(language)
+                ? scalaCliInputs(
+                        path, com.editora.process.ExecTargets.forPath(path).toTargetPath(path), content, project)
+                : null;
+        return new FilePlan(gate, tool, shell, dir, missing, scala);
+    }
+
+    private void startFileRunNow(EditorBuffer buffer, boolean promptArgs, boolean trace) {
         if (!beginRunRequest()) {
             return;
         }
@@ -2564,9 +2864,21 @@ final class RunCoordinator {
         if (path == null) {
             return;
         }
+        String language = buffer.getLanguage();
+        String content = buffer.getContent();
+        String firstLine = firstLine(buffer);
+        boolean shellFile = buffer.isShell();
+        Path project = ops.projectRoot();
+        offFx(
+                "run-file-plan",
+                () -> planFile(language, path, content, firstLine, shellFile, trace, project),
+                plan -> startFileRunPlanned(buffer, path, promptArgs, trace, plan));
+    }
+
+    private void startFileRunPlanned(EditorBuffer buffer, Path path, boolean promptArgs, boolean trace, FilePlan plan) {
         // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
         // the project, not just the file — the workspace-trust gate first, so "no" runs nothing.
-        if (!trusted(fileTrustGate(buffer, path))) {
+        if (!trusted(plan.gate())) {
             return;
         }
         // A Groovy (and later Kotlin, Scala, Clojure) file runs through its own tool, on the same JDK as Java.
@@ -2586,7 +2898,7 @@ final class RunCoordinator {
         java.util.Map<String, String> launchEnv = !onJdk
                 ? java.util.Map.of()
                 : remote ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath());
-        if (jvmScript && !remote && jvmTool(buffer) == null) {
+        if (jvmScript && !remote && plan.jvmTool() == null) {
             // Said here, not as the shell's "groovy: command not found" in the Run console.
             host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(
                     com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path))));
@@ -2597,10 +2909,10 @@ final class RunCoordinator {
             if (promptArgs) {
                 host.promptText(tr("dialog.runArgs.title"), tr("dialog.runArgs.label"), stored, args -> {
                     ops.setProgramArgs(path, args == null ? "" : args.strip());
-                    launchFile(buffer, path, javaExecutable, launchEnv, trace);
+                    launchFile(buffer, path, javaExecutable, launchEnv, trace, plan);
                 });
             } else {
-                launchFile(buffer, path, javaExecutable, launchEnv, trace);
+                launchFile(buffer, path, javaExecutable, launchEnv, trace, plan);
             }
         };
         if (javaSource) {
@@ -2637,7 +2949,8 @@ final class RunCoordinator {
             Path path,
             String javaExecutable,
             java.util.Map<String, String> launchEnv,
-            boolean trace) {
+            boolean trace,
+            FilePlan plan) {
         List<String> args = programArgs(ops.programArgs(path), null);
         if (args == null) {
             return;
@@ -2662,14 +2975,14 @@ final class RunCoordinator {
                             ops.pythonInterpreterChoice(),
                             PythonRunLauncher.setting(path, host.settings())),
                     dir,
-                    plan -> streamPython(path.getFileName().toString(), dir, plan, path));
+                    python -> streamPython(path.getFileName().toString(), dir, python, path));
             return;
         }
         java.util.Map<String, String> env = launchEnv;
         if ("kotlin".equals(buffer.getLanguage())
                 && com.editora.run.KotlinRun.shape(path.getFileName().toString())
                         == com.editora.run.KotlinRun.Shape.PROGRAM) {
-            String kotlinc = jvmTool(buffer);
+            String kotlinc = plan.jvmTool();
             if (!com.editora.process.ExecTargets.runsHere(path) || kotlinc == null) {
                 host.setStatus(tr(
                         kotlinc == null
@@ -2689,32 +3002,28 @@ final class RunCoordinator {
             return;
         }
         ShellCommand.Launch shell = null;
-        if (buffer.isShell()) {
+        if (buffer.isShell() && plan.shell() != null) {
             boolean remote = !com.editora.process.ExecTargets.runsHere(path);
-            // The shebang decides the interpreter and its flags, as running ./script would.
-            shell = ShellCommand.launch(firstLine(buffer), path.getFileName().toString(), "", "", existsHere(remote));
-            if (trace) {
-                shell = ShellCommand.withTrace(shell);
-            }
+            shell = plan.shell(); // the shebang's, read with the plan
             env = shellEnvironment(shell, java.util.Map.of(), remote);
         }
         if ("scala".equals(buffer.getLanguage())) {
             // Scala CLI runs the file, or its project folder with the file's main class.
-            String tool = jvmTool(buffer);
-            String target = com.editora.process.ExecTargets.forPath(path).toTargetPath(path);
+            String tool = plan.jvmTool();
+            List<String> inputs = plan.scalaInputs();
             List<String> argv = com.editora.run.JvmScriptRun.scalaCli(
                     tool == null ? com.editora.run.JvmScriptRun.tool("scala") : tool,
-                    scalaCliInputs(path, target, buffer.getContent()),
+                    inputs == null ? List.of() : inputs,
                     List.of(),
                     args);
-            pendingTrustGate = fileTrustGate(buffer, path);
+            pendingTrustGate = plan.gate();
             streamRun(path.getFileName().toString(), path.getParent(), argv, env, path);
             return;
         }
         if (com.editora.run.JvmScriptRun.supports(buffer.getLanguage())) {
             // The tool decides the folder too: a Clojure file runs in its project's, where deps.edn is read.
             String toolName = com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
-            String tool = jvmTool(buffer);
+            String tool = plan.jvmTool();
             String executable = tool == null ? toolName : tool;
             if (executable == null) {
                 return; // not reached: every language JvmScriptRun supports names its tool
@@ -2731,14 +3040,15 @@ final class RunCoordinator {
                     env,
                     com.editora.process.ExecTargets.runsHere(path) ? System.getenv() : java.util.Map.of());
             Path where = how.directory() != null ? how.directory() : path.getParent();
-            pendingTrustGate = fileTrustGate(buffer, path);
+            pendingTrustGate = plan.gate();
             streamRun(path.getFileName().toString(), where, how.argv(), how.env(), path);
             return;
         }
-        Path dir = shell == null
-                ? path.getParent()
-                : shebangDir(shell, path.getParent(), com.editora.vfs.Vfs.isRemote(path));
+        Path dir = shell == null ? path.getParent() : plan.shellDir();
         if (dir == null) {
+            if (plan.missingShellDir() != null) {
+                host.setStatus(tr("status.run.shebangDirMissing", String.valueOf(plan.missingShellDir())));
+            }
             return;
         }
         streamRun(
@@ -2823,11 +3133,10 @@ final class RunCoordinator {
      * The tool that runs {@code buffer}'s JVM language ({@code groovy}): this machine's install for a local file,
      * the bare name (the host's PATH) for a remote one; null when it is not installed here.
      */
-    private static @Nullable String jvmTool(EditorBuffer buffer) {
-        Path path = buffer.getPath();
+    private static @Nullable String jvmTool(String language, @Nullable Path path) {
         String tool = path == null
-                ? com.editora.run.JvmScriptRun.tool(buffer.getLanguage())
-                : com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
+                ? com.editora.run.JvmScriptRun.tool(language)
+                : com.editora.run.JvmScriptRun.tool(language, path);
         if (tool == null) {
             return null;
         }
@@ -2841,12 +3150,12 @@ final class RunCoordinator {
      * What Scala CLI runs for {@code path} ({@code target} as its host names it): the file, or its Scala CLI
      * project's folder with the file's main class.
      */
-    private List<String> scalaCliInputs(Path path, String target, String text) {
+    private static List<String> scalaCliInputs(Path path, String target, String text, @Nullable Path project) {
         if (!com.editora.process.ExecTargets.runsHere(path)) {
             return List.of(target); // a remote file: no folder walk over the connection
         }
         com.editora.run.ScalaRun.Owner owner =
-                com.editora.run.ScalaRun.ownerOf(path, ops.projectRoot(), java.nio.file.Files::isRegularFile);
+                com.editora.run.ScalaRun.ownerOf(path, project, java.nio.file.Files::isRegularFile);
         String folder = owner.root() == null
                 ? null
                 : com.editora.process.ExecTargets.forPath(owner.root()).toTargetPath(owner.root());
@@ -2854,12 +3163,12 @@ final class RunCoordinator {
     }
 
     /** Whether {@code path} belongs to an sbt, Mill, Gradle or Maven build, which runs it (not Scala CLI). */
-    private boolean scalaBuildOwner(Path path) {
+    private static boolean scalaBuildOwner(Path path, @Nullable Path project) {
         if (!com.editora.process.ExecTargets.runsHere(path)) {
             return false; // a remote file runs through Scala CLI on its host
         }
         com.editora.run.ScalaRun.Build build = com.editora.run.ScalaRun.ownerOf(
-                        path, ops.projectRoot(), java.nio.file.Files::isRegularFile)
+                        path, project, java.nio.file.Files::isRegularFile)
                 .build();
         return build == com.editora.run.ScalaRun.Build.SBT
                 || build == com.editora.run.ScalaRun.Build.MILL
@@ -3082,7 +3391,7 @@ final class RunCoordinator {
         lastRunEnv = env;
         consoleUsed = true;
         ops.openToolWindow();
-        panel().started(label);
+        panel().starting(label);
         if (deploySummary != null) {
             panel().showCommandLine(deploySummary);
         }
@@ -3093,10 +3402,9 @@ final class RunCoordinator {
         service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override
             public void onStart(String commandLine) {
-                panel().started(commandLine);
-                if (deploySummary != null) {
-                    panel().showCommandLine(deploySummary); // started() cleared it: the deploy comes first
-                }
+                // The console was cleared, and the deploy's summary shown, when the run began above: the program
+                // starts off the FX thread (PERF-01), and what was typed meanwhile stays.
+                panel().runningAs(commandLine);
                 if (script != null || tests != null || commandLineFirst) {
                     // Which interpreter ran, and how: the first thing to check when a script behaves oddly.
                     panel().showCommandLine(commandLine);

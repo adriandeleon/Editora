@@ -863,7 +863,15 @@ final class GitWindowCoordinator {
                 all, file, searchedFile ? com.editora.git.GitLogQuery.NONE : query, 0, size);
         GitLogPanel.View view = new GitLogPanel.View(
                 file != null ? file.getFileName().toString() : null, branch, all, gitLogSearch, request.graphable());
-        host.gitLogPanel().setShallow(shallow(root));
+        // Two or three stats in .git: off the FX thread (PERF-01, Pauta 6.0.1), landing for this load only.
+        Thread.ofVirtual().name("git-log-shallow").start(() -> {
+            boolean cut = shallow(root);
+            javafx.application.Platform.runLater(() -> {
+                if (generation == gitLogGeneration) {
+                    host.gitLogPanel().setShallow(cut);
+                }
+            });
+        });
         gitLogLoading = true;
         host.git().service().logPage(root, request, page -> {
             if (generation != gitLogGeneration) {
@@ -927,6 +935,7 @@ final class GitWindowCoordinator {
         if (root == null) {
             return false;
         }
+        com.editora.perf.BlockingSites.enter("GitWindowCoordinator.shallow");
         try {
             Path git = root.resolve(".git");
             if (Files.isRegularFile(git)) { // a worktree or submodule: "gitdir: <path>"

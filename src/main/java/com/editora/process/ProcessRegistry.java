@@ -92,6 +92,9 @@ public final class ProcessRegistry {
     static final long REMOTE_KILL_WAIT_MS = 2000;
 
     private static final Object LEDGER_FILE_LOCK = new Object();
+
+    /** A ledger write asked for on the FX thread is queued on the reaper thread; one queued write is enough. */
+    private static final AtomicBoolean LEDGER_WRITE_QUEUED = new AtomicBoolean();
     /** The shared ledger older versions wrote ({@code spawned-servers.txt}): read and cleared, never written. */
     private static volatile @Nullable Path ledgerFile;
     /** This process's own ledger ({@code spawned-servers.<pid>.<start>.txt}) — the only one it writes. */
@@ -251,6 +254,9 @@ public final class ProcessRegistry {
             return;
         }
         EXITING.remove(p); // its owner's wait is over; from here it is killed, not waited for
+        if (onFxThread() && offFx(() -> killTree(p))) {
+            return; // the walk of the process table and the ledger write below are not for the FX thread
+        }
         if (p instanceof RemoteProcess remote) {
             killRemoteTree(remote);
             return;
@@ -327,6 +333,9 @@ public final class ProcessRegistry {
         }
         if (p instanceof RemoteProcess || isWindows()) {
             killTree(p);
+            return;
+        }
+        if (onFxThread() && offFx(() -> interruptThenKillTree(p))) {
             return;
         }
         List<ProcessHandle> descendants = descendantsOf(p);
@@ -420,7 +429,30 @@ public final class ProcessRegistry {
         }
     }
 
+    /**
+     * Runs {@code work} on the reaper thread; false when the scheduler refuses it (the JVM is shutting down), and
+     * the caller then does the work itself.
+     */
+    private static boolean offFx(Runnable work) {
+        try {
+            SCHEDULER.execute(work);
+            return true;
+        } catch (RuntimeException rejected) {
+            return false;
+        }
+    }
+
+    /** Whether this is the JavaFX application thread; false where the toolkit is not loaded. */
+    private static boolean onFxThread() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
     private static List<ProcessHandle> descendantsOf(Process process) {
+        com.editora.perf.BlockingSites.enter("ProcessRegistry.descendants");
         try {
             return process.descendants().toList();
         } catch (RuntimeException ignored) {
@@ -1044,6 +1076,22 @@ public final class ProcessRegistry {
         if (file == null) {
             return;
         }
+        if (onFxThread()) {
+            // PERF-01 (Pauta 6.0.1): the FX thread never writes the file. Every write takes the rows as they are
+            // when it runs, so one queued write covers every change made before it.
+            if (LEDGER_WRITE_QUEUED.compareAndSet(false, true)) {
+                try {
+                    SCHEDULER.execute(() -> {
+                        LEDGER_WRITE_QUEUED.set(false);
+                        writeLedger();
+                    });
+                } catch (RuntimeException rejected) {
+                    LEDGER_WRITE_QUEUED.set(false); // JVM shutting down: the shutdown hook writes the last rows
+                }
+            }
+            return;
+        }
+        com.editora.perf.BlockingSites.enter("ProcessRegistry.writeLedger");
         synchronized (LEDGER_FILE_LOCK) {
             // Snapshot inside the lock: two writers racing with the snapshot outside could land out of order
             // and leave the older rows on disk.

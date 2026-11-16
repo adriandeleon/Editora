@@ -23,6 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("fx")
 class GitCommandReachabilityFxTest {
 
+    /** The plans read in place: these tests read what a command did as soon as it returns (PERF-01 moved the reads). */
+    @org.junit.jupiter.api.BeforeEach
+    void planInPlace() {
+        DebugPlanning.planner = (name, task) -> task.run();
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void planOnThreads() {
+        DebugPlanning.planner = (name, task) -> Thread.ofVirtual().name(name).start(task);
+    }
+
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();

@@ -1933,10 +1933,12 @@ final class DebugCoordinator {
             s().launchedLines.snapshotIfAbsent(file, b.getContent());
             return;
         }
-        List<String> disk = ClosedFileBreakpoints.readLinesOrNull(file);
-        if (disk != null) {
-            s().launchedLines.snapshotIfAbsent(file, String.join("\n", disk));
-        }
+        DebugSession session = s(); // the file on disk is read off the FX thread (PERF-01), for this session
+        DebugPlanning.offFx("debug-launched-lines", () -> ClosedFileBreakpoints.readLinesOrNull(file), a -> {
+            if (a.value() != null) {
+                session.launchedLines.snapshotIfAbsent(file, String.join("\n", a.value()));
+            }
+        });
     }
 
     /** {@code frames} with each line as the document now has it (a frame names the launched line). */
@@ -3513,8 +3515,6 @@ final class DebugCoordinator {
      * program. One that cannot be read is said in the status bar.
      */
     private void loadCustomAdapters(boolean on) {
-        List<List<com.editora.dap.CustomAdapters.Adapter>> files = new ArrayList<>();
-        List<String> problems = new ArrayList<>();
         List<Path> paths = new ArrayList<>();
         Path user = userAdaptersFile();
         if (user != null) {
@@ -3524,32 +3524,29 @@ final class DebugCoordinator {
         if (project != null && host.projectScope().trusted()) {
             paths.add(project.resolve(".editora").resolve("debug-adapters.json"));
         }
-        for (Path p : paths) {
-            if (!java.nio.file.Files.isRegularFile(p)) {
-                continue;
+        long read = ++adaptersRead; // the files are read off the FX thread (PERF-01): the last ask's answer wins
+        DebugPlanning.offFx("debug-adapters-read", () -> DebugPlanning.readAdapters(paths), answer -> {
+            var found = answer.value();
+            if (read != adaptersRead || found == null) {
+                return;
             }
-            try {
-                var parsed = com.editora.dap.CustomAdapters.parse(java.nio.file.Files.readString(p));
-                files.add(parsed.adapters());
-                parsed.problems().forEach(problem -> problems.add(p.getFileName() + ": " + problem));
-            } catch (java.io.IOException e) {
-                problems.add(p + ": " + e.getMessage());
+            List<com.editora.dap.CustomAdapters.Adapter> adapters = com.editora.dap.CustomAdapters.merge(found.files());
+            java.util.Map<String, com.editora.dap.CustomAdapters.Adapter> byType = new java.util.LinkedHashMap<>();
+            adapters.forEach(a -> byType.put(a.profile().id(), a));
+            customAdapters = byType;
+            com.editora.dap.DebugLanguages.setCustom(adapters.stream()
+                    .map(com.editora.dap.CustomAdapters.Adapter::profile)
+                    .toList());
+            for (var a : adapters) {
+                dap().configureExternal(a.profile(), on, "", f -> applyGating());
             }
-        }
-        List<com.editora.dap.CustomAdapters.Adapter> adapters = com.editora.dap.CustomAdapters.merge(files);
-        java.util.Map<String, com.editora.dap.CustomAdapters.Adapter> byType = new java.util.LinkedHashMap<>();
-        adapters.forEach(a -> byType.put(a.profile().id(), a));
-        customAdapters = byType;
-        com.editora.dap.DebugLanguages.setCustom(adapters.stream()
-                .map(com.editora.dap.CustomAdapters.Adapter::profile)
-                .toList());
-        for (var a : adapters) {
-            dap().configureExternal(a.profile(), on, "", found -> applyGating());
-        }
-        if (!problems.isEmpty()) {
-            host.setStatus(tr("status.debug.customAdaptersInvalid", String.join("; ", problems)));
-        }
+            if (!found.problems().isEmpty()) {
+                host.setStatus(tr("status.debug.customAdaptersInvalid", String.join("; ", found.problems())));
+            }
+        });
     }
+
+    private long adaptersRead;
 
     /** Debug: Edit Debug Adapters: the user's {@code debug-adapters.json}, written with an example the first time. */
     void editCustomAdapters() {
@@ -3557,16 +3554,13 @@ final class DebugCoordinator {
         if (file == null) {
             return;
         }
-        try {
-            if (!java.nio.file.Files.exists(file)) {
-                java.nio.file.Files.createDirectories(file.getParent());
-                java.nio.file.Files.writeString(file, com.editora.dap.CustomAdapters.EXAMPLE);
+        DebugPlanning.offFx("debug-adapters-edit", () -> DebugPlanning.ensureAdaptersFile(file), answer -> {
+            if (answer.failure() != null) {
+                host.setStatus(tr("debug.error.startFailed", answer.why()));
+            } else {
+                ops.openPath(file);
             }
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("debug.error.startFailed", e.getMessage()));
-            return;
-        }
-        ops.openPath(file);
+        });
     }
 
     /** F5 on a file of one of the user's own adapters' languages: its {@code launch} template, variables put in. */
@@ -3637,10 +3631,14 @@ final class DebugCoordinator {
      */
     void startLaunchConfiguration() {
         EditorBuffer b = host.activeBuffer();
-        LaunchFile launch = readLaunchJson(b);
-        if (launch == null) {
-            return; // said
-        }
+        readLaunchJson(b, true, launch -> {
+            if (launch != null) {
+                startLaunchConfiguration(launch, b);
+            }
+        });
+    }
+
+    private void startLaunchConfiguration(LaunchFile launch, @Nullable EditorBuffer b) {
         if (launch.parsed().configurations().isEmpty()
                 && launch.parsed().compounds().isEmpty()) {
             host.setStatus(tr("status.debug.noConfigurations", launch.path()));
@@ -3670,24 +3668,9 @@ final class DebugCoordinator {
     /** A project's launch.json, read: where it is, the folder it is for, what it holds. */
     record LaunchFile(Path path, Path workspace, com.editora.dap.LaunchJson.File parsed) {}
 
-    /** The launch.json for the active file's project, read; null after saying why there is none to use. */
-    private @Nullable LaunchFile readLaunchJson(@Nullable EditorBuffer b) {
-        Path file = b == null ? null : b.getPath();
-        Path launchJson = com.editora.dap.LaunchJson.find(ops.projectRoot(), file);
-        if (launchJson == null) {
-            host.setStatus(tr("status.debug.noLaunchJson"));
-            return null;
-        }
-        com.editora.dap.LaunchJson.File parsed;
-        try {
-            parsed = com.editora.dap.LaunchJson.parse(java.nio.file.Files.readString(launchJson));
-        } catch (java.io.IOException | com.editora.dap.LaunchJson.LaunchJsonException e) {
-            host.setStatus(tr("status.debug.launchJsonInvalid", launchJson, e.getMessage()));
-            return null;
-        }
-        Path vscode = launchJson.toAbsolutePath().getParent();
-        Path workspace = vscode == null || vscode.getParent() == null ? launchJson : vscode.getParent();
-        return new LaunchFile(launchJson, workspace, parsed);
+    /** The launch.json for the active file's project, read off the FX thread ({@link DebugPlanning#readLaunchJson}). */
+    private void readLaunchJson(@Nullable EditorBuffer b, boolean sayNone, Consumer<@Nullable LaunchFile> then) {
+        DebugPlanning.readLaunchJson(host, ops.projectRoot(), b == null ? null : b.getPath(), sayNone, then);
     }
 
     /** An entry of Debug: Start Configuration: one of launch.json's configurations, or one of its compounds. */
@@ -3774,21 +3757,20 @@ final class DebugCoordinator {
                 startAll.run();
                 return;
             }
-            inSession(first, () -> {
-                List<String> argv = preLaunchTask(launch.path(), launch.workspace(), group.preLaunchTask(), b, answers);
-                if (argv == null) {
-                    return; // said
-                }
-                nameSession(group.name());
-                beforeLaunch()
-                        .run(
-                                host,
-                                new BeforeLaunchStep.Command(group.preLaunchTask(), argv, "status.run.preLaunchTask"),
-                                launch.workspace(),
-                                java.util.Map.of(),
-                                beforeLaunchConsole(),
-                                () -> later(startAll)); // once the step has ended: its service is free again
-            });
+            inSession(
+                    first,
+                    () -> preLaunchTask(launch.path(), launch.workspace(), group.preLaunchTask(), b, answers, argv -> {
+                        nameSession(group.name());
+                        beforeLaunch()
+                                .run(
+                                        host,
+                                        new BeforeLaunchStep.Command(
+                                                group.preLaunchTask(), argv, "status.run.preLaunchTask"),
+                                        launch.workspace(),
+                                        java.util.Map.of(),
+                                        beforeLaunchConsole(),
+                                        () -> later(startAll)); // once the step has ended: its service is free again
+                    }));
         });
     }
 
@@ -3829,8 +3811,10 @@ final class DebugCoordinator {
      */
     void startCompound() {
         EditorBuffer b = host.activeBuffer();
-        Path launchJson = com.editora.dap.LaunchJson.find(ops.projectRoot(), b == null ? null : b.getPath());
-        LaunchFile launch = launchJson == null ? null : readLaunchJson(b);
+        readLaunchJson(b, false, launch -> startCompound(launch, b));
+    }
+
+    private void startCompound(@Nullable LaunchFile launch, @Nullable EditorBuffer b) {
         List<CompoundChoice> choices = new ArrayList<>();
         ops.runCompounds().forEach(c -> choices.add(new CompoundChoice(c, null)));
         if (launch != null) {
@@ -3974,61 +3958,31 @@ final class DebugCoordinator {
             start.run();
             return;
         }
-        List<String> argv = preLaunchTask(launchJson, workspace, task, b, answers);
-        if (argv == null) {
-            return; // said
-        }
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(task, argv, "status.run.preLaunchTask"),
-                        workspace,
-                        java.util.Map.of(),
-                        beforeLaunchConsole(),
-                        () -> later(start));
+        preLaunchTask(launchJson, workspace, task, b, answers, argv -> {
+            if (beforeLaunchActive() || s().pendingBuild != null) {
+                host.setStatus(tr("status.run.busy"));
+                return;
+            }
+            beforeLaunch()
+                    .run(
+                            host,
+                            new BeforeLaunchStep.Command(task, argv, "status.run.preLaunchTask"),
+                            workspace,
+                            java.util.Map.of(),
+                            beforeLaunchConsole(),
+                            () -> later(start));
+        });
     }
 
-    /** The command line of {@code tasks.json}'s task {@code label}; null when it cannot be run here (said). */
-    private @Nullable List<String> preLaunchTask(
+    /** The command line of {@code tasks.json}'s task {@code label}, to {@code then} ({@link DebugPlanning}). */
+    private void preLaunchTask(
             Path launchJson,
             Path workspace,
             String label,
             @Nullable EditorBuffer b,
-            java.util.Map<String, String> answers) {
-        Path tasksJson = launchJson.resolveSibling("tasks.json");
-        try {
-            com.editora.dap.LaunchJson.File tasks =
-                    com.editora.dap.LaunchJson.parse(java.nio.file.Files.readString(tasksJson));
-            java.util.Map<String, Object> task = com.editora.dap.LaunchJson.task(tasks, label);
-            if (task == null) {
-                host.setStatus(tr("status.debug.taskMissing", label));
-                return null;
-            }
-            Object resolved = com.editora.dap.LaunchJson.substitute(
-                    com.editora.dap.LaunchJson.forPlatform(
-                            task, com.editora.dap.LaunchJson.osKey(com.editora.Os.current())),
-                    launchContext(workspace, b, answers),
-                    tasks.inputs(),
-                    new java.util.HashMap<>(answers));
-            @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> t = (java.util.Map<String, Object>) resolved;
-            List<String> argv = t == null ? null : com.editora.dap.LaunchJson.taskArgv(t, com.editora.Os.isWindows());
-            if (argv == null) {
-                host.setStatus(tr("status.debug.taskUnsupported", label));
-            }
-            return argv;
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("status.debug.taskMissing", label));
-        } catch (com.editora.dap.LaunchJson.LaunchJsonException e) {
-            host.setStatus(tr("status.debug.launchVariable", e.getMessage()));
-        } catch (com.editora.dap.LaunchJson.Cancelled e) {
-            // asked and cancelled: nothing runs
-        }
-        return null;
+            java.util.Map<String, String> answers,
+            Consumer<List<String>> then) {
+        DebugPlanning.preLaunchTask(host, launchJson, label, () -> launchContext(workspace, b, answers), answers, then);
     }
 
     /** Starts a resolved configuration on the debugger its type names. */
@@ -4047,7 +4001,7 @@ final class DebugCoordinator {
                 if (!debugEffectiveFor("python")) {
                     host.setStatus(unavailableMessage("python", null));
                 } else if (route.attach()) {
-                    String[] where = attachAddress(body, 5678);
+                    String[] where = DebugLaunchArgs.attachAddress(body, 5678);
                     ops.openToolWindow();
                     nameSession(name);
                     s().relaunch = null;
@@ -4064,7 +4018,8 @@ final class DebugCoordinator {
                 if (!debugEffectiveFor("javascript")) {
                     host.setStatus(unavailableMessage("javascript", null));
                 } else if (route.attach()) {
-                    String[] where = attachAddress(body, com.editora.dap.JsLaunch.DEFAULT_INSPECTOR_PORT);
+                    String[] where =
+                            DebugLaunchArgs.attachAddress(body, com.editora.dap.JsLaunch.DEFAULT_INSPECTOR_PORT);
                     ops.openToolWindow();
                     nameSession(name);
                     s().relaunch = null;
@@ -4152,19 +4107,6 @@ final class DebugCoordinator {
                         dap().startExternal(anchor, ruby, request, com.editora.dap.LaunchRoute.rdbgTail(request)));
         s().relaunch = start;
         start.run();
-    }
-
-    /** {@code host:port} an attach configuration names ({@code connect: {host, port}}, or {@code address} / {@code port}). */
-    static String[] attachAddress(java.util.Map<String, Object> body, int defaultPort) {
-        Object connect = body.get("connect");
-        java.util.Map<?, ?> where = connect instanceof java.util.Map<?, ?> m ? m : body;
-        Object host = where.get("host") != null ? where.get("host") : where.get("address");
-        Object port = where.get("port");
-        String p = port instanceof Number n ? String.valueOf(n.longValue()) : port == null ? "" : String.valueOf(port);
-        return new String[] {
-            host == null || String.valueOf(host).isBlank() ? "127.0.0.1" : String.valueOf(host),
-            p.matches("\\d+") ? p : String.valueOf(defaultPort)
-        };
     }
 
     /**
@@ -4803,13 +4745,34 @@ final class DebugCoordinator {
      * Debug console, which the build's output then follows instead of replacing.
      */
     private record LaunchExtras(
-            java.util.Map<String, String> env, @Nullable Path cwd, boolean afterStep) {
-        static final LaunchExtras NONE = new LaunchExtras(java.util.Map.of(), null, false);
+            java.util.Map<String, String> env, @Nullable Path cwd, boolean afterStep, boolean config) {
+        static final LaunchExtras NONE = new LaunchExtras(java.util.Map.of(), null, false, false);
+    }
+
+    /** Names the session and its Restart for a file's launch; a configuration's launch did both itself already. */
+    private void named(LaunchExtras extras, String name, Runnable relaunch) {
+        if (!extras.config()) {
+            nameSession(name);
+            s().relaunch = relaunch;
+        }
     }
 
     /** {@link #debugGoFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
     private void debugGo(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        Path module = com.editora.dap.GoLaunch.moduleRoot(path);
+        DebugPlanning.offFx( // the module is a folder walk: off the FX thread (PERF-01)
+                "debug-go-plan",
+                () -> java.util.Optional.ofNullable(com.editora.dap.GoLaunch.moduleRoot(path)),
+                a -> debugGoIn(
+                        path,
+                        text,
+                        caret,
+                        args,
+                        extras,
+                        a.value() == null ? null : a.value().orElse(null)));
+    }
+
+    private void debugGoIn(
+            Path path, String text, int caret, List<String> args, LaunchExtras extras, @Nullable Path module) {
         List<String> go = module != null
                 ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
                 : com.editora.build.BuildExecutable.resolve(
@@ -4819,10 +4782,9 @@ final class DebugCoordinator {
         }
         java.util.Map<String, Object> launch = com.editora.dap.GoLaunch.launch(
                 path, text, caret, module != null, args, extras.env(), false, extras.cwd());
-        nameSession(com.editora.dap.GoLaunch.sessionName(path, text, caret));
         dap().setExternalPathDirs("go", goToolDirs(go));
         Path built = module != null ? module : path.toAbsolutePath().getParent();
-        s().relaunch = () -> startGo(path, built, launch); // the same test again, wherever the caret is now
+        named(extras, com.editora.dap.GoLaunch.sessionName(path, text, caret), () -> startGo(path, built, launch));
         startGo(path, built, launch);
     }
 
@@ -4862,7 +4824,38 @@ final class DebugCoordinator {
 
     /** {@link #debugRustFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
     private void debugRust(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        Path root = com.editora.dap.RustLaunch.packageRoot(path);
+        DebugPlanning.offFx( // the package and its programs are looked for off the FX thread (PERF-01)
+                "debug-rust-plan",
+                () -> {
+                    Path root = com.editora.dap.RustLaunch.packageRoot(path);
+                    boolean program = root != null
+                            && (java.nio.file.Files.isRegularFile(
+                                            root.resolve("src").resolve("main.rs"))
+                                    || java.nio.file.Files.isDirectory(
+                                            root.resolve("src").resolve("bin")));
+                    return new Object[] {root, program};
+                },
+                a -> {
+                    Object[] found = a.value();
+                    debugRustIn(
+                            path,
+                            text,
+                            caret,
+                            args,
+                            extras,
+                            found == null ? null : (Path) found[0],
+                            found != null && (Boolean) found[1]);
+                });
+    }
+
+    private void debugRustIn(
+            Path path,
+            String text,
+            int caret,
+            List<String> args,
+            LaunchExtras extras,
+            @Nullable Path root,
+            boolean hasProgram) {
         if (root == null) {
             host.setStatus(tr("status.debug.rustNoPackage", path.getFileName()));
             return;
@@ -4871,13 +4864,8 @@ final class DebugCoordinator {
         if (cargo == null) {
             return; // the package was not trusted: nothing is built
         }
-        boolean hasProgram =
-                java.nio.file.Files.isRegularFile(root.resolve("src").resolve("main.rs"))
-                        || java.nio.file.Files.isDirectory(root.resolve("src").resolve("bin"));
         com.editora.dap.RustLaunch.Plan plan = com.editora.dap.RustLaunch.plan(root, path, text, caret, hasProgram);
-        nameSession(plan.sessionName());
-        // the same test again, wherever the caret is now
-        s().relaunch = () -> startRust(path, root, cargo, plan, args, extras);
+        named(extras, plan.sessionName(), () -> startRust(path, root, cargo, plan, args, extras)); // the test again
         startRust(path, root, cargo, plan, args, extras);
     }
 
@@ -4971,10 +4959,20 @@ final class DebugCoordinator {
 
     /** {@link #debugNativeFile} for {@code path}, a lone file compiled as C++ ({@code cpp}) or as C. */
     private void debugNative(Path path, boolean cpp, List<String> args, LaunchExtras extras) {
-        Path cmake = com.editora.dap.NativeBuild.cmakeRoot(path);
-        Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(path) : null;
-        com.editora.dap.NativeBuild.Plan plan =
-                com.editora.dap.NativeBuild.plan(path, cpp, cmake, make, nativeOutputDir());
+        Path out = nativeOutputDir();
+        DebugPlanning.offFx( // the project's build files are looked for off the FX thread (PERF-01)
+                "debug-native-plan",
+                () -> {
+                    Path cmake = com.editora.dap.NativeBuild.cmakeRoot(path);
+                    Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(path) : null;
+                    return java.util.Optional.ofNullable(com.editora.dap.NativeBuild.plan(path, cpp, cmake, make, out));
+                },
+                a -> debugNativePlanned(
+                        path, args, extras, a.value() == null ? null : a.value().orElse(null)));
+    }
+
+    private void debugNativePlanned(
+            Path path, List<String> args, LaunchExtras extras, com.editora.dap.NativeBuild.@Nullable Plan plan) {
         if (plan == null) {
             host.setStatus(tr("status.debug.nativeHeaderAlone", path.getFileName()));
             return;
@@ -4988,8 +4986,7 @@ final class DebugCoordinator {
                 return; // not trusted: nothing is built
             }
         }
-        nameSession(plan.sessionName());
-        s().relaunch = () -> startNative(path, plan, args, extras);
+        named(extras, plan.sessionName(), () -> startNative(path, plan, args, extras));
         startNative(path, plan, args, extras);
     }
 
@@ -5009,19 +5006,26 @@ final class DebugCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        try {
-            if (plan.buildDir() != null) {
-                com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
-            }
-            if (plan.output() != null && plan.output().getParent() != null) {
-                java.nio.file.Files.createDirectories(plan.output().getParent());
-            }
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("debug.error.startFailed", e.getMessage()));
-            return;
-        }
         boolean terminal = host.settings().isDebugProgramConsole();
-        runNativeSteps(path, plan, 0, !extras.afterStep(), () -> launchNative(path, plan, args, terminal, extras));
+        DebugPlanning.offFx( // CMake's codemodel request and the output folder are written off the FX thread
+                "debug-native-prepare",
+                () -> {
+                    if (plan.buildDir() != null) {
+                        com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
+                    }
+                    if (plan.output() != null && plan.output().getParent() != null) {
+                        java.nio.file.Files.createDirectories(plan.output().getParent());
+                    }
+                    return plan;
+                },
+                a -> {
+                    if (a.failure() != null) {
+                        host.setStatus(tr("debug.error.startFailed", a.why()));
+                        return;
+                    }
+                    runNativeSteps(
+                            path, plan, 0, !extras.afterStep(), () -> launchNative(path, plan, args, terminal, extras));
+                });
         updateDebugAvailability();
     }
 
@@ -5081,8 +5085,17 @@ final class DebugCoordinator {
      * ({@link com.editora.dap.DotnetLaunch}).
      */
     private void debugCsharpFile(Path path, List<String> args) {
-        Path project = com.editora.dap.DotnetLaunch.projectFile(path);
-        com.editora.dap.DotnetLaunch.Plan plan = com.editora.dap.DotnetLaunch.plan(path, project);
+        DebugPlanning.offFx( // the project file is a folder walk with listings: off the FX thread (PERF-01)
+                "debug-dotnet-plan",
+                () -> com.editora.dap.DotnetLaunch.plan(path, com.editora.dap.DotnetLaunch.projectFile(path)),
+                a -> {
+                    if (a.value() != null) {
+                        debugCsharpPlanned(path, args, a.value());
+                    }
+                });
+    }
+
+    private void debugCsharpPlanned(Path path, List<String> args, com.editora.dap.DotnetLaunch.Plan plan) {
         if (plan.project()
                 && !ops.trustBuild(
                         plan.root(),
@@ -5282,10 +5295,23 @@ final class DebugCoordinator {
         if (path == null) {
             return; // saved just above, so it has one
         }
+        String text = b.getContent();
+        String settingsJdk = host.settings().getMavenJdkHome();
+        // What the launch reads from the disk is looked at off the FX thread first (PERF-01): the trust gate's
+        // project files, the build root and its pom, the JDK's java, PATH's java. What follows answers from that.
+        DebugPlanning.offFx(
+                "debug-file-plan", () -> DebugPlanning.warmJavaLaunch(language, path, text, settingsJdk), a -> {
+                    if (a.value() != null) {
+                        launchBufferPlanned(b, path, language, nodeArgs, a.value());
+                    }
+                });
+    }
+
+    private void launchBufferPlanned(
+            EditorBuffer b, Path path, String language, List<String> nodeArgs, DebugPlanning.FileRead read) {
         // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
         // the project, not just the file — the workspace-trust gate first, as Run asks it, so "no" starts nothing.
-        if (!trusted(com.editora.run.RunTrust.forFile(
-                language, path, b.getContent(), null, java.nio.file.Files::isRegularFile))) {
+        if (!trusted(read.gate())) {
             return;
         }
         b.settleRunScan(); // compact-source detection is the load's off-FX scan; decide from its result
@@ -5464,16 +5490,19 @@ final class DebugCoordinator {
         s().pendingBuild = token;
         showPreparing(routing); // from the first moment: the source-folder step can wait seconds on jdtls (C203)
         DebugSession session = s();
-        com.editora.dap.JavaSourceRootFix.correct(
-                lspManager,
-                routing,
-                com.editora.dap.JavaSourceRootFix.declaredPackage(readQuietly(routing)),
-                () -> session.pendingBuild == token,
-                asThisSession(fixed -> {
-                    if (s().pendingBuild == token) {
-                        buildThenLaunch(routing, launch, true);
-                    }
-                }));
+        DebugPlanning.offFx( // the file's package clause is read off the FX thread (PERF-01)
+                "debug-loose-package",
+                () -> com.editora.dap.JavaSourceRootFix.declaredPackage(readQuietly(routing)),
+                a -> com.editora.dap.JavaSourceRootFix.correct(
+                        lspManager,
+                        routing,
+                        a.value() == null ? "" : a.value(),
+                        () -> session.pendingBuild == token,
+                        asThisSession(fixed -> {
+                            if (s().pendingBuild == token) {
+                                buildThenLaunch(routing, launch, true);
+                            }
+                        })));
     }
 
     /**
@@ -5617,11 +5646,7 @@ final class DebugCoordinator {
     }
 
     private static String readQuietly(Path file) {
-        try {
-            return java.nio.file.Files.size(file) > 2_000_000 ? "" : java.nio.file.Files.readString(file);
-        } catch (java.io.IOException | RuntimeException e) {
-            return "";
-        }
+        return DebugPlanning.readQuietly(file);
     }
 
     /** How many times a failed build's errors are looked for again before the console says only that there are some. */
@@ -5926,19 +5951,26 @@ final class DebugCoordinator {
             host.setStatus(tr("status.run.configNeedsJavaFile"));
             return;
         }
-        Path buildRoot = JavaProjectRoot.find(routing);
-        Path root = JavaLaunchPrep.projectOf(routing, buildRoot, ops.projectRoot());
-        if (root == null) {
+        Path window = ops.projectRoot();
+        String jdk = host.settings().getMavenJdkHome(); // the project and the plan are read off the FX thread
+        DebugPlanning.offFx("debug-config-plan", () -> DebugPlanning.planJava(cfg, routing, window, jdk), a -> {
+            if (a.value() != null) {
+                debugJavaConfig(cfg, routing, a.value());
+            }
+        });
+    }
+
+    private void debugJavaConfig(RunConfiguration cfg, Path routing, DebugPlanning.JavaRead read) {
+        Path buildRoot = read.buildRoot();
+        Path root = read.root();
+        com.editora.run.JavaLaunchPlan.Result planned = read.planned();
+        if (root == null || planned == null) {
             host.setStatus(tr("status.debug.noProject"));
             return;
         }
         if (!saveJavaBuffers(routing, root, true)) {
             return; // every unsaved Java file of the project is written first (review B3)
         }
-        // One plan for Run and Debug (review D9): working directory, JDK, environment, arguments.
-        com.editora.run.JavaLaunchPlan.Result planned = com.editora.run.JavaLaunchPlan.forConfiguration(
-                cfg,
-                com.editora.run.JavaLaunchPlan.Inputs.of(root, host.settings().getMavenJdkHome()));
         com.editora.run.JavaLaunchPlan plan = planned.plan();
         if (plan == null) { // not ok: the plan names its problem
             if (planned.problem() instanceof com.editora.run.JavaLaunchPlan.Problem problem) {
@@ -5973,7 +6005,8 @@ final class DebugCoordinator {
             // resolve below comes back "no language server for file" while jdtls is running perfectly.
             lsp.ensureManaged(routing);
             dap().resolveMainClasses(routing, options -> {
-                DapManager.MainClassOption match = matchConfiguredClass(options, cfg.mainClass(), plainFolder);
+                DapManager.MainClassOption match =
+                        DebugLaunchArgs.matchConfiguredClass(options, cfg.mainClass(), plainFolder);
                 if (match == null) {
                     host.setStatus(
                             options.isEmpty()
@@ -6083,9 +6116,17 @@ final class DebugCoordinator {
         if (args == null) {
             return;
         }
-        Path root = ops.projectRoot();
-        Path cwd = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
-        Path script = cwd == null ? null : com.editora.run.RunConfigWorkingDirectory.script(cfg, root, cwd);
+        Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
+        DebugPlanning.offFx("debug-config-plan", () -> DebugPlanning.readConfig(cfg, root, false, true), a -> {
+            if (a.value() != null) {
+                debugJvmScriptConfig(cfg, args, a.value());
+            }
+        });
+    }
+
+    private void debugJvmScriptConfig(RunConfiguration cfg, List<String> args, DebugPlanning.ConfigRead read) {
+        Path cwd = read.cwd();
+        Path script = read.script();
         if (cwd == null || script == null) {
             host.setStatus(tr("status.run.configNeedsTarget", cfg.name()));
             ops.editConfiguration(cfg.name());
@@ -6095,7 +6136,7 @@ final class DebugCoordinator {
             host.setStatus(tr("debug.error.remoteLanguage"));
             return;
         }
-        if (!java.nio.file.Files.isRegularFile(script)) {
+        if (read.scriptMissing()) {
             host.setStatus(tr("status.run.scriptMissing", cfg.name(), script.toString()));
             ops.editConfiguration(cfg.name());
             return;
@@ -6104,31 +6145,15 @@ final class DebugCoordinator {
             host.setStatus(unavailableMessage(cfg.type(), script));
             return;
         }
-        java.util.Map<String, String> env;
-        try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false), cwd);
-        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
-            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
-            ops.editConfiguration(cfg.name());
-            return;
-        } catch (com.editora.run.EnvVars.EnvFileException e) {
-            host.setStatus(
-                    tr("status.run.envFileUnreadable", cfg.name(), e.file().toString()));
-            ops.editConfiguration(cfg.name());
+        if (DebugPlanning.envProblem(host, ops::editConfiguration, cfg, read.env(), read.envError())) {
             return;
         }
+        java.util.Map<String, String> env = read.env();
         if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        // A Clojure file's project (project.clj, deps.edn, bb.edn) or a Scala CLI project folder is loaded with it:
-        // that tool's workspace-trust gate first, as Run asks it, so "no" starts nothing.
-        com.editora.run.RunTrust.Gate gate = com.editora.run.ScriptRunCommand.SCALA.equals(cfg.type())
-                ? com.editora.run.RunTrust.scalaCli(
-                        com.editora.run.ScalaRun.ownerOf(script, null, java.nio.file.Files::isRegularFile))
-                : com.editora.run.JvmScriptRun.trustGate(
-                        cfg.type(), script, cfg.workingDir().isBlank() ? null : cwd);
-        if (!trusted(gate)) {
+        if (!trusted(read.gate())) { // the project's trust first, as Run asks it, so "no" starts nothing
             return;
         }
         String jdkHome = cfg.jdkHome().isBlank() ? host.settings().getMavenJdkHome() : cfg.jdkHome();
@@ -6188,9 +6213,19 @@ final class DebugCoordinator {
         if (args == null) {
             return;
         }
-        Path root = ops.projectRoot();
-        Path cwd = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
-        Path source = cwd == null ? null : com.editora.run.RunConfigWorkingDirectory.script(cfg, root, cwd);
+        Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
+        boolean text = com.editora.run.ScriptRunCommand.GO.equals(cfg.type())
+                || com.editora.run.ScriptRunCommand.RUST.equals(cfg.type());
+        DebugPlanning.offFx("debug-config-plan", () -> DebugPlanning.readConfig(cfg, root, text, false), a -> {
+            if (a.value() != null) {
+                debugCompiledConfig(cfg, args, a.value());
+            }
+        });
+    }
+
+    private void debugCompiledConfig(RunConfiguration cfg, List<String> args, DebugPlanning.ConfigRead read) {
+        Path cwd = read.cwd();
+        Path source = read.script();
         if (cwd == null || source == null) {
             host.setStatus(tr("status.run.configNeedsTarget", cfg.name()));
             ops.editConfiguration(cfg.name());
@@ -6200,13 +6235,13 @@ final class DebugCoordinator {
             host.setStatus(tr("debug.error.remoteLanguage"));
             return;
         }
-        if (!java.nio.file.Files.isRegularFile(source)) {
+        if (read.scriptMissing()) {
             host.setStatus(tr("status.run.scriptMissing", cfg.name(), source.toString()));
             ops.editConfiguration(cfg.name());
             return;
         }
         boolean ownDir = !cfg.workingDir().isBlank();
-        if (ownDir && !java.nio.file.Files.isDirectory(cwd)) {
+        if (read.dirMissing()) {
             host.setStatus(tr("status.run.workingDirMissing", cfg.name(), cwd.toString()));
             ops.editConfiguration(cfg.name());
             return;
@@ -6220,33 +6255,24 @@ final class DebugCoordinator {
             host.setStatus(unavailableMessage(language, source));
             return;
         }
-        java.util.Map<String, String> env;
-        try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false), cwd);
-        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
-            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
-            ops.editConfiguration(cfg.name());
-            return;
-        } catch (com.editora.run.EnvVars.EnvFileException e) {
-            host.setStatus(
-                    tr("status.run.envFileUnreadable", cfg.name(), e.file().toString()));
-            ops.editConfiguration(cfg.name());
+        if (DebugPlanning.envProblem(host, ops::editConfiguration, cfg, read.env(), read.envError())) {
             return;
         }
+        java.util.Map<String, String> env = read.env();
         if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
         String name = cfg.name();
         boolean hasStep = !cfg.beforeLaunch().isBlank();
-        LaunchExtras extras = new LaunchExtras(env, ownDir ? cwd : null, hasStep);
+        LaunchExtras extras = new LaunchExtras(env, ownDir ? cwd : null, hasStep, true);
         Runnable launch = () -> {
             ops.openToolWindow();
             s().announceStart = true;
             if (com.editora.run.ScriptRunCommand.GO.equals(type)) {
-                debugGo(source, sourceText(source), -1, args, extras);
+                debugGo(source, sourceText(source, read.text()), -1, args, extras);
             } else if (com.editora.run.ScriptRunCommand.RUST.equals(type)) {
-                debugRust(source, sourceText(source), -1, args, extras);
+                debugRust(source, sourceText(source, read.text()), -1, args, extras);
             } else {
                 debugNative(source, com.editora.run.ScriptRunCommand.CPP.equals(type), args, extras);
             }
@@ -6266,21 +6292,14 @@ final class DebugCoordinator {
     }
 
     /** The text of {@code file}: its open tab's (edits not saved yet count), else what is on disk, else none. */
-    private String sourceText(Path file) {
+    private String sourceText(Path file, String onDisk) {
         String[] open = new String[1];
         host.forEachBuffer(b -> {
             if (open[0] == null && b.getPath() != null && samePath(b.getPath(), file)) {
                 open[0] = b.getContent();
             }
         });
-        if (open[0] != null) {
-            return open[0];
-        }
-        try {
-            return java.nio.file.Files.readString(file);
-        } catch (java.io.IOException | java.io.UncheckedIOException e) {
-            return ""; // unreadable, or not text: the launch says what it could not build
-        }
+        return open[0] != null ? open[0] : onDisk; // what the plan read (empty: unreadable)
     }
 
     /**
@@ -6290,18 +6309,25 @@ final class DebugCoordinator {
      * environment are already set on the session.
      */
     private void debugKotlinProgram(Path source, @Nullable Path cwd, String java, java.util.Map<String, String> env) {
-        String kotlinc = com.editora.run.JvmTools.locate(com.editora.run.KotlinRun.TOOL);
-        if (kotlinc == null) {
-            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey("kotlin")));
-            return;
-        }
-        com.editora.run.KotlinBuild.Plan plan;
-        try {
-            plan = com.editora.run.KotlinBuild.plan(source, kotlinc, host.configDir());
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("debug.error.startFailed", e.getMessage()));
-            return;
-        }
+        Path config = host.configDir(); // the compiler, the source's hash and the jar cache: off the FX thread
+        DebugPlanning.offFx("debug-kotlin-plan", () -> DebugPlanning.readKotlin(source, config), a -> {
+            var read = a.value();
+            if (a.failure() != null || read == null) {
+                host.setStatus(tr("debug.error.startFailed", a.why()));
+            } else if (read.plan() == null) {
+                host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey("kotlin")));
+            } else {
+                debugKotlinPlanned(source, cwd, java, env, read.plan());
+            }
+        });
+    }
+
+    private void debugKotlinPlanned(
+            Path source,
+            @Nullable Path cwd,
+            String java,
+            java.util.Map<String, String> env,
+            com.editora.run.KotlinBuild.Plan plan) {
         String javaExec = java == null || java.isBlank() ? "java" : java;
         Runnable start = () -> {
             ops.openToolWindow();
@@ -6323,15 +6349,19 @@ final class DebugCoordinator {
                         cwd != null ? cwd : source.getParent(),
                         env,
                         beforeLaunchConsole(),
-                        () -> {
-                            try {
-                                com.editora.run.KotlinBuild.finish(plan);
-                            } catch (java.io.IOException e) {
-                                host.setStatus(tr("debug.error.startFailed", e.getMessage()));
-                                return;
-                            }
-                            start.run();
-                        });
+                        () -> DebugPlanning.offFx(
+                                "debug-kotlin-finish",
+                                () -> {
+                                    com.editora.run.KotlinBuild.finish(plan);
+                                    return plan;
+                                },
+                                a -> {
+                                    if (a.failure() != null) {
+                                        host.setStatus(tr("debug.error.startFailed", a.why()));
+                                    } else {
+                                        start.run();
+                                    }
+                                }));
         updateDebugAvailability();
     }
 
@@ -6357,30 +6387,6 @@ final class DebugCoordinator {
             }
         }
         return fallback;
-    }
-
-    /**
-     * jdtls's entry for a configuration's {@code mainClass}. In a plain folder jdtls may know a packaged class
-     * without its package (it guesses the source folder — see DapManager): the simple name then matches.
-     */
-    static DapManager.@Nullable MainClassOption matchConfiguredClass(
-            List<DapManager.MainClassOption> options, String mainClass, boolean plainFolder) {
-        for (DapManager.MainClassOption o : options) {
-            if (mainClass.equals(o.className())) {
-                return o;
-            }
-        }
-        if (!plainFolder) {
-            return null;
-        }
-        String simple = mainClass.substring(mainClass.lastIndexOf('.') + 1);
-        for (DapManager.MainClassOption o : options) {
-            String cls = o.className();
-            if (cls != null && simple.equals(cls.substring(cls.lastIndexOf('.') + 1))) {
-                return o;
-            }
-        }
-        return null;
     }
 
     private void startMainClassDebug(@Nullable String targetFqn) {
@@ -6459,7 +6465,8 @@ final class DebugCoordinator {
                 }
             };
             if (targetFqn != null) {
-                DapManager.MainClassOption match = matchConfiguredClass(options, targetFqn, plainFolder);
+                DapManager.MainClassOption match =
+                        DebugLaunchArgs.matchConfiguredClass(options, targetFqn, plainFolder);
                 if (match == null) {
                     host.setStatus(tr("status.debug.noMainClass"));
                     return;
@@ -6492,7 +6499,7 @@ final class DebugCoordinator {
         if (root != null && !com.editora.process.ExecTargets.runsHere(root)) {
             return ""; // a JDK setting names a folder on this machine; the jdtls where it runs resolves its own
         }
-        if (root != null && !java.nio.file.Files.isRegularFile(root.resolve("pom.xml"))) {
+        if (root != null && !RunOpsHost.isMavenProject(root)) { // the plan looked at it off the FX thread
             return "";
         }
         return com.editora.run.JdkToolchain.effectiveHome(
@@ -7442,8 +7449,22 @@ final class DebugCoordinator {
             ops.editConfiguration(name);
             return;
         }
-        Path root = ops.projectRoot();
-        Path cwd = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
+        Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
+        DebugPlanning.offFx("debug-config-plan", () -> DebugPlanning.readNode(cfg, root), a -> {
+            if (a.value() != null) {
+                debugNodeConfig(cfg, args, nodeOptions, root, a.value());
+            }
+        });
+    }
+
+    private void debugNodeConfig(
+            RunConfiguration cfg,
+            List<String> args,
+            List<String> nodeOptions,
+            @Nullable Path root,
+            DebugPlanning.NodeRead read) {
+        String name = cfg.name();
+        Path cwd = read.cwd();
         if (cwd == null) {
             host.setStatus(tr("status.run.configNeedsWorkingDir", name));
             ops.editConfiguration(name);
@@ -7453,25 +7474,20 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.nodeConfigRemote", tr("settings.runConfig.type." + cfg.type())));
             return;
         }
-        Map<String, String> env;
-        try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false), cwd);
-        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
-            host.setStatus(tr("status.run.envUnclosedQuote", name, String.valueOf(e.quote())));
-            ops.editConfiguration(name);
-            return;
-        } catch (com.editora.run.EnvVars.EnvFileException e) {
-            host.setStatus(tr("status.run.envFileUnreadable", name, e.file().toString()));
-            ops.editConfiguration(name);
+        if (DebugPlanning.envProblem(host, ops::editConfiguration, cfg, read.env(), read.envError())) {
             return;
         }
+        Map<String, String> env = read.env();
         s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
         if (com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
             if (!trusted(com.editora.run.RunTrust.npm(cwd))) {
                 return; // a package script runs its pre/post hooks: npm's workspace-trust gate, as Run asks it
             }
             // The project's own package manager, as Run and the npm tool window use it.
-            var detected = com.editora.build.BuildTool.npmManager(cwd, root);
+            var detected = read.npm();
+            if (detected == null) {
+                return; // not reached: an npm configuration's plan detects its manager
+            }
             String override = host.settings().getNpmCommand();
             List<String> manager = com.editora.build.BuildExecutable.resolve(
                     List.of(),
@@ -7486,8 +7502,8 @@ final class DebugCoordinator {
                     name);
             return;
         }
-        Path script = com.editora.run.RunConfigWorkingDirectory.script(cfg, root, cwd);
-        if (script == null || !Files.isRegularFile(script)) {
+        Path script = read.script();
+        if (script == null || read.scriptMissing()) {
             host.setStatus(tr("status.run.scriptMissing", name, String.valueOf(script)));
             ops.editConfiguration(name);
             return;

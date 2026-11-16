@@ -3013,17 +3013,36 @@ public class MainController implements com.editora.mcp.McpBridge {
     void applyMcpSupport() {
         boolean on = mcpEnabled();
         if (on && mcpServer == null) {
-            try {
-                com.editora.mcp.McpServer s = new com.editora.mcp.McpServer(this, config.getConfigDir());
-                s.start();
-                mcpServer = s;
-                mcpOwner = this;
-            } catch (Exception e) {
-                LOG.log(java.util.logging.Level.WARNING, "MCP server failed to start", e);
-                setStatus(tr("status.mcp.failed"));
-            }
+            // The loopback socket is bound and the server started off the FX thread (PERF-01, Pauta 6.0.1); the
+            // status bar says it runs once it does.
+            com.editora.mcp.McpServer s = new com.editora.mcp.McpServer(this, config.getConfigDir());
+            mcpServer = s;
+            mcpOwner = this;
+            Thread.ofVirtual().name("mcp-start").start(() -> {
+                Exception failed = null;
+                try {
+                    s.start();
+                } catch (Exception e) {
+                    failed = e;
+                }
+                Exception why = failed;
+                Platform.runLater(() -> {
+                    if (why != null) {
+                        LOG.log(java.util.logging.Level.WARNING, "MCP server failed to start", why);
+                        if (mcpServer == s) {
+                            mcpServer = null;
+                            mcpOwner = null;
+                        }
+                        setStatus(tr("status.mcp.failed"));
+                    } else if (mcpServer != s) {
+                        Thread.ofVirtual().name("mcp-stop").start(s::stop); // turned off while it started
+                    }
+                    statusBar.setMcpRunning(mcpServer != null && mcpServer.isRunning());
+                });
+            });
         } else if (!on && mcpServer != null && mcpOwner == this) {
-            mcpServer.stop();
+            com.editora.mcp.McpServer s = mcpServer;
+            Thread.ofVirtual().name("mcp-stop").start(s::stop); // waits for a start under way, off the FX thread
             mcpServer = null;
             mcpOwner = null;
         }
@@ -3166,7 +3185,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             mcpOwner = survivor;
             survivor.statusBar.setMcpRunning(mcpServer.isRunning());
         } else {
-            mcpServer.stop(); // last window — really stop + remove the endpoint file
+            com.editora.mcp.McpServer last = mcpServer; // last window — really stop + remove the endpoint file,
+            Thread.ofVirtual().name("mcp-stop").start(last::stop); // off the FX thread (a file left is reaped)
             mcpServer = null;
             mcpOwner = null;
         }

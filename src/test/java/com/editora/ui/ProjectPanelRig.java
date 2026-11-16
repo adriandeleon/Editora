@@ -117,6 +117,9 @@ final class ProjectPanelRig implements AutoCloseable {
                     modified::contains,
                     open::contains);
             panel.setDeleteOperations(ops);
+            // The confirmed delete's file work in place: these tests read the result as the command returns.
+            // ProjectPanelTrashFxTest and CrossWindowDeleteFxTest keep it on its own thread, as the app does.
+            panel.deleteWork = Runnable::run;
             panel.setOnStatus(status::add);
             OverlayInput.Prompt recorder = (title, label, initial, onAccept) -> {
                 prompts.add(title + "|" + initial);

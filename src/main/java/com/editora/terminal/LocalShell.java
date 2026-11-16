@@ -244,6 +244,7 @@ public final class LocalShell {
     public static LocalPtyConnector start(
             List<String> command, String directory, int columns, int rows, @Nullable Path integration)
             throws IOException {
+        com.editora.perf.BlockingSites.enter("LocalShell.start");
         List<String> login = command == null || command.isEmpty() ? shellCommand() : command;
         Map<String, String> env = environment();
         List<String> argv = integrated(login, integration, env);
@@ -273,6 +274,7 @@ public final class LocalShell {
         if (argv == null || argv.isEmpty()) {
             throw new IOException("no program to run");
         }
+        com.editora.perf.BlockingSites.enter("LocalShell.startProgram");
         // Unlike a shell, a program does not fall back to the home folder: its relative paths would land there.
         // Console Run refuses a missing folder too.
         if (directory != null && !directory.isBlank() && !Files.isDirectory(Path.of(directory.trim()))) {

@@ -190,7 +190,8 @@ class TerminalToolWindowFxTest {
             // Closed in the editor (Ctrl+W's path), an idle shell ends with its tab.
             FxTestSupport.runOnFx(() -> registry.run("terminal.moveToEditor"));
             FxTestSupport.runOnFx(() -> fx.controller.closeTab(fx.controller.editorArea.selectedTab()));
-            assertFalse(FxTestSupport.callOnFx(terminals::hasTerminals), "the shell's tab went");
+            // What the shell runs is asked off the FX thread (PERF-01): the tab goes once that answer is back.
+            await(() -> !FxTestSupport.callOnFx(terminals::hasTerminals), "the shell's tab went");
             ProcessHandle.of(pid)
                     .ifPresent(p -> p.onExit().orTimeout(10, TimeUnit.SECONDS).join());
             assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "shell ended");
@@ -207,7 +208,7 @@ class TerminalToolWindowFxTest {
                     terminals.panel().viewsForTest().getFirst().getSession().pid());
             FxTestSupport.runOnFx(() -> fx.controller.onNew());
             FxTestSupport.runOnFx(() -> fx.controller.closeOtherTabs(fx.controller.editorArea.selectedTab()));
-            assertFalse(FxTestSupport.callOnFx(terminals::hasTerminals), "Close Others took the terminal");
+            await(() -> !FxTestSupport.callOnFx(terminals::hasTerminals), "Close Others took the terminal");
             ProcessHandle.of(other)
                     .ifPresent(p -> p.onExit().orTimeout(10, TimeUnit.SECONDS).join());
 

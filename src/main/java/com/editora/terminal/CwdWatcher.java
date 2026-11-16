@@ -86,8 +86,18 @@ public final class CwdWatcher implements AutoCloseable {
         onChange.accept(value);
     }
 
+    /** What the shell ran at the last tick, innermost first; null before the first. Read by a close's question. */
+    private volatile java.util.@Nullable List<String> programs;
+
+    /** {@link #programs}: the FX thread asks this instead of reading {@code /proc} itself (PERF-01, Pauta 6.0.1). */
+    public java.util.@Nullable List<String> programs() {
+        return programs;
+    }
+
     private void pollProgram(long pid, Consumer<String> onProgramChange) {
-        String program = RunningProgram.first(pid).orElse("");
+        java.util.List<String> running = RunningProgram.in(pid);
+        programs = running;
+        String program = running.isEmpty() ? "" : running.get(0);
         if (program.equals(lastProgram)) return;
         lastProgram = program;
         onProgramChange.accept(program);

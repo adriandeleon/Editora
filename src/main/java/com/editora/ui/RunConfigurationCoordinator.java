@@ -810,23 +810,64 @@ final class RunConfigurationCoordinator {
             host.setStatus(host.debugCoordinator().unavailableMessage(language, routing));
             return;
         }
-        java.nio.file.Path root = JavaProjectRoot.find(routing);
-        if (root == null) {
-            host.setStatus(tr("status.debug.noProject"));
-            return;
-        }
-        if (b.isDirty() && !host.save(b)) {
-            return;
-        }
         BuildCoordinator gradle = detectedBuildCoordinator(BuildTool.GRADLE);
+        BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);
+        // The project, the Gradle build's run task (and its init script) or the pom's Boot plugin are read off the
+        // FX thread (PERF-01, Pauta 6.0.1); the build starts back on it.
+        DebugPlanning.offFx(
+                "debug-via-build-plan",
+                () -> {
+                    java.nio.file.Path root = JavaProjectRoot.find(routing);
+                    if (root == null) {
+                        return new ViaBuild(null, "", null, com.editora.maven.PomBuildConfig.DEFAULTS);
+                    }
+                    if (gradle != null) {
+                        String task = com.editora.build.SpringBoot.gradleRunTask(host.readGradleBuildFile(root));
+                        // On a port the system picks (an init script), unless the build runs on another machine.
+                        java.nio.file.Path init = com.editora.process.ExecTargets.runsHere(root)
+                                ? com.editora.build.GradleDebugInit.write(List.of(task))
+                                : null;
+                        return new ViaBuild(root, task, init, com.editora.maven.PomBuildConfig.DEFAULTS);
+                    }
+                    // The Boot plugin is read from the effective build — plugins, pluginManagement, profiles, the
+                    // parents on disk — not sniffed from the text (review D11).
+                    return new ViaBuild(
+                            root,
+                            "",
+                            null,
+                            maven == null
+                                    ? com.editora.maven.PomBuildConfig.DEFAULTS
+                                    : com.editora.build.BuildDebug.springBootConfig(root));
+                },
+                a -> {
+                    ViaBuild plan = a.value();
+                    if (a.failure() != null || plan == null) {
+                        host.setStatus(tr("debug.error.startFailed", a.why()));
+                    } else if (plan.root() == null) {
+                        host.setStatus(tr("status.debug.noProject"));
+                    } else if (!b.isDirty() || host.save(b)) {
+                        debugViaBuild(routing, gradle, maven, plan);
+                    }
+                });
+    }
+
+    /** What Debug via Build Tool read off the FX thread. */
+    private record ViaBuild(
+            java.nio.file.@Nullable Path root,
+            String gradleTask,
+            java.nio.file.@Nullable Path gradleInit,
+            com.editora.maven.PomBuildConfig pom) {}
+
+    private void debugViaBuild(
+            java.nio.file.Path routing,
+            @Nullable BuildCoordinator gradle,
+            @Nullable BuildCoordinator maven,
+            ViaBuild plan) {
         if (gradle != null) {
-            String task = com.editora.build.SpringBoot.gradleRunTask(host.readGradleBuildFile(root)); // run / bootRun
+            String task = plan.gradleTask();
+            java.nio.file.Path init = plan.gradleInit();
             armDebugAttach(gradle, routing);
             host.setStatus(tr("status.debug.viaBuildStarting"));
-            // On a port the system picks (an init script), unless the build runs on another machine.
-            java.nio.file.Path init = com.editora.process.ExecTargets.runsHere(root)
-                    ? com.editora.build.GradleDebugInit.write(List.of(task))
-                    : null;
             gradle.runTask(
                     init == null
                             ? com.editora.build.BuildDebug.gradleDebugArgs(task)
@@ -834,12 +875,7 @@ final class RunConfigurationCoordinator {
                     List.of());
             return;
         }
-        BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);
-        // The Boot plugin is read from the effective build — plugins, pluginManagement, profiles, the parents
-        // on disk — not sniffed from the text (review D11).
-        com.editora.maven.PomBuildConfig pom = maven == null
-                ? com.editora.maven.PomBuildConfig.DEFAULTS
-                : com.editora.build.BuildDebug.springBootConfig(root);
+        com.editora.maven.PomBuildConfig pom = plan.pom();
         if (maven != null && pom.springBoot()) {
             armDebugAttach(maven, routing);
             host.setStatus(tr("status.debug.viaBuildStarting"));

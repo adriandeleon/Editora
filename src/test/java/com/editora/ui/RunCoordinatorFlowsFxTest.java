@@ -317,6 +317,9 @@ class RunCoordinatorFlowsFxTest {
         fakeMvn = standInBuildTool(project);
         mvnLog = project.resolve("mvn.log");
         run = FxTestSupport.callOnFx(() -> new RunCoordinator(host, ops));
+        // A Run's plan read in place: these tests read what a command said as soon as it returns.
+        // ProcessesOffFxThreadFxTest drives the real planner threads.
+        run.planner = (name, task) -> task.run();
     }
 
     /**
@@ -665,9 +668,11 @@ class RunCoordinatorFlowsFxTest {
     void ctrlDOnAnEmptyInputLineEndsTheInput() throws Exception {
         open("cat.sh", "#!/bin/sh\ncat\necho \"cat done\"\n", true);
         FxTestSupport.runOnFx(run::runActiveFile);
-        await("the run to start", () -> {
+        // The program starts off the FX thread (PERF-01): its input opens once it has.
+        TextField field = FxTestSupport.field(run.panel(), "input");
+        await("the program to start", () -> {
             try {
-                return FxTestSupport.callOnFx(run::isRunning);
+                return FxTestSupport.callOnFx(() -> run.isRunning() && !field.isDisabled());
             } catch (Exception e) {
                 throw new AssertionError(e);
             }

@@ -41,6 +41,9 @@ class RunConfigLaunchFxTest {
 
     @BeforeAll
     void setUp() throws Exception {
+        // Debug's and Run's plans read in place: these tests read what a command said as soon as it returns.
+        // ProcessesOffFxThreadFxTest and DebugProgramConsoleFxTest drive the real planner threads.
+        DebugPlanning.planner = (name, task) -> task.run();
         FxTestSupport.bootToolkit();
         fx = FxWindowFixture.create();
         root = Files.createTempDirectory("editora-runcfg");
@@ -54,6 +57,7 @@ class RunConfigLaunchFxTest {
 
     @AfterAll
     void tearDown() throws Exception {
+        DebugPlanning.planner = (name, task) -> Thread.ofVirtual().name(name).start(task);
         if (fx != null) {
             fx.dispose();
         }
@@ -157,6 +161,7 @@ class RunConfigLaunchFxTest {
         CoordinatorHost host = FxTestSupport.field(fx.controller, "coordinatorHost");
         host.settings().setBuildBeforeRun(false); // the resolution is what is under test, not the build before it
         RunCoordinator coordinator = new RunCoordinator(host, ops);
+        coordinator.planner = (name, task) -> task.run();
         FxTestSupport.runOnFx(
                 () -> FxTestSupport.call(coordinator, "runJavaConfig", new Class[] {RunConfiguration.class}, cfg));
     }
@@ -195,6 +200,7 @@ class RunConfigLaunchFxTest {
      */
     private RunConfiguration choose(RecordingOps ops, String fqn) throws Exception {
         RunCoordinator c = new RunCoordinator(FxTestSupport.field(fx.controller, "coordinatorHost"), ops);
+        c.planner = (name, task) -> task.run();
         java.lang.reflect.Method m =
                 RunCoordinator.class.getDeclaredMethod("configurationForGutterRun", String.class, Path.class);
         m.setAccessible(true);

@@ -452,4 +452,43 @@ class DebugProgramConsoleFxTest {
         assertTrue(String.valueOf(refused.getCause().getMessage()).contains("no-such-java"), refused.toString());
         onFx(() -> assertFalse(dap.programInputAvailable()));
     }
+
+    /**
+     * PERF-01 (Pauta 6.0.1): a Java debug launch reads the file's main class, the class files and the JDK it
+     * decides by off the FX thread, and the program the adapter hands back is found, started and recorded off it
+     * too. Listens to {@link com.editora.perf.BlockingSites} for the whole launch.
+     */
+    @Test
+    void theLaunchPlansAndTheProgramStartsOffTheFxThread() throws Exception {
+        List<String> onFxThread = new CopyOnWriteArrayList<>();
+        List<String> elsewhere = new CopyOnWriteArrayList<>();
+        com.editora.perf.BlockingSites.listenForTest((site, thread) ->
+                (Platform.isFxApplicationThread() ? onFxThread : elsewhere).add(site + "@" + thread.getName()));
+        try {
+            FakeDebugAdapter.Session session = launch();
+            runInTerminal(session);
+            await("the prompt", () -> text("stdout").endsWith("first? "));
+        } finally {
+            com.editora.perf.BlockingSites.listenForTest(null);
+        }
+        assertEquals(List.of(), onFxThread, "nothing planned or started on the FX thread; elsewhere: " + elsewhere);
+        assertTrue(elsewhere.contains("DapManager.ownMainClass@java-launch-plan"), elsewhere.toString());
+        assertTrue(elsewhere.contains("DapManager.planJavaLaunch@java-launch-plan"), elsewhere.toString());
+        assertTrue(elsewhere.contains("process start@run-start"), elsewhere.toString());
+    }
+
+    /** A program that cannot be started fails the adapter's request, which then reports it (the start is async). */
+    @Test
+    void aProgramThatCannotStartFailsTheRequest() throws Exception {
+        FakeDebugAdapter.Session session = launch();
+        ExecutionException failed = assertThrows(
+                ExecutionException.class,
+                () -> session.runInTerminal(
+                                dir.toString(),
+                                List.of(dir.resolve("no-such-program").toString()),
+                                Map.of())
+                        .get(20, TimeUnit.SECONDS));
+        assertTrue(String.valueOf(failed.getCause()).contains("no-such-program"), failed.toString());
+        assertFalse(dap.programInputAvailable(), "no program, no input");
+    }
 }

@@ -431,6 +431,7 @@ public final class ProcessRunner {
         outReader.start();
 
         try {
+            com.editora.perf.BlockingSites.enter("process wait");
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 ProcessRegistry.killTree(process); // children first — a wrapper script's real work is a child
                 return new BytesResult(-1, outBuf.toByteArray(), TIMED_OUT, outTruncated.get(), errTruncated.get());
@@ -565,6 +566,13 @@ public final class ProcessRunner {
         if (cached != null) {
             return cached;
         }
+        if (onFxThread()) {
+            // Cold on the FX thread (PERF-01, Pauta 6.0.1): the login shell may take seconds. Answer with what is
+            // known without it, start the warm-up, and let the next caller have the full PATH.
+            warmAugmentedPathAsync();
+            return provisionalPath();
+        }
+        com.editora.perf.BlockingSites.enter("ProcessRunner.augmentedPath");
         LinkedHashSet<String> dirs = new LinkedHashSet<>();
         // An environment Editora was started from (`source .venv/bin/activate && editora`) leads: the login
         // shell rebuilds PATH from the profile and loses the activation, and putting that first sent every
@@ -580,6 +588,34 @@ public final class ProcessRunner {
         String built = String.join(File.pathSeparator, dirs);
         cachedPath = built;
         return built;
+    }
+
+    /**
+     * The augmented PATH without the login shell and without looking at the disk: the activated environment, the
+     * inherited PATH, then every {@link #EXTRA_PATH_DIRS} folder (one that does not exist finds nothing). What an
+     * FX caller gets while the real one is still being built.
+     */
+    static String provisionalPath() {
+        LinkedHashSet<String> dirs =
+                new LinkedHashSet<>(activatedEnvironmentBins(System.getenv(), com.editora.Os.isWindows()));
+        addPathEntries(dirs, System.getenv("PATH"));
+        dirs.addAll(EXTRA_PATH_DIRS);
+        return String.join(File.pathSeparator, dirs);
+    }
+
+    /** Whether this is the JavaFX application thread; false where the toolkit is not loaded (the CLI, tests). */
+    private static boolean onFxThread() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
+    /** TEST SEAM — forgets the built PATH, so the next {@link #augmentedPath()} builds it again. */
+    static void forgetAugmentedPathForTest() {
+        cachedPath = null;
+        PATH_WARM_STARTED.set(false);
     }
 
     /**
@@ -750,9 +786,24 @@ public final class ProcessRunner {
         if (exe.isEmpty() || exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0) {
             return command; // already an absolute/relative path
         }
-        boolean windows = com.editora.Os.isWindows();
-        return resolveExecutable(command, augmentedPath(), windows);
+        if (onFxThread() && !augmentedPathReady()) {
+            // The login shell's PATH is not known yet: looked up on what is, and not kept, so the next ask (once
+            // the warm-up has it) finds a version manager's tool.
+            com.editora.perf.BlockingSites.enter("PATH lookup");
+            return resolveExecutable(command, augmentedPath(), com.editora.Os.isWindows());
+        }
+        String found = ON_PATH.get(exe);
+        return found == null || found.equals(exe) ? command : rewriteFirst(command, found);
     }
+
+    /**
+     * A bare name's path on the augmented PATH (the name itself when it is not there). Looked up off the FX thread by
+     * a launch's plan, answered from memory on it (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<String, String> ON_PATH = new com.editora.perf.Looked<>(
+            "PATH lookup",
+            exe -> resolveExecutable(List.of(exe), augmentedPath(), com.editora.Os.isWindows())
+                    .get(0));
 
     /**
      * As {@link #resolveExecutable(List)}, against the one folder {@code dir} instead of the augmented PATH: a bare

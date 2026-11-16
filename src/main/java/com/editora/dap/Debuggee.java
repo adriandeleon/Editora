@@ -63,26 +63,29 @@ final class Debuggee {
     }
 
     /**
-     * Starts {@code argv} in {@code cwd} with {@code env} over the user's environment (a null value unsets
-     * that variable). Returns the process id, or throws with the reason the program could not be started.
+     * Starts {@code argv} in {@code dir} with {@code env} over the user's environment (a null value unsets that
+     * variable); a folder on a remote host's connection starts the program on that host, as Run does. The start
+     * itself runs off the FX thread (PERF-01, Pauta 6.0.1): the answer completes on the FX thread with the process
+     * id (-1 when it is not known yet, a program on another machine), or fails with why the program could not be
+     * started. Its output only comes after that.
      */
-    long start(String cwd, List<String> argv, Map<String, String> env, Sink sink) throws java.io.IOException {
-        return start(cwd == null || cwd.isBlank() ? null : Path.of(cwd), argv, env, sink);
-    }
-
-    /**
-     * As above, in {@code dir} — a folder on a remote host's connection starts the program on that host, as
-     * Run does.
-     */
-    long start(@Nullable Path dir, List<String> argv, Map<String, String> env, Sink sink) throws java.io.IOException {
+    java.util.concurrent.CompletableFuture<Long> start(
+            @Nullable Path dir, List<String> argv, Map<String, String> env, Sink sink) {
+        java.util.concurrent.CompletableFuture<Long> started = new java.util.concurrent.CompletableFuture<>();
         if (terminal != null) {
-            run = terminal.start(title, dir, argv, env == null ? Map.of() : env, sink::exited);
-            return run.pid(); // -1 on another machine until its pid line arrives: the reply then names none
+            try {
+                run = terminal.start(title, dir, argv, env == null ? Map.of() : env, sink::exited);
+                started.complete(run.pid()); // -1 until the program has started: the reply then names none
+            } catch (java.io.IOException | RuntimeException e) {
+                started.completeExceptionally(e);
+            }
+            return started;
         }
-        String[] failure = {null};
         service.runInDir(dir, argv, env, new RunService.Listener() {
             @Override
-            public void onStart(String commandLine) {}
+            public void onStart(String commandLine) {
+                started.complete(service.pid());
+            }
 
             @Override
             public void onOutput(String line, boolean stderr) {
@@ -101,14 +104,17 @@ final class Debuggee {
 
             @Override
             public void onError(String message) {
-                failure[0] = message == null ? "" : message;
+                started.completeExceptionally(new java.io.IOException(
+                        message == null || message.isBlank()
+                                ? com.editora.i18n.Messages.tr("debug.error.programNotStarted")
+                                : message));
             }
         });
-        if (failure[0] != null || !service.isRunning()) {
-            throw new java.io.IOException(
-                    failure[0] == null ? com.editora.i18n.Messages.tr("debug.error.programNotStarted") : failure[0]);
+        if (!service.isRunning() && !started.isDone()) {
+            started.completeExceptionally(
+                    new java.io.IOException(com.editora.i18n.Messages.tr("debug.error.programNotStarted")));
         }
-        return service.pid();
+        return started;
     }
 
     /** True until the program's exit has been delivered to the sink (its last output included). */

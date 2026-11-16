@@ -1196,59 +1196,83 @@ public final class DapManager {
                 fail(epoch, tr("debug.error.resolveMainClassFailed", msg(err)));
                 return;
             }
-            List<MainClassOption> options = JdtlsReplies.parseMainClasses(res);
-            DapPaths paths = pathsFor(file);
-            // A project's main class runs in the project root — what Run, the gutter and a saved
-            // configuration use — and a loose file in the window's project folder, else its own folder.
-            Path dir = projectRoot != null ? projectRoot : looseCwd != null ? looseCwd : file.getParent();
-            String cwd = dir == null ? null : paths.toAdapter(dir);
-            String own = ownMainClass(file);
-            if (options.isEmpty()) {
-                // jdtls enumerated no project main class (a standalone file, or the project is still
-                // importing). Derive the fully-qualified class name from the file (package + type name)
-                // and resolve its classpath — the adapter needs a real class name + classPaths, not a path.
-                String fqn = own != null ? own : JavaCompilation.mainClassFromFile(file);
-                if (fqn == null) {
-                    fail(epoch, tr("debug.error.noMainClass"));
-                    return;
-                }
-                compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
-                return;
-            }
-            MainClassOption match = options.stream()
-                    .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
-                    .findFirst()
-                    .orElse(null);
-            if (match == null && own != null) {
-                // The file declares a main that jdtls does not list: it is outside the project's source
-                // folders (a script beside the project), or jdtls has not seen it yet. Debug the file — never
-                // the project's other main class, which is what used to run instead.
-                compileAndLaunch(file, own, javaExecOverride, epoch, null, dir);
-                return;
-            }
-            if (match != null) {
-                launchOption(file, match, cwd, javaExecOverride, projectRoot, epoch);
-            } else if (options.size() == 1) {
-                // No main here: the project's only one is what Debug means, as in VS Code — said so, because
-                // the program that runs is not the file in front of the user.
-                MainClassOption only = options.get(0);
-                notice(
-                        epoch,
-                        com.editora.i18n.Messages.tr(
-                                "debug.console.noMainInFile", file.getFileName(), String.valueOf(only.className())));
-                launchOption(file, only, cwd, javaExecOverride, projectRoot, epoch);
-            } else {
-                picker.pick(options, chosen -> {
-                    if (chosen != null) {
-                        launchOption(file, chosen, cwd, javaExecOverride, projectRoot, epoch);
-                    } else {
-                        if (isCurrent(epoch)) {
-                            setState(State.INACTIVE);
-                        }
+            // The reply's parse and the file's own main are read off the FX thread (PERF-01, Pauta 6.0.1).
+            JAVA_LAUNCH_PLAN.execute(() -> {
+                com.editora.perf.BlockingSites.enter("DapManager.ownMainClass");
+                List<MainClassOption> options = JdtlsReplies.parseMainClasses(res);
+                String own = ownMainClass(file);
+                String fromFile = options.isEmpty() && own == null ? JavaCompilation.mainClassFromFile(file) : null;
+                fx(() -> {
+                    if (isCurrent(epoch)) {
+                        launchMainClass(
+                                file, picker, javaExecOverride, projectRoot, looseCwd, epoch, options, own, fromFile);
                     }
                 });
-            }
+            });
         });
+    }
+
+    /** {@link #resolveMainClassAndLaunch} once jdtls answered and the file was read: picks and launches. FX thread. */
+    private void launchMainClass(
+            Path file,
+            MainClassPicker picker,
+            String javaExecOverride,
+            @Nullable Path projectRoot,
+            @Nullable Path looseCwd,
+            long epoch,
+            List<MainClassOption> options,
+            @Nullable String own,
+            @Nullable String fromFile) {
+        DapPaths paths = pathsFor(file);
+        // A project's main class runs in the project root — what Run, the gutter and a saved
+        // configuration use — and a loose file in the window's project folder, else its own folder.
+        Path dir = projectRoot != null ? projectRoot : looseCwd != null ? looseCwd : file.getParent();
+        String cwd = dir == null ? null : paths.toAdapter(dir);
+        if (options.isEmpty()) {
+            // jdtls enumerated no project main class (a standalone file, or the project is still
+            // importing). Derive the fully-qualified class name from the file (package + type name)
+            // and resolve its classpath — the adapter needs a real class name + classPaths, not a path.
+            String fqn = own != null ? own : fromFile;
+            if (fqn == null) {
+                fail(epoch, tr("debug.error.noMainClass"));
+                return;
+            }
+            compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
+            return;
+        }
+        MainClassOption match = options.stream()
+                .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
+                .findFirst()
+                .orElse(null);
+        if (match == null && own != null) {
+            // The file declares a main that jdtls does not list: it is outside the project's source
+            // folders (a script beside the project), or jdtls has not seen it yet. Debug the file — never
+            // the project's other main class, which is what used to run instead.
+            compileAndLaunch(file, own, javaExecOverride, epoch, null, dir);
+            return;
+        }
+        if (match != null) {
+            launchOption(file, match, cwd, javaExecOverride, projectRoot, epoch);
+        } else if (options.size() == 1) {
+            // No main here: the project's only one is what Debug means, as in VS Code — said so, because
+            // the program that runs is not the file in front of the user.
+            MainClassOption only = options.get(0);
+            notice(
+                    epoch,
+                    com.editora.i18n.Messages.tr(
+                            "debug.console.noMainInFile", file.getFileName(), String.valueOf(only.className())));
+            launchOption(file, only, cwd, javaExecOverride, projectRoot, epoch);
+        } else {
+            picker.pick(options, chosen -> {
+                if (chosen != null) {
+                    launchOption(file, chosen, cwd, javaExecOverride, projectRoot, epoch);
+                } else {
+                    if (isCurrent(epoch)) {
+                        setState(State.INACTIVE);
+                    }
+                }
+            });
+        }
     }
 
     /**
@@ -1346,8 +1370,16 @@ public final class DapManager {
 
     /** {@link JavaSourceRootFix} before a launch from a folder with no build file, then {@code then}. */
     private void correctSourceRoot(Path file, long epoch, Runnable then) {
-        JavaSourceRootFix.correct(
-                lsp, file, JavaLaunchSupport.declaredPackage(file), () -> isCurrent(epoch), fixed -> then.run());
+        // The file's package clause is read off the FX thread (PERF-01, Pauta 6.0.1).
+        JAVA_LAUNCH_PLAN.execute(() -> {
+            com.editora.perf.BlockingSites.enter("DapManager.declaredPackage");
+            String declared = JavaLaunchSupport.declaredPackage(file);
+            fx(() -> {
+                if (isCurrent(epoch)) {
+                    JavaSourceRootFix.correct(lsp, file, declared, () -> isCurrent(epoch), fixed -> then.run());
+                }
+            });
+        });
     }
 
     /** Debug a compact {@code .java} file as the implicit class named after the file. */
@@ -1468,38 +1500,64 @@ public final class DapManager {
             if (!isCurrent(epoch)) {
                 return;
             }
-            if (ifNoClassFile != null
-                    && LooseJavaLaunch.classesFor(
-                                    true,
-                                    JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
-                                            || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))
-                            == LooseJavaLaunch.Classes.COMPILE_HERE) {
-                ifNoClassFile.run();
-                return;
-            }
-            if (!r.ok()) {
-                fail(epoch, r.error());
-                return;
-            }
-            warnAboutClasses(file, opt, r, epoch); // jdtls's output too: it is warned about, never trusted blindly
-            startDebugSessionAndConnect(
-                    file,
-                    LaunchConfig.launch(
-                            opt.mainClass(),
-                            proj,
-                            r.classPaths(),
-                            r.modulePaths(),
-                            javaExecFor(file, javaExecOverride, r.javaExec()),
-                            cwd,
-                            programArgs,
-                            JavaLaunchSupport.withPreview(vmArgsFor(targetFor(file)), r.enablePreview()),
-                            env,
-                            false,
-                            targetFor(file)),
-                    false,
-                    epoch);
+            // What the launch is made of is the session's (read here); what it decides by is on the disk: the
+            // class files, and the JDK's release file when the classpath is too long for a command line. Those are
+            // looked at off the FX thread (PERF-01, Pauta 6.0.1), and the launch goes on back on it.
+            String javaExec = javaExecFor(file, javaExecOverride, r.javaExec());
+            List<String> args = programArgs;
+            String vmArgs = JavaLaunchSupport.withPreview(vmArgsFor(targetFor(file)), r.enablePreview());
+            Map<String, String> environment = env;
+            LaunchConfig.Target target = targetFor(file);
+            JAVA_LAUNCH_PLAN.execute(() -> {
+                com.editora.perf.BlockingSites.enter("DapManager.planJavaLaunch");
+                boolean compileHere = ifNoClassFile != null
+                        && LooseJavaLaunch.classesFor(
+                                        true,
+                                        JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
+                                                || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))
+                                == LooseJavaLaunch.Classes.COMPILE_HERE;
+                if (com.editora.process.ExecTargets.runsHere(file)) {
+                    prepareExitWrapper(javaExec); // its exit-code wrapper, ready when the session starts
+                }
+                String warning = compileHere || !r.ok() ? null : classesWarning(file, opt, r);
+                Map<String, Object> config = compileHere || !r.ok()
+                        ? null
+                        : LaunchConfig.launch(
+                                opt.mainClass(),
+                                proj,
+                                r.classPaths(),
+                                r.modulePaths(),
+                                javaExec,
+                                cwd,
+                                args,
+                                vmArgs,
+                                environment,
+                                false,
+                                target);
+                fx(() -> {
+                    if (!isCurrent(epoch)) {
+                        return;
+                    }
+                    if (compileHere && ifNoClassFile != null) {
+                        ifNoClassFile.run();
+                        return;
+                    }
+                    if (!r.ok() || config == null) {
+                        fail(epoch, r.error());
+                        return;
+                    }
+                    if (warning != null) {
+                        notice(epoch, warning); // jdtls's output too: it is warned about, never trusted blindly
+                    }
+                    startDebugSessionAndConnect(file, config, false, epoch);
+                });
+            });
         });
     }
+
+    /** Where a Java launch reads the disk it decides by: a virtual thread per launch (PERF-01, Pauta 6.0.1). */
+    private static final java.util.concurrent.Executor JAVA_LAUNCH_PLAN =
+            com.editora.process.BlockingTasks.named("java-launch-plan");
 
     /**
      * The last word on a project launch's class files, whatever built them (the jdtls build before the launch,
@@ -1508,23 +1566,21 @@ public final class DapManager {
      * the ClassNotFoundException or the old code that follows then has its explanation (review A2). A remote
      * project's files are the host's and are not read from here.
      */
-    private void warnAboutClasses(Path file, MainClassOption opt, ResolvedLaunch r, long epoch) {
+    private static @Nullable String classesWarning(Path file, MainClassOption opt, ResolvedLaunch r) {
         if (!com.editora.process.ExecTargets.runsHere(file)) {
-            return;
+            return null;
         }
         List<String> paths = new ArrayList<>(r.classPaths());
         paths.addAll(r.modulePaths());
         String cls = opt.className();
         if (cls == null) {
-            return; // classState has nothing to judge by either
+            return null; // classState has nothing to judge by either
         }
-        switch (JavaLaunchSupport.classState(paths, opt.mainClass(), optionSource(file, opt))) {
-            case MISSING -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesMissing", cls));
-            case STALE -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesStale", cls));
-            default -> {
-                // current, or nothing to judge by
-            }
-        }
+        return switch (JavaLaunchSupport.classState(paths, opt.mainClass(), optionSource(file, opt))) {
+            case MISSING -> com.editora.i18n.Messages.tr("debug.console.classesMissing", cls);
+            case STALE -> com.editora.i18n.Messages.tr("debug.console.classesStale", cls);
+            default -> null; // current, or nothing to judge by
+        };
     }
 
     /**
@@ -5511,48 +5567,97 @@ public final class DapManager {
                 onOutput(epoch, com.editora.run.RunService.commandLine(argv) + "\n", COMMAND_CATEGORY);
                 Path source = debugFile;
                 Path built = JsLaunch.compiledInstead(source, dir, argv);
-                if (built != null && source != null && JsLaunch.builtIsStale(source, built, DapManager::modifiedTime)) {
-                    // A notice, not stderr: js-debug's copies of the program's streams are dropped (jsOutput).
-                    onNotice(
-                            epoch,
-                            tr("debug.js.builtStale", String.valueOf(built.getFileName()), source.getFileName()),
-                            true);
+                if (built != null && source != null) {
+                    // The two files' times are read off the FX thread (PERF-01), and the program starts after the
+                    // notice, which comes first in the console as before.
+                    Path from = dir;
+                    Thread.ofVirtual().name("dap-js-stale-check").start(() -> {
+                        boolean stale = JsLaunch.builtIsStale(source, built, DapManager::modifiedTime);
+                        fx(() -> {
+                            if (stale && isCurrent(epoch)) {
+                                // A notice, not stderr: js-debug's copies of the program's streams are dropped.
+                                onNotice(
+                                        epoch,
+                                        tr(
+                                                "debug.js.builtStale",
+                                                String.valueOf(built.getFileName()),
+                                                source.getFileName()),
+                                        true);
+                            }
+                            startProgram(epoch, program, from, argv, env, started);
+                        });
+                    });
+                    return;
                 }
             }
-            long pid = program.start(dir, argv, env, new Debuggee.Sink() {
-                @Override
-                public void output(String text, boolean stderr) {
-                    String shown = jsSession ? jsNoise.filter(text) : text;
-                    if (debuggee == program && isCurrent(epoch) && !shown.isEmpty()) {
-                        listener.onOutput(shown, stderr ? "stderr" : "stdout");
-                    }
-                }
+            startProgram(epoch, program, dir, argv, env, started);
+        } catch (RuntimeException e) {
+            program.kill();
+            started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
+        }
+    }
 
-                @Override
-                public void exited(int code) {
-                    if (debuggee != program) {
-                        return; // stopped: whoever stopped it has ended, or is ending, the session
-                    }
-                    boolean inputWasOpen = program.inputOpen();
-                    debuggee = null;
-                    if (isCurrent(epoch)) {
-                        if (inputWasOpen) {
-                            listener.onProgramInput(false);
+    /** Starts {@code program} for the session of {@code epoch} and answers the adapter's request when it has. */
+    private void startProgram(
+            long epoch,
+            Debuggee program,
+            @Nullable Path dir,
+            List<String> argv,
+            Map<String, String> env,
+            CompletableFuture<Long> started) {
+        try {
+            debuggee = program; // a Stop while it starts ends it as soon as it has started
+            program.start(dir, argv, env, new Debuggee.Sink() {
+                        @Override
+                        public void output(String text, boolean stderr) {
+                            String shown = jsSession ? jsNoise.filter(text) : text;
+                            if (debuggee == program && isCurrent(epoch) && !shown.isEmpty()) {
+                                listener.onOutput(shown, stderr ? "stderr" : "stdout");
+                            }
                         }
-                        listener.onProgramExit(code);
-                        endSession(epoch);
-                    }
-                }
-            });
-            debuggee = program;
-            started.complete(pid);
-            if (!program.inTerminal()) {
-                listener.onProgramInput(true); // in a terminal, the terminal takes the input
-            } else {
-                // The Debug console stays empty: say where the program's output and input are (review E106).
-                onOutput(epoch, tr("debug.console.inTerminal", programTitle()) + "\n", COMMAND_CATEGORY);
+
+                        @Override
+                        public void exited(int code) {
+                            if (debuggee != program) {
+                                return; // stopped: whoever stopped it has ended, or is ending, the session
+                            }
+                            boolean inputWasOpen = program.inputOpen();
+                            debuggee = null;
+                            if (isCurrent(epoch)) {
+                                if (inputWasOpen) {
+                                    listener.onProgramInput(false);
+                                }
+                                listener.onProgramExit(code);
+                                endSession(epoch);
+                            }
+                        }
+                    })
+                    .whenComplete((pid, failure) -> {
+                        if (failure != null) {
+                            if (debuggee == program) {
+                                debuggee = null;
+                            }
+                            program.kill();
+                            started.completeExceptionally(
+                                    failure); // the adapter fails the launch with this, which reports it
+                            return;
+                        }
+                        started.complete(pid);
+                        if (debuggee != program || !isCurrent(epoch)) {
+                            return; // stopped while it started
+                        }
+                        if (!program.inTerminal()) {
+                            listener.onProgramInput(true); // in a terminal, the terminal takes the input
+                        } else {
+                            // The Debug console stays empty: say where the program's output and input are (review
+                            // E106).
+                            onOutput(epoch, tr("debug.console.inTerminal", programTitle()) + "\n", COMMAND_CATEGORY);
+                        }
+                    });
+        } catch (RuntimeException e) {
+            if (debuggee == program) {
+                debuggee = null;
             }
-        } catch (java.io.IOException | RuntimeException e) {
             program.kill();
             started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
         }
@@ -5622,6 +5727,31 @@ public final class DapManager {
     /** The current session's exit-code wrapper, or null (the program console is on, a remote file, Windows). */
     private volatile @Nullable ExitWrapper exitWrapper;
 
+    /** An exit-code wrapper made ahead of time for each {@code java}, off the FX thread (PERF-01). */
+    private static final Map<String, JavaExitCodeWrapper> SPARE_EXIT_WRAPPERS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Makes a spare wrapper for {@code java} on a virtual thread, unless one is ready (not on Windows). */
+    static void prepareExitWrapper(@Nullable String java) {
+        if (java == null
+                || java.isBlank()
+                || LaunchConfig.Target.LOCAL.windows()
+                || SPARE_EXIT_WRAPPERS.containsKey(java)) {
+            return;
+        }
+        Thread.ofVirtual().name("dap-java-exit-wrapper").start(() -> {
+            com.editora.perf.BlockingSites.enter("JavaExitCodeWrapper.create");
+            try {
+                JavaExitCodeWrapper made = JavaExitCodeWrapper.create(java);
+                if (SPARE_EXIT_WRAPPERS.putIfAbsent(java, made) != null) {
+                    made.delete(); // another was made meanwhile
+                }
+            } catch (java.io.IOException | RuntimeException e) {
+                LOG.log(Level.FINE, "No exit-code wrapper made ahead", e);
+            }
+        });
+    }
+
     /**
      * Starts the program of a launch java-debug runs itself (the program console off) through a wrapper that
      * records its exit code: {@code args}' {@code javaExec} becomes the wrapper, which runs the real one. Only for
@@ -5637,7 +5767,14 @@ public final class DapManager {
             return;
         }
         try {
-            JavaExitCodeWrapper wrapper = JavaExitCodeWrapper.create(real);
+            // Made ahead of time off the FX thread for this java (the launch's plan): taken here, the next one made.
+            JavaExitCodeWrapper wrapper = Platform.isFxApplicationThread()
+                    ? SPARE_EXIT_WRAPPERS.remove(real)
+                    : JavaExitCodeWrapper.create(real);
+            prepareExitWrapper(real);
+            if (wrapper == null) {
+                return; // none ready yet: this program runs as before, the next has one
+            }
             releaseExitWrapper();
             exitWrapper = new ExitWrapper(epoch, wrapper, real);
             args.put("javaExec", wrapper.script().toString());
@@ -5664,7 +5801,10 @@ public final class DapManager {
                         () -> own.wrapper().awaitExitCode(java.time.Duration.ofSeconds(3)),
                         com.editora.process.BlockingTasks.named("dap-java-exit-code"))
                 .whenComplete((code, e) -> fx(() -> {
-                    own.wrapper().delete();
+                    // Its folder is removed off the FX thread (PERF-01, Pauta 6.0.1).
+                    Thread.ofVirtual()
+                            .name("dap-java-exit-wrapper")
+                            .start(() -> own.wrapper().delete());
                     if (managerClosed || sessionEpoch - epoch > 1) {
                         return; // a new session (or a Stop after the end) owns the console now
                     }

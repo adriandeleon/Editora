@@ -227,6 +227,7 @@ final class TestRunCoordinator implements TestRunHook {
     private final List<String> npmSniff = new ArrayList<>();
 
     TestRunCoordinator(CoordinatorHost host, Ops ops) {
+        com.editora.build.GradleDebugInit.prepare(List.of(TestDebug.GRADLE_TEST_TASK)); // a test debug's init script
         this.host = host;
         this.ops = ops;
     }
@@ -945,7 +946,8 @@ final class TestRunCoordinator implements TestRunHook {
         if (tool != BuildTool.GRADLE || where == null || !com.editora.process.ExecTargets.runsHere(where)) {
             return null;
         }
-        return com.editora.build.GradleDebugInit.write(List.of(TestDebug.GRADLE_TEST_TASK));
+        // Written once, ahead of time off the FX thread (the coordinator's start): here it is found (PERF-01).
+        return com.editora.build.GradleDebugInit.prepared(List.of(TestDebug.GRADLE_TEST_TASK));
     }
 
     private void startDebugRun(

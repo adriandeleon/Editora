@@ -109,7 +109,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-01",
       "kind": "pending",
-      "reason": "Start-up and the settings and other stores no longer read or write files on the interface's own thread, but some commands still do: running a program, deleting or moving files, and checks made as you type or on each command, so a slow disk can briefly freeze the window.",
+      "reason": "Start-up, the settings and other stores, and starting a program (Run, Build, Debug, Git, the terminal) no longer touch the disk or wait on the interface's own thread, but some commands still do: installing servers and plugins, file commands such as renaming or moving in the Project panel, and checks made as you type or on each command, so a slow disk can briefly freeze the window.",
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {

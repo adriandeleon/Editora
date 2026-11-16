@@ -55,6 +55,7 @@ public final class GradleDebugInit {
      * cannot be written — the caller then falls back to {@code --debug-jvm}.
      */
     public static @Nullable Path write(Collection<String> taskNames) {
+        com.editora.perf.BlockingSites.enter("GradleDebugInit.write");
         try {
             Path file = Files.createTempFile("editora-debug-", ".gradle");
             Files.writeString(file, script(taskNames), StandardCharsets.UTF_8);
@@ -64,6 +65,34 @@ public final class GradleDebugInit {
             return null;
         }
     }
+
+    /**
+     * {@link #write}, once per set of tasks: the script does not change, so the file written first serves every
+     * later debug run. Written ahead of time off the FX thread ({@link #prepare}), so a debug run on it finds the
+     * file (PERF-01, Pauta 6.0.1).
+     */
+    public static @Nullable Path prepared(Collection<String> taskNames) {
+        List<String> key = List.copyOf(taskNames);
+        Path known = PREPARED.get(key);
+        if (known != null) {
+            return known;
+        }
+        Path file = write(key);
+        if (file != null) {
+            PREPARED.put(key, file);
+        }
+        return file;
+    }
+
+    /** Writes {@link #prepared}'s file for {@code taskNames} on a virtual thread of its own. */
+    public static void prepare(Collection<String> taskNames) {
+        List<String> key = List.copyOf(taskNames);
+        if (!PREPARED.containsKey(key)) {
+            Thread.ofVirtual().name("gradle-debug-init").start(() -> prepared(key));
+        }
+    }
+
+    private static final java.util.Map<List<String>, Path> PREPARED = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** The arguments that apply {@code initScript} to a Gradle run. Pure. */
     public static List<String> args(Path initScript) {

@@ -704,6 +704,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Run, Build, Debug and the other programs Editora starts are started in the background.** Finding the program on
+  your PATH, starting it and recording it for clean-up no longer happen on the UI thread, for Run, Build, the
+  program a debugger hands back, Run in Terminal, a program in a container or a WSL distribution, and the New Maven
+  Project generation. Run's and Build's Stop applies from the moment you press Run: a press while the program is
+  still starting does not start a second one, and a Stop then ends it as soon as it has started. Run's input field
+  opens once the program has started. A build looks for its wrapper and reads what the trust question lists in the
+  background, then asks. Maven Update Versions reads the pom in the background before it says "Checking…", the Git
+  Log checks for a shallow clone in the background, a Java debug launch reads the file's main class and the class
+  files it warns about in the background, and a Kotlin program is hashed and its jar looked up in the background.
+  A program in a Terminal tab that cannot start ends its tab with the error, as one on another machine does.
+  Closing a shell tab asks what the shell runs in the background, then asks you. Deleting files in the Project
+  panel (to the trash, `gio trash` included) happens in the background, then reports. The login shell's PATH is
+  read as Editora starts, and a command given before it is known uses the PATH Editora was started with. The MCP
+  endpoint file is written and removed in the background, and the MCP server starts in the background (the status
+  bar shows it once it runs). A Git command given before Git was first checked no longer waits for `git --version`.
+  What Run and Debug read before a launch — the configuration's script and folder, an environment `@file`, the
+  shebang, the build files and the Maven reactor, `launch.json`, `tasks.json`, `debug-adapters.json`, a Go, Rust,
+  C/C++ or C# project — is read in the background too, and so are Export and Import Breakpoints, Add to
+  .gitignore, the conflict-marker check before staging, the "replace it?" checks of the encryption commands and
+  New Maven Project's folder, pom and archetype reads and its move into place. Quitting or closing a window with
+  busy terminals asks from what each terminal last reported; a terminal on another machine that never answered
+  yet is not listed.
+
 - **Settings and the other stores are saved in the background.** Changing a setting, showing a tool window,
   setting a bookmark or a breakpoint, writing a note, saving a macro, trusting a folder, adding a word to the
   dictionary and focusing or opening a window no longer wait for the config folder: the change applies at once and
