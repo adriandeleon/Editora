@@ -494,6 +494,40 @@ public final class DapManager {
         shared.evaluationTimeLimit = Math.max(0, seconds);
     }
 
+    /** The goroutine options this session's Delve was last told (at launch, or since through its console). */
+    private GoGoroutines.@Nullable Options liveGoGoroutines;
+
+    /** The Go goroutine options sessions are told ({@link GoGoroutines}). */
+    public GoGoroutines.Options goGoroutines() {
+        return shared.goGoroutines;
+    }
+
+    /**
+     * Go: which goroutines the Threads view lists and what it names them by ({@link GoGoroutines}). A Go session
+     * started from now on is told in its launch; a running one's Delve is told through its console ({@code dlv
+     * config}), and {@code done} runs once it has answered (at once when there is none to tell).
+     */
+    public void setGoGoroutines(GoGoroutines.Options options, Runnable done) {
+        shared.goGoroutines = options;
+        DapClient c = client;
+        if (c == null
+                || state == State.INACTIVE
+                || !DebugLanguages.GO.id().equals(sessionLanguage)
+                || options.equals(liveGoGoroutines)) {
+            done.run();
+            return;
+        }
+        liveGoGoroutines = options;
+        java.util.concurrent.CompletableFuture<?> chain = java.util.concurrent.CompletableFuture.completedFuture(null);
+        for (String command : GoGoroutines.liveCommands(options)) {
+            chain = chain.thenCompose(x -> c.evaluate(command, 0, "repl").exceptionally(e -> {
+                LOG.log(Level.FINE, "Delve did not take " + command, e);
+                return null;
+            }));
+        }
+        chain.whenComplete((x, e) -> fx(done));
+    }
+
     /** The Debugging setting's Node.js for JavaScript sessions ("" = automatic). */
     public void setNodePath(String nodePath) {
         shared.nodePath = nodePath == null ? "" : nodePath.strip();
@@ -5757,8 +5791,11 @@ public final class DapManager {
             String language = sessionLanguage;
             List<String> skips = StepFilters.patterns(shared.stepFilters, language);
             int limit = shared.evaluationTimeLimit;
-            candidate.setLaunchDecorator( // Don't step into, and the evaluation time limit
-                    args -> EvaluationLimits.decorate(StepFilters.decorate(language, args, skips), limit));
+            GoGoroutines.Options goroutines = shared.goGoroutines;
+            liveGoGoroutines = goroutines;
+            candidate.setLaunchDecorator( // Don't step into, the evaluation time limit, Go's goroutine options
+                    args -> GoGoroutines.decorate(
+                            EvaluationLimits.decorate(StepFilters.decorate(language, args, skips), limit), goroutines));
             candidate.setEvaluationWait(EvaluationLimits.wait(limit));
             candidate.setHexValues(shared.hexValues);
             client = candidate;

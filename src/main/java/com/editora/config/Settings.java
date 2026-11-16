@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 174;
+    public static final int SCHEMA_VERSION = 175;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -896,6 +896,15 @@ public class Settings {
      * debugpy as a session starts ({@code EvaluationLimits}); 0 leaves each debugger to its own.
      */
     private int debugEvaluationTimeLimit = 10;
+    /** Go: the runtime's own goroutines are left out of the Threads view (Delve's {@code hideSystemGoroutines}). */
+    private boolean debugGoHideRuntimeGoroutines = true;
+    /**
+     * Go: the pprof label keys a goroutine's name in the Threads view shows, separated by commas ({@code *}: every
+     * label it has; "": none). Delve's {@code showPprofLabels}.
+     */
+    private String debugGoPprofLabels = "*";
+    /** Go: Delve's goroutine filter for the Threads view ({@code -with label job=*}; "": every goroutine). */
+    private String debugGoGoroutineFilter = "";
     /**
      * Visual Studio's PerfTips: after a step or Continue, the time the program ran until it stopped, shown faintly
      * after the line it stopped on.
@@ -3658,6 +3667,30 @@ public class Settings {
 
     /** The most stops Debug History may keep. */
     public static final int MAX_DEBUG_HISTORY_STOPS = 5_000;
+
+    public boolean isDebugGoHideRuntimeGoroutines() {
+        return debugGoHideRuntimeGoroutines;
+    }
+
+    public void setDebugGoHideRuntimeGoroutines(boolean hide) {
+        this.debugGoHideRuntimeGoroutines = hide;
+    }
+
+    public String getDebugGoPprofLabels() {
+        return debugGoPprofLabels == null ? "" : debugGoPprofLabels;
+    }
+
+    public void setDebugGoPprofLabels(String labels) {
+        this.debugGoPprofLabels = labels == null ? "" : labels.strip();
+    }
+
+    public String getDebugGoGoroutineFilter() {
+        return debugGoGoroutineFilter == null ? "" : debugGoGoroutineFilter;
+    }
+
+    public void setDebugGoGoroutineFilter(String filter) {
+        this.debugGoGoroutineFilter = filter == null ? "" : filter.strip();
+    }
 
     public int getDebugEvaluationTimeLimit() {
         return Math.max(0, Math.min(debugEvaluationTimeLimit, MAX_DEBUG_EVALUATION_TIME_LIMIT));

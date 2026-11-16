@@ -172,6 +172,23 @@ final class SettingsDebugPage {
             config.getSettings().setDebugHistoryStops(now);
             w.apply();
         });
+        debugGoHideRuntimeCheck = new CheckBox(tr("settings.debug.goHideRuntime"));
+        debugGoHideRuntimeCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugGoHideRuntimeGoroutines(now);
+            w.apply();
+        });
+        debugGoLabelsField = new TextField();
+        debugGoLabelsField.setPromptText(tr("settings.debug.goLabels.prompt"));
+        w.commitOnEnterOrBlur(debugGoLabelsField, () -> config.getSettings().getDebugGoPprofLabels(), now -> {
+            config.getSettings().setDebugGoPprofLabels(now);
+            w.apply();
+        });
+        debugGoFilterField = new TextField();
+        debugGoFilterField.setPromptText(tr("dialog.debug.goroutineFilterPrompt"));
+        w.commitOnEnterOrBlur(debugGoFilterField, () -> config.getSettings().getDebugGoGoroutineFilter(), now -> {
+            config.getSettings().setDebugGoGoroutineFilter(now);
+            w.apply();
+        });
         debugEvaluationLimitCombo = new ComboBox<>();
         debugEvaluationLimitCombo.getItems().setAll(0, 5, 10, 30, 60, 300);
         debugEvaluationLimitCombo.setConverter(new StringConverter<>() {
@@ -272,6 +289,11 @@ final class SettingsDebugPage {
     private ComboBox<Integer> debugHistoryCombo;
 
     private ComboBox<Integer> debugEvaluationLimitCombo;
+    /** Go's goroutines in the Threads view (Delve's hideSystemGoroutines, showPprofLabels, goroutineFilters). */
+    private CheckBox debugGoHideRuntimeCheck;
+
+    private TextField debugGoLabelsField;
+    private TextField debugGoFilterField;
 
     /** GDB's path, for its DAP mode. */
     private TextField debugGdbPathField;
@@ -345,6 +367,28 @@ final class SettingsDebugPage {
                 debugEvaluationLimitCombo,
                 "debug evaluate evaluation expression watch console hover function call time limit timeout hang"
                         + " stuck slow cancel stop interrupt");
+        Card goroutinesCard = w.card(p, tr("settings.debug.goroutines"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), goroutinesCard.box());
+        w.checkRow(
+                goroutinesCard,
+                Category.DEBUG,
+                debugGoHideRuntimeCheck,
+                tr("settings.debug.goHideRuntime.hint"),
+                "debug go golang goroutines threads runtime system hide gc workers delve");
+        w.controlRow(
+                goroutinesCard,
+                Category.DEBUG,
+                tr("settings.debug.goLabels"),
+                tr("settings.debug.goLabels.hint"),
+                debugGoLabelsField,
+                "debug go golang goroutines threads pprof labels name delve");
+        w.controlRow(
+                goroutinesCard,
+                Category.DEBUG,
+                tr("settings.debug.goFilter"),
+                tr("dialog.debug.goroutineFilterHint"),
+                debugGoFilterField,
+                "debug go golang goroutines threads filter with without label user delve");
         // Type renderers (IntelliJ's Java Type Renderers): every language's, one list.
         Card renderersCard = w.card(p, tr("settings.debug.typeRenderers"));
         SettingsDependents.bind(debugCheck.selectedProperty(), renderersCard.box());
@@ -753,6 +797,9 @@ final class SettingsDebugPage {
             debugEvaluationLimitCombo.getItems().sort(Integer::compare);
         }
         debugEvaluationLimitCombo.setValue(limit);
+        debugGoHideRuntimeCheck.setSelected(settings.isDebugGoHideRuntimeGoroutines());
+        debugGoLabelsField.setText(settings.getDebugGoPprofLabels());
+        debugGoFilterField.setText(settings.getDebugGoGoroutineFilter());
         nodePathField.setText(settings.getNodePath());
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             CheckBox enable = debugEnableChecks.get(dbg.id());

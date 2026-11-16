@@ -1491,6 +1491,25 @@ every session's panel; not saved), so it holds at the next stop and in the next 
 `DebugPanel.shown`, and Copy Value copies what is shown. `ShowValueAsFxTest` (a scripted panel) covers the menu, an
 array's elements, a watch, Copy Value, the grayed row and the commands; `ValueFormatsProbeFxTest` runs the commands
 in a window on java-debug, debugpy, Delve, GDB, CodeLLDB and js-debug.
+**Go's goroutines in the Threads view** (GoLand's and VS Code's goroutine options) are Delve's own: launch and
+attach arguments that are also settings of a running session (its console's `dlv config`). Settings → Debugging → *Go
+goroutines* keeps *Hide runtime goroutines* (`debugGoHideRuntimeGoroutines`, on: Delve's `hideSystemGoroutines`, which
+leaves out the runtime's garbage-collector workers, finalizer and scavenger), *pprof labels in names*
+(`debugGoPprofLabels`, `*`: `showPprofLabels`, so a goroutine started under `pprof.Do` reads `[Go 20 job:resize-0]
+main.worker`; one key shows its value alone) and *Goroutine filter* (`debugGoGoroutineFilter`, "": `goroutineFilters`,
+the filter of Delve's `goroutines` command, `-with label job=*`, `-without go runtime.*`, `-with user`); schema 175.
+[`dap/GoGoroutines`](../../src/main/java/com/editora/dap/GoGoroutines.java) (pure) adds them to a `type: go` launch or
+attach request (`decorate`, chained after the evaluation time limit in `publishClient`'s decorator; a launch.json's own
+are kept) and turns them into the console commands a running session is sent (`liveCommands`: `dlv config
+hideSystemGoroutines …`, `goroutineFilters …` — empty clears it — and the labels cleared then added). `DapManager
+.setGoGoroutines` sends them, one after another, only when a Go session's options changed (`liveGoGoroutines`), and
+[`ui/GoroutineCommands`](../../src/main/java/com/editora/ui/GoroutineCommands.java) lists the threads again after.
+The Threads view's right-click menu, in a Go session, has *Hide Runtime Goroutines* (`debug.toggleRuntimeGoroutines`)
+and *Filter Goroutines…* (`debug.filterGoroutines`, an overlay prompt); both save the choice in Settings and tell every
+running Go session at once. A filter can leave out the goroutine the program stopped on. Delve 1.27.2 probed:
+`GoroutinesWindowFxTest` (a stand-in `dlv` relaying to `FakeDebugAdapter`) checks the launch arguments, the console
+commands and that nothing is sent again when nothing changed; `GoGoroutinesProbeFxTest` stops a program with three
+labelled workers and checks the list Delve gives with the defaults, with runtime goroutines shown, and filtered.
 **Method breakpoints and field watchpoints** ([`config/MemberBreakpoint`](../../src/main/java/com/editora/config/MemberBreakpoint.java),
 [`ui/MemberBreakpointCommands`](../../src/main/java/com/editora/ui/MemberBreakpointCommands.java)) are java-debug's
 DAP function and data breakpoints, both named `pkg.Class#member` (the binary class name, `Outer$Inner`). A method
