@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A copy button on the Markdown preview's code blocks.** Point at a code block in the preview and a copy button
+  shows in its top right corner, beside the language; one click copies the block's code, and a check mark says it
+  worked. Fenced and indented blocks both have it; hover and completion popups do not.
 - **Set Value on a watch.** Right-click a watch while the program is paused and choose Set Value… to give its
   expression a new value — a variable, a field, an element — as IntelliJ and Visual Studio allow. Python and
   JavaScript set the expression directly; Java, Go and C/C++ set the variable a watch names, or (Java) evaluate the
