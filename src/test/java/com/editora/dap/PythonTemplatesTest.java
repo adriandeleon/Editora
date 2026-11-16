@@ -16,9 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Django and Jinja template breakpoints: what a project uses, and debugpy's switches ({@link PythonTemplates}). */
 class PythonTemplatesTest {
 
+    /** What the project at {@code start} uses, its files keyed by path (written with / on every platform). */
     private static Found detect(Map<String, String> files, String start) {
-        return PythonTemplates.detect(
-                Path.of(start), f -> files.get(f.toString()), f -> files.containsKey(f.toString()));
+        Map<Path, String> byPath = new HashMap<>();
+        files.forEach((name, text) -> byPath.put(Path.of(name), text));
+        return PythonTemplates.detect(Path.of(start), byPath::get, byPath::containsKey);
     }
 
     @Test
@@ -63,7 +65,10 @@ class PythonTemplatesTest {
         assertEquals(
                 false, PythonTemplates.decorate(own, Mode.ON, dir -> Found.NONE).get("django"));
         Map<String, Object> program = Map.of("type", "python", "request", "launch", "program", "/work/api/app.py");
-        assertEquals(Path.of("/work/api"), PythonTemplates.folder(program), "else the program's folder");
+        assertEquals(
+                Path.of("/work/api/app.py").toAbsolutePath().getParent(),
+                PythonTemplates.folder(program),
+                "else the program's folder");
         Map<String, Object> go = Map.of("type", "go", "request", "launch");
         assertSame(go, PythonTemplates.decorate(go, Mode.ON, dir -> Found.NONE));
     }
