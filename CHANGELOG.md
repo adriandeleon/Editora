@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Breakpoints in Django and Jinja templates.** A breakpoint on a line of a Django or Jinja template stops there,
+  with the template's variables (the context, a loop's item and `forloop`) in the Debug window. Editora turns it on for
+  a project that uses Django (a `manage.py`, or Django in its requirements) or Jinja (Jinja2 or Flask in its
+  requirements); Settings → Debugging → Python → Template breakpoints can turn it on or off for every project. Before,
+  a Django template's breakpoint was never hit, and a Jinja one stopped at the wrong place.
 - **Go goroutines your way in the Threads view.** A Go program's runtime goroutines (the garbage collector's
   workers, the finalizer) are left out of the Threads view, and a goroutine started under pprof labels shows them in
   its name (`[Go 20 job:resize-0] main.worker`). Right-click the Threads view to show the runtime's goroutines again or

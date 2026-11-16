@@ -40,9 +40,26 @@ class RunConfigurationsWindowFxTest {
                 .forEach(Stage::close));
     }
 
+    /** The configs the test made: their writes land before the test's folder is deleted (they save off the FX thread). */
+    private final java.util.List<ConfigManager> configs = new java.util.ArrayList<>();
+
+    private ConfigManager config(Path dir) {
+        ConfigManager config = new ConfigManager(dir);
+        configs.add(config);
+        return config;
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void writesLand() {
+        for (ConfigManager config : configs) {
+            config.shared().flushWrites();
+        }
+        configs.clear();
+    }
+
     @Test
     void editorIsASeparateWindowAndSelectsTheRequestedSessionConfiguration(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         RunConfiguration first = new RunConfiguration("First", "example.First", "", "", "", "");
         RunConfiguration second = new RunConfiguration("Second", "example.Second", "", "", "", "");
         config.getWorkspaceState().setRunConfigurations(java.util.List.of(first, second));
@@ -73,7 +90,7 @@ class RunConfigurationsWindowFxTest {
      */
     @Test
     void theButtonRowStaysInsideTheWindowAtAnyHeight(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(new RunConfiguration("App", "example.App", "", "", "", "")));
         RunConfigurationsWindow window =
@@ -113,7 +130,7 @@ class RunConfigurationsWindowFxTest {
     /** Closing the window and opening it again shows it again, at the size it was left. */
     @Test
     void theWindowReopensAfterItIsClosed(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         RunConfigurationsWindow window =
                 FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
         FxTestSupport.runOnFx(() -> window.show(null, null));
@@ -154,7 +171,7 @@ class RunConfigurationsWindowFxTest {
      */
     @Test
     void committingAFieldOfTheOnlyConfigurationKeepsItSelectedAndTheFormFilled(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(new RunConfiguration("Only", "example.Only", "", "", "", "")));
         RunConfigurationsWindow window =
@@ -181,7 +198,7 @@ class RunConfigurationsWindowFxTest {
     /** Remove is saved at once, so it asks first, naming the configuration: Cancel keeps it. */
     @Test
     void removingAConfigurationAsksFirst(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(
                         new RunConfiguration("First", "example.First", "", "", "", ""),
@@ -228,7 +245,7 @@ class RunConfigurationsWindowFxTest {
      */
     @Test
     void anUncommittedEditIsKeptWhenAnotherConfigurationIsSelected(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(
                         new RunConfiguration("First", "example.First", "", "", "", ""),
@@ -260,7 +277,7 @@ class RunConfigurationsWindowFxTest {
     /** Only the fields the selected type launches with are editable, and they follow the type as it changes. */
     @Test
     void onlyTheFieldsOfTheSelectedTypeAreEnabled(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(
                         new RunConfiguration("App", "example.App", "", "", "-Xmx1g", ""),
@@ -300,7 +317,7 @@ class RunConfigurationsWindowFxTest {
 
     @Test
     void aShellConfigurationHasInterpreterFieldsThatPersist(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(
                         new RunConfiguration("Deploy", "shell", "deploy.sh", "", "", "", "", "", "", ""),
@@ -338,7 +355,7 @@ class RunConfigurationsWindowFxTest {
 
     @Test
     void runInATerminalTabIsAPersistedChoiceOfEachConfiguration(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(
                         new RunConfiguration("Menu", "python", "menu.py", "", "", "", "", "", "", ""),
@@ -366,7 +383,7 @@ class RunConfigurationsWindowFxTest {
 
     @Test
     void addProposesTheActiveScriptAndTheFormShowsOnlyItsFields(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         Path root = dir.resolve("site");
         RunConfiguration script =
                 com.editora.run.RunConfigDefaults.forScript("shell", root.resolve("bin/deploy.sh"), root);
@@ -435,7 +452,7 @@ class RunConfigurationsWindowFxTest {
                     }
                 }
                 """);
-        ConfigManager config = new ConfigManager(dir.resolve("config"));
+        ConfigManager config = config(dir.resolve("config"));
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(
                         new RunConfiguration(tr("settings.runConfig.newName"), "", "", "", "", ""),
@@ -483,7 +500,7 @@ class RunConfigurationsWindowFxTest {
 
     @Test
     void runOnListsTheDeploymentsAndSavesTheChoice(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setDeployments(
                         new java.util.ArrayList<>(java.util.List.of(com.editora.config.Deployment.named("dev"))));
@@ -518,7 +535,7 @@ class RunConfigurationsWindowFxTest {
      */
     @Test
     void addTakesItsTypeFromTheActiveFile(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         Path root = dir.resolve("site");
         RunConfiguration[] blank = {
             com.editora.run.RunConfigDefaults.blankOfType("make", root.resolve("native/Makefile"), root)
@@ -576,7 +593,7 @@ class RunConfigurationsWindowFxTest {
      */
     @Test
     void addMakesAConfigurationForTheCompiledSourceFileInFront(@TempDir Path dir) throws Exception {
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         RunConfiguration old = new RunConfiguration("Serve", "example.Serve", "", "--port 8080", "", "");
         config.getWorkspaceState().setRunConfigurations(new java.util.ArrayList<>(java.util.List.of(old)));
         Path root = dir.resolve("site");
@@ -681,7 +698,7 @@ class RunConfigurationsWindowFxTest {
         assertEquals("generic", RunConfigurationsWindow.iconKeyFor("from-a-newer-build"));
         assertEquals("generic", RunConfigurationsWindow.iconKeyFor(null));
 
-        ConfigManager config = new ConfigManager(dir);
+        ConfigManager config = config(dir);
         config.getWorkspaceState()
                 .setRunConfigurations(java.util.List.of(
                         new RunConfiguration("Deploy", "shell", "deploy.sh", "", "", "", "", "", "", "", "")));

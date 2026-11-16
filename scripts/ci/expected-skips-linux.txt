@@ -77,6 +77,7 @@ com.editora.ui.WatchSetValueProbeFxTest
 com.editora.ui.EvaluationTimeLimitProbeFxTest
 com.editora.ui.ValueFormatsProbeFxTest
 com.editora.ui.GoGoroutinesProbeFxTest
+com.editora.ui.PythonTemplatesProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest
