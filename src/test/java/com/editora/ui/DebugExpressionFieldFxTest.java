@@ -67,6 +67,25 @@ class DebugExpressionFieldFxTest {
     }
 
     @Test
+    void aLongPromptStaysInsideANarrowField() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            field.setPromptText("Evaluate an expression (Enter) — Shift+Enter for several lines");
+            javafx.scene.layout.StackPane root = new javafx.scene.layout.StackPane(field.node());
+            javafx.scene.Scene scene = new javafx.scene.Scene(root, 160, 40);
+            root.applyCss();
+            root.layout();
+            javafx.scene.control.Label prompt =
+                    (javafx.scene.control.Label) field.area().getPlaceholder();
+            assertTrue(prompt.isVisible(), "the empty field shows its prompt");
+            assertTrue(
+                    prompt.getWidth() <= field.area().getWidth(),
+                    "the prompt (" + prompt.getWidth() + ") fits the field ("
+                            + field.area().getWidth() + ")");
+            assertTrue(scene.getWidth() > 0);
+        });
+    }
+
+    @Test
     void enterEvaluatesOneLineAndShiftEnterMakesACodeFragment() throws Exception {
         FxTestSupport.runOnFx(() -> {
             CodeArea area = field.area();
