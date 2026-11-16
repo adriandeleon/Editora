@@ -40,7 +40,7 @@ final class TypeRendererDialog {
         final ComboBox<String> language = new ComboBox<>();
         final TextField value = new TextField();
         final TextArea children = new TextArea();
-        final GridPane node = new GridPane();
+        final GridPane node = Dialogs.labelColumn(new GridPane());
 
         Form(TypeRenderer initial) {
             List<String> ids = new ArrayList<>();

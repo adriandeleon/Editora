@@ -37,7 +37,7 @@ final class StepFilterDialog {
         final CheckBox enabled = new CheckBox(tr("stepfilter.enabled"));
         final TextField pattern = new TextField();
         final ComboBox<String> language = new ComboBox<>();
-        final GridPane node = new GridPane();
+        final GridPane node = Dialogs.labelColumn(new GridPane());
 
         Form(StepFilter initial) {
             List<String> ids = new ArrayList<>();
