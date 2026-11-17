@@ -1300,6 +1300,12 @@ final class DebugCoordinator {
                         on && s.isPhpDebugEnabled(),
                         scope.debugTool("php", s.getPhpDebugPath()),
                         found -> applyGating());
+        // vscode-bash-debug: as configured, else Editora's install or VS Code's extension.
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.BASH,
+                        on && s.isBashDebugEnabled(),
+                        scope.debugTool("bash", s.getBashDebugPath()),
+                        found -> applyGating());
         // C and C++: the same CodeLLDB as Rust's.
         dap().configureExternal(
                         com.editora.dap.DebugLanguages.CPP,
@@ -5178,22 +5184,14 @@ final class DebugCoordinator {
     }
 
     /**
-     * Debugs Ruby or PHP file {@code path} in its folder: a Ruby script under rdbg ({@code -- ruby <file>}), a PHP one by
-     * {@code php} with Xdebug, which vscode-php-debug starts ({@link com.editora.dap.ScriptLaunch}).
+     * Debugs a Ruby, PHP or Bash script {@code path} in its folder: under rdbg, by {@code php} with Xdebug, or under the
+     * bashdb vscode-bash-debug ships ({@link com.editora.dap.ScriptLaunch#plan}).
      */
     private void debugScriptFile(Path path, String language, List<String> args) {
         Path cwd = path.toAbsolutePath().getParent();
-        Path dir = cwd != null ? cwd : path.toAbsolutePath();
-        Runnable start = "ruby".equals(language)
-                ? () -> withClosedBreakpoints(() -> dap().startExternal(
-                                path,
-                                com.editora.dap.DebugLanguages.RUBY,
-                                com.editora.dap.ScriptLaunch.rubyLaunch(path, args, dir),
-                                com.editora.dap.ScriptLaunch.rubyTail(path, args)))
-                : () -> withClosedBreakpoints(() -> dap().startExternal(
-                                path,
-                                com.editora.dap.DebugLanguages.PHP,
-                                com.editora.dap.ScriptLaunch.phpLaunch(path, args, dir)));
+        var plan = com.editora.dap.ScriptLaunch.plan(language, path, args, cwd != null ? cwd : path.toAbsolutePath());
+        Runnable start = () ->
+                withClosedBreakpoints(() -> dap().startExternal(path, plan.language(), plan.launch(), plan.tail()));
         s().relaunch = start;
         start.run();
     }
@@ -5280,8 +5278,8 @@ final class DebugCoordinator {
         // A file no adapter can debug is told so first: an untitled one used to get a Save As dialog, and then
         // a shell script "Debugging is unavailable for this file (check Settings → Debugging)", which no
         // setting can change.
-        if (b != null && b.isShell()) {
-            host.setStatus(tr("status.debug.shellNotDebuggable"));
+        if (b != null && b.isShell() && !com.editora.dap.ScriptLaunch.isBashScript(b.getPath(), b.getContent())) {
+            host.setStatus(tr("status.debug.shellNotBash")); // bashdb debugs Bash scripts alone
             return;
         }
         if (b != null && b.getPath() == null && !DapServerRegistry.isDebuggable(b.getLanguage())) {
@@ -5380,7 +5378,7 @@ final class DebugCoordinator {
             debugCsharpFile(path, fileArgs);
             return;
         }
-        if ("ruby".equals(language) || "php".equals(language)) {
+        if ("ruby".equals(language) || "php".equals(language) || "bash".equals(language)) {
             debugScriptFile(path, language, fileArgs);
             return;
         }

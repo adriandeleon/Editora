@@ -386,6 +386,7 @@ class SettingsSyncPageFxTest {
             sync.markDirty();
             assertNotEquals(Animation.Status.RUNNING, dirty.getStatus(), "a change waits for Sync Now");
         });
+        assertTrue(fx.shared.flushWrites()); // settings are saved off the FX thread (PERF-01)
         String saved = Files.readString(fx.configDir.resolve("settings.json"));
         assertTrue(saved.matches("(?s).*\"syncSnippets\"\\s*:\\s*false.*"), "the choice is on disk");
 

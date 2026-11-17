@@ -37,6 +37,7 @@ public final class LaunchRoute {
         RDBG,
         /** vscode-php-debug ({@code php}). */
         PHP_DEBUG,
+        BASH_DEBUG,
         /** java-debug, through a run configuration ({@code java}). */
         JAVA,
         /** An adapter of the user's ({@link CustomAdapters}). */
@@ -129,6 +130,12 @@ public final class LaunchRoute {
                     return unsupported(body, "a PHP attach (Xdebug connects to a launch: \"Listen for Xdebug\")");
                 }
                 return new Route(Kind.PHP_DEBUG, DebugLanguages.PHP, request, false, "");
+            }
+            case "bashdb" -> {
+                if (attach) {
+                    return unsupported(body, "a bashdb attach (vscode-bash-debug only launches)");
+                }
+                return new Route(Kind.BASH_DEBUG, DebugLanguages.BASH, request, false, "");
             }
             case "dotnet" -> {
                 return unsupported(body, "C# Dev Kit's \"dotnet\" (use \"coreclr\" with the built program)");

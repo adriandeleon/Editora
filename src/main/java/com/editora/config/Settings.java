@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 176;
+    public static final int SCHEMA_VERSION = 177;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -973,6 +973,10 @@ public class Settings {
     private boolean phpDebugEnabled = true;
     /** vscode-php-debug's {@code phpDebug.js} (or its folder); blank = Editora's install, VS Code's extension. */
     private String phpDebugPath = "";
+    /** Bash debugging (bashdb through vscode-bash-debug): on by default, only effective when the adapter is found. */
+    private boolean bashDebugEnabled = true;
+    /** vscode-bash-debug's {@code bashDebug.js} (or its folder); blank = Editora's install, VS Code's extension. */
+    private String bashDebugPath = "";
     /**
      * Language Server Protocol support (code intelligence through each language's server): on by default since
      * 0.27.1. Each server self-gates on being installed, and the install banner offers the missing ones. Off, a new
@@ -4057,6 +4061,22 @@ public class Settings {
 
     public void setRubyDebugPath(String rubyDebugPath) {
         this.rubyDebugPath = rubyDebugPath == null ? "" : rubyDebugPath;
+    }
+
+    public boolean isBashDebugEnabled() {
+        return bashDebugEnabled;
+    }
+
+    public void setBashDebugEnabled(boolean bashDebugEnabled) {
+        this.bashDebugEnabled = bashDebugEnabled;
+    }
+
+    public String getBashDebugPath() {
+        return bashDebugPath == null ? "" : bashDebugPath;
+    }
+
+    public void setBashDebugPath(String bashDebugPath) {
+        this.bashDebugPath = bashDebugPath == null ? "" : bashDebugPath;
     }
 
     public boolean isPhpDebugEnabled() {

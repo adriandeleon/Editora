@@ -61,6 +61,19 @@ public record InstalledAdapter(
             List.of("xdebug.php-debug-"),
             List.of("out/phpDebug.js"));
 
+    /**
+     * vscode-bash-debug (rogalmic, MIT): {@code out/bashDebug.js} in its {@code .vsix}'s {@code extension} folder, run on
+     * Node.js, with the {@code bashdb} it ships beside it ({@code bashdb_dir}); VS Code's extension is {@code
+     * rogalmic.bash-debug}.
+     */
+    public static final InstalledAdapter BASH_DEBUG = new InstalledAdapter(
+            "bash",
+            "bashDebug.js",
+            false,
+            List.of("extension/out/bashDebug.js", "out/bashDebug.js", "bashDebug.js"),
+            List.of("rogalmic.bash-debug-"),
+            List.of("out/bashDebug.js"));
+
     /** Where the installer puts it, by this launch's config folder first. Pure construction. */
     List<Path> roots(Path home) {
         List<Path> roots = new ArrayList<>();

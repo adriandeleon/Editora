@@ -83,7 +83,12 @@ class StartupOffFxThreadFxTest {
         // What the launch set process-wide, put back as the other tests in this JVM expect it.
         DebugLog.detachFileForTest();
         com.editora.process.ProcessRegistry.setLedgerFile(null);
-        FxTestSupport.runOnFx(() -> UiZoom.init(100));
+        FxTestSupport.runOnFx(() -> {
+            UiZoom.init(100);
+            // The launch made the user's theme the app's, at their zoom: its sheet set the whole JVM's fonts and
+            // sizes, and later tests in this JVM measured rows and cards in it. The default theme again, at 100%.
+            Themes.applyAppTheme(Themes.DEFAULT);
+        });
         if (emptyDir != null) {
             Themes.loadUserThemes(emptyDir);
         }

@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug Bash scripts.** Press Debug on a Bash script to stop at its breakpoints, step through it and read its
+  variables in a watch or by hovering (`total`, or `$total` as the script writes it). Install Bash Debug from
+  Settings → Debugging → Bash; it brings its own bashdb and runs on Node.js. Scripts of other shells (zsh, fish) still
+  point at Run with Trace.
 - **Debug Test at Caret in C#.** In an xUnit, NUnit or MSTest project, Debug Test at Caret runs the test the caret
   is in (or every test of its class) under `dotnet test` and attaches the debugger to it, so its breakpoints stop with
   the test's values. Stop ends the run; Restart runs the same test again.
