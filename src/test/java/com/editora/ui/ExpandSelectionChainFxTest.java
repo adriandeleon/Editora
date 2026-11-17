@@ -118,6 +118,8 @@ class ExpandSelectionChainFxTest {
         Object coordinator = FxTestSupport.field(fx.controller, "lspCoordinator");
         Path file = Files.createTempDirectory("expand-chain").resolve("A.java");
         Files.writeString(file, SRC);
+        // An install another test began holds jdtls stopped in every window of this JVM until it is released.
+        com.editora.lsp.LspManager.releaseAfterInstall(com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID);
         SelectionRangeFake.install(manager, ExpandSelectionChainFxTest::answer);
         fx.shared.getSettings().setLspSupport(true);
         fx.shared.getSettings().setJavaLspEnabled(true);
@@ -142,7 +144,13 @@ class ExpandSelectionChainFxTest {
         } finally {
             com.editora.perf.OffFx.runnerForTest(null);
         }
-        assertTrue(manager.supportsSelectionRanges(file), "the fake server is attached");
+        assertTrue(
+                manager.supportsSelectionRanges(file),
+                () -> "the fake server is attached (held for install: "
+                        + com.editora.lsp.LspManager.isHeldForInstall(com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID)
+                        + ", sessions: "
+                        + FxTestSupport.<Map<String, ?>>field(manager, "sessionsByRoot")
+                                .keySet() + ")");
 
         // Ladder 1 in method a(): the first press is local, the second uses the fetched chain.
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(SRC.indexOf("alpha") + 2));
