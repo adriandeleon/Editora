@@ -73,8 +73,18 @@ class MergeViewerPagingFxTest {
                 button(pane, tr("merge.acceptTheirs")).fire();
                 button(pane, tr("merge.pagePrevious")).fire();
                 assertEquals(tr("merge.kept.ours"), chosen(pane, 0), "the first page shows its choice again");
-
-                TextArea result = FxTestSupport.field(pane, "resultArea");
+            });
+            // The Result is put together off the FX thread (PERF-01): wait for the one for both choices.
+            TextArea result = FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "resultArea"));
+            for (int i = 0;
+                    i < 500
+                            && !FxTestSupport.callOnFx(
+                                    () -> result.getText().contains("theirs " + MergeViewerPane.PAGE_SIZE + "\n"));
+                    i++) {
+                Thread.sleep(10);
+                FxTestSupport.drainFx();
+            }
+            FxTestSupport.runOnFx(() -> {
                 assertTrue(result.getText().startsWith("same 0\nours 0\nsame 1\n<<<<<<< HEAD"), "the result: ours");
                 assertTrue(
                         result.getText()
