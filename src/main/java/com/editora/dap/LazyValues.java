@@ -6,7 +6,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntFunction;
 import java.util.function.LongSupplier;
@@ -39,6 +38,13 @@ final class LazyValues {
     /** The time a stop may spend waiting for {@code toString()} answers before rows wait for a click. */
     static final long BUDGET_MILLIS = 1_500;
 
+    /**
+     * How long a {@code toString()} keeps the controls refused ({@link #stuck}): past the time a request is waited for.
+     * The adapter may still be running it then, but the user must be able to Resume or Stop: the request waits in the
+     * adapter's queue and is answered once the {@code toString()} returns.
+     */
+    static final long GIVE_UP_MILLIS = DapClient.requestTimeoutSeconds() * 1_000;
+
     /** How many children are asked for at once: enough to hide the round trips, few enough to stop at the budget. */
     private static final int LANES = 16;
 
@@ -59,7 +65,10 @@ final class LazyValues {
     /** The raw {@code variables} replies of this stop, by request: the tree and the inline values share one. */
     private final Map<String, CompletableFuture<List<DapModels.VariableInfo>>> replies = new ConcurrentHashMap<>();
 
-    /** Children asked for and not answered, with when (nanos) — kept across stops: the adapter is still busy. */
+    /**
+     * Children asked for and not answered, with when (nanos) — kept across stops, as the adapter is still busy, until
+     * the answer comes or Editora gives up on it ({@link #GIVE_UP_MILLIS}).
+     */
     private final Map<Integer, Asked> unanswered = new ConcurrentHashMap<>();
 
     private record Asked(long at, String what) {}
@@ -123,6 +132,9 @@ final class LazyValues {
     String stuck() {
         long now = clock.getAsLong();
         long limit = TimeUnit.MILLISECONDS.toNanos(BUDGET_MILLIS);
+        long giveUp = TimeUnit.MILLISECONDS.toNanos(GIVE_UP_MILLIS);
+        // Given up on: it no longer holds the controls (see GIVE_UP_MILLIS), whatever its request says.
+        unanswered.values().removeIf(a -> now - a.at() >= giveUp);
         for (Asked a : unanswered.values()) {
             if (now - a.at() > limit) {
                 return a.what();
@@ -228,9 +240,9 @@ final class LazyValues {
         cache.put(key, answer);
         asked.whenComplete((kids, e) -> {
             ended();
-            if (!timedOut(e)) {
-                unanswered.remove(id); // a timeout is Editora giving up: the adapter is still busy with it
-            }
+            // Answered, refused or timed out: a timeout is Editora giving up, and the adapter may still be busy with
+            // it — but keeping it would refuse Resume and Step for the rest of the session (only reset() cleared it).
+            unanswered.remove(id);
             DapModels.VariableInfo r =
                     e != null || kids == null || kids.size() != 1 ? v : resolved(v, kids.get(0), paused);
             if (r == v || r.note() != null) {
@@ -239,15 +251,6 @@ final class LazyValues {
             answer.complete(r);
         });
         return answer;
-    }
-
-    private static boolean timedOut(@Nullable Throwable t) {
-        for (Throwable x = t; x != null; x = x.getCause()) {
-            if (x instanceof TimeoutException) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private synchronized void began() {

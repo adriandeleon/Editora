@@ -169,11 +169,12 @@ public final class DapClient implements IDebugProtocolClient {
         return t;
     });
 
-    private @Nullable Socket socket;
+    // Volatile: set on a connect worker thread and read by dispose on another (the FX thread or dap-dispose).
+    private volatile @Nullable Socket socket;
     /** The adapter subprocess for stdio transports (debugpy); null for socket transports. Killed on dispose. */
-    private @Nullable Process adapterProcess;
+    private volatile @Nullable Process adapterProcess;
 
-    private @Nullable IDebugProtocolServer server;
+    private volatile @Nullable IDebugProtocolServer server;
     private volatile boolean disposed;
     /** The breakpoints to install when the adapter signals {@code initialized} (snapshot taken on the FX
      *  thread at session start, so this never reads UI state off-thread). */
@@ -256,12 +257,28 @@ public final class DapClient implements IDebugProtocolClient {
      * so the frames and variables asked for next come from it too), else {@link #target()}.
      */
     private DapClient target(int threadId) {
-        DapClient owner = threadOwners.get(threadId);
-        if (owner != null && !owner.disposed && children.contains(owner)) {
+        DapClient owner = ownerOf(threadId);
+        if (owner != null) {
             focus = owner;
             return owner;
         }
         return target();
+    }
+
+    /**
+     * The session a request about {@code threadId} goes to, leaving the focus where it is: for a request the user did
+     * not aim at that thread (a thread dump asks every thread for its stack), after which the frames and variables
+     * asked for next must still come from the session that stopped.
+     */
+    private DapClient targetQuietly(int threadId) {
+        DapClient owner = ownerOf(threadId);
+        return owner != null ? owner : target();
+    }
+
+    /** The live child session that owns {@code threadId}, or null. */
+    private @Nullable DapClient ownerOf(int threadId) {
+        DapClient owner = threadOwners.get(threadId);
+        return owner != null && !owner.disposed && children.contains(owner) ? owner : null;
     }
 
     /** Live child sessions (test/diagnostic read). */
@@ -277,15 +294,25 @@ public final class DapClient implements IDebugProtocolClient {
      * Fire-and-forget, mirroring {@link #sendSetBreakpoints}.
      */
     public void setExceptionFilters(@Nullable List<String> filters) {
-        this.exceptionFilters = filters == null ? null : List.copyOf(filters);
-        for (DapClient child : children) {
-            child.setExceptionFilters(filters); // each session holds its own exception configuration
+        // Under the lock, as breakpoints: initialized() may be sending the filters right now, and the new set must go
+        // on the wire after that one (which it would otherwise overwrite), and reach a child that is joining.
+        synchronized (configurationLock) {
+            this.exceptionFilters = filters == null ? null : List.copyOf(filters);
+            for (DapClient child : children) {
+                child.setExceptionFilters(filters); // each session holds its own exception configuration
+            }
+            sendExceptionFiltersIfConfigured();
         }
-        if (server != null && configured) {
+    }
+
+    /** Sends the exception filters in force when the session is configured (caller holds the lock). */
+    private void sendExceptionFiltersIfConfigured() {
+        IDebugProtocolServer s = server;
+        if (s != null && configured) {
             try {
                 SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
                 ex.setFilters(effectiveExceptionFilters().toArray(new String[0]));
-                ignore(timed(server.setExceptionBreakpoints(ex)));
+                ignore(timed(s.setExceptionBreakpoints(ex)));
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "live setExceptionBreakpoints failed", e);
             }
@@ -326,21 +353,15 @@ public final class DapClient implements IDebugProtocolClient {
     /** Sets {@link #extraExceptionFilters}, and sends the filters again when the session is running. */
     public void setExtraExceptionFilters(List<String> extras) {
         List<String> next = extras == null ? List.of() : List.copyOf(extras);
-        if (next.equals(extraExceptionFilters)) {
-            return;
-        }
-        this.extraExceptionFilters = next;
-        for (DapClient child : children) {
-            child.setExtraExceptionFilters(next);
-        }
-        if (server != null && configured) {
-            try {
-                SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
-                ex.setFilters(effectiveExceptionFilters().toArray(new String[0]));
-                ignore(timed(server.setExceptionBreakpoints(ex)));
-            } catch (RuntimeException e) {
-                LOG.log(Level.WARNING, "live setExceptionBreakpoints failed", e);
+        synchronized (configurationLock) { // see setExceptionFilters
+            if (next.equals(extraExceptionFilters)) {
+                return;
             }
+            this.extraExceptionFilters = next;
+            for (DapClient child : children) {
+                child.setExtraExceptionFilters(next);
+            }
+            sendExceptionFiltersIfConfigured();
         }
     }
 
@@ -410,10 +431,10 @@ public final class DapClient implements IDebugProtocolClient {
      */
     public void setMemberBreakpoints(@Nullable List<DapModels.MemberBreakpoint> breakpoints) {
         List<DapModels.MemberBreakpoint> list = breakpoints == null ? List.of() : List.copyOf(breakpoints);
-        for (DapClient child : children) {
-            child.setMemberBreakpoints(list); // each session holds its own breakpoints
-        }
         synchronized (configurationLock) {
+            for (DapClient child : children) {
+                child.setMemberBreakpoints(list); // each session holds its own breakpoints
+            }
             memberBreakpoints = list;
             if (server != null && configured) {
                 sendMemberBreakpointsNow();
@@ -426,12 +447,16 @@ public final class DapClient implements IDebugProtocolClient {
         return memberBreakpoints;
     }
 
-    /** Sends {@code setFunctionBreakpoints} and {@code setDataBreakpoints}, each when the adapter offers it. */
-    private void sendMemberBreakpointsNow() {
+    /**
+     * Sends {@code setFunctionBreakpoints} and {@code setDataBreakpoints}, each when the adapter offers it. Returns the
+     * requests' answers, which {@code configurationDone} waits for as it does for the line breakpoints'.
+     */
+    private List<CompletableFuture<?>> sendMemberBreakpointsNow() {
         IDebugProtocolServer s = server;
         Capabilities caps = capabilities;
+        List<CompletableFuture<?>> sent = new ArrayList<>();
         if (s == null || caps == null) {
-            return;
+            return sent;
         }
         List<DapModels.MemberBreakpoint> all = memberBreakpoints;
         try {
@@ -449,7 +474,9 @@ public final class DapClient implements IDebugProtocolClient {
                 org.eclipse.lsp4j.debug.SetFunctionBreakpointsArguments a =
                         new org.eclipse.lsp4j.debug.SetFunctionBreakpointsArguments();
                 a.setBreakpoints(methods.toArray(new org.eclipse.lsp4j.debug.FunctionBreakpoint[0]));
-                ignore(timed(s.setFunctionBreakpoints(a)));
+                CompletableFuture<?> answer = timed(s.setFunctionBreakpoints(a));
+                ignore(answer);
+                sent.add(answer);
             }
             if (Boolean.TRUE.equals(caps.getSupportsDataBreakpoints())) {
                 List<org.eclipse.lsp4j.debug.DataBreakpoint> fields = new ArrayList<>();
@@ -466,11 +493,14 @@ public final class DapClient implements IDebugProtocolClient {
                 org.eclipse.lsp4j.debug.SetDataBreakpointsArguments a =
                         new org.eclipse.lsp4j.debug.SetDataBreakpointsArguments();
                 a.setBreakpoints(fields.toArray(new org.eclipse.lsp4j.debug.DataBreakpoint[0]));
-                ignore(timed(s.setDataBreakpoints(a)));
+                CompletableFuture<?> answer = timed(s.setDataBreakpoints(a));
+                ignore(answer);
+                sent.add(answer);
             }
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "setFunctionBreakpoints/setDataBreakpoints failed", e);
         }
+        return sent;
     }
 
     private static @Nullable String blankToNull(@Nullable String s) {
@@ -549,7 +579,7 @@ public final class DapClient implements IDebugProtocolClient {
             if (disposed) {
                 return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
             }
-            Socket opened = openWithRetry(port, 50);
+            Socket opened = openWithRetry(port, 50); // gives up early once the session is disposed
             if (disposed) {
                 opened.close();
                 return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
@@ -564,8 +594,8 @@ public final class DapClient implements IDebugProtocolClient {
             this.adapterId = adapterId;
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
                     this,
-                    quietOnClose(socket.getInputStream()),
-                    orderedWriter(socket.getOutputStream()),
+                    quietOnClose(opened.getInputStream()),
+                    orderedWriter(opened.getOutputStream()),
                     executor,
                     c -> c);
             server = launcher.getRemoteProxy();
@@ -578,7 +608,12 @@ public final class DapClient implements IDebugProtocolClient {
                         return c;
                     });
         } catch (Exception e) {
-            LOG.log(Level.WARNING, "Failed to connect to debug adapter on port " + port, e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt(); // a Stop interrupted the connect: keep saying so
+            }
+            if (!disposed) {
+                LOG.log(Level.WARNING, "Failed to connect to debug adapter on port " + port, e);
+            }
             return CompletableFuture.failedFuture(e);
         }
     }
@@ -674,8 +709,11 @@ public final class DapClient implements IDebugProtocolClient {
      */
     private static final String[] LOOPBACKS = {"127.0.0.1", "::1"};
 
-    private static Socket openWithRetry(int port, int tries) throws InterruptedException {
+    private Socket openWithRetry(int port, int tries) throws InterruptedException {
         for (int i = 0; i < tries; i++) {
+            if (disposed) { // Stop while connecting: the retries would otherwise go on for seconds
+                throw new java.util.concurrent.CancellationException("disposed");
+            }
             for (String loopback : LOOPBACKS) {
                 Socket s = new Socket();
                 try {
@@ -738,11 +776,14 @@ public final class DapClient implements IDebugProtocolClient {
 
     private void watchProcess(Process process) {
         if (process != null) {
-            process.onExit().thenRun(() -> {
-                if (!disposed) {
-                    host.onTransportClosed(null);
-                }
-            });
+            // On a thread of its own: the host may wait a moment for the adapter's last stderr lines, which must not
+            // hold the thread that reports every process's exit.
+            process.onExit()
+                    .thenRun(() -> Thread.ofVirtual().name("dap-adapter-exit").start(() -> {
+                        if (!disposed) {
+                            host.onTransportClosed(null);
+                        }
+                    }));
         }
     }
 
@@ -826,7 +867,7 @@ public final class DapClient implements IDebugProtocolClient {
                     configuring.add(sent);
                 }
                 if (!memberBreakpoints.isEmpty()) {
-                    sendMemberBreakpointsNow();
+                    configuring.addAll(sendMemberBreakpointsNow());
                 }
             }
             CompletableFuture.allOf(configuring.stream()
@@ -1309,12 +1350,16 @@ public final class DapClient implements IDebugProtocolClient {
     private void connectChild(
             int adapterPort, boolean attach, Map<String, Object> configuration, CompletableFuture<Void> started) {
         DapClient child = new DapClient(this);
-        child.initialBreakpoints = initialBreakpoints;
-        child.exceptionFilters = exceptionFilters;
-        child.extraExceptionFilters = extraExceptionFilters;
-        child.memberBreakpoints = memberBreakpoints;
-        child.terminateOnDisconnect = terminateOnDisconnect; // js-debug's program runs in the child sessions
-        children.add(child);
+        synchronized (configurationLock) {
+            // With the copy, under the lock that a breakpoint or filter change takes: a change made now either is in
+            // the copy or finds the child in the list, never neither.
+            child.initialBreakpoints = initialBreakpoints;
+            child.exceptionFilters = exceptionFilters;
+            child.extraExceptionFilters = extraExceptionFilters;
+            child.memberBreakpoints = memberBreakpoints;
+            child.terminateOnDisconnect = terminateOnDisconnect; // js-debug's program runs in the child sessions
+            children.add(child);
+        }
         if (disposed) { // the session ended while this was queued
             children.remove(child);
             child.dispose();
@@ -1324,7 +1369,7 @@ public final class DapClient implements IDebugProtocolClient {
         child.connect(adapterPort, adapterId).whenComplete((caps, error) -> {
             if (error != null) {
                 children.remove(child);
-                child.dispose();
+                child.disposeInBackground(); // possibly on the child's own reader thread
                 started.completeExceptionally(error);
                 return;
             }
@@ -1382,6 +1427,30 @@ public final class DapClient implements IDebugProtocolClient {
             }
 
             @Override
+            public void onContinued(int threadId, boolean allThreadsContinued) {
+                for (int resumed : continuedThreads(child, threadId, allThreadsContinued)) {
+                    host.onContinued(resumed, false);
+                }
+                if (allThreadsContinued && isOnlyChild(child)) {
+                    host.onContinued(threadId, true); // the child's threads are all the session has
+                }
+            }
+
+            @Override
+            public void onExited(int exitCode) {
+                if (isMainChild(child)) { // a worker's or subprocess's exit is not the program's
+                    host.onExited(exitCode);
+                }
+            }
+
+            @Override
+            public void onProcessId(long pid) {
+                if (isMainChild(child)) {
+                    host.onProcessId(pid);
+                }
+            }
+
+            @Override
             public void onOutput(String text, String category) {
                 host.onOutput(text, category);
             }
@@ -1419,6 +1488,38 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     /**
+     * The threads a child's {@code continued} event resumed, each to be reported on its own: {@code threadId}, and for
+     * {@code allThreadsContinued} every thread the child owns — "all" is that session's threads, while another
+     * child's may still be stopped. Empty when the child is the only one, whose "all" is the whole session's.
+     */
+    private List<Integer> continuedThreads(DapClient child, int threadId, boolean allThreadsContinued) {
+        if (!allThreadsContinued) {
+            return List.of(threadId);
+        }
+        if (isOnlyChild(child)) {
+            return List.of();
+        }
+        java.util.Set<Integer> resumed = new java.util.LinkedHashSet<>();
+        resumed.add(threadId);
+        threadOwners.forEach((thread, owner) -> {
+            if (owner == child) {
+                resumed.add(thread);
+            }
+        });
+        return List.copyOf(resumed);
+    }
+
+    /** Whether {@code child} is the only live child session. */
+    private boolean isOnlyChild(DapClient child) {
+        return children.size() <= 1 && (children.isEmpty() || children.contains(child));
+    }
+
+    /** Whether {@code child} debugs the program the session launched: the first child the adapter asked for. */
+    private boolean isMainChild(DapClient child) {
+        return children.isEmpty() || children.get(0) == child;
+    }
+
+    /**
      * A child session ended. The others keep running; when it was the last one the debuggee is gone, so the
      * whole session ends — the root session has nothing left to debug.
      */
@@ -1431,7 +1532,9 @@ public final class DapClient implements IDebugProtocolClient {
         if (wasFocus) {
             focus = null;
         }
-        child.dispose();
+        // In the background: this runs on the child's own reader thread, which a synchronous dispose would hold for
+        // the whole disconnect wait and then interrupt (shutting the child's executor down) before the calls below.
+        child.disposeInBackground();
         if (disposed) {
             return;
         }
@@ -1451,14 +1554,14 @@ public final class DapClient implements IDebugProtocolClient {
      * starting the program ("Empty debug session."), and the breakpoint was then shown as rejected.
      */
     public CompletableFuture<Void> sendSetBreakpoints(DapModels.FileBreakpoints fb) {
-        if (fb != null && root == null) {
-            for (DapClient child : children) {
-                child.sendSetBreakpoints(fb); // each session holds its own breakpoints
-            }
-        }
         synchronized (configurationLock) {
             if (fb != null) {
                 rememberBreakpoints(fb); // a child session started later, and initialized(), begin with this set
+                if (root == null) {
+                    for (DapClient child : children) { // under the lock: see connectChild
+                        child.sendSetBreakpoints(fb); // each session holds its own breakpoints
+                    }
+                }
             }
             if (!configured) {
                 return CompletableFuture.completedFuture(null);
@@ -1790,9 +1893,17 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<List<DapModels.StackFrameInfo>> stackTrace(int threadId) {
-        DapClient session = target(threadId);
+        return stackTrace(threadId, true);
+    }
+
+    /**
+     * The call stack of {@code threadId}. {@code focusThread}: the user looks at that thread, so the session that owns
+     * it becomes the one later requests go to; false for a stack asked for in bulk (Thread Dump, Parallel Stacks).
+     */
+    public CompletableFuture<List<DapModels.StackFrameInfo>> stackTrace(int threadId, boolean focusThread) {
+        DapClient session = focusThread ? target(threadId) : targetQuietly(threadId);
         if (session != this) {
-            return session.stackTrace(threadId);
+            return session.stackTrace(threadId, focusThread);
         }
         StackTraceArguments a = new StackTraceArguments();
         a.setThreadId(threadId);
@@ -2048,7 +2159,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setVariablesReference(variablesReference);
         a.setName(name);
         a.setValue(value);
-        return timed(server().setVariable(a)).thenApply(r -> r == null ? value : r.getValue());
+        return timed(server().setVariable(a)).thenApply(r -> r == null || r.getValue() == null ? value : r.getValue());
     }
 
     /**
@@ -2247,9 +2358,14 @@ public final class DapClient implements IDebugProtocolClient {
         if (session != this) {
             return session.readMemory(memoryReference, offset, count);
         }
+        MemoryAddress at = memoryAddress(memoryReference, offset);
+        if (at == null) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(
+                    com.editora.i18n.Messages.tr("debug.error.memoryOffset", offset, memoryReference)));
+        }
         org.eclipse.lsp4j.debug.ReadMemoryArguments a = new org.eclipse.lsp4j.debug.ReadMemoryArguments();
-        a.setMemoryReference(memoryReference);
-        a.setOffset((int) offset);
+        a.setMemoryReference(at.reference());
+        a.setOffset(at.offset());
         a.setCount(count);
         return timed(server().readMemory(a)).thenApply(r -> {
             String data = r == null ? null : r.getData();
@@ -2262,6 +2378,35 @@ public final class DapClient implements IDebugProtocolClient {
                     bytes,
                     unreadable == null ? 0 : unreadable);
         });
+    }
+
+    /** A {@code readMemory} request's {@code memoryReference} and {@code offset}. */
+    record MemoryAddress(String reference, int offset) {}
+
+    /**
+     * Where {@code readMemory} reads {@code reference} + {@code offset}: DAP's offset is a 32-bit integer, so a farther
+     * offset is added to the reference itself when it is an address (hex {@code 0x…} or decimal, as CodeLLDB, GDB and
+     * Delve give them). Null when it is neither and the offset does not fit: an offset cast to {@code int} would wrap to
+     * a negative one and read somewhere else entirely. Pure.
+     */
+    static @Nullable MemoryAddress memoryAddress(String reference, long offset) {
+        if (offset >= Integer.MIN_VALUE && offset <= Integer.MAX_VALUE) {
+            return new MemoryAddress(reference, (int) offset);
+        }
+        String r = reference == null ? "" : reference.strip();
+        java.math.BigInteger base;
+        try {
+            base = r.startsWith("0x") || r.startsWith("0X")
+                    ? new java.math.BigInteger(r.substring(2), 16)
+                    : new java.math.BigInteger(r);
+        } catch (NumberFormatException e) {
+            return null; // an opaque reference: nothing to add the offset to
+        }
+        java.math.BigInteger address = base.add(java.math.BigInteger.valueOf(offset));
+        if (address.signum() < 0) {
+            return null;
+        }
+        return new MemoryAddress("0x" + address.toString(16), 0);
     }
 
     /**
