@@ -70,8 +70,18 @@ final class RunCoordinator {
          */
         void editConfiguration(String name);
 
-        /** Saves {@code buffer} (dirty → write, untitled → Save-As); {@code false} if cancelled/failed. */
-        boolean saveBuffer(EditorBuffer buffer);
+        /** A test stand-in's save (dirty → write, untitled → Save-As), answered at once; the app uses saveThen. */
+        default boolean saveBuffer(EditorBuffer buffer) {
+            return false;
+        }
+
+        /**
+         * Saves {@code buffer} as {@link #saveBuffer} does, without waiting: {@code then} hears on the FX thread
+         * whether it was saved. The app writes off the FX thread and never waits in a nested loop (PERF-01).
+         */
+        default void saveThen(EditorBuffer buffer, Consumer<Boolean> then) {
+            then.accept(saveBuffer(buffer));
+        }
 
         /** The remembered program-arguments string for {@code path} ("" when none). */
         String programArgs(@Nullable Path path);
@@ -391,7 +401,20 @@ final class RunCoordinator {
         }
         // Save the script being rerun, wherever its tab is (the tab in front may be something else, a README, and
         // saving only that let the edited script run as it was on disk), then the tab in front as before.
-        if (!beginRunRequest() || !saveScriptAndActive(lastRunScript)) {
+        if (consoleRunning() || deploying) {
+            beginRunRequest(); // says the Run is busy
+            return;
+        }
+        // Saved off the FX thread; the rerun goes on when the writes have landed (PERF-01, Pauta 6.0.1).
+        saveThen(scriptAndActive(lastRunScript), () -> {
+            if (beginRunRequest()) {
+                rerunLastSaved();
+            }
+        });
+    }
+
+    private void rerunLastSaved() {
+        if (lastRunCommand == null || lastRunDir == null) {
             return;
         }
         if (lastTestRerun != null) {
@@ -489,24 +512,32 @@ final class RunCoordinator {
 
     /**
      * Runs a test command (pytest, unittest) in this console: its lines and exit also go to {@code hooks}, and
-     * Rerun repeats it through {@code rerun}. False, having said why, when another program is running or a
-     * save was refused.
+     * Rerun repeats it through {@code rerun}; {@code started} runs once it has. The script and the tab in front are
+     * saved first, off the FX thread (PERF-01, Pauta 6.0.1). Nothing runs, having said why, when another program is
+     * running or a save was refused.
      */
-    boolean runTests(
+    void runTests(
             @Nullable String label,
             @Nullable Path dir,
             List<String> argv,
             java.util.Map<String, String> env,
             @Nullable Path script,
             TestStream hooks,
-            Runnable rerun) {
-        if (!beginRunRequest() || !saveScriptAndActive(script)) {
-            return false;
+            Runnable rerun,
+            Runnable started) {
+        if (consoleRunning() || deploying) {
+            beginRunRequest(); // says the Run is busy
+            return;
         }
-        pendingTestStream = hooks;
-        streamRun(label, dir, argv, env, script);
-        lastTestRerun = rerun;
-        return true;
+        saveThen(scriptAndActive(script), () -> {
+            if (!beginRunRequest()) {
+                return;
+            }
+            pendingTestStream = hooks;
+            streamRun(label, dir, argv, env, script);
+            lastTestRerun = rerun;
+            started.run();
+        });
     }
 
     /**
@@ -995,15 +1026,17 @@ final class RunCoordinator {
         long generation = ++locateGeneration;
         ops.onRunStateChanged();
         planner.accept(thread, () -> {
-            T value = null;
-            Exception error = null;
-            try {
-                value = work.call();
-            } catch (Exception e) {
-                error = e;
-            }
-            T answer = value;
-            Exception failed = error;
+            Object[] result = new Object[2];
+            com.editora.perf.Looked.asOffFxWork(() -> {
+                try {
+                    result[0] = work.call();
+                } catch (Exception e) {
+                    result[1] = e;
+                }
+            });
+            @SuppressWarnings("unchecked")
+            T answer = (T) result[0];
+            Exception failed = (Exception) result[1];
             Runnable land = () -> {
                 if (generation != locateGeneration || !locatingProgram) {
                     return; // stopped meanwhile
@@ -1171,29 +1204,29 @@ final class RunCoordinator {
                 return;
             }
         }
-        if (!saveBuffersUnder(plan.root(), List.of("c", "cpp"))) {
-            return;
-        }
-        String missing = tr("status.run.compiledNoProgram", source.getFileName());
-        offFx(
-                "run-native-prepare",
-                () -> {
-                    com.editora.perf.BlockingSites.enter("NativeBuild.requestCodemodel");
-                    if (plan.buildDir() != null) {
-                        com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
-                    }
-                    if (plan.output() != null && plan.output().getParent() != null) {
-                        java.nio.file.Files.createDirectories(plan.output().getParent());
-                    }
-                    return plan;
-                },
-                ready -> buildThenRun(
-                        run,
-                        plan.root(),
-                        plan.steps(),
-                        "status.run.compiledBuild",
-                        () -> Built.of(com.editora.dap.NativeBuild.executable(plan, source), missing),
-                        plan.root()));
+        // Saved off the FX thread first; the build goes on once every write has landed (PERF-01).
+        saveBuffersUnderThen(plan.root(), List.of("c", "cpp"), () -> {
+            String missing = tr("status.run.compiledNoProgram", source.getFileName());
+            offFx(
+                    "run-native-prepare",
+                    () -> {
+                        com.editora.perf.BlockingSites.enter("NativeBuild.requestCodemodel");
+                        if (plan.buildDir() != null) {
+                            com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
+                        }
+                        if (plan.output() != null && plan.output().getParent() != null) {
+                            java.nio.file.Files.createDirectories(plan.output().getParent());
+                        }
+                        return plan;
+                    },
+                    ready -> buildThenRun(
+                            run,
+                            plan.root(),
+                            plan.steps(),
+                            "status.run.compiledBuild",
+                            () -> Built.of(com.editora.dap.NativeBuild.executable(plan, source), missing),
+                            plan.root()));
+        });
     }
 
     /**
@@ -1257,32 +1290,34 @@ final class RunCoordinator {
         if (go == null) {
             return; // the module was not trusted: nothing is built
         }
-        if (!saveBuffersUnder(module != null ? module : folder, List.of("go"))) {
-            return;
-        }
-        Path programs = builtProgramsDir();
-        Path output = com.editora.dap.NativeBuild.outputFor(source, programs);
-        String missing = tr("status.run.compiledNoProgram", source.getFileName());
-        offFx(
-                "run-go-prepare",
-                () -> {
-                    com.editora.perf.BlockingSites.enter("GoLaunch.prepare");
-                    java.nio.file.Files.createDirectories(programs);
-                    java.nio.file.Files.deleteIfExists(output); // the last build's program is not this one's
-                    return output;
-                },
-                ready -> buildThenRun(
-                        run,
-                        folder,
-                        List.of(com.editora.dap.GoLaunch.buildArgv(go, source, module != null, output)),
-                        "status.run.compiledBuild",
-                        // A program, not a package's archive (what go writes for a package whose clause was not read).
-                        () -> Built.of(
-                                java.nio.file.Files.isRegularFile(output) && java.nio.file.Files.isExecutable(output)
-                                        ? output
-                                        : null,
-                                missing),
-                        folder));
+        // Saved off the FX thread first; the build goes on once every write has landed (PERF-01).
+        saveBuffersUnderThen(module != null ? module : folder, List.of("go"), () -> {
+            Path programs = builtProgramsDir();
+            Path output = com.editora.dap.NativeBuild.outputFor(source, programs);
+            String missing = tr("status.run.compiledNoProgram", source.getFileName());
+            offFx(
+                    "run-go-prepare",
+                    () -> {
+                        com.editora.perf.BlockingSites.enter("GoLaunch.prepare");
+                        java.nio.file.Files.createDirectories(programs);
+                        java.nio.file.Files.deleteIfExists(output); // the last build's program is not this one's
+                        return output;
+                    },
+                    ready -> buildThenRun(
+                            run,
+                            folder,
+                            List.of(com.editora.dap.GoLaunch.buildArgv(go, source, module != null, output)),
+                            "status.run.compiledBuild",
+                            // A program, not a package's archive (what go writes for a package whose clause was not
+                            // read).
+                            () -> Built.of(
+                                    java.nio.file.Files.isRegularFile(output)
+                                                    && java.nio.file.Files.isExecutable(output)
+                                            ? output
+                                            : null,
+                                    missing),
+                            folder));
+        });
     }
 
     /**
@@ -1319,27 +1354,27 @@ final class RunCoordinator {
 
     private void runRustTrusted(CompiledRun run, Path source, Path root, List<String> cargo) {
         {
-            if (!saveBuffersUnder(root, List.of("rust"))) {
-                return;
-            }
-            offFx(
-                    "run-rust-plan",
-                    () -> {
-                        com.editora.perf.BlockingSites.enter("RustLaunch.plan");
-                        String text;
-                        try {
-                            text = java.nio.file.Files.readString(source);
-                        } catch (java.io.IOException e) {
-                            text = ""; // unreadable: Cargo says so
-                        }
-                        boolean hasProgram = java.nio.file.Files.isRegularFile(
-                                        root.resolve("src").resolve("main.rs"))
-                                || java.nio.file.Files.isDirectory(
-                                        root.resolve("src").resolve("bin"));
-                        // No caret picks a test: a test file runs all its tests.
-                        return com.editora.dap.RustLaunch.plan(root, source, text, -1, hasProgram);
-                    },
-                    plan -> runRustPlanned(run, source, root, cargo, plan));
+            // Saved off the FX thread first; the build goes on once every write has landed (PERF-01).
+            saveBuffersUnderThen(root, List.of("rust"), () -> {
+                offFx(
+                        "run-rust-plan",
+                        () -> {
+                            com.editora.perf.BlockingSites.enter("RustLaunch.plan");
+                            String text;
+                            try {
+                                text = java.nio.file.Files.readString(source);
+                            } catch (java.io.IOException e) {
+                                text = ""; // unreadable: Cargo says so
+                            }
+                            boolean hasProgram = java.nio.file.Files.isRegularFile(
+                                            root.resolve("src").resolve("main.rs"))
+                                    || java.nio.file.Files.isDirectory(
+                                            root.resolve("src").resolve("bin"));
+                            // No caret picks a test: a test file runs all its tests.
+                            return com.editora.dap.RustLaunch.plan(root, source, text, -1, hasProgram);
+                        },
+                        plan -> runRustPlanned(run, source, root, cargo, plan));
+            });
         }
     }
 
@@ -1388,8 +1423,41 @@ final class RunCoordinator {
                 : Path.of(System.getProperty("java.io.tmpdir"), "editora-native-run");
     }
 
-    /** Saves the edited buffers of {@code languages} under {@code root}: a build reads them from disk. False when refused. */
-    private boolean saveBuffersUnder(Path root, List<String> languages) {
+    /** The buffer a command just saved before calling itself again: it goes on even if the tab is still marked. */
+    private @Nullable EditorBuffer justSaved;
+
+    private @Nullable EditorBuffer takeJustSaved() {
+        EditorBuffer saved = justSaved;
+        justSaved = null;
+        return saved;
+    }
+
+    /**
+     * Saves those of {@code buffers} that are edited or untitled, one after another, then runs {@code then}: each
+     * write runs off the FX thread and the command goes on when it has landed, never in a nested wait (PERF-01,
+     * Pauta 6.0.1). Nothing more runs when a save is refused, cancelled or fails.
+     */
+    private void saveThen(List<EditorBuffer> buffers, Runnable then) {
+        for (int i = 0; i < buffers.size(); i++) {
+            EditorBuffer b = buffers.get(i);
+            if (b.isDirty() || b.getPath() == null) {
+                List<EditorBuffer> rest = List.copyOf(buffers.subList(i + 1, buffers.size()));
+                ops.saveThen(b, saved -> {
+                    if (saved) {
+                        saveThen(rest, then);
+                    }
+                });
+                return;
+            }
+        }
+        then.run();
+    }
+
+    /**
+     * Saves the edited buffers of {@code languages} under {@code root} (a build reads them from disk), then runs
+     * {@code then}; nothing when a save is refused.
+     */
+    private void saveBuffersUnderThen(Path root, List<String> languages, Runnable then) {
         List<EditorBuffer> dirty = new ArrayList<>();
         host.forEachBuffer(b -> {
             Path p = b.getPath();
@@ -1400,12 +1468,7 @@ final class RunCoordinator {
                 dirty.add(b);
             }
         });
-        for (EditorBuffer b : dirty) {
-            if (!ops.saveBuffer(b)) {
-                return false;
-            }
-        }
-        return true;
+        saveThen(dirty, then);
     }
 
     /** Set while a built program is being looked for off the FX thread: the console is busy, and Stop ends it. */
@@ -1600,9 +1663,11 @@ final class RunCoordinator {
     }
 
     private void runConfigSaved(RunConfiguration cfg, @Nullable Path script) {
-        if (!saveScriptAndActive(script)) {
-            return;
-        }
+        // Saved off the FX thread; the configuration goes on when the writes have landed (PERF-01, Pauta 6.0.1).
+        saveThen(scriptAndActive(script), () -> runConfigScriptSaved(cfg));
+    }
+
+    private void runConfigScriptSaved(RunConfiguration cfg) {
         // A before-launch step gates everything after it: if the build fails there is nothing worth running,
         // and launching the previous binary anyway is the failure mode this exists to prevent.
         withBeforeLaunch(cfg, () -> {
@@ -1641,9 +1706,11 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.compiledRemote", given.name())); // said before anything is deployed
             return;
         }
-        if (!saveProjectBuffers(localRoot)) {
-            return; // a deploy sends what is on disk: an unsaved edit would not reach the host
-        }
+        // A deploy sends what is on disk: the project's edited files are saved first, off the FX thread (PERF-01).
+        saveThen(projectBuffers(localRoot), () -> deploySaved(given, debug, localRoot));
+    }
+
+    private void deploySaved(RunConfiguration given, boolean debug, Path localRoot) {
         com.editora.deploy.DeployPaths mapping = new com.editora.deploy.DeployPaths(localRoot, localRoot);
         RunConfiguration cfg = new RunConfiguration(
                 given.name(),
@@ -1686,8 +1753,8 @@ final class RunCoordinator {
         }
     }
 
-    /** Saves every open, edited file of the project at {@code root}; false when a save was refused. */
-    private boolean saveProjectBuffers(Path root) {
+    /** Every open, edited file of the project at {@code root}. */
+    private List<EditorBuffer> projectBuffers(Path root) {
         List<EditorBuffer> dirty = new java.util.ArrayList<>();
         host.forEachBuffer(b -> {
             if (b.isDirty()
@@ -1696,12 +1763,7 @@ final class RunCoordinator {
                 dirty.add(b);
             }
         });
-        for (EditorBuffer b : dirty) {
-            if (!ops.saveBuffer(b)) {
-                return false;
-            }
-        }
-        return true;
+        return dirty;
     }
 
     /** The Run console as a deploy's: its progress while it runs, its failure if it fails. */
@@ -1919,23 +1981,23 @@ final class RunCoordinator {
      * Saves the open tab of {@code script} (null = none) and then the tab in front: the script is what runs,
      * and a before-launch step may read the file being edited in front. False when a save was refused.
      */
-    private boolean saveScriptAndActive(@Nullable Path script) {
-        return (script == null || saveOpenBuffer(script)) && saveActiveBuffer();
-    }
-
-    /**
-     * Saves the open tab of {@code file} if it has unsaved edits, whichever tab is in front; false when that
-     * save was refused or failed. A file with no open tab, or none edited, needs nothing.
-     */
-    private boolean saveOpenBuffer(Path file) {
-        EditorBuffer[] found = new EditorBuffer[1];
-        host.forEachBuffer(b -> {
-            if (found[0] == null && b.getPath() != null && com.editora.config.PathKeys.samePath(b.getPath(), file)) {
-                found[0] = b;
-            }
-        });
-        EditorBuffer b = found[0];
-        return b == null || !b.isDirty() || ops.saveBuffer(b);
+    private List<EditorBuffer> scriptAndActive(@Nullable Path script) {
+        List<EditorBuffer> out = new ArrayList<>();
+        if (script != null) {
+            host.forEachBuffer(b -> {
+                if (out.isEmpty()
+                        && b.getPath() != null
+                        && com.editora.config.PathKeys.samePath(b.getPath(), script)
+                        && b.isDirty()) {
+                    out.add(b);
+                }
+            });
+        }
+        EditorBuffer active = host.activeBuffer();
+        if (active != null && active.getPath() != null && active.isDirty() && !out.contains(active)) {
+            out.add(active);
+        }
+        return out;
     }
 
     /**
@@ -1988,12 +2050,6 @@ final class RunCoordinator {
 
     /** The terminal type a shell run gets: the Run console renders colour codes but not cursor movement. */
     static final String SHELL_TERM = "xterm-256color";
-
-    /** Saves the active buffer if it is a dirty local file; false when that save was refused or failed. */
-    private boolean saveActiveBuffer() {
-        EditorBuffer b = host.activeBuffer();
-        return b == null || b.getPath() == null || !b.isDirty() || ops.saveBuffer(b);
-    }
 
     /**
      * Runs {@code cfg}'s before-launch command in the Run console, then {@code then} — see
@@ -2401,9 +2457,15 @@ final class RunCoordinator {
             return;
         }
         EditorBuffer b = host.activeBuffer();
-        if (b != null && b.isDirty() && RemoteExec.runsFor(b.getPath()) && !ops.saveBuffer(b)) {
-            return; // save whatever the user was editing before launching, as before
+        if (b != null && b.isDirty() && RemoteExec.runsFor(b.getPath()) && takeJustSaved() != b) {
+            // Save whatever the user was editing before launching, as before: off the FX thread, then again here.
+            saveThen(List.of(b), () -> {
+                justSaved = b;
+                runJavaConfig(cfg);
+            });
+            return;
         }
+        justSaved = null;
         // The project, its build files, an env @file and the Maven module are read off the FX thread (PERF-01,
         // Pauta 6.0.1): one plan for Run and Debug (review D9), working directory, JDK, environment and arguments.
         String settingsJdk = host.settings().getMavenJdkHome();
@@ -2603,9 +2665,15 @@ final class RunCoordinator {
                 () -> startMainClassRunPlanned(b, routing, root, targetFqn))) {
             return;
         }
-        if (b.isDirty() && !ops.saveBuffer(b)) {
+        if (b.isDirty() && takeJustSaved() != b) {
+            // Saved off the FX thread, then planned again from here: the facts above are known by then (PERF-01).
+            saveThen(List.of(b), () -> {
+                justSaved = b;
+                startMainClassRunPlanned(b, routing, root, targetFqn);
+            });
             return;
         }
+        justSaved = null;
         // A saved configuration is the user's stated intent for how this project runs: the before-launch
         // build, the program and VM arguments, the environment, the working directory. The ad-hoc path below
         // has none of that — which is exactly why a freshly generated project's gutter ▶ launched against an
@@ -2885,11 +2953,17 @@ final class RunCoordinator {
         if (buffer == null) {
             return;
         }
+        if (buffer.isDirty() || buffer.getPath() == null) {
+            // Saved off the FX thread first; a cancelled Save As or a failed save runs nothing (PERF-01).
+            saveThen(List.of(buffer), () -> runMakeTargetSaved(buffer, target));
+        } else {
+            runMakeTargetSaved(buffer, target);
+        }
+    }
+
+    private void runMakeTargetSaved(EditorBuffer buffer, @Nullable String target) {
         if (!beginRunRequest()) {
             return;
-        }
-        if ((buffer.isDirty() || buffer.getPath() == null) && !ops.saveBuffer(buffer)) {
-            return; // user cancelled Save-As, or the save failed — don't run against stale/missing content
         }
         Path path = buffer.getPath();
         if (path == null) {
@@ -2910,8 +2984,14 @@ final class RunCoordinator {
     private void runActiveFile(boolean promptArgs, boolean trace) {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer != null) {
-            buffer.settleRunScan(); // the load's scan runs off FX; the answer is needed now
+            // The load's (or an edit's) scan runs off FX: the command decides once it has landed.
+            buffer.whenRunScanned(() -> runActiveFileScanned(buffer, promptArgs, trace));
+        } else {
+            runActiveFileScanned(null, promptArgs, trace);
         }
+    }
+
+    private void runActiveFileScanned(@Nullable EditorBuffer buffer, boolean promptArgs, boolean trace) {
         if (buffer != null && buffer.isHttpFile()) {
             // A request file is "run" by sending its requests — the generic path launched `java requests.http`.
             if (!ops.runHttpFile(buffer)) {
@@ -2981,17 +3061,16 @@ final class RunCoordinator {
             Path project = ops.projectRoot();
             planner.accept("run-file-scala-owner", () -> {
                 com.editora.perf.BlockingSites.enter("ScalaRun.ownerOf");
-                boolean built = scalaBuildOwner(early, project);
+                boolean[] owned = {false};
+                com.editora.perf.Looked.asOffFxWork(() -> owned[0] = scalaBuildOwner(early, project));
+                boolean built = owned[0];
                 onFxThread(() -> {
                     if (!built) {
                         startFileRunNow(buffer, promptArgs, trace);
                         return;
                     }
                     // A file of an sbt or Mill build runs as part of it, in that tool's window (not the Run console).
-                    if (buffer.isDirty() && !ops.saveBuffer(buffer)) {
-                        return;
-                    }
-                    runScalaThroughBuild(buffer, early, promptArgs);
+                    saveThen(List.of(buffer), () -> runScalaThroughBuild(buffer, early, promptArgs));
                 });
             });
             return;
@@ -3068,12 +3147,19 @@ final class RunCoordinator {
     }
 
     private void startFileRunNow(EditorBuffer buffer, boolean promptArgs, boolean trace) {
-        if (!beginRunRequest()) {
+        if (consoleRunning() || deploying) {
+            beginRunRequest(); // says the Run is busy
             return;
         }
-        if ((buffer.isDirty() || buffer.getPath() == null) && !ops.saveBuffer(buffer)) {
-            return; // user cancelled Save-As, or the save failed — don't run stale/missing content
-        }
+        // Saved first, off the FX thread: a cancelled Save As or a failed save runs nothing (stale/missing content).
+        saveThen(List.of(buffer), () -> {
+            if (beginRunRequest()) {
+                startFileRunSaved(buffer, promptArgs, trace);
+            }
+        });
+    }
+
+    private void startFileRunSaved(EditorBuffer buffer, boolean promptArgs, boolean trace) {
         Path path = buffer.getPath();
         if (path == null) {
             return;
@@ -3118,8 +3204,8 @@ final class RunCoordinator {
                 : remote ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath());
         if (jvmScript && !remote && plan.jvmTool() == null) {
             // Said here, not as the shell's "groovy: command not found" in the Run console.
-            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(
-                    com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path))));
+            // The tool's name was worked out with the plan, off the FX thread (PERF-01, Pauta 6.0.1).
+            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(plan.jvmToolName())));
             return;
         }
         Runnable proceed = () -> {

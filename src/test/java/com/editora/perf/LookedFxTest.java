@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link Looked}: a look made off the FX thread is kept, and the FX thread answers from it without looking (PERF-01,
- * Pauta 6.0.1); the FX thread looks itself, named to {@link BlockingSites}, only for a key never looked at.
+ * Pauta 6.0.1); a key never looked at answers its cold answer (or null) there and is looked at behind.
  */
 @Tag("fx")
 class LookedFxTest {
@@ -81,10 +81,29 @@ class LookedFxTest {
         assertEquals("a:second", onFx(() -> looked.get("a")));
 
         disk.set(null);
-        assertNull(onFx(() -> looked.get("b")), "a key nobody looked at is looked at where asked");
-        assertEquals(List.of("guard-look"), onFx, "and that look is named");
+        int before = looks.get();
+        assertNull(onFx(() -> looked.get("b")), "a key nobody looked at answers unknown on the FX thread");
+        waitUntil(() -> looked.knows("b"));
+        assertEquals(before + 1, looks.get(), "and is looked at behind, off the FX thread");
         assertNull(onFx(() -> looked.get("b")), "a null answer is kept too");
-        assertEquals(List.of("guard-look"), onFx);
+        assertEquals(List.of(), onFx, "no memo looks on the FX thread (PERF-01)");
+    }
+
+    @Test
+    void aFullMemoKeepsTheKeysJustLookedAt() throws Exception {
+        Looked<Integer, Integer> memo = new Looked<>("full-look", k -> k);
+        for (int i = 0; i < 300; i++) {
+            memo.get(i); // off the FX thread: looked at now, all of them fresh
+        }
+        for (int i = 0; i < 300; i++) {
+            assertTrue(memo.knows(i), "a key a command just had looked at is still there: " + i);
+        }
+        assertTrue(memo.size() >= 300, "fresh keys are not dropped at the bound");
+        for (int i = 300; i < 2000; i++) {
+            memo.get(i);
+        }
+        assertTrue(memo.size() < 2000, "but the memo stays bounded: " + memo.size());
+        assertTrue(memo.knows(1999), "the newest are kept");
     }
 
     @Test

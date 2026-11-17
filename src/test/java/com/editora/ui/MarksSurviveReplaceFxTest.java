@@ -77,6 +77,7 @@ class MarksSurviveReplaceFxTest {
             b.toggleBookmark(4); // a line with no match, inside the replaced span
             b.toggleBreakpoint(3);
             FindReplaceBar bar = new FindReplaceBar(() -> b, status -> {});
+            bar.searchOn(Runnable::run, Runnable::run, com.editora.text.SearchMatcher.DEFAULT_PAGE); // in place
             FxTestSupport.<TextField>field(bar, "findField").setText("foo");
             FxTestSupport.<TextField>field(bar, "replaceField").setText("bar");
             bar.replaceAllMatches();

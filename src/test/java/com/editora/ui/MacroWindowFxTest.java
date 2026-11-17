@@ -235,7 +235,12 @@ class MacroWindowFxTest {
         });
         assertFalse(get(() -> buf().ownsKeyTarget(focus())), "the find bar has the focus");
         on(() -> type("foo"));
+        // The typed query is searched off the FX thread once typing pauses; Enter then steps on from its match. The
+        // replay waits for the same search before it presses Enter.
+        FindReplaceBar bar = get(() -> FxTestSupport.field(fx.controller, "findBar"));
+        SettingsRig.awaitFx("the search", () -> !bar.busy());
         on(() -> enter());
+        SettingsRig.awaitFx("the step to the match", () -> !bar.busy());
         on(() -> press(KeyCode.ESCAPE));
         assertTrue(get(() -> macros.isRecording()), "Escape in the find bar closes it; it does not cancel the macro");
         on(() -> {
@@ -259,6 +264,8 @@ class MacroWindowFxTest {
             area().requestFocus();
             reg.run("macro.replayLast");
         });
+        // The search runs off the FX thread (PERF-01): the replay waits for it, then goes on.
+        SettingsRig.awaitFx("the replay", () -> !macros.isReplaying());
         assertEquals(live, get(this::text), "the replay searched, then typed Z where the search left the caret");
         assertTrue(get(() -> buf().ownsKeyTarget(focus())), "the find bar is closed again");
     }

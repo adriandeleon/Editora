@@ -729,6 +729,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Searching, matching and checking a document no longer hold up typing.** The find bar searches, and works out
+  Replace and Replace All, in the background for every document, not only large ones: the matches light up a moment
+  after you pause, and a Replace All with text typed meanwhile is worked out again on the new text, still as one undo
+  step. The tab's modified mark is checked in the background: an undo back to the saved text of a large file clears
+  the mark a moment later (it never shows "saved" for text that differs). Find in Files' Replace All on open tabs, the
+  link updates in open Markdown tabs after a rename, the shell script's own names in completion, a matching bracket
+  far off-screen, the ▶ marks after a file opens, the unused pasted images after a save and an HTTP request's history
+  entry are all worked out in the background and shown when they land. Run, Debug, Git, Diff and the close question save in the background
+  and go on once the file is written, instead of holding the window meanwhile (Save in the close question closes the
+  tab when the save is done); a file's personal notes and the Markdown preview's find are also worked out in the
+  background; Debug Test on a Gradle project waits for its
+  debug script the same way. Windows opened after the first are built without reading their layout file again.
+
 - **Amber, red and green now mean only a warning, an error and a success.** Bookmarks, Personal Notes, the Stop
   buttons, deleted lines and the Map's recent-changes heat no longer borrow them. A bookmark and a note are the
   accent, in the gutter, the Project tree and the editor's note wash, told apart by their shapes, and the code-action

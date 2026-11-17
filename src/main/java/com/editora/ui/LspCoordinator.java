@@ -101,9 +101,17 @@ final class LspCoordinator {
             done.accept(openBackgroundBuffer(file));
         }
 
-        /** Saves {@code buffer} to its file now; false when it could not be saved. */
+        /** A test stand-in's save, answered at once; the app saves through {@link #saveThen}. */
         default boolean saveBuffer(EditorBuffer buffer) {
             return false;
+        }
+
+        /**
+         * Saves {@code buffer} without waiting: the write runs off the FX thread and {@code then} hears on it whether
+         * it went through (PERF-01, Pauta 6.0.1). This default, for test stand-ins, answers {@link #saveBuffer} at once.
+         */
+        default void saveThen(EditorBuffer buffer, Consumer<Boolean> then) {
+            then.accept(saveBuffer(buffer));
         }
 
         /** Closes the tab of {@code buffer}, opened in the background by an edit, when it has nothing unsaved. */
@@ -472,7 +480,7 @@ final class LspCoordinator {
                 host.setError(message);
             }
         };
-        this.pythonFormat = new PythonFormatCoordinator(formatHost, host::settings, ops::saveBuffer);
+        this.pythonFormat = new PythonFormatCoordinator(formatHost, host::settings, ops::saveThen);
         this.xmlFormat = new XmlFormatCoordinator(formatHost); // XML without a formatting server (C8)
         WorkspaceFileOperations files = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
@@ -4286,9 +4294,13 @@ final class LspCoordinator {
         }
         SaveActionUndo.foldIntoOneUndo(buffer, saved);
         savingAfterActions.add(buffer);
-        if (!ops.saveBuffer(buffer)) {
-            savingAfterActions.remove(buffer);
-        }
+        ops.saveThen(
+                buffer,
+                written -> { // written off the FX thread (PERF-01)
+                    if (!written) {
+                        savingAfterActions.remove(buffer);
+                    }
+                });
     }
 
     /** The file whose save asked for {@link #projectRecheck}; the build goes to its project's server. */

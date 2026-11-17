@@ -290,9 +290,10 @@ class SearchCoordinatorSnapshotFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             SearchCoordinator coordinator = coordinator(host, dir);
             async.onClose(coordinator::shutdown);
-            SearchCoordinator.ReplaceResult result = FxTestSupport.callOnFx(() -> coordinator
-                    .replaceInFiles(new SearchQuery("cost", true, true, false), "$cost", List.of(file))
-                    .get(10, java.util.concurrent.TimeUnit.SECONDS));
+            // The replacement is checked off the FX thread (PERF-01): the answer lands there, so wait off it.
+            SearchCoordinator.ReplaceResult result = FxTestSupport.callOnFx(() -> coordinator.replaceInFiles(
+                            new SearchQuery("cost", true, true, false), "$cost", List.of(file)))
+                    .get(10, java.util.concurrent.TimeUnit.SECONDS);
 
             assertEquals(0, result.count());
             assertEquals(1, host.errors.size(), "statuses: " + host.statuses);

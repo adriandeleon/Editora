@@ -260,16 +260,47 @@ final class BufferRunGutter {
     /** True while the load's (or a settle's) text scan is on the pool and its result has not landed. */
     private boolean runScanInFlight;
 
+    /** What waits for the scan in flight to land: a Run or Debug command issued right after an open or an edit. */
+    private final java.util.List<Runnable> afterRunScan = new java.util.ArrayList<>();
+
     /**
-     * Lands a background Run scan now when one is still in flight. The load's scan runs off the FX thread, so
-     * a Run or Debug command issued right after a file opens asks for the answer here before deciding how to
-     * launch; nothing happens when the result has already landed.
+     * Runs {@code then} once the Run scan has landed: at once when none is in flight, else when it lands. The scan
+     * runs off the FX thread (PERF-01, Pauta 6.0.1), so a Run or Debug command issued right after a file opens
+     * waits for the answer here before deciding how to launch, rather than scanning the text itself.
      */
-    void settleRunScan() {
+    void whenRunScanned(Runnable then) {
+        if (!runScanInFlight) {
+            then.run();
+            return;
+        }
+        afterRunScan.add(then);
+    }
+
+    /** Set only by {@link #settleRunScanForTest}: the scan runs where it is asked. */
+    private boolean scanInPlaceForTest;
+
+    /**
+     * TEST SEAM — lands a scan still in flight now, scanning in place on the calling thread: what a test that reads
+     * the gutter right after an open does instead of waiting. The app waits with {@link #whenRunScanned}.
+     */
+    void settleRunScanForTest() {
         if (runScanInFlight) {
-            recomputeRun(false);
+            scanInPlaceForTest = true;
+            try {
+                recomputeRun(true);
+            } finally {
+                scanInPlaceForTest = false;
+            }
         }
     }
+
+    /** Whether a scan is in flight: {@link #whenRunScanned} then waits for it. */
+    boolean runScanPending() {
+        return runScanInFlight;
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of the Run scan, heard on the thread it runs on. */
+    static final String RUN_SCAN_SITE = "BufferRunGutter.runScan";
 
     /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
     void recomputeRun() {
@@ -277,11 +308,11 @@ final class BufferRunGutter {
     }
 
     /**
-     * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles — or after a load — whose
-     * scan of the text ({@link RunScan}) runs off the FX thread: a generation counter drops a superseded
-     * result, as for {@link BufferTodos#refreshTodoMarks}. The load's pass lands a few milliseconds after the document
-     * does rather than scanning up to 256 KiB on the FX thread inside the open. Every other caller (Save As,
-     * a feature toggle) needs the answer now.
+     * As {@link #recomputeRun()}. The scan of the text ({@link RunScan}, up to 256 KiB) runs off the FX thread
+     * whatever asked for it (PERF-01, Pauta 6.0.1) — a settled edit, a load, Save As, a feature toggle — and a
+     * generation counter drops a superseded result, as for {@link BufferTodos#refreshTodoMarks}. A pass that needs
+     * no text (the features are off or the file is too large) answers at once. {@code settled} is kept for the
+     * callers' sake: it no longer changes where the scan runs.
      */
     void recomputeRun(boolean settled) {
         b.maybeApplyShebang(); // an interpreter shebang can set the language before we gate the Run glyph
@@ -301,26 +332,52 @@ final class BufferRunGutter {
         // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
         // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on
         // every 150 ms edit pulse just to discard it as run-ineligible.
-        String text = in.needsText() ? b.documentTextSnapshot() : "";
-        if (!settled || !in.needsText()) {
+        if (!in.needsText()) {
+            runScanInFlight = false;
+            applyRunScan(RunScan.scan(in, ""));
+            landed();
+            return;
+        }
+        String text = b.documentTextSnapshot();
+        if (scanInPlaceForTest) {
             runScanInFlight = false;
             applyRunScan(RunScan.scan(in, text));
+            landed();
             return;
         }
         runScanInFlight = true;
         long version = b.docVersion;
         EditorBuffer.HIGHLIGHT_POOL.execute(() -> {
+            com.editora.perf.BlockingSites.enter(RUN_SCAN_SITE);
             RunScan.Result found = RunScan.scan(in, text);
             Platform.runLater(() -> {
-                // An edit since the snapshot moved the lines this scan reports: applying them would put the ■ on
-                // the old lines and drop every .http result the edit had moved (reanchor reads them as edited).
-                // That edit's own settled pass scans the new text; until it lands, settleRunScan still answers.
-                if (gen == runScanGen && version == b.docVersion) {
-                    runScanInFlight = false;
-                    applyRunScan(found);
+                if (gen != runScanGen || b.disposed) {
+                    return; // a newer pass answers
                 }
+                if (version != b.docVersion) {
+                    // An edit since the snapshot moved the lines this scan reports: applying them would put the ■ on
+                    // the old lines and drop every .http result the edit had moved (reanchor reads them as edited).
+                    // That edit's own settled pass scans the new text; a command waiting for it scans it now.
+                    if (!afterRunScan.isEmpty()) {
+                        recomputeRun(true);
+                    }
+                    return;
+                }
+                runScanInFlight = false;
+                applyRunScan(found);
+                landed();
             });
         });
+    }
+
+    /** Runs what waited for the scan, now that it has landed. */
+    private void landed() {
+        if (afterRunScan.isEmpty()) {
+            return;
+        }
+        java.util.List<Runnable> waiting = java.util.List.copyOf(afterRunScan);
+        afterRunScan.clear();
+        waiting.forEach(Runnable::run);
     }
 
     private void applyRunScan(RunScan.Result now) {

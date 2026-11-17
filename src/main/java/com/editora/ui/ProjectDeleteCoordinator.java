@@ -24,7 +24,7 @@ final class ProjectDeleteCoordinator implements ProjectPanel.DeletePreparation {
     private final Function<Path, List<EditorBuffer>> findBuffers;
     private final Consumer<EditorBuffer> revealBuffer;
     private final Predicate<EditorBuffer> hasPendingSave;
-    private final Predicate<EditorBuffer> confirmClose;
+    private final CloseQuestion confirmClose;
     private final Consumer<Path> invalidatePendingWrite;
     private final BiConsumer<Path, Consumer<HistoryCoordinator.DeleteCapture>> captureHistory;
     private final Consumer<String> setStatus;
@@ -41,13 +41,14 @@ final class ProjectDeleteCoordinator implements ProjectPanel.DeletePreparation {
      *     in all of them once the file is gone, so all of them are asked first
      * @param revealBuffer brings the buffer's window and tab forward before its prompt
      * @param hasPendingSave asked of the window that owns the buffer
-     * @param confirmClose the unsaved-changes prompt of the window that owns the buffer
+     * @param confirmClose the unsaved-changes prompt of the window that owns the buffer; a Save picked there writes
+     *     off the FX thread and runs the given retry once it has landed
      */
     ProjectDeleteCoordinator(
             Function<Path, List<EditorBuffer>> findBuffers,
             Consumer<EditorBuffer> revealBuffer,
             Predicate<EditorBuffer> hasPendingSave,
-            Predicate<EditorBuffer> confirmClose,
+            CloseQuestion confirmClose,
             Consumer<Path> invalidatePendingWrite,
             BiConsumer<Path, Consumer<HistoryCoordinator.DeleteCapture>> captureHistory,
             Consumer<String> setStatus) {
@@ -79,7 +80,14 @@ final class ProjectDeleteCoordinator implements ProjectPanel.DeletePreparation {
                 }
                 if (buffer.isDirty() || hasPendingSave.test(buffer)) {
                     revealBuffer.accept(buffer);
-                    if (!confirmClose.test(buffer)) {
+                    CloseCoordinator.Answer answer = confirmClose.ask(
+                            buffer,
+                            () -> prepare(files, completion),
+                            () -> completion.accept(ProjectPanel.DeleteApproval.denied()));
+                    if (answer == CloseCoordinator.Answer.SAVING) {
+                        return; // saved off the FX thread: the delete is prepared again once the write has landed
+                    }
+                    if (answer != CloseCoordinator.Answer.CLOSE) {
                         completion.accept(ProjectPanel.DeleteApproval.denied());
                         return;
                     }
@@ -149,5 +157,11 @@ final class ProjectDeleteCoordinator implements ProjectPanel.DeletePreparation {
                     }
                     capture(files, index + 1, acceptedVersions, expectedBytes, completion);
                 }));
+    }
+
+    /** The unsaved-changes question of the window that owns a buffer (see {@link CloseCoordinator#askCloseIfDirty}). */
+    @FunctionalInterface
+    interface CloseQuestion {
+        CloseCoordinator.Answer ask(EditorBuffer buffer, Runnable afterSave, Runnable saveFailed);
     }
 }

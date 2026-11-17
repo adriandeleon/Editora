@@ -89,7 +89,7 @@ class FindLargeDocumentFxTest {
     }
 
     /**
-     * @param syncChars documents up to this many characters are searched inline (0 = everything off-thread)
+     * @param syncChars above 0: the search runs in place (the seam); 0: on the held worker, off the FX thread
      * @param page how many matches the bar holds
      */
     private Harness harness(String text, int syncChars, int page) throws Exception {
@@ -99,7 +99,12 @@ class FindLargeDocumentFxTest {
             h.buffer.setContent(text);
             h.bar = new FindReplaceBar(() -> h.buffer, h.statuses::add);
             new Scene(new VBox(h.bar, h.buffer.getNode()), 800, 600);
-            h.bar.searchOn(h.worker, syncChars, page);
+            // Every search runs off the FX thread now (PERF-01); "inline" runs the worker and the delivery in place.
+            boolean inline = syncChars > 0;
+            h.bar.searchOn(
+                    inline ? Runnable::run : h.worker,
+                    inline ? Runnable::run : javafx.application.Platform::runLater,
+                    page);
             h.bar.show(false);
             return h;
         });

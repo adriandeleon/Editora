@@ -121,7 +121,7 @@ class HttpClientScratchFxTest {
                     null,
                     null));
             created.setHttpEnabled(true);
-            created.settleRunScan();
+            created.settleRunScanForTest();
             host.buffers.add(created);
             host.active = created;
             coordinator.ensureHttpPreview(created);

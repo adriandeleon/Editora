@@ -49,7 +49,7 @@ class HttpResultsStaleRunScanFxTest {
             created.setLanguageOverride("http");
             created.setContent(TEXT);
             created.setHttpEnabled(true);
-            created.settleRunScan();
+            created.settleRunScanForTest();
             return created;
         });
         Stage stage = EditorFx.callFx(() -> EditorFx.show(b, 900, 500));

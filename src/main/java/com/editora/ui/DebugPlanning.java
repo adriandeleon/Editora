@@ -36,13 +36,16 @@ final class DebugPlanning {
     static <T> void offFx(String name, Callable<T> work, Consumer<Answer<T>> then) {
         planner.accept(name, () -> {
             BlockingSites.enter("DebugPlanning " + name);
-            Answer<T> answer;
-            try {
-                answer = new Answer<>(work.call(), null);
-            } catch (Exception e) {
-                answer = new Answer<>(null, e);
-            }
-            Answer<T> done = answer;
+            Object[] result = new Object[2];
+            com.editora.perf.Looked.asOffFxWork(() -> {
+                try {
+                    result[0] = work.call();
+                } catch (Exception e) {
+                    result[1] = e;
+                }
+            });
+            @SuppressWarnings("unchecked")
+            Answer<T> done = new Answer<>((T) result[0], (Exception) result[1]);
             if (Platform.isFxApplicationThread()) {
                 then.accept(done);
             } else {
@@ -323,7 +326,16 @@ final class DebugPlanning {
     }
 
     /** What Debug File read before its launch: the project trust gate (null: none). The rest it warmed. */
-    record FileRead(com.editora.run.RunTrust.@Nullable Gate gate) {}
+    record FileRead(
+            com.editora.run.RunTrust.@Nullable Gate gate,
+            @Nullable String ownMain) {}
+
+    /** The class of the first {@code main} method {@code source} declares, or null: a parse, never on the FX thread. */
+    static @Nullable String ownMainClass(String source) {
+        List<com.editora.run.MainMethodScanner.MainMethod> mains =
+                com.editora.run.MainMethodScanner.scan(source == null ? "" : source);
+        return mains.isEmpty() ? null : mains.get(0).fqn();
+    }
 
     /**
      * Reads the trust gate of {@code path}'s project and looks, so the FX thread then answers from memory, at what
@@ -341,7 +353,7 @@ final class DebugPlanning {
             com.editora.run.JdkToolchain.inheritedJavaExecutable(System.getenv());
             com.editora.process.ProcessRunner.resolveExecutable(List.of("java"));
         }
-        return new FileRead(gate);
+        return new FileRead(gate, "java".equals(language) ? ownMainClass(text) : null);
     }
 
     /** A Java configuration's Debug plan: its build root, its project, its plan (one for Run and Debug, review D9). */

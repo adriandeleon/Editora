@@ -286,9 +286,20 @@ final class GitHunkCoordinator {
             reportNoChange(gutter);
             return;
         }
-        if (b.isDirty() && !diff.saveBuffer(b)) {
-            return; // the save path has said why
+        if (b.isDirty()) {
+            // Written off the FX thread first; a save that fails has said why, and nothing is staged (PERF-01).
+            diff.saveThen(b, saved -> {
+                if (saved) {
+                    stageSaved(b, line, root, file, rel);
+                }
+            });
+            return;
         }
+        stageSaved(b, line, root, file, rel);
+    }
+
+    /** {@link #stage} once the buffer is saved: the change is looked up again in a fresh diff of the file. */
+    private void stageSaved(EditorBuffer b, int line, Path root, Path file, String rel) {
         git.service().diff(root, file.toAbsolutePath(), fresh -> {
             if (b.isDisposed() || b.isDirty()) {
                 return; // edited again while git ran: the lines no longer name what was asked for

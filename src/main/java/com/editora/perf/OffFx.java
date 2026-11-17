@@ -36,13 +36,16 @@ public final class OffFx {
     public static <T> void then(String name, Callable<T> work, Consumer<Answer<T>> then) {
         runner.accept(name, () -> {
             BlockingSites.enter(name);
-            Answer<T> answer;
-            try {
-                answer = new Answer<>(work.call(), null);
-            } catch (Exception | LinkageError e) {
-                answer = new Answer<>(null, e);
-            }
-            Answer<T> done = answer;
+            Object[] result = new Object[2];
+            Looked.asOffFxWork(() -> {
+                try {
+                    result[0] = work.call();
+                } catch (Exception | LinkageError e) {
+                    result[1] = e;
+                }
+            });
+            @SuppressWarnings("unchecked")
+            Answer<T> done = new Answer<>((T) result[0], (Throwable) result[1]);
             onFx(() -> then.accept(done));
         });
     }
