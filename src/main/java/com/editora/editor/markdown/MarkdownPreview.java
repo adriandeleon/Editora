@@ -407,6 +407,12 @@ public final class MarkdownPreview {
      * starts from wherever the reader has scrolled meanwhile.
      */
     private void reflow(double shift) {
+        ScrollPane at = pane;
+        double v = at == null ? 0 : at.getVvalue();
+        if (v != reflowAtV) {
+            reflowShift = 0; // measured at another place: what was owed there is not owed here
+            reflowAtV = v;
+        }
         reflowShift += shift;
         if (reflowQueued) {
             return;
@@ -419,7 +425,8 @@ public final class MarkdownPreview {
                 return;
             }
             double from = scrollY(); // what the reader sees now, before the pane learns the new height
-            double by = reflowShift;
+            // Scrolled elsewhere since (a key, a command, the scroll sync): the shift was for the place left.
+            double by = p.getVvalue() == reflowAtV ? reflowShift : 0;
             reflowShift = 0;
             column.requestLayout();
             p.layout();
@@ -427,6 +434,9 @@ public final class MarkdownPreview {
             layoutNow(); // the blocks now in view, built before the next frame is drawn
         });
     }
+
+    /** The scroll position the pending {@link #reflow}'s shift was measured at. */
+    private double reflowAtV = Double.NaN;
 
     private boolean holdsAnchor() {
         return anchorLine >= 0 && System.nanoTime() < anchorUntil && pane != null && pane.getContent() == root;
@@ -735,7 +745,7 @@ public final class MarkdownPreview {
     }
 
     /** Stops holding the last render's line in place: something else now decides where the document is. */
-    void releaseAnchor() {
+    public void releaseAnchor() {
         anchorUntil = 0;
     }
 

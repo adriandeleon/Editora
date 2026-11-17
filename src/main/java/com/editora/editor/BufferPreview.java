@@ -294,6 +294,9 @@ final class BufferPreview {
         if (scrollable <= 0) {
             return; // content fits — nothing to page
         }
+        if (markdownPreview != null) {
+            markdownPreview.releaseAnchor(); // the reader moves now: a render's held line no longer pulls back
+        }
         double range = previewPane.getVmax() - previewPane.getVmin();
         double next = Double.isInfinite(pages)
                 ? (pages > 0 ? previewPane.getVmax() : previewPane.getVmin())

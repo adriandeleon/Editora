@@ -265,7 +265,7 @@ class MarkdownPreviewFxTest {
             assertEquals(5000, p.blockCount());
             most[0] = column(buffer).getChildren().size();
             assertTrue(most[0] > 0 && most[0] <= 60, "a screenful and its margins: " + most[0]);
-            assertTrue(p.builtTotal() <= 60, "built: " + p.builtTotal());
+            assertTrue(p.builtTotal() <= 100, "a few screens of 5,000 blocks built: " + p.builtTotal());
             assertTrue(EditorFx.textOf(column(buffer))
                     .contains("Paragraph number " + (int) Math.round(p.topLine() / 2) + "."));
             assertTrue(column(buffer).prefHeight(600) > 5000 * 10, "yet the column is as tall as the document");

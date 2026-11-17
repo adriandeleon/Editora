@@ -136,7 +136,9 @@ class PreviewOnlyFxTest {
             Thread.sleep(10);
         }
         int caret = FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition());
-        FxTestSupport.runOnFx(() -> pane[0].setVvalue(0));
+        // To the top the way a reader gets there (a key): that also ends the render's hold on the line it opened at,
+        // which a bare setVvalue does not, so a re-anchor after blocks are measured could pull the view back.
+        run("nav.docStart");
         run("nav.lineDown");
         double line = FxTestSupport.callOnFx(() -> pane[0].getVvalue());
         assertTrue(line > 0, "line-down scrolls the preview a little");

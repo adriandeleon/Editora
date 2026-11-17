@@ -183,6 +183,14 @@ class WikiLinkPreviewFxTest {
             assertTrue(System.nanoTime() < end, "the embedded picture never loaded");
             Thread.sleep(20);
         }
+        // The note's link is styled once the folder's notes are known (a render after the picture's): wait for it.
+        for (int i = 0;
+                i < 500
+                        && !EditorFx.callFx(() -> run("note") != null
+                                && run("note").getStyleClass().contains("md-wikilink"));
+                i++) {
+            Thread.sleep(10);
+        }
         EditorFx.onFx(() -> {
             assertEquals(1, pane.preview().column().lookupAll(".md-image").size());
             Text note = run("note");
