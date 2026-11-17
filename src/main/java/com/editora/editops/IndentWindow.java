@@ -62,7 +62,7 @@ public final class IndentWindow {
     }
 
     /** How far below the caret's line Enter looks in a brace language (see {@link CommentContinuation}). */
-    static final int LOOK_BELOW_CHARS = 4096;
+    public static final int LOOK_BELOW_CHARS = 4096;
 
     /** {@link Indenter#enterEdit(String, int, String, int, Boolean, Integer)} at {@code caret}, for {@code unit}. */
     public static Indenter.EnterEdit enterEdit(Doc doc, int caret, String language, String unit) {

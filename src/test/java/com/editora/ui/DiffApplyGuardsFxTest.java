@@ -36,6 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Diff, merge and Local History applies against the real window: every one of them rebuilds a whole
  * document from a displayed comparison, so each must refuse when the document is no longer the one shown.
  */
+// The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
+// each lands before the command returns. HandlersDebugOffFxThreadFxTest runs them where the app does.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class DiffApplyGuardsFxTest {
 
@@ -763,7 +766,7 @@ class DiffApplyGuardsFxTest {
             assertTrue(FxTestSupport.<Boolean>callOnFx(() -> {
                 choices.set(0, com.editora.diff.ConflictParser.Choice.OURS);
                 FxTestSupport.call(pane, "refreshResult", new Class<?>[] {});
-                return (Boolean) FxTestSupport.call(pane, "saveResult", new Class<?>[] {});
+                return pane.saveBeforeClose() /* in place, as the quit does */;
             }));
             assertEquals("top\nours\nend\n", FxTestSupport.callOnFx(buffer::getContent));
 
@@ -771,7 +774,7 @@ class DiffApplyGuardsFxTest {
                     FxTestSupport.<Boolean>callOnFx(() -> {
                         choices.set(0, com.editora.diff.ConflictParser.Choice.THEIRS);
                         FxTestSupport.call(pane, "refreshResult", new Class<?>[] {});
-                        return (Boolean) FxTestSupport.call(pane, "saveResult", new Class<?>[] {});
+                        return pane.saveBeforeClose() /* in place, as the quit does */;
                     }),
                     "the document still holds what the resolver applied, so it is not stale");
             assertEquals("top\ntheirs\nend\n", FxTestSupport.callOnFx(buffer::getContent));

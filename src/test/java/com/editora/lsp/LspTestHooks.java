@@ -11,6 +11,12 @@ public final class LspTestHooks {
 
     private LspTestHooks() {}
 
+    /** The {@code didChange} diff's {@link com.editora.perf.BlockingSites} name. */
+    public static final String SYNC_DIFF_SITE = LazyChangeEvents.SITE;
+
+    /** The encoding of a message on a session's writer thread, as {@link com.editora.perf.BlockingSites} hears it. */
+    public static final String ENCODE_SITE = DeferredSyncConsumer.SITE;
+
     /**
      * Makes {@code manager} attach an in-process fake to every session it creates instead of forking a real
      * language server. Without this a coordinator test would fork whatever happens to be installed on the
@@ -43,6 +49,26 @@ public final class LspTestHooks {
             created.add(fake);
             session.setRawSinkForTest(fake.rawSink());
             session.attachForTest(fake, capabilities);
+        });
+        return created;
+    }
+
+    /**
+     * As {@link #useFakeSessions(LspManager, ServerCapabilities)}, with each fake at the other end of a pair of pipes,
+     * as a real server is: what a session sends is encoded and written on its writer thread and read by LSP4J on the
+     * fake's side. The fake hears each message on LSP4J's thread, a moment after it is sent.
+     */
+    public static java.util.List<FakeLanguageServer> useWiredFakeSessions(
+            LspManager manager, ServerCapabilities capabilities) {
+        java.util.List<FakeLanguageServer> created = new java.util.concurrent.CopyOnWriteArrayList<>();
+        manager.setSessionStarterForTest(session -> {
+            FakeLanguageServer fake = new FakeLanguageServer();
+            created.add(fake);
+            try {
+                session.attachWiredForTest(fake, capabilities);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
         });
         return created;
     }

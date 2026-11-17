@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * in the texts below.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(com.editora.ui.OffFxInPlace.class)
 class MarkdownEditingFxTest {
 
     @BeforeAll
@@ -224,7 +225,7 @@ class MarkdownEditingFxTest {
             assertEquals("| a         | b   |\n| --------- | --- |\n| long ‸cell | 2   |\n", shown(table));
 
             EditorBuffer toc = markdown("# T\n<!-- toc -->\nold\n<!-- /toc -->\n## A‸\n");
-            assertTrue(toc.insertOrUpdateToc());
+            assertTrue(MarkdownAnswers.toc(toc));
             assertEquals("# T\n<!-- toc -->\n- [T](#t)\n  - [A](#a)\n<!-- /toc -->\n## A‸\n", shown(toc));
             table.dispose();
             toc.dispose();
@@ -343,11 +344,11 @@ class MarkdownEditingFxTest {
         EditorFx.onFx(() -> {
             EditorBuffer buffer = markdown("# T\n\n‸\n\n## A\n### B\n#### C\n");
             buffer.markdown().configure(2, 3, id -> null);
-            assertTrue(buffer.insertOrUpdateToc());
+            assertTrue(MarkdownAnswers.toc(buffer));
             String text = buffer.getArea().getText();
             assertTrue(text.contains("<!-- toc -->\n- [A](#a)\n  - [B](#b)\n<!-- /toc -->"), text);
             buffer.markdown().configure(1, 6, id -> null);
-            assertTrue(buffer.insertOrUpdateToc(), "the same block, regenerated with the new levels");
+            assertTrue(MarkdownAnswers.toc(buffer), "the same block, regenerated with the new levels");
             assertTrue(buffer.getArea().getText().contains("- [T](#t)\n  - [A](#a)\n    - [B](#b)\n      - [C](#c)"));
             buffer.dispose();
         });
@@ -446,16 +447,16 @@ class MarkdownEditingFxTest {
             buffer.markdown().setLink("the docs", "http://new");
             assertEquals("see [the docs](http://new)‸ now\n", shown(buffer));
             buffer.getArea().moveTo(6);
-            assertTrue(buffer.markdown().convertLink(false));
+            assertTrue(MarkdownAnswers.convertLink(buffer, false));
             assertEquals("see [the docs][1]‸ now\n\n[1]: http://new\n", shown(buffer));
             buffer.getArea().moveTo(6);
-            assertFalse(buffer.markdown().convertLink(false), "a reference already");
-            assertTrue(buffer.markdown().convertLink(true));
+            assertFalse(MarkdownAnswers.convertLink(buffer, false), "a reference already");
+            assertTrue(MarkdownAnswers.convertLink(buffer, true));
             assertEquals("see [the docs](http://new)‸ now\n", shown(buffer));
             buffer.getArea().moveTo(6);
-            assertTrue(buffer.markdown().removeLink());
+            assertTrue(MarkdownAnswers.removeLink(buffer));
             assertEquals("see «the docs» now\n", shown(buffer));
-            assertFalse(buffer.markdown().removeLink());
+            assertFalse(MarkdownAnswers.removeLink(buffer));
 
             place(buffer.getArea(), "make «this» a link\n");
             assertEquals("this", buffer.markdown().linkTextCandidate());
@@ -500,7 +501,7 @@ class MarkdownEditingFxTest {
             cells.putHtml("<table><tr><td>Name</td><td>Qty</td></tr><tr><td>a</td><td>1</td></tr></table>");
             cells.putString("Name\tQty\na\t1");
             javafx.scene.input.Clipboard.getSystemClipboard().setContent(cells);
-            assertTrue(buffer.markdown().pasteAsMarkdown(false), "a table: the ordinary paste converts it");
+            assertTrue(MarkdownAnswers.pasteAsMarkdown(buffer, false), "a table: the ordinary paste converts it");
             assertEquals(
                     "| Name | Qty |\n| ---- | --- |\n| a    | 1   |",
                     buffer.getArea().getText());
@@ -509,24 +510,24 @@ class MarkdownEditingFxTest {
             styled.putHtml("<span style=\"color:#333\">just <b>text</b></span>");
             styled.putString("just text");
             javafx.scene.input.Clipboard.getSystemClipboard().setContent(styled);
-            assertFalse(buffer.markdown().pasteAsMarkdown(false), "styled text pastes as the text it is");
+            assertFalse(MarkdownAnswers.pasteAsMarkdown(buffer, false), "styled text pastes as the text it is");
             buffer.getArea().replaceText("");
-            assertTrue(buffer.markdown().pasteAsMarkdown(true), "the command converts whatever HTML there is");
+            assertTrue(MarkdownAnswers.pasteAsMarkdown(buffer, true), "the command converts whatever HTML there is");
             assertEquals("just **text**", buffer.getArea().getText());
 
             javafx.scene.input.ClipboardContent markdown = new javafx.scene.input.ClipboardContent();
             markdown.putHtml("<ul><li>a</li></ul>");
             markdown.putString("- a");
             javafx.scene.input.Clipboard.getSystemClipboard().setContent(markdown);
-            assertFalse(buffer.markdown().pasteAsMarkdown(false), "the plain text is Markdown already");
+            assertFalse(MarkdownAnswers.pasteAsMarkdown(buffer, false), "the plain text is Markdown already");
 
             EditorFx.clipboard("x\ty\n1\t2");
-            assertFalse(buffer.markdown().pasteAsMarkdown(false));
+            assertFalse(MarkdownAnswers.pasteAsMarkdown(buffer, false));
             buffer.getArea().replaceText("");
-            assertTrue(buffer.markdown().pasteAsMarkdown(true), "tab-separated text becomes a table on request");
+            assertTrue(MarkdownAnswers.pasteAsMarkdown(buffer, true), "tab-separated text becomes a table on request");
             assertTrue(buffer.getArea().getText().startsWith("| x   | y   |"));
             EditorFx.clipboard("plain");
-            assertFalse(buffer.markdown().pasteAsMarkdown(true));
+            assertFalse(MarkdownAnswers.pasteAsMarkdown(buffer, true));
             buffer.dispose();
         });
     }
@@ -537,20 +538,20 @@ class MarkdownEditingFxTest {
             EditorBuffer buffer = markdown("# Doc\n\n<!-- toc -->\n<!-- /toc -->\n\n## A‸\n## B\n");
             buffer.markdown().configureWriting(false, true, true);
             buffer.getArea().getUndoManager().forgetHistory();
-            assertTrue(buffer.markdown().updateTocForSave());
+            assertTrue(MarkdownAnswers.tocForSave(buffer));
             assertEquals(
                     "# Doc\n\n<!-- toc -->\n1. [A](#a)\n2. [B](#b)\n<!-- /toc -->\n\n## A‸\n## B\n", shown(buffer));
-            assertFalse(buffer.markdown().updateTocForSave(), "up to date: the buffer is not touched");
+            assertFalse(MarkdownAnswers.tocForSave(buffer), "up to date: the buffer is not touched");
             buffer.getArea().undo();
             assertEquals(
                     "# Doc\n\n<!-- toc -->\n<!-- /toc -->\n\n## A\n## B\n",
                     buffer.getArea().getText());
 
             EditorBuffer none = markdown("# Doc\n‸");
-            assertFalse(none.markdown().updateTocForSave(), "a save never inserts a table of contents");
+            assertFalse(MarkdownAnswers.tocForSave(none), "a save never inserts a table of contents");
             EditorBuffer readOnly = markdown("<!-- toc -->\n<!-- /toc -->\n# T‸\n");
             readOnly.setReadOnly(true);
-            assertFalse(readOnly.markdown().updateTocForSave());
+            assertFalse(MarkdownAnswers.tocForSave(readOnly));
             for (EditorBuffer b : new EditorBuffer[] {buffer, none, readOnly}) {
                 b.dispose();
             }
@@ -588,31 +589,30 @@ class MarkdownEditingFxTest {
         EditorFx.onFx(() -> {
             EditorBuffer buffer = markdown("see [[Other No‸te#Heading|label]] now\n");
             assertArrayEquals(
-                    new String[] {"label", "Other Note#Heading", "wiki"},
-                    buffer.markdown().linkForEditing());
+                    new String[] {"label", "Other Note#Heading", "wiki"}, MarkdownAnswers.linkForEditing(buffer));
             buffer.markdown().setLink("new label", "Third Note");
             assertEquals("see [[Third Note|new label]]‸ now\n", shown(buffer), "edited, and still a wiki link");
 
             buffer.getArea().moveTo(8);
-            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals(0, MarkdownAnswers.convertWikiLink(buffer));
             assertEquals("see [new label](<Third Note.md>)‸ now\n", shown(buffer));
             buffer.getArea().moveTo(8);
-            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals(0, MarkdownAnswers.convertWikiLink(buffer));
             assertEquals("see [[Third Note|new label]]‸ now\n", shown(buffer), "and back");
 
             buffer.markdown()
                     .setWikiResolver(target -> "notes/" + target.toLowerCase().replace(' ', '-') + ".md");
             buffer.getArea().moveTo(8);
-            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals(0, MarkdownAnswers.convertWikiLink(buffer));
             assertEquals("see [new label](notes/third-note.md)‸ now\n", shown(buffer), "through the window's resolver");
 
             place(buffer.getArea(), "an [ext‸ernal](https://example.com) link and plain\n");
-            assertEquals(2, buffer.markdown().convertWikiLink(), "a wiki link cannot name a URL");
+            assertEquals(2, MarkdownAnswers.convertWikiLink(buffer), "a wiki link cannot name a URL");
             buffer.getArea().moveTo(buffer.getArea().getLength() - 2);
-            assertEquals(1, buffer.markdown().convertWikiLink(), "no link here");
+            assertEquals(1, MarkdownAnswers.convertWikiLink(buffer), "no link here");
 
             place(buffer.getArea(), "drop [[No‸te|the note]] here\n");
-            assertTrue(buffer.markdown().removeLink());
+            assertTrue(MarkdownAnswers.removeLink(buffer));
             assertEquals("drop «the note» here\n", shown(buffer));
 
             // "Link" on a link edits that link instead of nesting a new one in it.
@@ -631,37 +631,36 @@ class MarkdownEditingFxTest {
         EditorFx.onFx(() -> {
             // In a table the bar is \| — read on the way in, written on the way out.
             EditorBuffer table = markdown("| a |\n|---|\n| [[no‸te\\|old]] |\n");
-            assertArrayEquals(
-                    new String[] {"old", "note", "wiki"}, table.markdown().linkForEditing());
+            assertArrayEquals(new String[] {"old", "note", "wiki"}, MarkdownAnswers.linkForEditing(table));
             table.markdown().setLink("new", "note#part");
             assertEquals("| a |\n|---|\n| [[note#part\\|new]]‸ |\n", shown(table));
             table.getArea().moveTo(table.getArea().getText().indexOf("note"));
-            assertEquals(0, table.markdown().convertWikiLink());
+            assertEquals(0, MarkdownAnswers.convertWikiLink(table));
             assertTrue(
                     table.getArea().getText().contains("| [new](note.md#part) |"),
                     table.getArea().getText());
             table.getArea().moveTo(table.getArea().getText().indexOf("new"));
-            assertEquals(0, table.markdown().convertWikiLink());
+            assertEquals(0, MarkdownAnswers.convertWikiLink(table));
             assertTrue(
                     table.getArea().getText().contains("| [[note#part\\|new]] |"),
                     table.getArea().getText());
 
             // Not wiki links: indexing, a defined reference, brackets around an ordinary link's text.
             EditorBuffer index = markdown("x[[‸1]] and more\n");
-            assertEquals(1, index.markdown().convertWikiLink(), "no link under the caret");
-            assertFalse(index.markdown().removeLink());
+            assertEquals(1, MarkdownAnswers.convertWikiLink(index), "no link under the caret");
+            assertFalse(MarkdownAnswers.removeLink(index));
             EditorBuffer reference = markdown("see [[no‸te]] here\n\n[note]: http://x\n");
             assertArrayEquals(
                     new String[] {"note", "http://x", "link"},
-                    reference.markdown().linkForEditing(),
+                    MarkdownAnswers.linkForEditing(reference),
                     "the reference link the document defines, not a wiki link");
             EditorBuffer ordinary = markdown("see [[no‸te]](http://y) here\n");
-            assertEquals("link", ordinary.markdown().linkForEditing()[2]);
-            assertEquals("http://y", ordinary.markdown().linkForEditing()[1]);
+            assertEquals("link", MarkdownAnswers.linkForEditing(ordinary)[2]);
+            assertEquals("http://y", MarkdownAnswers.linkForEditing(ordinary)[1]);
 
             // Three brackets: the link is the inner pair, the outer brackets stay text.
             EditorBuffer triple = markdown("see [[[‸a]]] here\n");
-            assertTrue(triple.markdown().removeLink());
+            assertTrue(MarkdownAnswers.removeLink(triple));
             assertEquals("see [«a»] here\n", shown(triple));
             for (EditorBuffer b : new EditorBuffer[] {table, index, reference, ordinary, triple}) {
                 b.dispose();

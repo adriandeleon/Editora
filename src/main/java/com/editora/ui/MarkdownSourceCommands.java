@@ -1,7 +1,6 @@
 package com.editora.ui;
 
 import java.lang.ref.WeakReference;
-import java.util.function.Function;
 
 import com.editora.command.Command;
 import com.editora.editor.EditorBuffer;
@@ -61,7 +60,10 @@ final class MarkdownSourceCommands {
 
     /** A whole-document edit: Markdown and editable (said by {@code withMarkdown}), not preview-only, undoable. */
     private static void edit(
-            WindowCommandRegistrar.Host host, String id, Function<EditorBuffer, Outcome> action, String doneKey) {
+            WindowCommandRegistrar.Host host,
+            String id,
+            java.util.function.BiConsumer<EditorBuffer, java.util.function.Consumer<Outcome>> action,
+            String doneKey) {
         host.registry()
                 .register(Command.of(
                         id,
@@ -73,11 +75,16 @@ final class MarkdownSourceCommands {
                             if (!NoUndoGuard.allow(buffer, tr("command." + id))) {
                                 return;
                             }
-                            Outcome outcome = action.apply(buffer);
-                            if (outcome != Outcome.REFUSED) {
-                                host.setStatus(
-                                        tr(outcome == Outcome.CHANGED ? doneKey : "status.markdown.formatNothing"));
-                            }
+                            action.accept(
+                                    buffer,
+                                    outcome -> { // worked out off the FX thread
+                                        if (outcome != Outcome.REFUSED) {
+                                            host.setStatus(tr(
+                                                    outcome == Outcome.CHANGED
+                                                            ? doneKey
+                                                            : "status.markdown.formatNothing"));
+                                        }
+                                    });
                         })));
     }
 }

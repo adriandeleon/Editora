@@ -140,31 +140,48 @@ final class BufferCarets {
         return placed;
     }
 
+    /** {@link com.editora.perf.BlockingSites} name of Select All Occurrences' search, made off the FX thread. */
+    static final String OCCURRENCES_SITE = "BufferCarets.selectAllOccurrences";
+
+    /** An occurrence search's answer: the matches and the start of the one the caret is in. */
+    private record Occurrences(List<int[]> matches, int anchor) {}
+
     /**
      * Selects every occurrence of the current selection (or, with none, the word under the caret) as a
      * multi-caret selection — VS Code's {@code selectHighlights} (Ctrl+Shift+L). Case-sensitive literal
-     * matching (whole-word when seeded from the caret's word). Returns the number of carets placed (0 when there's nothing to match).
+     * matching (whole-word when seeded from the caret's word). The document is searched off the FX thread
+     * (PERF-01, Pauta 6.0.1) and the carets placed when that lands, if the text, the caret and the selection are
+     * unchanged; {@code placed} then hears the number of carets placed (0 when there's nothing to match). A press
+     * while one search is out does nothing.
      */
-    int selectAllOccurrences() {
+    void selectAllOccurrences(java.util.function.IntConsumer placed) {
         CodeArea a = b.focusedArea != null ? b.focusedArea : b.area;
-        String text = a.getText();
-        String query;
-        int anchor;
-        String sel = a.getSelectedText();
-        if (!sel.isEmpty()) {
-            query = sel;
-            anchor = a.getSelection().getStart();
-        } else {
-            int[] w = com.editora.editops.SelectOccurrences.wordAt(text, a.getCaretPosition(), b.language);
-            if (w == null) {
-                return 0;
-            }
-            query = text.substring(w[0], w[1]);
-            anchor = w[0];
-        }
-        // A query seeded from the word under a bare caret matches whole words only (id, not valid / width).
-        List<int[]> matches = SearchMatcher.matches(text, query, true, false, sel.isEmpty());
-        return placeOccurrenceCarets(matches, anchor);
+        String language = b.language;
+        CaretLook.then(
+                OCCURRENCES_SITE,
+                a,
+                at -> {
+                    String text = at.text();
+                    int start = Math.min(at.caret(), at.anchor());
+                    int end = Math.max(at.caret(), at.anchor());
+                    String query;
+                    int anchor;
+                    boolean wholeWord = start == end;
+                    if (!wholeWord) {
+                        query = text.substring(start, end);
+                        anchor = start;
+                    } else {
+                        int[] w = com.editora.editops.SelectOccurrences.wordAt(text, at.caret(), language);
+                        if (w == null) {
+                            return new Occurrences(List.of(), 0);
+                        }
+                        query = text.substring(w[0], w[1]);
+                        anchor = w[0];
+                    }
+                    // A query seeded from the word under a bare caret matches whole words only (id, not valid / width).
+                    return new Occurrences(SearchMatcher.matches(text, query, true, false, wholeWord), anchor);
+                },
+                found -> placed.accept(placeOccurrenceCarets(found.matches(), found.anchor()))); // refused while out
     }
 
     /**
@@ -172,33 +189,46 @@ final class BufferCarets {
      * VS Code's Add Cursors to Line Ends (true: a bare caret at the end of each selected line), for every
      * selection there is. Returns the number of carets placed; 0 when nothing is selected.
      */
-    int splitSelectionIntoLines(boolean atLineEnds) {
+    void splitSelectionIntoLines(boolean atLineEnds, java.util.function.IntConsumer placed) {
         MultiCarets carets = activeCarets();
         CodeArea a = b.getFocusedArea();
         if (carets == null) {
-            return 0;
+            placed.accept(0);
+            return;
         }
-        String text = a.getText();
-        java.util.TreeMap<Long, int[]> ranges = new java.util.TreeMap<>(); // in document order, none twice
-        for (int[] sel : carets.selections()) {
-            List<int[]> parts = atLineEnds
-                    ? com.editora.editops.CaretPlans.caretsAtLineEnds(text, sel[0], sel[1])
-                    : com.editora.editops.CaretPlans.splitIntoLines(text, sel[0], sel[1]);
-            for (int[] r : parts) {
-                ranges.put(((long) r[0] << 32) | r[1], r);
-            }
-        }
-        return ranges.isEmpty()
-                ? 0
-                : placeOccurrenceCarets(
-                        new java.util.ArrayList<>(ranges.values()),
-                        a.getSelection().getStart());
+        List<int[]> selections = carets.selections();
+        int anchorStart = a.getSelection().getStart();
+        // A selection can be the whole document (Select All): its lines are split off the FX thread, and the
+        // carets placed when that lands if nothing moved (PERF-01, Pauta 6.0.1).
+        CaretLook.then(
+                SPLIT_SITE,
+                a,
+                at -> {
+                    java.util.TreeMap<Long, int[]> ranges = new java.util.TreeMap<>(); // in document order, none twice
+                    for (int[] sel : selections) {
+                        List<int[]> parts = atLineEnds
+                                ? com.editora.editops.CaretPlans.caretsAtLineEnds(at.text(), sel[0], sel[1])
+                                : com.editora.editops.CaretPlans.splitIntoLines(at.text(), sel[0], sel[1]);
+                        for (int[] r : parts) {
+                            ranges.put(((long) r[0] << 32) | r[1], r);
+                        }
+                    }
+                    return new java.util.ArrayList<>(ranges.values());
+                },
+                ranges -> placed.accept(ranges.isEmpty() ? 0 : placeOccurrenceCarets(ranges, anchorStart)));
     }
 
+    /** {@link com.editora.perf.BlockingSites} name of Split into Lines / Add Cursors to Line Ends, made off FX. */
+    static final String SPLIT_SITE = "BufferCarets.splitIntoLines";
+
     /** Moves the newest selection to the next occurrence (VS Code Ctrl+K Ctrl+D); false when it cannot. */
-    boolean skipOccurrence() {
+    void skipOccurrence(java.util.function.Consumer<Boolean> moved) {
         MultiCarets carets = activeCarets();
-        return carets != null && carets.skipOccurrence();
+        if (carets == null) {
+            moved.accept(false);
+        } else {
+            carets.skipOccurrence(moved);
+        }
     }
 
     /** Removes the extra caret added last (VS Code Ctrl+U); false when there is only one caret. */

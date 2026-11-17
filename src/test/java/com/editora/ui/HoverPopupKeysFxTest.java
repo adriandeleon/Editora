@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * of reaching the text (HTML review B8/C9).
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // a popup's Markdown parse (PERF-01) lands at once
 class HoverPopupKeysFxTest {
 
     @TempDir

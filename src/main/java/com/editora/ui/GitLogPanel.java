@@ -482,21 +482,58 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         filterField.selectAll();
     }
 
-    /** Case-insensitive substring filter over each loaded commit's subject, author, hash, date and refs. */
+    /** Where the filter box's text is matched against the loaded commits: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "GitLogPanel.filter";
+
+    /** The filter in flight: a newer keystroke (or page) supersedes it, and only the latest answer is shown. */
+    private final LatestOnly filterSearch = PickerSearch.latest();
+
+    /**
+     * Narrows the loaded commits to those the text is found in. The loaded commits grow by a page of 200 each time
+     * the list is scrolled to its end, so they are matched off the FX thread (PERF-01, Pauta 6.0.1) on a copy; the
+     * rows shown stay until the latest answer lands.
+     */
     private void applyCommitFilter(String text) {
         String q = text == null ? "" : text.strip().toLowerCase(java.util.Locale.ROOT);
         if (q.isEmpty()) {
+            filterSearch.cancel();
             filteredCommits.setPredicate(c -> true);
-        } else {
-            filteredCommits.setPredicate(c -> contains(c.subject(), q)
-                    || contains(c.author(), q)
-                    || contains(c.shortHash(), q)
-                    || contains(c.hash(), q)
-                    || contains(c.date(), q)
-                    || c.refs().stream().anyMatch(r -> contains(r.name(), q)));
+            updateGraphColumn(); // a filtered list is a subset of the commits: no graph while it is narrowed
+            updateFooter();
+            return;
         }
-        updateGraphColumn(); // a filtered list is a subset of the commits: no graph while it is narrowed
-        updateFooter();
+        List<Entry> loaded = List.copyOf(allCommits);
+        filterSearch.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    java.util.Set<Entry> keep = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                    for (Entry c : loaded) {
+                        if (matches(c, q)) {
+                            keep.add(c);
+                        }
+                    }
+                    return keep;
+                },
+                keep -> {
+                    filteredCommits.setPredicate(keep::contains);
+                    updateGraphColumn();
+                    updateFooter();
+                });
+    }
+
+    /** Whether the filter's answer for the loaded commits is still to land (a test waits on it). */
+    boolean filterPending() {
+        return filterSearch.pending();
+    }
+
+    /** Case-insensitive substring filter over a commit's subject, author, hash, date and refs. */
+    private static boolean matches(Entry c, String q) {
+        return contains(c.subject(), q)
+                || contains(c.author(), q)
+                || contains(c.shortHash(), q)
+                || contains(c.hash(), q)
+                || contains(c.date(), q)
+                || c.refs().stream().anyMatch(r -> contains(r.name(), q));
     }
 
     private boolean filtering() {
@@ -578,6 +615,9 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             updateGraphColumn();
             // Populate the unfiltered master list; the FilteredList view re-applies the current filter.
             allCommits.setAll(page.entries());
+            if (filtering()) {
+                applyCommitFilter(filterField.getText()); // the new rows are matched off the FX thread
+            }
             reselect(selected);
             if (!sameListing) {
                 commits.scrollTo(0);
@@ -627,6 +667,9 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             updateGraphColumn();
         }
         allCommits.addAll(page.entries());
+        if (filtering()) {
+            applyCommitFilter(filterField.getText()); // the page's rows are matched off the FX thread
+        }
         updateFooter();
     }
 

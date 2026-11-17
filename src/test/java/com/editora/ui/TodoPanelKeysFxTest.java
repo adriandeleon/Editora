@@ -50,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * structured and an unstructured match look like.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // searches and filters answer before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TodoPanelKeysFxTest {
 

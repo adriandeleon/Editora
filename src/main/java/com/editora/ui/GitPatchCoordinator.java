@@ -94,10 +94,38 @@ final class GitPatchCoordinator {
             return;
         }
         EditorBuffer active = host.activeBuffer();
-        if (active != null && isPatch(active.getTitle(), active.getContent())) {
-            chooseTarget(patchBytes(active));
+        if (active == null) {
+            pickPatchFile();
             return;
         }
+        if (checkingPatch) {
+            return; // a second press while the tab is parsed
+        }
+        checkingPatch = true;
+        String title = active.getTitle();
+        String content = active.getContent();
+        String ending = active.getLineEnding();
+        String charset = active.getEffectiveCharset();
+        // Whether the tab holds a patch is a parse of its text: off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                PATCH_CHECK_SITE, () -> isPatch(title, content) ? patchBytes(content, ending, charset) : null, a -> {
+                    checkingPatch = false;
+                    byte[] bytes = a.value();
+                    if (bytes != null) {
+                        chooseTarget(bytes);
+                    } else {
+                        pickPatchFile();
+                    }
+                });
+    }
+
+    /** Where Apply Patch parses the active tab, and the patch's touched paths: heard off the FX thread (PERF-01). */
+    static final String PATCH_CHECK_SITE = "GitPatchCoordinator.isPatch";
+
+    /** Set while Apply Patch parses the active tab. */
+    private boolean checkingPatch;
+
+    private void pickPatchFile() {
         Path file = choosePatchFile.get();
         if (file != null) {
             readPatchFile(file, this::chooseTarget);
@@ -172,7 +200,11 @@ final class GitPatchCoordinator {
         // git patches the files on disk: an unsaved edit of one of them would be left behind, then conflict
         // with the patched file on its next save.
         if (writesFiles) {
-            git.saveUnsaved(root, touchedPaths(patch), () -> runSaved(root, patch, cached, threeWay, true));
+            com.editora.perf.OffFx.then( // the paths are a parse of the patch: off the FX thread (PERF-01)
+                    PATCH_CHECK_SITE,
+                    () -> touchedPaths(patch),
+                    paths -> git.saveUnsaved(
+                            root, paths.or(List.of()), () -> runSaved(root, patch, cached, threeWay, true)));
         } else {
             runSaved(root, patch, cached, threeWay, false);
         }
@@ -263,8 +295,12 @@ final class GitPatchCoordinator {
 
     /** A buffer's text as the bytes a save would write: its line ending and charset, so the patch still fits. */
     static byte[] patchBytes(EditorBuffer buffer) {
-        return EditorConfigCharset.encode(
-                LineEndings.apply(buffer.getContent(), buffer.getLineEnding()), buffer.getEffectiveCharset());
+        return patchBytes(buffer.getContent(), buffer.getLineEnding(), buffer.getEffectiveCharset());
+    }
+
+    /** As {@link #patchBytes(EditorBuffer)} for a buffer's text, line ending and charset. Pure. */
+    static byte[] patchBytes(String content, String lineEnding, String charset) {
+        return EditorConfigCharset.encode(LineEndings.apply(content, lineEnding), charset);
     }
 
     /**
@@ -407,7 +443,7 @@ final class GitPatchCoordinator {
             }
             EditorBuffer buffer = new EditorBuffer();
             buffer.setDisplayName(name);
-            buffer.setContent(patch.text());
+            buffer.setContentLater(patch.text(), () -> {}); // made ready off the FX thread
             openTab.accept(buffer);
             host.setStatus(tr("status.git.patchOpened", name));
             return;

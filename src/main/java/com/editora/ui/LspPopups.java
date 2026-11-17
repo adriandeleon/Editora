@@ -123,20 +123,42 @@ final class LspPopups {
      */
     void showHoverPopup(CodeArea area, String markdown, List<LspDiagnostic> problemsHere) {
         hideHoverPopup();
+        if (markdown.isBlank()) {
+            showHoverContent(area, markdown, null, problemsHere);
+            return;
+        }
+        // The Markdown is parsed off the FX thread (PERF-01, Pauta 6.0.1); the popup shows when it lands, unless
+        // another hover, a caret move or a hide came first.
+        long generation = hoverGeneration;
+        MarkdownRenderer.parseLater(markdown, ast -> {
+            if (generation == hoverGeneration && area.getScene() != null) {
+                showHoverContent(area, markdown, ast, problemsHere);
+            }
+        });
+    }
+
+    private void showHoverContent(
+            CodeArea area, String markdown, org.commonmark.node.@Nullable Node ast, List<LspDiagnostic> problemsHere) {
         Node content;
         Node problemsNode = CaretProblems.node(problemsHere);
         if (markdown.isBlank()) {
             content = problemsNode != null ? problemsNode : new Label();
-        } else
-            try {
-                // Links in a hover (documentation URLs) open through the window's link choke point.
-                content =
-                        MarkdownRenderer.renderPopup(MarkdownRenderer.parseForRender(markdown), host::openExternalUrl);
-            } catch (RuntimeException e) {
+        } else {
+            content = null;
+            if (ast != null) {
+                try {
+                    // Links in a hover (documentation URLs) open through the window's link choke point.
+                    content = MarkdownRenderer.renderPopup(ast, host::openExternalUrl);
+                } catch (RuntimeException e) {
+                    content = null;
+                }
+            }
+            if (content == null) {
                 Label label = new Label(markdown);
                 label.setWrapText(true);
                 content = label;
             }
+        }
         if (problemsNode != null && content != problemsNode) {
             content = UiZoom.spacing(new VBox(problemsNode, new javafx.scene.control.Separator(), content), 10);
         }
@@ -372,15 +394,10 @@ final class LspPopups {
             box.getChildren().add(0, UiZoom.spacing(new javafx.scene.layout.HBox(previous, count, next), 6));
         }
         if (!active.documentation().isBlank()) {
-            try {
-                Node doc = MarkdownRenderer.renderPopup(
-                        MarkdownRenderer.parseForRender(active.documentation()), host::openExternalUrl);
-                box.getChildren().add(doc);
-            } catch (RuntimeException e) {
-                Label docLabel = new Label(active.documentation());
-                docLabel.setWrapText(true);
-                box.getChildren().add(docLabel);
-            }
+            // Plain text first, its rendering when the parse made off the FX thread lands (PERF-01).
+            box.getChildren()
+                    .add(MarkdownRenderer.renderedLater(
+                            active.documentation(), ast -> MarkdownRenderer.renderPopup(ast, host::openExternalUrl)));
         }
         box.getStyleClass().add("lsp-hover-popup"); // same card styling as hover
         UiZoom.maxWidth(box, 560);

@@ -190,7 +190,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         this.name = name;
         this.startLine = startLine;
         this.endLine = endLine;
-        this.lines = declarationLines(text, startLine, endLine);
+        this.lines = List.of(); // split off the FX thread, below
         history = null;
         blamed = null;
         String heading = name.isBlank()
@@ -208,7 +208,27 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         diff.getItems().clear();
         fillBlame();
         openCommit.setDisable(true);
-        return ++shown;
+        long ask = ++shown;
+        linesFrom(ask, text);
+        return ask;
+    }
+
+    /** Where the declaration's lines are cut from the file's text: heard off the FX thread (PERF-01). */
+    static final String LINES_SITE = "ProjectMapHistoryCard.declarationLines";
+
+    /** The declaration's lines of {@code text}, cut off the FX thread (PERF-01) and shown if still for {@code ask}. */
+    private void linesFrom(long ask, String text) {
+        if (text.isEmpty()) {
+            return;
+        }
+        int first = startLine;
+        int last = endLine;
+        com.editora.perf.OffFx.then(LINES_SITE, () -> declarationLines(text, first, last), a -> {
+            if (ask == shown && a.value() != null) {
+                lines = a.value();
+                fillBlame();
+            }
+        });
     }
 
     /** The commits for the ask {@code ask} of {@link #show}; an older ask's are dropped. */
@@ -236,8 +256,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         if (ask != shown || text.isEmpty()) {
             return;
         }
-        lines = declarationLines(text, startLine, endLine);
-        fillBlame();
+        linesFrom(ask, text);
     }
 
     /** The 0-based lines {@code startLine..endLine} of {@code text}, as many of them as it has. Pure. */

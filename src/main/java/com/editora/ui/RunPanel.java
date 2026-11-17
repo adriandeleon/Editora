@@ -126,7 +126,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
                 return;
             }
             int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
-            ConsoleUrls.Link link = ConsoleUrls.at(output.getText(), offset);
+            ConsoleUrls.Link link = urlAt(output, offset);
             if (link != null) {
                 onUrl.accept(link.url());
                 e.consume();
@@ -134,7 +134,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         });
         output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_MOVED, e -> {
             int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
-            output.setCursor(ConsoleUrls.at(output.getText(), offset) == null ? Cursor.TEXT : Cursor.HAND);
+            output.setCursor(urlAt(output, offset) == null ? Cursor.TEXT : Cursor.HAND);
         });
         output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> output.setCursor(null));
         ConsoleNav.installShared(output); // configured-keymap scrolling while the console has focus
@@ -242,6 +242,34 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /**
+     * The console line around {@code offset}: its text, read alone, and where it starts. A hover or a click looks at
+     * one line, never at a copy of the whole console (PERF-01, Pauta 6.0.1: it runs on every mouse move). Null past
+     * the end.
+     */
+    record LineAt(String text, int start) {}
+
+    static @Nullable LineAt lineAt(CodeArea area, int offset) {
+        if (offset < 0 || offset >= area.getLength()) {
+            return null;
+        }
+        int paragraph = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+        return new LineAt(area.getParagraph(paragraph).getText(), area.getAbsolutePosition(paragraph, 0));
+    }
+
+    /** The URL under {@code offset} of {@code area}, read from its line alone; offsets are the console's. */
+    static ConsoleUrls.@Nullable Link urlAt(CodeArea area, int offset) {
+        LineAt line = lineAt(area, offset);
+        if (line == null) {
+            return null;
+        }
+        ConsoleUrls.Link link = ConsoleUrls.at(line.text(), offset - line.start());
+        return link == null
+                ? null
+                : new ConsoleUrls.Link(line.start() + link.start(), line.start() + link.end(), link.url());
+    }
+
     /** {@link CodeArea} overload of {@link #installLinkClicks(TextArea, java.util.function.Supplier)} — used
      *  by {@link BuildToolPanel}, whose console is a RichTextFX {@code CodeArea} so it can color lines via
      *  {@code com.editora.build.OutputStyle}. */
@@ -252,11 +280,15 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             if (h == null || e.getClickCount() != 2) {
                 return;
             }
-            String text = console.getText();
-            int caret = Math.min(console.getCaretPosition(), text.length());
-            int start = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
-            int end = text.indexOf('\n', caret);
-            StackTraceLinks.Link link = StackTraceLinks.parse(text.substring(start, end < 0 ? text.length() : end));
+            int caret = console.getCaretPosition();
+            LineAt line = caret < console.getLength() ? lineAt(console, caret) : null;
+            String text = line != null
+                    ? line.text()
+                    : console.getParagraphs().isEmpty()
+                            ? ""
+                            : console.getParagraph(console.getParagraphs().size() - 1)
+                                    .getText(); // the caret at the very end: the last line
+            StackTraceLinks.Link link = StackTraceLinks.parse(text);
             if (link != null) {
                 h.accept(link);
             }

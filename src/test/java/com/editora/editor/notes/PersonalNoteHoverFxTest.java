@@ -28,6 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Pins Personal Notes hover hit-testing to CodeArea coordinates when the event originated in a child node. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        com.editora.ui.OffFxInPlace.class) // work moved off FX (PERF-01) lands at once
 class PersonalNoteHoverFxTest {
 
     @Test

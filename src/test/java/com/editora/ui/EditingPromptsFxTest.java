@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the kill-ring picker, the abbreviation and fill-column prompts — each with the answers that must change
  * nothing (empty, cancelled, malformed) as well as the one that does the work.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // worked out off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EditingPromptsFxTest {

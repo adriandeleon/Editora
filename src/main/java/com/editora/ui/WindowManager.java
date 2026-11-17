@@ -499,17 +499,13 @@ public class WindowManager {
             pendingRestore.add(new PendingWindow(key, project, stateFile));
         }
         restoreFocusKey = primary;
-        // Until one window is on screen: normally just the primary, the next one if it failed to build.
-        while (windows.isEmpty() && !pendingRestore.isEmpty()) {
-            PendingWindow next = pendingRestore.poll();
-            boolean isPrimary = next.key().equals(primary);
-            buildRestoredWindow(
-                    next,
-                    isPrimary ? targets : List.of(),
-                    isPrimary && zen,
-                    isPrimary && expert,
-                    isPrimary ? newFile : null,
-                    isPrimary && simple);
+        // The command line's targets and chrome flags go to the primary window, whenever it is built.
+        primaryArgs = new PrimaryArgs(primary, targets, zen, expert, newFile, simple);
+        // Until one window is on screen: normally just the primary, the next one if it failed to build. A window
+        // whose session the launch did not read is not built here: it is read off the FX thread first and built
+        // when it lands, by buildNextRestoredWindow (PERF-01, Pauta 6.0.1).
+        while (windows.isEmpty() && !pendingRestore.isEmpty() && sessionReady(pendingRestore.peek())) {
+            buildRestoredWindow(pendingRestore.poll());
         }
         // The windows still to come have their sessions read now, off the FX thread, while the first one paints.
         pendingRestore.forEach(this::readAhead);
@@ -523,6 +519,59 @@ public class WindowManager {
             focusKey(primary);
             restoreScheduler.accept(this::buildNextRestoredWindow);
         }
+    }
+
+    /** What the command line asked of the launch's primary window: given to it whenever it is built. */
+    private record PrimaryArgs(
+            String key,
+            List<MainController.OpenTarget> targets,
+            boolean zen,
+            boolean expert,
+            @Nullable String newFile,
+            boolean simple) {}
+
+    /** The launch's primary window's command-line asks, until that window is built. */
+    private @Nullable PrimaryArgs primaryArgs;
+
+    /** Builds a pending restored window, with the command line's asks when it is the launch's primary. */
+    private void buildRestoredWindow(PendingWindow w) {
+        PrimaryArgs args = primaryArgs;
+        if (args != null && args.key().equals(w.key())) {
+            primaryArgs = null;
+            buildRestoredWindow(w, args.targets(), args.zen(), args.expert(), args.newFile(), args.simple());
+        } else {
+            buildRestoredWindow(w, List.of(), false, false, null, false);
+        }
+    }
+
+    /**
+     * Whether {@code w}'s session is in memory, so the window can be built without reading on the FX thread: the
+     * launch's bootstrap read it, or {@link #readAhead} has. Starts that read when nothing has.
+     */
+    private boolean sessionReady(PendingWindow w) {
+        Path stateFile = w.stateFile();
+        if (stateFile == null ? bootstrapConfig != null : bootstrapMatches(stateFile)) {
+            return true;
+        }
+        Path file = sessionFileOf(w);
+        java.util.concurrent.CompletableFuture<ConfigManager> read = readsAhead.get(file);
+        if (read == null) {
+            readAhead(w);
+            read = readsAhead.get(file);
+        }
+        return read != null && read.isDone();
+    }
+
+    /** Whether the prefetched project-window session was read from {@code stateFile}. */
+    private boolean bootstrapMatches(Path stateFile) {
+        ConfigManager boot = bootstrapProjectConfig;
+        return boot != null && boot.getWorkspaceStateFile().equals(stateFile);
+    }
+
+    /** The session file a pending window's session is read from: its own, or the default window's. */
+    private Path sessionFileOf(PendingWindow w) {
+        Path stateFile = w.stateFile();
+        return stateFile != null ? stateFile : new ConfigManager(shared).getWorkspaceStateFile();
     }
 
     /**
@@ -626,10 +675,9 @@ public class WindowManager {
         if (restorePaused || pendingRestore.isEmpty()) {
             return; // a cancelled quit reschedules; an emptied queue was finished by whoever emptied it
         }
+        PendingWindow first = pendingRestore.peek();
         java.util.concurrent.CompletableFuture<ConfigManager> read =
-                pendingRestore.peek().stateFile() == null
-                        ? null
-                        : readsAhead.get(pendingRestore.peek().stateFile());
+                sessionReady(first) ? null : readsAhead.get(sessionFileOf(first));
         if (read != null && !read.isDone()) {
             // Its session is still being read: carry on when it lands, rather than wait for it here.
             read.handle((config, error) -> null)
@@ -639,12 +687,12 @@ public class WindowManager {
             return;
         }
         PendingWindow next = pendingRestore.poll();
-        if (findHolder(next.key()) != null && next.stateFile() != null) {
-            readsAhead.remove(next.stateFile()); // opened by hand meanwhile: that window read its own
+        if (findHolder(next.key()) != null) {
+            readsAhead.remove(sessionFileOf(next)); // opened by hand meanwhile: that window read its own
         }
         if (findHolder(next.key()) == null) { // else opened by hand while it was waiting
             Holder focused = actuallyFocusedHolder();
-            buildRestoredWindow(next, List.of(), false, false, null, false);
+            buildRestoredWindow(next);
             Holder back = focused != null ? focused : findHolder(restoreFocusKey);
             if (back != null) {
                 focus(back.stage());
@@ -670,15 +718,48 @@ public class WindowManager {
      */
     private void readAhead(PendingWindow w) {
         Path stateFile = w.stateFile();
-        if (stateFile == null) {
-            return; // the default window: its session is the bootstrap's
+        if (stateFile == null ? bootstrapConfig != null : bootstrapMatches(stateFile)) {
+            return; // the launch's prefetch read it
+        }
+        Path file = sessionFileOf(w);
+        if (readsAhead.containsKey(file)) {
+            return;
         }
         Path root = w.project() == null ? null : w.project().rootPath();
         readsAhead.put(
-                stateFile,
+                file,
                 java.util.concurrent.CompletableFuture.supplyAsync(
-                        () -> readWindowConfig(shared, stateFile, root),
+                        () -> readWindowConfigReporting(shared, file, root, w.key()),
                         com.editora.process.BlockingTasks.named("window-session-read")));
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of a window's session read, off the FX thread. */
+    static final String SESSION_READ_SITE = "WindowManager.sessionRead";
+
+    /** {@link com.editora.perf.BlockingSites} name of a window's session read the way that reports what is wrong. */
+    static final String REPORTING_READ_SITE = "WindowManager.fallbackSessionRead";
+
+    /**
+     * {@link #readWindowConfig}, and when that throws (rare), the session read the way a window built in place read
+     * it, which reports what is wrong: off the FX thread either way. Blocking.
+     */
+    static ConfigManager readWindowConfigReporting(
+            SharedConfig shared, Path stateFile, @Nullable Path projectRoot, String key) {
+        try {
+            return readWindowConfig(shared, stateFile, projectRoot);
+        } catch (RuntimeException failure) {
+            java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                    .log(
+                            java.util.logging.Level.WARNING,
+                            "Could not read the session of window '" + key + "'",
+                            failure);
+            com.editora.perf.BlockingSites.enter(REPORTING_READ_SITE);
+            ConfigManager c = new ConfigManager(shared, stateFile);
+            c.setWorkspaceStateFile(stateFile);
+            c.setStartupSessionScan(com.editora.config.SessionScan.of(
+                    c.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
+            return c;
+        }
     }
 
     /**
@@ -687,6 +768,7 @@ public class WindowManager {
      * prefetch reads its first window's this way too.
      */
     public static ConfigManager readWindowConfig(SharedConfig shared, Path stateFile, @Nullable Path projectRoot) {
+        com.editora.perf.BlockingSites.enter(SESSION_READ_SITE);
         ConfigManager config = new ConfigManager(shared, stateFile);
         config.setWorkspaceStateFile(stateFile);
         config.setStartupSessionScan(com.editora.config.SessionScan.of(
@@ -701,7 +783,7 @@ public class WindowManager {
     private @Nullable ConfigManager takeReadAhead(Path stateFile) {
         java.util.concurrent.CompletableFuture<ConfigManager> read = readsAhead.remove(stateFile);
         if (read == null || !read.isDone() || read.isCompletedExceptionally()) {
-            return null; // not read ahead, or it failed: buildWindow reads it, and reports what is wrong
+            return null; // not read ahead, or even the reporting read failed
         }
         return read.join(); // done: no wait
     }
@@ -789,14 +871,35 @@ public class WindowManager {
                 stateFile = projects().stateFile(project);
             }
         }
-        try {
-            buildWindow(key, project, stateFile, targets, zen, expert, newFile, simple);
-        } catch (RuntimeException | Error t) {
-            java.util.logging.Logger.getLogger(WindowManager.class.getName())
-                    .log(java.util.logging.Level.WARNING, "Failed to build single window for key '" + key + "'", t);
+        // Its session is read off the FX thread first unless the launch's prefetch read it (PERF-01, Pauta 6.0.1).
+        PendingWindow single = new PendingWindow(key, project, stateFile);
+        String windowKey = key;
+        Project windowProject = project;
+        Path windowStateFile = stateFile;
+        Runnable build = () -> {
+            try {
+                buildWindow(windowKey, windowProject, windowStateFile, targets, zen, expert, newFile, simple);
+            } catch (RuntimeException | Error t) {
+                java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                        .log(
+                                java.util.logging.Level.WARNING,
+                                "Failed to build single window for key '" + windowKey + "'",
+                                t);
+            }
+            focusKey(windowKey);
+            bootstrapConfig = null; // the launch is over; see the field
+            bootstrapProjectConfig = null;
+        };
+        if (sessionReady(single)) {
+            build.run();
+        } else {
+            java.util.concurrent.CompletableFuture<ConfigManager> read = readsAhead.get(sessionFileOf(single));
+            if (read == null) {
+                build.run(); // not expected: sessionReady starts the read
+            } else {
+                read.handle((config, error) -> null).thenRunAsync(build, javafx.application.Platform::runLater);
+            }
         }
-        focusKey(key);
-        bootstrapConfig = null; // the launch is over; see the field
     }
 
     /** Finds a project by display name (exact first, then case-insensitive), or {@code null} if none match. */
@@ -956,6 +1059,8 @@ public class WindowManager {
                                 "Could not read the session of window '" + key + "'",
                                 failure);
             }
+            // A session not read even the reporting way (both reads threw) is not read here either: buildWindow
+            // refuses, which is logged below, rather than read on the FX thread (PERF-01, Pauta 6.0.1).
             readForBuild = failure == null ? config : null;
             try {
                 buildWindow(key, project, stateFile, targets, false, false, null, false);
@@ -1008,8 +1113,8 @@ public class WindowManager {
 
     /**
      * Reads, once and on a thread of its own, the bundled resources a later window or dialog would otherwise read
-     * on the FX thread (PERF-01, Pauta 6.0.1): the Settings window's table of controls, New Maven Project's archetype
-     * catalog.
+     * on the FX thread (PERF-01, Pauta 6.0.1): the Settings window's table of controls, every bundled grammar (on
+     * {@code grammars-warm}), New Maven Project's archetype catalog.
      */
     private static void warmBundledLater() {
         if (!BUNDLED_WARMED.compareAndSet(false, true)) {
@@ -1021,6 +1126,7 @@ public class WindowManager {
             } catch (RuntimeException | LinkageError e) {
                 // the Settings window reads it itself
             }
+            com.editora.editor.highlight.GrammarRegistry.warmAllLater(); // every bundled grammar, loaded once and kept
             try {
                 com.editora.maven.ArchetypeCatalog.curated(); // New Maven Project's bundled catalog, parsed once
             } catch (RuntimeException e) {
@@ -2054,10 +2160,18 @@ public class WindowManager {
             if (config == null) {
                 config = stateFile == null ? takeBootstrapConfig() : takeBootstrapProjectConfig(stateFile);
             }
-            if (config == null && stateFile != null) {
-                config = takeReadAhead(stateFile); // a restored window's, read while the windows before it painted
+            if (config == null) {
+                // A restored window's (or --single-window's), read while the windows before it painted.
+                config = takeReadAhead(
+                        stateFile != null ? stateFile : new ConfigManager(shared).getWorkspaceStateFile());
             }
             if (config == null) {
+                // Every window the app builds has its session read off the FX thread first (PERF-01, Pauta 6.0.1);
+                // only a test's own window is built from a read made here.
+                if (!sessionReadInPlaceForTest) {
+                    throw new IllegalStateException("the session of window '" + key + "' was not read");
+                }
+                com.editora.perf.BlockingSites.enter(SESSION_READ_IN_PLACE_SITE);
                 config = stateFile == null ? new ConfigManager(shared) : new ConfigManager(shared, stateFile);
                 config.setWorkspaceStateFile(config.getWorkspaceStateFile()); // load this window's session
             }
@@ -2214,16 +2328,32 @@ public class WindowManager {
     MainController buildWindowForTest(
             boolean zen, boolean expert, boolean simple, List<MainController.OpenTarget> targets, boolean noSession) {
         this.noSession = noSession;
-        buildWindow("", null, null, targets, zen, expert, null, simple);
+        sessionReadInPlaceForTest = true;
+        try {
+            buildWindow("", null, null, targets, zen, expert, null, simple);
+        } finally {
+            sessionReadInPlaceForTest = false;
+        }
         return windows.get(windows.size() - 1).controller();
     }
 
     /** Builds the production standalone-diff path for headless JavaFX tests. */
     MainController buildDiffWindowForTest(DiffUiRequest request) {
         this.noSession = true;
-        buildWindow("", null, null, List.of(), false, false, null, false, request);
+        sessionReadInPlaceForTest = true;
+        try {
+            buildWindow("", null, null, List.of(), false, false, null, false, request);
+        } finally {
+            sessionReadInPlaceForTest = false;
+        }
         return windows.get(windows.size() - 1).controller();
     }
+
+    /** {@link com.editora.perf.BlockingSites} name of a session read on the calling thread: a test's window only. */
+    static final String SESSION_READ_IN_PLACE_SITE = "WindowManager.sessionReadInPlace";
+
+    /** TEST SEAM — set while a test's own window is built from a session read in place. */
+    private boolean sessionReadInPlaceForTest;
 
     // --- helpers ---
 

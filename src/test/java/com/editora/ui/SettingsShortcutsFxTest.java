@@ -36,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Keymaps and Macros pages in a real Settings window: what the user records, sees and keeps. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // searches and filters answer before the call returns
 class SettingsShortcutsFxTest {
 
     @BeforeAll

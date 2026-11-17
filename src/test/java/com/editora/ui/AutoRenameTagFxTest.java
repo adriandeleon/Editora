@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * unit-tested separately — this exercises the {@code plainTextChanges} subscription, the re-entrancy
  * guard, and the caret restore around the mirrored {@code replaceText}).
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the pair is found off FX in the app
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AutoRenameTagFxTest {

@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.PriorityQueue;
 
 import com.editora.search.FuzzyMatch;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An in-memory, per-file map of a project's declarations, queried by fuzzy name.
@@ -45,6 +46,42 @@ public final class SymbolIndex {
     private final Map<Path, List<Symbol>> byFile = new LinkedHashMap<>();
     private int symbolCount;
 
+    /** What {@link #freeze} last answered; dropped by every change. */
+    private @Nullable Frozen frozen;
+
+    /**
+     * An unchanging copy of the index as it is now, to {@linkplain Frozen#search search} on another thread
+     * (PERF-01, Pauta 6.0.1: the FX thread searches nothing). Copies one entry per file — never a symbol — and only
+     * after a change: asking again with nothing changed answers the same copy.
+     */
+    public Frozen freeze() {
+        Frozen f = frozen;
+        if (f == null) {
+            f = new Frozen(List.copyOf(byFile.entrySet().stream()
+                    .map(e -> Map.entry(e.getKey(), e.getValue()))
+                    .toList()));
+            frozen = f;
+        }
+        return f;
+    }
+
+    /** The index at one moment, safe to search on any thread: it never changes. */
+    public static final class Frozen {
+        private final List<Map.Entry<Path, List<Symbol>>> entries;
+
+        private Frozen(List<Map.Entry<Path, List<Symbol>>> entries) {
+            this.entries = entries;
+        }
+
+        /** An empty index. */
+        public static final Frozen EMPTY = new Frozen(List.of());
+
+        /** As {@link SymbolIndex#search(String, int)}, over this copy. */
+        public List<Hit> search(String query, int limit) {
+            return SymbolIndex.search(entries, query, limit);
+        }
+    }
+
     /** Replaces {@code file}'s symbols. Returns false when a cap refused the update. */
     public boolean put(Path file, List<Symbol> symbols) {
         if (file == null) {
@@ -66,6 +103,7 @@ public final class SymbolIndex {
         }
         byFile.put(file, incoming);
         symbolCount += delta;
+        frozen = null;
         return true;
     }
 
@@ -74,6 +112,7 @@ public final class SymbolIndex {
         List<Symbol> previous = byFile.remove(file);
         if (previous != null) {
             symbolCount -= previous.size();
+            frozen = null;
         }
     }
 
@@ -81,6 +120,7 @@ public final class SymbolIndex {
     public void clear() {
         byFile.clear();
         symbolCount = 0;
+        frozen = null;
     }
 
     public boolean contains(Path file) {
@@ -113,7 +153,8 @@ public final class SymbolIndex {
      * for. A blank query returns nothing — "every symbol in the project" is not a useful answer, and the
      * caller has {@link #symbolsIn} when it wants a file's outline.
      *
-     * <p><b>Bounded selection, not a full sort.</b> This runs on the FX thread on every keystroke, and a
+     * <p><b>Bounded selection, not a full sort.</b> This runs on every keystroke (off the FX thread, on a
+     * {@link #freeze} copy), and a
      * short query matches a large fraction of the corpus — so sorting every match to then discard all but
      * {@code limit} of them was the single worst-scaling thing here: measured at 57–70% of the call for a
      * one- or two-character query, and growing with corpus size (#876). Instead a heap of at most
@@ -129,13 +170,18 @@ public final class SymbolIndex {
      * broad query quietly stops being reproducible from one keystroke to the next.
      */
     public List<Hit> search(String query, int limit) {
+        return search(byFile.entrySet(), query, limit);
+    }
+
+    private static List<Hit> search(
+            java.util.Collection<Map.Entry<Path, List<Symbol>>> byFile, String query, int limit) {
         if (query == null || query.isBlank() || limit <= 0) {
             return List.of();
         }
         // Ordered worst-first, so the head is the entry a better candidate evicts.
         PriorityQueue<Ranked> keep = new PriorityQueue<>(RANK.reversed());
         int seq = 0;
-        for (Map.Entry<Path, List<Symbol>> entry : byFile.entrySet()) {
+        for (Map.Entry<Path, List<Symbol>> entry : byFile) {
             for (Symbol symbol : entry.getValue()) {
                 // scoreOf, not of: the highlight ranges of() builds are discarded here (a Hit carries only
                 // a score) and re-derived at render time for the handful of rows actually drawn.

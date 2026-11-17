@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * renderer, and its links have to do something: they were drawn as links and wired to nothing.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        com.editora.ui.OffFxInPlace.class) // work moved off FX (PERF-01) lands at once
 class RenderedMarkdownLinksFxTest {
 
     private static final String MD = "See [the docs](https://example.com/docs) for details.\n";

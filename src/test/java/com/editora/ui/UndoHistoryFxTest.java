@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** EditorBuffer's undo-history capture + restore (the model behind the Undo History tool window). */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the work runs off FX in the app; here in place
 @Tag("fx")
 class UndoHistoryFxTest {
 

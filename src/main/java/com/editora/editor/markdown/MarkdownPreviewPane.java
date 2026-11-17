@@ -273,7 +273,7 @@ public final class MarkdownPreviewPane implements TabContent {
     }
 
     /** The rendered document (tests). */
-    MarkdownPreview preview() {
+    public MarkdownPreview preview() {
         return preview;
     }
 }

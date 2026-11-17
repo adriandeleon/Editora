@@ -1309,15 +1309,33 @@ final class MapCards {
         if (file == null || text.isEmpty() || disposed) {
             return;
         }
-        int lineCount = 1;
-        int lastBreak = -1;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                lineCount++;
-                lastBreak = i;
-            }
+        if (source == null || (!aids.semantic() && !aids.inlayHints())) {
+            card.setSemanticTokens(text, List.of()); // none wanted: taken away at once
+            card.setInlayHints(text, List.of());
+            return;
         }
-        int lastLineLength = text.length() - lastBreak - 1;
+        // The card's lines are counted and split off the FX thread (PERF-01, Pauta 6.0.1), then asked for if the card
+        // still shows that text.
+        com.editora.perf.OffFx.then(CARD_LINES_SITE, () -> text.split("\n", -1), a -> {
+            String[] lines = a.value();
+            if (lines != null && !disposed && card.fullText() == text) { // the same text: not compared, it is held
+                askCardAids(card, aids, source, file, text, lines);
+            }
+        });
+    }
+
+    /** Where a code card's lines are counted for its aids: heard off the FX thread (PERF-01). */
+    static final String CARD_LINES_SITE = "MapCards.cardLines";
+
+    private void askCardAids(
+            ProjectMapPreview card,
+            MapCardAids aids,
+            MapCardLinks.@Nullable Source source,
+            Path file,
+            String text,
+            String[] lines) {
+        int lineCount = lines.length;
+        int lastLineLength = lines[lines.length - 1].length();
         if (aids.semantic() && source != null) {
             source.semanticTokens(file, lineCount, lastLineLength, tokens -> card.setSemanticTokens(text, tokens));
         } else {
@@ -1328,7 +1346,6 @@ final class MapCards {
             int start = shown == null ? 0 : shown.startLine();
             int end = shown == null ? lineCount - 1 : shown.endLine();
             com.editora.lsp.InlayHintFilter.Mode mode = com.editora.lsp.InlayHintFilter.Mode.of(aids.inlayMode());
-            String[] lines = text.split("\n", -1);
             source.inlayHints(
                     file,
                     start,

@@ -8,6 +8,7 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 
 import com.editora.editops.LineEndings;
+import com.editora.editor.markdown.MarkdownAnswers;
 import com.editora.markdown.MarkdownTable;
 import com.editora.typst.TypstMarkup;
 import org.fxmisc.richtext.CodeArea;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * left, and that each action refuses the buffers it does not belong to (another language, read-only).
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(com.editora.ui.OffFxInPlace.class)
 class MarkupEditingFxTest {
 
     private static final String TABLE = "| a | b |\n| --- | --- |\n| 1 | 2 |";
@@ -83,7 +85,7 @@ class MarkupEditingFxTest {
             assertFalse(java.tableFromCsv());
             assertFalse(java.tableToCsv());
             assertFalse(java.exportTableFile("csv"));
-            assertFalse(java.insertOrUpdateToc());
+            assertFalse(MarkdownAnswers.toc(java));
             assertFalse(java.trySmartLinkPaste());
             java.formatTaskList();
             java.formatBulletList();
@@ -284,19 +286,19 @@ class MarkupEditingFxTest {
     void theTableOfContentsIsInsertedOnceAndThenRegeneratedInPlace() throws Exception {
         EditorFx.onFx(() -> {
             EditorBuffer none = buffer("markdown", "no headings here");
-            assertFalse(none.insertOrUpdateToc(), "nothing to list");
+            assertFalse(MarkdownAnswers.toc(none), "nothing to list");
             assertEquals("no headings here", none.getArea().getText());
 
             EditorBuffer buffer = buffer("markdown", "intro\n# One\n\n## Two\n");
             buffer.getArea().moveTo(5); // end of "intro"
-            assertTrue(buffer.insertOrUpdateToc());
+            assertTrue(MarkdownAnswers.toc(buffer));
             String withToc = buffer.getArea().getText();
             assertTrue(withToc.startsWith("intro\n\n<!-- toc -->"), "inserted on its own line: " + withToc);
             assertTrue(withToc.contains("[One](#one)"));
             assertTrue(withToc.contains("[Two](#two)"));
 
             buffer.getArea().appendText("\n# Three\n");
-            assertTrue(buffer.insertOrUpdateToc());
+            assertTrue(MarkdownAnswers.toc(buffer));
             String updated = buffer.getArea().getText();
             assertTrue(updated.contains("[Three](#three)"), "the existing block picked up the new heading");
             assertEquals(1, updated.split("<!-- toc -->", -1).length - 1, "still exactly one TOC block");
@@ -418,20 +420,20 @@ class MarkupEditingFxTest {
             EditorBuffer buffer = buffer("markdown", "go [here](https://example.org/x) now");
             List<String> opened = new ArrayList<>();
             buffer.getArea().moveTo(6);
-            assertTrue(buffer.openLinkUnderCaret(), "with no opener wired the link is still recognised");
+            assertTrue(MarkdownAnswers.openLink(buffer), "with no opener wired the link is still recognised");
 
             buffer.setOpenUrlHandler(opened::add);
-            assertTrue(buffer.openLinkUnderCaret());
+            assertTrue(MarkdownAnswers.openLink(buffer));
             assertEquals(List.of("https://example.org/x"), opened);
-            assertEquals("https://example.org/x", buffer.linkUnderCaret());
+            assertEquals("https://example.org/x", MarkdownAnswers.linkUnderCaret(buffer));
 
             buffer.getArea().moveTo(buffer.getArea().getLength());
-            assertFalse(buffer.openLinkUnderCaret(), "the caret is past the link");
+            assertFalse(MarkdownAnswers.openLink(buffer), "the caret is past the link");
             assertEquals(1, opened.size());
 
             buffer.setOpenUrlHandler(null); // back to the no-op opener
             buffer.getArea().moveTo(6);
-            assertTrue(buffer.openLinkUnderCaret());
+            assertTrue(MarkdownAnswers.openLink(buffer));
             assertEquals(1, opened.size());
             buffer.dispose();
         });

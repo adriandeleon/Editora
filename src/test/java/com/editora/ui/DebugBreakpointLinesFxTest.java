@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * status bar says why; a code line, and removing a breakpoint that is already there, work as before.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // work moved off FX (PERF-01) lands at once
 class DebugBreakpointLinesFxTest {
 
     private static final String SOURCE = String.join(

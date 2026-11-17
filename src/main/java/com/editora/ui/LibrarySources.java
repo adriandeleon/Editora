@@ -176,10 +176,20 @@ final class LibrarySources {
             boolean changed = !content.equals(buffer.getArea().getText());
             if (changed) {
                 int line = buffer.getArea().getCurrentParagraph();
-                buffer.setContent(content);
-                buffer.getArea()
-                        .moveTo(Math.min(line, buffer.getArea().getParagraphs().size() - 1), 0);
-                buffer.getArea().requestFollowCaret();
+                buffer.setContentLater(
+                        content,
+                        () -> { // made ready off the FX thread (PERF-01, Pauta 6.0.1)
+                            buffer.getArea()
+                                    .moveTo(
+                                            Math.min(
+                                                    line,
+                                                    buffer.getArea()
+                                                                    .getParagraphs()
+                                                                    .size()
+                                                            - 1),
+                                            0);
+                            buffer.getArea().requestFollowCaret();
+                        });
             }
             resolve(buffer, attachment -> {
                 if (attachment != null && attachment.attached()) {

@@ -32,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * tree renders the class → methods hierarchy, and symbols for a non-attached buffer are ignored.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        OffFxInPlace.class) // the outline and the pickers answer before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class StructurePanelFxTest {
 

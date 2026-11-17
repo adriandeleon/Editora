@@ -1093,7 +1093,7 @@ final class ExportCoordinator {
                     com.editora.editor.markdown.MarkdownHtmlExport.painter(
                             com.editora.pdf.CodeHtml::toClassHtml,
                             () -> com.editora.pdf.CodeHtml.classCss(".markdown-body")));
-            java.util.function.Supplier<Exception> write = () -> {
+            java.util.function.Supplier<@Nullable Exception> write = () -> {
                 try {
                     String html = com.editora.editor.markdown.MarkdownHtmlExport.toHtml(markdown, title, math, options);
                     com.editora.io.StagedExport.writeString(f.toPath(), html);
@@ -1102,27 +1102,40 @@ final class ExportCoordinator {
                     return ex;
                 }
             };
-            if (!com.editora.editor.markdown.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options)) {
-                // text only: nothing to wait for, but still built and written off the FX thread (PERF-01, Pauta 6.0.1)
-                com.editora.perf.OffFx.then("html-export", write::get, done -> htmlExported(f, done.value(), true));
-                return;
-            }
-            // Off the FX thread: embedding reads image files, and a Mermaid block runs the CLI.
-            AutoCloseable task = host.startBackgroundTask(tr("dialog.htmlExport.title"));
-            htmlExport = java.util.concurrent.CompletableFuture.supplyAsync(
-                            write,
-                            runnable -> Thread.ofVirtual().name("html-export").start(runnable))
-                    .thenAcceptAsync(
-                            failure -> {
-                                try {
-                                    task.close();
-                                } catch (Exception ignored) {
-                                    // the progress chip is cosmetic
-                                }
-                                htmlExported(f, failure, false);
-                            },
-                            javafx.application.Platform::runLater);
+            // Whether it reads image files or runs Mermaid is a look through the whole source: made off the FX
+            // thread too (PERF-01, Pauta 6.0.1), then the export goes on.
+            com.editora.perf.OffFx.then(
+                    HTML_EXPORT_CHECK_SITE,
+                    () -> com.editora.editor.markdown.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options),
+                    slow -> exportHtml(f, write, Boolean.TRUE.equals(slow.value()) || !slow.ok()));
         });
+    }
+
+    /** The name the HTML export's look through the source is heard by, on its own thread. */
+    static final String HTML_EXPORT_CHECK_SITE = "html-export-check";
+
+    /** Writes the HTML export: with a progress chip when it reads files or runs tools, else quietly. */
+    private void exportHtml(java.io.File f, java.util.function.Supplier<@Nullable Exception> write, boolean slow) {
+        if (!slow) {
+            // text only: nothing to wait for, but still built and written off the FX thread (PERF-01, Pauta 6.0.1)
+            com.editora.perf.OffFx.then("html-export", write::get, done -> htmlExported(f, done.value(), true));
+            return;
+        }
+        // Off the FX thread: embedding reads image files, and a Mermaid block runs the CLI.
+        AutoCloseable task = host.startBackgroundTask(tr("dialog.htmlExport.title"));
+        htmlExport = java.util.concurrent.CompletableFuture.supplyAsync(
+                        write,
+                        runnable -> Thread.ofVirtual().name("html-export").start(runnable))
+                .thenAcceptAsync(
+                        failure -> {
+                            try {
+                                task.close();
+                            } catch (Exception ignored) {
+                                // the progress chip is cosmetic
+                            }
+                            htmlExported(f, failure, false);
+                        },
+                        javafx.application.Platform::runLater);
     }
 
     private void htmlExported(java.io.File f, @Nullable Exception failure, boolean modal) {

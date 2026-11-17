@@ -30,9 +30,10 @@ import static com.editora.i18n.Messages.tr;
  * Terminal's on a scrollback, so neither fits; this is the {@link TerminalFindBar} shape over plain text. It is
  * a node of the window it searches, never a popup.
  *
- * <p>Stateless between steps: every search scans the console's current text (a console is capped at a few
- * hundred thousand characters, which a quoted-pattern scan covers in well under a frame), so output that
- * arrives while the bar is open is searched too and no stale match index is kept. Every match is painted
+ * <p>Stateless between steps: every search scans a snapshot of the console's current text off the FX thread
+ * (PERF-01, Pauta 6.0.1; {@link #SEARCH_SITE}), the latest ask winning and an answer for text that changed
+ * meanwhile worked out again, so output that arrives while the bar is open is searched too and no stale match
+ * index is kept. Typing searches once it pauses. Every match is painted
  * while the bar is open, the active one more strongly, over a console that was given the layer for it
  * ({@link #withMarks}); a plain text control draws one selection and nothing else. Enter goes to the next
  * match after the selection, Shift+Enter to the previous one, Escape closes the bar and gives the keyboard
@@ -61,6 +62,31 @@ final class ConsoleFindBar extends HBox {
 
     private boolean repaintQueued;
 
+    /** The place that searches the console's text, heard off the FX thread ({@code BlockingSites}). */
+    static final String SEARCH_SITE = "ConsoleFindBar.search";
+
+    /** How long typing must pause before the query is searched. TEST SEAM: 0 searches as each character lands. */
+    static final int TYPING_PAUSE_MS = 80;
+
+    private static volatile int typingPauseMs = TYPING_PAUSE_MS;
+
+    /** TEST SEAM — sets {@link #typingPauseMs}. */
+    static void typingPauseForTest(int ms) {
+        typingPauseMs = ms;
+    }
+
+    /** Waits for typing to pause before a refine. */
+    private final javafx.animation.PauseTransition typing = new javafx.animation.PauseTransition();
+
+    /** The latest search asked for: an answer for an earlier one is dropped. */
+    private long generation;
+
+    /** What the search under way was asked for, or null. */
+    private @Nullable Ask pending;
+
+    /** Counts the changes heard to the text searched while the bar is open: an answer for older text is redone. */
+    private long changes;
+
     /** Where the match the find is on starts, or -1: output that arrives can take the selection off it. */
     private int activeStart = -1;
 
@@ -87,6 +113,16 @@ final class ConsoleFindBar extends HBox {
     interface Target {
         String text();
 
+        /** The control this reads: two targets over the same control are the same text. */
+        default Object source() {
+            return this;
+        }
+
+        /** The text's length, without copying it. */
+        default int length() {
+            return text().length();
+        }
+
         int selectionStart();
 
         void select(int start, int end);
@@ -109,6 +145,16 @@ final class ConsoleFindBar extends HBox {
                 @Override
                 public String text() {
                     return area.getText();
+                }
+
+                @Override
+                public Object source() {
+                    return area;
+                }
+
+                @Override
+                public int length() {
+                    return area.getLength();
                 }
 
                 @Override
@@ -154,6 +200,16 @@ final class ConsoleFindBar extends HBox {
                 }
 
                 @Override
+                public Object source() {
+                    return control;
+                }
+
+                @Override
+                public int length() {
+                    return control.getLength();
+                }
+
+                @Override
                 public int selectionStart() {
                     return control.getSelection().getStart();
                 }
@@ -166,6 +222,13 @@ final class ConsoleFindBar extends HBox {
                 @Override
                 public void focus() {
                     control.requestFocus();
+                }
+
+                @Override
+                public Runnable watch(Runnable changed) {
+                    javafx.beans.value.ChangeListener<String> listener = (o, was, now) -> changed.run();
+                    control.textProperty().addListener(listener);
+                    return () -> control.textProperty().removeListener(listener);
                 }
             };
         }
@@ -215,7 +278,16 @@ final class ConsoleFindBar extends HBox {
         FocusCommands.press(this, "edit.cancel", close); // what closes the editor's find bar closes this one
         FocusCommands.bindIf(this, "find.toggleCase", PanelCommands.toggle(matchCase));
 
-        query.textProperty().addListener((o, was, now) -> refine());
+        typing.setOnFinished(e -> refine());
+        query.textProperty().addListener((o, was, now) -> {
+            int pause = typingPauseMs;
+            if (pause <= 0) {
+                refine();
+            } else {
+                typing.setDuration(javafx.util.Duration.millis(pause));
+                typing.playFromStart();
+            }
+        });
         matchCase.selectedProperty().addListener((o, was, now) -> refine());
         query.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ENTER) {
@@ -267,7 +339,12 @@ final class ConsoleFindBar extends HBox {
     /** Follows {@code text} for output that arrives while the bar is open: its matches are painted too. */
     private void watch(@Nullable Target text) {
         unwatch.run();
-        unwatch = text == null ? () -> {} : text.watch(this::repaintSoon);
+        unwatch = text == null
+                ? () -> {}
+                : text.watch(() -> {
+                    changes++;
+                    repaintSoon();
+                });
     }
 
     /** The text changed under an open bar: paint its matches again, once for a burst of output. */
@@ -282,16 +359,7 @@ final class ConsoleFindBar extends HBox {
             if (text == null || !isShowing()) {
                 return;
             }
-            List<int[]> matches = matches(text.text());
-            int at = -1;
-            for (int i = 0; i < matches.size() && at < 0; i++) {
-                at = matches.get(i)[0] == activeStart ? i : -1;
-            }
-            if (at >= 0 || matches.isEmpty()) {
-                show(text, matches, at); // the count grows with the output, the find staying on its match
-            } else {
-                paint(text, matches, -1); // its match was trimmed away: the count stays until the next step
-            }
+            search(Ask.REPAINT, 0);
         });
     }
 
@@ -320,8 +388,11 @@ final class ConsoleFindBar extends HBox {
         return isVisible();
     }
 
-    /** Hides the bar and gives the keyboard back to the text it searched. Nothing is pending to cancel. */
+    /** Hides the bar and gives the keyboard back to the text it searched; a search under way is dropped. */
     void close() {
+        typing.stop();
+        generation++;
+        pending = null;
         setVisible(false);
         setManaged(false);
         unwatch.run();
@@ -357,61 +428,126 @@ final class ConsoleFindBar extends HBox {
 
     /** The match at or after the anchor, else the first — what typing into the field keeps in view. */
     private void refine() {
+        typing.stop();
         Target area = target.get();
         if (area == null || !isShowing()) {
             return;
         }
-        List<int[]> matches = matches(area.text());
-        if (matches.isEmpty()) {
-            show(area, matches, -1);
-            return;
-        }
-        int from = Math.min(anchor, area.text().length());
-        int at = 0;
-        for (int i = 0; i < matches.size(); i++) {
-            if (matches.get(i)[0] >= from) {
-                at = i;
-                break;
-            }
-        }
-        select(area, matches, at);
+        search(Ask.REFINE, 0);
     }
 
     /** The next match after the selection ({@code forward}) or the last one before it, wrapping around. */
     private void step(boolean forward) {
+        typing.stop();
+        if (target.get() == null) {
+            return;
+        }
+        search(forward ? Ask.NEXT : Ask.PREVIOUS, 0);
+    }
+
+    /** What a search was asked for: where it leaves the find once its matches land. */
+    private enum Ask {
+        REFINE,
+        NEXT,
+        PREVIOUS,
+        REPAINT
+    }
+
+    /**
+     * Searches a snapshot of the text off the FX thread and applies the answer to the text it was found in
+     * (PERF-01, Pauta 6.0.1). A later ask supersedes it (a repaint never supersedes a step or a refine, which
+     * paints too); text that changed meanwhile is searched again, up to three times, and then the latest answer is
+     * applied anyway, the queued repaint of the newer text following it.
+     */
+    private void search(Ask ask, int tries) {
         Target area = target.get();
         if (area == null) {
             return;
         }
-        List<int[]> matches = matches(area.text());
+        if (ask == Ask.REPAINT && pending != null && pending != Ask.REPAINT) {
+            return; // the step or refine under way paints when it lands
+        }
+        String text = area.text();
+        String needle = query.getText();
+        boolean caseSensitive = matchCase.isSelected();
+        int selectionStart = area.selectionStart();
+        long mine = ++generation;
+        long version = changes;
+        pending = ask;
+        com.editora.perf.OffFx.then(SEARCH_SITE, () -> matches(text, needle, caseSensitive), answer -> {
+            Target now = target.get();
+            if (mine != generation || now == null || now.source() != area.source()) {
+                return; // superseded, or the bar now searches another console
+            }
+            pending = null;
+            if (version != changes && tries < 3) {
+                search(ask, tries + 1);
+                return;
+            }
+            if (ask == Ask.REFINE && !isShowing()) {
+                return;
+            }
+            apply(ask, area, answer.or(List.of()), text.length(), selectionStart);
+        });
+    }
+
+    private void apply(Ask ask, Target area, List<int[]> matches, int length, int selectionStart) {
         if (matches.isEmpty()) {
             show(area, matches, -1);
             return;
         }
-        int selectionStart = area.selectionStart();
-        int at;
-        if (forward) {
-            at = 0;
-            for (int i = 0; i < matches.size(); i++) {
-                if (matches.get(i)[0] > selectionStart) {
-                    at = i;
-                    break;
+        switch (ask) {
+            case REFINE -> {
+                int from = Math.min(anchor, length);
+                int at = 0;
+                for (int i = 0; i < matches.size(); i++) {
+                    if (matches.get(i)[0] >= from) {
+                        at = i;
+                        break;
+                    }
                 }
+                select(area, matches, at);
             }
-        } else {
-            at = matches.size() - 1;
-            for (int i = matches.size() - 1; i >= 0; i--) {
-                if (matches.get(i)[0] < selectionStart) {
-                    at = i;
-                    break;
+            case NEXT -> {
+                int at = 0;
+                for (int i = 0; i < matches.size(); i++) {
+                    if (matches.get(i)[0] > selectionStart) {
+                        at = i;
+                        break;
+                    }
+                }
+                select(area, matches, at);
+            }
+            case PREVIOUS -> {
+                int at = matches.size() - 1;
+                for (int i = matches.size() - 1; i >= 0; i--) {
+                    if (matches.get(i)[0] < selectionStart) {
+                        at = i;
+                        break;
+                    }
+                }
+                select(area, matches, at);
+            }
+            case REPAINT -> {
+                int at = -1;
+                for (int i = 0; i < matches.size() && at < 0; i++) {
+                    at = matches.get(i)[0] == activeStart ? i : -1;
+                }
+                if (at >= 0) {
+                    show(area, matches, at); // the count grows with the output, the find staying on its match
+                } else {
+                    paint(area, matches, -1); // its match was trimmed away: the count stays until the next step
                 }
             }
         }
-        select(area, matches, at);
     }
 
     private void select(Target area, List<int[]> matches, int at) {
         int[] match = matches.get(at);
+        if (match[1] > area.length()) {
+            paint(area, matches, -1); // the text was cut since it was searched: the repaint it queued follows
+            return;
+        }
         area.select(match[0], match[1]);
         activeStart = match[0];
         show(area, matches, at);
@@ -434,13 +570,17 @@ final class ConsoleFindBar extends HBox {
 
     /** Every {@code [start, end)} of the query in {@code text}, at most {@link #MAX_MATCHES} of them. */
     List<int[]> matches(String text) {
-        String needle = query.getText();
+        return matches(text, query.getText(), matchCase.isSelected());
+    }
+
+    /** As {@link #matches(String)} for a query given, on any thread. */
+    static List<int[]> matches(@Nullable String text, String needle, boolean caseSensitive) {
         List<int[]> out = new ArrayList<>();
         if (needle.isEmpty() || text == null || text.isEmpty()) {
             return out;
         }
         // A quoted pattern rather than a lower-cased indexOf: case folding can change a string's length.
-        int flags = matchCase.isSelected() ? 0 : Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
+        int flags = caseSensitive ? 0 : Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
         Matcher m = Pattern.compile(Pattern.quote(needle), flags).matcher(text);
         while (m.find() && out.size() < MAX_MATCHES) {
             out.add(new int[] {m.start(), m.end()});

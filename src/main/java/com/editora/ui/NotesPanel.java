@@ -99,8 +99,18 @@ public class NotesPanel extends VBox implements ToolWindowContent {
 
         filterField.setPromptText(tr("notes.filterPrompt"));
         filterField.getStyleClass().add("notes-filter");
-        filterField.textProperty().addListener((o, w, n) -> refresh());
-        FilterFieldNav.install(filterField, tree, this::activateSelected); // Down/Enter → into / open the results
+        filterField.textProperty().addListener((o, w, n) -> {
+            activateWhenFiltered = false; // typed on after Enter: the Enter was for the text before
+            refresh();
+        });
+        // Down/Enter → into / open the results; Enter typed before the filter's answer opens the first of the latest
+        FilterFieldNav.install(filterField, tree, () -> {
+            if (filterSearch.pending()) {
+                activateWhenFiltered = true;
+            } else {
+                activateSelected();
+            }
+        });
         // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project panel).
         Button clear = new Button("✕");
         clear.getStyleClass().add("project-filter-clear");
@@ -192,6 +202,65 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 : filterField.getText().strip().toLowerCase();
         Scope scope = source.get();
         Map<String, Map<String, List<PersonalNote>>> byProject = scope.byProject();
+        if (filter.isEmpty()) {
+            filterSearch.cancel();
+            show(scope, byProject, null);
+            return;
+        }
+        // Matched off the FX thread (PERF-01, Pauta 6.0.1), on a copy of each note's file and text; the tree shown
+        // stays until the latest filter's answer lands.
+        List<String> files = new ArrayList<>();
+        List<PersonalNote> notes = new ArrayList<>();
+        byProject
+                .values()
+                .forEach(bucket -> bucket.forEach((fileKey, list) -> {
+                    if (list != null) {
+                        for (PersonalNote note : list) {
+                            files.add(fileKey);
+                            notes.add(note);
+                        }
+                    }
+                }));
+        filterSearch.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    java.util.Set<PersonalNote> kept =
+                            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                    for (int i = 0; i < notes.size(); i++) {
+                        if (matches(files.get(i), notes.get(i), filter)) {
+                            kept.add(notes.get(i));
+                        }
+                    }
+                    return kept;
+                },
+                kept -> {
+                    show(scope, byProject, kept);
+                    if (activateWhenFiltered) {
+                        activateWhenFiltered = false;
+                        activateSelected();
+                    }
+                });
+    }
+
+    /** Where the filter is matched against the notes: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "NotesPanel.filter";
+
+    /** The filter in flight: a newer keystroke (or refresh) supersedes it, and only the latest answer is shown. */
+    private final LatestOnly filterSearch = PickerSearch.latest();
+
+    /** Enter was pressed in the filter field while its answer was still coming: open the row once it lands. */
+    private boolean activateWhenFiltered;
+
+    /** Whether the tree is not yet the latest filter's (a test waits on it). */
+    boolean filtering() {
+        return filterSearch.pending();
+    }
+
+    /** Builds the tree: every note when {@code kept} is null, else the notes the filter kept. */
+    private void show(
+            Scope scope,
+            Map<String, Map<String, List<PersonalNote>>> byProject,
+            java.util.@Nullable Set<PersonalNote> kept) {
         currentKey = scope.currentKey() == null ? "" : scope.currentKey();
 
         List<String> withContent = new ArrayList<>();
@@ -220,7 +289,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 }
                 List<TreeItem<Row>> kids = new ArrayList<>();
                 for (PersonalNote note : notes) {
-                    if (filter.isEmpty() || matches(fileKey, note, filter)) {
+                    if (kept == null || kept.contains(note)) {
                         kids.add(new TreeItem<>(new NoteRow(key, fileKey, note)));
                     }
                 }

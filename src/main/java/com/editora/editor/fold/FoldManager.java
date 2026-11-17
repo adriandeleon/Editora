@@ -140,8 +140,6 @@ public final class FoldManager {
     /** Suppresses change notifications while we programmatically restore saved folds. */
     private boolean restoring;
 
-    /** True from a deferred restore until its regions (or any newer ones) are applied. */
-    private boolean regionsPending;
     /** Saved collapsed header lines waiting for those regions, kept in step with edits; null when none. */
     private @Nullable List<Integer> pendingCollapsed;
 
@@ -270,6 +268,7 @@ public final class FoldManager {
         // without manual folds, i.e. almost all of them.
         area.plainTextChanges().subscribe(ch -> {
             recomputeGeneration++;
+            editCount++;
             noteEditNearFold(ch.getPosition(), ch.getInserted(), ch.getRemoved());
             if (manualRegions.isEmpty() && pendingCollapsed == null) {
                 return;
@@ -314,14 +313,26 @@ public final class FoldManager {
         List<Region> next = new ArrayList<>(manualRegions);
         next.add(r);
         manualRegions = next;
-        recompute(); // the new header needs its chevron before fold() records the collapse
-        fold(r);
+        if (!waitForRegions(() -> foldManual(r))) {
+            foldManual(r);
+        }
         return true;
+    }
+
+    /**
+     * Gives the new manual range its chevron at once, merged into the regions shown (no scan: the header needs it
+     * before {@link #fold} records the collapse), folds it, and has the regions detected again off the thread.
+     */
+    private void foldManual(Region r) {
+        List<Region> merged = new ArrayList<>(regions);
+        merged.add(r);
+        applyRegions(FoldRegions.canonicalOrder(merged));
+        fold(r);
+        recomputeAsync(false);
     }
 
     /** Removes every manual fold range, unfolding any that are collapsed. Returns how many were removed. */
     public int removeManualFolds() {
-        settleRegions();
         List<Region> removed = manualRegions;
         if (removed.isEmpty()) {
             return 0;
@@ -466,10 +477,50 @@ public final class FoldManager {
      * would reset the viewport).
      */
     public void recompute() {
+        recomputeAsync(true);
+    }
+
+    /** Applies the server and manual regions at once: with the heuristic off there is no text to scan. */
+    private void recomputeWithoutScan() {
         recomputeGeneration++; // invalidate a debounced result captured before this explicit recompute
         detectedGeneration = recomputeGeneration;
-        String text = heuristicEnabled ? textSnapshot.get() : "";
-        applyRegions(detectRegions(text, language, serverRegions, manualRegions, heuristicEnabled));
+        detecting = false;
+        applyRegions(detectRegions("", language, serverRegions, manualRegions, false));
+        runWaiters();
+    }
+
+    /**
+     * True while a detection a fold command must wait for is in flight: one started by a change of the regions'
+     * sources (language, server regions, manual ranges) or a restore, not the settle after typing.
+     */
+    private boolean detecting;
+
+    /** Fold commands asked for while {@link #detecting}, run in order when the regions land. */
+    private final List<Runnable> waiters = new ArrayList<>();
+
+    /** Runs {@code then} once the regions are known: now, or when the detection a command would wait for lands. */
+    public void whenRegionsKnown(Runnable then) {
+        if (!waitForRegions(then)) {
+            then.run();
+        }
+    }
+
+    /** Queues {@code again} when the regions are being detected; false when they are known and it may go on now. */
+    private boolean waitForRegions(Runnable again) {
+        if (!detecting) {
+            return false;
+        }
+        waiters.add(again);
+        return true;
+    }
+
+    private void runWaiters() {
+        if (waiters.isEmpty()) {
+            return;
+        }
+        List<Runnable> now = new ArrayList<>(waiters);
+        waiters.clear();
+        now.forEach(Runnable::run);
     }
 
     /**
@@ -490,24 +541,35 @@ public final class FoldManager {
      * applied synchronously, which reads no text.
      */
     public void recomputeAsync() {
+        recomputeAsync(false);
+    }
+
+    /**
+     * As {@link #recomputeAsync()}; {@code awaited} makes fold commands wait for the answer (PERF-01, Pauta 6.0.1:
+     * every recompute scans off the FX thread, and a command never acts on regions not yet known).
+     */
+    private void recomputeAsync(boolean awaited) {
         if (!heuristicEnabled) {
-            recompute();
+            recomputeWithoutScan();
             return;
         }
         long generation = ++recomputeGeneration;
         detectedGeneration = generation;
+        detecting |= awaited;
         String text = textSnapshot.get();
         String languageSnapshot = language;
         List<Region> serverSnapshot = serverRegions;
         List<Region> manualSnapshot = manualRegions;
-        Thread.ofVirtual().name("editora-fold-detect").start(() -> {
-            List<Region> detected = detectRegions(text, languageSnapshot, serverSnapshot, manualSnapshot, true);
-            javafx.application.Platform.runLater(() -> {
-                if (generation == recomputeGeneration && heuristicEnabled) {
-                    applyRegions(detected);
-                }
-            });
-        });
+        com.editora.perf.OffFx.then(
+                DETECT_SITE,
+                () -> detectRegions(text, languageSnapshot, serverSnapshot, manualSnapshot, true),
+                answer -> {
+                    if (generation == recomputeGeneration && heuristicEnabled) {
+                        detecting = false;
+                        applyRegions(answer.or(List.of()));
+                        runWaiters();
+                    }
+                });
     }
 
     /**
@@ -545,7 +607,6 @@ public final class FoldManager {
 
     private void applyRegions(List<Region> detected) {
         List<Integer> restoreCollapsed = pendingCollapsed;
-        regionsPending = false;
         pendingCollapsed = null;
         Set<Integer> oldStarts = byStart.keySet();
         regions = detected;
@@ -657,25 +718,7 @@ public final class FoldManager {
             merged.addAll(collapsed);
             pendingCollapsed = merged;
         }
-        regionsPending = true;
-        recomputeAsync();
-    }
-
-    /**
-     * Regions a deferred restore is still detecting are computed now: an explicit fold command acts on the
-     * regions, so it cannot run against the empty list of a file that has only just opened.
-     */
-    private void settleRegions() {
-        if (regionsPending) {
-            recompute();
-        }
-    }
-
-    /** As {@link #settleRegions}, for a caller that only cares about folds that are saved but not yet applied. */
-    private void settleCollapsed() {
-        if (pendingCollapsed != null) {
-            recompute();
-        }
+        recomputeAsync(true);
     }
 
     /** Recreates the gutter graphics of those of {@code lines} (null = all) that {@code view} is showing. */
@@ -926,27 +969,61 @@ public final class FoldManager {
      * collapsed header and its hidden body are ONE line, as they are on screen. The line breaks inside a
      * fold become {@link #HIDDEN_BREAK}, which keeps every offset unchanged; pass the edit's replacement
      * through {@link #restoreBreaks}. Returns {@code text} itself when no collapsed fold is at, directly
-     * above or directly below the caret's line {@code par} — the only folds such a command can reach.
+     * above or directly below any of the lines {@code pars} — the only folds such a command can reach.
+     *
+     * <p>Only those folds are looked at (PERF-01, Pauta 6.0.1): the hidden runs that touch the lines around each
+     * of {@code pars}, found from the area's fold state, and the check for a real {@link #HIDDEN_BREAK} covers
+     * just the lines a command can rewrite — never a walk over the whole document on the FX thread.
      */
-    public String linesAsUnits(String text, int par) {
+    public String linesAsUnits(String text, int... pars) {
         lastUnitsMasked = false;
         int n = area.getParagraphs().size();
-        boolean near = false;
-        for (int p = Math.max(0, par - 1); p <= par + 2 && p < n && !near; p++) {
-            near = area.isFolded(p);
+        List<int[]> runs = new ArrayList<>(); // [first hidden line, last hidden line]
+        int spanFrom = Integer.MAX_VALUE;
+        int spanTo = -1;
+        for (int par : pars) {
+            int lo = Integer.MAX_VALUE;
+            int hi = -1;
+            for (int p = Math.max(0, par - 1); p <= par + 2 && p < n; p++) {
+                if (area.isFolded(p)) {
+                    lo = Math.min(lo, p);
+                    hi = Math.max(hi, p);
+                }
+            }
+            if (hi < 0) {
+                continue;
+            }
+            while (lo > 0 && area.isFolded(lo - 1)) {
+                lo--;
+            }
+            while (hi + 1 < n && area.isFolded(hi + 1)) {
+                hi++;
+            }
+            runs.add(new int[] {lo, hi});
+            spanFrom = Math.min(spanFrom, Math.min(Math.max(0, par - 1), Math.max(0, lo - 1)));
+            spanTo = Math.max(spanTo, Math.max(Math.min(n - 1, par + 2), hi));
         }
-        if (!near || text.indexOf(HIDDEN_BREAK) >= 0) {
+        if (runs.isEmpty()) {
             return text;
         }
-        char[] chars = text.toCharArray();
-        int line = 0;
-        for (int i = 0; i < chars.length; i++) {
-            if (chars[i] == '\n' && ++line < n && area.isFolded(line)) {
-                chars[i] = HIDDEN_BREAK;
-                lastUnitsMasked = true;
+        int from = Math.min(text.length(), area.getAbsolutePosition(spanFrom, 0));
+        int to = spanTo + 1 < n ? Math.min(text.length(), area.getAbsolutePosition(spanTo + 1, 0)) : text.length();
+        for (int i = from; i < to; i++) {
+            if (text.charAt(i) == HIDDEN_BREAK) {
+                return text; // a real NUL where the command works: never masked
             }
         }
-        return new String(chars);
+        char[] chars = text.toCharArray();
+        for (int[] run : runs) {
+            for (int p = Math.max(1, run[0]); p <= run[1]; p++) {
+                int brk = area.getAbsolutePosition(p, 0) - 1;
+                if (brk >= 0 && brk < chars.length && chars[brk] == '\n') {
+                    chars[brk] = HIDDEN_BREAK;
+                    lastUnitsMasked = true;
+                }
+            }
+        }
+        return lastUnitsMasked ? new String(chars) : text;
     }
 
     /**
@@ -1116,7 +1193,7 @@ public final class FoldManager {
      * shown rather than silently scrolled to a hidden paragraph.)
      */
     public void unfoldContaining(int line) {
-        settleCollapsed();
+        // A restore still detecting has folded nothing yet; when it lands it keeps open the region the caret is in.
         int n = area.getParagraphs().size();
         if (line < 0 || line >= n || !area.isFolded(line)) {
             return;
@@ -1139,7 +1216,9 @@ public final class FoldManager {
     }
 
     public void foldAll() {
-        settleRegions();
+        if (waitForRegions(() -> foldAll())) {
+            return; // done once the detection in flight lands
+        }
         int topPar = firstVisiblePar();
         int keptCaret = area.getCaretPosition();
         int keptAnchor = area.getAnchor();
@@ -1210,7 +1289,9 @@ public final class FoldManager {
     }
 
     public void unfoldAll() {
-        settleRegions();
+        if (waitForRegions(() -> unfoldAll())) {
+            return; // done once the detection in flight lands
+        }
         if (!hasCollapsedParagraph()) {
             return; // nothing folded: skip firstVisiblePar() (a forced VirtualFlow layout) and the shade sweep
         }
@@ -1253,7 +1334,9 @@ public final class FoldManager {
      * thousands of nested collapses in a big file bloats the persisted fold state for no visible change.
      */
     public void foldAllExcept(int line) {
-        settleRegions();
+        if (waitForRegions(() -> foldAllExcept(line))) {
+            return; // done once the detection in flight lands
+        }
         int topPar = firstVisiblePar();
         int keptCaret = area.getCaretPosition();
         int keptAnchor = area.getAnchor();
@@ -1290,7 +1373,9 @@ public final class FoldManager {
      * collapsed fold, so "except the fold I'm on" reads naturally).
      */
     public void unfoldAllExcept(int line) {
-        settleRegions();
+        if (waitForRegions(() -> unfoldAllExcept(line))) {
+            return; // done once the detection in flight lands
+        }
         int topPar = firstVisiblePar();
         int keptCaret = area.getCaretPosition();
         int keptAnchor = area.getAnchor();
@@ -1328,26 +1413,77 @@ public final class FoldManager {
         unfoldAllExcept(caretLine.getAsInt());
     }
 
-    /** Folds every multi-line block comment (VS Code's {@code foldAllBlockComments}). Returns the count. */
-    public int foldAllBlockComments() {
-        settleRegions();
-        return foldExactly(FoldRegions.blockComments(textSnapshot.get(), language));
+    /**
+     * Folds every multi-line block comment (VS Code's {@code foldAllBlockComments}); {@code done} gets the count on
+     * the FX thread once the comments are found, off it (PERF-01, Pauta 6.0.1). Refused while a kind scan is in
+     * flight.
+     */
+    public void foldAllBlockComments(java.util.function.IntConsumer done) {
+        String lang = language;
+        scanKind(text -> FoldRegions.blockComments(text, lang), found -> done.accept(foldExactly(found)));
     }
 
-    /** Folds every {@code #region} marker region (VS Code's {@code foldAllMarkerRegions}). Returns the count. */
-    public int foldAllMarkerRegions() {
-        settleRegions();
-        return foldExactly(FoldRegions.markers(textSnapshot.get(), language));
+    /** Folds every {@code #region} marker region (VS Code's {@code foldAllMarkerRegions}), as above. */
+    public void foldAllMarkerRegions(java.util.function.IntConsumer done) {
+        String lang = language;
+        scanKind(text -> FoldRegions.markers(text, lang), found -> done.accept(foldExactly(found)));
     }
 
-    /** Unfolds every {@code #region} marker region ({@code unfoldAllMarkerRegions}). Returns the count. */
-    public int unfoldAllMarkerRegions() {
-        settleRegions();
+    /** Unfolds every {@code #region} marker region ({@code unfoldAllMarkerRegions}), as above. */
+    public void unfoldAllMarkerRegions(java.util.function.IntConsumer done) {
+        String lang = language;
+        scanKind(text -> FoldRegions.markers(text, lang), found -> done.accept(unfoldMarkers(found)));
+    }
+
+    /** The scan of one kind of region (comments, markers) for a command, named for {@link com.editora.perf.BlockingSites}. */
+    public static final String KIND_SCAN_SITE = "FoldManager.kindScan";
+
+    /** The scan of a recompute, named for {@link com.editora.perf.BlockingSites}. */
+    public static final String DETECT_SITE = "FoldManager.detect";
+
+    /** Whether a kind scan is in flight: a second command meanwhile is refused. */
+    private boolean kindScanBusy;
+
+    /** Counts edits, so a kind scan's answer applies only to the text it was made from. */
+    private long editCount;
+
+    /**
+     * Runs {@code scan} on a snapshot of the text off the FX thread and {@code apply} with its answer on it, when the
+     * text has not changed meanwhile; otherwise scans again (at most three times), then gives up.
+     */
+    private void scanKind(
+            java.util.function.Function<String, List<Region>> scan, java.util.function.Consumer<List<Region>> apply) {
+        if (kindScanBusy) {
+            return;
+        }
+        kindScanBusy = true;
+        scanKind(scan, apply, 3);
+    }
+
+    private void scanKind(
+            java.util.function.Function<String, List<Region>> scan,
+            java.util.function.Consumer<List<Region>> apply,
+            int triesLeft) {
+        long edits = editCount;
+        String text = textSnapshot.get();
+        com.editora.perf.OffFx.then(KIND_SCAN_SITE, () -> scan.apply(text), answer -> {
+            if (edits != editCount && triesLeft > 1) {
+                scanKind(scan, apply, triesLeft - 1); // typed meanwhile: its lines moved
+                return;
+            }
+            kindScanBusy = false;
+            if (edits == editCount && answer.ok()) {
+                apply.accept(answer.or(List.of()));
+            }
+        });
+    }
+
+    private int unfoldMarkers(List<Region> markers) {
         int topPar = firstVisiblePar();
         int keptCaret = area.getCaretPosition();
         int keptAnchor = area.getAnchor();
         int n = 0;
-        for (Region r : FoldRegions.markers(textSnapshot.get(), language)) {
+        for (Region r : markers) {
             // Same phantom-header guard as unfoldAllExcept: a marker region hidden inside a folded
             // ancestor reads as collapsed, and unfolding it would rip the ancestor open.
             if (isCollapsed(r.startLine()) && !area.isFolded(r.startLine())) {
@@ -1387,7 +1523,9 @@ public final class FoldManager {
 
     /** Collapses the innermost expanded foldable region around the caret; no-op if none applies. */
     public void foldAtCaret() {
-        settleRegions();
+        if (waitForRegions(() -> foldAtCaret())) {
+            return; // done once the detection in flight lands
+        }
         int line = caretLine.getAsInt();
         Region target = null; // innermost (largest startLine) containing, expanded region
         for (Region r : regions) {
@@ -1405,7 +1543,9 @@ public final class FoldManager {
 
     /** Expands the collapsed region at the caret (its header line, or the innermost containing it). */
     public void unfoldAtCaret() {
-        settleRegions();
+        if (waitForRegions(() -> unfoldAtCaret())) {
+            return; // done once the detection in flight lands
+        }
         int line = caretLine.getAsInt();
         Region atHeader = byStart.get(line);
         if (atHeader != null && isCollapsed(atHeader.startLine())) {
@@ -1428,7 +1568,9 @@ public final class FoldManager {
 
     /** Toggles the region at the caret: expands it if collapsed, otherwise collapses it. */
     public void toggleFoldAtCaret() {
-        settleRegions();
+        if (waitForRegions(() -> toggleFoldAtCaret())) {
+            return; // done once the detection in flight lands
+        }
         int line = caretLine.getAsInt();
         boolean collapsedHere = false;
         for (Region r : regions) {
@@ -1450,7 +1592,9 @@ public final class FoldManager {
      * levels stay open and deeper regions are hidden inside the folds (revealing them when unfolded).
      */
     public void foldLevel(int level) {
-        settleRegions();
+        if (waitForRegions(() -> foldLevel(level))) {
+            return; // done once the detection in flight lands
+        }
         int topPar = firstVisiblePar();
         int keptCaret = area.getCaretPosition();
         int keptAnchor = area.getAnchor();
@@ -1468,7 +1612,9 @@ public final class FoldManager {
 
     /** Collapses the innermost region around the caret <b>and</b> every region nested inside it. */
     public void foldRecursivelyAtCaret() {
-        settleRegions();
+        if (waitForRegions(() -> foldRecursivelyAtCaret())) {
+            return; // done once the detection in flight lands
+        }
         Region target = FoldTree.innermostContaining(regions, caretLine.getAsInt());
         if (target == null) {
             return;
@@ -1496,7 +1642,9 @@ public final class FoldManager {
 
     /** Expands the collapsed region around the caret <b>and</b> every region nested inside it. */
     public void unfoldRecursivelyAtCaret() {
-        settleRegions();
+        if (waitForRegions(() -> unfoldRecursivelyAtCaret())) {
+            return; // done once the detection in flight lands
+        }
         int line = caretLine.getAsInt();
         Region target = byStart.get(line);
         if (target == null || !isCollapsed(target.startLine())) {
@@ -1589,12 +1737,20 @@ public final class FoldManager {
 
     /** Header line indices of every currently collapsed region, for persistence. */
     public List<Integer> collapsedStartLines() {
-        settleCollapsed();
         List<Integer> out = new ArrayList<>();
         for (Region r : regions) {
             if (isCollapsed(r.startLine())) {
                 out.add(r.startLine());
             }
+        }
+        List<Integer> pending = pendingCollapsed;
+        if (pending != null) { // a restore still detecting: its folds are saved as they will be applied
+            for (int line : pending) {
+                if (!out.contains(line)) {
+                    out.add(line);
+                }
+            }
+            java.util.Collections.sort(out);
         }
         return out;
     }

@@ -288,7 +288,13 @@ class FileFinderFxTest {
     void aLateLookChoosesNothingAndASecondEnterWaitsForTheFirst(@TempDir Path root) throws Exception {
         tree(root);
         java.util.List<Runnable> held = new java.util.ArrayList<>();
-        com.editora.perf.OffFx.runnerForTest((name, task) -> held.add(task));
+        com.editora.perf.OffFx.runnerForTest((name, task) -> {
+            if ("file-finder-look".equals(name)) {
+                held.add(task); // the Enter's look is what this holds
+            } else {
+                task.run(); // the list's filter and any other work land at once
+            }
+        });
         try (Shown s = new Shown(root, false, 5)) {
             s.type(root + SEP + "late.txt");
             s.press(KeyCode.ENTER);

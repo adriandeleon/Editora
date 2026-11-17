@@ -24,9 +24,9 @@ import javafx.scene.control.TextInputControl;
 
 import com.editora.config.Settings;
 import com.editora.config.SettingsFileCheck;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which Settings rows show a value other than the default, and putting one row back to its default.
@@ -45,8 +45,9 @@ final class SettingsModified {
         return !key.toLowerCase(java.util.Locale.ROOT).contains("apikey") && !key.startsWith("historyMax");
     }
 
+    /** Only introspects {@link Settings}' properties: no value is serialized or read as JSON here. */
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final JsonNode DEFAULTS = JSON.valueToTree(new Settings());
+
     private static final Map<String, String> TABLE = table();
 
     private final Map<Node, String> controlKeys = new IdentityHashMap<>();
@@ -119,13 +120,19 @@ final class SettingsModified {
         }
     }
 
-    /** The keys whose value in {@code settings} differs from the default. Pure apart from the shared defaults. */
+    /**
+     * The keys whose value in {@code settings} differs from the default. Pure apart from the shared defaults.
+     *
+     * <p>Compares the properties' values as {@code settings.json} would write them, read through their accessors,
+     * with no JSON made (PERF-01, Pauta 6.0.1: this runs on the FX thread on every change in Settings). Numbers
+     * compare by value, and a map or an object of the app's own matches when each of its entries matches the
+     * default's, as {@link SettingsFileCheck#sameValue} judges two written values.
+     */
     static Set<String> modifiedKeys(Settings settings) {
-        JsonNode now = JSON.valueToTree(settings);
         Set<String> out = new LinkedHashSet<>();
-        for (Iterator<String> it = now.fieldNames(); it.hasNext(); ) {
-            String key = it.next();
-            if (marked(key) && !SettingsFileCheck.sameValue(now.get(key), DEFAULTS.path(key))) {
+        for (Map.Entry<String, Prop> e : PROPERTIES.entrySet()) {
+            String key = e.getKey();
+            if (marked(key) && !same(read(e.getValue(), settings), DEFAULT_VALUES.get(key))) {
                 out.add(key);
             }
         }
@@ -137,58 +144,208 @@ final class SettingsModified {
         return out;
     }
 
+    /**
+     * The keys whose value differs between {@code before} and {@code now}, compared as {@link #modifiedKeys} does but
+     * both ways (a map entry added or removed counts). No JSON is made.
+     */
+    static Set<String> changedKeys(Settings before, Settings now) {
+        Set<String> out = new LinkedHashSet<>();
+        for (Map.Entry<String, Prop> e : PROPERTIES.entrySet()) {
+            Object a = read(e.getValue(), before);
+            Object b = read(e.getValue(), now);
+            if (!same(a, b) || !same(b, a)) {
+                out.add(e.getKey());
+            }
+        }
+        return out;
+    }
+
     /** Puts {@code keys} of {@code settings} back to their defaults. */
     static void reset(Settings settings, Set<String> keys) {
-        ObjectNode defaults = JSON.createObjectNode();
         for (String key : keys) {
             switch (key) {
-                case "keymap" ->
-                    KeymapLayers.switchKeymap(settings, DEFAULTS.path("keymap").asText());
+                case "keymap" -> KeymapLayers.switchKeymap(settings, DEFAULTS.getKeymap());
                 case "editorTheme" -> {
                     settings.setEditorThemeUserSet(false);
                     settings.setEditorTheme(EditorThemes.defaultFor(settings.getTheme()));
                 }
                 default -> {
-                    if (marked(key) && DEFAULTS.has(key)) {
-                        defaults.set(key, DEFAULTS.get(key));
+                    Prop property = PROPERTIES.get(key);
+                    if (marked(key) && property != null) {
+                        write(property, settings, copyOf(DEFAULT_VALUES.get(key)));
                     }
                 }
             }
         }
-        try {
-            JSON.readerForUpdating(settings).readValue((JsonNode) defaults);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 
     /** The values {@code keys} have in {@code settings} now, for {@link #restore} to put back after a {@link #reset}. */
-    static ObjectNode values(Settings settings, Set<String> keys) {
-        JsonNode now = JSON.valueToTree(settings);
-        ObjectNode out = JSON.createObjectNode();
+    static Map<String, @Nullable Object> values(Settings settings, Set<String> keys) {
+        Map<String, @Nullable Object> out = new LinkedHashMap<>();
         for (String key : keys) {
-            if (now.has(key)) {
-                out.set(key, now.get(key));
+            Prop property = PROPERTIES.get(key);
+            if (property != null) {
+                out.put(key, copyOf(read(property, settings)));
             }
-            if (key.equals("editorTheme") && now.has("editorThemeUserSet")) {
-                out.set("editorThemeUserSet", now.get("editorThemeUserSet")); // whether the theme was picked
+            if (key.equals("editorTheme")) {
+                out.put("editorThemeUserSet", settings.isEditorThemeUserSet()); // whether the theme was picked
             }
         }
         return out;
     }
 
     /** Puts {@code values} (from {@link #values}) back into {@code settings}. */
-    static void restore(Settings settings, ObjectNode values) {
-        ObjectNode rest = values.deepCopy();
-        JsonNode keymap = rest.remove("keymap");
+    static void restore(Settings settings, Map<String, @Nullable Object> values) {
+        Map<String, @Nullable Object> rest = new LinkedHashMap<>(values);
+        Object keymap = rest.remove("keymap");
         if (keymap != null) {
-            KeymapLayers.switchKeymap(settings, keymap.asText()); // as reset does: the keymap's own bindings follow
+            // as reset does: the keymap's own bindings follow
+            KeymapLayers.switchKeymap(settings, String.valueOf(keymap));
+        }
+        for (Map.Entry<String, @Nullable Object> e : rest.entrySet()) {
+            Prop property = PROPERTIES.get(e.getKey());
+            if (property != null) {
+                write(property, settings, copyOf(e.getValue()));
+            }
+        }
+    }
+
+    private static @Nullable Object copyOf(@Nullable Object value) {
+        return value == null ? null : com.editora.config.Snapshots.copy(value);
+    }
+
+    /** The defaults, a fresh {@link Settings}. */
+    private static final Settings DEFAULTS = new Settings();
+
+    /** Each property {@code settings.json} writes, by its key: how it is read and written. */
+    private static final Map<String, Prop> PROPERTIES = properties(Settings.class);
+
+    /** Each property's default value. */
+    private static final Map<String, @Nullable Object> DEFAULT_VALUES = defaultValues();
+
+    private static final Map<Class<?>, Map<String, Prop>> OWN_PROPERTIES =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** A property as {@code settings.json} reads and writes it: its accessor, and its mutator when it has one. */
+    private record Prop(
+            com.fasterxml.jackson.databind.introspect.AnnotatedMember read,
+            com.fasterxml.jackson.databind.introspect.@Nullable AnnotatedMember write) {}
+
+    private static Map<String, Prop> properties(Class<?> type) {
+        Map<String, com.fasterxml.jackson.databind.introspect.AnnotatedMember> writes = new LinkedHashMap<>();
+        for (BeanPropertyDefinition p : JSON.getDeserializationConfig()
+                .introspect(JSON.constructType(type))
+                .findProperties()) {
+            com.fasterxml.jackson.databind.introspect.AnnotatedMember m = p.getNonConstructorMutator();
+            if (m != null) {
+                m.fixAccess(true);
+                writes.put(p.getName(), m);
+            }
+        }
+        Map<String, Prop> out = new LinkedHashMap<>();
+        for (BeanPropertyDefinition p : JSON.getSerializationConfig()
+                .introspect(JSON.constructType(type))
+                .findProperties()) {
+            com.fasterxml.jackson.databind.introspect.AnnotatedMember m = p.getAccessor();
+            if (m != null) {
+                m.fixAccess(true);
+                out.put(p.getName(), new Prop(m, writes.get(p.getName())));
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, @Nullable Object> defaultValues() {
+        Map<String, @Nullable Object> out = new LinkedHashMap<>();
+        PROPERTIES.forEach((key, property) -> out.put(key, read(property, DEFAULTS)));
+        return out;
+    }
+
+    private static @Nullable Object read(Prop property, Object bean) {
+        return property.read().getValue(bean);
+    }
+
+    private static void write(Prop property, Object bean, @Nullable Object value) {
+        com.fasterxml.jackson.databind.introspect.AnnotatedMember mutator = property.write();
+        if (mutator == null) {
+            return; // read-only: nothing writes it back from settings.json either
         }
         try {
-            JSON.readerForUpdating(settings).readValue((JsonNode) rest);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            if (mutator instanceof com.fasterxml.jackson.databind.introspect.AnnotatedMethod setter) {
+                setter.callOnWith(bean, value);
+            } else {
+                mutator.setValue(bean, value);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Cannot reset a setting", e);
         }
+    }
+
+    /**
+     * Whether {@code now} and {@code used} would be written as the same value (see {@link
+     * SettingsFileCheck#sameValue}): numbers by value, a map or an object of the app's own entry by entry (each of
+     * {@code now}'s found alike in {@code used}), a list or an array item by item, anything else by {@code equals}.
+     */
+    static boolean same(@Nullable Object now, @Nullable Object used) {
+        if (now == used) {
+            return true;
+        }
+        if (now == null || used == null) {
+            return false;
+        }
+        if (now instanceof Number a && used instanceof Number b) {
+            try {
+                return new java.math.BigDecimal(a.toString()).compareTo(new java.math.BigDecimal(b.toString())) == 0;
+            } catch (NumberFormatException e) {
+                return a.equals(b);
+            }
+        }
+        if (now instanceof Map<?, ?> a && used instanceof Map<?, ?> b) {
+            for (Map.Entry<?, ?> e : a.entrySet()) {
+                Object key = e.getKey();
+                if (!b.containsKey(key) || !same(e.getValue(), b.get(key))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (now instanceof Iterable<?> a && used instanceof Iterable<?> b) {
+            Iterator<?> x = a.iterator();
+            Iterator<?> y = b.iterator();
+            while (x.hasNext() && y.hasNext()) {
+                if (!same(x.next(), y.next())) {
+                    return false;
+                }
+            }
+            return !x.hasNext() && !y.hasNext();
+        }
+        if (now.getClass().isArray() && used.getClass().isArray()) {
+            int n = java.lang.reflect.Array.getLength(now);
+            if (n != java.lang.reflect.Array.getLength(used)) {
+                return false;
+            }
+            for (int i = 0; i < n; i++) {
+                if (!same(java.lang.reflect.Array.get(now, i), java.lang.reflect.Array.get(used, i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        Class<?> type = now.getClass();
+        if (type == used.getClass()
+                && !type.isEnum()
+                && type.getName().startsWith("com.editora.")
+                && !now.equals(used)) {
+            for (Prop p : OWN_PROPERTIES
+                    .computeIfAbsent(type, SettingsModified::properties)
+                    .values()) {
+                if (!same(read(p, now), read(p, used))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return now.equals(used);
     }
 
     /**

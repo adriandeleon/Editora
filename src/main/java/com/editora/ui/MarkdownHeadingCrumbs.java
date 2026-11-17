@@ -19,6 +19,9 @@ import org.reactfx.Subscription;
  * The breadcrumb's tail for a Markdown document: the headings that enclose the caret, outermost first, each
  * one a link to its line.
  *
+ * <p>The headings are parsed off the JavaFX thread on a snapshot (PERF-01, Pauta 6.0.1), the latest ask winning,
+ * and land only on the text they were read from; until then the crumbs show what they showed.
+ *
  * <p>Nothing here runs on a keystroke. A caret-line change or an edit only restarts a short pause; the
  * headings are re-read when it ends, and only if the text changed since they were last read — moving the
  * caret through an unchanged document walks a list already in hand. Lines are the editor's own, so a
@@ -30,6 +33,12 @@ final class MarkdownHeadingCrumbs extends HBox {
     private static final int MAX_CHARS = 2_000_000;
 
     private static final int MAX_TITLE = 40;
+
+    /** The name the heading parse is heard by, on its own thread. */
+    static final String SITE = "MarkdownHeadingCrumbs.headings";
+
+    private final LatestOnly parse =
+            new LatestOnly(task -> Thread.ofVirtual().name(SITE).start(task), javafx.application.Platform::runLater);
 
     private final PauseTransition pause = new PauseTransition(Duration.millis(180));
     private final ChangeListener<Integer> caretMoved = (obs, was, now) -> pause.playFromStart();
@@ -57,6 +66,7 @@ final class MarkdownHeadingCrumbs extends HBox {
         buffer = next;
         stale = true;
         headings = List.of();
+        parse.cancel();
         if (buffer == null) {
             show(List.of());
             return;
@@ -71,6 +81,7 @@ final class MarkdownHeadingCrumbs extends HBox {
 
     private void detach() {
         pause.stop();
+        parse.cancel();
         if (buffer != null) {
             buffer.getArea().currentParagraphProperty().removeListener(caretMoved);
         }
@@ -80,17 +91,45 @@ final class MarkdownHeadingCrumbs extends HBox {
         }
     }
 
-    /** Brings the crumbs up to date now (the pause calls it; tests call it to skip the wait). */
+    /**
+     * Brings the crumbs up to date (the pause calls it; tests call it to skip the wait): at once from the headings
+     * in hand, or once the text read since they were is parsed.
+     */
     void refresh() {
         if (buffer == null) {
             return;
         }
-        var area = buffer.getArea();
+        EditorBuffer target = buffer;
+        var area = target.getArea();
         if (stale) {
-            headings = area.getLength() > MAX_CHARS ? List.of() : MarkdownOutline.headings(area.getText());
-            stale = false;
+            if (area.getLength() > MAX_CHARS) {
+                headings = List.of();
+                stale = false;
+            } else {
+                long version = target.docVersion();
+                String text = target.text();
+                parse.submit(
+                        () -> {
+                            com.editora.perf.BlockingSites.enter(SITE);
+                            return MarkdownOutline.headings(text);
+                        },
+                        found -> {
+                            if (buffer != target || target.docVersion() != version) {
+                                return; // read from a text that has moved on: the edit's own pause asks again
+                            }
+                            headings = found;
+                            stale = false;
+                            show(MarkdownOutline.pathAt(headings, area.getCurrentParagraph()));
+                        });
+                return;
+            }
         }
         show(MarkdownOutline.pathAt(headings, area.getCurrentParagraph()));
+    }
+
+    /** Whether a parse of the headings is out (tests wait for it to land). */
+    boolean parsing() {
+        return parse.pending();
     }
 
     /** The titles on show, outermost first. */

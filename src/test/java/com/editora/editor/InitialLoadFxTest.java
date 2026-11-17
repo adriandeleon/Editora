@@ -131,8 +131,11 @@ class InitialLoadFxTest {
             holder[0] = buffer;
             buffer.setPath(java.nio.file.Path.of("Long.java"));
             buffer.setInitialContent(LONG_SOURCE);
-            buffer.getFoldManager().recompute();
-            assertTrue(buffer.getFoldManager().regionStartingAt(1).isPresent(), "the fixture has a block at line 1");
+            buffer.getFoldManager().recompute(); // detected off the FX thread (PERF-01)
+        });
+        await(() -> holder[0].getFoldManager().regionStartingAt(1).isPresent()); // the fixture has a block at line 1
+        runOnFx(() -> {
+            EditorBuffer buffer = holder[0];
             buffer.setInitialContent(LONG_SOURCE + "\n"); // a fresh load: the regions above are for the old text
             buffer.getArea().moveTo(0);
 
@@ -161,7 +164,6 @@ class InitialLoadFxTest {
                 buffer.getFoldManager().restore(List.of(), List.of(1));
                 // What a session save in this instant persists: the saved fold, not an empty list.
                 assertEquals(List.of(1), buffer.getFoldManager().collapsedStartLines());
-                assertTrue(buffer.getFoldManager().isCollapsed(1));
             } finally {
                 buffer.dispose();
             }

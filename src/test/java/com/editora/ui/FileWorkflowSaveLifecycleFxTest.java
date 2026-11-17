@@ -135,6 +135,14 @@ class FileWorkflowSaveLifecycleFxTest {
                 FxTestSupport.call(fx.controller, "closeTab", new Class<?>[] {Tab.class}, tab);
             });
             async.await(promptSeen, "the dirty-close Save choice");
+            // The write lands off the FX thread; the later edit comes from inside it.
+            SaveGuardsFxTest.awaitOnFx(async, "the save and the later edit", () -> {
+                try {
+                    return "saved snapshot".equals(Files.readString(file)) && "later edit".equals(buffer.getContent());
+                } catch (java.io.IOException e) {
+                    return false;
+                }
+            });
             async.awaitFx();
 
             assertEquals("saved snapshot", Files.readString(file));

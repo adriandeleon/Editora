@@ -692,35 +692,7 @@ final class LanguageServerSession implements LanguageClient {
             // old Redirect.DISCARD) surfaces *why* a server fails to come up (missing JDK, lock, bad command)
             // — otherwise that's invisible. Capped so a chatty server can't flood the log.
             drainStderr(process);
-            // Everything LSP4J sends goes through one ordered writer thread, so no caller — least of all
-            // the FX thread — ever blocks in a pipe write when the server stops reading its stdin.
-            AsyncPipeWriter out = new AsyncPipeWriter(
-                    process.getOutputStream(), "lsp-writer-" + command.get(0), this::onInputStalled);
-            writer = out;
-            // The builder keeps its JSON handler to itself; the deferred document-sync encoding needs the
-            // same one LSP4J encodes every other message with.
-            var json = new java.util.concurrent.atomic.AtomicReference<
-                    org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler>();
-            Launcher<LanguageServer> launcher = new Launcher.Builder<LanguageServer>() {
-                @Override
-                protected org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler createJsonHandler() {
-                    json.set(super.createJsonHandler());
-                    return json.get();
-                }
-            }.setLocalService(this)
-                    .setRemoteInterface(JdtLanguageServer.class)
-                    .setInput(process.getInputStream())
-                    .setOutput(out)
-                    .setExecutorService(executor)
-                    // LSP4J wraps both directions with this; only its stream writer is the outgoing end.
-                    .wrapMessages(consumer -> consumer instanceof org.eclipse.lsp4j.jsonrpc.json.StreamMessageConsumer
-                            ? new DeferredSyncConsumer(consumer, out, json::get)
-                            : new AfterRequestConsumer(
-                                    consumer, "workspace/configuration", this::configurationAnswered))
-                    .create();
-            this.launcher = launcher;
-            server = launcher.getRemoteProxy();
-            listening = launcher.startListening();
+            connect(process.getInputStream(), process.getOutputStream(), "lsp-writer-" + command.get(0));
             openProgress.clear(); // the last process's work ended with it
             jdtProgressIds.clear();
             metalsSpinning = false;
@@ -1471,7 +1443,8 @@ final class LanguageServerSession implements LanguageClient {
         }
         try {
             server().getWorkspaceService()
-                    .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
+                    .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(
+                            java.util.Objects.requireNonNull(frozen(settings))));
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "didChangeConfiguration failed", e);
         }
@@ -1742,6 +1715,102 @@ final class LanguageServerSession implements LanguageClient {
         return new TextDocumentIdentifier(named.toWire(key));
     }
 
+    /**
+     * Connects LSP4J to the server's streams: everything it sends goes through one ordered writer thread, so no
+     * caller — least of all the FX thread — ever blocks in a pipe write when the server stops reading its stdin,
+     * and the messages are encoded there too ({@link DeferredSyncConsumer}).
+     */
+    private void connect(java.io.InputStream in, java.io.OutputStream rawOut, String writerName) {
+        AsyncPipeWriter out = new AsyncPipeWriter(rawOut, writerName, this::onInputStalled);
+        writer = out;
+        // The builder keeps its JSON handler to itself; the deferred encoding needs the same one LSP4J encodes
+        // every other message with.
+        var json = new java.util.concurrent.atomic.AtomicReference<org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler>();
+        Launcher<LanguageServer> launcher = new Launcher.Builder<LanguageServer>() {
+            @Override
+            protected org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler createJsonHandler() {
+                json.set(super.createJsonHandler());
+                return json.get();
+            }
+        }.setLocalService(this)
+                .setRemoteInterface(JdtLanguageServer.class)
+                .setInput(in)
+                .setOutput(out)
+                .setExecutorService(executor)
+                // LSP4J wraps both directions with this; only its stream writer is the outgoing end.
+                .wrapMessages(consumer -> consumer instanceof org.eclipse.lsp4j.jsonrpc.json.StreamMessageConsumer
+                        ? new DeferredSyncConsumer(consumer, out, json::get)
+                        : new AfterRequestConsumer(consumer, "workspace/configuration", this::configurationAnswered))
+                .create();
+        this.launcher = launcher;
+        server = launcher.getRemoteProxy();
+        listening = launcher.startListening();
+    }
+
+    /**
+     * TEST SEAM — {@link #attachForTest} with the messages going over a wire as with a real server: {@code
+     * testServer} is served by LSP4J at the other end of a pair of pipes, so what this session sends is encoded and
+     * written on its writer thread and decoded on LSP4J's.
+     */
+    void attachWiredForTest(LanguageServer testServer, ServerCapabilities caps) throws java.io.IOException {
+        TestPipe up = new TestPipe();
+        TestPipe down = new TestPipe();
+        org.eclipse.lsp4j.launch.LSPLauncher.createServerLauncher(testServer, up.in, down.out)
+                .startListening();
+        connect(down.in, up.out, "lsp-writer-test");
+        LanguageServer wired = java.util.Objects.requireNonNull(server, "connected");
+        attachForTest(wired, caps);
+    }
+
+    /** A pipe for {@link #attachWiredForTest}: chunks handed over a queue, whichever threads read and write. */
+    private static final class TestPipe {
+        private final java.util.concurrent.BlockingQueue<byte[]> chunks =
+                new java.util.concurrent.LinkedBlockingQueue<>();
+
+        final java.io.OutputStream out = new java.io.OutputStream() {
+            @Override
+            public void write(int b) {
+                chunks.add(new byte[] {(byte) b});
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) {
+                chunks.add(java.util.Arrays.copyOfRange(b, off, off + len));
+            }
+        };
+
+        final java.io.InputStream in = new java.io.InputStream() {
+            private byte[] current = new byte[0];
+            private int at;
+
+            @Override
+            public int read() throws java.io.IOException {
+                byte[] one = new byte[1];
+                return read(one, 0, 1) < 0 ? -1 : one[0] & 0xff;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws java.io.IOException {
+                if (len == 0) {
+                    return 0;
+                }
+                while (at >= current.length) {
+                    try {
+                        current = chunks.take();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new java.io.InterruptedIOException();
+                    }
+                    at = 0;
+                }
+                int n = Math.min(len, current.length - at);
+                System.arraycopy(current, at, b, off, n);
+                at += n;
+                return n;
+            }
+        };
+    }
+
     void attachForTest(LanguageServer testServer, ServerCapabilities caps) {
         this.server = testServer;
         this.capabilities = caps;
@@ -1928,10 +1997,21 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * Syncs {@code text}. Returns false only when the server is known to hold exactly this text already, so
-     * nothing was (or will be) sent — and therefore nothing will make it publish diagnostics again.
+     * Syncs {@code text}. Returns false only when the server is known to hold exactly this text already (the very
+     * string last sent), so nothing was (or will be) sent — and therefore nothing will make it publish diagnostics
+     * again.
      */
     boolean didChange(String uri, String text) {
+        return didChange(uri, text, () -> {});
+    }
+
+    /**
+     * As {@link #didChange(String, String)}; {@code onIdentical} runs on the FX thread when the text turns out to
+     * be equal to what the server holds (an edit and its undo). That compare, the diff and the JSON are worked out
+     * on the writer thread, in wire order ({@link LazyChangeEvents}, PERF-01, Pauta 6.0.1): such a change still
+     * goes out, changing nothing, so the server's version is the one counted here.
+     */
+    boolean didChange(String uri, String text, Runnable onIdentical) {
         if (changeSyncDisabled()) {
             return true; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
         }
@@ -1942,15 +2022,18 @@ final class LanguageServerSession implements LanguageClient {
         // known post-initialize, and the shadow must be read in send order.
         whenReady("didChange:" + uri, () -> {
             if (changeSyncDisabled()) return;
-            List<TextDocumentContentChangeEvent> events = changeEventsFor(uri, text);
-            if (events.isEmpty()) {
+            LazyChangeEvents events = changeEventsFor(uri, text, onIdentical);
+            if (events == null) {
                 identical[0] = true;
-                return; // content identical to what the server already holds — nothing to sync
+                return; // the very text the server already holds — nothing to sync
             }
             int version = versions.merge(uri, 1, Integer::sum);
             server().getTextDocumentService()
                     .didChange(new DidChangeTextDocumentParams(
                             new VersionedTextDocumentIdentifier(named.toWire(uri), version), events));
+            if (writer == null) {
+                events.events(); // an in-process server (a test's): no writer thread to work them out on
+            }
         });
         return !identical[0]; // a send still queued for initialize has compared nothing yet: reported as sent
     }
@@ -1989,28 +2072,25 @@ final class LanguageServerSession implements LanguageClient {
      * and lets the server process incrementally (#678); otherwise (Full/unspecified/no shadow) the whole
      * text, exactly the previous behavior. Every {@link #RESYNC_EVERY}-th incremental send goes out full as
      * a divergence safety net. The shadow updates unconditionally — it must always equal what the server
-     * holds after this send.
+     * holds after this send. Null when {@code text} is the very string last sent. Only the bookkeeping is done
+     * here; the compare and the splice are worked out by whoever reads the events first, the writer thread.
      */
-    private List<TextDocumentContentChangeEvent> changeEventsFor(String uri, String text) {
+    private @Nullable LazyChangeEvents changeEventsFor(String uri, String text, Runnable onIdentical) {
         String old = shadows.put(uri, text);
-        if (text.equals(old)) return List.of();
-        if (aliasTexts.containsKey(uri)) {
-            return List.of(new TextDocumentContentChangeEvent(wireText(uri, text))); // see alias()
+        if (text == old) return null;
+        var alias = aliasTexts.get(uri);
+        if (alias != null) {
+            return new LazyChangeEvents(old, text, false, alias, onIdentical); // see alias()
         }
         if (old == null || changeSyncKind(capabilities) != TextDocumentSyncKind.Incremental) {
-            return List.of(new TextDocumentContentChangeEvent(text));
+            return new LazyChangeEvents(old, text, false, null, onIdentical);
         }
         int count = sendsSinceResync.merge(uri, 1, Integer::sum);
         if (count >= RESYNC_EVERY) {
             sendsSinceResync.put(uri, 0);
-            return List.of(new TextDocumentContentChangeEvent(text)); // periodic full re-convergence
+            return new LazyChangeEvents(old, text, false, null, onIdentical); // periodic full re-convergence
         }
-        TextSyncDiff.Delta d = TextSyncDiff.diff(old, text);
-        if (d == null) {
-            return List.of(); // identical (e.g. a redundant pre-request sync) — skip the send entirely
-        }
-        var range = TextSyncDiff.rangeOf(old, d.start(), d.end());
-        return List.of(new TextDocumentContentChangeEvent(range, d.replacement()));
+        return new LazyChangeEvents(old, text, true, null, onIdentical);
     }
 
     /** Pure: the server's declared change-sync kind, or null when unspecified (either capability form). */
@@ -2119,6 +2199,38 @@ final class LanguageServerSession implements LanguageClient {
     // --- Requests (return raw LSP futures; LspManager marshals to the FX thread) ----------------
 
     /**
+     * An unchanging copy of a message's parameter tree — maps, lists and JSON copied, other values (strings,
+     * numbers, LSP4J objects the server sent) kept — so the writer thread encodes what was sent even when the
+     * caller changes its own maps meanwhile (PERF-01, Pauta 6.0.1: see {@link DeferredSyncConsumer}). A copy of
+     * collections, not an encoding.
+     */
+    static @Nullable Object frozen(@Nullable Object value) {
+        if (value instanceof com.google.gson.JsonElement json) {
+            return json.deepCopy();
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<Object, @Nullable Object> copy = new java.util.LinkedHashMap<>();
+            map.forEach((k, v) -> copy.put(k, frozen(v)));
+            return java.util.Collections.unmodifiableMap(copy);
+        }
+        if (value instanceof List<?> list) {
+            return frozenList(list);
+        }
+        return value;
+    }
+
+    /** {@link #frozen} of a list. */
+    static List<Object> frozenList(List<?> list) {
+        List<@Nullable Object> copy = new ArrayList<>(list.size());
+        for (Object item : list) {
+            copy.add(frozen(item));
+        }
+        @SuppressWarnings("NullAway") // a list may carry JSON nulls; LSP4J encodes them as null
+        List<Object> out = java.util.Collections.unmodifiableList(copy);
+        return out;
+    }
+
+    /**
      * Runs a server-side command ({@code workspace/executeCommand}) — used to drive jdtls's debug
      * commands ({@code vscode.java.resolveMainClass}/{@code resolveClasspath}/{@code startDebugSession}/…).
      * Queued until {@code initialize} completes; completes exceptionally if the session is disposed first.
@@ -2134,8 +2246,8 @@ final class LanguageServerSession implements LanguageClient {
                     }
                     try {
                         bounded(server().getWorkspaceService()
-                                        .executeCommand(
-                                                new ExecuteCommandParams(command, args == null ? List.of() : args)))
+                                        .executeCommand(new ExecuteCommandParams(
+                                                command, args == null ? List.of() : frozenList(args))))
                                 .whenComplete((r, e) -> {
                                     if (e != null) {
                                         out.completeExceptionally(e);

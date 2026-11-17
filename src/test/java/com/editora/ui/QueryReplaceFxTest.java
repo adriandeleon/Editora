@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * typed {@code y}/{@code n}/{@code !} is taken as a command and applied to the document, that the session
  * owns the keys while active and releases them on quit, and that offsets stay correct as edits shift them.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // worked out off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class QueryReplaceFxTest {

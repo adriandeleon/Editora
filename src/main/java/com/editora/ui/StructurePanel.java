@@ -237,8 +237,18 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     private void build() {
         filterField.setPromptText(tr("structure.filterPrompt"));
         filterField.getStyleClass().add("structure-filter");
-        filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
-        FilterFieldNav.install(filterField, tree, this::activateSelected); // Down/Enter → into / open the results
+        filterField.textProperty().addListener((o, w, n) -> {
+            activateWhenFiltered = false; // typed on after Enter: the Enter was for the text before
+            applyFilter(n);
+        });
+        // Down/Enter → into / open the results; Enter typed before the filter's answer opens the first of the latest
+        FilterFieldNav.install(filterField, tree, () -> {
+            if (filterSearch.pending()) {
+                activateWhenFiltered = true;
+            } else {
+                activateSelected();
+            }
+        });
         // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project/Notes panels).
         Button clearFilter = new Button("✕");
         clearFilter.getStyleClass().add("project-filter-clear");
@@ -361,35 +371,156 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // While the tool window is closed the tree is not rebuilt (#549), so {@code roots} is empty or still
         // the outline of whichever file was active when it was last open. The picker is the keyboard "go to
         // symbol in file" and has to work with the window closed: compute the model for this request.
-        collectOutline(pendingRebuild ? computeRoots() : roots, out);
+        // The model is built off the FX thread (PERF-01, Pauta 6.0.1): this answers what is known for the buffer now
+        // (nothing at first) and the picker is told to read again when it lands (onHiddenOutlineChanged).
+        if (pendingRebuild) {
+            EditorBuffer b = buffer;
+            if (b != null && (hiddenFor != b || hiddenVersion != b.docVersion())) {
+                hiddenFor = b;
+                hiddenVersion = b.docVersion();
+                hiddenRoots = List.of();
+                long version = hiddenVersion;
+                boolean[] asking = {true};
+                buildOutline(b, ++outlineGeneration, nodes -> {
+                    if (hiddenFor == b && hiddenVersion == version) {
+                        hiddenRoots = nodes;
+                        if (!asking[0] && onHiddenOutlineChanged != null) {
+                            onHiddenOutlineChanged.run(); // landed later: the picker reads again
+                        }
+                    }
+                });
+                asking[0] = false;
+            }
+            collectOutline(b == null ? List.of() : hiddenRoots, out);
+            return out;
+        }
+        collectOutline(roots, out);
         return out;
     }
 
-    /** The structure model for the attached buffer: the LSP outline when there is one, else the heuristic. */
-    private List<StructureNode> computeRoots() {
-        if (buffer == null) {
-            return new ArrayList<>(); // mutable: sortNodes sorts roots in place (a diff/Welcome tab has no buffer)
-        }
-        if (buffer.isNarrowed()) {
-            // The area holds the region, so its regions and symbols describe only that; the outline stays the
-            // whole file's (the mode's "pick another symbol" needs the others on screen). The first fill is
-            // synchronous, the refreshes after edits are not (refreshNarrowedOutline).
-            if (narrowedRoots == null) {
-                narrowedRoots = StructureOutline.build(
-                        StructureOutline.Source.document(buffer).analyzed());
+    /** The outline built for the picker while the window is closed, the buffer and version it is of. */
+    private List<StructureNode> hiddenRoots = List.of();
+
+    private @Nullable EditorBuffer hiddenFor;
+    private long hiddenVersion = -1;
+
+    /** Where the outline is built and its doc comments read: off the FX thread, never on it. */
+    static final String OUTLINE_SITE = "StructurePanel.outline";
+
+    /** The latest outline asked for: an answer for an earlier one is dropped. */
+    private long outlineGeneration;
+
+    /**
+     * Builds the outline of {@code b} off the FX thread (PERF-01, Pauta 6.0.1: the document is split into lines, a
+     * Markdown or narrowed document parsed, the doc comments read) from a copy of its text, regions and symbols taken
+     * here, and hands it to {@code then} on the FX thread with its docs and syntax colours, sorted — unless a later
+     * build was asked for meanwhile. Text changed meanwhile: built again on the new text.
+     */
+    private void buildOutline(EditorBuffer b, long gen, java.util.function.Consumer<List<StructureNode>> then) {
+        long version = b.docVersion();
+        String text = b.getContent();
+        boolean narrowed = b.isNarrowed();
+        List<StructureNode> cached = narrowed ? narrowedRoots : null;
+        List<Integer> cachedLines = cached == null ? null : linesOf(cached, new ArrayList<>());
+        List<SymbolNode> lsp = lspSymbols;
+        boolean python = b.isPython();
+        String language = b.getLanguage();
+        boolean markdown = b.isMarkdown();
+        boolean typst = b.isTypst();
+        boolean http = b.isHttpFile();
+        boolean pom = b.isPom();
+        List<Region> regions = List.copyOf(b.getFoldManager().regions());
+        List<com.editora.editor.highlight.TextMateHighlighter.Symbol> symbols = List.copyOf(b.symbols());
+        Path path = b.getPath();
+        String fileName = path == null || path.getFileName() == null
+                ? null
+                : path.getFileName().toString();
+        com.editora.perf.OffFx.then(
+                OUTLINE_SITE,
+                () -> {
+                    List<String> lines = List.of(text.split("\n", -1));
+                    List<StructureNode> built;
+                    if (cached != null) {
+                        built = cached; // only read on the FX thread: its docs are read below by line
+                    } else if (narrowed) {
+                        built = StructureOutline.build(
+                                StructureOutline.Source.file(fileName == null ? "" : fileName, text)
+                                        .analyzedAs(language, markdown, typst, http, pom));
+                    } else if (lsp != null) {
+                        built = StructureOutline.fromLsp(lsp, language, pom, lines::get, lines.size());
+                    } else {
+                        built = StructureOutline.build(new StructureOutline.Source(
+                                text,
+                                lines.size(),
+                                lines::get,
+                                language,
+                                markdown,
+                                typst,
+                                http,
+                                pom,
+                                null,
+                                regions,
+                                symbols,
+                                fileName));
+                    }
+                    java.util.Map<Integer, String> docs = new java.util.HashMap<>();
+                    java.util.Map<Integer, String> markers = new java.util.HashMap<>();
+                    for (int line : cachedLines != null ? cachedLines : linesOf(built, new ArrayList<>())) {
+                        docs.computeIfAbsent(line, l -> StructureDoc.commentAbove(lines, l));
+                        if (python && line < lines.size()) {
+                            // `async`, `property`, `classmethod` … beside the row, read from the decorators above
+                            // its line (review 2 C113): several lines per row, so here, not on the FX thread.
+                            markers.computeIfAbsent(line, l -> PythonOutlineSymbols.marker(lines::get, l));
+                        }
+                    }
+                    return new Built(built, docs, markers);
+                },
+                answer -> {
+                    if (gen != outlineGeneration || buffer != b) {
+                        return; // another build was asked for since, or another buffer attached
+                    }
+                    if (b.docVersion() != version) {
+                        buildOutline(b, gen, then); // the text moved on: built again on the new text
+                        return;
+                    }
+                    Built done = answer.value();
+                    if (done == null) {
+                        return; // a failure is the outline's own business: the tree keeps what it shows
+                    }
+                    if (narrowed && cached == null && b.isNarrowed()) {
+                        narrowedRoots = done.nodes();
+                    }
+                    applyDocs(done.nodes(), done.docs(), done.markers());
+                    attachSyntaxStyles(done.nodes());
+                    sortNodes(done.nodes());
+                    then.accept(done.nodes());
+                });
+    }
+
+    /** An outline built off the FX thread and the doc comment above each of its lines. */
+    private record Built(
+            List<StructureNode> nodes, java.util.Map<Integer, String> docs, java.util.Map<Integer, String> markers) {}
+
+    /** The lines of {@code nodes} and their children, in tree order. */
+    private static List<Integer> linesOf(List<StructureNode> nodes, List<Integer> out) {
+        for (StructureNode n : nodes) {
+            if (n.line() >= 0) {
+                out.add(n.line());
             }
-            return narrowedRoots;
+            linesOf(n.children(), out);
         }
-        // LSP-served file: precise hierarchy + kinds; fallback: fold-region nesting + TextMate-scope names.
-        CodeArea area = buffer.getArea();
-        return lspSymbols != null
-                ? StructureOutline.fromLsp(
-                        lspSymbols,
-                        buffer.getLanguage(),
-                        buffer.isPom(),
-                        i -> area.getParagraph(i).getText(),
-                        area.getParagraphs().size())
-                : StructureOutline.build(StructureOutline.Source.area(buffer));
+        return out;
+    }
+
+    private static void applyDocs(
+            List<StructureNode> nodes, java.util.Map<Integer, String> docs, java.util.Map<Integer, String> markers) {
+        for (StructureNode n : nodes) {
+            if (n.line() >= 0) {
+                n.setDoc(docs.getOrDefault(n.line(), ""));
+                n.setMarker(markers.getOrDefault(n.line(), ""));
+            }
+            applyDocs(n.children(), docs, markers);
+        }
     }
 
     private static void collectOutline(List<StructureNode> nodes, List<Outline> out) {
@@ -412,6 +543,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         this.lspSymbolsStale = false;
         narrowedRoots = null;
         narrowedOutlineGeneration++;
+        hiddenFor = null;
         userPicked = false;
         foldMode = buffer != null && buffer.isNarrowed() && foldModes.contains(buffer);
         syncNarrowToggle();
@@ -801,9 +933,17 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return;
         }
         int generation = ++narrowedOutlineGeneration;
-        StructureOutline.Source source = StructureOutline.Source.document(b);
+        // The text taken here; split, its grammar looked up and analyzed off the FX thread (PERF-01, Pauta 6.0.1).
+        String text = b.getContent();
+        String language = b.getLanguage();
+        boolean markdown = b.isMarkdown();
+        boolean typst = b.isTypst();
+        boolean http = b.isHttpFile();
+        boolean pom = b.isPom();
         Thread.ofVirtual().name("editora-structure-outline").start(() -> {
-            List<StructureNode> nodes = StructureOutline.build(source.analyzed());
+            com.editora.perf.BlockingSites.enter(OUTLINE_SITE);
+            List<StructureNode> nodes = StructureOutline.build(
+                    StructureOutline.Source.file("", text).analyzedAs(language, markdown, typst, http, pom));
             Platform.runLater(() -> {
                 if (generation != narrowedOutlineGeneration || buffer != b || !b.isNarrowed()) {
                     return;
@@ -938,10 +1078,17 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return;
         }
         pendingRebuild = false;
-        List<StructureNode> next = computeRoots();
-        attachDocs(next);
-        attachSyntaxStyles(next);
-        sortNodes(next);
+        EditorBuffer b = buffer;
+        long gen = ++outlineGeneration;
+        if (b == null) {
+            show(new ArrayList<>(), onlyIfChanged); // mutable: sortNodes sorts roots in place
+            return;
+        }
+        buildOutline(b, gen, next -> show(next, onlyIfChanged));
+    }
+
+    /** Shows the outline built for the attached buffer, unless it is the one shown already ({@code onlyIfChanged}). */
+    private void show(List<StructureNode> next, boolean onlyIfChanged) {
         if (onlyIfChanged && modelShown && sameModel(next, roots)) {
             return;
         }
@@ -953,20 +1100,15 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // and it should keep the user on the symbol they had selected rather than snapping to the top.
         StructureNode prevSelection = selectedNodeValue();
         boolean wasPicked = userPicked;
-        suppressNavigation = true;
-        try {
-            applyFilter(filterField.getText());
-            reselect(prevSelection);
-        } finally {
-            suppressNavigation = false;
-        }
-        // Row 0 is selected by default; only a row the user chose (and that survived) is a narrowing target.
-        StructureNode now = selectedNodeValue();
-        userPicked = wasPicked
-                && prevSelection != null
-                && now != null
-                && now.line() == prevSelection.line()
-                && java.util.Objects.equals(now.label(), prevSelection.label());
+        applyFilter(filterField.getText(), () -> reselect(prevSelection), () -> {
+            // Row 0 is selected by default; only a row the user chose (and that survived) is a narrowing target.
+            StructureNode now = selectedNodeValue();
+            userPicked = wasPicked
+                    && prevSelection != null
+                    && now != null
+                    && now.line() == prevSelection.line()
+                    && java.util.Objects.equals(now.label(), prevSelection.label());
+        });
     }
 
     /** Whether the tree currently shows {@link #roots} for the attached buffer. */
@@ -1047,31 +1189,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return;
         }
         this.lspSymbols = symbols;
+        hiddenFor = null; // the picker's outline is built again from these
         rebuild();
         if (!visible() && onHiddenOutlineChanged != null) {
             onHiddenOutlineChanged.run();
-        }
-    }
-
-    /**
-     * Fills each node's doc from the leading comment above its declaration line, read from the buffer text.
-     * Works for both the LSP and heuristic outlines (either way a node carries the declaration's line).
-     */
-    private void attachDocs(List<StructureNode> nodes) {
-        if (buffer == null || nodes.isEmpty()) {
-            return;
-        }
-        // Rows carry document lines, and getContent() is the whole file whether or not the buffer is narrowed.
-        List<String> lines = List.of(buffer.getContent().split("\n", -1));
-        attachDocs(nodes, lines);
-    }
-
-    private static void attachDocs(List<StructureNode> nodes, List<String> lines) {
-        for (StructureNode n : nodes) {
-            if (n.line() >= 0) {
-                n.setDoc(StructureDoc.commentAbove(lines, n.line()));
-            }
-            attachDocs(n.children(), lines);
         }
     }
 
@@ -1093,7 +1214,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             attachHeadingStyle(nodes);
             return;
         }
-        attachSyntaxStyles(buffer.getArea(), buffer.narrowFirstLine(), nodes, buffer.isPython());
+        attachSyntaxStyles(buffer.getArea(), buffer.narrowFirstLine(), nodes);
     }
 
     private static void attachHeadingStyle(List<StructureNode> nodes) {
@@ -1103,18 +1224,15 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private static void attachSyntaxStyles(CodeArea area, int base, List<StructureNode> nodes, boolean python) {
+    /**
+     * Colours each row from its own declaration line in the editor, and only that line: the token classes of the
+     * characters the label borrows, a bounded per-row read like painting the row. A Python row's marker, read from the
+     * decorators above, comes with the outline from off the FX thread ({@link #buildOutline}).
+     */
+    private static void attachSyntaxStyles(CodeArea area, int base, List<StructureNode> nodes) {
         for (StructureNode node : nodes) {
             attachSyntaxStyles(area, base, node);
-            if (python) { // `async`, `property`, `classmethod` … beside the row, with or without LSP (review 2 C113)
-                int line = node.line() - base;
-                node.setMarker(
-                        line < 0 || line >= area.getParagraphs().size()
-                                ? ""
-                                : PythonOutlineSymbols.marker(
-                                        i -> area.getParagraph(i).getText(), line));
-            }
-            attachSyntaxStyles(area, base, node.children(), python);
+            attachSyntaxStyles(area, base, node.children());
         }
     }
 
@@ -1567,10 +1685,104 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     private void applyFilter(String query) {
+        applyFilter(query, null, null);
+    }
+
+    /** Where the filter is matched against the outline's labels: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "StructurePanel.filter";
+
+    /** The filter in flight: a newer keystroke (or rebuild) supersedes it, and only the latest answer is shown. */
+    private final LatestOnly filterSearch = PickerSearch.latest();
+
+    /**
+     * Shows the outline narrowed to the labels {@code query} matches. An outline can hold thousands of rows, so a
+     * typed query is matched off the FX thread (PERF-01, Pauta 6.0.1) on a copy of the labels; the tree shown stays
+     * until the latest answer lands. {@code reselect} runs with the tree, navigation held (a rebuild keeping the
+     * user's row), and {@code after} once it is shown.
+     */
+    private void applyFilter(String query, @Nullable Runnable reselect, @Nullable Runnable after) {
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        List<StructureNode> shown = roots;
+        if (q.isEmpty()) {
+            filterSearch.cancel();
+            showTree(shown, q, null, reselect, after);
+            return;
+        }
+        List<StructureNode> flat = new ArrayList<>();
+        flatten(shown, flat);
+        List<String> labels = new ArrayList<>(flat.size());
+        for (StructureNode n : flat) {
+            labels.add(n.label() == null ? "" : n.label());
+        }
+        filterSearch.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    java.util.BitSet hit = new java.util.BitSet(labels.size());
+                    for (int i = 0; i < labels.size(); i++) {
+                        if (FuzzyMatch.of(labels.get(i), q) != null) {
+                            hit.set(i);
+                        }
+                    }
+                    return hit;
+                },
+                hit -> {
+                    if (shown != roots) {
+                        return; // a rebuild came since: it filters its own outline
+                    }
+                    java.util.Set<StructureNode> matched =
+                            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                    for (int i = hit.nextSetBit(0); i >= 0; i = hit.nextSetBit(i + 1)) {
+                        matched.add(flat.get(i));
+                    }
+                    showTree(shown, q, matched, reselect, after);
+                    if (activateWhenFiltered) {
+                        activateWhenFiltered = false;
+                        activateSelected();
+                    }
+                });
+    }
+
+    /** Enter was pressed in the filter field while its answer was still coming: open the row once it lands. */
+    private boolean activateWhenFiltered;
+
+    /** Whether the tree is not yet filtered for the text typed (a test waits on it). */
+    boolean filtering() {
+        return filterSearch.pending();
+    }
+
+    private static void flatten(List<StructureNode> nodes, List<StructureNode> out) {
+        for (StructureNode n : nodes) {
+            out.add(n);
+            flatten(n.children(), out);
+        }
+    }
+
+    /** Builds the tree of {@code shown}: every row when {@code matched} is null, else the matched ones and their parents. */
+    private void showTree(
+            List<StructureNode> shown,
+            String q,
+            java.util.@Nullable Set<StructureNode> matched,
+            @Nullable Runnable reselect,
+            @Nullable Runnable after) {
+        boolean held = suppressNavigation;
+        suppressNavigation = held || reselect != null;
+        try {
+            buildTree(shown, q, matched);
+            if (reselect != null) {
+                reselect.run();
+            }
+        } finally {
+            suppressNavigation = held;
+        }
+        if (after != null) {
+            after.run();
+        }
+    }
+
+    private void buildTree(List<StructureNode> shown, String q, java.util.@Nullable Set<StructureNode> matched) {
         TreeItem<StructureNode> root = new TreeItem<>(null);
-        for (StructureNode n : roots) {
-            TreeItem<StructureNode> item = toItem(n, q);
+        for (StructureNode n : shown) {
+            TreeItem<StructureNode> item = toItem(n, matched);
             if (item != null) {
                 root.getChildren().add(item);
             }
@@ -1591,16 +1803,17 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Builds a tree item for {@code node}, keeping it if it matches the query or has a matching descendant. */
-    private @Nullable TreeItem<StructureNode> toItem(StructureNode node, String q) {
+    private @Nullable TreeItem<StructureNode> toItem(
+            StructureNode node, java.util.@Nullable Set<StructureNode> matched) {
         List<TreeItem<StructureNode>> childItems = new ArrayList<>();
         for (StructureNode child : node.children()) {
-            TreeItem<StructureNode> ci = toItem(child, q);
+            TreeItem<StructureNode> ci = toItem(child, matched);
             if (ci != null) {
                 childItems.add(ci);
             }
         }
         boolean kindVisible = node.kind() == null || !hiddenKinds.contains(node.kind());
-        boolean self = kindVisible && (q.isEmpty() || FuzzyMatch.of(node.label(), q) != null);
+        boolean self = kindVisible && (matched == null || matched.contains(node));
         if (!self && childItems.isEmpty()) {
             return null;
         }

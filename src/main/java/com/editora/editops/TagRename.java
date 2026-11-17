@@ -66,6 +66,41 @@ public final class TagRename {
         return findPair(text, nameStart, closing, oldName, newName, html);
     }
 
+    /** A tag-name edit: the name's span in the text given, whether it is a closing tag's, and its old and new name. */
+    public record Rename(int nameStart, int nameEnd, boolean closing, String oldName, String newName) {}
+
+    /**
+     * The rename a change makes, read from a window of the text around it that holds at least {@code MAX_NAME + 2}
+     * characters each side of the change ({@code changePos} is in the window's offsets); null when the change is not
+     * inside a tag name, or leaves the name as it was. Fully local: the first half of {@link #mirror}.
+     */
+    public static @Nullable Rename renameAt(String window, int changePos, String removed, String inserted) {
+        int changeEnd = changePos + inserted.length();
+        int[] region = nameRegionAt(window, changePos, changeEnd);
+        if (region == null) {
+            return null;
+        }
+        String newName = window.substring(region[0], region[1]);
+        String oldName = window.substring(region[0], changePos) + removed + window.substring(changeEnd, region[1]);
+        if (oldName.equals(newName) || !isName(oldName)) {
+            return null;
+        }
+        return new Rename(region[0], region[1], window.charAt(region[0] - 1) == '/', oldName, newName);
+    }
+
+    /**
+     * The paired tag of the tag whose name starts at {@code nameStart} in {@code text} and was {@code oldName}, to be
+     * renamed {@code newName}; null when there is none or the document is over {@link #MAX_DOC}. The second half of
+     * {@link #mirror}: one lex of the document, for a thread other than the FX thread.
+     */
+    public static @Nullable Mirror pairFor(
+            String text, int nameStart, boolean closing, String oldName, String newName, boolean html) {
+        if (text.length() > MAX_DOC || oldName.equals(newName) || !isName(oldName)) {
+            return null;
+        }
+        return findPair(text, nameStart, closing, oldName, newName, html);
+    }
+
     /**
      * Cheap, fully-local pre-check: does the change span {@code [changeStart, changeEnd)} within {@code text}
      * sit inside a tag name (i.e. could {@link #mirror} possibly have any work to do)? Reads only a bounded

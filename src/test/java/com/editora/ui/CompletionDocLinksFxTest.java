@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 /** A link in a completion's documentation opens on a click through the buffer's (that is, the window's) link
  *  opener, and is no Tab stop. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // a popup's Markdown parse (PERF-01) lands at once
 class CompletionDocLinksFxTest {
 
     @BeforeAll

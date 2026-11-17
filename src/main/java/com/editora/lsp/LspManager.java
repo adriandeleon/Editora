@@ -1459,12 +1459,21 @@ public final class LspManager {
      * a publish that will not come.
      */
     public boolean changeDocument(Path file, String text) {
+        return changeDocument(file, text, () -> {});
+    }
+
+    /**
+     * As {@link #changeDocument(Path, String)}; {@code onUnchanged} also runs, on the FX thread, when the server
+     * turns out to hold text equal to {@code text}: that compare is made off the FX thread as the change is sent,
+     * so it can be learned only later (PERF-01, Pauta 6.0.1). It does not run when this returns false.
+     */
+    public boolean changeDocument(Path file, String text, Runnable onUnchanged) {
         String key = uri(file);
         if (scriptOpens.computeIfPresent(key, (k, before) -> text == null ? "" : text) != null) {
             return true; // not opened yet (its stand-in is being written): it opens with this text
         }
         LanguageServerSession s = sessionFor(file);
-        return s == null || s.didChange(uri(file), text);
+        return s == null || s.didChange(uri(file), text, onUnchanged);
     }
 
     public void saveDocument(Path file, @Nullable String savedText) {

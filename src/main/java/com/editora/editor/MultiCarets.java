@@ -121,8 +121,52 @@ final class MultiCarets {
     /** Ctrl/Cmd+D: selects the next occurrence of the primary selection as another caret. */
     void addNextOccurrence() {
         syncAnchors(); // it searches from the furthest selection end, anchors included
-        manager.addNextOccurrence();
+        if (area.getSelection().getLength() == 0 && !manager.hasExtras()) {
+            manager.addNextOccurrence(); // selects the word at the caret: a look at its own line, no search
+            return;
+        }
+        String term = area.getSelectedText();
+        if (term.isEmpty()) {
+            return;
+        }
+        List<int[]> all = new ArrayList<>();
+        int from = 0;
+        for (int[] sel : selections()) {
+            int start = Math.min(sel[0], sel[1]);
+            int end = Math.max(sel[0], sel[1]);
+            all.add(new int[] {start, end});
+            from = Math.max(from, end);
+        }
+        int searchFrom = from;
+        // The document is searched off the FX thread, the caret added when that lands if nothing moved (PERF-01).
+        CaretLook.then(
+                OCCURRENCE_SITE,
+                area,
+                at -> {
+                    int idx = at.text().indexOf(term, searchFrom);
+                    if (idx < 0) {
+                        idx = at.text().indexOf(term); // wrap around
+                    }
+                    if (idx < 0) {
+                        return null;
+                    }
+                    int end = idx + term.length();
+                    for (int[] taken : all) {
+                        if (taken[0] == idx && taken[1] == end) {
+                            return null; // every occurrence has a caret
+                        }
+                    }
+                    return new int[] {idx, end};
+                },
+                next -> {
+                    manager.addCaretWithSelection(next[0], next[1]);
+                    area.showParagraphInViewport(
+                            area.offsetToPosition(next[1], Bias.Forward).getMajor());
+                });
     }
+
+    /** {@link com.editora.perf.BlockingSites} name of Add Caret at Next Occurrence and Skip Occurrence's search. */
+    static final String OCCURRENCE_SITE = "MultiCarets.nextOccurrence";
 
     void collapse() {
         manager.collapseToPrimary();
@@ -145,11 +189,12 @@ final class MultiCarets {
      * primary selection's text, leaving the one it was on unselected. With no extra carets the primary
      * selection moves. False when there is nothing selected or no other occurrence to move to.
      */
-    boolean skipOccurrence() {
+    void skipOccurrence(java.util.function.Consumer<Boolean> moved) {
         syncAnchors();
         String term = area.getSelectedText();
         if (term.isEmpty()) {
-            return false;
+            moved.accept(false);
+            return;
         }
         List<Extra> extras = extras();
         List<int[]> taken = new ArrayList<>();
@@ -168,20 +213,33 @@ final class MultiCarets {
                 taken.add(new int[] {x.anchor(), x.caret()});
             }
         }
-        int[] next = CaretPlans.nextOccurrence(area.getText(), term, newest[1], taken);
-        if (next == null || (next[0] == newest[0] && next[1] == newest[1])) {
-            return false;
+        // The document is searched off the FX thread; the selection moves when that lands if nothing moved (PERF-01).
+        boolean asked = CaretLook.then(
+                OCCURRENCE_SITE,
+                area,
+                at -> {
+                    int[] next = CaretPlans.nextOccurrence(at.text(), term, newest[1], taken);
+                    return next == null || (next[0] == newest[0] && next[1] == newest[1]) ? new int[0] : next;
+                },
+                next -> {
+                    if (next.length == 0) {
+                        moved.accept(false);
+                        return;
+                    }
+                    if (extras.isEmpty()) {
+                        area.selectRange(next[0], next[1]);
+                    } else {
+                        List<Extra> kept = new ArrayList<>(extras.subList(0, extras.size() - 1));
+                        kept.add(new Extra(Integer.MAX_VALUE, next[0], next[1]));
+                        rebuild(kept);
+                    }
+                    area.showParagraphInViewport(
+                            area.offsetToPosition(next[1], Bias.Forward).getMajor());
+                    moved.accept(true);
+                });
+        if (!asked) {
+            moved.accept(true); // the previous press is still searching: nothing to say yet
         }
-        if (extras.isEmpty()) {
-            area.selectRange(next[0], next[1]);
-        } else {
-            List<Extra> kept = new ArrayList<>(extras.subList(0, extras.size() - 1));
-            kept.add(new Extra(Integer.MAX_VALUE, next[0], next[1]));
-            rebuild(kept);
-        }
-        area.showParagraphInViewport(
-                area.offsetToPosition(next[1], Bias.Forward).getMajor());
-        return true;
     }
 
     /** VS Code's Ctrl+U: removes the extra caret added last. False when there is only the primary caret. */

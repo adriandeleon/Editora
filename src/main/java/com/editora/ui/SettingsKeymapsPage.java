@@ -244,14 +244,43 @@ final class SettingsKeymapsPage {
             return;
         }
         String q = shortcutFilter == null ? "" : shortcutFilter.getText();
+        List<Shortcut> rows = List.copyOf(w.shortcutActions.rows());
+        if (q.isBlank()) {
+            filterSearch.cancel();
+            showShortcuts(list, rows, focusId); // nothing to match: every row
+            return;
+        }
         String typedChord = com.editora.command.ChordQuery.parse(q);
         String chordShown = typedChord == null ? null : w.shortcutActions.display(typedChord);
-        List<Shortcut> shown = new java.util.ArrayList<>();
-        for (Shortcut s : w.shortcutActions.rows()) {
-            if (shortcutMatches(s, q, chordShown)) {
-                shown.add(s);
-            }
-        }
+        // Matched off the FX thread (PERF-01, Pauta 6.0.1): a row per command, several hundred; the rows shown stay
+        // until the latest filter's answer lands.
+        filterSearch.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    List<Shortcut> shown = new java.util.ArrayList<>();
+                    for (Shortcut s : rows) {
+                        if (shortcutMatches(s, q, chordShown)) {
+                            shown.add(s);
+                        }
+                    }
+                    return shown;
+                },
+                shown -> showShortcuts(list, shown, focusId));
+    }
+
+    /** Where the shortcut list's filter is matched against the commands: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "SettingsKeymapsPage.filter";
+
+    /** The filter in flight: a newer keystroke supersedes it, and only the latest answer is shown. */
+    private final LatestOnly filterSearch = PickerSearch.latest();
+
+    /** Whether the shortcut list is not yet filtered for the text typed (a test waits on it). */
+    boolean filtering() {
+        return filterSearch.pending();
+    }
+
+    /** Shows {@code shown} in the list, keeping the cursor's command (or moving it to {@code focusId}'s). */
+    private void showShortcuts(ListView<Shortcut> list, List<Shortcut> shown, @Nullable String focusId) {
         Shortcut cursor = list.getSelectionModel().getSelectedItem();
         String keep = focusId != null ? focusId : cursor == null ? null : cursor.id();
         list.getItems().setAll(shown);
@@ -658,14 +687,14 @@ final class SettingsKeymapsPage {
      * The Keymaps shortcut list is searched as a list of its own (its hundreds of command names are not the
      * page's text): a search it matches carries over into its filter, and clearing the search clears it again.
      */
-    void pushShortcutQuery(String query) {
+    void pushShortcutQuery(String query, boolean listHit) {
         if (shortcutFilter == null) {
             return;
         }
         String q = query == null ? "" : query.strip();
         String shown = shortcutFilter.getText();
         boolean ours = shown.isEmpty() || shown.equals(pushedShortcutQuery);
-        pushedShortcutQuery = q.isEmpty() || !shortcutMatches(q) ? "" : q;
+        pushedShortcutQuery = q.isEmpty() || !listHit ? "" : q; // the list was searched with the rows, off FX
         if (ours) {
             shortcutFilter.setText(pushedShortcutQuery);
         }
@@ -673,11 +702,21 @@ final class SettingsKeymapsPage {
 
     /** Whether a command in the shortcut list matches {@code query} as its own filter would. */
     boolean shortcutMatches(String query) {
-        String q = query.toLowerCase(Locale.ROOT);
-        return w.shortcutActions != null
-                && w.shortcutActions.rows().stream()
-                        .anyMatch(s -> s.title().toLowerCase(Locale.ROOT).contains(q)
-                                || s.id().toLowerCase(Locale.ROOT).contains(q));
+        return shortcutMatcher().test(query);
+    }
+
+    /**
+     * {@link #shortcutMatches(String)} over a copy of the rows as they are now: taken on the FX thread, asked on any
+     * (the Settings search asks it off the FX thread).
+     */
+    java.util.function.Predicate<String> shortcutMatcher() {
+        List<Shortcut> rows = w.shortcutActions == null ? List.of() : List.copyOf(w.shortcutActions.rows());
+        return query -> {
+            String q = query.toLowerCase(Locale.ROOT);
+            return rows.stream()
+                    .anyMatch(s -> s.title().toLowerCase(Locale.ROOT).contains(q)
+                            || s.id().toLowerCase(Locale.ROOT).contains(q));
+        };
     }
 
     /**

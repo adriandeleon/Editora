@@ -52,13 +52,37 @@ final class SearchEverywherePopup {
 
     private record ItemRow(Item item) implements Row {}
 
-    /** Supplies results. Each is called on the FX thread with the sigil already stripped off the query. */
-    interface Ops {
+    /** The three sources, searched on a picker thread: nothing in them may touch the FX thread's state. */
+    interface Sources {
         List<Item> commands(String query);
 
         List<Item> files(String query);
 
         List<Item> symbols(String query);
+    }
+
+    /** Where the rows are searched for a query: a picker thread, never the FX thread. */
+    static final String SEARCH_SITE = "SearchEverywherePopup.search";
+
+    /** The search in flight: a newer query supersedes it, and only the latest answer is shown. */
+    private final LatestOnly search = PickerSearch.latest();
+
+    /** Enter was pressed while the rows for the text in the field were still coming: choose once they land. */
+    private boolean acceptWhenLanded;
+
+    /**
+     * Where the rows come from. The three sources are searched off the FX thread (PERF-01, Pauta 6.0.1): each search
+     * asks {@link #sources} on the FX thread for a copy safe on another thread, and calls its three methods on a
+     * picker thread with the sigil already stripped off the query.
+     */
+    interface Ops extends Sources {
+        /**
+         * Called on the FX thread for each search: what it searches, as it is now, safe to search on another thread.
+         * By default this Ops itself (a test's stub, whose three methods then run off the FX thread).
+         */
+        default Sources sources() {
+            return this;
+        }
 
         /**
          * Ensures the project corpus exists as far as it can, then runs the callback — always, exactly once,
@@ -151,7 +175,10 @@ final class SearchEverywherePopup {
         desc = new Label();
         input.setPromptText(tr("searchEverywhere.prompt"));
         input.getStyleClass().add("palette-input");
-        input.textProperty().addListener((o, a, b) -> debounce.playFromStart());
+        input.textProperty().addListener((o, a, b) -> {
+            acceptWhenLanded = false; // typed on after Enter: the Enter was for the query before
+            debounce.playFromStart();
+        });
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         com.editora.command.TextInputKeymap.installShared(input);
 
@@ -215,7 +242,17 @@ final class SearchEverywherePopup {
                     // different from every one after it.
                     Platform.runLater(this::reassertCursor);
                 },
-                () -> showing = false);
+                () -> {
+                    showing = false;
+                    acceptWhenLanded = false;
+                    debounce.stop();
+                    search.cancel();
+                });
+    }
+
+    /** Whether the rows shown are not yet those for the text in the field (a test waits on it). */
+    boolean searching() {
+        return debounce.getStatus() == javafx.animation.Animation.Status.RUNNING || search.pending();
     }
 
     /**
@@ -254,6 +291,20 @@ final class SearchEverywherePopup {
     }
 
     private void chooseSelected() {
+        if (searching()) {
+            // The rows shown answer an older query: Enter acts on the rows for what was typed, once they land.
+            if (debounce.getStatus() == javafx.animation.Animation.Status.RUNNING) {
+                debounce.stop();
+                refresh();
+            }
+            acceptWhenLanded = true;
+            return;
+        }
+        chooseRow();
+    }
+
+    /** Chooses the highlighted row (a click chooses the row clicked, which is shown and so known). */
+    private void chooseRow() {
         if (list.getSelectionModel().getSelectedItem() instanceof ItemRow row
                 && row.item().enabled()) {
             overlayHost.hide();
@@ -324,15 +375,37 @@ final class SearchEverywherePopup {
     private void populate(Scope scope) {
         // The corpus sources answer nothing useful for an empty query, and asking would build the index.
         boolean corpus = !scope.query().isEmpty();
-        List<Item> all = new ArrayList<>();
-        if (scope.kind() == null || scope.kind() == Kind.COMMAND) {
-            all.addAll(ops.commands(scope.query()));
+        boolean commands = scope.kind() == null || scope.kind() == Kind.COMMAND;
+        boolean files = corpus && (scope.kind() == null || scope.kind() == Kind.FILE);
+        boolean symbols = corpus && (scope.kind() == null || scope.kind() == Kind.SYMBOL);
+        // Searched off the FX thread (PERF-01, Pauta 6.0.1) on a copy of the sources as they are now; the rows shown
+        // stay until the latest query's answer lands.
+        Sources sources = ops.sources();
+        String query = scope.query();
+        search.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(SEARCH_SITE);
+                    List<Item> all = new ArrayList<>();
+                    if (commands) {
+                        all.addAll(sources.commands(query));
+                    }
+                    if (files) {
+                        all.addAll(sources.files(query));
+                    }
+                    if (symbols) {
+                        all.addAll(sources.symbols(query));
+                    }
+                    return all;
+                },
+                all -> landed(scope, all, symbols));
+    }
+
+    /** The rows for {@code scope}, searched off the FX thread: shown, then chosen when Enter was waiting for them. */
+    private void landed(Scope scope, List<Item> all, boolean symbols) {
+        if (!showing) {
+            return;
         }
-        if (corpus && (scope.kind() == null || scope.kind() == Kind.FILE)) {
-            all.addAll(ops.files(scope.query()));
-        }
-        if (corpus && (scope.kind() == null || scope.kind() == Kind.SYMBOL)) {
-            all.addAll(ops.symbols(scope.query()));
+        if (symbols) {
             // The JDK's and the dependencies' classes come from jdtls, after the project's own (Java review E8).
             ops.laterSymbols(scope.query(), later -> {
                 if (showing && !later.isEmpty() && scope.query().equals(currentQuery)) {
@@ -343,6 +416,10 @@ final class SearchEverywherePopup {
             });
         }
         show(scope, all, false);
+        if (acceptWhenLanded && !searching()) {
+            acceptWhenLanded = false;
+            chooseRow();
+        }
     }
 
     /** Groups and lists {@code all}; {@code keepSelection} keeps the row the user is on when it is still listed. */
@@ -416,7 +493,7 @@ final class SearchEverywherePopup {
             setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && isSelectable(getItem())) {
                     getListView().getSelectionModel().select(getItem());
-                    chooseSelected();
+                    chooseRow();
                 }
             });
         }

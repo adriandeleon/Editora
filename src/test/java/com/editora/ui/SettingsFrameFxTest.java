@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Settings window's frame: how it opens, what a command opening it on a page shows, the sidebar. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // searches and filters answer before the call returns
 class SettingsFrameFxTest {
 
     @BeforeAll

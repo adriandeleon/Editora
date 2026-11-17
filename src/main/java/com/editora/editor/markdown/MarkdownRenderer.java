@@ -206,6 +206,44 @@ public final class MarkdownRenderer {
         return parseForRender(markdown, MathImages.isEnabled());
     }
 
+    /** The parse of a popup's Markdown (hover, signature and completion docs, a note), named for BlockingSites. */
+    public static final String POPUP_PARSE_SITE = "MarkdownRenderer.popupParse";
+
+    /**
+     * Parses {@code markdown} for a popup off the FX thread (PERF-01, Pauta 6.0.1) and hands the AST, or null when
+     * it could not be parsed, to {@code onFx} on the FX thread. The caller checks there that its popup still wants
+     * it.
+     */
+    public static void parseLater(
+            String markdown, java.util.function.Consumer<org.commonmark.node.@Nullable Node> onFx) {
+        com.editora.perf.OffFx.then(
+                POPUP_PARSE_SITE, () -> parseForRender(markdown), a -> onFx.accept(a.ok() ? a.value() : null));
+    }
+
+    /**
+     * A node that shows {@code markdown} as plain wrapped text at once and its rendering once the parse made off the
+     * FX thread lands ({@link #parseLater}); {@code render} builds the rendering from the AST on the FX thread. A
+     * rendering that fails leaves the plain text.
+     */
+    public static Node renderedLater(
+            String markdown, java.util.function.Function<org.commonmark.node.Node, Node> render) {
+        Label plain = new Label(markdown);
+        plain.setWrapText(true);
+        StackPane holder = new StackPane(plain);
+        holder.setAlignment(Pos.TOP_LEFT);
+        parseLater(markdown, ast -> {
+            if (ast == null) {
+                return;
+            }
+            try {
+                holder.getChildren().setAll(render.apply(ast));
+            } catch (RuntimeException unrendered) {
+                // the plain text stays
+            }
+        });
+        return holder;
+    }
+
     /** {@link #parseForRender(String)} with math recognised or not, whatever the feature switch says. */
     public static org.commonmark.node.Node parseForRender(String markdown, boolean math) {
         return renderParser(math, wikiLinks).parse(markdown == null ? "" : markdown);
@@ -1287,24 +1325,32 @@ public final class MarkdownRenderer {
     private static Node highlightedCodeBlock(String literal, String info) {
         String code = stripTrailingNewline(literal);
         boolean console = ConsoleSession.isConsole(info); // a terminal session: prompts, commands, output
-        IGrammar grammar =
-                code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS ? null : grammarForInfo(console ? "sh" : info);
-        if (grammar == null) {
+        String grammarInfo = console ? "sh" : info;
+        if (code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS || !hasGrammarForInfo(grammarInfo)) {
             return codeBlock(literal);
         }
         TextFlow flow = new TextFlow();
         flow.getStyleClass().add("md-code-block");
         flow.setMaxWidth(Double.MAX_VALUE);
-        String cacheKey = (console ? "console\u0000" : "") + grammar.getScopeName() + '\u0000' + code;
-        List<Run> known = TOKEN_CACHE.get(cacheKey);
-        if (known != null) {
-            flow.getChildren().setAll(tokenNodes(known)); // seen before: coloured at once, no flash of plain text
-            return sideScrollingCode(flow, code);
+        // Only a grammar already loaded is asked for here (PERF-01, Pauta 6.0.1): a cold one is loaded on the
+        // highlight worker, which then colours the block as it would have.
+        IGrammar cached = cachedGrammarForInfo(grammarInfo);
+        if (cached != null) {
+            List<Run> known = TOKEN_CACHE.get(tokenKey(console, cached, code));
+            if (known != null) {
+                flow.getChildren().setAll(tokenNodes(known)); // seen before: coloured at once, no flash of plain text
+                return sideScrollingCode(flow, code);
+            }
         }
         Text initial = new Text(code);
         initial.getStyleClass().add("text");
         flow.getChildren().add(initial);
         CODE_HIGHLIGHT_POOL.execute(() -> {
+            IGrammar grammar = cached != null ? cached : grammarForInfo(grammarInfo);
+            if (grammar == null) {
+                return; // not loadable after all — leave the plain text
+            }
+            String cacheKey = tokenKey(console, grammar, code);
             List<Run> runs = console ? ConsoleSession.runs(code, grammar) : tokenizeRuns(code, grammar);
             if (runs == null) {
                 return; // tokenize failed — leave the plain text
@@ -1435,6 +1481,45 @@ public final class MarkdownRenderer {
             Map.entry("md", "md"));
 
     /** The bundled grammar for a fence info string (first token, case-insensitive), or {@code null}. */
+    private static String tokenKey(boolean console, IGrammar grammar, String code) {
+        return (console ? "console\u0000" : "") + grammar.getScopeName() + '\u0000' + code;
+    }
+
+    /** The language word of a fence's info string ({@code "java"} of {@code "java title=x"}), or null. */
+    private static @Nullable String infoLanguage(@Nullable String info) {
+        if (info == null || info.isBlank()) {
+            return null;
+        }
+        return info.trim().split("\\s+")[0].toLowerCase(Locale.ROOT);
+    }
+
+    /** Whether {@link #grammarForInfo} would find a grammar for {@code info}; loads nothing (safe on FX). */
+    static boolean hasGrammarForInfo(String info) {
+        String lang = infoLanguage(info);
+        if (lang == null) {
+            return false;
+        }
+        GrammarRegistry reg = GrammarRegistry.shared();
+        return reg.hasGrammarForLanguage(lang) || reg.hasGrammarFor("x." + INFO_EXT.getOrDefault(lang, lang));
+    }
+
+    /** {@link #grammarForInfo}, answered only from grammars already loaded: never loads (safe on FX). */
+    static @Nullable IGrammar cachedGrammarForInfo(String info) {
+        String lang = infoLanguage(info);
+        if (lang == null) {
+            return null;
+        }
+        GrammarRegistry reg = GrammarRegistry.shared();
+        if (reg.hasGrammarForLanguage(lang)) {
+            return reg.cachedForLanguageName(lang);
+        }
+        return reg.cachedForFileName("x." + INFO_EXT.getOrDefault(lang, lang));
+    }
+
+    /**
+     * The grammar for a fence's info string, loading it when it is not loaded yet: call it off the FX thread (the
+     * renderer's highlight worker, an export). On the FX thread use {@link #cachedGrammarForInfo}.
+     */
     public static @Nullable IGrammar grammarForInfo(String info) {
         if (info == null || info.isBlank()) {
             return null;

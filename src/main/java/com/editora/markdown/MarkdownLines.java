@@ -75,7 +75,38 @@ public final class MarkdownLines {
         };
     }
 
+    /**
+     * What a line is, answered without scanning: the editor keeps a map of its document's lines, made off the
+     * JavaFX thread (PERF-01, Pauta 6.0.1), and binds it with {@link #withKinds} around a call made on that
+     * thread, so the helpers here look a line up instead of scanning the document above it.
+     */
+    @FunctionalInterface
+    public interface LineKinds {
+        /** The kind of the line that starts at offset {@code lineStart}. */
+        MarkdownBlocks.Kind kindAt(int lineStart);
+    }
+
+    /** The kinds bound for one text: honoured only by a call made on that very String. */
+    private record Known(String text, LineKinds kinds) {}
+
+    private static final ScopedValue<Known> KNOWN = ScopedValue.newInstance();
+
+    /**
+     * Runs {@code work} with {@code kinds} answering for the lines of {@code text}: every helper here (and
+     * {@link MarkdownTable}, {@link MarkdownHeading}, {@link MarkdownWiki}, {@link MarkdownToc}…) given that same
+     * String looks a line's kind up rather than scanning the document.
+     */
+    public static <T> T withKinds(String text, LineKinds kinds, java.util.function.Supplier<T> work) {
+        return ScopedValue.where(KNOWN, new Known(text, kinds)).call(work::get);
+    }
+
     private static MarkdownBlocks.Kind kindAt(String text, int lineStart) {
+        if (KNOWN.isBound()) {
+            Known known = KNOWN.get();
+            if (known.text() == text) {
+                return known.kinds().kindAt(Math.max(0, Math.min(lineStart, text.length())));
+            }
+        }
         int start = Math.max(0, Math.min(lineStart, text.length()));
         int eol = text.indexOf('\n', start);
         // Front matter is only front matter once it is closed, which may be below this line: then scan it all.

@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Settings pages that edit an ordered list: the toolbar, the tool windows and the shortcuts. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // searches and filters answer before the call returns
 class SettingsListsFxTest {
 
     private SettingsRig rig;

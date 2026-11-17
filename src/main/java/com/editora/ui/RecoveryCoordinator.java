@@ -491,24 +491,48 @@ final class RecoveryCoordinator {
             } else if (open.isDirty() || !open.isEditable() || open.isTruncatedLoad() || open.isLogFollowing()) {
                 // It has unsaved changes of its own (or cannot take text): never overwrite those.
                 restoredAsNew(entry, record, text, null, tr("status.recovery.restoredBeside", record.title()));
-            } else {
-                open.replaceWholeDocument(text);
-                applyLineEnding(open, record.lineEnding());
-                keepChosenCharset(open, record);
-                Tab tab = files.host().tabForBuffer(open);
-                if (tab != null) {
-                    files.host().editorArea().select(tab);
-                    files.host().updateTabMeta(tab, open);
-                }
-                moveCaret(open, record.caret());
-                finish(entry, open, tr("status.recovery.restored", record.title()));
+            } else if (restoring.add(entry)) {
+                // The span that differs is worked out off the FX thread (PERF-01, Pauta 6.0.1); a second
+                // Restore meanwhile does nothing.
+                open.replaceWholeDocumentLater(text, applied -> {
+                    restoring.remove(entry);
+                    if (closed || open.isDisposed() || !service().unresolved().contains(entry)) {
+                        return;
+                    }
+                    if (!applied) { // typed into meanwhile: the recovered text goes beside it
+                        restoredAsNew(entry, record, text, null, tr("status.recovery.restoredBeside", record.title()));
+                        return;
+                    }
+                    applyLineEnding(open, record.lineEnding());
+                    keepChosenCharset(open, record);
+                    Tab tab = files.host().tabForBuffer(open);
+                    if (tab != null) {
+                        files.host().editorArea().select(tab);
+                        files.host().updateTabMeta(tab, open);
+                    }
+                    moveCaret(open, record.caret());
+                    finish(entry, open, tr("status.recovery.restored", record.title()));
+                });
             }
         });
     }
 
+    /** {@link com.editora.perf.BlockingSites} name of a recovered text made ready for its tab, off the FX thread. */
+    static final String RESTORE_PREPARE_SITE = "RecoveryCoordinator.prepare";
+
+    /** Records whose text is being made ready or applied: a second Restore of one does nothing. FX thread. */
+    private final java.util.Set<RecoveryStore.Entry> restoring =
+            java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /** A recovered text made ready off the FX thread: whether it has a giant line, and its document. */
+    private record Prepared(boolean longLine, com.editora.editor.InitialDocument document) {}
+
     /** Opens the text in a new tab: bound to {@code path} when given, otherwise untitled. */
     private void restoredAsNew(
             RecoveryStore.Entry entry, RecoveryRecord record, String text, @Nullable Path path, String status) {
+        if (!restoring.add(entry)) {
+            return; // already on its way
+        }
         EditorBuffer buffer = new EditorBuffer();
         if (path != null) {
             buffer.setPath(path);
@@ -523,16 +547,44 @@ final class RecoveryCoordinator {
         if (record.charset() != null) {
             buffer.setDetectedCharset(record.charset());
         }
-        boolean longLine =
-                FileWorkflowCoordinator.textStats(text).maxLineLength() >= FileWorkflowCoordinator.LONG_LINE_FILE_CHARS;
-        if (longLine || text.length() >= EditorBuffer.LARGE_FILE_BYTES) {
+        // Its lines measured and its document built off the FX thread, as a load is (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                RESTORE_PREPARE_SITE,
+                () -> {
+                    boolean longLine = FileWorkflowCoordinator.textStats(text).maxLineLength()
+                            >= FileWorkflowCoordinator.LONG_LINE_FILE_CHARS;
+                    return new Prepared(
+                            longLine,
+                            buffer.prepareInitialContent(LineEndings.apply(text, record.lineEnding()), longLine));
+                },
+                answer -> {
+                    restoring.remove(entry);
+                    Prepared prepared = answer.value();
+                    if (prepared == null || closed || !service().unresolved().contains(entry)) {
+                        buffer.dispose();
+                        return;
+                    }
+                    openRestored(entry, record, buffer, prepared, text.length(), path, status);
+                });
+    }
+
+    private void openRestored(
+            RecoveryStore.Entry entry,
+            RecoveryRecord record,
+            EditorBuffer buffer,
+            Prepared prepared,
+            int length,
+            @Nullable Path path,
+            String status) {
+        boolean longLine = prepared.longLine();
+        if (longLine || length >= EditorBuffer.LARGE_FILE_BYTES) {
             buffer.setLargeFile(true); // before the text goes in, as a load does
         }
         if (longLine) {
             buffer.wrap().setSuppressed(true);
             buffer.setWordWrap(false);
         }
-        buffer.setInitialContent(LineEndings.apply(text, record.lineEnding()), longLine);
+        buffer.setInitialContent(prepared.document());
         applyLineEnding(buffer, record.lineEnding());
         Tab tab = files.host().addBuffer(buffer, true);
         files.setWritesBom(buffer, record.bom());

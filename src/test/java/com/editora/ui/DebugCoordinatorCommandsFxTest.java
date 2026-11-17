@@ -45,6 +45,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * what each one starts, and what the status bar says when it starts nothing. Also what happens to stored
  * breakpoints when a file is renamed or another window rewrites them.
  */
+// The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
+// each lands before the command returns. HandlersDebugOffFxThreadFxTest runs them where the app does.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class DebugCoordinatorCommandsFxTest {
 

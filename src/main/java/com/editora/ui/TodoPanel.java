@@ -327,6 +327,21 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                 && file.toString().toLowerCase(java.util.Locale.ROOT).contains(query);
     }
 
+    /** Where the TODO rows are filtered and grouped: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "TodoPanel.filter";
+
+    /** The filter in flight: a newer keystroke (or scan) supersedes it, and only the latest answer is shown. */
+    private final LatestOnly filterSearch = PickerSearch.latest();
+
+    /** Whether the tree is not yet the latest filter's (a test waits on it). */
+    boolean filtering() {
+        return filterSearch.pending();
+    }
+
+    /**
+     * Shows the scan's TODOs narrowed by the filter and grouped. A project can hold thousands, so they are matched and
+     * grouped off the FX thread (PERF-01, Pauta 6.0.1); the tree shown stays until the latest answer lands.
+     */
     private void rebuild() {
         TodoService.Outcome outcome = lastOutcome;
         if (outcome == null) {
@@ -335,17 +350,29 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         String query = filterField.getText() == null
                 ? ""
                 : filterField.getText().strip().toLowerCase(java.util.Locale.ROOT);
-        List<TodoGrouping.Entry> entries = new ArrayList<>();
-        for (TodoService.FileTodos fr : outcome.files()) {
-            for (TodoMatch m : fr.matches()) {
-                if (matchesFilter(fr.file(), m, query)) {
-                    entries.add(new TodoGrouping.Entry(fr.file(), m));
-                }
-            }
-        }
         TodoGrouping.GroupBy by = currentGroupBy();
-        List<TodoGrouping.Group> groups = TodoGrouping.group(entries, by, activeFile);
+        Path active = activeFile;
+        filterSearch.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    List<TodoGrouping.Entry> entries = new ArrayList<>();
+                    for (TodoService.FileTodos fr : outcome.files()) {
+                        for (TodoMatch m : fr.matches()) {
+                            if (matchesFilter(fr.file(), m, query)) {
+                                entries.add(new TodoGrouping.Entry(fr.file(), m));
+                            }
+                        }
+                    }
+                    return TodoGrouping.group(entries, by, active);
+                },
+                groups -> {
+                    if (outcome == lastOutcome) {
+                        showGroups(outcome, by, groups);
+                    }
+                });
+    }
 
+    private void showGroups(TodoService.Outcome outcome, TodoGrouping.GroupBy by, List<TodoGrouping.Group> groups) {
         TreeItem<Row> root = new TreeItem<>();
         for (TodoGrouping.Group g : groups) {
             String header = g.label().isEmpty() ? emptyGroupLabel(by) : g.label();

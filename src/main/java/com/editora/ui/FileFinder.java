@@ -126,7 +126,10 @@ public class FileFinder {
         UiZoom.prefHeight(list, LIST_HEIGHT);
         list.setCellFactory(v -> new EntryCell());
 
-        input.textProperty().addListener((obs, old, now) -> refresh(now));
+        input.textProperty().addListener((obs, old, now) -> {
+            whenFiltered = null; // typed on after Enter or Tab: the key was for the text before
+            refresh(now);
+        });
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         // Emacs caret movement + basic editing in the path field. Registered after onKey so the finder's own
         // list navigation (C-n/C-p/C-g) consumes those chords first and the keymap yields to it (isConsumed).
@@ -200,7 +203,11 @@ public class FileFinder {
                         input.positionCaret(input.getText().length());
                     });
                 },
-                () -> showing = false);
+                () -> {
+                    showing = false;
+                    filtering.cancel(); // a filter landing after the card closed shows nothing and acts on nothing
+                    whenFiltered = null;
+                });
     }
 
     public void hide() {
@@ -274,24 +281,74 @@ public class FileFinder {
         });
     }
 
+    /** Where the typed prefix is matched against the folder's entries: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "FileFinder.filter";
+
+    /** The filter in flight: a newer keystroke supersedes it, and only the latest answer is shown. */
+    private final LatestOnly filtering = PickerSearch.latest();
+
+    /** What a key pressed while the rows were still coming does once they land: nothing, Enter or Tab. */
+    private @Nullable Runnable whenFiltered;
+
+    /** The longest common prefix of the rows shown, worked out with them (Tab extends the field to it). */
+    private String rowsPrefix = "";
+
+    /** The entries of a folder that match a typed prefix, and their longest common prefix. */
+    private record Filtered(List<Path> matches, String prefix) {}
+
+    /**
+     * Shows the entries whose name starts with what is typed after the last separator. A folder can hold tens of
+     * thousands of entries, so they are matched off the FX thread (PERF-01, Pauta 6.0.1) on the listing as read; the
+     * rows shown stay until the latest answer lands, and Enter or Tab pressed meanwhile waits for it.
+     */
     private void applyFilter(String text) {
         String prefix = prefixPart(text);
         boolean wantHidden = prefix.startsWith(".");
         String q = prefix.toLowerCase(Locale.ROOT);
-        List<Path> matches = new ArrayList<>();
-        for (Path p : listing.entries()) {
-            String name = p.getFileName().toString();
-            if (!wantHidden && name.startsWith(".")) {
-                continue; // hide dotfiles unless the user is typing a leading dot
-            }
-            if (name.toLowerCase(Locale.ROOT).startsWith(q)) {
-                matches.add(p);
-            }
-        }
-        items.setAll(matches);
-        highlightMoved = false;
-        if (!items.isEmpty()) {
-            list.getSelectionModel().select(0);
+        List<Path> entries = listing.entries();
+        filtering.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    List<Path> matches = new ArrayList<>();
+                    String lcp = null;
+                    for (Path p : entries) {
+                        String name = p.getFileName().toString();
+                        if (!wantHidden && name.startsWith(".")) {
+                            continue; // hide dotfiles unless the user is typing a leading dot
+                        }
+                        if (name.toLowerCase(Locale.ROOT).startsWith(q)) {
+                            matches.add(p);
+                            lcp = lcp == null ? name : commonPrefix(lcp, name);
+                        }
+                    }
+                    return new Filtered(matches, lcp == null ? "" : lcp);
+                },
+                found -> {
+                    items.setAll(found.matches());
+                    rowsPrefix = found.prefix();
+                    highlightMoved = false;
+                    if (!items.isEmpty()) {
+                        list.getSelectionModel().select(0);
+                    }
+                    Runnable then = whenFiltered;
+                    whenFiltered = null;
+                    if (then != null) {
+                        then.run();
+                    }
+                });
+    }
+
+    /** Whether the rows shown are not yet those for the text typed (a test waits on it). */
+    boolean filtering() {
+        return filtering.pending();
+    }
+
+    /** Runs {@code key} now, or once the rows for what was typed have landed. */
+    private void afterFilter(Runnable key) {
+        if (filtering.pending()) {
+            whenFiltered = key;
+        } else {
+            key.run();
         }
     }
 
@@ -299,12 +356,12 @@ public class FileFinder {
         PickerKeys.Action action = PickerKeys.action(e);
         switch (action) {
             case CANCEL -> hide();
-            case ACCEPT -> chooseSelected();
+            case ACCEPT -> afterFilter(this::chooseSelected);
             default -> {
                 if (e.getCode() == javafx.scene.input.KeyCode.TAB) {
-                    autocomplete();
+                    afterFilter(this::autocomplete);
                 } else if (projectChord != null && projectChord.equals(KeyDispatcher.chord(e))) {
-                    openAsProject();
+                    afterFilter(this::openAsProject);
                 } else if (PickerKeys.navigate(list, action)) {
                     highlightMoved = true;
                 } else {
@@ -324,7 +381,7 @@ public class FileFinder {
         if (target == null || choosing) {
             return; // a second Enter while the first one's look is under way does nothing
         }
-        if (listing.entries().contains(target)) {
+        if (listing.lists(target)) {
             chosen(target, listing.isDirectory(target)); // listed: known already
             return;
         }
@@ -434,10 +491,7 @@ public class FileFinder {
             }
             return;
         }
-        String lcp = items.get(0).getFileName().toString();
-        for (Path p : items) {
-            lcp = commonPrefix(lcp, p.getFileName().toString());
-        }
+        String lcp = rowsPrefix; // worked out with the rows, off the FX thread
         String dir = dirPart(input.getText());
         String current = prefixPart(input.getText());
         if (lcp.length() > current.length()) {

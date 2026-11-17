@@ -156,11 +156,81 @@ public final class GrammarRegistry {
         return names;
     }
 
+    /** The place a grammar is read, parsed and compiled, heard on the thread that loads it ({@code BlockingSites}). */
+    public static final String LOAD_SITE = "GrammarRegistry.load";
+
+    /**
+     * The grammar for a language name <em>only if already loaded</em> (see {@link #cachedForFileName}): what the FX
+     * thread asks, never loading.
+     */
+    public @Nullable IGrammar cachedForLanguageName(@Nullable String name) {
+        String scope = scopeForLanguageName(name);
+        return scope == null ? null : grammarCache.get(scope);
+    }
+
+    /** Whether a grammar is bundled for language {@code name} (regardless of load state). No load. */
+    public boolean hasGrammarForLanguage(@Nullable String name) {
+        return scopeForLanguageName(name) != null;
+    }
+
+    private @Nullable String scopeForLanguageName(@Nullable String name) {
+        if (name == null) {
+            return null;
+        }
+        String lower = name.toLowerCase(Locale.ROOT);
+        return languageNameToScope.getOrDefault(lower, LANGUAGE_ALIASES.get(lower));
+    }
+
+    /**
+     * The grammar for language {@code name} handed to {@code then} on the FX thread: at once when it is loaded,
+     * else once a thread of its own has loaded it (PERF-01, Pauta 6.0.1: the FX thread never reads, parses or
+     * compiles a grammar, nor waits for the load lock). {@code then} gets null when none is bundled.
+     */
+    public void whenLanguageLoaded(@Nullable String name, java.util.function.Consumer<@Nullable IGrammar> then) {
+        String scope = scopeForLanguageName(name);
+        IGrammar cached = scope == null ? null : grammarCache.get(scope);
+        if (scope == null || cached != null || failedScopes.contains(scope)) {
+            then.accept(cached);
+            return;
+        }
+        Thread.ofVirtual().name("grammar-load").start(() -> {
+            IGrammar loaded = grammarForScope(scope);
+            com.editora.perf.OffFx.onFx(() -> then.accept(loaded));
+        });
+    }
+
+    private static final java.util.concurrent.atomic.AtomicBoolean WARMED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Loads every bundled grammar once, on a thread of its own, so that a later caller on the FX thread finds the
+     * grammar it asks for loaded (PERF-01, Pauta 6.0.1). Called once after the first window; later calls do nothing.
+     */
+    public static void warmAllLater() {
+        if (!WARMED.compareAndSet(false, true)) {
+            return;
+        }
+        Thread.ofPlatform()
+                .daemon()
+                .name("grammars-warm")
+                .priority(Thread.MIN_PRIORITY)
+                .start(() -> {
+                    for (String scope : List.copyOf(INSTANCE.scopeToResource.keySet())) {
+                        try {
+                            INSTANCE.grammarForScope(scope);
+                        } catch (RuntimeException | LinkageError e) {
+                            // that one stays cold: whoever asks loads it then
+                        }
+                    }
+                });
+    }
+
     private @Nullable IGrammar grammarForScope(String scope) {
         IGrammar cached = grammarCache.get(scope);
         if (cached != null || failedScopes.contains(scope)) {
             return cached;
         }
+        com.editora.perf.BlockingSites.enter(LOAD_SITE);
         synchronized (loadLock) {
             cached = grammarCache.get(scope); // loaded while this thread waited for the lock
             if (cached != null || failedScopes.contains(scope)) {

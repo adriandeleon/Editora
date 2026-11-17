@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * glyph's dispatch, Ctrl-click, the hover tooltips, the install banner, and paging a read-only view.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(com.editora.ui.OffFxInPlace.class) // a clicked link is resolved in place
 class EditorInteractionFxTest {
 
     @BeforeAll

@@ -209,26 +209,48 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         button.getStyleClass().addAll("button-icon", "flat");
     }
 
-    /** URL, Git-diff and Git-file clicks plus the hand cursor over them, on {@code area}. */
+    /**
+     * URL, Git-diff and Git-file clicks plus the hand cursor over them, on {@code area}. Each looks at the line under
+     * the pointer alone ({@link RunPanel#lineAt}), never at a copy of the whole console (PERF-01, Pauta 6.0.1: the
+     * hover runs on every mouse move).
+     */
     private void installMouse(CodeArea area) {
         area.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {
             if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY || e.getClickCount() != 1) {
                 return;
             }
             int offset = area.hit(e.getX(), e.getY()).getInsertionIndex();
-            ConsoleUrls.Link link = ConsoleUrls.at(area.getText(), offset);
+            ConsoleUrls.Link link = RunPanel.urlAt(area, offset);
             if (link != null && onUrl != null) {
                 onUrl.accept(link.url());
                 e.consume();
                 return;
             }
-            GitOutputDiffs.Target diff = gitTranscript ? GitOutputDiffs.at(area.getText(), offset) : null;
-            if (diff != null && onGitDiff != null) {
-                onGitDiff.accept(diff);
+            RunPanel.LineAt line = gitTranscript ? RunPanel.lineAt(area, offset) : null;
+            int[] graph = line == null ? null : GitOutputDiffs.graph(line.text());
+            if (line != null
+                    && graph != null
+                    && graph[0] <= offset - line.start()
+                    && offset - line.start() < graph[1]) {
+                // On a change graph: the diff it opens is found by walking the transcript up to its "Updating a..b",
+                // on a snapshot off the FX thread (PERF-01, Pauta 6.0.1); the click acts when it lands.
                 e.consume();
+                String transcript = area.getText();
+                RunPanel.LineAt clicked = line;
+                com.editora.perf.OffFx.then(GIT_DIFF_SITE, () -> GitOutputDiffs.at(transcript, offset), answer -> {
+                    GitOutputDiffs.Target diff = answer.value();
+                    if (diff != null && onGitDiff != null) {
+                        onGitDiff.accept(diff);
+                        return;
+                    }
+                    GitOutputLinks.Link file = GitOutputLinks.at(clicked.text(), offset - clicked.start());
+                    if (file != null && onLink != null) {
+                        onLink.accept(new StackTraceLinks.Link(file.file(), 1));
+                    }
+                });
                 return;
             }
-            GitOutputLinks.Link file = gitTranscript ? GitOutputLinks.at(area.getText(), offset) : null;
+            GitOutputLinks.Link file = line == null ? null : GitOutputLinks.at(line.text(), offset - line.start());
             if (file != null && onLink != null) {
                 onLink.accept(new StackTraceLinks.Link(file.file(), 1));
                 e.consume();
@@ -236,13 +258,25 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         });
         area.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_MOVED, e -> {
             int offset = area.hit(e.getX(), e.getY()).getInsertionIndex();
-            boolean linked = ConsoleUrls.at(area.getText(), offset) != null
-                    || (gitTranscript
-                            && (GitOutputLinks.at(area.getText(), offset) != null
-                                    || GitOutputDiffs.at(area.getText(), offset) != null));
+            RunPanel.LineAt line = RunPanel.lineAt(area, offset);
+            int at = line == null ? -1 : offset - line.start();
+            boolean linked = line != null
+                    && (ConsoleUrls.at(line.text(), at) != null
+                            || (gitTranscript
+                                    && (GitOutputLinks.at(line.text(), at) != null
+                                            || GitOutputDiffs.at(line.text(), at) != null)));
             area.setCursor(linked ? Cursor.HAND : Cursor.TEXT);
         });
         area.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> area.setCursor(null));
+    }
+
+    /** The place a clicked change graph's diff is looked for in the transcript, off the FX thread. */
+    static final String GIT_DIFF_SITE = "BuildToolPanel.gitDiff";
+
+    /** Whether {@code at} of {@code line} is on a stat row's change graph (the line alone: the hover's question). */
+    private static boolean onGraph(String line, int at) {
+        int[] graph = GitOutputDiffs.graph(line);
+        return graph != null && graph[0] <= at && at < graph[1];
     }
 
     public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {

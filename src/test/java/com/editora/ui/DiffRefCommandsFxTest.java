@@ -525,7 +525,11 @@ class DiffRefCommandsFxTest {
                 buffer.getArea().replaceText("just some notes\n");
                 diff.openPatchFile(buffer);
             });
-            assertEquals(tr("status.diff.patchUnparsable"), w.status());
+            // Parsed off the FX thread (PERF-01): the answer comes when the parse lands.
+            OverlayTestKit.await(
+                    async,
+                    "the unparsable patch",
+                    () -> tr("status.diff.patchUnparsable").equals(w.status()));
         }
     }
 

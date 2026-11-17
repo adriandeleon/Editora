@@ -301,7 +301,10 @@ public class QuickOpen<T> {
             }
         });
 
-        input.textProperty().addListener((obs, old, now) -> filter(now));
+        input.textProperty().addListener((obs, old, now) -> {
+            chooseWhenLanded = false; // typed on after Enter: the Enter was for the query before
+            filter(now);
+        });
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         // Emacs caret movement + basic editing in the query field. Registered after onKey so the picker's own
         // list navigation (C-n/C-p/C-g) consumes those chords first and the keymap yields to it (isConsumed).
@@ -340,11 +343,10 @@ public class QuickOpen<T> {
                 T item = list.getSelectionModel().getSelectedItem();
                 if (item != null) {
                     row.action().accept(item);
-                    reload();
-                    if (!items.isEmpty()) {
-                        int keep = Math.max(0, Math.min(at, items.size() - 1));
-                        list.getSelectionModel().select(keep);
-                        list.scrollTo(keep);
+                    if (showing) {
+                        all = itemsSupplier.get();
+                        keys = null;
+                        filter(input.getText(), at); // the cursor stays at the same place once the rows land
                     }
                 }
                 e.consume();
@@ -365,6 +367,15 @@ public class QuickOpen<T> {
     }
 
     private void chooseSelected() {
+        if (search.pending()) {
+            chooseWhenLanded = true; // the rows shown answer an older query: choose from the latest once it lands
+            return;
+        }
+        chooseRow();
+    }
+
+    /** Chooses the highlighted row (a click chooses the row clicked, which is shown and so known). */
+    private void chooseRow() {
         T item = list.getSelectionModel().getSelectedItem();
         if (item != null) {
             chosen = true; // must be set before hide(), which is what runs the cancel hook
@@ -373,41 +384,95 @@ public class QuickOpen<T> {
         }
     }
 
+    /** Where a typed query is matched against the rows: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "QuickOpen.filter";
+
+    /** The filter in flight: a newer keystroke supersedes it, and only the latest answer is shown. */
+    private final LatestOnly search = PickerSearch.latest();
+
+    /** Enter was pressed while the rows for the query were still coming: choose once they land. */
+    private boolean chooseWhenLanded;
+
+    /** {@link #searchKey} of each of {@link #all}, taken once per list on the FX thread; null until a query needs it. */
+    private @Nullable List<String> keys;
+
+    /** Whether the rows shown are not yet those for the query typed (a test waits on it). */
+    boolean filtering() {
+        return search.pending();
+    }
+
     private void filter(String query) {
+        filter(query, -1);
+    }
+
+    /**
+     * Shows the rows matching {@code query}: at once for an empty one (the source's own order), else matched off the FX
+     * thread (PERF-01, Pauta 6.0.1) — the list may be thousands long (Loaded Sources, Modules) — on a copy of the rows
+     * and their search keys; the rows shown stay until the latest query's answer lands. {@code keepAt} is the row the
+     * cursor goes back to (a row action), or -1 for the usual first row.
+     */
+    private void filter(String query, int keepAt) {
         String q = query == null ? "" : query.trim();
-        currentQuery = q;
-        List<T> matches = new ArrayList<>();
+        List<T> rows = all;
         if (q.isEmpty()) {
             // With nothing typed the supplier's own order is the meaningful one — recency for recent
             // files, document order for symbols — so it is passed through exactly as given.
-            matches.addAll(all);
-        } else {
-            record Scored<U>(U item, int score, int index) {}
-            List<Scored<T>> scored = new ArrayList<>();
-            for (int i = 0; i < all.size(); i++) {
-                T item = all.get(i);
-                FuzzyMatch.Match m = FuzzyMatch.of(searchKey.apply(item), q);
-                if (m != null) {
-                    scored.add(new Scored<>(item, m.score(), i));
-                }
-            }
-            // The supplier's index is the final tiebreak, so equal-scoring rows keep their original
-            // relative order instead of shuffling under the cursor between keystrokes.
-            scored.sort(Comparator.comparingInt((Scored<T> s) -> s.score())
-                    .reversed()
-                    .thenComparingInt(Scored::index));
-            for (Scored<T> s : scored) {
-                matches.add(s.item());
-            }
+            search.cancel();
+            landed(q, new ArrayList<>(rows), keepAt);
+            return;
         }
+        List<String> matchKeys = keys;
+        if (matchKeys == null || matchKeys.size() != rows.size()) {
+            List<String> taken = new ArrayList<>(rows.size());
+            for (T item : rows) {
+                String key = searchKey.apply(item);
+                taken.add(key == null ? "" : key);
+            }
+            matchKeys = List.copyOf(taken);
+            keys = matchKeys;
+        }
+        List<String> matched = matchKeys;
+        search.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    record Scored(int index, int score) {}
+                    List<Scored> scored = new ArrayList<>();
+                    for (int i = 0; i < matched.size(); i++) {
+                        if (Thread.currentThread().isInterrupted()) {
+                            return List.<T>of(); // superseded: the answer is dropped anyway
+                        }
+                        FuzzyMatch.Match m = FuzzyMatch.of(matched.get(i), q);
+                        if (m != null) {
+                            scored.add(new Scored(i, m.score()));
+                        }
+                    }
+                    // The supplier's index is the final tiebreak, so equal-scoring rows keep their original
+                    // relative order instead of shuffling under the cursor between keystrokes.
+                    scored.sort(
+                            Comparator.comparingInt(Scored::score).reversed().thenComparingInt(Scored::index));
+                    List<T> matches = new ArrayList<>(scored.size());
+                    for (Scored s : scored) {
+                        matches.add(rows.get(s.index()));
+                    }
+                    return matches;
+                },
+                matches -> landed(q, matches, keepAt));
+    }
+
+    /** The rows for {@code q}: shown, the cursor placed, and chosen when Enter was waiting for them. */
+    private void landed(String q, List<T> matches, int keepAt) {
+        currentQuery = q;
         items.setAll(matches);
         if (items.isEmpty()) {
             emptyLabel.setText(placeholderText());
+            chooseWhenLanded = false;
             return;
         }
         // With no query, start on the value in force when one was supplied; otherwise the first row.
         int start = 0;
-        if (q.isEmpty() && currentItem != null) {
+        if (keepAt >= 0) {
+            start = Math.min(keepAt, items.size() - 1);
+        } else if (q.isEmpty() && currentItem != null) {
             T current = currentItem.get();
             int idx = current == null ? -1 : items.indexOf(current);
             if (idx >= 0) {
@@ -417,6 +482,10 @@ public class QuickOpen<T> {
         list.getSelectionModel().select(start);
         list.scrollTo(start);
         PickerKeys.announce(list); // typing changed the row in front
+        if (chooseWhenLanded) {
+            chooseWhenLanded = false;
+            chooseRow();
+        }
     }
 
     /** Shows the picker as a centered in-scene overlay. {@code owner} is unused (kept for call-site
@@ -427,6 +496,7 @@ public class QuickOpen<T> {
         }
         ensureBuilt();
         all = itemsSupplier.get();
+        keys = null;
         List<String> legend = new ArrayList<>();
         legend.add(PickerKeys.hint("select", "↵"));
         rowActions.forEach(r -> legend.add(r.legend()));
@@ -437,6 +507,8 @@ public class QuickOpen<T> {
         showing = true;
         overlayHost.show(content, input::requestFocus, () -> {
             showing = false;
+            search.cancel(); // a filter landing after the card closed shows nothing and chooses nothing
+            chooseWhenLanded = false;
             if (!chosen && onPreviewCancelled != null) {
                 onPreviewCancelled.run();
             }
@@ -450,6 +522,7 @@ public class QuickOpen<T> {
     public void reload() {
         if (showing) {
             all = itemsSupplier.get();
+            keys = null;
             filter(input.getText());
         }
     }
@@ -486,7 +559,7 @@ public class QuickOpen<T> {
             setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && getItem() != null) {
                     getListView().getSelectionModel().select(getItem());
-                    chooseSelected();
+                    chooseRow();
                 }
             });
         }
