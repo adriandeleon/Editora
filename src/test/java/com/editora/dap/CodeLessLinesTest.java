@@ -66,6 +66,36 @@ class CodeLessLinesTest {
     }
 
     @Test
+    void aRegularExpressionHoldingSlashStarOpensNoComment() {
+        String js = String.join(
+                "\n",
+                "function trim(s) {",
+                "  s = s.replace(/\\/*$/, \"\");", // 1: /\/*$/
+                "  const re = [/[/*]/g, /a\\/b/];", // 2
+                "  return /x*/.test(s) ? s : 0;", // 3
+                "  // a comment", // 4
+                "  return s;", // 5
+                "}");
+        assertFalse(CodeLessLines.isCodeLess(js, 5, "javascript"), "real code after the regular expressions");
+        assertFalse(CodeLessLines.isCodeLess(js, 5, "typescript"));
+        assertTrue(CodeLessLines.isCodeLess(js, 4, "javascript"));
+        String division = "let a = b / c; /* half\n   a comment */\nlet d = 1;";
+        assertTrue(CodeLessLines.isCodeLess(division, 1, "javascript"), "a division is no regular expression");
+        assertFalse(CodeLessLines.isCodeLess(division, 2, "javascript"));
+    }
+
+    @Test
+    void aTemplateLiteralOrGoRawStringSpansLines() {
+        String js = "const t = `\n/* not a comment\n`;\nrun(t);\n";
+        assertFalse(CodeLessLines.isCodeLess(js, 1, "javascript"), "inside the template literal");
+        assertFalse(CodeLessLines.isCodeLess(js, 3, "javascript"), "after it");
+        assertFalse(CodeLessLines.isCodeLess(js, 3, "typescript"));
+        String go = "package main\n\nvar s = `C:\\dir\\`\nvar t = `\n/* text\n`\nfunc main() {}\n";
+        assertFalse(CodeLessLines.isCodeLess(go, 4, "go"), "inside the raw string");
+        assertFalse(CodeLessLines.isCodeLess(go, 6, "go"), "after it; a backslash ends no raw string early");
+    }
+
+    @Test
     void rustCommentLinesHaveNoCode() {
         String rs = "/// Docs.\nfn main() {\n    // a comment\n    let x = 1; // trailing\n}\n";
         assertTrue(CodeLessLines.isCodeLess(rs, 0, "rust"));
