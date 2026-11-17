@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * a settings/zoom change takes effect inside a diff tab (it previously kept its fixed construction font).
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // an unwarmed model is laid out off FX in the app
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DiffViewerFontFxTest {
 

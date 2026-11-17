@@ -2221,13 +2221,12 @@ final class LanguageServerSession implements LanguageClient {
 
     /** {@link #frozen} of a list. */
     static List<Object> frozenList(List<?> list) {
-        List<@Nullable Object> copy = new ArrayList<>(list.size());
+        List<Object> copy = new ArrayList<>(list.size());
         for (Object item : list) {
-            copy.add(frozen(item));
+            Object kept = frozen(item);
+            copy.add(kept == null ? com.google.gson.JsonNull.INSTANCE : kept); // a null goes out as JSON null
         }
-        @SuppressWarnings("NullAway") // a list may carry JSON nulls; LSP4J encodes them as null
-        List<Object> out = java.util.Collections.unmodifiableList(copy);
-        return out;
+        return java.util.Collections.unmodifiableList(copy);
     }
 
     /**

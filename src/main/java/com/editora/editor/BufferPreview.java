@@ -651,13 +651,14 @@ final class BufferPreview {
         String md = b.documentTextSnapshot();
         Path baseDir = b.path == null ? null : b.path.getParent();
         long gen = ++previewGen;
+        Boolean glyphsDark = previewThemeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(previewThemeMode));
         PREVIEW_POOL.submit(() -> {
             // Guarded like every other preview branch. commonmark 0.30.0 added input limits that *throw*
             // rather than degrade — a table over a million cells is the reachable one (the nesting limits
             // fall back to plain text instead). Unguarded, submit() parks that in a Future nobody reads, so
             // the preview would sit blank with nothing logged and no way to tell it apart from a slow render.
             try {
-                MarkdownPreview.Plan plan = MarkdownPreview.plan(md, baseDir); // parse + per-block keys
+                MarkdownPreview.Plan plan = MarkdownPreview.plan(md, baseDir, glyphsDark); // parse, keys, formulas
                 Platform.runLater(() -> {
                     if (gen != previewGen) {
                         return; // a newer render superseded this one

@@ -305,11 +305,54 @@ final class Icons {
                 + "10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z");
     }
 
-    /** Editora's application mark, for actions that enter or return to the full application UI. */
+    /** {@link com.editora.perf.BlockingSites} name of the application mark's read and decode, done off FX. */
+    static final String EDITORA_ICON_SITE = "Icons.editora";
+
+    /** The application mark, read and decoded once and kept (PERF-01, Pauta 6.0.1); null until then. */
+    private static volatile @org.jspecify.annotations.Nullable Image editoraImage;
+
+    private static String editoraUrl() {
+        return java.util.Objects.requireNonNull(
+                        Icons.class.getResource("/com/editora/icons/icon-32.png"), "Editora application icon")
+                .toExternalForm();
+    }
+
+    /**
+     * Reads and decodes the application mark and keeps it: called off the FX thread (by {@code bundled-warm} after
+     * the first window), so a diff viewer built later never reads the jar on the FX thread.
+     */
+    static void warmEditora() {
+        if (editoraImage == null) {
+            com.editora.perf.BlockingSites.enter(EDITORA_ICON_SITE);
+            Image image = new Image(editoraUrl());
+            if (!image.isError()) {
+                editoraImage = image;
+            }
+        }
+    }
+
+    /** TEST SEAM — forgets the kept mark, so the next ask is cold. */
+    static void forgetEditoraForTest() {
+        editoraImage = null;
+    }
+
+    /**
+     * Editora's application mark, for actions that enter or return to the full application UI. The kept image when
+     * it is known; asked before the warm-up has read it, the image loads in the background (JavaFX's loader thread)
+     * and is kept once it has, so the FX thread never reads or decodes it.
+     */
     static Node editora() {
-        var resource = java.util.Objects.requireNonNull(
-                Icons.class.getResource("/com/editora/icons/icon-32.png"), "Editora application icon");
-        ImageView view = new ImageView(new Image(resource.toExternalForm()));
+        Image image = editoraImage;
+        if (image == null) {
+            Image loading = new Image(editoraUrl(), true); // background loading: the read and decode are not on FX
+            loading.progressProperty().addListener((o, was, now) -> {
+                if (now.doubleValue() >= 1 && !loading.isError() && editoraImage == null) {
+                    editoraImage = loading;
+                }
+            });
+            image = loading;
+        }
+        ImageView view = new ImageView(image);
         view.setFitWidth(ICON_SCALE * 24.0);
         view.setFitHeight(ICON_SCALE * 24.0);
         view.setPreserveRatio(true);

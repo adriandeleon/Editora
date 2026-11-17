@@ -97,6 +97,11 @@ public final class DiffLayout {
             return u;
         }
 
+        /** Whether the layout of that view (unified or side-by-side), context collapsed or not, is worked out. */
+        public synchronized boolean has(boolean unified, boolean collapse) {
+            return unified ? unifieds[collapse ? 1 : 0] != null : sides[collapse ? 1 : 0] != null;
+        }
+
         void warm() {
             side(false);
             side(true);

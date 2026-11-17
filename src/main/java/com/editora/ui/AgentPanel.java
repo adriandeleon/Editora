@@ -455,7 +455,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private static org.commonmark.node.@Nullable Node parsed(String md, boolean math) {
         com.editora.perf.BlockingSites.enter(PARSE_SITE);
         try {
-            return MarkdownRenderer.parseForRender(md, math);
+            org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md, math);
+            MarkdownRenderer.warmMath(ast, null); // its formulas drawn here too, not on the FX thread
+            return ast;
         } catch (RuntimeException ex) {
             return null;
         }

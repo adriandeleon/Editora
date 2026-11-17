@@ -570,4 +570,50 @@ class HandlersEditorOffFxThreadFxTest {
         now.forEach(Runnable::run);
         FxTestSupport.drainFx();
     }
+    /**
+     * A record logged on the FX thread is written to the session log and the console by the log's own thread; the
+     * status bar's size is counted off the FX thread after an edit; a curl command is converted off it, and its new
+     * tab's text is prepared off it too (PERF-01, Pauta 6.0.1).
+     */
+    @Test
+    void aRecordLoggedOnFxTheSizeAfterAnEditAndACurlImportWorkOffTheFxThread() throws Exception {
+        Path file = Files.writeString(dir.resolve("notes.txt"), "héllo\n");
+        fx = FxWindowFixture.createWithFileWorkOffThread(
+                Files.createDirectories(dir.resolve("config")),
+                s -> s.getSettings().setHttpClientSupport(true));
+        EditorBuffer buffer = open(file);
+        Path logDir = Files.createDirectories(dir.resolve("log"));
+        DebugLog.install();
+        DebugLog.attachFile(logDir);
+        try {
+            listen();
+            String marker = "logged on the FX thread " + System.nanoTime();
+            FxTestSupport.runOnFx(
+                    () -> java.util.logging.Logger.getLogger("perf.guard").warning(marker));
+            assertTrue(DebugLog.flushWrites(10_000), "the writer caught up");
+            awaitHeard(DebugLog.WRITE_SITE);
+            assertTrue(Files.readString(DebugLog.sessionFile(logDir)).contains(marker), "the record is in the file");
+
+            FxTestSupport.runOnFx(() -> buffer.getArea().appendText("more\n"));
+            awaitHeard(StatusBar.SIZE_SITE);
+
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+                content.putString("curl -X PUT https://example.test/b -H 'Accept: text/plain'");
+                javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            });
+            run("http.importCurl");
+            awaitHeard(HttpClientCoordinator.CURL_IMPORT_SITE);
+            SettingsRig.awaitFx("the request in a new tab", () -> {
+                EditorBuffer active = fx.controller.activeBuffer();
+                return active != null && active.getContent().startsWith("PUT https://example.test/b");
+            });
+            awaitHeard(EditorBuffer.PREPARE_TEXT_SITE);
+
+            FxTestSupport.drainFx();
+            assertNothingOnFx();
+        } finally {
+            DebugLog.detachFileForTest();
+        }
+    }
 }

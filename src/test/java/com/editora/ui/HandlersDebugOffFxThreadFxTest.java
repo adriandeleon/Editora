@@ -285,6 +285,88 @@ class HandlersDebugOffFxThreadFxTest {
         assertNothingOnFx();
     }
 
+    /**
+     * A diff viewer whose model's kept layouts were dropped lays its view out off the FX thread and shows it when it
+     * lands; its application mark is never read on the FX thread, and the warm-up reads it off it.
+     */
+    @Test
+    void aDiffViewerWithoutKeptLayoutsLaysOutOffTheFxThreadAndShowsWhenTheyLand() throws Exception {
+        String left = "a\nB\nc\n";
+        String right = "a\nb\nc\n";
+        var model = DiffEngine.compute(left, right, DiffEngine.DiffOptions.DEFAULT); // never laid out: as if evicted
+        Icons.forgetEditoraForTest();
+        listen();
+        DiffViewerPane pane = FxTestSupport.callOnFx(() -> new DiffViewerPane(
+                "diff", "left", "right", "x.txt", "x.txt", left, right, model, "Monospaced", 13, true, "x.txt"));
+        SettingsRig.awaitFx("the view shown once laid out", () -> FxTestSupport.field(pane, "sideBySideNode") != null);
+        awaitHeard(DiffViewerPane.LAYOUT_SITE);
+        awaitHeard(com.editora.diff.DiffLayout.SITE);
+        Icons.forgetEditoraForTest(); // the viewer's background load may have kept it already
+        Thread warm = Thread.ofVirtual().start(Icons::warmEditora); // what bundled-warm does after the first window
+        warm.join();
+        awaitHeard(Icons.EDITORA_ICON_SITE);
+        FxTestSupport.drainFx();
+        assertNothingOnFx();
+    }
+
+    /** The debug expression field tokenizes off the FX thread once typing pauses; only the latest ask is applied. */
+    @Test
+    void theDebugExpressionFieldIsHighlightedOffTheFxThread() throws Exception {
+        DebugExpressionField field = FxTestSupport.callOnFx(() -> new DebugExpressionField(
+                new DebugExpressionField.Owner() {
+                    @Override
+                    public boolean paused() {
+                        return true;
+                    }
+
+                    @Override
+                    public void complete(
+                            String text,
+                            int caret,
+                            java.util.function.Consumer<List<com.editora.dap.DapModels.CompletionTarget>> cb) {
+                        cb.accept(List.of());
+                    }
+
+                    @Override
+                    public void submit(String expression) {}
+                },
+                new DebugPanelText.History(),
+                () -> null));
+        FxTestSupport.runOnFx(() -> field.setLanguageFile("Main.java"));
+        SettingsRig.awaitFx("the grammar loaded", () -> !"".equals(field.languageFile()));
+        listen();
+        FxTestSupport.runOnFx(() -> {
+            for (char c : "return 1;".toCharArray()) {
+                field.area().appendText(String.valueOf(c)); // typed: one highlight once the typing pauses
+            }
+        });
+        SettingsRig.awaitFx(
+                "`return` styled as a keyword",
+                () -> field.area().getStyleOfChar(1).contains("keyword"));
+        awaitHeard(DebugExpressionField.HIGHLIGHT_SITE);
+        long asks = heard.stream()
+                .filter(h -> h.site().equals(DebugExpressionField.HIGHLIGHT_SITE))
+                .count();
+        assertTrue(asks < "return 1;".length(), "tokenized once typing paused, not per key: " + asks);
+        FxTestSupport.drainFx();
+        assertNothingOnFx();
+    }
+
+    /** Two saved Map views are compared property by property, with no JSON. */
+    @Test
+    void savedMapViewsCompareByTheirProperties() {
+        com.editora.config.ProjectMapState a = new com.editora.config.ProjectMapState();
+        com.editora.config.ProjectMapState b = new com.editora.config.ProjectMapState();
+        assertTrue(ProjectMapWorkingSets.sameView(a, b));
+        a.setSelected("src/A.java");
+        assertFalse(ProjectMapWorkingSets.sameView(a, b));
+        b.setSelected("src/A.java");
+        assertTrue(ProjectMapWorkingSets.sameView(a, b));
+        a.setExpanded(List.of("src"));
+        assertFalse(ProjectMapWorkingSets.sameView(a, b), "a list only one of them has");
+        assertFalse(ProjectMapWorkingSets.sameView(b, a));
+    }
+
     @Test
     void aMapChangesCardsWordsAreWorkedOutOffTheFxThreadAndTheLatestPickWins() throws Exception {
         List<GitChanges.FileDiff> files = GitChanges.parse("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"

@@ -741,8 +741,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Select All Occurrences, matching-bracket jumps, Expand Selection, Query Replace, Toggle Comment, tag
     auto-rename, CSV Align, Convert Indentation and whole-file replacements;
   - folding, hover and documentation popups (a long doc may show as plain text for a moment), the merge resolver's
-    Save, the Map's Changes card (changed words are marked just after the lines show), and breakpoints moved by
-    edits during a debug session.
+    Save, the Map's Changes card (changed words are marked just after the lines show), breakpoints moved by
+    edits during a debug session;
+  - math in the Markdown preview, popups and the agent panel (a new formula appears a moment after its text),
+    Copy HTML, the debug expression field's colours and the status bar's size.
 
   Two small differences: Ctrl/Cmd-click on a Markdown link now also moves the caret there, and a `*/` more than
   4,096 characters below no longer stops `/**` from closing itself. A close-save in the merge resolver closes the tab

@@ -1159,6 +1159,10 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void restoreViewState(ViewState state) {
+        if (layingOut) {
+            restoreWhenShown = state; // the view is shown once its layout lands: restored then
+            return;
+        }
         Platform.runLater(() -> {
             syncing = true;
             try {
@@ -1612,8 +1616,13 @@ public final class DiffViewerPane implements TabContent {
 
     private void showSideBySide() {
         if (sideBySideNode == null) {
+            if (!layoutReady(false)) {
+                layOutThen(false, this::showSideBySide);
+                return;
+            }
             buildSideBySide();
         }
+        layoutShown();
         // (Re-)bind every time, not once at build: showUnified unbinds it, so a toggle out and back would
         // otherwise leave the toolbar cluster stuck at the window edge. Tracks the divider as it is dragged.
         if (leftPaneBox != null) {
@@ -2083,6 +2092,64 @@ public final class DiffViewerPane implements TabContent {
         javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
     }
 
+    /** {@link com.editora.perf.BlockingSites} name of a view laid out here because its kept layouts were dropped. */
+    static final String LAYOUT_SITE = "DiffViewerPane.layout";
+
+    /** Counts layout asks: a layout landing for an earlier ask (or after a view was shown since) is dropped. */
+    private long layoutAsk;
+    /** Whether a view waits for its layout, worked out off the FX thread. */
+    private boolean layingOut;
+    /** The view state to restore once the view waiting for its layout is shown. */
+    private @Nullable ViewState restoreWhenShown;
+
+    /** Whether the layout of that view of the model shown is worked out (it normally is, where the model was made). */
+    private boolean layoutReady(boolean unifiedView) {
+        return layouts().has(unifiedView, collapseContext);
+    }
+
+    /**
+     * Lays the view out off the FX thread (PERF-01, Pauta 6.0.1) when the model's kept layouts were dropped before
+     * this viewer asked (more diffs made since, or a model made elsewhere), then shows it with {@code show}. The view
+     * shown until then stays; an answer for another model, view or collapse is dropped.
+     */
+    private void layOutThen(boolean unifiedView, Runnable show) {
+        long ask = ++layoutAsk;
+        layingOut = true;
+        DiffModel m = model;
+        boolean collapse = collapseContext;
+        com.editora.diff.DiffLayout.Layouts l = layouts();
+        com.editora.perf.OffFx.then(
+                LAYOUT_SITE,
+                () -> {
+                    if (unifiedView) {
+                        l.unified(collapse);
+                    } else {
+                        l.side(collapse);
+                    }
+                    return Boolean.TRUE;
+                },
+                a -> {
+                    if (ask != layoutAsk) {
+                        return; // a later ask, or a view shown since
+                    }
+                    layingOut = false;
+                    ViewState restore = restoreWhenShown;
+                    restoreWhenShown = null;
+                    if (model == m && collapseContext == collapse && unified == unifiedView) {
+                        show.run();
+                        if (restore != null) {
+                            restoreViewState(restore);
+                        }
+                    }
+                });
+    }
+
+    /** A view was shown: a layout still landing for an earlier ask is dropped. */
+    private void layoutShown() {
+        layoutAsk++;
+        layingOut = false;
+    }
+
     /** The layouts of the model shown: worked out where it was made, or (a model made elsewhere) as asked for. */
     private com.editora.diff.DiffLayout.Layouts layouts() {
         com.editora.diff.DiffLayout.Layouts l = layouts;
@@ -2152,8 +2219,13 @@ public final class DiffViewerPane implements TabContent {
 
     private void showUnified() {
         if (unifiedNode == null) {
+            if (!layoutReady(true)) {
+                layOutThen(true, this::showUnified);
+                return;
+            }
             buildUnified();
         }
+        layoutShown();
         leftPaneWidth.unbind(); // no second pane to align to; the cluster goes back to the right edge
         leftPaneWidth.set(0);
         showComparison(unifiedNode);

@@ -339,7 +339,30 @@ command waiting for one is busy, so a second press is refused.
   - The Map Changes card's words (the latest pick wins), the History card's lines and a code card's aids and uses
     are worked out off the thread too.
 
-`Handlers{Index,Lsp,Markdown,Editor,Console,Debug}OffFxThreadFxTest` drive these paths and check that none of their
+- **Rendering, logging and small reads.**
+  - A LaTeX formula is never parsed or rasterized on the FX thread (`MathImages.SITE`, one at a time under its
+    lock). The threads that parse a document for the preview, a popup or the agent panel draw its formulas into
+    the cache (`MarkdownRenderer.warmMath`), and print draws them with its other assets (`MarkdownPrintAssets`). A
+    formula the FX thread finds missing shows as an empty image of its style, filled when its rendering lands (its
+    source when it does not parse). JLaTeXMath's fonts are warmed on `math-warm`.
+  - Copy HTML renders the markup off the thread (`PreviewMenu.COPY_HTML_SITE`) and fills the clipboard when it
+    lands. A print preview's page images are decoded off the thread (`PrintService.DECODE_SITE`), and a page is
+    printed once `Pages.prepare` has its images.
+  - The debug expression field tokenizes off the thread once typing pauses for 120 ms
+    (`DebugExpressionField.HIGHLIGHT_SITE`). The diff viewers' application mark is read once on `bundled-warm` and
+    kept (`Icons.warmEditora`). A diff view whose kept layouts were dropped is laid out off the thread
+    (`DiffViewerPane.LAYOUT_SITE`). Saving a Map working set compares the two views property by property, with no
+    JSON.
+  - The session log is written by its own thread (`DebugLog`, `debug-log-writer`): a record logged on any thread
+    goes into the in-memory log and is queued, in order, for the session file and for the console, whose handlers
+    the log takes over. The quit waits for it (`DebugLog.flushWrites`, from `Application.stop()` and a shutdown
+    hook).
+  - The status bar's size is counted off the thread whatever the size (`StatusBar.SIZE_SITE`). Import from curl
+    converts the command off the thread (`CURL_IMPORT_SITE`). The start-up fallback reads the first window's fonts,
+    catalog and keymap on its own thread before the window is built (`App.FALLBACK_FIRST_WINDOW_SITE`) and builds
+    that window from `MainView`.
+
+`Handlers{Index,Lsp,Markdown,Editor,Console,Debug,Render}OffFxThreadFxTest` drive these paths and check that none of their
 `BlockingSites` is heard on the FX thread. `LspSyncOverWireFxTest` rebuilds the document from the changes a wired
 fake server receives, versions in order.
 

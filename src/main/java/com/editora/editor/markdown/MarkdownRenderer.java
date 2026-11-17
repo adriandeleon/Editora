@@ -97,9 +97,9 @@ public final class MarkdownRenderer {
         return (ctx.live() != null ? PreviewPrefs.contentWidth() : MAX_CONTENT_WIDTH) - 48;
     }
     /** Point sizes passed to JLaTeXMath for inline {@code $…$} and display {@code $$…$$} math. */
-    private static final double INLINE_MATH_SIZE = 16;
+    static final double INLINE_MATH_SIZE = 16;
 
-    private static final double DISPLAY_MATH_SIZE = 20;
+    static final double DISPLAY_MATH_SIZE = 20;
 
     /** Parser/text extensions, shared so the AST and the plain-text rendering stay in sync. (The
      *  heading-anchor extension is renderer-only — it's added to the HTML renderer in {@code
@@ -206,6 +206,40 @@ public final class MarkdownRenderer {
         return parseForRender(markdown, MathImages.isEnabled());
     }
 
+    /**
+     * Rasterizes the formulas of {@code ast} into {@link MathImages}' cache, for the app theme ({@code dark} null) or
+     * the one given, so the FX thread that builds the nodes finds them there (PERF-01, Pauta 6.0.1). Off the FX thread
+     * only: the threads that parse a document for the preview, a popup or the agent panel call it after the parse.
+     */
+    public static void warmMath(org.commonmark.node.@Nullable Node ast, @Nullable Boolean dark) {
+        if (ast == null || !MathImages.isEnabled() || javafx.application.Platform.isFxApplicationThread()) {
+            return; // on the FX thread the nodes rasterize off it themselves
+        }
+        forEachFormula(ast, (latex, display) -> {
+            if (display) {
+                MathImages.warm(latex, true, DISPLAY_MATH_SIZE, dark);
+            }
+            MathImages.warm(latex, false, INLINE_MATH_SIZE, dark); // a $$…$$ inside a paragraph shows inline
+        });
+    }
+
+    /** Each closed formula of {@code ast}: its LaTeX and whether it is written as a display formula. */
+    static void forEachFormula(org.commonmark.node.Node ast, java.util.function.BiConsumer<String, Boolean> each) {
+        java.util.ArrayDeque<org.commonmark.node.Node> todo = new java.util.ArrayDeque<>();
+        todo.push(ast);
+        while (!todo.isEmpty()) {
+            org.commonmark.node.Node n = todo.pop();
+            if (n instanceof MarkdownMath.Block b && b.isClosed()) {
+                each.accept(b.getLatex(), Boolean.TRUE);
+            } else if (n instanceof MarkdownMath.Inline m) {
+                each.accept(m.getLatex(), m.isDisplay());
+            }
+            for (org.commonmark.node.Node c = n.getLastChild(); c != null; c = c.getPrevious()) {
+                todo.push(c);
+            }
+        }
+    }
+
     /** The parse of a popup's Markdown (hover, signature and completion docs, a note), named for BlockingSites. */
     public static final String POPUP_PARSE_SITE = "MarkdownRenderer.popupParse";
 
@@ -217,7 +251,13 @@ public final class MarkdownRenderer {
     public static void parseLater(
             String markdown, java.util.function.Consumer<org.commonmark.node.@Nullable Node> onFx) {
         com.editora.perf.OffFx.then(
-                POPUP_PARSE_SITE, () -> parseForRender(markdown), a -> onFx.accept(a.ok() ? a.value() : null));
+                POPUP_PARSE_SITE,
+                () -> {
+                    org.commonmark.node.Node ast = parseForRender(markdown);
+                    warmMath(ast, null);
+                    return ast;
+                },
+                a -> onFx.accept(a.ok() ? a.value() : null));
     }
 
     /**
@@ -527,6 +567,11 @@ public final class MarkdownRenderer {
 
         Node blockMath(String latex) {
             Boolean d = glyphsDark();
+            MathImages.Rendered printed = // print: rasterized with its other assets, off the FX thread
+                    assets == null || d == null ? null : assets.math(MathImages.key(latex, true, DISPLAY_MATH_SIZE, d));
+            if (printed != null) {
+                return MathImages.nodeOf(printed, latex, true);
+            }
             return d == null
                     ? MathImages.blockNode(latex, DISPLAY_MATH_SIZE)
                     : MathImages.blockNode(latex, DISPLAY_MATH_SIZE, d);
@@ -534,6 +579,11 @@ public final class MarkdownRenderer {
 
         Node inlineMath(String latex) {
             Boolean d = glyphsDark();
+            MathImages.Rendered printed =
+                    assets == null || d == null ? null : assets.math(MathImages.key(latex, false, INLINE_MATH_SIZE, d));
+            if (printed != null) {
+                return MathImages.nodeOf(printed, latex, false);
+            }
             return d == null
                     ? MathImages.inlineNode(latex, INLINE_MATH_SIZE)
                     : MathImages.inlineNode(latex, INLINE_MATH_SIZE, d);

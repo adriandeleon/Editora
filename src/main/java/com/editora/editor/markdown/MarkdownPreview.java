@@ -568,8 +568,17 @@ public final class MarkdownPreview {
 
     /** Parses {@code markdown} and cuts it into keyed units. Pure CPU plus a {@code stat} per local image. */
     public static Plan plan(String markdown, @Nullable Path baseDir) {
+        return plan(markdown, baseDir, null);
+    }
+
+    /**
+     * As {@link #plan(String, Path)}, its formulas rasterized here for the glyph theme the preview will show
+     * ({@code glyphsDark} null: the app's), so the FX thread finds them drawn (PERF-01, Pauta 6.0.1).
+     */
+    public static Plan plan(String markdown, @Nullable Path baseDir, @Nullable Boolean glyphsDark) {
         String md = markdown == null ? "" : markdown;
         org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
+        MarkdownRenderer.warmMath(ast, glyphsDark);
         String definitions = definitions(ast);
         // The anchors the table of contents and the link opener use: one numbering for all three.
         Map<Heading, String> slugs = MarkdownDocInfo.headingAnchors(ast);

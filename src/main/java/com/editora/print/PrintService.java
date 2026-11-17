@@ -60,6 +60,14 @@ public final class PrintService {
         /** The node of page {@code index} (0-based). A lazy implementation builds a fresh node per call. */
         Node get(int index);
 
+        /**
+         * Runs {@code then} on the FX thread once page {@code index} is ready to be printed as {@link #get} builds
+         * it: at once for pages built from what is in memory, after a decode off the FX thread for image pages.
+         */
+        default void prepare(int index, Runnable then) {
+            then.run();
+        }
+
         /** Pages that are already built. */
         static Pages of(List<Node> nodes) {
             List<Node> copy = List.copyOf(nodes);
@@ -348,7 +356,7 @@ public final class PrintService {
                 }
                 List<ImagePaging.Source> sources =
                         images.stream().map(PageImage::source).toList();
-                deliver(onReady, new Prepared(imagePaginator(sources, decoding(images)), null));
+                deliver(onReady, new Prepared(imagePaginator(sources, Decoder.of(images)), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -371,7 +379,7 @@ public final class PrintService {
                 List<PageImage> images = List.of(PageImage.of(r.png(), r.pixelScale()));
                 deliver(
                         onReady,
-                        new Prepared(imagePaginator(List.of(images.get(0).source()), decoding(images)), null));
+                        new Prepared(imagePaginator(List.of(images.get(0).source()), Decoder.of(images)), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -408,20 +416,92 @@ public final class PrintService {
         return pages;
     }
 
+    /** Where a print page's PNG is decoded: heard off the FX thread (PERF-01). */
+    public static final String DECODE_SITE = "PrintService.decodePage";
+
     /**
-     * Decodes PNG {@code i} when a page needs it, keeping the last two (a page shows at most the end of one
-     * chunk and the start of the next). A 4,000-row tree at 2× is some 150 million pixels: decoded all at
-     * once that is over half a gigabyte, encoded a few megabytes. FX thread only.
+     * The page images of a print job, decoded when a page needs them, keeping the last two (a page shows at most the
+     * end of one chunk and the start of the next). A 4,000-row tree at 2× is some 150 million pixels: decoded all at
+     * once that is over half a gigabyte, encoded a few megabytes. The decode runs off the FX thread (PERF-01, Pauta
+     * 6.0.1); which pixel rows are blank (where a page may be cut) is worked out on the prepare thread, one image at
+     * a time, so laying the pages out decodes nothing.
      */
-    private static IntFunction<Image> decoding(List<PageImage> images) {
-        java.util.Map<Integer, Image> recent = new java.util.LinkedHashMap<>(4, 0.75f, true) {
+    public static final class Decoder {
+        private final List<PageImage> images;
+        private final java.util.BitSet[] blank;
+        /** FX-confined: the images decoded last. */
+        private final java.util.Map<Integer, Image> recent = new java.util.LinkedHashMap<>(4, 0.75f, true) {
             @Override
             protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Image> eldest) {
                 return size() > 2;
             }
         };
-        return i -> recent.computeIfAbsent(
-                i, k -> new Image(new ByteArrayInputStream(images.get(k).png())));
+
+        private Decoder(List<PageImage> images, java.util.BitSet[] blank) {
+            this.images = images;
+            this.blank = blank;
+        }
+
+        /** Off the FX thread: reads each image once for its blank rows. */
+        public static Decoder of(List<PageImage> images) {
+            java.util.BitSet[] blank = new java.util.BitSet[images.size()];
+            for (int i = 0; i < images.size(); i++) {
+                Image img = decode(images.get(i));
+                java.util.BitSet rows = new java.util.BitSet();
+                if (img != null) {
+                    for (int row = 0; row < (int) img.getHeight(); row++) {
+                        if (blankRow(img, row)) {
+                            rows.set(row);
+                        }
+                    }
+                }
+                blank[i] = rows;
+            }
+            return new Decoder(images, blank);
+        }
+
+        private static @Nullable Image decode(PageImage image) {
+            Image img = new Image(new ByteArrayInputStream(image.png()));
+            return img.isError() ? null : img;
+        }
+
+        boolean blank(int image, int row) {
+            return image >= 0 && image < blank.length && blank[image].get(row);
+        }
+
+        /** The decoded image {@code i} when it is at hand, else null. FX thread. */
+        @Nullable
+        Image cached(int i) {
+            return recent.get(i);
+        }
+
+        /** Decodes the images {@code needed} not at hand off the FX thread, then runs {@code then} on it. */
+        void decode(java.util.Set<Integer> needed, Runnable then) {
+            List<Integer> missing =
+                    needed.stream().filter(i -> !recent.containsKey(i)).sorted().toList();
+            if (missing.isEmpty()) {
+                then.run();
+                return;
+            }
+            com.editora.perf.OffFx.then(
+                    DECODE_SITE,
+                    () -> {
+                        java.util.Map<Integer, Image> decoded = new java.util.LinkedHashMap<>();
+                        for (int i : missing) {
+                            Image img = decode(images.get(i));
+                            if (img != null) {
+                                decoded.put(i, img);
+                            }
+                        }
+                        return decoded;
+                    },
+                    a -> {
+                        if (a.value() != null) {
+                            recent.putAll(a.value());
+                        }
+                        then.run();
+                    });
+        }
     }
 
     /** A code paginator whose {@link Paginator#pages} builds each page only when it is asked for. */
@@ -545,7 +625,7 @@ public final class PrintService {
      * area (never rotated — the orientation is the user's choice in Page Setup), and a page's node is built
      * when it is asked for, from the images {@code images} hands out.
      */
-    static Paginator imagePaginator(List<ImagePaging.Source> sources, IntFunction<Image> images) {
+    static Paginator imagePaginator(List<ImagePaging.Source> sources, Decoder images) {
         return new Paginator() {
             @Override
             public List<Node> paginate(PageLayout layout) {
@@ -559,9 +639,72 @@ public final class PrintService {
 
             @Override
             public Pages pages(PageLayout layout) {
-                return imagePages(sources, images, layout.getPrintableWidth(), layout.getPrintableHeight());
+                return decodedPages(sources, images, layout.getPrintableWidth(), layout.getPrintableHeight());
             }
         };
+    }
+
+    /**
+     * As {@link #imagePages}, the images decoded off the FX thread: a page shown before its images land shows them
+     * when they do, and a page is printed once {@link Pages#prepare} has them at hand.
+     */
+    public static Pages decodedPages(List<ImagePaging.Source> sources, Decoder images, double availW, double availH) {
+        List<ImagePaging.Page> plan = ImagePaging.layout(sources, availW, availH, false, images::blank);
+        return new Pages() {
+            @Override
+            public int count() {
+                return Math.max(1, plan.size());
+            }
+
+            @Override
+            public Node get(int index) {
+                Pane root = new Pane();
+                root.setPrefSize(availW, availH);
+                if (index < plan.size()) {
+                    List<ImageView> pending = new java.util.ArrayList<>();
+                    List<Integer> of = new java.util.ArrayList<>();
+                    for (ImagePaging.Slice s : plan.get(index).slices()) {
+                        ImageView iv = slice(images.cached(s.image()), s);
+                        root.getChildren().add(iv);
+                        if (iv.getImage() == null) {
+                            pending.add(iv);
+                            of.add(s.image());
+                        }
+                    }
+                    if (!pending.isEmpty()) {
+                        images.decode(new java.util.HashSet<>(of), () -> {
+                            for (int k = 0; k < pending.size(); k++) {
+                                pending.get(k).setImage(images.cached(of.get(k)));
+                            }
+                        });
+                    }
+                }
+                return root;
+            }
+
+            @Override
+            public void prepare(int index, Runnable then) {
+                if (index >= plan.size()) {
+                    then.run();
+                    return;
+                }
+                java.util.Set<Integer> needed = new java.util.HashSet<>();
+                for (ImagePaging.Slice s : plan.get(index).slices()) {
+                    needed.add(s.image());
+                }
+                images.decode(needed, then);
+            }
+        };
+    }
+
+    private static ImageView slice(@Nullable Image img, ImagePaging.Slice s) {
+        ImageView iv = new ImageView(img);
+        iv.setViewport(new javafx.geometry.Rectangle2D(s.srcX(), s.srcY(), s.srcWidth(), s.srcHeight()));
+        iv.setFitWidth(s.width());
+        iv.setFitHeight(s.height());
+        iv.setSmooth(true);
+        iv.relocate(s.x(), s.y());
+        return iv;
     }
 
     /** The pages of {@code sources} on a printable area of {@code availW × availH} points. */

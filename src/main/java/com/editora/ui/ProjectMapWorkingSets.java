@@ -183,12 +183,13 @@ final class ProjectMapWorkingSets {
                 tr("confirm.action.replace"));
     }
 
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
-            new com.fasterxml.jackson.databind.ObjectMapper();
-
-    /** Whether two saved views are the same view, as they are stored: saving one over the other loses nothing. Pure. */
+    /**
+     * Whether two saved views are the same view, as they are stored: saving one over the other loses nothing. Pure.
+     * Compared property by property, as they are stored, with no JSON made (PERF-01, Pauta 6.0.1): both ways, so a
+     * map entry only one of them has counts.
+     */
     static boolean sameView(ProjectMapState a, ProjectMapState b) {
-        return JSON.valueToTree(a).equals(JSON.valueToTree(b));
+        return SettingsModified.same(a, b) && SettingsModified.same(b, a);
     }
 
     private javafx.stage.@Nullable Window owner() {

@@ -835,7 +835,7 @@ final class FileWorkflowCoordinator {
      * </ul>
      */
     String loadInto(EditorBuffer buffer, Path file) throws IOException {
-        String note = applyPreparedLoad(buffer, prepareLoad(file, false));
+        String note = applyPreparedLoad(buffer, prepareLoad(file, false).preparedFor(buffer));
         notePerfContentLoaded(buffer);
         return note;
     }

@@ -48,10 +48,11 @@ class DebugLogSessionFileTest {
         assertEquals(List.of("captured before the config dir was known"), Files.readAllLines(file));
 
         DebugLog.append("logged afterwards");
+        assertTrue(DebugLog.flushWrites(5000), "written by the log's own thread (PERF-01)");
         assertEquals(
                 List.of("captured before the config dir was known", "logged afterwards"),
                 Files.readAllLines(file),
-                "each record is on disk as soon as it is logged — the file is what survives a crash");
+                "each record is on disk once the writer has it — the file is what survives a crash");
         assertTrue(DebugLog.snapshot().endsWith("logged afterwards"));
 
         if (Files.getFileStore(file).supportsFileAttributeView("posix")) {

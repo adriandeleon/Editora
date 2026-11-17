@@ -50,6 +50,25 @@ public final class DebugLog {
     private static boolean captureSuspendedForTest; // guarded by LOCK; see suspendCaptureForTest
     private static @Nullable PrintWriter file; // optional mirror to <configDir>/editora-session.log
 
+    /**
+     * Where the session file and the console are written: {@code debug-log-writer}, never the thread that logs
+     * (PERF-01, Pauta 6.0.1: a record logged on the FX thread must not write a file there). Heard by
+     * {@link com.editora.perf.BlockingSites} on the writer, once per batch it writes.
+     */
+    public static final String WRITE_SITE = "DebugLog.write";
+
+    /** One write for the writer, in the order logged: a line for a file, text for stderr, or a flush marker. */
+    private record Pending(
+            @Nullable PrintWriter to, @Nullable String text, java.util.concurrent.@Nullable CountDownLatch flushed) {}
+
+    private static final java.util.concurrent.LinkedBlockingQueue<Pending> PENDING =
+            new java.util.concurrent.LinkedBlockingQueue<>();
+
+    private static @Nullable Thread writer; // guarded by LOCK; started with the first write
+
+    /** The root logger's console handlers, whose output the writer prints instead (see {@link #install()}). */
+    private static final List<Handler> CONSOLE = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     /** The least time between two echo messages about uncaught exceptions: one that repeats must not flood. */
     static final long UNCAUGHT_ECHO_INTERVAL_MS = 10_000;
 
@@ -69,11 +88,23 @@ public final class DebugLog {
             }
             installed = true;
         }
+        // The root logger's console handlers print on the thread that logs, the FX thread included; their text is
+        // formatted there (a string, no I/O) and printed by the writer, in order with the session file (PERF-01).
+        Logger root = Logger.getLogger("");
+        for (Handler h : root.getHandlers()) {
+            if (h instanceof java.util.logging.ConsoleHandler) {
+                root.removeHandler(h);
+                CONSOLE.add(h);
+            }
+        }
         Handler handler = new Handler() {
             @Override
             public void publish(LogRecord record) {
                 if (isLoggable(record)) {
                     capture(format(record));
+                }
+                for (Handler console : CONSOLE) {
+                    toConsole(console, record);
                 }
             }
 
@@ -98,7 +129,7 @@ public final class DebugLog {
             // Native Image smoke runs can fail before start() attaches the session log.
             // Keep those early failures visible in the captured process stderr.
             if (Boolean.getBoolean("editora.debug.stderr")) {
-                System.err.println(record);
+                enqueue(new Pending(null, record + System.lineSeparator(), null));
             }
             announceUncaught(error, System.currentTimeMillis(), javafx.application.Platform::runLater);
         });
@@ -198,6 +229,7 @@ public final class DebugLog {
             return;
         }
         com.editora.perf.BlockingSites.enter("DebugLog.attachFile");
+        flushWrites(1000); // the writes queued for a file attached before go out before it is replaced
         synchronized (LOCK) {
             try {
                 Path path = configDir.resolve(SESSION_FILE);
@@ -229,6 +261,7 @@ public final class DebugLog {
 
     /** TEST SEAM — stops mirroring and closes the session file, so a test can delete the folder it attached. */
     public static void detachFileForTest() {
+        flushWrites(5000);
         synchronized (LOCK) {
             if (file != null) {
                 file.close();
@@ -295,9 +328,96 @@ public final class DebugLog {
                 RECORDS.removeFirst();
             }
             if (file != null) {
-                file.println(record);
-                file.flush();
+                enqueue(new Pending(file, record, null)); // written on the writer, in this order
             }
+        }
+    }
+
+    /** {@code console}'s text for {@code record}, printed by the writer, if the handler would print it. */
+    private static void toConsole(Handler console, LogRecord record) {
+        try {
+            if (console.isLoggable(record)) {
+                enqueue(new Pending(null, console.getFormatter().format(record), null));
+            }
+        } catch (RuntimeException ignored) {
+            // a diagnostic must never become the failure it is describing
+        }
+    }
+
+    private static void enqueue(Pending pending) {
+        synchronized (LOCK) {
+            if (writer == null) {
+                Thread t = Thread.ofPlatform().daemon().name("debug-log-writer").unstarted(DebugLog::writeLoop);
+                writer = t;
+                t.start();
+                Runtime.getRuntime()
+                        .addShutdownHook(
+                                Thread.ofPlatform().name("debug-log-flush").unstarted(() -> flushWrites(1000)));
+            }
+            PENDING.add(pending);
+        }
+    }
+
+    /** The writer: everything queued, in order, then one flush of what it wrote to, then the waiting markers. */
+    private static void writeLoop() {
+        List<Pending> batch = new java.util.ArrayList<>();
+        while (true) {
+            try {
+                batch.add(PENDING.take());
+            } catch (InterruptedException e) {
+                return;
+            }
+            PENDING.drainTo(batch);
+            com.editora.perf.BlockingSites.enter(WRITE_SITE);
+            java.util.Set<PrintWriter> written = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            boolean console = false;
+            for (Pending p : batch) {
+                PrintWriter to = p.to();
+                String text = p.text();
+                try {
+                    if (to != null && text != null) {
+                        to.println(text);
+                        written.add(to);
+                    } else if (text != null) {
+                        System.err.print(text);
+                        console = true;
+                    }
+                } catch (RuntimeException ignored) {
+                    // a closed or failing file loses this line; the in-memory log keeps it
+                }
+            }
+            written.forEach(PrintWriter::flush);
+            if (console) {
+                System.err.flush();
+            }
+            for (Pending p : batch) {
+                java.util.concurrent.CountDownLatch flushed = p.flushed();
+                if (flushed != null) {
+                    flushed.countDown();
+                }
+            }
+            batch.clear();
+        }
+    }
+
+    /**
+     * Waits until every record logged before the call is in the session file and on the console, up to {@code
+     * timeoutMs}. For the quit ({@code Application.stop()}, the shutdown hook), tests and threads that are not
+     * the FX thread; true when it got there in time (or nothing was ever written).
+     */
+    public static boolean flushWrites(long timeoutMs) {
+        synchronized (LOCK) {
+            if (writer == null) {
+                return true;
+            }
+        }
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        enqueue(new Pending(null, null, done));
+        try {
+            return done.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 

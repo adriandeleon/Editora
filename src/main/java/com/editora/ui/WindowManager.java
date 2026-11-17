@@ -1128,11 +1128,25 @@ public class WindowManager {
             }
             com.editora.editor.highlight.GrammarRegistry.warmAllLater(); // every bundled grammar, loaded once and kept
             try {
+                Icons.warmEditora(); // the diff viewers' application mark, read and decoded once
+            } catch (RuntimeException | LinkageError e) {
+                // a viewer loads it in the background itself
+            }
+            try {
                 com.editora.maven.ArchetypeCatalog.curated(); // New Maven Project's bundled catalog, parsed once
             } catch (RuntimeException e) {
                 // the form reads it itself
             }
         });
+    }
+
+    /**
+     * The first window is built by {@link MainView} too, not from {@code main.fxml}: for the start-up fallback, whose
+     * first window is built in a {@code runLater}, where parsing XML is not one of the reads the rule allows
+     * (PERF-01, Pauta 6.0.1). {@code MainViewFxTest} keeps the two frames equal.
+     */
+    public static void firstFrameFromCode() {
+        FIRST_FRAME_BUILT.set(true);
     }
 
     /** TEST SEAM — whether {@code main.fxml} has been read and kept. */
