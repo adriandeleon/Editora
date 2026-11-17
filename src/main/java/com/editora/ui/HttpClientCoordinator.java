@@ -427,13 +427,19 @@ final class HttpClientCoordinator {
             host.setStatus(tr("status.http.noRequest"));
             return;
         }
-        int index = HttpFile.requestIndexAt(buffer.getContent(), line);
-        if (index < 0) {
-            host.setStatus(tr("status.http.noRequest"));
-            return;
-        }
-        runIndex(buffer, index);
+        // The file is parsed off the FX thread (PERF-01, Pauta 6.0.1); the run starts when it lands.
+        parsedFiles.withParsed(buffer, parsed -> {
+            int index = parsed.indexAt(line);
+            if (index < 0) {
+                host.setStatus(tr("status.http.noRequest"));
+                return;
+            }
+            runIndex(buffer, parsed, index, null);
+        });
     }
+
+    /** Each {@code .http} buffer's requests, parsed off the FX thread per version ({@link HttpParsedFiles}). */
+    private final HttpParsedFiles parsedFiles = new HttpParsedFiles();
 
     /**
      * {@code http.debugRequest}: runs the request at the caret with its pre-request scripts and response handlers
@@ -461,13 +467,19 @@ final class HttpClientCoordinator {
             if (refuseRemote(b)) {
                 return;
             }
-            int index = HttpFile.requestIndexAt(b.getContent(), line);
+            parsedFiles.withParsed(b, file -> debugParsed(b, file, line));
+        });
+    }
+
+    /** {@link #debugRequest} once {@code b}'s requests are parsed (off the FX thread). */
+    private void debugParsed(EditorBuffer b, HttpParsedFiles.Parsed file, int line) {
+        {
+            int index = file.indexAt(line);
             if (index < 0) {
                 host.setStatus(tr("status.http.noRequest"));
                 return;
             }
-            HttpFile.Parsed parsed =
-                    HttpFile.parseRequest(HttpFile.parse(b.getContent()).get(index));
+            HttpFile.Parsed parsed = file.parsed().get(index);
             if (parsed.handlers().isEmpty() && parsed.preScripts().isEmpty()) {
                 host.setStatus(tr("status.http.debugNoScript"));
                 return;
@@ -481,29 +493,31 @@ final class HttpClientCoordinator {
                 host.setStatus(tr("status.http.debugUnavailable"));
                 return;
             }
-            runIndex(b, index, debugger);
-        });
+            runIndex(b, file, index, debugger);
+        }
     }
 
-    /** Runs request {@code index} (0-based, in file order) of {@code buffer}. */
+    /** Runs request {@code index} (0-based, in file order) of {@code buffer}, its file parsed off the FX thread. */
     private void runIndex(EditorBuffer buffer, int index) {
-        runIndex(buffer, index, null);
+        parsedFiles.withParsed(buffer, file -> runIndex(buffer, file, index, null));
     }
 
-    /** As {@link #runIndex(EditorBuffer, int)}, its scripts under {@code debugger} when it is not null. */
+    /** Runs request {@code index} of {@code file} (the buffer's requests), its scripts under {@code debugger}. */
     private void runIndex(
-            EditorBuffer buffer, int index, com.editora.http.NodeResponseScripts.@Nullable Debugger debugger) {
+            EditorBuffer buffer,
+            HttpParsedFiles.Parsed file,
+            int index,
+            com.editora.http.NodeResponseScripts.@Nullable Debugger debugger) {
         if (refuseRemote(buffer)) {
             return;
         }
-        String text = buffer.getContent();
-        List<HttpFile.Request> requests = HttpFile.parse(text);
+        List<HttpFile.Request> requests = file.requests();
         if (index < 0 || index >= requests.size()) {
             host.setStatus(tr("status.http.noRequest"));
             return;
         }
         HttpFile.Request req = requests.get(index);
-        HttpFile.Parsed parsed = HttpFile.parseRequest(req);
+        HttpFile.Parsed parsed = file.parsed().get(index);
         Map<String, String> vars = shownVariables(buffer); // for the label and the save-first check only
         Path baseDir = folderOf(buffer); // null: an untitled scratch buffer
         CapturedResponses session = capturesFor(buffer);
@@ -632,14 +646,28 @@ final class HttpClientCoordinator {
             runRequest(buffer, buffer.getArea().getCurrentParagraph());
             return;
         }
+        // The file is parsed and its requests hashed off the FX thread (PERF-01, Pauta 6.0.1).
+        String text = buffer.getContent();
+        int caret = buffer.getArea().getCurrentParagraph();
+        com.editora.perf.OffFx.then(
+                "http-rerun-find",
+                () -> new int[] {HttpRerunTarget.find(HttpFile.parse(text), entry), HttpFile.requestIndexAt(text, caret)
+                },
+                a -> {
+                    int[] found = a.value();
+                    if (found != null) {
+                        runAgainAt(buffer, entry, caret, found[0], found[1]);
+                    }
+                });
+    }
+
+    private void runAgainAt(EditorBuffer buffer, HttpHistoryEntry entry, int caret, int index, int atCaret) {
         HttpExchange ex = entry.exchange();
-        int index = HttpRerunTarget.find(HttpFile.parse(buffer.getContent()), entry);
         if (index >= 0) {
             runIndex(buffer, index);
             return;
         }
-        int caret = buffer.getArea().getCurrentParagraph();
-        if (HttpFile.requestIndexAt(buffer.getContent(), caret) < 0) {
+        if (atCaret < 0) {
             host.setStatus(tr("status.http.rerunGone"));
             return;
         }
@@ -661,16 +689,26 @@ final class HttpClientCoordinator {
         if (buffer == null || entry == null) {
             return;
         }
-        List<HttpFile.Request> requests = HttpFile.parse(buffer.getContent());
-        int index = HttpRerunTarget.find(requests, entry);
-        if (index < 0) {
+        String text = buffer.getContent(); // parsed and matched off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "http-jump-find",
+                () -> {
+                    List<HttpFile.Request> requests = HttpFile.parse(text);
+                    int index = HttpRerunTarget.find(requests, entry);
+                    return index < 0 ? -1 : requests.get(index).startLine();
+                },
+                a -> jumpToRequestLine(buffer, a.or(-1)));
+    }
+
+    private void jumpToRequestLine(EditorBuffer buffer, int line) {
+        if (line < 0) {
             host.setStatus(tr("status.http.requestGone"));
             return;
         }
         if (buffer.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.PREVIEW) {
             buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT);
         }
-        buffer.jumpToLine(requests.get(index).startLine());
+        buffer.jumpToLine(line);
         focusWhenShown(buffer.getArea()); // right after leaving Preview the editor is not in the scene yet
     }
 
@@ -744,10 +782,14 @@ final class HttpClientCoordinator {
             if (refuseRemote(b)) {
                 return;
             }
-            String text = b.getContent();
-            List<HttpFile.Request> blocks = HttpFile.parse(text);
-            List<HttpFile.Parsed> reqs =
-                    blocks.stream().map(HttpFile::parseRequest).toList();
+            parsedFiles.withParsed(b, file -> runFileParsed(b, file)); // parsed off the FX thread (PERF-01)
+        });
+    }
+
+    /** {@link #runFile} once the buffer's requests are parsed. */
+    private void runFileParsed(EditorBuffer b, HttpParsedFiles.Parsed file) {
+        {
+            List<HttpFile.Parsed> reqs = file.parsed();
             if (reqs.isEmpty()) {
                 host.setStatus(tr("status.http.noRequest"));
                 return;
@@ -784,10 +826,11 @@ final class HttpClientCoordinator {
                 return;
             }
             startRun(b, label, label);
-            String[] startText = text.split("\n", -1); // each request's line as the run saw it, for the ■
+            List<String> startText = file.lines(); // each request's line as the run saw it, for the ■
+            List<HttpFile.Request> blocks = file.requests();
             IntFunction<String> requestLine = i -> {
                 int line = blocks.get(i).startLine();
-                return line >= 0 && line < startText.length ? startText[line] : null;
+                return line >= 0 && line < startText.size() ? startText.get(line) : null;
             };
             b.setHttpRunning(sent.get(0), requestLine.apply(sent.get(0)));
             List<HttpFile.Parsed> toSend = sent.stream().map(reqs::get).toList();
@@ -811,7 +854,7 @@ final class HttpClientCoordinator {
                                     index,
                                     reqs.size(),
                                     HttpPanelStates.runLabel(
-                                            section >= 0 && section < startText.length ? startText[section] : null,
+                                            section >= 0 && section < startText.size() ? startText.get(section) : null,
                                             reqs.get(index).name(),
                                             HttpScratch.label(reqs.get(index), vars, baseDir, ZonedDateTime.now())));
                         }
@@ -841,7 +884,7 @@ final class HttpClientCoordinator {
                         }
                     });
             track(b, run[0]);
-        });
+        }
     }
 
     /**
@@ -1209,30 +1252,57 @@ final class HttpClientCoordinator {
         HttpClientPanel p = panelFor(buffer);
         List<HttpHistoryEntry> entries = p == null ? List.of() : p.history();
         if (entries.isEmpty() || !host.settings().isHttpInlineResults() || !host.isLocalBuffer(buffer)) {
+            inlineGenerations.merge(buffer, 1L, Long::sum); // a refresh still on its way is dropped
             buffer.setHttpResults(List.of());
             return;
         }
+        // The file is parsed and each request matched to its newest run (a hash per request) off the FX thread
+        // (PERF-01, Pauta 6.0.1); the latest refresh's answer is the one shown.
         String text = buffer.getContent();
+        List<HttpHistoryEntry> runs = List.copyOf(entries);
+        long generation = inlineGenerations.merge(buffer, 1L, Long::sum);
+        com.editora.perf.OffFx.then("http-inline-results", () -> inlineHits(text, runs), a -> {
+            if (!Long.valueOf(generation).equals(inlineGenerations.get(buffer)) || !a.ok()) {
+                return; // a newer refresh is on its way
+            }
+            long now = System.currentTimeMillis();
+            java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+            List<com.editora.editor.http.HttpLineResult> results = new ArrayList<>();
+            for (InlineHit hit : a.or(List.of())) {
+                HttpResult r = hit.entry().result();
+                results.add(new com.editora.editor.http.HttpLineResult(
+                        hit.line(),
+                        hit.text(),
+                        HttpInlineResult.segments(r),
+                        HttpInlineResult.glyphClass(r),
+                        tr(
+                                "httpinline.tooltip",
+                                HttpInlineResult.ranAt(hit.entry().at(), now, zone)),
+                        () -> showInlineResult(buffer, hit.entry())));
+            }
+            buffer.setHttpResults(results);
+        });
+    }
+
+    /** The refresh each buffer asked for last ({@link #refreshInlineResults}): an older answer is dropped. */
+    private final java.util.Map<EditorBuffer, Long> inlineGenerations = new java.util.WeakHashMap<>();
+
+    /** A request line with the run that last answered it. */
+    private record InlineHit(int line, String text, HttpHistoryEntry entry) {}
+
+    /** Which request lines of {@code text} have a run among {@code entries}, newest per request. Off the FX thread. */
+    private static List<InlineHit> inlineHits(String text, List<HttpHistoryEntry> entries) {
+        com.editora.perf.BlockingSites.enter("HttpClientCoordinator.inlineHits");
         List<HttpFile.Request> requests = HttpFile.parse(text);
         String[] lines = text.split("\n", -1);
-        long now = System.currentTimeMillis();
-        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
-        List<com.editora.editor.http.HttpLineResult> results = new ArrayList<>();
+        List<InlineHit> hits = new ArrayList<>();
         HttpInlineResult.newestPerRequest(requests, entries).forEach((index, entry) -> {
             int line = requests.get(index).startLine();
-            if (line < 0 || line >= lines.length) {
-                return;
+            if (line >= 0 && line < lines.length) {
+                hits.add(new InlineHit(line, lines[line], entry));
             }
-            HttpResult r = entry.result();
-            results.add(new com.editora.editor.http.HttpLineResult(
-                    line,
-                    lines[line],
-                    HttpInlineResult.segments(r),
-                    HttpInlineResult.glyphClass(r),
-                    tr("httpinline.tooltip", HttpInlineResult.ranAt(entry.at(), now, zone)),
-                    () -> showInlineResult(buffer, entry)));
         });
-        buffer.setHttpResults(results);
+        return hits;
     }
 
     /** A click on a request line's result: the response view shows that History entry. */

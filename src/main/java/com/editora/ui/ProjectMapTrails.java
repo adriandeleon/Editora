@@ -475,9 +475,11 @@ final class ProjectMapTrails {
             then.accept(null);
             return;
         }
-        Path file = MapTrails.fileFor(root, stem);
+        java.util.concurrent.atomic.AtomicReference<Path> where = new java.util.concurrent.atomic.AtomicReference<>();
         io(
                 () -> {
+                    Path file = MapTrails.fileFor(root, stem); // a listing stat: here, off the FX thread (PERF-01)
+                    where.set(file);
                     if (Files.exists(file)) {
                         return Boolean.FALSE;
                     }
@@ -496,7 +498,7 @@ final class ProjectMapTrails {
                         view.onStatus.accept(tr(
                                 "project.map.status.trail.created",
                                 value,
-                                root.relativize(file).toString().replace('\\', '/')));
+                                root.relativize(where.get()).toString().replace('\\', '/')));
                         then.accept(stem);
                     }
                 });

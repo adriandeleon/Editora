@@ -47,7 +47,7 @@ public enum GitPathScope {
      * answered from memory when a tab's or the Project tree's menu is built (PERF-01, Pauta 6.0.1).
      */
     private static final com.editora.perf.Looked<Path, Path> NEAREST =
-            new com.editora.perf.Looked<>("GitPathScope.nearestRepository", GitPathScope::nearestNow);
+            new com.editora.perf.Looked<>("GitPathScope.nearestRepository", GitPathScope::nearestNow, null);
 
     private static @Nullable Path nearestNow(Path path) {
         try {

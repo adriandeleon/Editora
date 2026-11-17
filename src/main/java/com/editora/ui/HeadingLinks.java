@@ -83,7 +83,26 @@ final class HeadingLinks {
         Path here = buffer.getPath() == null
                 ? null
                 : buffer.getPath().toAbsolutePath().normalize();
-        Path file = wiki.target().isEmpty() ? here : WikiLinks.resolve(here, wiki.target());
+        if (wiki.target().isEmpty()) {
+            openWikiAt(wiki, here, here, buffer, workflows, openBuffer, jump, status);
+            return;
+        }
+        // Without the project's index the note is found by listing its folder: off the FX thread.
+        ExternalLinks.looked(
+                "wiki-link-resolve",
+                () -> WikiLinks.resolve(here, wiki.target()),
+                file -> openWikiAt(wiki, here, file, buffer, workflows, openBuffer, jump, status));
+    }
+
+    private static void openWikiAt(
+            WikiLinks.Parsed wiki,
+            @Nullable Path here,
+            @Nullable Path file,
+            EditorBuffer buffer,
+            FileWorkflowCoordinator workflows,
+            Function<Path, @Nullable EditorBuffer> openBuffer,
+            Jump jump,
+            Consumer<String> status) {
         if (file == null && !wiki.target().isEmpty()) {
             status.accept(tr("status.wikilink.unresolved", wiki.target()));
             return;
@@ -121,17 +140,18 @@ final class HeadingLinks {
             Consumer<String> status) {
         String target = WikiLinkTargets.targetOf(address);
         Path folder = clicked.getPath() == null ? null : clicked.getPath().getParent();
-        Path file = WikiLinkTargets.resolve(folder, target);
-        if (file == null) {
-            status.accept(tr("status.wikilink.unresolved", target));
-            return;
-        }
-        String fragment = WikiLinkTargets.fragmentOf(address);
-        if (fragment == null) {
-            openFile.accept(file);
-        } else {
-            follow(clicked, file, fragment, openThen, openBuffer, jump, status);
-        }
+        ExternalLinks.looked("wiki-link-resolve", () -> WikiLinkTargets.resolve(folder, target), file -> {
+            if (file == null) {
+                status.accept(tr("status.wikilink.unresolved", target));
+                return;
+            }
+            String fragment = WikiLinkTargets.fragmentOf(address);
+            if (fragment == null) {
+                openFile.accept(file);
+            } else {
+                follow(clicked, file, fragment, openThen, openBuffer, jump, status);
+            }
+        });
     }
 
     /** Goes to {@code fragment} in {@code file}, or in {@code clicked} itself when {@code file} is null. */
@@ -144,23 +164,49 @@ final class HeadingLinks {
             Jump jump,
             Consumer<String> status) {
         int[] place = linePlace(fragment);
-        if (place != null) {
+        // The heading's line: a scan of the open document's text, or a read of the closed file — off the FX
+        // thread (PERF-01, Pauta 6.0.1); the text of an open buffer is taken here, as it is now.
+        EditorBuffer open = file == null ? clicked : openBuffer.apply(file);
+        boolean fromBuffer = file == null || (open != null && !open.isLoading());
+        String text = fromBuffer && open != null && open.isMarkdown() ? open.getContent() : null;
+        ExternalLinks.looked(
+                "link-anchor-line",
+                () -> fromBuffer
+                        ? text == null ? -1 : MarkdownAnchors.lineOf(text, fragment)
+                        : file == null ? -1 : lineOnDisk(file, fragment),
+                found -> followTo(
+                        clicked,
+                        file,
+                        fragment,
+                        place,
+                        found == null ? -1 : found,
+                        openThen,
+                        openBuffer,
+                        jump,
+                        status));
+    }
+
+    private static void followTo(
+            EditorBuffer clicked,
+            @Nullable Path file,
+            String fragment,
+            int @Nullable [] place,
+            int line,
+            java.util.function.BiConsumer<Path, Runnable> openThen,
+            Function<Path, @Nullable EditorBuffer> openBuffer,
+            Jump jump,
+            Consumer<String> status) {
+        if (place != null && line < 0) {
             // #L28,22 — a line (and column), as a language server's hover links name a place; a Markdown heading
             // that happens to answer to the same fragment still wins
-            int heading = file == null
-                    ? clicked.isMarkdown() ? MarkdownAnchors.lineOf(clicked.getContent(), fragment) : -1
-                    : lineIn(file, openBuffer.apply(file), fragment);
-            if (heading < 0) {
-                if (file == null && clicked.getPath() == null) {
-                    clicked.jumpToLine(place[0]);
-                } else {
-                    jump.to(file == null ? clicked.getPath() : file, place[0], place[1]);
-                }
-                return;
+            if (file == null && clicked.getPath() == null) {
+                clicked.jumpToLine(place[0]);
+            } else {
+                jump.to(file == null ? clicked.getPath() : file, place[0], place[1]);
             }
+            return;
         }
         if (file == null) {
-            int line = clicked.isMarkdown() ? MarkdownAnchors.lineOf(clicked.getContent(), fragment) : -1;
             if (line >= 0 && clicked.getPath() == null) {
                 clicked.jumpToLine(line); // an unsaved buffer has no place in the jump history
             } else if (line >= 0) {
@@ -174,7 +220,6 @@ final class HeadingLinks {
             }
             return;
         }
-        int line = lineIn(file, openBuffer.apply(file), fragment);
         if (line >= 0) {
             jump.to(file, line, 0);
         }
@@ -215,11 +260,9 @@ final class HeadingLinks {
         }
     }
 
-    /** The line {@code fragment} names in {@code file}: from its open buffer (unsaved edits count), else from disk. */
-    private static int lineIn(Path file, @Nullable EditorBuffer open, String fragment) {
-        if (open != null && !open.isLoading()) {
-            return open.isMarkdown() ? MarkdownAnchors.lineOf(open.getContent(), fragment) : -1;
-        }
+    /** The line {@code fragment} names in the closed Markdown {@code file}, read from disk (never on FX). */
+    private static int lineOnDisk(Path file, String fragment) {
+        com.editora.perf.BlockingSites.enter("HeadingLinks.lineIn");
         if (!"markdown".equals(LanguageRegistry.forFileName(file.toString()))) {
             return -1;
         }

@@ -63,53 +63,73 @@ final class RemoteWatcher {
     /** TEST SEAM: watch by polling even on a host that has inotifywait (the fallback is otherwise untestable). */
     static volatile boolean pollForTest;
 
-    private final Process process;
-    private volatile boolean stopped;
+    /** The command on the host, once it has started (it starts on a thread of its own); null before. */
+    private volatile @Nullable Process process;
 
-    private RemoteWatcher(Process process) {
-        this.process = process;
-    }
+    private volatile boolean stopped;
+    private volatile boolean failed;
+
+    private RemoteWatcher() {}
 
     /**
      * Starts watching {@code root} on its host, handing each batch to {@code onChanges} on the reader thread.
      * Null when the host cannot run commands now (the watch is then simply absent, as before).
+     *
+     * <p>The command starts on a thread of its own (PERF-01, Pauta 6.0.1): the first command on a host asks for
+     * its environment and waits for the channel, which must not hold the FX thread that sets the Project panel's
+     * root. The watcher counts as running from here until it is stopped or its command could not start.
      */
     static @Nullable RemoteWatcher start(Path root, Consumer<List<ProjectPanel.FsChange>> onChanges) {
         ExecTarget target = ExecTargets.forPath(root);
         if (target.isLocal() || !target.isAvailable()) {
             return null;
         }
-        Process process;
-        try {
-            process = target.start(ExecSpec.of(
-                            List.of("sh", "-c", SCRIPT, "editora-watch", target.toTargetPath(root)),
-                            null,
-                            pollForTest ? Map.of("EDITORA_WATCH_POLL", "1") : Map.of(),
-                            ExecSpec.Locale.PARSE_STABLE)
-                    .withLongLived(true) // ended with the connection, like everything else started there
-                    .withDiscardedOutput(false, true));
-        } catch (IOException e) {
-            LOG.log(Level.FINE, "remote watch could not start", e);
-            return null;
-        }
-        ProcessRegistry.track(process);
-        RemoteWatcher watcher = new RemoteWatcher(process);
-        Thread reader = new Thread(() -> watcher.read(target, onChanges), "remote-fs-watch");
-        reader.setDaemon(true);
-        reader.start();
+        RemoteWatcher watcher = new RemoteWatcher();
+        Map<String, String> env = pollForTest ? Map.of("EDITORA_WATCH_POLL", "1") : Map.of();
+        Thread.ofVirtual().name("remote-fs-watch-start").start(() -> {
+            com.editora.perf.BlockingSites.enter("RemoteWatcher.start");
+            Process started;
+            try {
+                started = target.start(ExecSpec.of(
+                                List.of("sh", "-c", SCRIPT, "editora-watch", target.toTargetPath(root)),
+                                null,
+                                env,
+                                ExecSpec.Locale.PARSE_STABLE)
+                        .withLongLived(true) // ended with the connection, like everything else started there
+                        .withDiscardedOutput(false, true));
+            } catch (IOException | RuntimeException e) {
+                LOG.log(Level.FINE, "remote watch could not start", e);
+                watcher.failed = true;
+                return;
+            }
+            ProcessRegistry.track(started);
+            watcher.process = started;
+            if (watcher.stopped) {
+                ProcessRegistry.killTree(started); // stopped while it was starting
+                return;
+            }
+            Thread reader = new Thread(() -> watcher.read(target, onChanges), "remote-fs-watch");
+            reader.setDaemon(true);
+            reader.start();
+        });
         return watcher;
     }
 
     void stop() {
         stopped = true;
-        ProcessRegistry.killTree(process);
+        Process p = process;
+        if (p != null) {
+            ProcessRegistry.killTree(p);
+        }
     }
 
     boolean isRunning() {
-        return !stopped && process.isAlive();
+        Process p = process;
+        return !stopped && !failed && (p == null || p.isAlive());
     }
 
     private void read(ExecTarget target, Consumer<List<ProjectPanel.FsChange>> onChanges) {
+        Process process = java.util.Objects.requireNonNull(this.process);
         try (BufferedReader in =
                 new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;

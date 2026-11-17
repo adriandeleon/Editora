@@ -152,11 +152,56 @@ read at launch and with the spell dictionary. The safety copy before a bulk edit
 order with every later capture of the file; the edit goes on at once, and the quit drains the worker. `FilesOffFxThreadFxTest` drives a representative set and checks that
 none of their `BlockingSites` is heard on the FX thread.
 
-What still reads the disk on the FX thread: the first look at a key no off-thread look filled (each named to
-`BlockingSites`), Debug's core dump and C# assembly stats, the stand-in file of a Java script (written before the server is
-told it is open), Settings
-sync's apply (on purpose, so no store is saving meanwhile), the log viewer's follow with no snapshot, and a remote
-terminal never asked yet (left out of the close question).
+The checks made as the user types, per buffer sync, per publish and per command follow it too (PERF-01, Pauta 6.0.1).
+A memo filled off the FX thread answers them, and a look that lands later is applied under a guard; until a fact is
+known the code acts as it did when the fact was absent, never hiding a row or a button. `ui/DiskFacts` is the
+FX-confined memo for a handler's small facts (the New Maven Project form's folder, Find in Files' root, the Map
+tooltip's attributes, the Problems window's folders, the Maven menu's pom), looked at again behind an answer older than
+2 s; `perf/Looked` and `perf/ProbeCache` take a cold answer for a key nothing looked at yet, look it up behind on a
+virtual thread and tell an `onLearned` listener. A buffer's server root (`ui/LspRootMemo`, keyed by project, file,
+server and loose root) is looked at off the thread; `syncBuffer` waits for it and syncs the buffer when it lands,
+and the other callers of `lspRootFor` treat a root not known yet as none. The Java checks around it run off the thread
+too: the build folder of a published file, the module poms and their packaging, the import checks, the project's Java
+style (`java-style`), the system watcher's registrations (`watchWork`), a Java script's stand-in file (written on
+`java-script-shadow`, `didOpen` sent once it exists), the XML catalogs, the JDK list (`JdkChoice.jdksLater`), library
+sources and a missing XML include. `.editorconfig` rules (`EditorConfig`) answer from a per-file memo the file's load
+fills, looked at again behind an answer older than 3 s, and a change heard on the FX thread re-applies them. The
+Markdown lint config (`markdown-lint-config`, the lint waits for the first look), Markdown and HTTP completion
+(`structural-completion`, the latest ask for the same version and caret wins), the spell checker's verdicts (a word
+with none yet is not squiggled, `spell-lookup`), links followed (`link-classify`, `link-anchor-line`,
+`wiki-link-resolve`), the terminal's path links, console and stack-trace links, Go to Super Method's closed files, the
+SSH Host field (`RemoteCoordinator.HOST_LOOK_PAUSE_MS`), a remote project's watcher start, Local History's text of a
+closed file, the log follow's start from the end (measured on the follow's poll thread), Load all tasks' trust
+question, Python test jumps, Don't Step Into's source, the export staging folders and a configured command with a
+space (`ConfiguredCommand`: looked at as settings arrive, `onLearned` rebuilds a command line asked before) follow
+the same shape. Bundled resources read after the first window are read once and kept: each keymap is parsed once
+(`keymaps-warm` parses the others after start-up), `main.fxml`, the Settings controls table and the archetype catalog
+are warmed on `bundled-warm`, the About icon comes from `AppIcons`, and zoomed stylesheets are built on
+`ui-zoom-sheets` (a copy not made yet answers the 100% sheet, and windows are re-pointed when it lands). A bundled
+font family asked for after the first frame is registered off the thread and `Fonts.whenFamiliesLoaded` re-applies
+it. Settings sync writes the config folder's files on the config writer (`SharedConfig.callWithWrites`, which the sync
+thread waits on, so no store saves meanwhile). A debugger stop's frame files are looked at on the adapter's reader
+thread (`dap/FrameFiles`). The structured previews' print and export parse off the thread (`PreviewSnapshots.parse`),
+the `.http` environment files where they are read, the inline results under a per-buffer generation, a binary diff's
+blobs on the diff executor, View As JSON/XML and the data table's pages through `OffFx`, and an agent message is
+encoded on the pipe writer. `ChecksOffFxThreadFxTest` drives a representative set and checks that none of their
+`BlockingSites` is heard on the FX thread.
+
+A command that needs a fact no look has filled waits for the look, never a guess and never a look in place: Run,
+Build and Debug check their build wrapper, trust summary, build-before-launch tool, build files and Java project root
+with `Looked.allKnown` and, when one is missing, look it up off the thread (`run-*-look`, `debug-*-look`, the command
+busy meanwhile) and go on; a server command or java-debug path typed in Settings is probed off the thread on apply
+(`lsp-own-copies`, `java-debug-locate`, the row says "checking"); a keymap switch waits for `KeymapManager.whenParsed`
+(every bundled keymap is parsed on the config-prefetch thread); New Maven Project's Create stays disabled while its
+folder is being looked at and the generation looks again before writing. A save's payload (the `.editorconfig`
+transform, resolved on disk on the save worker, and the encoding) is worked out on the save worker. A diagram
+preview's content hash is worked out on its render executor (`SourceKeys`); Markdown lint's Fix, Disable for Line/File
+and fix-on-save work on a snapshot off the thread and apply only to the same document version; test-output lines are
+parsed on the output's reader thread (`OutputPump.Sink.prepare`, `TestLineStage`, `TestParseQueue`); a `.http` buffer
+is parsed per document version off the thread (`HttpParsedFiles`, `EditorBuffer.httpScriptMap`); a terminal link
+click on a path not looked at yet is acted on when the look lands. Outside start-up's allowed reads and the quit, nothing
+on the FX thread touches the disk, starts or waits for a process, or parses, hashes or serializes text of the user's
+size.
 
 ### 2. Debounce and coalesce
 

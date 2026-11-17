@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -200,7 +199,8 @@ final class PythonInterpreterCoordinator {
             List<Path> found = new java.util.ArrayList<>();
             try {
                 found.addAll(PythonInterpreters.listVenvs(root, windows));
-                PythonInterpreters.findProjectVenv(file, snapshot.projectRoot(), Files::isRegularFile, windows)
+                PythonInterpreters.findProjectVenv(
+                                file, snapshot.projectRoot(), java.nio.file.Files::isRegularFile, windows)
                         .filter(v -> !found.contains(v))
                         .ifPresent(found::add);
             } catch (RuntimeException e) {
@@ -263,10 +263,8 @@ final class PythonInterpreterCoordinator {
     private void browse(@Nullable Path from) {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
         chooser.setTitle(tr("python.interpreter.pick.browseTitle"));
-        if (from != null && Files.isDirectory(from)) {
-            chooser.setInitialDirectory(from.toFile());
-        }
-        java.io.File picked = chooser.showOpenDialog(host.window());
+        ChooserStart.set(chooser, from); // no look at the folder first (PERF-01, Pauta 6.0.1)
+        java.io.File picked = ChooserStart.show(chooser, c -> c.showOpenDialog(host.window()));
         if (picked == null) {
             return;
         }

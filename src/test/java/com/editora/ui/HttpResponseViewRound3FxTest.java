@@ -59,6 +59,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * stage, which line shows the running ■, and what the panel says after a cancel or a request that was not sent.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HttpResponseViewRound3FxTest {
 
     private static final long WAIT_SECONDS = 30;

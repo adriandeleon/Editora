@@ -29,13 +29,30 @@ class NodeTypesNoticeTest {
         Path a = Files.writeString(dir.resolve("a.js"), "const fs = require('fs');\n");
         Path b = Files.writeString(dir.resolve("b.js"), "const os = require('os');\n");
         NodeTypesNotice notice = new NodeTypesNotice();
+        List<Path> looked = new ArrayList<>();
+        notice.typesLook = (file, then) -> {
+            looked.add(file);
+            then.accept(com.editora.lsp.NodeTypesHint.hasNodeTypes(file));
+        };
         List<String> said = new ArrayList<>();
-        notice.opened("javascript", Files.readString(a), a, dir, false, false, said::add);
-        notice.opened("javascript", Files.readString(b), b, dir, false, false, said::add);
+        notice.opened("javascript", Files.readString(a), a, dir, false, () -> false, said::add);
+        notice.opened("javascript", Files.readString(b), b, dir, false, () -> false, said::add);
+        assertEquals(List.of(a), looked, "looked at once per folder");
         assertTrue(said.isEmpty(), "nothing said while the file opens");
         String atReady = notice.atReady(dir, "typescript-language-server: Loaded and ready");
         assertTrue(atReady.startsWith("No types for Node.js APIs"), atReady);
         assertEquals("ready", notice.atReady(dir, "ready"), "said once");
+    }
+
+    @Test
+    void typesFoundByTheLookSayNothing(@TempDir Path dir) throws Exception {
+        Path a = Files.writeString(dir.resolve("a.js"), "const fs = require('fs');\n");
+        NodeTypesNotice notice = new NodeTypesNotice();
+        notice.typesLook = (file, then) -> then.accept(true); // installed, as a failed look answers too
+        List<String> said = new ArrayList<>();
+        notice.opened("javascript", Files.readString(a), a, dir, false, () -> true, said::add);
+        assertTrue(said.isEmpty());
+        assertEquals("ready", notice.atReady(dir, "ready"), "nothing waits for the ready line");
     }
 
     @Test

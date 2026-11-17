@@ -803,11 +803,15 @@ final class AgentCoordinator implements AcpClient.Host {
      *  file (the syntactic pre-filter in {@code AgentPanel.looksLikePath} can't know that without disk I/O). */
     private void openPathCandidate(String text) {
         Path resolved = PathKeys.resolveUserInput(text, sessionCwd(), System.getProperty("user.home"));
-        if (resolved != null && Files.exists(resolved)) {
-            ops.openPath(resolved);
-        } else {
-            host.setStatus(tr("status.agent.pathNotFound", text));
-        }
+        // Whether it exists is asked off the FX thread (PERF-01, Pauta 6.0.1).
+        ExternalLinks.looked(
+                "agent-path-look", () -> resolved != null && Files.exists(resolved) ? resolved : null, found -> {
+                    if (found != null) {
+                        ops.openPath(found);
+                    } else {
+                        host.setStatus(tr("status.agent.pathNotFound", text));
+                    }
+                });
     }
 
     // --- AcpClient.Host (reader/request threads — marshal to FX here) --------------------------------

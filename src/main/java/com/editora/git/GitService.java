@@ -270,6 +270,19 @@ public final class GitService {
      */
     private static volatile List<String> GIT_CMD = List.of("git");
 
+    /** The value last given to {@link #setCommand}, built again when whether it names a file is learned. */
+    private static volatile String lastCommand = "";
+
+    private static final java.util.function.Consumer<String> COMMAND_LEARNED = raw -> {
+        if (raw.equals(lastCommand)) {
+            GIT_CMD = commandTokens(raw);
+        }
+    };
+
+    static {
+        com.editora.process.ConfiguredCommand.onLearned(COMMAND_LEARNED);
+    }
+
     /** The git command every service runs, for the package's other runners ({@link QuietGit}). */
     static List<String> command() {
         return GIT_CMD;
@@ -277,6 +290,7 @@ public final class GitService {
 
     /** Sets the git command/path (see {@link #commandTokens}); blank ⇒ resolve {@code git} on PATH. */
     public void setCommand(String command) {
+        lastCommand = command == null ? "" : command.strip();
         List<String> next = commandTokens(command);
         if (!next.equals(GIT_CMD)) {
             GIT_CMD = next; // each service re-probes: its cached availability names the command it was for
@@ -2392,7 +2406,7 @@ public final class GitService {
      * (PERF-01, Pauta 6.0.1).
      */
     private static final com.editora.perf.Looked<Path, Path> REAL_PATHS =
-            new com.editora.perf.Looked<>("GitService.realPath", GitService::realPathNow);
+            new com.editora.perf.Looked<>("GitService.realPath", GitService::realPathNow, null);
 
     /** Looks at {@code file}'s and {@code root}'s real paths now, on this thread (off the FX thread), and keeps them. */
     public static void lookAt(Path file, @Nullable Path root) {
@@ -3981,6 +3995,9 @@ public final class GitService {
             if (!top.isEmpty()) {
                 root = ExecTargets.forPath(dir).toPath(top);
                 rememberGitDir(root, dir, lines.length > 1 ? lines[1].strip() : "");
+                if (onThisFileSystem(root)) {
+                    REAL_PATHS.lookAgain(root); // the root every path-based Git command compares with, on FX
+                }
             }
         }
         if (root != null) {

@@ -215,6 +215,7 @@ class StepFiltersWindowFxTest {
             return Optional.of(initial);
         };
         run("debug.dontStepIntoFrame");
+        await("the form", () -> !offered.isEmpty()); // the frame's package is looked for off the FX thread (PERF-01)
         assertEquals(List.of(new StepFilter(true, "ruby", "**/helper.rb")), offered);
         assertEquals(
                 List.of(new StepFilter(true, "ruby", "**/helper.rb")),

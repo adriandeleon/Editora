@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * that method from its name, a type goes to its supertypes, and nothing found is said.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspSuperMethodFxTest {
 
     private static final String SOURCE = "class A extends Base {\n    void go() {\n        int x = 1;\n    }\n}\n";

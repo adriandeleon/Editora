@@ -42,6 +42,7 @@ public final class FirstWindowPrep {
         Path configDir = shared.getConfigDir();
         // The user's themes, before any sheet is named: a user theme saved as the active one resolves on launch.
         step("user themes", () -> Themes.loadUserThemes(configDir));
+        step("keymaps", com.editora.command.KeymapManager::parseAllBundled); // every bundled keymap, for later asks
         step("zoomed stylesheets", () -> {
             List<String> sheets = new ArrayList<>(windowSheets());
             sheets.addAll(moreSheets);
@@ -79,6 +80,10 @@ public final class FirstWindowPrep {
                         settings.getTypstPath(),
                         blankOr(settings.getRipgrepCommand(), com.editora.search.Ripgrep.DEFAULT_COMMAND),
                         settings.getContainerEngine())));
+        step(
+                "command paths", // every other configured command line with a space (server and tool commands)
+                () -> com.editora.process.ConfiguredCommand.prepareAllIn(
+                        new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(settings)));
     }
 
     private static String blankOr(String value, String fallback) {

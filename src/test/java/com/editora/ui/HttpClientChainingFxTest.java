@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * environment change forgets responses, and {@code @var} lines read the {@code .env} beside the file.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HttpClientChainingFxTest {
 
     private HttpServer server;

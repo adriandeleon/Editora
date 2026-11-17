@@ -34,6 +34,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * over a recording fake server: what is asked for, what reaches the buffer, and what a click does.
  */
 @Tag("fx")
+// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.0.1); here in place, so a sync has
+// opened the document when it returns, as the assertions read it.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class CodeLensCoordinatorFxTest {
 
     private static final String SOURCE = "class A {\n    void run() {}\n    int size() { return 0; }\n}\n";

@@ -71,9 +71,9 @@ final class AboutDialog {
         titleBox.setAlignment(Pos.CENTER_LEFT);
 
         HBox header = UiZoom.spacing(new HBox(titleBox), 16);
-        var iconStream = AboutDialog.class.getResourceAsStream("/com/editora/icons/icon-128.png");
-        if (iconStream != null) {
-            ImageView logo = new ImageView(new Image(iconStream));
+        Image icon = AppIcons.icon(128); // kept since the first window's icons were read: no read here (PERF-01)
+        if (icon != null) {
+            ImageView logo = new ImageView(icon);
             UiZoom.follow(logo, () -> {
                 logo.setFitWidth(UiZoom.px(72));
                 logo.setFitHeight(UiZoom.px(72));

@@ -126,7 +126,32 @@ final class InstanceLock implements AutoCloseable {
      * probe itself fails the answer is {@code true}: the callers gate destructive work on "nobody else is
      * here", and not knowing is not the same as nobody.
      */
-    synchronized boolean othersPresent() {
+    boolean othersPresent() {
+        if (onFx()) {
+            // No lock taken or probed on the FX thread (PERF-01, Pauta 6.0.1): the answer a probe off it last
+            // gave, true when none has yet (not knowing is not nobody), and a fresh probe behind it.
+            Thread.ofVirtual().name("instance-presence").start(() -> lastPresent = othersPresentNow());
+            Boolean last = lastPresent;
+            return last == null || last;
+        }
+        boolean now = othersPresentNow();
+        lastPresent = now;
+        return now;
+    }
+
+    /** What {@link #othersPresent} answered off the FX thread last; null before the first probe. */
+    private volatile @Nullable Boolean lastPresent;
+
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
+    private synchronized boolean othersPresentNow() {
+        com.editora.perf.BlockingSites.enter("InstanceLock.othersPresent");
         if (!primary) {
             ensurePresence(); // a presence lock that lost its first race is retried whenever we are asked
             return true;

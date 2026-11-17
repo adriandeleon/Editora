@@ -612,7 +612,26 @@ public final class DapManager {
             String jsPath) {
         shared.enabled = enabled;
         shared.pluginPath = javaPluginPath == null ? "" : javaPluginPath;
-        shared.bundlePaths = enabled ? locateKept() : List.of();
+        if (!enabled) {
+            shared.bundlePaths = List.of();
+        } else if (DebugAdapterLocator.locatedKnown(shared.pluginPath, home()) || !onFx()) {
+            shared.bundlePaths = locateKept();
+        } else {
+            // A java-debug path not looked at yet (typed in Settings a moment ago): looked for off the FX thread
+            // (PERF-01, Pauta 6.0.1), and the bundles in effect so far kept until it lands; then the owner applies
+            // the support again ({@link #setOnJavaDebugLocated}), which pushes the new bundles to jdtls.
+            String asked = shared.pluginPath;
+            com.editora.perf.OffFx.then(
+                    "java-debug-locate", () -> DebugAdapterLocator.locate(asked, home()), located -> {
+                        if (asked.equals(shared.pluginPath) && shared.enabled) {
+                            shared.bundlePaths = locateKept();
+                            Runnable then = onJavaDebugLocated;
+                            if (then != null) {
+                                then.run();
+                            }
+                        }
+                    });
+        }
         shared.pythonEnabled = pythonEnabled;
         shared.pythonCommand = pythonCommand == null ? "" : pythonCommand;
         shared.jsEnabled = jsEnabled;
@@ -630,6 +649,27 @@ public final class DapManager {
         if (!shared.enabled || !shared.jsEnabled) {
             shared.jsServer = null;
             shared.jsAvailable = false;
+        }
+    }
+
+    /** Run on the FX thread when a java-debug path {@link #configure} could not answer from memory was located. */
+    private volatile @Nullable Runnable onJavaDebugLocated;
+
+    /** Who applies the support again once a newly configured java-debug path has been looked at off FX. */
+    public void setOnJavaDebugLocated(@Nullable Runnable then) {
+        this.onJavaDebugLocated = then;
+    }
+
+    /** The java-debug path {@link #configure} was last given (a look off the FX thread may ask for it). */
+    public String javaDebugPluginPath() {
+        return shared.pluginPath;
+    }
+
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
         }
     }
 
@@ -1216,15 +1256,30 @@ public final class DapManager {
                 return;
             }
             // The reply's parse and the file's own main are read off the FX thread (PERF-01, Pauta 6.0.1).
+            DapPaths paths = pathsFor(file);
             JAVA_LAUNCH_PLAN.execute(() -> {
                 com.editora.perf.BlockingSites.enter("DapManager.ownMainClass");
                 List<MainClassOption> options = JdtlsReplies.parseMainClasses(res);
                 String own = ownMainClass(file);
                 String fromFile = options.isEmpty() && own == null ? JavaCompilation.mainClassFromFile(file) : null;
+                // which option is this file's: real paths compared here, off the FX thread
+                MainClassOption match = options.stream()
+                        .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
+                        .findFirst()
+                        .orElse(null);
                 fx(() -> {
                     if (isCurrent(epoch)) {
                         launchMainClass(
-                                file, picker, javaExecOverride, projectRoot, looseCwd, epoch, options, own, fromFile);
+                                file,
+                                picker,
+                                javaExecOverride,
+                                projectRoot,
+                                looseCwd,
+                                epoch,
+                                options,
+                                own,
+                                fromFile,
+                                match);
                     }
                 });
             });
@@ -1241,7 +1296,8 @@ public final class DapManager {
             long epoch,
             List<MainClassOption> options,
             @Nullable String own,
-            @Nullable String fromFile) {
+            @Nullable String fromFile,
+            @Nullable MainClassOption match) {
         DapPaths paths = pathsFor(file);
         // A project's main class runs in the project root — what Run, the gutter and a saved
         // configuration use — and a loose file in the window's project folder, else its own folder.
@@ -1259,10 +1315,6 @@ public final class DapManager {
             compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
             return;
         }
-        MainClassOption match = options.stream()
-                .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
-                .findFirst()
-                .orElse(null);
         if (match == null && own != null) {
             // The file declares a main that jdtls does not list: it is outside the project's source
             // folders (a script beside the project), or jdtls has not seen it yet. Debug the file — never
@@ -1313,14 +1365,23 @@ public final class DapManager {
         }
         Path source = optionSource(file, opt);
         Path dir = cwd == null ? null : pathsFor(file).fromAdapter(cwd);
-        Runnable compile = () -> compileAndLaunch(
-                source,
-                JavaLaunchSupport.qualified(opt.className(), JavaLaunchSupport.declaredPackage(source)),
-                javaExecOverride,
-                epoch,
-                null,
-                dir,
-                file);
+        // The source's package clause is read off the FX thread (PERF-01, Pauta 6.0.1).
+        Runnable compile = () -> JAVA_LAUNCH_PLAN.execute(() -> {
+            com.editora.perf.BlockingSites.enter("DapManager.declaredPackage");
+            String pkg = JavaLaunchSupport.declaredPackage(source);
+            fx(() -> {
+                if (isCurrent(epoch)) {
+                    compileAndLaunch(
+                            source,
+                            JavaLaunchSupport.qualified(opt.className(), pkg),
+                            javaExecOverride,
+                            epoch,
+                            null,
+                            dir,
+                            file);
+                }
+            });
+        });
         boolean built = takeLooseBuild();
         if (!built) {
             compile.run(); // no build ran for this launch: whatever jdtls's output holds may be from any earlier one
@@ -1460,16 +1521,26 @@ public final class DapManager {
         String uri = lsp.serverUri(file);
         executeCommand(file, "vscode.java.resolveMainMethod", List.of(uri), (res, err) -> {
             String name = err == null ? JavaLaunchSupport.projectName(res) : null;
-            int[] at = name == null ? JavaLaunchSupport.typeNamePosition(file) : null;
-            if (at == null) {
+            if (name != null) {
                 cb.accept(name);
                 return;
             }
-            executeCommand(
-                    file,
-                    "vscode.java.resolveElementAtSelection",
-                    List.of(uri, at[0], at[1]),
-                    (el, e2) -> cb.accept(e2 == null ? JavaLaunchSupport.projectName(el) : null));
+            // The type's position is read from the file off the FX thread (PERF-01, Pauta 6.0.1).
+            JAVA_LAUNCH_PLAN.execute(() -> {
+                com.editora.perf.BlockingSites.enter("DapManager.typeNamePosition");
+                int[] at = JavaLaunchSupport.typeNamePosition(file);
+                fx(() -> {
+                    if (at == null) {
+                        cb.accept(null);
+                        return;
+                    }
+                    executeCommand(
+                            file,
+                            "vscode.java.resolveElementAtSelection",
+                            List.of(uri, at[0], at[1]),
+                            (el, e2) -> cb.accept(e2 == null ? JavaLaunchSupport.projectName(el) : null));
+                });
+            });
         });
     }
 
@@ -4880,6 +4951,17 @@ public final class DapManager {
         });
     }
 
+    /** Looks at {@code frames}' files here, off the FX thread, before the FX thread picks one (PERF-01). */
+    private static boolean warmed(@Nullable List<DapModels.StackFrameInfo> frames) {
+        FrameFiles.warm(frames);
+        return true;
+    }
+
+    /** {@link #fx(Runnable)}, after {@code warmed} has run on this thread. */
+    private void fx(boolean warmed, Runnable r) {
+        fx(r);
+    }
+
     public void stackTrace(int threadId, Consumer<List<DapModels.StackFrameInfo>> cb) {
         DapClient c = client;
         if (c == null) {
@@ -4887,7 +4969,7 @@ public final class DapManager {
             return;
         }
         c.stackTrace(threadId)
-                .whenComplete((frames, e) -> fx(() -> {
+                .whenComplete((frames, e) -> fx(warmed(frames), () -> {
                     if (client == c) {
                         cb.accept(originalFrames(frames));
                     }
@@ -5299,7 +5381,7 @@ public final class DapManager {
     private void presentStop(
             long epoch, DapClient c, int threadId, String reason, boolean event, boolean allThreadsStopped) {
         c.stackTrace(threadId)
-                .whenComplete((frames, e) -> fx(() -> {
+                .whenComplete((frames, e) -> fx(warmed(frames), () -> {
                     if (!isCurrent(epoch, c)) {
                         return;
                     }

@@ -148,69 +148,93 @@ class SettingsFollowUpsFxTest {
     @Test
     void textFieldsAreCommittedOnEnterOrCloseNotPerKeystroke() throws Exception {
         try (var fx = FxWindowFixture.create()) {
-            FxTestSupport.runOnFx(() -> {
-                SettingsWindow w = shown(fx.controller);
-                Settings s = fx.shared.getSettings();
-                Path file = fx.configDir.resolve("settings.json");
-                ComboBox<String> provider = SettingsRig.control(w, "aiProviderCombo");
+            // Saves are queued for the config writer (PERF-01): each "is it saved" check waits for the queued
+            // writes off the FX thread.
+            Path file = fx.configDir.resolve("settings.json");
+            Settings s = fx.shared.getSettings();
+            Map<String, Supplier<String>> stored = new LinkedHashMap<>();
+            Map<String, TextField> fields = new LinkedHashMap<>();
+            SettingsWindow w = FxTestSupport.callOnFx(() -> {
+                SettingsWindow shown = shown(fx.controller);
+                ComboBox<String> provider = SettingsRig.control(shown, "aiProviderCombo");
                 var ai = com.editora.ai.AiProvider.from(provider.getValue());
-                Map<BuildTool, TextField> buildTools = FxTestSupport.field(w, "buildToolCommandFields");
-
-                Map<String, Supplier<String>> stored = new LinkedHashMap<>();
-                Map<String, TextField> fields = new LinkedHashMap<>();
-                fields.put("typst", SettingsRig.control(w, "typstPathField"));
+                Map<BuildTool, TextField> buildTools = FxTestSupport.field(shown, "buildToolCommandFields");
+                fields.put("typst", SettingsRig.control(shown, "typstPathField"));
                 stored.put("typst", s::getTypstPath);
-                fields.put("ripgrep", FxTestSupport.field(w, "ripgrepCommandField"));
+                fields.put("ripgrep", FxTestSupport.field(shown, "ripgrepCommandField"));
                 stored.put("ripgrep", s::getRipgrepCommand);
                 fields.put("maven command", buildTools.get(BuildTool.MAVEN));
                 stored.put("maven command", () -> BuildTool.MAVEN.commandIn(s));
-                fields.put("maven catalog", FxTestSupport.field(w, "mavenArchetypeCatalogField"));
+                fields.put("maven catalog", FxTestSupport.field(shown, "mavenArchetypeCatalogField"));
                 stored.put("maven catalog", s::getMavenArchetypeCatalogUrlRaw);
-                fields.put("plugin registry", SettingsRig.control(w, "pluginRegistryField"));
+                fields.put("plugin registry", SettingsRig.control(shown, "pluginRegistryField"));
                 stored.put("plugin registry", s::getPluginRegistryUrlRaw);
-                fields.put("ai endpoint", SettingsRig.control(w, "aiEndpointField"));
+                fields.put("ai endpoint", SettingsRig.control(shown, "aiEndpointField"));
                 stored.put("ai endpoint", () -> s.getAiEndpointFor(ai));
-                fields.put("ai model", SettingsRig.control(w, "aiModelField"));
+                fields.put("ai model", SettingsRig.control(shown, "aiModelField"));
                 stored.put("ai model", () -> s.getAiModelFor(ai));
-                fields.put("ai key", SettingsRig.control(w, "aiApiKeyField"));
+                fields.put("ai key", SettingsRig.control(shown, "aiApiKeyField"));
                 stored.put("ai key", () -> s.getApiKeyFor(ai));
-                fields.put("ai completion model", SettingsRig.control(w, "aiCompletionModelField"));
+                fields.put("ai completion model", SettingsRig.control(shown, "aiCompletionModelField"));
                 stored.put("ai completion model", () -> s.getAiCompletionModelFor(ai));
-                fields.put("author", SettingsRig.control(w, "templateAuthorField"));
+                fields.put("author", SettingsRig.control(shown, "templateAuthorField"));
                 stored.put("author", s::getAuthorNameRaw);
-                fields.put("git", SettingsRig.control(w, "gitPathField"));
+                fields.put("git", SettingsRig.control(shown, "gitPathField"));
                 stored.put("git", s::getGitPath);
+                return shown;
+            });
 
-                fields.forEach((name, field) -> {
+            for (Map.Entry<String, TextField> e : fields.entrySet()) {
+                String name = e.getKey();
+                TextField field = e.getValue();
+                String typed = "https://example.test/" + name.replace(' ', '-');
+                settle(fx);
+                delete(file);
+                FxTestSupport.runOnFx(() -> {
                     String before = stored.get(name).get();
-                    String typed = "https://example.test/" + name.replace(' ', '-');
-                    delete(file);
                     for (int n = 1; n <= typed.length(); n++) {
                         field.setText(typed.substring(0, n));
                     }
                     assertEquals(before, stored.get(name).get(), name + ": nothing is applied while typing");
-                    assertFalse(Files.exists(file), name + ": and nothing is saved per keystroke");
+                });
+                settle(fx);
+                assertFalse(
+                        Files.exists(file) && Files.readString(file).contains(typed.substring(0, typed.length() - 1)),
+                        name + ": and nothing typed is saved per keystroke");
 
+                FxTestSupport.runOnFx(() -> {
                     field.fireEvent(new ActionEvent());
                     assertEquals(typed, stored.get(name).get(), name + ": Enter commits");
-                    assertTrue(Files.exists(file), name + ": and saves");
-
-                    delete(file);
-                    field.fireEvent(new ActionEvent());
-                    assertFalse(Files.exists(file), name + ": an unchanged field is not saved again");
                 });
+                settle(fx);
+                assertTrue(Files.exists(file), name + ": and saves");
 
-                // A URL field shows the built-in URL when none is configured; emptying it goes back to that.
-                TextField registry = fields.get("plugin registry");
+                String saved = Files.readString(file);
+                FxTestSupport.runOnFx(() -> field.fireEvent(new ActionEvent()));
+                settle(fx);
+                // A session save may rewrite the file at any time; an unchanged field must not change it.
+                assertEquals(saved, Files.readString(file), name + ": an unchanged field is not saved again");
+            }
+
+            // A URL field shows the built-in URL when none is configured; emptying it goes back to that.
+            TextField registry = fields.get("plugin registry");
+            FxTestSupport.runOnFx(() -> {
                 registry.setText("");
                 registry.fireEvent(new ActionEvent());
                 assertEquals("", s.getPluginRegistryUrlRaw());
                 assertEquals(Settings.DEFAULT_PLUGIN_REGISTRY, s.getPluginRegistryUrl());
-                delete(file);
-                registry.fireEvent(new ActionEvent());
-                assertFalse(Files.exists(file), "an emptied URL field is not re-saved on every Enter / focus loss");
+            });
+            settle(fx);
+            String emptied = Files.readString(file);
+            FxTestSupport.runOnFx(() -> registry.fireEvent(new ActionEvent()));
+            settle(fx);
+            assertEquals(
+                    emptied,
+                    Files.readString(file),
+                    "an emptied URL field is not re-saved on every Enter / focus loss");
 
-                // Closing the window commits the field being typed in.
+            // Closing the window commits the field being typed in.
+            FxTestSupport.runOnFx(() -> {
                 fields.get("typst").setText("/opt/typst/bin/typst");
                 fields.get("maven catalog").setText("https://nexus.example/archetype-catalog.xml");
                 assertNotEquals("/opt/typst/bin/typst", s.getTypstPath());
@@ -739,6 +763,17 @@ class SettingsFollowUpsFxTest {
             }
         } finally {
             com.editora.i18n.Messages.init("en");
+        }
+    }
+    /**
+     * Lets the background looks the window started land, and the saves they and the FX thread queued reach the
+     * disk (PERF-01 moved both off the FX thread), so a file check sees only what the step under test did.
+     */
+    private static void settle(FxWindowFixture fx) throws Exception {
+        for (int i = 0; i < 3; i++) {
+            Thread.sleep(50);
+            FxTestSupport.drainFx();
+            fx.shared.awaitWrites();
         }
     }
 }

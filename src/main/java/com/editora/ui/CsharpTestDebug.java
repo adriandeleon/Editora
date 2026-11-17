@@ -46,15 +46,31 @@ final class CsharpTestDebug {
      * Debugs the C# test at the caret of {@code b}, when {@code b} is a file of a test project with a test there (or a
      * test class around the caret). False — nothing done — for any other buffer.
      */
-    boolean debugAtCaret(@Nullable EditorBuffer b) {
+    boolean debugAtCaret(@Nullable EditorBuffer b, Runnable otherwise) {
         Path file = b == null ? null : b.getPath();
         if (b == null || file == null || !"csharp".equals(b.getLanguage())) {
             return false;
         }
-        Path project = DotnetLaunch.projectFile(file);
-        if (project == null || !DotnetTests.isTestProject(read(project))) {
-            return false;
-        }
+        // The project above the file is found and read off the FX thread (PERF-01, Pauta 6.0.1); a C# file that
+        // is not in a test project goes on to {@code otherwise}, as a false answer did.
+        com.editora.perf.OffFx.then(
+                "CsharpTestDebug.debugAtCaret",
+                () -> {
+                    Path project = DotnetLaunch.projectFile(file);
+                    return project != null && DotnetTests.isTestProject(read(project))
+                            ? java.util.Optional.of(project)
+                            : java.util.Optional.<Path>empty();
+                },
+                found -> {
+                    Path project = found.or(java.util.Optional.empty()).orElse(null);
+                    if (project == null || !debugInProject(b, file, project)) {
+                        otherwise.run();
+                    }
+                });
+        return true;
+    }
+
+    private boolean debugInProject(EditorBuffer b, Path file, Path project) {
         DotnetTests.Target target = DotnetTests.testAt(b.getContent(), DebugCoordinator.caretLine(b));
         if (target == null) {
             return false;

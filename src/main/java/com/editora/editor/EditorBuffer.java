@@ -3133,6 +3133,57 @@ public class EditorBuffer implements TabContent {
         typingAids.setLspRangeFormatAvailable(available);
     }
 
+    /**
+     * This {@code .http} document's scripts ({@link com.editora.http.HttpScriptLines#mapOf}) for its current text, or
+     * null while they are being worked out: parsed off the FX thread once per document version (PERF-01, Pauta 6.0.1).
+     * A caller treats null as "may be a script" (a breakpoint is allowed, a Debug Request row offered).
+     */
+    public com.editora.http.HttpScriptLines.@Nullable Map httpScriptMap() {
+        long version = docVersion();
+        com.editora.http.HttpScriptLines.Map kept = httpScripts;
+        if (kept != null && httpScriptsVersion == version) {
+            return kept;
+        }
+        if (httpScriptsAsked != version) {
+            httpScriptsAsked = version;
+            String text = documentTextSnapshot();
+            Thread.ofVirtual().name("http-script-lines").start(() -> {
+                com.editora.perf.BlockingSites.enter("EditorBuffer.httpScriptMap");
+                com.editora.http.HttpScriptLines.Map map = com.editora.http.HttpScriptLines.mapOf(text);
+                javafx.application.Platform.runLater(() -> {
+                    if (docVersion() == version) {
+                        httpScripts = map;
+                        httpScriptsVersion = version;
+                        java.util.List<Runnable> waiting = new java.util.ArrayList<>(httpScriptWaiters);
+                        httpScriptWaiters.clear();
+                        waiting.forEach(Runnable::run);
+                    } else if (!httpScriptWaiters.isEmpty()) {
+                        httpScriptMap(); // the text moved on meanwhile: worked out again for the waiters
+                    }
+                });
+            });
+        }
+        return null;
+    }
+
+    /**
+     * Runs {@code then} on the FX thread once {@link #httpScriptMap} knows the current text: now when it does, else
+     * when the parse off the FX thread lands. For a command that must not decide on a guess.
+     */
+    public void whenHttpScriptMap(Runnable then) {
+        if (httpScriptMap() != null) {
+            then.run();
+            return;
+        }
+        httpScriptWaiters.add(then);
+    }
+
+    private final java.util.List<Runnable> httpScriptWaiters = new java.util.ArrayList<>();
+
+    private com.editora.http.HttpScriptLines.@Nullable Map httpScripts;
+    private long httpScriptsVersion = -1;
+    private long httpScriptsAsked = -1;
+
     /** Current document text (for an initial didOpen). */
     public String text() {
         return documentTextSnapshot();
@@ -3144,8 +3195,12 @@ public class EditorBuffer implements TabContent {
         java.util.Map<String, String> shown = hugeFile ? null : values;
         if ((shown != null && !shown.isEmpty()) || inlineValues != null) {
             // In a .http file only its script lines are the script's; a request body's "user" is not that variable.
-            java.util.BitSet script = isHttpFile() ? com.editora.http.HttpScriptLines.of(getContent()) : null;
-            inlineValues().setValues(shown, frameLine, script == null ? null : script::get);
+            com.editora.http.HttpScriptLines.Map script = isHttpFile() ? httpScriptMap() : null;
+            if (isHttpFile() && script == null) {
+                whenHttpScriptMap(() -> setInlineValues(values, frameLine)); // its script lines, parsed off FX
+                return;
+            }
+            inlineValues().setValues(shown, frameLine, script == null ? null : script::isScriptLine);
         }
     }
 
@@ -4846,6 +4901,11 @@ public class EditorBuffer implements TabContent {
     /** The line ending a save writes: the EditorConfig override when set, else the file's own. */
     public String getLineEnding() {
         return eolOverride != null ? eolOverride : lineEnding;
+    }
+
+    /** The file's own line ending (or a manual conversion), whatever {@code .editorconfig}'s end_of_line says. */
+    public String getBaseLineEnding() {
+        return lineEnding;
     }
 
     /** Whether {@code .editorconfig} fixes the line ending, so a manual conversion cannot take effect. */

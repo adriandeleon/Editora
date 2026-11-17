@@ -191,10 +191,40 @@ public final class Fonts {
             }
             pending = remaining;
         }
+        if (onFx()) {
+            // Never on the FX thread (PERF-01, Pauta 6.0.1): the rest load on fonts-load, and whoever needs them
+            // hears it through whenFamiliesLoaded.
+            (pending != null ? pending : loadRemainingAsync()).thenRun(Fonts::announceLoaded);
+            return;
+        }
         if (pending != null) {
             pending.join();
         } else {
             load();
+        }
+    }
+
+    /** Run on the FX thread whenever a family the FX thread asked for has been registered off it. */
+    private static final List<Runnable> LOADED_LISTENERS = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * Runs {@code r} on the FX thread each time families the FX thread asked for ({@link #ensureFamily},
+     * {@link #ensureAllLoaded}) land: a window applies its font again then, since until they are registered a
+     * family a user picked shows in the fallback face.
+     */
+    public static void whenFamiliesLoaded(Runnable r) {
+        LOADED_LISTENERS.add(r);
+    }
+
+    private static void announceLoaded() {
+        javafx.application.Platform.runLater(() -> LOADED_LISTENERS.forEach(Runnable::run));
+    }
+
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
         }
     }
 
@@ -217,6 +247,9 @@ public final class Fonts {
         }
         if (family == null) {
             ensureAllLoaded();
+        } else if (onFx()) {
+            // A bundled family registered after the first frame: on a thread of its own (PERF-01, Pauta 6.0.1).
+            loadFamilyAsync(family).thenRun(Fonts::announceLoaded);
         } else {
             loadFamilies(List.of(family));
         }

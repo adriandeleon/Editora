@@ -214,6 +214,12 @@ final class InstallPromptCoordinator {
             return false;
         }
         String custom = lsp.customServerCommand(pomServer);
+        if (custom == null && lsp.pomTrustUnknown(buffer)) {
+            // Which offer it is depends on the folder's trust, asked by the pom's root: looked for off the FX
+            // thread (PERF-01, Pauta 6.0.1). Decided when it lands.
+            lsp.afterRootLearned(buffer, () -> maybeOfferInstall(buffer));
+            return true;
+        }
         if (custom != null) {
             offerSettings(buffer, pomServer, custom);
         } else {
@@ -273,6 +279,28 @@ final class InstallPromptCoordinator {
                 || !"bash".equals(com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage()))
                 || !lsp.serverEnabled("bash")
                 || !lsp.isServerAvailable("bash")) {
+            return false;
+        }
+        java.util.List<java.util.List<String>> unknown = com.editora.install.InstallCatalog.PINNED_TOOL_IDS.stream()
+                .map(lsp::bashToolCommand)
+                .filter(cmd -> !cmd.isBlank())
+                .map(java.util.List::of)
+                .filter(cmd -> !com.editora.doctor.DoctorProbes.known(cmd))
+                .toList();
+        if (!unknown.isEmpty()) {
+            // Whether each tool is there is looked at off the FX thread first (PERF-01, Pauta 6.0.1); the banner
+            // is decided when the look lands, if the script is still the one shown.
+            com.editora.perf.OffFx.then(
+                    "shell-tools-look",
+                    () -> {
+                        unknown.forEach(com.editora.doctor.DoctorProbes::lookAt);
+                        return Boolean.TRUE;
+                    },
+                    looked -> {
+                        if (unknown.stream().allMatch(com.editora.doctor.DoctorProbes::known)) {
+                            maybeOfferInstall(buffer);
+                        }
+                    });
             return false;
         }
         java.util.List<String> missing = com.editora.install.InstallCatalog.PINNED_TOOL_IDS.stream()

@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -238,8 +239,11 @@ final class TestNavigationCoordinator {
         Path anchor = lspStackTraceAnchor();
         if (anchor != null && link.raw() != null) {
             host.lspManager().resolveStackTraceLocation(anchor, link.raw(), uri -> {
-                if (uri == null || !openResolvedFrame(anchor, uri, link)) {
-                    openRunLinkLocally(link, onUnresolved); // no answer, or one we can't open — heuristic
+                if (uri == null) {
+                    openRunLinkLocally(link, onUnresolved); // no answer — heuristic
+                } else {
+                    // One we can't open falls back to the heuristic too.
+                    openResolvedFrame(anchor, uri, link, () -> openRunLinkLocally(link, onUnresolved));
                 }
             });
             return;
@@ -261,23 +265,44 @@ final class TestNavigationCoordinator {
                 : null;
     }
 
-    /** Opens a server-resolved frame URI; false when it names something we can't open, so the caller falls
-     *  back. A {@code jdt://} answer is a library frame and opens as read-only class-file source (#665). */
-    boolean openResolvedFrame(Path anchor, String uri, com.editora.run.StackTraceLinks.Link link) {
+    /**
+     * Opens a server-resolved frame URI, or runs {@code otherwise} when it names something we can't open. A
+     * {@code jdt://} answer is a library frame and opens as read-only class-file source (#665). Whether the file is
+     * there is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    void openResolvedFrame(Path anchor, String uri, com.editora.run.StackTraceLinks.Link link, Runnable otherwise) {
         if (uri.startsWith("jdt:")) {
             host.lspCoordinator().openLibraryFrame(anchor, uri, link.line() - 1);
-            return true;
+            return;
         }
+        Path file;
         try {
-            Path file = host.lspManager().pathForServerUri(anchor, uri);
-            if (file != null && java.nio.file.Files.isRegularFile(file)) {
-                host.openAndGoto(file, link.line() - 1, 0); // console lines are 1-based
-                return true;
-            }
+            file = host.lspManager().pathForServerUri(anchor, uri);
         } catch (RuntimeException notAUsableUri) {
-            return false;
+            file = null;
         }
-        return false;
+        if (file == null) {
+            otherwise.run();
+            return;
+        }
+        Path target = file;
+        lookupRunner.accept(() -> {
+            com.editora.perf.BlockingSites.enter("TestNavigationCoordinator.openResolvedFrame");
+            boolean there;
+            try {
+                there = java.nio.file.Files.isRegularFile(target);
+            } catch (RuntimeException e) {
+                there = false;
+            }
+            boolean open = there;
+            com.editora.perf.OffFx.onFx(() -> {
+                if (open) {
+                    host.openAndGoto(target, link.line() - 1, 0); // console lines are 1-based
+                } else {
+                    otherwise.run();
+                }
+            });
+        });
     }
 
     void openRunLinkLocally(com.editora.run.StackTraceLinks.Link link) {
@@ -295,14 +320,21 @@ final class TestNavigationCoordinator {
     void openRunLinkLocally(com.editora.run.StackTraceLinks.Link link, @Nullable Runnable onUnresolved) {
         String sourcePath = com.editora.run.StackTraceLinks.javaSourcePath(link);
         Path open = sourcePath == null ? null : openFileEndingWith(sourcePath);
-        if (sourcePath == null || open != null) {
-            finishRunLink(link, open != null ? open : resolveRunLinkFile(link.file()), onUnresolved);
+        if (open != null) {
+            finishRunLink(link, open, onUnresolved);
             return;
         }
-        locateSource(
-                sourcePath,
-                true,
-                found -> finishRunLink(link, found != null ? found : resolveRunLinkFile(link.file()), onUnresolved));
+        if (sourcePath == null) {
+            resolveRunLinkFileAsync(link.file(), resolved -> finishRunLink(link, resolved, onUnresolved));
+            return;
+        }
+        locateSource(sourcePath, true, found -> {
+            if (found != null) {
+                finishRunLink(link, found, onUnresolved);
+            } else {
+                resolveRunLinkFileAsync(link.file(), resolved -> finishRunLink(link, resolved, onUnresolved));
+            }
+        });
     }
 
     private void finishRunLink(
@@ -376,8 +408,45 @@ final class TestNavigationCoordinator {
         });
     }
 
+    /**
+     * The file a console link names, resolved with the disk looked at off the FX thread (PERF-01, Pauta 6.0.1):
+     * what the window knows (its project, open tabs, last run folder) is taken here, the stats run on a thread of
+     * their own, and {@code onResult} gets the file, or null, on the FX thread.
+     */
+    void resolveRunLinkFileAsync(String fileToken, java.util.function.Consumer<@Nullable Path> onResult) {
+        RunLinkInputs inputs = runLinkInputs();
+        lookupRunner.accept(() -> {
+            com.editora.perf.BlockingSites.enter("TestNavigationCoordinator.resolveRunLinkFile");
+            Path found = resolveRunLinkOnDisk(fileToken, inputs);
+            com.editora.perf.OffFx.onFx(() -> onResult.accept(found));
+        });
+    }
+
+    /** As {@link #resolveRunLinkFileAsync}, answered on the calling thread. TEST SEAM. */
     @Nullable
     Path resolveRunLinkFile(String fileToken) {
+        return resolveRunLinkOnDisk(fileToken, runLinkInputs());
+    }
+
+    /** What the window knows that a link resolves against: taken on the FX thread. */
+    record RunLinkInputs(
+            @Nullable Path root,
+            List<Path> openPaths,
+            @Nullable Path lastRunDir) {}
+
+    private RunLinkInputs runLinkInputs() {
+        List<Path> open = new ArrayList<>();
+        for (Tab t : host.editorArea().tabs()) {
+            EditorBuffer b = host.bufferOf(t);
+            if (b != null && b.getPath() != null) {
+                open.add(b.getPath());
+            }
+        }
+        return new RunLinkInputs(
+                projectRoot(), List.copyOf(open), host.runCoordinator().lastRunDir());
+    }
+
+    static @Nullable Path resolveRunLinkOnDisk(String fileToken, RunLinkInputs in) {
         try {
             Path p = Path.of(fileToken);
             if (p.isAbsolute() && java.nio.file.Files.isRegularFile(p)) {
@@ -387,7 +456,7 @@ final class TestNavigationCoordinator {
             // which don't exist locally — try progressively shorter repo-relative suffixes under the project
             // root so a GitHub Actions failure frame still jumps to the local file. Exact paths are tried
             // first (candidate 0), so local behaviour is unchanged.
-            Path root = projectRoot(); // this window's project, not the window opened last
+            Path root = in.root(); // this window's project, not the window opened last
             if (root != null) {
                 for (String candidate : com.editora.run.RunnerPaths.candidates(fileToken)) {
                     Path c = root.resolve(candidate);
@@ -400,15 +469,12 @@ final class TestNavigationCoordinator {
                 return null; // absolute, not local, and no repo-relative suffix matched
             }
             String name = p.getFileName().toString();
-            for (Tab t : host.editorArea().tabs()) { // an open tab with that file name wins
-                EditorBuffer b = host.bufferOf(t);
-                if (b != null
-                        && b.getPath() != null
-                        && b.getPath().getFileName().toString().equals(name)) {
-                    return b.getPath();
+            for (Path open : in.openPaths()) { // an open tab with that file name wins
+                if (open.getFileName() != null && open.getFileName().toString().equals(name)) {
+                    return open;
                 }
             }
-            Path lastRunDir = host.runCoordinator().lastRunDir();
+            Path lastRunDir = in.lastRunDir();
             if (lastRunDir != null) {
                 Path sibling = lastRunDir.resolve(name);
                 if (java.nio.file.Files.isRegularFile(sibling)) {
@@ -441,11 +507,16 @@ final class TestNavigationCoordinator {
                 return;
             }
         }
-        if (looksLikePythonProject(projectRoot())) {
-            pythonTests.runAll(null);
-            return;
-        }
-        host.setStatus(tr("status.testrunner.noBuildTool"));
+        // The project's Python markers are looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        Path root = projectRoot();
+        com.editora.perf.OffFx.then(
+                "TestNavigationCoordinator.looksLikePythonProject", () -> looksLikePythonProject(root), python -> {
+                    if (Boolean.TRUE.equals(python.value())) {
+                        pythonTests.runAll(null);
+                    } else {
+                        host.setStatus(tr("status.testrunner.noBuildTool"));
+                    }
+                });
     }
 
     /** Whether a JVM build tool (Maven/Gradle) is detected + enabled — the JUnit test gutter's build-side gate. */
@@ -561,9 +632,17 @@ final class TestNavigationCoordinator {
             return;
         }
         // A C# test at the caret: dotnet test runs it, its host waiting, and netcoredbg attaches to it.
-        if (debug && host.debugCoordinator() != null && new CsharpTestDebug(host.debugCoordinator()).debugAtCaret(b)) {
+        if (debug
+                && host.debugCoordinator() != null
+                && new CsharpTestDebug(host.debugCoordinator())
+                        .debugAtCaret(b, () -> runTestAtCaretAfterCsharp(b, classLevel, debug))) {
             return;
         }
+        runTestAtCaretAfterCsharp(b, classLevel, debug);
+    }
+
+    /** {@link #runTestAtCaret}'s rest, after a C# test was not found at the caret. */
+    private void runTestAtCaretAfterCsharp(@Nullable EditorBuffer b, boolean classLevel, boolean debug) {
         // A Rust test at the caret is debugged on CodeLLDB: its test binary, filtered to it.
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugRustTestAtCaret(b)) {
             return;
@@ -668,7 +747,13 @@ final class TestNavigationCoordinator {
             return;
         }
         String name = pathHint.substring(pathHint.lastIndexOf('/') + 1);
-        locateSource(pathHint, navigation, found -> onResult.accept(found != null ? found : resolveRunLinkFile(name)));
+        locateSource(pathHint, navigation, found -> {
+            if (found != null) {
+                onResult.accept(found);
+            } else {
+                resolveRunLinkFileAsync(name, onResult::accept);
+            }
+        });
     }
 
     /**

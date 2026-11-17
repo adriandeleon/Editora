@@ -133,6 +133,10 @@ class GitLogActionsFxTest {
                     () -> win.w().active() != null
                             && other.equals(win.w().active().getPath()));
             FxTestSupport.runOnFx(() -> win.actions().openFile("side.txt")); // only on the other branch
+            OverlayTestKit.await( // looked at off the FX thread (PERF-01)
+                    async,
+                    "side.txt to be found gone",
+                    () -> tr("status.git.fileGone", "side.txt").equals(win.w().status()));
             assertEquals(tr("status.git.fileGone", "side.txt"), win.w().status());
 
             // Against its parent: read-only, the commit's two versions.

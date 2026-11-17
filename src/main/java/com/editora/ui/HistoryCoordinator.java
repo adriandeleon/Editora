@@ -292,6 +292,19 @@ final class HistoryCoordinator {
             }
 
             @Override
+            public void currentTextLater(Path target, java.util.function.Consumer<String> then) {
+                EditorBuffer open = ops.openBufferFor(target);
+                if (open != null) {
+                    then.accept(open.getContent());
+                    return;
+                }
+                com.editora.perf.OffFx.then(
+                        "HistoryCoordinator.currentText",
+                        () -> Files.readString(target),
+                        read -> then.accept(read.or("")));
+            }
+
+            @Override
             public void revert(HistoryRevision revision, Runnable done) {
                 restoreHistory(revision).whenComplete((result, failure) -> onFx(done));
             }

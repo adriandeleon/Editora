@@ -104,6 +104,14 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
         String currentText(Path target);
 
+        /**
+         * {@link #currentText}, for a file that may be closed: a closed file is read off the FX thread (PERF-01,
+         * Pauta 6.0.1); {@code then} gets the text on the FX thread.
+         */
+        default void currentTextLater(Path target, Consumer<String> then) {
+            then.accept(currentText(target));
+        }
+
         /** Restores {@code revision} into the file; {@code done} runs on the FX thread once that has finished. */
         void revert(HistoryRevision revision, Runnable done);
 
@@ -392,10 +400,13 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             resetDiff(); // the previously-shown diff was for the old file (or old list) — clear it
         } else if (sameFile && wanted.equals(shown) && pane != null) {
             shown = wanted;
-            if (support != null
-                    && target != null
-                    && !support.currentText(target).equals(baseText)) {
-                reDiffAfterEdit(); // same revision, but the file has moved on
+            if (support != null && target != null) {
+                int asked = gen;
+                support.currentTextLater(target, now -> {
+                    if (asked == gen && !now.equals(baseText)) {
+                        reDiffAfterEdit(); // same revision, but the file has moved on
+                    }
+                });
             }
         } else if (target != null) { // a remembered or pending revision is always one of a file's
             remembered.put(target.toString(), wanted);
@@ -520,10 +531,20 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         headerInfo.setText(header);
         headerTip.setText(header);
         headerInfo.setTooltip(headerTip);
-        baseText = support.currentText(path);
         int request = ++gen;
         updateToolbar();
-        support.fetchContent(rev, content -> {
+        DiffSupport diffs = support;
+        diffs.currentTextLater(path, base -> {
+            if (request == gen) {
+                baseText = base;
+                fetchShown(diffs, rev, request);
+            }
+        });
+    }
+
+    /** The second half of {@link #showRevision}: the revision's snapshot, once the current text is known. */
+    private void fetchShown(DiffSupport diffs, HistoryRevision rev, int request) {
+        diffs.fetchContent(rev, content -> {
             if (request != gen) {
                 return;
             }
@@ -645,11 +666,13 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             rehashEditorText();
         }
         if (shown != null && shownPath != null && !shownMissing) {
-            String now = support.currentText(shownPath);
-            if (!now.equals(baseText) || pane == null) {
-                baseText = now;
-                recompute();
-            }
+            int asked = gen;
+            support.currentTextLater(shownPath, now -> {
+                if (asked == gen && (!now.equals(baseText) || pane == null)) {
+                    baseText = now;
+                    recompute();
+                }
+            });
         }
     }
 
@@ -663,8 +686,15 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             editorSha = "";
             return;
         }
-        String text = support.currentText(target);
-        if (text == null || text.length() > MAX_HASHED_CHARS) {
+        support.currentTextLater(target, text -> {
+            if (mine == hashGen) {
+                hashLater(text, mine);
+            }
+        });
+    }
+
+    private void hashLater(String text, long mine) {
+        if (text.length() > MAX_HASHED_CHARS) {
             editorSha = "";
             return;
         }

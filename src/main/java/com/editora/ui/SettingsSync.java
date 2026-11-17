@@ -122,7 +122,7 @@ final class SettingsSync {
     /** This computer's name for commit messages; looked up off the FX thread (it can be a DNS query). */
     private volatile String machine = "";
     /** The key-binding overrides as {@link #keymapReloaded} last saw them ({@link KeybindingsFile#render}). */
-    private @Nullable String keybindingsSeen;
+    private KeybindingsFile.Bindings keybindingsSeen;
 
     SettingsSync(SharedConfig shared, WindowManager windows) {
         this.shared = shared;
@@ -130,7 +130,7 @@ final class SettingsSync {
         dirty.setOnFinished(e -> request(false, false));
         startup.setOnFinished(e -> request(false, false));
         worker.execute(() -> machine = machineName());
-        keybindingsSeen = KeybindingsFile.render(shared.getSettings());
+        keybindingsSeen = KeybindingsFile.Bindings.of(shared.getSettings());
         settingsChanged();
     }
 
@@ -229,7 +229,8 @@ final class SettingsSync {
      * overrides are not what they were.
      */
     void keymapReloaded() {
-        String now = KeybindingsFile.render(shared.getSettings());
+        // A copy compared in memory, no JSON on the FX thread (PERF-01, Pauta 6.0.1).
+        KeybindingsFile.Bindings now = KeybindingsFile.Bindings.of(shared.getSettings());
         if (!Objects.equals(now, keybindingsSeen)) {
             keybindingsSeen = now;
             markDirty();
@@ -469,11 +470,21 @@ final class SettingsSync {
     // --- writing a run's result into the live stores -------------------------------------------------------
 
     /**
-     * The config directory's files, written on the FX thread so no store is saving at the same moment. The key
-     * bindings are not a file here but part of the live {@link Settings}: they are read and written on the FX
-     * thread, and saved with {@code settings.json}.
+     * The config directory's files, written on the config writer (in order with every store's save, so none is
+     * saving at the same moment) while the sync thread waits, never on the FX thread (PERF-01, Pauta 6.0.1). The
+     * key bindings are not a file here but part of the live {@link Settings}: the FX thread hands over a copy of
+     * them (memory only) and later takes the bindings a run brought, which the sync thread rendered, compared and
+     * parsed; they are saved with {@code settings.json}.
      */
     private final class LiveTarget extends FileSyncTarget {
+
+        /** The bindings as the FX thread last handed them over, for this run's {@link #current}. */
+        private KeybindingsFile.@Nullable Bindings bindingsNow;
+
+        /** The bindings this run writes, put into the live settings on the FX thread after the files. */
+        private KeybindingsFile.@Nullable Bindings bindingsWritten;
+
+        private boolean bindingsChanged;
 
         LiveTarget() {
             super(shared.getConfigDir());
@@ -486,7 +497,8 @@ final class SettingsSync {
             boolean keybindings = files.remove(SyncCategory.KEYBINDINGS);
             Map<String, String> out = super.read(files);
             if (keybindings) {
-                String text = onFx(() -> KeybindingsFile.render(shared.getSettings()));
+                KeybindingsFile.Bindings now = onFx(() -> KeybindingsFile.Bindings.of(shared.getSettings()));
+                String text = now == null ? null : KeybindingsFile.render(now);
                 if (text != null) {
                     out.put(KeybindingsFile.PATH, text);
                 }
@@ -496,29 +508,45 @@ final class SettingsSync {
 
         @Override
         public boolean apply(Map<String, String> expected, Map<String, String> changes) throws IOException {
-            return Boolean.TRUE.equals(onFx(() -> {
+            bindingsNow = changes.containsKey(KeybindingsFile.PATH)
+                    ? onFx(() -> KeybindingsFile.Bindings.of(shared.getSettings()))
+                    : null;
+            bindingsWritten = null;
+            bindingsChanged = false;
+            boolean written = shared.callWithWrites(() -> writeFiles(expected, changes));
+            if (!written) {
+                return false;
+            }
+            KeybindingsFile.Bindings bindings = bindingsWritten;
+            boolean saveBindings = bindingsChanged;
+            onFx(() -> {
                 applying = true;
                 try {
-                    boolean written = writeFiles(expected, changes);
-                    if (written) {
-                        reload(changes.keySet());
+                    if (saveBindings && bindings != null) {
+                        bindings.applyTo(shared.getSettings());
+                        shared.saveSettings();
                     }
-                    return written;
+                    reload(changes.keySet());
                 } finally {
                     applying = false;
                 }
-            }));
+                return Boolean.TRUE;
+            });
+            return true;
         }
 
         private boolean writeFiles(Map<String, String> expected, Map<String, String> changes) throws IOException {
+            com.editora.perf.BlockingSites.enter("SettingsSync.writeFiles");
             return super.apply(expected, changes);
         }
 
         @Override
         protected @Nullable String current(String path) throws IOException {
-            return KeybindingsFile.PATH.equals(path)
-                    ? KeybindingsFile.render(shared.getSettings())
-                    : super.current(path);
+            if (!KeybindingsFile.PATH.equals(path)) {
+                return super.current(path);
+            }
+            KeybindingsFile.Bindings now = bindingsNow;
+            return now == null ? null : KeybindingsFile.render(now);
         }
 
         @Override
@@ -527,8 +555,8 @@ final class SettingsSync {
                 super.write(path, text);
                 return;
             }
-            KeybindingsFile.apply(shared.getSettings(), text);
-            shared.saveSettings();
+            bindingsWritten = KeybindingsFile.parse(text); // put into the live settings on the FX thread
+            bindingsChanged = true;
         }
 
         @Override

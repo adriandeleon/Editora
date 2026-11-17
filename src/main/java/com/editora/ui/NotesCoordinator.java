@@ -1,7 +1,6 @@
 package com.editora.ui;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -302,10 +301,25 @@ final class NotesCoordinator {
         if (draft == null) {
             draft = open.captureLineNoteDraft(0);
         }
-        FileIdentity identity = open.fileIdentity(); // found by its path, so it has one
-        if (identity != null) {
-            open.getNoteManager().add(PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of()));
+        addWithIdentity(open, draft, body);
+    }
+
+    /**
+     * Adds {@code body}'s note to {@code buffer} once its file's identity is known: its size, time, real path and
+     * (for a small file) hash are looked at off the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    private void addWithIdentity(EditorBuffer buffer, NoteDraft draft, String body) {
+        Path path = buffer.getPath();
+        if (path == null) {
+            return;
         }
+        com.editora.perf.OffFx.then("note-identity", () -> FileIdentity.of(path), looked -> {
+            FileIdentity identity = looked.value();
+            if (identity != null && path.equals(buffer.getPath())) {
+                buffer.getNoteManager()
+                        .add(PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of()));
+            }
+        });
     }
 
     private void addClosedNote(
@@ -647,13 +661,7 @@ final class NotesCoordinator {
         NoteDraft draft = buffer.captureNoteDraft();
         showNoteDialog(
                 "",
-                body -> {
-                    FileIdentity identity = buffer.fileIdentity(); // it had a path when the dialog opened
-                    if (identity != null) {
-                        buffer.getNoteManager()
-                                .add(PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of()));
-                    }
-                },
+                body -> addWithIdentity(buffer, draft, body), // it had a path when the dialog opened
                 null);
     }
 
@@ -971,11 +979,17 @@ final class NotesCoordinator {
         if (f == null) {
             return;
         }
-        try {
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT).writeValue(f, ops.notes());
-            host.setStatus(tr("status.notesExported", f.toString()));
-        } catch (IOException e) {
-            host.setStatus(tr("status.notesExportFailed", e.getMessage()));
-        }
+        // A copy taken here; serialized and written off the FX thread (PERF-01, Pauta 6.0.1).
+        Map<String, List<PersonalNote>> notes = new java.util.LinkedHashMap<>();
+        ops.notes().forEach((k, v) -> notes.put(k, List.copyOf(v)));
+        com.editora.perf.OffFx.run(
+                "notes-export",
+                () -> new ObjectMapper()
+                        .enable(SerializationFeature.INDENT_OUTPUT)
+                        .writeValue(f, notes),
+                failure -> host.setStatus(
+                        failure == null
+                                ? tr("status.notesExported", f.toString())
+                                : tr("status.notesExportFailed", failure.getMessage())));
     }
 }

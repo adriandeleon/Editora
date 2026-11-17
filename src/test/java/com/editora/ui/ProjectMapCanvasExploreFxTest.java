@@ -287,7 +287,12 @@ class ProjectMapCanvasExploreFxTest {
                 assertTrue(y >= 0 && y < h.surface().getHeight(), "the last row is on screen at " + y);
             });
 
-            // A row listed by name only gets its size and time when its tooltip asks.
+            // A row listed by name only gets its size and time when its tooltip asks: read off the FX thread
+            // (PERF-01), so the tooltip asked again once that read has landed has them.
+            FxTestSupport.callOnFx(() -> (String) FxTestSupport.call(
+                    h.surface(), "tooltipText", new Class<?>[] {ProjectMapModel.Entry.class}, entry(h, last)));
+            DiskFacts<ProjectMapModel.Entry, ?> attributes = FxTestSupport.field(h.surface(), "attributes");
+            waitForFx(() -> attributes.knows(entry(h, last)));
             String tooltip = FxTestSupport.callOnFx(() -> (String) FxTestSupport.call(
                     h.surface(), "tooltipText", new Class<?>[] {ProjectMapModel.Entry.class}, entry(h, last)));
             assertTrue(tooltip.contains(tr("project.map.tooltip.size", "0 B")), tooltip);
