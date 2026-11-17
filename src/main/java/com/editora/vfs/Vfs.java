@@ -79,6 +79,17 @@ public final class Vfs {
      * SFTP only checks that the file exists. Unknown (no POSIX view, unreachable) counts as writable.
      */
     public static boolean isWritableOnDisk(Path path) {
+        return !Boolean.FALSE.equals(WRITABLE.get(path));
+    }
+
+    /**
+     * {@link #isWritableOnDisk} by path: looked at off the FX thread as the file is read, answered from memory when
+     * its tab asks on the FX thread (PERF-01, Pauta 6.0.1). A remote file is a round trip to its host.
+     */
+    private static final com.editora.perf.Looked<Path, Boolean> WRITABLE =
+            new com.editora.perf.Looked<>("Vfs.isWritableOnDisk", Vfs::writableNow);
+
+    private static boolean writableNow(Path path) {
         if (isLocal(path)) {
             return Files.isWritable(path);
         }

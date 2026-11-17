@@ -538,7 +538,21 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     // changes may take a few seconds to show (the focus-regain refresh covers the immediate case).
     private java.nio.file.@Nullable WatchService watchService;
     private @Nullable Thread watchThread;
-    private final java.util.Map<java.nio.file.WatchKey, Path> watchKeys = new java.util.HashMap<>();
+    /** The folders watched, by key: changed on {@link #watchWork} only, read by the watch loop too. */
+    private final java.util.Map<java.nio.file.WatchKey, Path> watchKeys =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Where the watches are registered and cancelled, in order: a registration is a system call (and with the
+     * polling watcher a listing of the folder), off the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    private final java.util.concurrent.ExecutorService watchPool =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    r -> Thread.ofPlatform().daemon().name("project-watch").unstarted(r));
+
+    /** Where {@link #watchPool}'s work is handed. TEST SEAM: a test may register in place. */
+    java.util.concurrent.Executor watchWork = watchPool;
+
     private final PauseTransition watchDebounce = new PauseTransition(Duration.millis(250));
     private volatile boolean disposed;
     // In-app rename/delete update the tree directly (instantly); the watcher then re-fires for that same
@@ -929,19 +943,29 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         ProjectMapPreview from = mapView.focusedCard();
         Path anchor = mapView.gotoAnchor(from);
-        Path start = anchor == null ? root : java.nio.file.Files.isDirectory(anchor) ? anchor : anchor.getParent();
-        Path startDir = start == null ? root : start;
-        FileFinder finder = new FileFinder(() -> startDir, picked -> {
-            if (!java.nio.file.Files.exists(picked) || !mapView.showOnMap(from, picked, -1, null)) {
-                FileActions actions = fileActions;
-                if (actions != null) {
-                    actions.openPicked(picked);
-                    raiseEditorWindow();
-                }
-            }
-        });
-        finder.setOverlayHost(mapWindow.overlayHost());
-        finder.show(owner);
+        // where the finder starts, and whether the picked file is there, are looked at off the FX thread (PERF-01,
+        // Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "map-goto-look",
+                () -> anchor == null ? root : java.nio.file.Files.isDirectory(anchor) ? anchor : anchor.getParent(),
+                looked -> {
+                    Path start = looked.value();
+                    Path startDir = start == null ? root : start;
+                    FileFinder finder = new FileFinder(
+                            () -> startDir,
+                            picked -> com.editora.perf.OffFx.then(
+                                    "map-goto-look", () -> java.nio.file.Files.exists(picked), there -> {
+                                        if (!there.or(false) || !mapView.showOnMap(from, picked, -1, null)) {
+                                            FileActions actions = fileActions;
+                                            if (actions != null) {
+                                                actions.openPicked(picked);
+                                                raiseEditorWindow();
+                                            }
+                                        }
+                                    }));
+                    finder.setOverlayHost(mapWindow.overlayHost());
+                    finder.show(owner);
+                });
         return true;
     }
 
@@ -1784,7 +1808,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (folder == null || System.currentTimeMillis() - mapNewFileAt > MAP_NEW_FILE_WINDOW_MS) {
             return false;
         }
-        if (!com.editora.config.PathKeys.isAtOrUnder(file, folder) || java.nio.file.Files.isDirectory(file)) {
+        // an opened tab's path is a file: no look at the disk needed (PERF-01, Pauta 6.0.1)
+        if (!com.editora.config.PathKeys.isAtOrUnder(file, folder)) {
             return false;
         }
         mapNewFileFolder = null;
@@ -2374,21 +2399,97 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             mapView.setWatchedDirectories(java.util.Set.of());
             return;
         }
-        java.util.Set<Path> desired = new java.util.HashSet<>();
+        java.util.Set<Path> wanted = new java.util.HashSet<>();
         if (root != null) {
-            desired.add(root);
+            wanted.add(root);
         }
         if (tree.getRoot() instanceof PathItem rootItem) {
-            collectExpanded(rootItem, desired); // expanded directories (root included)
+            collectExpanded(rootItem, wanted); // expanded directories (root included)
         }
         if (isMapShowing()) {
-            desired.addAll(mapView.expandedDirectories());
+            wanted.addAll(mapView.expandedDirectories());
+        }
+        Path styleRoot = root != null && !com.editora.vfs.Vfs.isRemote(root) ? root : null;
+        java.nio.file.WatchService service = watchService;
+        boolean hidden = showHidden;
+        // The polling watcher lists each folder it is given and stats every entry: that registration is made off the
+        // FX thread (PERF-01, Pauta 6.0.1), and a folder that changed before it landed is listed again. The system's
+        // watcher registers a folder with one call, in place, as before: the Map relies on knowing at once which
+        // folders are watched.
+        boolean polling = com.editora.io.WatchServices.isPolling(service);
+        if (!polling) {
+            mapView.setWatchedDirectories(registerWatches(service, wanted, styleRoot, new ArrayList<>()));
+            return;
+        }
+        try {
+            watchWork.execute(() -> {
+                java.util.List<Path> added = new ArrayList<>();
+                java.util.Set<Path> followed = registerWatches(service, wanted, styleRoot, added);
+                // Watched a moment after the folder was listed: what came or went in between sent no event. What
+                // each newly watched folder holds now is listed here, and compared with its rows below.
+                Map<Path, java.util.Set<Path>> now = new java.util.HashMap<>();
+                for (Path dir : added) {
+                    java.util.Set<Path> names = new java.util.HashSet<>();
+                    listDir(dir, hidden).forEach(e -> names.add(e.path()));
+                    now.put(dir, names);
+                }
+                Platform.runLater(() -> {
+                    if (disposed) {
+                        return;
+                    }
+                    mapView.setWatchedDirectories(followed);
+                    relistWhereRowsDiffer(now);
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException disposedMeanwhile) {
+            // the window closed: nothing to watch
+        }
+    }
+
+    /** Lists again each folder in {@code now} whose loaded rows are not the entries it holds. */
+    private void relistWhereRowsDiffer(Map<Path, java.util.Set<Path>> now) {
+        TreeItem<Path> top = tree.getRoot();
+        if (top == null || now.isEmpty() || filtering || isMapShowing()) {
+            return; // a filtered tree, or the Map's own rows, do not show a folder whole
+        }
+        boolean any = false;
+        for (Map.Entry<Path, java.util.Set<Path>> e : now.entrySet()) {
+            TreeItem<Path> item = findVisible(top, e.getKey());
+            if (!(item instanceof PathItem dir) || !dir.childrenReady) {
+                continue; // not listed yet: its own listing comes after the watch
+            }
+            java.util.Set<Path> rows = new java.util.HashSet<>();
+            for (TreeItem<Path> child : dir.getChildren()) {
+                rows.add(child.getValue());
+            }
+            if (!rows.equals(e.getValue())) {
+                watchChanges.add(e.getKey(), List.of(), true);
+                any = true;
+            }
+        }
+        if (any) {
+            watchDebounce.playFromStart();
+        }
+    }
+
+    /**
+     * Registers {@code desired} (and the Java style's folders under {@code styleRoot}) with {@code service} and
+     * cancels the rest, on {@link #watchWork}; the folders whose changes the Map follows. Each folder watched anew
+     * goes into {@code added}.
+     */
+    private java.util.Set<Path> registerWatches(
+            java.nio.file.WatchService service,
+            java.util.Set<Path> desired,
+            @Nullable Path styleRoot,
+            java.util.List<Path> added) {
+        if (com.editora.io.WatchServices.isPolling(service)) {
+            com.editora.perf.BlockingSites.enter("ProjectPanel.watch"); // the polling watcher lists each folder
         }
         // The folders the project's Java style is read from, open in the tree or not: an outside edit to a profile
         // in .settings went unseen in a project window (fifth review DN4). Their changes refresh no tree.
         java.util.Set<Path> style = new java.util.HashSet<>();
-        if (root != null && !com.editora.vfs.Vfs.isRemote(root)) {
-            for (Path dir : com.editora.lsp.JavaProjectSettings.styleFolders(root)) {
+        if (styleRoot != null) {
+            for (Path dir : com.editora.lsp.JavaProjectSettings.styleFolders(styleRoot)) {
                 if (desired.add(dir)) {
                     style.add(dir);
                 }
@@ -2410,27 +2511,39 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             try {
                 java.nio.file.WatchKey key = com.editora.io.WatchServices.register(
                         dir,
-                        watchService,
+                        service,
                         java.nio.file.StandardWatchEventKinds.ENTRY_CREATE,
                         java.nio.file.StandardWatchEventKinds.ENTRY_DELETE,
                         java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
                 watchKeys.put(key, dir);
+                added.add(dir);
             } catch (IOException | RuntimeException ignored) {
                 // a dir we can't watch (perms, vanished) is simply not watched
             }
         }
         // The Map reuses a folder's listing only while this watcher would tell it the folder changed. The
         // style-only folders' events refresh nothing, so they do not count.
+        added.removeAll(style); // their changes refresh no tree
         java.util.Set<Path> followed = new java.util.HashSet<>(watchKeys.values());
         followed.removeAll(style);
-        mapView.setWatchedDirectories(followed);
+        return java.util.Set.copyOf(followed);
     }
 
     private void cancelAllWatches() {
-        for (java.nio.file.WatchKey key : watchKeys.keySet()) {
-            key.cancel();
+        java.nio.file.WatchService service = watchService;
+        // in order with the registrations: on the polling watcher's worker when they are made there
+        java.util.concurrent.Executor work =
+                service != null && com.editora.io.WatchServices.isPolling(service) ? watchWork : Runnable::run;
+        try {
+            work.execute(() -> {
+                for (java.nio.file.WatchKey key : watchKeys.keySet()) {
+                    key.cancel();
+                }
+                watchKeys.clear();
+            });
+        } catch (java.util.concurrent.RejectedExecutionException disposedMeanwhile) {
+            watchKeys.clear();
         }
-        watchKeys.clear();
     }
 
     /** Daemon loop: drains watch events and schedules a single coalesced refresh on the FX thread. */
@@ -2545,6 +2658,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         stopRemoteWatch();
         watchDebounce.stop();
         externalThrottle.stop();
+        watchPool.shutdownNow();
         watchKeys.clear();
         java.nio.file.WatchService ws = watchService;
         watchService = null;
@@ -2868,6 +2982,54 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         /** Whether the last {@code willRename} that answered false was the user's No, not a failure (BR4). */
         default boolean refusedByUser() {
             return true;
+        }
+    }
+
+    /**
+     * What the tree hands {@link RenameParticipant#willRename} as its {@code proceed}: answering it starts the move,
+     * which is made off the FX thread (PERF-01, Pauta 6.0.1); {@link #whenMoved} hears when it has landed — the
+     * file moved and the open tabs following it — or that it was not made.
+     */
+    public static final class MoveProceed implements Consumer<Boolean> {
+        private final Consumer<Boolean> start;
+        private final List<Consumer<Moved>> waiting = new ArrayList<>();
+        private @Nullable Moved landed;
+
+        MoveProceed(Consumer<Boolean> start) {
+            this.start = start;
+        }
+
+        @Override
+        public void accept(Boolean ok) {
+            start.accept(ok);
+        }
+
+        /** Runs {@code then} once the move has landed: now when it has, else on the FX thread when it does. */
+        public void whenMoved(Consumer<Moved> then) {
+            Moved m = landed;
+            if (m != null) {
+                then.accept(m);
+            } else {
+                waiting.add(then);
+            }
+        }
+
+        void land(Moved m) {
+            landed = m;
+            List<Consumer<Moved>> now = List.copyOf(waiting);
+            waiting.clear();
+            now.forEach(c -> c.accept(m));
+        }
+    }
+
+    /** How a tree move landed: whether the item is at its new place (and gone from the old), and is a folder there. */
+    public record Moved(boolean moved, boolean folder) {
+        public static final Moved NOT = new Moved(false, false);
+
+        /** Looks at {@code from} and {@code to} now: off the FX thread. */
+        public static Moved look(Path from, Path to) {
+            com.editora.perf.BlockingSites.enter("ProjectPanel.moved");
+            return new Moved(!Files.exists(from) && Files.exists(to), Files.isDirectory(to));
         }
     }
 
@@ -3571,20 +3733,30 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 return;
             }
             Path target = dir.resolve(name);
-            if (Files.exists(target)) {
-                showError(tr("project.newFolderExists", name));
-                return;
-            }
-            try {
-                Files.createDirectories(target);
-            } catch (IOException ex) {
-                showError(tr("project.newFolderError", name, ex.getMessage()));
-                return;
-            }
-            markLocalChange(List.of(target)); // tree re-listed below; the watcher skips its echo
-            dirItem.setExpanded(true); // reveal the new folder under its parent
-            refreshAfterChange();
-            revealCreatedOnMap(dirItem, target);
+            // made off the FX thread (PERF-01, Pauta 6.0.1); the tree shows it when it is there
+            com.editora.perf.OffFx.then(
+                    "project-new-folder",
+                    () -> {
+                        if (Files.exists(target)) {
+                            return Boolean.FALSE;
+                        }
+                        Files.createDirectories(target);
+                        return Boolean.TRUE;
+                    },
+                    made -> {
+                        if (!made.ok()) {
+                            showError(tr("project.newFolderError", name, made.why()));
+                            return;
+                        }
+                        if (!made.or(false)) {
+                            showError(tr("project.newFolderExists", name));
+                            return;
+                        }
+                        markLocalChange(List.of(target)); // tree re-listed below; the watcher skips its echo
+                        dirItem.setExpanded(true); // reveal the new folder under its parent
+                        refreshAfterChange();
+                        revealCreatedOnMap(dirItem, target);
+                    });
         });
     }
 
@@ -3607,15 +3779,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     if (target.equals(path)) {
                         return; // the same name: nothing to do
                     }
-                    if (Files.exists(target) && !caseOnlyRename(path, target)) {
-                        showError(tr("project.newFolderExists", name)); // taken: say so, do not just close
-                        return;
-                    }
-                    renameParticipant.willRename(path, target, ok -> {
-                        if (ok) {
-                            move(path, target); // says why when the file is gone or the name taken by now
-                        }
-                    });
+                    // whether the name is taken is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+                    com.editora.perf.OffFx.then(
+                            "project-rename-look",
+                            () -> Files.exists(target) && !caseOnlyRename(path, target),
+                            taken -> {
+                                if (taken.or(false)) {
+                                    showError(tr("project.newFolderExists", name)); // taken: say so, do not just close
+                                    return;
+                                }
+                                MoveProceed[] proceed = new MoveProceed[1];
+                                proceed[0] = new MoveProceed(ok -> {
+                                    if (ok) {
+                                        move(path, target, proceed[0]); // says why when the file is gone by now
+                                    } else {
+                                        proceed[0].land(Moved.NOT);
+                                    }
+                                });
+                                renameParticipant.willRename(path, target, proceed[0]);
+                            });
                 });
     }
 
@@ -3658,36 +3840,30 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private void move(Path path, Path target) {
-        try {
-            moveRenaming(path, target);
-        } catch (IOException ex) {
-            showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
-            return;
-        }
-        markLocalChange(List.of(path, target)); // tree re-listed below; the watcher skips its echo
-        mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
-        refreshAfterChange();
-        onFileRenamed.accept(path, target);
-    }
-
-    private void deleteItem(TreeItem<Path> item) {
-        Path path = item.getValue();
-        if (!confirmDelete(List.of(path))) {
-            return;
-        }
-        deleteConfirmed(List.of(path));
-    }
-
     /**
-     * The delete confirmation. It says which of two different things is about to happen: the files go to the
-     * operating system's trash (restorable), or they are deleted for good, where the trash cannot take them
-     * (not restorable). Either way the button says Delete in red and Cancel is the default, so Enter alone
-     * deletes nothing.
+     * Renames {@code path} to {@code target} off the FX thread (PERF-01, Pauta 6.0.1); then, on it, the tree and the
+     * open tabs follow, and {@code proceed} hears that it landed.
      */
-    private boolean confirmDelete(List<Path> files) {
-        int trashed = trashCount(files, deleteOperations);
-        return Confirm.ask(dialogOwner(), deleteFilesQuestion(files, trashed));
+    private void move(Path path, Path target, MoveProceed proceed) {
+        com.editora.perf.OffFx.then(
+                "project-rename",
+                () -> {
+                    moveRenaming(path, target);
+                    return Moved.look(path, target);
+                },
+                done -> {
+                    Moved moved = done.value();
+                    if (moved == null) {
+                        showError(tr("project.renameError", path.getFileName(), done.why()));
+                        proceed.land(Moved.NOT);
+                        return;
+                    }
+                    markLocalChange(List.of(path, target)); // tree re-listed below; the watcher skips its echo
+                    mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
+                    refreshAfterChange();
+                    onFileRenamed.accept(path, target);
+                    proceed.land(moved);
+                });
     }
 
     /** How many of {@code files} a delete would move to the trash rather than delete for good. */
@@ -3802,7 +3978,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      *  so {@link #undoLastMove()} can take them back. */
     private void moveInto(List<Path> dropped, @Nullable Path targetDir) {
         List<Path> sources = pruneNestedSources(dropped);
-        if (sources.isEmpty() || targetDir == null || !Files.isDirectory(targetDir)) {
+        if (sources.isEmpty() || targetDir == null) {
             return;
         }
         if (moving) {
@@ -3811,29 +3987,80 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             fileOpStatus(tr("project.moveInProgress"));
             return;
         }
-        int skipped = 0;
-        List<Path> movable = new ArrayList<>();
-        for (Path src : sources) {
-            // a file/folder of that name already there is never clobbered
-            if (!canMoveInto(src, targetDir) || Files.exists(targetDir.resolve(src.getFileName()))) {
-                skipped++;
-            } else {
-                movable.add(src);
+        moving = true;
+        // What is there, what is a folder and what holds Java are looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then("project-move-look", () -> MovePlan.into(sources, targetDir), looked -> {
+            MovePlan plan = looked.value();
+            if (plan == null || !plan.targetIsFolder()) {
+                moving = false;
+                return;
             }
+            moveInto(plan, targetDir);
+        });
+    }
+
+    /**
+     * What a drag-move or its Undo Move needs from the disk before it asks anything: the moves it can make, how many
+     * it cannot, whether it asks first ({@link #moveNeedsConfirmation}) and how many of them are Java items
+     * ({@link #javaItems}). Read off the FX thread.
+     */
+    record MovePlan(boolean targetIsFolder, List<Move> moves, int skipped, boolean needsConfirmation, int javaItems) {
+
+        static MovePlan into(List<Path> sources, Path targetDir) {
+            com.editora.perf.BlockingSites.enter("ProjectPanel.movePlan");
+            if (!Files.isDirectory(targetDir)) {
+                return new MovePlan(false, List.of(), 0, false, 0);
+            }
+            int skipped = 0;
+            List<Path> movable = new ArrayList<>();
+            for (Path src : sources) {
+                // a file/folder of that name already there is never clobbered
+                if (!canMoveInto(src, targetDir) || Files.exists(targetDir.resolve(src.getFileName()))) {
+                    skipped++;
+                } else {
+                    movable.add(src);
+                }
+            }
+            List<Move> planned = new ArrayList<>();
+            for (Path src : movable) {
+                planned.add(new Move(src, targetDir.resolve(src.getFileName())));
+            }
+            return new MovePlan(
+                    true, planned, skipped, moveNeedsConfirmation(movable), ProjectPanel.javaItems(planned));
         }
-        if (moveNeedsConfirmation(movable) && !confirmQuestion.test(moveQuestion(movable, targetDir))) {
+
+        static MovePlan back(List<Move> moves) {
+            com.editora.perf.BlockingSites.enter("ProjectPanel.movePlan");
+            int stuck = 0;
+            List<Move> back = new ArrayList<>();
+            for (int i = moves.size() - 1; i >= 0; i--) {
+                Move move = moves.get(i);
+                Path parent = move.from().getParent();
+                if (!Files.exists(move.to(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                        || Files.exists(move.from(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                        || parent == null
+                        || !Files.isDirectory(parent)) {
+                    stuck++;
+                } else {
+                    back.add(new Move(move.to(), move.from())); // moved back as moved: jdtls edits the packages back
+                }
+            }
+            return new MovePlan(true, back, stuck, false, ProjectPanel.javaItems(back));
+        }
+    }
+
+    private void moveInto(MovePlan plan, Path targetDir) {
+        List<Path> movable = plan.moves().stream().map(Move::from).toList();
+        if (plan.needsConfirmation() && !confirmQuestion.test(moveQuestion(movable, targetDir))) {
+            moving = false;
             fileOpStatus(tr("project.moveCancelled"));
             return;
         }
-        List<Move> planned = new ArrayList<>();
-        for (Path src : movable) {
-            planned.add(new Move(src, targetDir.resolve(src.getFileName())));
-        }
-        int alreadySkipped = skipped;
+        List<Move> planned = plan.moves();
+        int alreadySkipped = plan.skipped();
         refused[0] = 0;
         editFailed[0] = 0;
-        moving = true;
-        renameParticipant.beginMove(javaItems(planned)); // the question is about the Java items only (BV3)
+        renameParticipant.beginMove(plan.javaItems()); // the question is about the Java items only (BV3)
         moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             int moved = done.size();
             if (moved > 0) {
@@ -3876,7 +4103,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         Move m = moves.get(i);
-        renameParticipant.willRename(m.from(), m.to(), ok -> {
+        // On the next pulse: the participant records what this move did once it has landed, and the last move's
+        // finish ends the drag. Run inline, the drag ended before its last file's edit was recorded, and undoing it
+        // left that file in the wrong package (fifth review BV1).
+        Runnable next =
+                () -> javafx.application.Platform.runLater(() -> moveThrough(moves, i + 1, done, failed, finish));
+        MoveProceed[] proceed = new MoveProceed[1];
+        proceed[0] = new MoveProceed(ok -> {
             if (!ok) {
                 failed[0]++;
                 if (renameParticipant.refusedByUser()) {
@@ -3884,23 +4117,34 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 } else {
                     editFailed[0]++;
                 }
-            } else {
-                try {
-                    Files.move(m.from(), m.to());
-                    markLocalChange(List.of(m.from(), m.to()));
-                    mapView.pathRenamed(m.from(), m.to());
-                    onFileRenamed.accept(m.from(), m.to()); // the open buffer(s) of a moved file / under a moved dir
-                    done.add(m);
-                } catch (IOException ex) {
-                    showError(tr("project.moveError", m.from().getFileName(), ex.getMessage()));
-                    failed[0]++;
-                }
+                proceed[0].land(Moved.NOT);
+                next.run();
+                return;
             }
-            // On the next pulse: the participant records what this move did once this callback returns, and the
-            // last move's finish ends the drag. Run inline, the drag ended before its last file's edit was
-            // recorded, and undoing it left that file in the wrong package (fifth review BV1).
-            javafx.application.Platform.runLater(() -> moveThrough(moves, i + 1, done, failed, finish));
+            // the move itself off the FX thread (PERF-01, Pauta 6.0.1); then the tabs follow, then the next one
+            com.editora.perf.OffFx.then(
+                    "project-move",
+                    () -> {
+                        Files.move(m.from(), m.to());
+                        return Moved.look(m.from(), m.to());
+                    },
+                    moved -> {
+                        Moved landed = moved.value();
+                        if (landed == null) {
+                            showError(tr("project.moveError", m.from().getFileName(), moved.why()));
+                            failed[0]++;
+                            proceed[0].land(Moved.NOT);
+                        } else {
+                            markLocalChange(List.of(m.from(), m.to()));
+                            mapView.pathRenamed(m.from(), m.to());
+                            onFileRenamed.accept(m.from(), m.to()); // the open buffer(s) of a moved file / dir
+                            done.add(m);
+                            proceed[0].land(landed);
+                        }
+                        next.run();
+                    });
         });
+        renameParticipant.willRename(m.from(), m.to(), proceed[0]);
     }
 
     /** The moves of the drag under way that the participant refused (the user said not to move without edits). */
@@ -3943,25 +4187,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (moves.isEmpty()) {
             return;
         }
-        int stuck = 0;
-        List<Move> back = new ArrayList<>();
-        for (int i = moves.size() - 1; i >= 0; i--) {
-            Move move = moves.get(i);
-            Path parent = move.from().getParent();
-            if (!Files.exists(move.to(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
-                    || Files.exists(move.from(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
-                    || parent == null
-                    || !Files.isDirectory(parent)) {
-                stuck++;
-            } else {
-                back.add(new Move(move.to(), move.from())); // moved back as moved: jdtls edits the packages back
+        moving = true;
+        // Where each item is now is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then("project-move-look", () -> MovePlan.back(moves), looked -> {
+            MovePlan plan = looked.value();
+            if (plan == null) {
+                moving = false;
+                fileOpStatus(tr("project.moveUndoneSome", 0, moves.size()));
+                return;
             }
-        }
-        int alreadyStuck = stuck;
+            undoMove(plan);
+        });
+    }
+
+    private void undoMove(MovePlan plan) {
+        List<Move> back = plan.moves();
+        int alreadyStuck = plan.skipped();
         refused[0] = 0;
         editFailed[0] = 0;
-        moving = true;
-        renameParticipant.beginMove(javaItems(back));
+        renameParticipant.beginMove(plan.javaItems());
         moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             if (!done.isEmpty()) {
                 refreshAfterChange(); // each move back was recorded as a local change when it was made
@@ -4000,24 +4244,43 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Deletes the selected files (or just {@code clicked}); confirms once. Folders/root are skipped (delete
      *  is files-only, like the single-file menu). */
     private void deleteSelected(@Nullable TreeItem<Path> clicked) {
-        List<Path> files = new ArrayList<>();
-        for (TreeItem<Path> it : actionTargets(clicked)) {
-            if (Files.isRegularFile(it.getValue())) {
-                files.add(it.getValue());
-            }
-        }
-        if (files.isEmpty()) {
+        List<Path> selected =
+                actionTargets(clicked).stream().map(TreeItem::getValue).toList();
+        if (selected.isEmpty() || deleting) {
             return;
         }
-        if (files.size() == 1 && clicked != null && Files.isRegularFile(clicked.getValue())) {
-            deleteItem(clicked); // single: reuse the existing per-file confirm flow
-            return;
-        }
-        if (!confirmDelete(files)) {
-            return;
-        }
-        deleteConfirmed(files);
+        // Which of them are files, and which would go to the trash, is looked at off the FX thread (PERF-01, Pauta
+        // 6.0.1); then the question. A second Delete meanwhile does nothing.
+        deleting = true;
+        DeleteOperations operations = deleteOperations;
+        com.editora.perf.OffFx.then(
+                "project-delete-look",
+                () -> {
+                    List<Path> files = new ArrayList<>();
+                    for (Path p : selected) {
+                        if (Files.isRegularFile(p)) {
+                            files.add(p);
+                        }
+                    }
+                    return new DeleteLook(files, trashCount(files, operations));
+                },
+                looked -> {
+                    deleting = false;
+                    DeleteLook look = looked.value();
+                    if (look == null || look.files().isEmpty()) {
+                        return;
+                    }
+                    if (Confirm.ask(dialogOwner(), deleteFilesQuestion(look.files(), look.trashed()))) {
+                        deleteConfirmed(look.files());
+                    }
+                });
     }
+
+    /** The files of a Delete and how many of them go to the trash, looked at off the FX thread. */
+    private record DeleteLook(List<Path> files, int trashed) {}
+
+    /** Set while {@link #deleteSelected} looks at what it would delete. */
+    private boolean deleting;
 
     /** Runs the post-confirmation delete transaction: preflight every file, verify every captured preimage,
      *  then perform the filesystem deletes. Package-visible completion lets integration tests await the same

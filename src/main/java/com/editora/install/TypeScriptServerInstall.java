@@ -62,6 +62,7 @@ public final class TypeScriptServerInstall {
 
     /** The {@code tsserver.js} of the TypeScript in Editora's prefix, or null when it is not installed. */
     public static @Nullable Path ownTsserver(@Nullable Path configDir) {
+        com.editora.perf.BlockingSites.enter("TypeScriptServerInstall.ownTsserver");
         if (configDir == null) {
             return null;
         }

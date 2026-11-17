@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * lifetime, the project windows, and a handful of commands whose whole logic lives in the controller.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class MainControllerWindowFxTest {
 
     @TempDir

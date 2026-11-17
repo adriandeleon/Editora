@@ -566,34 +566,59 @@ final class EditingCoordinator {
         }
     }
 
-    /** Writes a pasted image into the assets folder under the configured name pattern and links it. */
+    /**
+     * Writes a pasted image into the assets folder under the configured name pattern and links it. The pixels are
+     * copied here; the PNG is encoded and the file written off the FX thread (PERF-01, Pauta 6.0.1), and the link
+     * goes where the caret was.
+     */
     private void savePastedImage(EditorBuffer b, javafx.scene.image.Image img, String alt) {
-        try {
-            java.nio.file.Path file = b.getPath(); // the caller checked: the buffer is saved
-            java.nio.file.Path baseDir =
-                    file == null ? null : file.toAbsolutePath().getParent();
-            if (file == null || baseDir == null) {
-                host.setStatus(tr("status.markdown.imageNeedsSave"));
-                return;
-            }
-            java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
-                    baseDir, host.config().getSettings().getMarkdownAssetsFolder());
-            java.nio.file.Files.createDirectories(assets);
-            String base = com.editora.markdown.MarkdownImagePaste.baseName(
-                    host.config().getSettings().getMarkdownImageNamePattern(),
-                    file.getFileName().toString(),
-                    java.time.LocalDateTime.now());
-            String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                    n -> java.nio.file.Files.exists(assets.resolve(n)), base, "png");
-            java.nio.file.Path target = assets.resolve(name);
-            writeFxImageToPng(img, target);
-            b.markdown().sessionImages().add(target); // ours: unused after a save, it may be trashed
-            String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-            b.insertAtCaret(markupImageSnippet(b, rel, alt == null ? stripExtension(name) : alt));
-            host.setStatus(tr("status.markdown.imagePasted", rel));
-        } catch (Exception ex) {
-            host.setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
+        java.nio.file.Path file = b.getPath(); // the caller checked: the buffer is saved
+        java.nio.file.Path baseDir = file == null ? null : file.toAbsolutePath().getParent();
+        if (file == null || baseDir == null) {
+            host.setStatus(tr("status.markdown.imageNeedsSave"));
+            return;
         }
+        int w = (int) Math.round(img.getWidth());
+        int h = (int) Math.round(img.getHeight());
+        int[] argb = new int[Math.max(0, w) * Math.max(0, h)];
+        try {
+            img.getPixelReader().getPixels(0, 0, w, h, javafx.scene.image.PixelFormat.getIntArgbInstance(), argb, 0, w);
+        } catch (RuntimeException ex) {
+            host.setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
+            return;
+        }
+        String assetsSetting = host.config().getSettings().getMarkdownAssetsFolder();
+        String base = com.editora.markdown.MarkdownImagePaste.baseName(
+                host.config().getSettings().getMarkdownImageNamePattern(),
+                file.getFileName().toString(),
+                java.time.LocalDateTime.now());
+        CodeArea view = b.getFocusedArea();
+        int at = view.getCaretPosition();
+        com.editora.perf.OffFx.then(
+                "markdown-image-write",
+                () -> {
+                    java.nio.file.Path assets =
+                            com.editora.markdown.MarkdownImagePaste.assetsDir(baseDir, assetsSetting);
+                    java.nio.file.Files.createDirectories(assets);
+                    String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
+                            n -> java.nio.file.Files.exists(assets.resolve(n)), base, "png");
+                    java.nio.file.Path target = assets.resolve(name);
+                    writePng(argb, w, h, target);
+                    return target;
+                },
+                saved -> {
+                    java.nio.file.Path target = saved.value();
+                    if (target == null) {
+                        host.setStatus(tr("status.markdown.imageFailed", saved.why()));
+                        return;
+                    }
+                    b.markdown().sessionImages().add(target); // ours: unused after a save, it may be trashed
+                    String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
+                    String name = String.valueOf(target.getFileName());
+                    if (insertAtDrop(view, at, markupImageSnippet(b, rel, alt == null ? stripExtension(name) : alt))) {
+                        host.setStatus(tr("status.markdown.imagePasted", rel));
+                    }
+                });
     }
 
     /** Copies dropped image files into the Markdown file's {@code assets/} dir and inserts a link for each. */
@@ -609,43 +634,69 @@ final class EditingCoordinator {
         }
     }
 
-    /** {@code alt}: the alt text for every image; null gives each its file's name. */
+    /**
+     * {@code alt}: the alt text for every image; null gives each its file's name. The images are copied off the
+     * FX thread (PERF-01, Pauta 6.0.1); the links go where the caret was.
+     */
     private void insertDroppedImages(EditorBuffer b, java.util.List<java.io.File> files, @Nullable String alt) {
-        try {
-            java.nio.file.Path file = b.getPath(); // the caller checked: the buffer is saved
-            java.nio.file.Path baseDir =
-                    file == null ? null : file.toAbsolutePath().getParent();
-            if (baseDir == null) {
-                host.setStatus(tr("status.markdown.imageNeedsSave"));
-                return;
-            }
-            java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
-                    baseDir, host.config().getSettings().getMarkdownAssetsFolder());
-            java.nio.file.Files.createDirectories(assets);
-            StringBuilder out = new StringBuilder();
-            for (java.io.File f : files) {
-                String ext = extensionOf(f.getName());
-                String base = stripExtension(f.getName());
-                java.nio.file.Path source = f.toPath().toAbsolutePath().normalize();
-                java.nio.file.Path target = source;
-                if (!source.startsWith(baseDir.normalize())) { // already beside the document: link it, no copy
-                    String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                            n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
-                    target = assets.resolve(name);
-                    java.nio.file.Files.copy(source, target);
-                    b.markdown().sessionImages().add(target);
-                }
-                String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-                if (out.length() > 0) {
-                    out.append('\n');
-                }
-                out.append(markupImageSnippet(b, rel, alt == null ? base : alt));
-            }
-            b.insertAtCaret(out.toString());
-            host.setStatus(tr("status.markdown.imageDropped", files.size()));
-        } catch (Exception ex) {
-            host.setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
+        java.nio.file.Path file = b.getPath(); // the caller checked: the buffer is saved
+        java.nio.file.Path baseDir = file == null ? null : file.toAbsolutePath().getParent();
+        if (baseDir == null) {
+            host.setStatus(tr("status.markdown.imageNeedsSave"));
+            return;
         }
+        String assetsSetting = host.config().getSettings().getMarkdownAssetsFolder();
+        CodeArea view = b.getFocusedArea();
+        int at = view.getCaretPosition();
+        com.editora.perf.OffFx.then(
+                "markdown-image-write",
+                () -> {
+                    java.nio.file.Path assets =
+                            com.editora.markdown.MarkdownImagePaste.assetsDir(baseDir, assetsSetting);
+                    java.nio.file.Files.createDirectories(assets);
+                    java.util.List<java.nio.file.Path[]> placed = new java.util.ArrayList<>(); // {target, copied?}
+                    for (java.io.File f : files) {
+                        String ext = extensionOf(f.getName());
+                        String base = stripExtension(f.getName());
+                        java.nio.file.Path source = f.toPath().toAbsolutePath().normalize();
+                        java.nio.file.Path target = source;
+                        boolean copied = false;
+                        if (!source.startsWith(baseDir.normalize())) { // beside the document: link it, no copy
+                            String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
+                                    n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
+                            target = assets.resolve(name);
+                            java.nio.file.Files.copy(source, target);
+                            copied = true;
+                        }
+                        placed.add(new java.nio.file.Path[] {target, copied ? target : null});
+                    }
+                    return placed;
+                },
+                done -> {
+                    java.util.List<java.nio.file.Path[]> placed = done.value();
+                    if (placed == null) {
+                        host.setStatus(tr("status.markdown.imageFailed", done.why()));
+                        return;
+                    }
+                    StringBuilder out = new StringBuilder();
+                    for (int i = 0; i < placed.size(); i++) {
+                        java.nio.file.Path target = placed.get(i)[0];
+                        if (placed.get(i)[1] != null) {
+                            b.markdown().sessionImages().add(target);
+                        }
+                        String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
+                        if (out.length() > 0) {
+                            out.append('\n');
+                        }
+                        out.append(markupImageSnippet(
+                                b,
+                                rel,
+                                alt == null ? stripExtension(files.get(i).getName()) : alt));
+                    }
+                    if (insertAtDrop(view, at, out.toString())) {
+                        host.setStatus(tr("status.markdown.imageDropped", files.size()));
+                    }
+                });
     }
 
     /**
@@ -792,6 +843,17 @@ final class EditingCoordinator {
     static String stripExtension(String name) {
         int dot = name.lastIndexOf('.');
         return dot > 0 ? name.substring(0, dot) : name;
+    }
+
+    /** Encodes {@code argb} ({@code w} by {@code h}) as a PNG at {@code target}. Off the FX thread. */
+    static void writePng(int[] argb, int w, int h, java.nio.file.Path target) throws java.io.IOException {
+        com.editora.perf.BlockingSites.enter("EditingCoordinator.writePng");
+        java.awt.image.BufferedImage bi =
+                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        bi.setRGB(0, 0, w, h, argb, 0, w);
+        if (!javax.imageio.ImageIO.write(bi, "png", target.toFile())) {
+            throw new java.io.IOException("no PNG writer");
+        }
     }
 
     /** Writes a JavaFX {@code Image} to a PNG via headless Java2D (no {@code javafx.swing} dependency). */

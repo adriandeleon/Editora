@@ -192,29 +192,59 @@ final class TemplateCoordinator {
         // names: this is the one place a typed string becomes a file, and a folder in the way may be a
         // symbolic link to somewhere else.
         Path target = dir.resolve(plan.relativePath()).normalize();
-        if (!target.startsWith(dir.normalize()) || !PathContainment.isWithin(dir, target)) {
+        if (!target.startsWith(dir.normalize())) {
             host.setError(tr("status.newfile.invalidName"));
             return;
         }
-        if (Files.exists(target)) {
-            host.setError(tr("status.newfile.exists", plan.fileName()));
-            return;
-        }
         NewFileContent.Rendered rendered = NewFileContent.render(type, plan.baseName(), plan.packageName());
-        com.editora.editorconfig.EditorConfigProperties rules = editorConfigFor(target);
-        boolean executable;
-        try {
-            executable = TemplateOutput.create(dir, target, TemplateOutput.finish(rendered.text(), rules, target));
-        } catch (IOException e) {
-            host.setError(tr("status.newfile.failed", e.getMessage()));
-            return;
+        // The containment on the real path, whether the name is taken, the folder's .editorconfig and the write are
+        // all off the FX thread (PERF-01, Pauta 6.0.1); the file opens when it is there.
+        com.editora.perf.OffFx.then(
+                "new-file-write",
+                () -> {
+                    if (!PathContainment.isWithin(dir, target)) {
+                        return new Written(Written.Outcome.INVALID, false, null);
+                    }
+                    if (Files.exists(target)) {
+                        return new Written(Written.Outcome.EXISTS, false, null);
+                    }
+                    com.editora.editorconfig.EditorConfigProperties rules = editorConfigFor(target);
+                    boolean executable =
+                            TemplateOutput.create(dir, target, TemplateOutput.finish(rendered.text(), rules, target));
+                    return new Written(Written.Outcome.CREATED, executable, rules);
+                },
+                done -> {
+                    Written w = done.value();
+                    if (w == null) {
+                        host.setError(tr("status.newfile.failed", done.why()));
+                        return;
+                    }
+                    switch (w.outcome()) {
+                        case INVALID -> host.setError(tr("status.newfile.invalidName"));
+                        case EXISTS -> host.setError(tr("status.newfile.exists", plan.fileName()));
+                        case CREATED -> {
+                            String created = tr("status.newfile.created", plan.fileName())
+                                    + (w.executable() ? "" : " " + tr("status.template.noExecBit", plan.fileName()));
+                            openAndPlaceCaret(
+                                    target,
+                                    TemplateOutput.caretAfterReindent(rendered.text(), rendered.caret(), w.rules()),
+                                    null,
+                                    created);
+                            refreshTree();
+                            host.setStatus(created);
+                        }
+                    }
+                });
+    }
+
+    /** What New ▸ type's write did, off the FX thread. */
+    private record Written(
+            Outcome outcome, boolean executable, com.editora.editorconfig.@Nullable EditorConfigProperties rules) {
+        enum Outcome {
+            CREATED,
+            EXISTS,
+            INVALID
         }
-        String created = tr("status.newfile.created", plan.fileName())
-                + (executable ? "" : " " + tr("status.template.noExecBit", plan.fileName()));
-        openAndPlaceCaret(
-                target, TemplateOutput.caretAfterReindent(rendered.text(), rendered.caret(), rules), null, created);
-        refreshTree();
-        host.setStatus(created);
     }
 
     /** The message for a refused name: each reason says what to change, not just "not valid". */
@@ -379,7 +409,7 @@ final class TemplateCoordinator {
         body.getChildren()
                 .addAll(
                         new Label(tr(multi ? "template.wizard.folderRequiredLabel" : "template.wizard.folder")),
-                        folderRow(folderField, () -> folderChooserDir(folderField.getText(), targetDir)));
+                        folderRow(folderField, () -> folderChooserCandidate(folderField.getText(), targetDir)));
         LinkedHashMap<String, TextField> fields = variableFields(t, vars, body);
         // Focus the first variable (the thing most likely to be edited), else the folder field.
         TextField initialFocus =
@@ -416,22 +446,31 @@ final class TemplateCoordinator {
     }
 
     /** The folder field with its Browse button. */
-    private HBox folderRow(TextField field, java.util.function.Supplier<java.io.File> initialDir) {
+    private HBox folderRow(TextField field, java.util.function.Supplier<@Nullable Path> initialDir) {
         field.setPrefColumnCount(28);
         com.editora.command.TextInputKeymap.install(field, host.keymap());
         Button browse = new Button(tr("dialog.clone.browse"));
         browse.setFocusTraversable(false);
         browse.setOnAction(e -> {
-            DirectoryChooser chooser = new DirectoryChooser();
-            chooser.setTitle(tr("template.wizard.folderTitle"));
-            java.io.File init = initialDir.get();
-            if (init != null) {
-                chooser.setInitialDirectory(init);
+            if (browse.isDisabled()) {
+                return;
             }
-            java.io.File dir = chooser.showDialog(host.stage());
-            if (dir != null) {
-                field.setText(dir.toString());
-            }
+            // where it opens (the nearest folder that exists) is looked for off the FX thread (PERF-01, Pauta 6.0.1)
+            browse.setDisable(true);
+            Path candidate = initialDir.get();
+            com.editora.perf.OffFx.then("template-folder-look", () -> nearestFolder(candidate), init -> {
+                browse.setDisable(false);
+                DirectoryChooser chooser = new DirectoryChooser();
+                chooser.setTitle(tr("template.wizard.folderTitle"));
+                java.io.File start = init.value();
+                if (start != null) {
+                    chooser.setInitialDirectory(start);
+                }
+                java.io.File dir = ChooserStart.show(chooser, c -> c.showDialog(host.stage()));
+                if (dir != null) {
+                    field.setText(dir.toString());
+                }
+            });
         });
         HBox row = UiZoom.spacing(new HBox(field, browse), 6);
         HBox.setHgrow(field, Priority.ALWAYS);
@@ -532,10 +571,19 @@ final class TemplateCoordinator {
 
     /** Where a folder chooser opens: the typed folder or its nearest existing ancestor, else the context. */
     java.io.@Nullable File folderChooserDir(String current, @Nullable Path context) {
+        return nearestFolder(folderChooserCandidate(current, context));
+    }
+
+    /** The folder a chooser is asked to open on, before the disk says whether it exists. FX thread. */
+    @Nullable
+    Path folderChooserCandidate(String current, @Nullable Path context) {
         Path p = current == null || current.isBlank() ? null : resolveFolder(current.strip(), context);
-        if (p == null) {
-            p = context != null ? context : defaultNewDir();
-        }
+        return p != null ? p : context != null ? context : defaultNewDir();
+    }
+
+    /** {@code p} or its nearest existing ancestor, as a file; off the FX thread. */
+    static java.io.@Nullable File nearestFolder(@Nullable Path start) {
+        Path p = start;
         while (p != null && !Files.isDirectory(p)) {
             p = p.getParent();
         }
@@ -564,7 +612,7 @@ final class TemplateCoordinator {
                         nameLabel,
                         nameField,
                         new Label(tr("template.project.location")),
-                        folderRow(locationField, () -> folderChooserDir(locationField.getText(), null)),
+                        folderRow(locationField, () -> folderChooserCandidate(locationField.getText(), null)),
                         willCreate);
         LinkedHashMap<String, TextField> fields = variableFields(t, vars, body);
 

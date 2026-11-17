@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * "Add to .gitignore". The only remote is a bare repository in the temp folder.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class GitRepositoryCommandsFxTest {
 
     @BeforeAll

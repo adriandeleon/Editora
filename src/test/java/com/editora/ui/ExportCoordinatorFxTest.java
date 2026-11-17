@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Exercises command routing and real export output without native dialogs or installed renderers. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class ExportCoordinatorFxTest {
     @TempDir
     Path temp;

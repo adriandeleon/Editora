@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** The in-tab preview's selection through the buffer: Preview: Copy, the editor's Copy / Select All when the
  *  preview is where the user is, and the context menu. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(com.editora.ui.OffFxInPlace.class)
 class PreviewSelectionCommandsFxTest {
 
     private static final String DOC = "# Title\n\nFirst **bold** paragraph.\n\nSecond paragraph.\n";

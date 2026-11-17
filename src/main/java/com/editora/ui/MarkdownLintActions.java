@@ -612,26 +612,38 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     private void writeRuleOff(Path config, String code) {
-        try {
-            String before = Files.isRegularFile(config) ? Files.readString(config) : "";
-            String name = String.valueOf(config.getFileName());
-            String after = MarkdownLintConfig.withRuleOff(name, before, code);
-            if (after == null) {
-                // No safe edit (options written as a nested mapping, a file that does not parse): say what to add.
-                host.setStatus(
-                        tr("status.markdownLint.projectConfigManual", MarkdownLintConfig.manualLine(name, code), name));
-                return;
-            }
-            if (config.getParent() != null) {
-                Files.createDirectories(config.getParent());
-            }
-            Files.writeString(config, after);
-            cache.remove(config);
-            previews.applyMarkdownLint();
-            host.setStatus(tr("status.markdownLint.projectDisabled", code, config.getFileName()));
-        } catch (IOException | RuntimeException e) {
-            host.setStatus(tr("status.markdownLint.configError", config.getFileName()));
-        }
+        String name = String.valueOf(config.getFileName());
+        // Read, parsed, edited and written off the FX thread (PERF-01, Pauta 6.0.1); the lint runs again after.
+        com.editora.perf.OffFx.then(
+                "markdown-lint-config-write",
+                () -> {
+                    String before = Files.isRegularFile(config) ? Files.readString(config) : "";
+                    String after = MarkdownLintConfig.withRuleOff(name, before, code);
+                    if (after == null) {
+                        return Boolean.FALSE;
+                    }
+                    if (config.getParent() != null) {
+                        Files.createDirectories(config.getParent());
+                    }
+                    Files.writeString(config, after);
+                    return Boolean.TRUE;
+                },
+                done -> {
+                    if (!done.ok()) {
+                        host.setStatus(tr("status.markdownLint.configError", config.getFileName()));
+                    } else if (!done.or(false)) {
+                        // No safe edit (options written as a nested mapping, a file that does not parse): say what
+                        // to add.
+                        host.setStatus(tr(
+                                "status.markdownLint.projectConfigManual",
+                                MarkdownLintConfig.manualLine(name, code),
+                                name));
+                    } else {
+                        cache.remove(config);
+                        previews.applyMarkdownLint();
+                        host.setStatus(tr("status.markdownLint.projectDisabled", code, config.getFileName()));
+                    }
+                });
     }
 
     // --- the project, the status bar, the config watcher ----------------------------------------------------

@@ -86,14 +86,22 @@ final class LspWorkspaceEdits {
     }
 
     /**
-     * Runs {@code next} on the FX thread with a view of the disk for {@code paths}: the live disk when they are
-     * all local (a stat there is cheap, and the check stays in this FX turn), else a {@link WorkspaceFileSnapshot}
-     * taken on the workspace worker first — on a remote host every stat is a round trip, and a rename touching
-     * a few dozen files froze the window for the length of them.
+     * Runs {@code next} on the FX thread with a view of the disk for {@code paths}: a {@link WorkspaceFileSnapshot}
+     * taken on the workspace worker first, local or remote (PERF-01, Pauta 6.0.1) — on a remote host every stat is
+     * a round trip, and a rename touching a few dozen files froze the window for the length of them. No paths, no
+     * look.
      */
     void withDiskView(java.util.Collection<Path> paths, java.util.function.Consumer<WorkspaceFileOperations> next) {
+        if (paths.isEmpty()) {
+            next.accept(WorkspaceFileSnapshot.of(workspaceFiles, paths));
+            return;
+        }
         if (!WorkspaceFileSnapshot.anyRemote(paths)) {
-            next.accept(workspaceFiles);
+            com.editora.perf.OffFx.then(
+                    "workspace-disk-view", () -> WorkspaceFileSnapshot.of(workspaceFiles, paths), snapshot -> {
+                        WorkspaceFileSnapshot taken = snapshot.value();
+                        next.accept(taken != null ? taken : WorkspaceFileSnapshot.of(workspaceFiles, List.of()));
+                    });
             return;
         }
         workspaceExecutor.execute(() -> {
@@ -607,11 +615,9 @@ final class LspWorkspaceEdits {
                 return;
             }
             // The finish step checks the staged files and the preimages where the renames put them, on the FX
-            // thread: for remote files those stats are taken here, on the worker (see withDiskView).
+            // thread: those stats are taken here, on the worker (see withDiskView).
             List<Path> checked = finishPaths(mapped, creates, renames, deletes);
-            WorkspaceFileOperations files = WorkspaceFileSnapshot.anyRemote(checked)
-                    ? WorkspaceFileSnapshot.of(workspaceFiles, checked)
-                    : workspaceFiles;
+            WorkspaceFileOperations files = WorkspaceFileSnapshot.of(workspaceFiles, checked);
             Platform.runLater(() -> collectCreatedWorkspaceBuffers(
                     mapped,
                     buffers,
@@ -870,12 +876,14 @@ final class LspWorkspaceEdits {
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
             return;
         }
-        transaction.journal.committed();
         committedEdits.add(mapped);
         List<Path> orphaned = remapRenamedBuffers(renames, targets);
         creates.forEach(created -> ops.fileCreated(created.operation().file()));
         retireDeleted(deletes, targets);
         workspaceExecutor.execute(() -> {
+            // The journal's COMMIT line (written and synced to disk) goes first, here, off the FX thread (PERF-01,
+            // Pauta 6.0.1); the staged copies are removed only after it.
+            transaction.journal.committed();
             staging.commitRenames(renames);
             staging.commitCreates(creates);
             staging.commitDeletes(deletes);
@@ -1129,6 +1137,7 @@ final class LspWorkspaceEdits {
             List<com.editora.lsp.WorkspaceEditJournal.Interrupted> found = new java.util.ArrayList<>();
             for (var interrupted : com.editora.lsp.WorkspaceEditJournal.pending(directory)) {
                 if (interrupted.touches(root)) {
+                    interrupted.originals(); // what the question names, looked at here (PERF-01, Pauta 6.0.1)
                     found.add(interrupted);
                 } else {
                     com.editora.lsp.WorkspaceEditJournal.release(interrupted); // another project's
@@ -1159,11 +1168,14 @@ final class LspWorkspaceEdits {
                     Platform.runLater(
                             () -> interruptedEditResolved(List.of(), left, tr("status.lsp.interruptedEdit.removed")));
                 });
-            case KEEP -> {
-                List<Path> left = interrupted.leftovers();
-                interrupted.dismiss();
-                host.setStatus(tr("status.lsp.interruptedEdit.kept", blockedFileNames(left)));
-            }
+            case KEEP ->
+                workspaceExecutor.execute(
+                        () -> { // looked at and forgotten off the FX thread (PERF-01, Pauta 6.0.1)
+                            List<Path> left = interrupted.leftovers();
+                            interrupted.dismiss();
+                            Platform.runLater(() ->
+                                    host.setStatus(tr("status.lsp.interruptedEdit.kept", blockedFileNames(left))));
+                        });
             case LATER -> {
                 // The journal stays; this run does not ask again.
             }

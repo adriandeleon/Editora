@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.Level;
@@ -720,16 +721,44 @@ final class PluginCoordinator {
      * version that was installed (and enabled). A plugin running in this session is replaced at the next start.
      */
     private void onStaged(PluginInstaller.Staging s) {
-        installing = false;
         PluginInstaller.Staged st = s.staged();
         if (st == null) { // !s.ok()
+            installing = false;
             showProblem("status.plugins.installFailed", s.problem());
             restoreSettings();
             return;
         }
+        // What the question shows (the folders it brings) and the consent's fingerprint (a hash) are read off
+        // the FX thread (PERF-01, Pauta 6.0.1); the install stays busy meanwhile, so a second press waits.
+        com.editora.perf.OffFx.then("plugin-consent", () -> StagedFacts.of(st), facts -> {
+            installing = false;
+            StagedFacts f = facts.value();
+            if (f == null) {
+                PluginInstaller.discardAsync(st);
+                showProblem(
+                        "status.plugins.installFailed",
+                        new PluginProblem(PluginProblem.Kind.FAILED, List.of(), facts.why()));
+                restoreSettings();
+                return;
+            }
+            askAndCommit(st, f);
+        });
+    }
+
+    /** What the consent to a staged install shows and stores, read off the FX thread. */
+    record StagedFacts(boolean snippets, boolean templates, String digest) {
+        static StagedFacts of(PluginInstaller.Staged st) {
+            return new StagedFacts(
+                    Files.isDirectory(st.root().resolve("snippets")),
+                    Files.isDirectory(st.root().resolve("templates")),
+                    st.digest());
+        }
+    }
+
+    private void askAndCommit(PluginInstaller.Staged st, StagedFacts facts) {
         boolean running = manager().running(st.id()) != null;
-        if (!confirm.test(consentQuestion(st))) {
-            PluginInstaller.discard(st);
+        if (!confirm.test(consentQuestion(st, facts))) {
+            PluginInstaller.discardAsync(st);
             report(
                     st.previous() == null
                             ? tr("status.plugins.notInstalled", st.name())
@@ -737,24 +766,42 @@ final class PluginCoordinator {
             restoreSettings();
             return;
         }
-        PluginInstaller.Commit c = installer().commit(st, running);
-        if (!c.ok()) {
-            showProblem("status.plugins.installFailed", c.problem());
-            restoreSettings();
-            return;
-        }
-        config.getPluginStore().enable(st.id(), st.digest());
-        config.savePlugins();
-        if (pluginRegistry != null) { // set whenever the installer is
-            pluginRegistry.invalidate(); // status labels (Installed/Update) changed
-        }
-        manager().discover(); // the Settings list; what runs waits for the restart
-        report(
-                c.pending()
-                        ? tr("status.plugins.updatePending", st.name(), st.version())
-                        : tr("status.plugins.installed", st.name()));
-        settingsWindow.syncPluginsCheck(); // rebuilds the per-plugin list
-        restoreSettings();
+        installing = true; // the folder is put in place off the FX thread: a second install waits for it
+        PluginInstaller installer = installer();
+        PluginManager manager = manager();
+        com.editora.perf.OffFx.then(
+                "plugin-commit",
+                () -> {
+                    PluginInstaller.Commit c = installer.commit(st, running);
+                    if (c.ok()) {
+                        manager.discover(); // the Settings list; what runs waits for the restart
+                    }
+                    return c;
+                },
+                answer -> {
+                    installing = false;
+                    PluginInstaller.Commit c = answer.value();
+                    if (c == null || !c.ok()) {
+                        showProblem(
+                                "status.plugins.installFailed",
+                                c != null
+                                        ? c.problem()
+                                        : new PluginProblem(PluginProblem.Kind.FAILED, List.of(), answer.why()));
+                        restoreSettings();
+                        return;
+                    }
+                    config.getPluginStore().enable(st.id(), facts.digest());
+                    config.savePlugins();
+                    if (pluginRegistry != null) { // set whenever the installer is
+                        pluginRegistry.invalidate(); // status labels (Installed/Update) changed
+                    }
+                    report(
+                            c.pending()
+                                    ? tr("status.plugins.updatePending", st.name(), st.version())
+                                    : tr("status.plugins.installed", st.name()));
+                    settingsWindow.syncPluginsCheck(); // rebuilds the per-plugin list
+                    restoreSettings();
+                });
     }
 
     private static String versionOf(PluginManifest m) {
@@ -762,7 +809,7 @@ final class PluginCoordinator {
     }
 
     /** The consent for a staged install: an install, an update, a downgrade, a reinstall, or a replacement. */
-    private Question consentQuestion(PluginInstaller.Staged st) {
+    private Question consentQuestion(PluginInstaller.Staged st, StagedFacts facts) {
         String name = PluginDisclosure.clean(st.name(), 80);
         String version = PluginDisclosure.clean(st.version(), 40);
         PluginManifest prev = st.previous();
@@ -793,8 +840,8 @@ final class PluginCoordinator {
         String caps = PluginDisclosure.capabilities(
                 st.manifest(),
                 st.jars(),
-                Files.isDirectory(st.root().resolve("snippets")),
-                Files.isDirectory(st.root().resolve("templates")),
+                facts.snippets(),
+                facts.templates(),
                 keymap.activeName(),
                 keys(st.manifest()));
         return new Question(Question.Kind.ENABLE, header, intro, caps, tr("dialog.plugins.enable"));
@@ -809,11 +856,13 @@ final class PluginCoordinator {
         if (d == null || d.loadError() != null) {
             return false;
         }
+        // The folders it brings are answered from what the plugin list's scan found (PERF-01, Pauta 6.0.1).
+        PluginManager listed = pluginManager;
         String caps = PluginDisclosure.capabilities(
                 d.manifest(),
                 d.jars(),
-                Files.isDirectory(d.dir().resolve("snippets")),
-                Files.isDirectory(d.dir().resolve("templates")),
+                listed != null && listed.assetDir(d, "snippets") != null,
+                listed != null && listed.assetDir(d, "templates") != null,
                 keymap.activeName(),
                 keys(d.manifest()));
         String version = PluginDisclosure.clean(d.manifest().version == null ? "" : d.manifest().version, 40);
@@ -960,51 +1009,80 @@ final class PluginCoordinator {
      * start (its jar is open; Windows cannot delete it); it is switched off at once either way.
      */
     void uninstall(PluginDescriptor d) {
-        if (pluginManager == null || d == null) {
-            return;
+        PluginManager manager = pluginManager;
+        if (manager == null || d == null || removing.contains(d.id())) {
+            return; // a second Remove while the first is under way does nothing
         }
         String name = PluginDisclosure.clean(d.displayName(), 80);
-        if (!confirm.test(uninstallQuestion(
-                name, d.dir().toString(), Files.isDirectory(d.dir().resolve("data"))))) {
-            return;
-        }
-        boolean running = pluginManager.running(d.id()) != null;
-        if (running) {
-            if (!PluginInstaller.markForRemoval(pluginManager.pluginsDir(), d.id())) {
-                reportError(tr("status.plugins.uninstallFailed", name));
-                ops.showError(
-                        tr("status.plugins.uninstallFailed", name), d.dir().toString());
-                return;
-            }
-        } else if (!removeInstalled(pluginManager, d, name)) {
-            return;
-        }
-        config.getPluginStore().forget(d.id());
-        config.savePlugins();
-        pluginManager.discover();
-        settingsWindow.syncPluginsCheck();
-        report(running ? tr("status.plugins.removalPending", name) : tr("status.plugins.uninstalled", name));
+        removing.add(d.id());
+        // Whether it keeps data is looked at off the FX thread, then the question; the folder is removed off it too
+        // (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "plugin-uninstall-look", () -> Files.isDirectory(d.dir().resolve("data")), data -> {
+                    if (!confirm.test(uninstallQuestion(name, d.dir().toString(), data.or(false)))) {
+                        removing.remove(d.id());
+                        return;
+                    }
+                    boolean running = manager.running(d.id()) != null;
+                    Path pluginsDir = manager.pluginsDir();
+                    com.editora.perf.OffFx.then(
+                            "plugin-uninstall",
+                            () -> {
+                                Removal r = remove(pluginsDir, d, running);
+                                if (r != Removal.NOT_REMOVABLE) {
+                                    manager.discover(); // the list; a failed removal shows what is left (manifest last)
+                                }
+                                return r;
+                            },
+                            answer -> {
+                                removing.remove(d.id());
+                                Removal r = answer.or(Removal.FAILED);
+                                if (r != Removal.DONE) {
+                                    reportError(tr("status.plugins.uninstallFailed", name));
+                                    ops.showError(
+                                            tr("status.plugins.uninstallFailed", name),
+                                            d.dir().toString());
+                                    if (r == Removal.FAILED) {
+                                        settingsWindow.syncPluginsCheck();
+                                    }
+                                    return;
+                                }
+                                config.getPluginStore().forget(d.id());
+                                config.savePlugins();
+                                settingsWindow.syncPluginsCheck();
+                                report(
+                                        running
+                                                ? tr("status.plugins.removalPending", name)
+                                                : tr("status.plugins.uninstalled", name));
+                            });
+                });
+    }
+
+    /** Plugin ids with a Remove under way. */
+    private final Set<String> removing = new java.util.HashSet<>();
+
+    /** How a removal went. */
+    enum Removal {
+        DONE,
+        /** It is not a folder Editora may delete ({@link PluginInstaller#removableDir}). */
+        NOT_REMOVABLE,
+        /** Part of it could not be deleted, or the marker for the next start could not be written. */
+        FAILED
     }
 
     /**
-     * Deletes the folder of plugin {@code plugin} — the directory it was discovered in, and only when that is a
-     * direct child of the plugins folder (see {@link PluginInstaller#removableDir}).
+     * Removes plugin {@code plugin} — the directory it was discovered in, and only when that is a direct child of
+     * the plugins folder (see {@link PluginInstaller#removableDir}) — or, when it runs in this session, marks it
+     * for removal at the next start. Off the FX thread.
      */
-    private boolean removeInstalled(PluginManager pluginManager, PluginDescriptor plugin, String name) {
-        Path dir = PluginInstaller.removableDir(pluginManager.pluginsDir(), plugin);
-        if (dir == null) {
-            reportError(tr("status.plugins.uninstallFailed", name));
-            ops.showError(tr("status.plugins.uninstallFailed", name), String.valueOf(plugin.dir()));
-            return false;
+    static Removal remove(Path pluginsDir, PluginDescriptor plugin, boolean running) {
+        if (running) {
+            return PluginInstaller.markForRemoval(pluginsDir, plugin.id()) ? Removal.DONE : Removal.FAILED;
         }
-        if (!PluginInstaller.deleteInstalled(pluginManager.pluginsDir(), plugin)) {
-            reportError(tr("status.plugins.uninstallFailed", name));
-            ops.showError(tr("status.plugins.uninstallFailed", name), dir.toString());
-            pluginManager.discover(); // show what is left (its manifest is deleted last: still listed)
-            settingsWindow.syncPluginsCheck();
-            return false;
+        if (PluginInstaller.removableDir(pluginsDir, plugin) == null) {
+            return Removal.NOT_REMOVABLE;
         }
-        return true;
+        return PluginInstaller.deleteInstalled(pluginsDir, plugin) ? Removal.DONE : Removal.FAILED;
     }
 
     /** Whether the caller is on the FX thread; plugin API calls touch JavaFX state. */

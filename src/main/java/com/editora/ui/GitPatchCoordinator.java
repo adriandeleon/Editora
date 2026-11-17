@@ -232,11 +232,8 @@ final class GitPatchCoordinator {
                 .addAll(
                         new FileChooser.ExtensionFilter("Patch (*.patch, *.diff)", "*.patch", "*.diff"),
                         new FileChooser.ExtensionFilter("*", "*.*", "*"));
-        Path root = git.repoRoot();
-        if (root != null && Files.isDirectory(root)) {
-            chooser.setInitialDirectory(root.toFile());
-        }
-        File picked = chooser.showOpenDialog(host.window());
+        ChooserStart.set(chooser, git.repoRoot()); // no look at the disk on the FX thread first (PERF-01)
+        File picked = ChooserStart.show(chooser, c -> c.showOpenDialog(host.window()));
         return picked == null ? null : picked.toPath();
     }
 

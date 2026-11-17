@@ -86,11 +86,14 @@ public final class TypstService {
             Consumer<TypstRenderer.PendingExport> onStaged) {
         exec.submit(() -> {
             TypstRenderer.PendingExport pending = TypstRenderer.stageExport(command(), source, dest, fileDir, root);
+            pending.lookAtTargets(); // what the FX side asks before it replaces files, looked at here (PERF-01)
             Platform.runLater(() -> {
                 try {
                     onStaged.accept(pending);
                 } finally {
-                    pending.close(); // no-op once committed; otherwise the staging directory must not linger
+                    if (!pending.taken()) {
+                        pending.closeLater(); // the staging directory must not linger; deleted off the FX thread
+                    }
                 }
             });
         });

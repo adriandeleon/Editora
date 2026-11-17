@@ -144,7 +144,7 @@ class DiffApplyGuardsFxTest {
 
             // The disposed buffer's text still equals the baseline, so writing into it "succeeded" and the
             // resolution was lost. It must reach a live buffer for the file instead.
-            boolean applied = FxTestSupport.callOnFx(() -> diff.applyMergeResolution(opened, source, "ours\n"));
+            boolean applied = applyMerge(diff, opened, source, "ours\n");
 
             assertTrue(applied);
             EditorBuffer live = FxTestSupport.callOnFx(() -> ops.openBufferFor(file));
@@ -169,7 +169,7 @@ class DiffApplyGuardsFxTest {
             Files.writeString(file, "resolved by hand in another tool\n");
 
             CountDownLatch stale = watchStatus(fx, tr("status.merge.stale")::equals);
-            assertFalse(FxTestSupport.callOnFx(() -> diff.applyMergeResolution(opened, source, "ours\n")));
+            assertFalse(applyMerge(diff, opened, source, "ours\n"));
             async.await(stale, "stale merge feedback");
             assertNull(FxTestSupport.callOnFx(() -> ops.openBufferFor(file)), "no stray tab is left behind");
             assertEquals("resolved by hand in another tool\n", Files.readString(file));
@@ -184,7 +184,7 @@ class DiffApplyGuardsFxTest {
             });
             String untitledSource = FxTestSupport.callOnFx(untitled::text);
             closeTab(fx, untitled);
-            assertFalse(FxTestSupport.callOnFx(() -> diff.applyMergeResolution(untitled, untitledSource, "ours\n")));
+            assertFalse(applyMerge(diff, untitled, untitledSource, "ours\n"));
         }
     }
 
@@ -901,5 +901,16 @@ class DiffApplyGuardsFxTest {
             echo.textProperty().addListener(listener);
         });
         return seen;
+    }
+
+    /**
+     * Applies a merge resolution and waits for its answer: a closed document is read again off the FX thread first
+     * (PERF-01, Pauta 6.0.1), so the answer may come a moment later.
+     */
+    private static boolean applyMerge(DiffCoordinator diff, EditorBuffer opened, String source, String resolved)
+            throws Exception {
+        java.util.concurrent.CompletableFuture<Boolean> answer = new java.util.concurrent.CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> diff.applyMergeResolution(opened, source, resolved, answer::complete));
+        return answer.get(10, java.util.concurrent.TimeUnit.SECONDS);
     }
 }

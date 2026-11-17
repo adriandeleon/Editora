@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -253,12 +252,15 @@ public final class ReportProblemWindow {
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text", "*.txt"));
         java.io.File target = chooser.showSaveDialog(stage);
         if (target != null) {
-            try {
-                com.editora.io.StagedExport.writeString(target.toPath(), area.getText());
-                status.setText(tr("report.saved", target.toPath().toString()));
-            } catch (IOException ex) {
-                status.setText(tr("report.saveFailed", String.valueOf(ex.getMessage())));
-            }
+            String text = area.getText();
+            // written off the FX thread (PERF-01, Pauta 6.0.1)
+            com.editora.perf.OffFx.run(
+                    "report-save",
+                    () -> com.editora.io.StagedExport.writeString(target.toPath(), text),
+                    failure -> status.setText(
+                            failure == null
+                                    ? tr("report.saved", target.toPath().toString())
+                                    : tr("report.saveFailed", String.valueOf(failure.getMessage()))));
         }
     }
 

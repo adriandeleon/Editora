@@ -1517,8 +1517,24 @@ public final class InstallCatalog {
         if (configDir == null) {
             return null;
         }
-        Path p = installedToolPath(configDir, id);
-        return java.nio.file.Files.isRegularFile(p) ? p.toString() : null;
+        return INSTALLED_TOOLS.get(installedToolPath(configDir, id));
+    }
+
+    /**
+     * Whether Editora's copy of a tool is there: looked at off the FX thread (the launch's warm-up, an install's
+     * check, the Settings status line), answered from memory on it (PERF-01, Pauta 6.0.1). A tab switch onto a shell
+     * script asks for both tools.
+     */
+    private static final com.editora.perf.Looked<Path, String> INSTALLED_TOOLS = new com.editora.perf.Looked<>(
+            "InstallCatalog.installedToolIfPresent", p -> java.nio.file.Files.isRegularFile(p) ? p.toString() : null);
+
+    /** Looks at Editora's copies of the pinned tools now, on this thread (off the FX thread): the warm-up. */
+    public static void lookAtInstalledTools(@Nullable Path configDir) {
+        if (configDir != null) {
+            for (String id : PINNED_TOOL_IDS) {
+                installedToolIfPresent(configDir, id);
+            }
+        }
     }
 
     /** Lower-case hex SHA-256 of {@code data}. Pure. */

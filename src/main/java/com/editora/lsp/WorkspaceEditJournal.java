@@ -196,16 +196,28 @@ public final class WorkspaceEditJournal {
             return List.copyOf(out);
         }
 
-        /** The paths the transaction was working on — where the user knows the files from. */
+        /**
+         * The paths the transaction was working on — where the user knows the files from. Looked at once, off the FX
+         * thread (where the journal is found), and kept for the question asked on it (PERF-01, Pauta 6.0.1).
+         */
         public List<Path> originals() {
+            List<Path> kept = originals;
+            if (kept != null) {
+                return kept;
+            }
+            com.editora.perf.BlockingSites.enter("WorkspaceEditJournal.originals");
             Set<Path> out = new LinkedHashSet<>();
             for (Entry entry : entries) {
                 if (entry.second() != null && Files.exists(entry.second())) {
                     out.add(entry.first());
                 }
             }
-            return List.copyOf(out);
+            List<Path> found = List.copyOf(out);
+            originals = found;
+            return found;
         }
+
+        private volatile @Nullable List<Path> originals;
 
         /** Whether any path of the transaction lies at or under {@code root}. */
         public boolean touches(Path root) {

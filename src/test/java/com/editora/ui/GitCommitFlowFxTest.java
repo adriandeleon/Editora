@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Stage / unstage / commit / discard against a real repository, through the window's Git coordinator. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class GitCommitFlowFxTest {
 
     @BeforeAll

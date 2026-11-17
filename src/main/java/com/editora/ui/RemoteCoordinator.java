@@ -502,6 +502,23 @@ final class RemoteCoordinator {
      * remote folder in the Project tool window.
      */
     void connect(@Nullable RemoteConnection prefill) {
+        // ~/.ssh/config and what it includes are read off the FX thread first (PERF-01, Pauta 6.0.1); the form opens
+        // with its hosts. A second press meanwhile opens nothing more.
+        if (readingSshConfig) {
+            return;
+        }
+        readingSshConfig = true;
+        RemoteFileSystems engine = remoteFs();
+        com.editora.perf.OffFx.then("ssh-config-read", engine::configuredHosts, hosts -> {
+            readingSshConfig = false;
+            connect(prefill, hosts.or(List.of()));
+        });
+    }
+
+    /** Set while {@link #connect(RemoteConnection)} reads {@code ~/.ssh/config}. */
+    private boolean readingSshConfig;
+
+    private void connect(@Nullable RemoteConnection prefill, List<String> configured) {
         KeymapManager keymap = ops.keymap();
         TextField hostField = new TextField();
         hostField.setPromptText(tr("remote.hostPrompt"));
@@ -571,7 +588,6 @@ final class RemoteCoordinator {
         // will read it. Its User and Port fill the fields until you type in them yourself.
         RemoteFileSystems engine = remoteFs();
         MenuButton fromConfig = null;
-        List<String> configured = engine.configuredHosts();
         if (!configured.isEmpty()) {
             fromConfig = new MenuButton(tr("remote.sshConfig.hosts"));
             fromConfig.setFocusTraversable(false);

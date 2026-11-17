@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * complexity, changes and hotspots, opened from ⋯ or a folder's row menu.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class MapMetricsCardFxTest {
 
     @TempDir

@@ -181,7 +181,11 @@ public final class TypstRenderer {
         private final Path dest;
         private final List<Path> staged;
         private final List<Path> targets;
-        private boolean closed;
+        private volatile boolean closed;
+        /** The existing targets, looked at off the FX thread before the result is handed over; null before. */
+        private volatile @Nullable List<Path> existing;
+        /** Set when the receiver takes the export over: it commits or closes it, off the FX thread. */
+        private volatile boolean taken;
 
         private PendingExport(
                 ProcessRunner.Result result,
@@ -216,17 +220,39 @@ public final class TypstRenderer {
          * chosen destination itself, whose replacement the Save dialog confirmed.
          */
         public List<Path> existingTargets() {
-            List<Path> existing = new ArrayList<>();
+            List<Path> looked = existing;
+            if (looked != null) {
+                return looked;
+            }
+            com.editora.perf.BlockingSites.enter("TypstRenderer.existingTargets");
+            List<Path> found = new ArrayList<>();
             for (Path target : targets) {
                 if (!target.equals(dest) && Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                    existing.add(target);
+                    found.add(target);
                 }
             }
-            return existing;
+            return found;
+        }
+
+        /** Looks at {@link #existingTargets} now, off the FX thread, and keeps the answer for the FX thread. */
+        public void lookAtTargets() {
+            existing = null;
+            existing = List.copyOf(existingTargets());
+        }
+
+        /** The receiver takes the export over: it {@link #commit commits} or {@link #close closes} it itself. */
+        public void take() {
+            taken = true;
+        }
+
+        /** Whether the receiver took it over. */
+        public boolean taken() {
+            return taken;
         }
 
         /** Moves the staged files to their targets (replacing them) and returns the targets. */
         public List<Path> commit() throws IOException {
+            com.editora.perf.BlockingSites.enter("TypstRenderer.commit");
             if (closed) {
                 throw new IOException("export already finished");
             }
@@ -258,7 +284,15 @@ public final class TypstRenderer {
         public void close() {
             if (!closed) {
                 closed = true;
+                com.editora.perf.BlockingSites.enter("TypstRenderer.close");
                 deleteRecursively(stagingDir);
+            }
+        }
+
+        /** {@link #close} on a thread of its own: the staging folder is deleted off the FX thread. */
+        public void closeLater() {
+            if (!closed) {
+                Thread.ofVirtual().name("typst-export-close").start(this::close);
             }
         }
     }

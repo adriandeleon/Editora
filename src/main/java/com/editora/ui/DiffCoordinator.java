@@ -611,10 +611,17 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.notInRepo"));
             return;
         }
-        if (Files.isDirectory(path)) {
-            diffDirectoryVsRef(path, root, rel, "HEAD", tr("diff.side.head"));
-            return;
-        }
+        // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("diff-look", () -> Files.isDirectory(path), folder -> {
+            if (folder.or(false)) {
+                diffDirectoryVsRef(path, root, rel, "HEAD", tr("diff.side.head"));
+            } else {
+                diffFileVsHead(path, root, rel);
+            }
+        });
+    }
+
+    private void diffFileVsHead(Path path, Path root, String rel) {
         String name = path.getFileName().toString();
         openDiff(
                 tr("diff.title.vsHead", name),
@@ -905,10 +912,18 @@ final class DiffCoordinator {
 
     /** Opens a two-directory picker and compares the selected trees. */
     void compareDirectories() {
+        Path start = ops.finderStartDir();
+        // the picker's start folder is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "chooser-start",
+                () -> start != null && Files.isDirectory(start),
+                folder -> compareDirectories(folder.or(false) ? start : null));
+    }
+
+    private void compareDirectories(@Nullable Path start) {
         DirectoryChooser leftPicker = new DirectoryChooser();
         leftPicker.setTitle(tr("diff.directory.pickLeft"));
-        Path start = ops.finderStartDir();
-        if (start != null && Files.isDirectory(start)) {
+        if (start != null) {
             leftPicker.setInitialDirectory(start.toFile());
         }
         java.io.File left = leftPicker.showDialog(host.window());
@@ -928,26 +943,41 @@ final class DiffCoordinator {
 
     /** Opens the two arbitrary paths supplied by the standalone {@code --diff-ui} launch. */
     void comparePaths(@Nullable Path left, @Nullable Path right) {
-        if (left != null && right != null && Files.isDirectory(left) && Files.isDirectory(right)) {
-            compareDirectories(left, right);
-            return;
-        }
-        if ((left != null && Files.isDirectory(left)) || (right != null && Files.isDirectory(right))) {
-            host.setStatus(tr("status.diff.pathTypeMismatch"));
-            return;
-        }
-        compareFiles(left, right);
+        // folders or files? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "diff-look",
+                () -> new boolean[] {left != null && Files.isDirectory(left), right != null && Files.isDirectory(right)
+                },
+                looked -> {
+                    boolean[] folders = looked.or(new boolean[2]);
+                    if (folders[0] && folders[1]) {
+                        compareDirectories(left, right);
+                    } else if (folders[0] || folders[1]) {
+                        host.setStatus(tr("status.diff.pathTypeMismatch"));
+                    } else {
+                        compareFiles(left, right);
+                    }
+                });
     }
 
     /** Opens the two arbitrary files supplied by the standalone {@code --diff-ui} launch. */
     void compareFiles(@Nullable Path left, @Nullable Path right) {
         Path leftPath = left == null ? null : left.toAbsolutePath().normalize();
         Path rightPath = right == null ? null : right.toAbsolutePath().normalize();
-        if (leftPath == null || rightPath == null || !readableFile(leftPath) || !readableFile(rightPath)) {
-            Path bad = !readableFile(leftPath) ? leftPath : rightPath;
-            host.setStatus(tr("status.diff.unreadable", bad == null ? "" : bad));
-            return;
-        }
+        // readable? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "diff-look", () -> new boolean[] {readableFile(leftPath), readableFile(rightPath)}, looked -> {
+                    boolean[] ok = looked.or(new boolean[2]);
+                    if (leftPath == null || rightPath == null || !ok[0] || !ok[1]) {
+                        Path bad = !ok[0] ? leftPath : rightPath;
+                        host.setStatus(tr("status.diff.unreadable", bad == null ? "" : bad));
+                        return;
+                    }
+                    compareReadableFiles(leftPath, rightPath);
+                });
+    }
+
+    private void compareReadableFiles(Path leftPath, Path rightPath) {
         String leftName = leftPath.getFileName() == null
                 ? leftPath.toString()
                 : leftPath.getFileName().toString();
@@ -970,11 +1000,25 @@ final class DiffCoordinator {
     void compareDirectories(@Nullable Path left, @Nullable Path right) {
         Path leftRoot = left == null ? null : left.toAbsolutePath().normalize();
         Path rightRoot = right == null ? null : right.toAbsolutePath().normalize();
-        if (leftRoot == null || rightRoot == null || !readableDirectory(leftRoot) || !readableDirectory(rightRoot)) {
-            Path bad = !readableDirectory(leftRoot) ? leftRoot : rightRoot;
-            host.setStatus(tr("status.diff.unreadableDirectory", bad == null ? "" : bad));
+        if (leftRoot == null || rightRoot == null) {
+            host.setStatus(tr("status.diff.unreadableDirectory", ""));
             return;
         }
+        // readable? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "diff-look",
+                () -> new boolean[] {readableDirectory(leftRoot), readableDirectory(rightRoot)},
+                looked -> {
+                    boolean[] ok = looked.or(new boolean[2]);
+                    if (!ok[0] || !ok[1]) {
+                        host.setStatus(tr("status.diff.unreadableDirectory", !ok[0] ? leftRoot : rightRoot));
+                    } else {
+                        scanDirectories(leftRoot, rightRoot);
+                    }
+                });
+    }
+
+    private void scanDirectories(Path leftRoot, Path rightRoot) {
         host.setStatus(tr("status.diff.scanningDirectories"));
         submitFileRead(() -> {
             try {
@@ -1231,10 +1275,17 @@ final class DiffCoordinator {
     }
 
     private void openPathVsRef(Path path, Path root, String rel, String ref, String displayRef) {
-        if (Files.isDirectory(path)) {
-            diffDirectoryVsRef(path, root, rel, ref, displayRef);
-            return;
-        }
+        // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("diff-look", () -> Files.isDirectory(path), folder -> {
+            if (folder.or(false)) {
+                diffDirectoryVsRef(path, root, rel, ref, displayRef);
+            } else {
+                openFileVsRef(path, root, rel, ref, displayRef);
+            }
+        });
+    }
+
+    private void openFileVsRef(Path path, Path root, String rel, String ref, String displayRef) {
         String name = path.getFileName().toString();
         openDiff(
                 tr("diff.title.vsBranch", name, displayRef),
@@ -1633,7 +1684,31 @@ final class DiffCoordinator {
             DiffViewerPane.GitHunkRequest request,
             GitService.BlobResult expectedBlob,
             GitService.BlobResult head) {
+        stageHunk(root, repoRel, file, request, expectedBlob, head, null);
+    }
+
+    /** {@code fileGone}: whether the working file is gone, once looked at off the FX thread; null before. */
+    private void stageHunk(
+            Path root,
+            String repoRel,
+            Path file,
+            DiffViewerPane.GitHunkRequest request,
+            GitService.BlobResult expectedBlob,
+            GitService.BlobResult head,
+            @Nullable Boolean fileGone) {
         boolean stage = request.action() == DiffViewerPane.GitHunkAction.STAGE;
+        if (stage
+                && fileGone == null
+                && request.wholeFile()
+                && request.afterText().isEmpty()
+                && ops.openBufferFor(file) == null) {
+            // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+            com.editora.perf.OffFx.then(
+                    "diff-look",
+                    () -> !Files.exists(file),
+                    gone -> stageHunk(root, repoRel, file, request, expectedBlob, head, gone.or(false)));
+            return;
+        }
         Consumer<com.editora.process.ProcessRunner.Result> done = result -> {
             if (result.ok()) {
                 host.setStatus(tr(stage ? "status.diff.hunkStaged" : "status.diff.hunkUnstaged"));
@@ -1646,7 +1721,7 @@ final class DiffCoordinator {
         String ecCharset = ops.editorConfigCharset(file);
         String openCharset = open == null ? null : open.getEffectiveCharset();
         if (request.wholeFile() && request.afterText().isEmpty()) {
-            boolean gone = stage ? open == null && !Files.exists(file) : head != null && !head.found();
+            boolean gone = stage ? open == null && Boolean.TRUE.equals(fileGone) : head != null && !head.found();
             if (gone) {
                 git.service().removeIndexEntry(root, repoRel, expectedBlob, done);
                 return;
@@ -1874,10 +1949,21 @@ final class DiffCoordinator {
             return;
         }
         Path target = workingFile.toAbsolutePath().normalize();
-        if (!Files.isRegularFile(target) && ops.openBufferFor(target) == null) {
-            host.setStatus(tr("status.git.fileGone", repoRel));
+        if (ops.openBufferFor(target) != null) {
+            diffCommitFileVsWorkingLooked(root, hash, repoRel, target);
             return;
         }
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("diff-look", () -> Files.isRegularFile(target), there -> {
+            if (!there.or(false) && ops.openBufferFor(target) == null) {
+                host.setStatus(tr("status.git.fileGone", repoRel));
+                return;
+            }
+            diffCommitFileVsWorkingLooked(root, hash, repoRel, target);
+        });
+    }
+
+    private void diffCommitFileVsWorkingLooked(Path root, String hash, String repoRel, Path target) {
         String name =
                 target.getFileName() == null ? repoRel : target.getFileName().toString();
         String displayHash = GitFormat.shortHash(hash);
@@ -1992,18 +2078,20 @@ final class DiffCoordinator {
             if (target == null) {
                 return;
             }
-            try {
-                // Staged: a failed write must not empty a patch the Save dialog agreed to replace.
-                com.editora.io.StagedExport.write(
-                        target,
-                        patchBytes(
-                                patch,
-                                request.leftFormat().charset(),
-                                request.rightFormat().charset()));
-                host.setStatus(tr("status.diff.patchSaved", target.getFileName()));
-            } catch (IOException e) {
-                host.setStatus(tr("status.diff.patchFailed", e.getMessage() == null ? "" : e.getMessage()));
-            }
+            byte[] bytes = patchBytes(
+                    patch, request.leftFormat().charset(), request.rightFormat().charset());
+            // Staged: a failed write must not empty a patch the Save dialog agreed to replace. Written off the FX
+            // thread (PERF-01, Pauta 6.0.1).
+            com.editora.perf.OffFx.run(
+                    "diff-patch-write", () -> com.editora.io.StagedExport.write(target, bytes), failure -> {
+                        if (failure == null) {
+                            host.setStatus(tr("status.diff.patchSaved", target.getFileName()));
+                        } else {
+                            host.setStatus(tr(
+                                    "status.diff.patchFailed",
+                                    failure.getMessage() == null ? "" : failure.getMessage()));
+                        }
+                    });
         });
     }
 
@@ -2201,13 +2289,12 @@ final class DiffCoordinator {
                 host.settings().getFontSize(),
                 format.lineSeparator(),
                 format.finalNewline(),
-                (java.util.function.Predicate<String>) resolvedText -> {
-                    boolean applied = applyMergeResolution(buffer, expected[0], resolvedText);
+                (resolvedText, done) -> applyMergeResolution(buffer, expected[0], resolvedText, applied -> {
                     if (applied) {
                         expected[0] = resolvedText;
                     }
-                    return applied;
-                });
+                    done.accept(applied);
+                }));
         ops.addDiffTab(pane);
     }
 
@@ -2219,11 +2306,25 @@ final class DiffCoordinator {
      * was closed) and re-checked for disposed / read-only / truncated before its <em>current</em> text is
      * compared with the baseline. An untitled buffer has no path to find it by, so a closed one is refused.
      */
-    boolean applyMergeResolution(EditorBuffer opened, String sourceText, String resolvedText) {
+    void applyMergeResolution(EditorBuffer opened, String sourceText, String resolvedText, Consumer<Boolean> done) {
         Path path = opened.getPath();
         EditorBuffer open = path == null ? (opened.isDisposed() ? null : opened) : ops.openBufferFor(path);
-        EditorBuffer target = open != null || path == null ? open : ops.openBackgroundBuffer(path);
-        boolean reopened = open == null && target != null;
+        if (open != null || path == null) {
+            done.accept(applyMergeTo(opened, open, false, sourceText, resolvedText));
+            return;
+        }
+        // Its tab was closed: the file is read again off the FX thread (PERF-01, Pauta 6.0.1), then applied.
+        ops.openBackgroundBufferAsync(
+                path, target -> done.accept(applyMergeTo(opened, target, target != null, sourceText, resolvedText)));
+    }
+
+    private boolean applyMergeTo(
+            EditorBuffer opened,
+            @Nullable EditorBuffer target,
+            boolean reopened,
+            String sourceText,
+            String resolvedText) {
+        Path path = opened.getPath();
         if (target == null || target.isDisposed() || !target.isEditable() || target.isTruncatedLoad()) {
             if (reopened) {
                 ops.discardBackgroundBuffer(target);

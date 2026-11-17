@@ -199,11 +199,13 @@ final class LspCoordinator {
         WorkspaceFileOperations SYSTEM = new WorkspaceFileOperations() {
             @Override
             public boolean exists(Path path) {
+                com.editora.perf.BlockingSites.enter("WorkspaceFileOperations.stat");
                 return java.nio.file.Files.exists(path);
             }
 
             @Override
             public boolean isDirectory(Path path) {
+                com.editora.perf.BlockingSites.enter("WorkspaceFileOperations.stat");
                 return java.nio.file.Files.isDirectory(path);
             }
 
@@ -219,6 +221,7 @@ final class LspCoordinator {
 
             @Override
             public WorkspaceFileIdentity identity(Path path) throws java.io.IOException {
+                com.editora.perf.BlockingSites.enter("WorkspaceFileOperations.stat");
                 var attributes =
                         java.nio.file.Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
                 return new WorkspaceFileIdentity(
@@ -2236,7 +2239,39 @@ final class LspCoordinator {
             host.setStatus(tr("status.trust.noProject"));
             return;
         }
-        List<String> sdkRequests = sdkTrustRequests(root);
+        if (trustLooking) {
+            return; // the folder's own TypeScript is still being looked for: one question at a time
+        }
+        // Where the folder's own TypeScript could be is taken here; it is looked for, and its version read, off the
+        // FX thread (PERF-01, Pauta 6.0.1). Then the question.
+        String ts = com.editora.lsp.TypeScriptServer.SERVER_ID;
+        boolean tsOn = serverEnabled(ts);
+        boolean astroOn = serverEnabled(ASTRO_SERVER_ID);
+        List<Path> tsStarts = new java.util.ArrayList<>();
+        List<Path> astroStarts = new java.util.ArrayList<>();
+        host.forEachBuffer(b -> {
+            if (lspPath(b) == null) {
+                return;
+            }
+            String id = serverIdForBuffer(b);
+            if (tsOn && ts.equals(id)) {
+                tsStarts.add(lspRootFor(b, ts));
+            } else if (astroOn && ASTRO_SERVER_ID.equals(id)) {
+                astroStarts.add(lspRootFor(b, ASTRO_SERVER_ID));
+            }
+        });
+        trustLooking = true;
+        com.editora.perf.OffFx.then(
+                "trust-look", () -> sdkTrustRequests(root, tsOn, tsStarts, astroOn, astroStarts), found -> {
+                    trustLooking = false;
+                    trustProjectSettings(root, config, found.or(List.of()));
+                });
+    }
+
+    /** Set while {@link #trustProjectSettings()} looks for the folder's own TypeScript. */
+    private boolean trustLooking;
+
+    private void trustProjectSettings(Path root, com.editora.config.ConfigManager config, List<String> sdkRequests) {
         List<String> requests = new java.util.ArrayList<>(projectTrustRequests());
         requests.addAll(sdkRequests);
         if (requests.isEmpty()) {
@@ -2265,63 +2300,48 @@ final class LspCoordinator {
     private static final String ASTRO_SERVER_ID = "astro";
 
     /**
-     * What trusting {@code root} hands the Astro server besides the project file's commands: the folder's own
-     * TypeScript SDK, whose JavaScript astro-ls loads and runs. One {@code "astro: <sdk dir>"} line per SDK
-     * found at the project root or at the server root of an open Astro file, never above the project root.
+     * What trusting {@code root} hands the TypeScript / JavaScript server and the Astro server besides the project
+     * file's commands: the folder's own TypeScript, whose {@code tsserver.js} the one runs and whose JavaScript the
+     * other loads. Untrusted, each runs the TypeScript installed beside itself instead (Node review B2). One {@code
+     * "typescript: <tsserver.js>"} or {@code "astro: <sdk dir>"} line per SDK at the project root (for Astro, only
+     * in a folder with an Astro config: JS review B110) or at the server root {@code tsStarts} / {@code
+     * astroStarts} of an open file, never above the project root. Reads files: off the FX thread, which also reads
+     * each SDK's version for the prompt.
      */
-    private List<String> sdkTrustRequests(Path root) {
-        List<String> out = new java.util.ArrayList<>(typeScriptSdkTrustRequests(root));
-        if (!serverEnabled(ASTRO_SERVER_ID)) {
-            return List.copyOf(out);
-        }
-        Path top = root.toAbsolutePath().normalize();
-        java.util.Set<String> found = new java.util.TreeSet<>(out);
-        java.util.function.Consumer<Path> look = start -> {
-            if (start != null && start.toAbsolutePath().normalize().startsWith(top)) {
-                Path sdk = LspManager.findTypeScriptSdk(start, top);
-                if (sdk != null) {
-                    found.add(ASTRO_SERVER_ID + ": " + sdk);
-                }
-            }
-        };
-        if (com.editora.lsp.RootResolver.hasAstroConfig(top)) {
-            look.accept(top); // not in a folder without Astro: the prompt listed it there (JS review B110)
-        }
-        host.forEachBuffer(b -> {
-            if (lspPath(b) != null && ASTRO_SERVER_ID.equals(serverIdForBuffer(b))) {
-                look.accept(lspRootFor(b, ASTRO_SERVER_ID));
-            }
-        });
-        return List.copyOf(found);
-    }
-
-    /**
-     * What trusting {@code root} hands the TypeScript / JavaScript server: the folder's own TypeScript, whose
-     * {@code tsserver.js} the server runs. Untrusted, it runs the TypeScript installed beside itself instead
-     * (Node review B2). One {@code "typescript: <tsserver.js>"} line per SDK at the project root or at the server
-     * root of an open JS/TS file, never above the project root.
-     */
-    private List<String> typeScriptSdkTrustRequests(Path root) {
-        String id = com.editora.lsp.TypeScriptServer.SERVER_ID;
-        if (!serverEnabled(id)) {
-            return List.of();
-        }
+    static List<String> sdkTrustRequests(
+            Path root, boolean tsOn, List<Path> tsStarts, boolean astroOn, List<Path> astroStarts) {
         Path top = root.toAbsolutePath().normalize();
         java.util.Set<String> found = new java.util.TreeSet<>();
-        java.util.function.Consumer<Path> look = start -> {
-            if (start != null && start.toAbsolutePath().normalize().startsWith(top)) {
-                Path sdk = com.editora.lsp.TypeScriptServer.findTsserver(start, top);
-                if (sdk != null) {
-                    found.add(id + ": " + sdk);
+        if (tsOn) {
+            String id = com.editora.lsp.TypeScriptServer.SERVER_ID;
+            java.util.function.Consumer<Path> look = start -> {
+                if (start != null && start.toAbsolutePath().normalize().startsWith(top)) {
+                    Path sdk = com.editora.lsp.TypeScriptServer.findTsserver(start, top);
+                    if (sdk != null) {
+                        found.add(id + ": " + sdk);
+                    }
                 }
+            };
+            look.accept(top);
+            tsStarts.forEach(look);
+        }
+        if (astroOn) {
+            java.util.function.Consumer<Path> look = start -> {
+                if (start != null && start.toAbsolutePath().normalize().startsWith(top)) {
+                    Path sdk = LspManager.findTypeScriptSdk(start, top);
+                    if (sdk != null) {
+                        found.add(ASTRO_SERVER_ID + ": " + sdk);
+                    }
+                }
+            };
+            if (com.editora.lsp.RootResolver.hasAstroConfig(top)) {
+                look.accept(top);
             }
-        };
-        look.accept(top);
-        host.forEachBuffer(b -> {
-            if (lspPath(b) != null && id.equals(serverIdForBuffer(b))) {
-                look.accept(lspRootFor(b, id));
-            }
-        });
+            astroStarts.forEach(look);
+        }
+        for (String r : found) {
+            TrustPromptText.sdkLine(root, r); // the version the prompt names, read now and kept
+        }
         return List.copyOf(found);
     }
 

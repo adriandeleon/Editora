@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -459,10 +458,9 @@ final class GitHubCoordinator {
         if (file == null || !RemoteExec.runsFor(file)) {
             return null;
         }
-        if (Vfs.isRemote(file)) {
-            return file.getParent(); // a buffer's path is a file; asking the server would be a round trip on FX
-        }
-        return Files.isDirectory(file) ? file : file.getParent();
+        // A buffer's path is a file: no need to ask the disk on the FX thread (PERF-01, Pauta 6.0.1), nor the
+        // server, a round trip.
+        return file.getParent();
     }
 
     // --- refresh / toggle ------------------------------------------------------------------------

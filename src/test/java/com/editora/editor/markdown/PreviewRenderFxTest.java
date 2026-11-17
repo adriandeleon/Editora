@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * parse leaves the user looking at, and the preview's own menus, paging keys and zoom.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(com.editora.ui.OffFxInPlace.class)
 class PreviewRenderFxTest {
 
     @BeforeAll

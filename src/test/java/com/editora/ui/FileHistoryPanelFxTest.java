@@ -48,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Local History panel as a view: what it shows, keeps and asks, against a scripted controller. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class FileHistoryPanelFxTest {
 
     private static final Path ORDERS = Path.of("/p/src/Orders.java");

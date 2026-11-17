@@ -265,11 +265,38 @@ final class LspRename {
 
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
+        // What the item is, and whether a moved .java file's package line fits where it goes, are looked at off the
+        // FX thread (PERF-01, Pauta 6.0.1); the servers are asked from the FX thread, as before.
+        com.editora.perf.OffFx.then(
+                "lsp-rename-look",
+                () -> RenameLook.of(from, to),
+                looked -> willRenameFile(from, to, proceed, fallback, looked.or(RenameLook.NONE)));
+    }
+
+    /** What {@link #willRenameFile} asks of the disk: read off the FX thread. */
+    record RenameLook(boolean folder, boolean renamesImports, boolean intoIsFolder, boolean packageFits) {
+        static final RenameLook NONE = new RenameLook(false, false, false, true);
+
+        static RenameLook of(Path from, Path to) {
+            com.editora.perf.BlockingSites.enter("LspRename.look");
+            Path into = to.getParent();
+            boolean javaMovedAway = into != null
+                    && !into.equals(from.getParent())
+                    && from.toString().endsWith(".java");
+            return new RenameLook(
+                    Files.isDirectory(from),
+                    TypeScriptServer.renamesImports(from),
+                    into != null && Files.isDirectory(into),
+                    !javaMovedAway || into == null || LspRename.packageFits(from, into));
+        }
+    }
+
+    private void willRenameFile(
+            Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback, RenameLook look) {
         // a folder a Java server serves stays jdtls's: its package lines and imports are what a move breaks
-        LanguageServerSession ts =
-                TypeScriptServer.renamesImports(from) && (!Files.isDirectory(from) || m.javaSessionFor(from) == null)
-                        ? m.serverSessionFor(TypeScriptServer.SERVER_ID, from)
-                        : null;
+        LanguageServerSession ts = look.renamesImports() && (!look.folder() || m.javaSessionFor(from) == null)
+                ? m.serverSessionFor(TypeScriptServer.SERVER_ID, from)
+                : null;
         if (ts != null && ts.isInitialized() && ts.capabilities() != null && willRenameAdvertised(ts)) {
             // the imports of a moved or renamed .ts/.js file (or folder) follow it (JS review B105)
             EditBasis expected = WorkspaceEditDrafts.editBasis(ts);
@@ -285,24 +312,24 @@ final class LspRename {
         }
         LanguageServerSession s = m.javaSessionFor(from);
         // No Java server for the folder: nothing to ask, and no folder walked (fifth review BV5)
-        if (s == null || (!from.toString().endsWith(".java") && !Files.isDirectory(from))) {
+        if (s == null || (!from.toString().endsWith(".java") && !look.folder())) {
             Platform.runLater(() -> proceed.accept(true));
             return;
         }
-        if (Files.isDirectory(from)) {
+        if (look.folder()) {
             // A folder is walked for .java files off the UI thread: the drop no longer waits on it (sixth BV5)
             CompletableFuture.supplyAsync(
                             () -> holdsJava(from), com.editora.process.BlockingTasks.named("lsp-rename-folder-scan"))
                     .whenComplete((java, e) -> Platform.runLater(() -> {
                         if (Boolean.TRUE.equals(java)) {
-                            askWillRename(s, from, to, proceed, fallback);
+                            askWillRename(s, from, to, proceed, fallback, look);
                         } else {
                             proceed.accept(true);
                         }
                     }));
             return;
         }
-        askWillRename(s, from, to, proceed, fallback);
+        askWillRename(s, from, to, proceed, fallback, look);
     }
 
     /** Whether {@code s} said it wants {@code workspace/willRenameFiles}. */
@@ -314,9 +341,14 @@ final class LspRename {
     }
 
     private void askWillRename(
-            LanguageServerSession s, Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
+            LanguageServerSession s,
+            Path from,
+            Path to,
+            Consumer<Boolean> proceed,
+            RenameFallback fallback,
+            RenameLook look) {
         Path into = to.getParent();
-        if (into != null && !into.equals(from.getParent()) && Files.isDirectory(into)) {
+        if (into != null && !into.equals(from.getParent()) && look.intoIsFolder()) {
             // jdtls answers null for a package it has not heard of: a folder made a moment ago, before the
             // watcher's batch reached it, or any new folder of an SSH project (fourth review DF3). Saying it
             // exists is idempotent, and goes out before the request on the same channel.
@@ -329,7 +361,7 @@ final class LspRename {
         boolean moved = into != null
                 && !into.equals(from.getParent())
                 && from.toString().endsWith(".java")
-                && !packageFits(from, into);
+                && !look.packageFits();
         EditBasis expected = WorkspaceEditDrafts.editBasis(s);
         s.willRenameFiles(s.uris().toWire(LspManager.uri(from)), s.uris().toWire(LspManager.uri(to)))
                 .whenComplete((edit, e) -> Platform.runLater(() -> {

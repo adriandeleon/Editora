@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * selection of an open window, and with none it says why on the status line and opens nothing (KBD-01, MENU-05).
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class RowCommandsWindowFxTest {
 
     private FxWindowFixture fx;

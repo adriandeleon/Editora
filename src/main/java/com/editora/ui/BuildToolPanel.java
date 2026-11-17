@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -465,12 +464,15 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * dialog agreed to replace). A failure is reported as a line in the console, where the user is looking.
      */
     void saveOutputTo(Path target) {
-        try {
-            com.editora.io.StagedExport.writeString(target, shownText());
-        } catch (IOException e) {
-            String message = e.getMessage() == null ? e.toString() : e.getMessage();
-            appendStyled(tr("console.saveOutput.failed", message), "log-error");
-        }
+        String text = shownText();
+        // written off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.run(
+                "save-output", () -> com.editora.io.StagedExport.writeString(target, text), failure -> {
+                    if (failure != null) {
+                        String message = failure.getMessage() == null ? failure.toString() : failure.getMessage();
+                        appendStyled(tr("console.saveOutput.failed", message), "log-error");
+                    }
+                });
     }
 
     /**

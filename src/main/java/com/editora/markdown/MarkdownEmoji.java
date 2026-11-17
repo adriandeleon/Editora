@@ -69,6 +69,7 @@ public final class MarkdownEmoji {
         static final Map<String, String> ALL = load();
 
         private static Map<String, String> load() {
+            com.editora.perf.BlockingSites.enter("MarkdownEmoji.table");
             Map<String, String> map = new TreeMap<>();
             try (InputStream in = MarkdownEmoji.class.getResourceAsStream("emoji.tsv")) {
                 if (in != null) {
@@ -87,6 +88,14 @@ public final class MarkdownEmoji {
             }
             return Collections.unmodifiableMap(map);
         }
+    }
+
+    /**
+     * Reads the table now, on this thread: the launch does it off the FX thread (PERF-01, Pauta 6.0.1), so the first
+     * emoji completion or {@code :name:} rendered there finds it read.
+     */
+    public static void warm() {
+        java.util.Objects.requireNonNull(Table.ALL); // the class initialization reads it
     }
 
     /** Every shortcode and its emoji, sorted by name. Loaded once, on first use. */

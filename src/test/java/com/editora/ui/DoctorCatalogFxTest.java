@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * selected JDK. Where a probe runs a program, the program is a script written into the test's own folder.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class DoctorCatalogFxTest {
 
     @BeforeAll

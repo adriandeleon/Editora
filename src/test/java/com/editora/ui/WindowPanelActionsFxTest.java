@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** What the Project tree's context menu asks of the window, and the preview slot a single click opens into. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class WindowPanelActionsFxTest {
 
     @TempDir

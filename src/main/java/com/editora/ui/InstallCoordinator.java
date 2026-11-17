@@ -92,7 +92,9 @@ final class InstallCoordinator {
 
     /** Whether every tool that makes up {@code lang}'s support is already installed/detected. */
     boolean isSupportInstalled(Lang lang) {
-        return InstallCatalog.steps(lang).stream().allMatch(this::stepInstalled);
+        List<Step> steps = InstallCatalog.steps(lang);
+        StepDisk disk = stepLook(steps).read();
+        return steps.stream().allMatch(s -> stepInstalled(s, disk));
     }
 
     /**
@@ -210,12 +212,29 @@ final class InstallCoordinator {
         List<Step> all = InstallCatalog.steps(lang).stream()
                 .filter(s -> onlyStep == null || s.id().equals(onlyStep))
                 .toList();
-        List<Step> missing = all.stream()
-                .filter(s -> !stepInstalled(s) || s.id().equals(updateStep))
-                .toList();
-        if (missing.isEmpty()) {
-            host.setStatus(tr("status.install.already", langName(lang)));
-            onResult.accept(true);
+        // What is installed is read off the FX thread (receipts, launchers, TypeScript's version: PERF-01, Pauta
+        // 6.0.1); the language counts as installing meanwhile, so a second press says so and starts nothing.
+        installing.add(lang);
+        StepLook look = stepLook(all);
+        com.editora.perf.OffFx.then("install-look", look::read, read -> {
+            installing.remove(lang);
+            StepDisk disk = read.or(StepDisk.NONE);
+            List<Step> missing = all.stream()
+                    .filter(s -> !stepInstalled(s, disk) || s.id().equals(updateStep))
+                    .toList();
+            if (missing.isEmpty()) {
+                host.setStatus(tr("status.install.already", langName(lang)));
+                onResult.accept(true);
+                return;
+            }
+            installMissing(lang, missing, onResult);
+        });
+    }
+
+    private void installMissing(Lang lang, List<Step> missing, java.util.function.Consumer<Boolean> onResult) {
+        if (installing.contains(lang)) {
+            host.setStatus(tr("status.install.inProgress"));
+            onResult.accept(false);
             return;
         }
         service.detectPrereqs(present -> {
@@ -228,7 +247,7 @@ final class InstallCoordinator {
                 return;
             }
             installing.add(lang);
-            List<String> replaced = runningServersOf(plan.runnable());
+            List<String> replaced = runningServersOf(plan.runnable(), Set.of());
             stopWhileReplaced(replaced);
             host.setStatus(tr("status.install.installing", langName(lang)));
             service.install(
@@ -295,13 +314,54 @@ final class InstallCoordinator {
             onResult.accept(false);
             return;
         }
-        boolean outdated = PinnedVersions.forServer(serverId)
-                        .map(pin -> editoraCopyOutdated(pin.stepId()))
-                        .orElse(false)
-                // a global vscode-langservers-extracted has no TypeScript libraries for <script>: Install brings
-                // Editora's own copy, which the default command prefers (HTML review A2)
-                || com.editora.install.WebServerInstall.serves(serverId)
-                        && com.editora.install.WebServerInstall.ownLauncher(ops.configDir(), serverId) == null;
+        Path config = ops.configDir();
+        String xmlCommand = host.settings() == null ? "" : host.settings().getXmlLspCommand();
+        // Receipts, launchers and the XML server's bundle are looked at off the FX thread (PERF-01, Pauta 6.0.1);
+        // the server counts as installing meanwhile, so a second press says so.
+        installingServers.add(serverId);
+        com.editora.perf.OffFx.then(
+                "install-look", () -> ServerDisk.read(serverId, steps, config, xmlCommand), read -> {
+                    installingServers.remove(serverId);
+                    ServerDisk disk = read.or(new ServerDisk(false, Set.of()));
+                    installServerLooked(serverId, steps, update, disk, onResult);
+                });
+    }
+
+    /** What {@link #installServer} reads off the FX thread: whether the copy is outdated, what an install replaces. */
+    record ServerDisk(boolean outdated, Set<String> replaced) {
+        static ServerDisk read(String serverId, List<Step> steps, Path config, @Nullable String xmlCommand) {
+            boolean outdated = PinnedVersions.forServer(serverId)
+                            .map(pin -> copyOutdated(pin.stepId(), config))
+                            .orElse(false)
+                    // a global vscode-langservers-extracted has no TypeScript libraries for <script>: Install
+                    // brings Editora's own copy, which the default command prefers (HTML review A2)
+                    || com.editora.install.WebServerInstall.serves(serverId)
+                            && com.editora.install.WebServerInstall.ownLauncher(config, serverId) == null;
+            return new ServerDisk(outdated, replacedBy(steps, xmlCommand, config));
+        }
+    }
+
+    /** The servers {@code steps} replace, by {@link #serversReplacedBy}: file lookups, off the FX thread. */
+    static Set<String> replacedBy(List<Step> steps, @Nullable String xmlCommand, Path config) {
+        Set<String> servers = new java.util.LinkedHashSet<>();
+        for (Step s : steps) {
+            servers.addAll(serversReplacedBy(s.id(), xmlCommand, config));
+        }
+        return servers;
+    }
+
+    private void installServerLooked(
+            String serverId,
+            List<Step> steps,
+            boolean update,
+            ServerDisk disk,
+            java.util.function.Consumer<Boolean> onResult) {
+        if (installingServers.contains(serverId)) {
+            host.setStatus(tr("status.install.inProgress"));
+            onResult.accept(false);
+            return;
+        }
+        boolean outdated = disk.outdated();
         if (ops.lspAvailable(serverId) && !update && !outdated) {
             host.setStatus(tr("status.install.already", serverName(serverId)));
             onResult.accept(true);
@@ -331,7 +391,7 @@ final class InstallCoordinator {
                     .findFirst()
                     .orElse(null);
             if (node == null) {
-                runServerInstall(serverId, steps, onResult);
+                runServerInstall(serverId, steps, disk.replaced(), onResult);
                 return;
             }
             // npm only warns about a Node.js older than the package's engines, and the server then fails at start
@@ -344,7 +404,7 @@ final class InstallCoordinator {
                     onResult.accept(false);
                     return;
                 }
-                runServerInstall(serverId, steps, onResult);
+                runServerInstall(serverId, steps, disk.replaced(), onResult);
             });
         });
     }
@@ -373,9 +433,13 @@ final class InstallCoordinator {
     }
 
     /** The install {@link #installServer} starts once its prerequisites are there. */
-    private void runServerInstall(String serverId, List<Step> steps, java.util.function.Consumer<Boolean> onResult) {
+    private void runServerInstall(
+            String serverId,
+            List<Step> steps,
+            Set<String> replacedOnDisk,
+            java.util.function.Consumer<Boolean> onResult) {
         installingServers.add(serverId);
-        List<String> replaced = runningServersOf(steps);
+        List<String> replaced = runningServersOf(steps, replacedOnDisk);
         stopWhileReplaced(replaced);
         host.setStatus(tr("status.install.installing", serverName(serverId)));
         service.install(
@@ -392,10 +456,20 @@ final class InstallCoordinator {
                                 fellBack == null || fellBack.isBlank()
                                         ? tr("status.install.done", serverName(serverId))
                                         : tr("status.install.javaFallback", serverName(serverId), fellBack));
-                        List<String> tools = toolsAfterServer(serverId);
-                        if (!tools.isEmpty()) {
-                            // the server alone lints and formats nothing: ShellCheck and shfmt come with it (C8)
-                            installTools(tools, false, toolsOk -> onResult.accept(true));
+                        if ("bash".equals(serverId)) {
+                            // the server alone lints and formats nothing: ShellCheck and shfmt come with it (C8);
+                            // which of them are here is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+                            com.editora.config.Settings settings = host.settings();
+                            Path config = ops.configDir();
+                            com.editora.perf.OffFx.then(
+                                    "install-look", () -> LspCoordinator.userBashIde(settings, config), bash -> {
+                                        List<String> tools = toolsAfterServer(serverId, bash.value());
+                                        if (tools.isEmpty()) {
+                                            onResult.accept(true);
+                                        } else {
+                                            installTools(tools, false, toolsOk -> onResult.accept(true));
+                                        }
+                                    });
                             return;
                         }
                     } else {
@@ -415,10 +489,16 @@ final class InstallCoordinator {
      * blank is switched off and not wanted.
      */
     List<String> toolsAfterServer(String serverId) {
-        if (!"bash".equals(serverId)) {
+        return toolsAfterServer(
+                serverId,
+                "bash".equals(serverId) ? LspCoordinator.userBashIde(host.settings(), ops.configDir()) : null);
+    }
+
+    /** As above with the Bash server's configuration read already ({@code null} when it could not be). */
+    List<String> toolsAfterServer(String serverId, com.editora.lsp.@Nullable BashIdeConfig bash) {
+        if (!"bash".equals(serverId) || bash == null) {
             return List.of();
         }
-        com.editora.lsp.BashIdeConfig bash = LspCoordinator.userBashIde(host.settings(), ops.configDir());
         return InstallCatalog.PINNED_TOOL_IDS.stream()
                 .filter(id -> !("shfmt".equals(id) ? bash.effectiveShfmt() : bash.effectiveShellcheck()).isBlank())
                 .filter(id -> !ops.toolAvailable(id))
@@ -503,9 +583,38 @@ final class InstallCoordinator {
      */
     void installTools(List<String> toolIds, boolean update, java.util.function.Consumer<Boolean> onResult) {
         final String key = "tools:" + String.join(",", toolIds);
+        if (installingServers.contains(key)) {
+            host.setStatus(tr("status.install.inProgress"));
+            onResult.accept(false);
+            return;
+        }
+        // Each tool's receipt is read off the FX thread (PERF-01, Pauta 6.0.1); busy meanwhile.
+        installingServers.add(key);
+        Path config = ops.configDir();
+        com.editora.perf.OffFx.then(
+                "install-look",
+                () -> {
+                    Set<String> outdated = new java.util.HashSet<>();
+                    for (String id : toolIds) {
+                        if (copyOutdated(id, config)) {
+                            outdated.add(id);
+                        }
+                    }
+                    return outdated;
+                },
+                read -> {
+                    installingServers.remove(key);
+                    Set<String> outdated = read.or(Set.of());
+                    installToolsLooked(toolIds, update, outdated, onResult);
+                });
+    }
+
+    private void installToolsLooked(
+            List<String> toolIds, boolean update, Set<String> outdated, java.util.function.Consumer<Boolean> onResult) {
+        final String key = "tools:" + String.join(",", toolIds);
         List<String> missing = toolIds.stream()
                 .filter(id -> com.editora.install.InstallCatalog.pinnedTool(id).isPresent())
-                .filter(id -> update || !ops.toolAvailable(id) || editoraCopyOutdated(id))
+                .filter(id -> update || !ops.toolAvailable(id) || outdated.contains(id))
                 .toList();
         String names = String.join(
                 ", ", toolIds.stream().map(InstallCoordinator::toolName).toList());
@@ -600,42 +709,86 @@ final class InstallCoordinator {
         if (lang == Lang.JAVA) {
             Path bin = ops.configDir().resolve("plugins/lsp/java/bin");
             Path launcher = isWindows() ? bin.resolve("jdtls.bat") : bin.resolve("jdtls");
-            if (Files.exists(launcher)) {
-                host.settings().setJavaLspCommand(InstallCatalog.quoteCommandPath(launcher.toString()));
-            }
+            // looked at off the FX thread (PERF-01, Pauta 6.0.1)
+            com.editora.perf.OffFx.then("install-look", () -> Files.exists(launcher), there -> {
+                if (there.or(false)) {
+                    host.settings().setJavaLspCommand(InstallCatalog.quoteCommandPath(launcher.toString()));
+                }
+                ops.reapplyToolSupport();
+            });
+            return;
         }
         ops.reapplyToolSupport();
     }
 
+    /**
+     * What {@link #stepInstalled} reads from the disk, read off the FX thread (PERF-01, Pauta 6.0.1): which pinned
+     * copies are older than this Editora's, whether debugpy is where the installer puts it, whether Editora's own
+     * TypeScript server is there, and whether the TypeScript the configured server runs is suitable.
+     */
+    record StepDisk(Set<String> outdated, boolean debugpy, boolean ownTypeScript, boolean typeScriptSuitable) {
+        static final StepDisk NONE = new StepDisk(Set.of(), false, false, false);
+    }
+
+    /** The inputs of a {@link StepDisk} read, taken on the FX thread. */
+    record StepLook(List<Step> steps, Path config, String typeScriptCommand) {
+        StepDisk read() {
+            Set<String> outdated = new java.util.HashSet<>();
+            boolean debugpy = false;
+            boolean ownTs = false;
+            boolean suitable = false;
+            for (Step step : steps) {
+                switch (step.id()) {
+                    case "jdtls", "js-debug" -> {
+                        if (copyOutdated(step.id(), config)) {
+                            outdated.add(step.id());
+                        }
+                    }
+                    case "debugpy" ->
+                        debugpy = com.editora.dap.DebugAdapterLocator.locateDebugpy(
+                                        "", Path.of(System.getProperty("user.home", "")))
+                                .isPresent();
+                    case "typescript-language-server" -> {
+                        ownTs = com.editora.install.TypeScriptServerInstall.ownLauncher(config) != null;
+                        suitable = !ownTs && typeScriptSuitable(typeScriptCommand, config);
+                    }
+                    default -> {
+                        /* answered by the detectors */
+                    }
+                }
+            }
+            return new StepDisk(Set.copyOf(outdated), debugpy, ownTs, suitable);
+        }
+    }
+
+    private StepLook stepLook(List<Step> steps) {
+        String command = host.settings() == null ? "" : host.settings().getTypescriptLspCommand();
+        return new StepLook(steps, ops.configDir(), command == null ? "" : command);
+    }
+
     /** Maps a catalog step to its current detected-availability via the existing per-feature detectors. */
-    private boolean stepInstalled(Step step) {
+    private boolean stepInstalled(Step step, StepDisk disk) {
         return switch (step.id()) {
             // Editora's own jdtls older than the pinned one counts as missing, so Install replaces it (D8).
-            case "jdtls" -> ops.lspAvailable("java") && !editoraCopyOutdated(step.id());
+            case "jdtls" -> ops.lspAvailable("java") && !disk.outdated().contains(step.id());
             case "java-debug" -> ops.dapAvailable("java");
             case "pyright" -> ops.lspAvailable("python");
             // Found where the installer puts it, whether or not debugging is switched on (detection only runs
             // then, so an installed debugpy was downloaded again by every install while it was off).
-            case "debugpy" ->
-                ops.dapAvailable("python")
-                        || com.editora.dap.DebugAdapterLocator.locateDebugpy(
-                                        "", Path.of(System.getProperty("user.home", "")))
-                                .isPresent();
+            case "debugpy" -> ops.dapAvailable("python") || disk.debugpy();
             // Editora's own copy, or a server whose TypeScript is one it may stay on: a global server beside
             // TypeScript 6 or 7 still wants Editora's TypeScript 5.9 (JS review B101)
             case "typescript-language-server" ->
-                com.editora.install.TypeScriptServerInstall.ownLauncher(ops.configDir()) != null
-                        || ops.lspAvailable("typescript") && typeScriptSuitable();
-            case "js-debug" -> ops.dapAvailable("javascript") && !editoraCopyOutdated(step.id());
+                disk.ownTypeScript() || ops.lspAvailable("typescript") && disk.typeScriptSuitable();
+            case "js-debug" ->
+                ops.dapAvailable("javascript") && !disk.outdated().contains(step.id());
             case "mmdc" -> ops.mmdcAvailable();
             default -> false;
         };
     }
 
     /** Whether the TypeScript the configured server would run is suitable ({@link com.editora.lsp.TypeScriptServer.Sdk#suitable}). */
-    private boolean typeScriptSuitable() {
-        Path config = ops.configDir();
-        String command = host.settings() == null ? "" : host.settings().getTypescriptLspCommand();
+    static boolean typeScriptSuitable(String command, Path config) {
         List<String> argv = com.editora.lsp.LspServerRegistry.tokenize(
                 com.editora.install.TypeScriptServerInstall.effectiveCommand(command, config));
         if (argv.isEmpty()) {
@@ -666,13 +819,13 @@ final class InstallCoordinator {
      * they are stopped first, so none runs on files being swapped out; the support re-applied afterwards starts
      * them again.
      */
-    private List<String> runningServersOf(List<Step> steps) {
-        String xmlCommand = host.settings() == null ? "" : host.settings().getXmlLspCommand();
-        return steps.stream()
-                .flatMap(s -> serversReplacedBy(s.id(), xmlCommand, ops.configDir()).stream())
-                .filter(ops::lspAvailable)
-                .distinct()
-                .toList();
+    private List<String> runningServersOf(List<Step> steps, Set<String> replacedOnDisk) {
+        java.util.LinkedHashSet<String> servers = new java.util.LinkedHashSet<>(replacedOnDisk);
+        for (Step s : steps) {
+            // the servers a step installs need no file lookup; only XML's tie to the pom bundle does, read off FX
+            servers.addAll(InstallCatalog.serversOfStep(s.id()));
+        }
+        return servers.stream().filter(ops::lspAvailable).distinct().toList();
     }
 
     /**
@@ -696,10 +849,9 @@ final class InstallCoordinator {
      * says so, or its files do — so Install replaces it rather than saying it is already there (D8). Reads files
      * only. A copy whose version cannot be told is left alone here; Doctor offers Update for it.
      */
-    private boolean editoraCopyOutdated(String stepId) {
+    static boolean copyOutdated(String stepId, Path config) {
         return PinnedVersions.forStep(stepId)
-                .map(pin ->
-                        PinnedVersions.installedFreshness(pin, ops.configDir()) == PinnedVersions.Freshness.OUTDATED)
+                .map(pin -> PinnedVersions.installedFreshness(pin, config) == PinnedVersions.Freshness.OUTDATED)
                 .orElse(false);
     }
 

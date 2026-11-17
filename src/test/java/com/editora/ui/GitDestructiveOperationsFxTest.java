@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Integration coverage for destructive Git commands crossing the editor's live-buffer/save boundary. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class GitDestructiveOperationsFxTest {
 
     private enum SaveTiming {

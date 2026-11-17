@@ -1,7 +1,5 @@
 package com.editora.editor;
 
-import java.nio.file.Files;
-
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 
@@ -65,8 +63,14 @@ final class BufferBanners {
     }
 
     /**
+     * Whether a local file may be written, when the window has not said: the window injects an answer from memory, as
+     * the file was looked at off the FX thread when it was read (PERF-01, Pauta 6.0.1).
+     */
+    static volatile java.util.function.Predicate<java.nio.file.Path> writableCheck = java.nio.file.Files::isWritable;
+
+    /**
      * Whether the file's permissions allow writing it, from the layer that can tell: {@code Files.isWritable}
-     * answers yes for any existing SFTP file. {@code null} (the default) asks the file system directly.
+     * answers yes for any existing SFTP file. {@code null} (the default) asks {@link #writableCheck}.
      */
     void setWritableOnDisk(@Nullable Boolean writable) {
         writableOnDisk = writable;
@@ -86,7 +90,8 @@ final class BufferBanners {
             bar.setReason(viewModeReason);
             Button editButton = bar.enableEditing();
             Label note = bar.note();
-            boolean canEdit = b.path == null || (writableOnDisk != null ? writableOnDisk : Files.isWritable(b.path));
+            // answered from what was looked at off the FX thread as the file was read (PERF-01, Pauta 6.0.1)
+            boolean canEdit = b.path == null || (writableOnDisk != null ? writableOnDisk : writableCheck.test(b.path));
             // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
             // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save
             // through the elevated write.

@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * on disk and then replace the open buffer with it — so a pom with unsaved edits lost them all.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class MavenUpdateVersionsFxTest {
 
     private static final String POM = """

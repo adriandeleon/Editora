@@ -421,23 +421,12 @@ public final class RunConfigurationsWindow {
             if (com.editora.run.ScriptRunCommand.NPM.equals(type.getValue())) {
                 // An npm configuration names a script: offer the package.json's own, not a file picker.
                 java.nio.file.Path root = projectRoot == null ? null : projectRoot.get();
-                javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
-                for (String[] script : npmScripts(root, workingDir.getText())) {
-                    javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(
-                            com.editora.build.NpmActionsProvider.label(script[0], script[1]));
-                    item.setMnemonicParsing(false);
-                    item.setOnAction(ev -> {
-                        target.setText(script[0]);
-                        commit.run();
-                    });
-                    menu.getItems().add(item);
-                }
-                if (menu.getItems().isEmpty()) {
-                    javafx.scene.control.MenuItem none = com.editora.editor.RowReasons.placeholder(
-                            new javafx.scene.control.MenuItem(tr("settings.runConfig.npmNoScripts")));
-                    menu.getItems().add(none);
-                }
-                menu.show(browse, javafx.geometry.Side.BOTTOM, 0, 0);
+                String dir = workingDir.getText();
+                // the package.json is read and parsed off the FX thread (PERF-01, Pauta 6.0.1)
+                com.editora.perf.OffFx.then(
+                        "run-config-browse",
+                        () -> npmScripts(root, dir),
+                        scripts -> showNpmScripts(browse, scripts.or(List.of()), target, commit));
                 return;
             }
             javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
@@ -465,8 +454,12 @@ public final class RunConfigurationsWindow {
             }
             java.io.File chosen = chooser.showOpenDialog(stage);
             if (chosen != null) {
-                pickMainClass(chosen.toPath(), name, mainClass);
-                commit.run();
+                // the source is read off the FX thread (PERF-01, Pauta 6.0.1)
+                java.nio.file.Path file = chosen.toPath();
+                com.editora.perf.OffFx.then("run-config-browse", () -> readSource(file), source -> {
+                    pickMainClass(file, source.or(""), name, mainClass);
+                    commit.run();
+                });
             }
         });
 
@@ -646,6 +639,27 @@ public final class RunConfigurationsWindow {
         return field;
     }
 
+    /** The npm scripts menu under {@code browse}: picking one names it in {@code target}. */
+    private static void showNpmScripts(Button browse, List<String[]> scripts, TextField target, Runnable commit) {
+        javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+        for (String[] script : scripts) {
+            javafx.scene.control.MenuItem item =
+                    new javafx.scene.control.MenuItem(com.editora.build.NpmActionsProvider.label(script[0], script[1]));
+            item.setMnemonicParsing(false);
+            item.setOnAction(ev -> {
+                target.setText(script[0]);
+                commit.run();
+            });
+            menu.getItems().add(item);
+        }
+        if (menu.getItems().isEmpty()) {
+            javafx.scene.control.MenuItem none = com.editora.editor.RowReasons.placeholder(
+                    new javafx.scene.control.MenuItem(tr("settings.runConfig.npmNoScripts")));
+            menu.getItems().add(none);
+        }
+        menu.show(browse, javafx.geometry.Side.BOTTOM, 0, 0);
+    }
+
     /**
      * The scripts (name, command) of the {@code package.json} an npm configuration runs in: its working directory
      * (relative to the project root), else the project root. Empty for a remote folder or no readable file.
@@ -677,14 +691,21 @@ public final class RunConfigurationsWindow {
      * while it is still named after nothing in particular ("New Configuration", or the class it launched).
      */
     void pickMainClass(java.nio.file.Path file, TextField name, TextField mainClass) {
-        String source;
+        pickMainClass(file, readSource(file), name, mainClass);
+    }
+
+    /** {@code file}'s text for its package and class: off the FX thread. */
+    static String readSource(java.nio.file.Path file) {
         try {
-            source = java.nio.file.Files.readString(file);
+            return java.nio.file.Files.readString(file);
         } catch (java.nio.charset.CharacterCodingException e) {
-            source = readLatin1(file); // a Latin-1 source still declares an ASCII package
+            return readLatin1(file); // a Latin-1 source still declares an ASCII package
         } catch (java.io.IOException e) {
-            source = ""; // unreadable: the file name (in the default package) is all there is
+            return ""; // unreadable: the file name (in the default package) is all there is
         }
+    }
+
+    void pickMainClass(java.nio.file.Path file, String source, TextField name, TextField mainClass) {
         String fileName = file.getFileName() == null ? "" : file.getFileName().toString();
         String fqn = RunConfigDefaults.mainClassForSource(source, fileName);
         if (fqn == null) {
