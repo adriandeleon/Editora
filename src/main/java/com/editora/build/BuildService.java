@@ -29,6 +29,15 @@ public final class BuildService {
         /** One line of output ({@code stderr} true for the error stream). */
         void onOutput(String line, boolean stderr);
 
+        /**
+         * On the output's reader thread, before the line is queued for the FX thread: what to run there for it
+         * ({@link OutputPump.Sink#prepare}). A listener that parses its lines does it here (PERF-01, Pauta 6.0.1).
+         * Default: {@link #onOutput} on the FX thread.
+         */
+        default Runnable prepareOutput(String line, boolean stderr) {
+            return () -> onOutput(line, stderr);
+        }
+
         /** The process exited with {@code code} (or {@code -1} if killed). */
         void onExit(int code);
 
@@ -153,7 +162,17 @@ public final class BuildService {
         }
         String shown = String.join(" ", command);
         pump.postStart(gen, () -> listener.onStart(shown));
-        OutputPump.Sink sink = listener::onOutput;
+        OutputPump.Sink sink = new OutputPump.Sink() {
+            @Override
+            public void line(String text, boolean stderr) {
+                listener.onOutput(text, stderr);
+            }
+
+            @Override
+            public Runnable prepare(String text, boolean stderr) {
+                return listener.prepareOutput(text, stderr);
+            }
+        };
         OutputPump.Feed stdout = pump.start(process.getInputStream(), false, gen, sink);
         OutputPump.Feed stderr = pump.start(process.getErrorStream(), true, gen, sink);
         Thread waiter = new Thread(

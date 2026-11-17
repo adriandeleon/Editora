@@ -114,8 +114,7 @@ final class BufferContextMenu {
                 MenuItem runAll = MenuChords.tag(new MenuItem(tr("editmenu.runHttpFile")), "http.runFile");
                 runAll.setOnAction(ev -> b.httpGutter.hooks().runAll().run());
                 items.addAll(java.util.List.of(runRequest, runAll));
-                if (b.runGutter.httpDebugHandler != null
-                        && com.editora.http.HttpScriptLines.requestHasScripts(b.getContent(), at.line())) {
+                if (b.runGutter.httpDebugHandler != null && scriptsOrUnknown(b, at.line())) {
                     MenuItem debugRequest =
                             MenuChords.tag(new MenuItem(tr("editmenu.debugHttpRequest")), "http.debugRequest");
                     debugRequest.setGraphic(MenuIcons.debug());
@@ -524,5 +523,11 @@ final class BufferContextMenu {
     /** Whether to offer "Rename" in the right-click menu (the server's rename capability, #676). */
     void setLspRenameAvailable(boolean available) {
         this.lspRenameAvailable = available;
+    }
+
+    /** Whether the request at {@code line} has scripts, or that is not known yet (worked out off FX): offered then. */
+    private static boolean scriptsOrUnknown(EditorBuffer b, int line) {
+        com.editora.http.HttpScriptLines.Map map = b.httpScriptMap();
+        return map == null || map.requestHasScripts(line);
     }
 }

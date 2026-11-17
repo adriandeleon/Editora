@@ -372,6 +372,12 @@ class EditorSettingsPickersFxTest {
             // The status-bar indicator opens the file that decides it.
             editorSettings.openActiveEditorConfig();
         });
+        // Which file decides is looked up off the FX thread; the open starts when that answer lands.
+        Path decides = dir.resolve(".editorconfig");
+        SettingsListPagesFxTest.waitFor(
+                () -> FxTestSupport.<EditorArea>field(controller, "editorArea").tabs().stream()
+                        .anyMatch(t -> t.getUserData() instanceof EditorBuffer b && decides.equals(b.getPath())),
+                "the .editorconfig tab opens");
         EditorBuffer config = WindowMcpBridgeFxTest.awaitLoaded(async, controller, dir.resolve(".editorconfig"));
         assertEquals("root = true\n[*]\nend_of_line = lf\n", FxTestSupport.callOnFx(config::getContent));
     }

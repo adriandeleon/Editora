@@ -160,7 +160,11 @@ final class SettingsLspPage {
                         SettingsWindow.settingRow(tr(srv.enableLabelKey()), null, SettingsWindow.switchFor(enable)),
                         srv.keywords());
             }
-            ToolStatusRow status = new ToolStatusRow(lspToolName(srv.id(), lspArgv(srv.id())));
+            // The configured command names the row until the refresh has looked at Editora's own copies (off FX).
+            ToolStatusRow status = new ToolStatusRow(lspToolName(
+                    srv.id(),
+                    com.editora.lsp.LspServerRegistry.commandFor(
+                            srv.id(), LspServerCommands.commandsForAllServers(config.getSettings()))));
             String langKey = installLangForServer(srv.id());
             if (langKey != null) {
                 w.installButtons.put(
@@ -693,23 +697,35 @@ final class SettingsLspPage {
         if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }
-        TypeScriptSdkStatus.refresh(
-                typeScriptSdkStatus,
-                lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID),
-                config.getConfigDir(),
-                lspCheck.isSelected());
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
-        // shut its running server down every time Settings was merely opened.
-        java.util.Map<String, String> shown =
-                LspServerCommands.launchCommandsForAllServers(config.getSettings(), config.getConfigDir());
+        // shut its running server down every time Settings was merely opened. Which of them is Editora's own
+        // copy is looked at off the FX thread (PERF-01, Pauta 6.0.1); the rows say "checking" until it lands.
         long gen = ++lspStatusGen;
+        lspStatusLabels.values().forEach(ToolStatusRow::checking);
+        com.editora.perf.OffFx.then(
+                "lsp-own-copies",
+                () -> LspServerCommands.launchCommandsForAllServers(config.getSettings(), config.getConfigDir()),
+                looked -> {
+                    if (gen == lspStatusGen) {
+                        refreshLspStatus(looked.or(java.util.Map.of()), gen);
+                    }
+                });
+    }
+
+    /** {@link #refreshLspStatus()} once every server's launch command is known ({@code shown}). */
+    private void refreshLspStatus(java.util.Map<String, String> shown, long gen) {
+        TypeScriptSdkStatus.refresh(
+                typeScriptSdkStatus,
+                lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID, shown),
+                config.getConfigDir(),
+                lspCheck.isSelected());
         for (LspServerUi srv : lspServerUis()) {
             ToolStatusRow status = lspStatusLabels.get(srv.id());
             if (status == null) {
                 continue;
             }
-            List<String> argv = lspArgv(srv.id());
+            List<String> argv = lspArgv(srv.id(), shown);
             status.tool(lspToolName(srv.id(), argv));
             status.checking();
             lspManager.detectCommand(
@@ -827,9 +843,8 @@ final class SettingsLspPage {
     private static final String MAVEN_POM = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
 
     /** The argv the LSP page shows for {@code serverId}: its global command, blank ⇒ the default. */
-    private List<String> lspArgv(String serverId) {
-        return com.editora.lsp.LspServerRegistry.commandFor(
-                serverId, LspServerCommands.launchCommandsForAllServers(config.getSettings(), config.getConfigDir()));
+    private static List<String> lspArgv(String serverId, java.util.Map<String, String> shown) {
+        return com.editora.lsp.LspServerRegistry.commandFor(serverId, shown);
     }
 
     /** The program a server runs, as its pill names it: the display-name table first (the pom.xml server runs

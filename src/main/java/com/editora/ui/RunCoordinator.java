@@ -133,6 +133,12 @@ final class RunCoordinator {
         /** Looks, on this (a plan's) thread, at what {@link #buildExecutable} asks of the disk for {@code root}. */
         default void warmBuildExecutable(com.editora.build.BuildTool tool, Path root) {}
 
+        /**
+         * What {@link #buildExecutable} asks of the disk for {@code tool} at {@code root}, asked and nothing else:
+         * looked at off the FX thread, checked inside {@code Looked.allKnown} on it.
+         */
+        default void buildExecutableFacts(com.editora.build.BuildTool tool, Path root) {}
+
         /** Resolves the Maven module's launch classpath off-thread ({@code mvn compile
          *  dependency:build-classpath} + {@code target/classes}); delivers null/empty on failure. FX thread. */
         void resolveMavenClasspath(Path root, Consumer<List<String>> cb);
@@ -396,11 +402,28 @@ final class RunCoordinator {
             lastConfigRerun.run();
             return;
         }
-        if (!trusted(lastRunGate)) {
-            return; // trust was revoked since: the gate asks again, and "no" runs nothing
+        RunTrust.Gate gate = lastRunGate;
+        @Nullable String label = lastRunLabel;
+        Path dir = java.util.Objects.requireNonNull(lastRunDir); // checked above
+        List<String> command = java.util.Objects.requireNonNull(lastRunCommand);
+        java.util.Map<String, String> env = lastRunEnv;
+        @Nullable Path script = lastRunScript;
+        whenTrusted(
+                gate,
+                () -> { // trust revoked since: the gate asks again, and "no" runs nothing
+                    pendingTrustGate = gate;
+                    streamRun(label, dir, command, env, script);
+                });
+    }
+
+    /**
+     * Off the FX thread, in a launch's plan: looks at what {@link #trusted} then asks of {@code gate} (the build
+     * tool's wrapper and the trust question's summary), so the FX thread answers from memory (PERF-01, Pauta 6.0.1).
+     */
+    private void warmGate(RunTrust.@Nullable Gate gate) {
+        if (gate != null) {
+            ops.warmBuildExecutable(gate.tool(), gate.root());
         }
-        pendingTrustGate = lastRunGate;
-        streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv, lastRunScript);
     }
 
     /**
@@ -411,6 +434,57 @@ final class RunCoordinator {
      */
     private boolean trusted(RunTrust.@Nullable Gate gate) {
         return gate == null || ops.buildExecutable(gate.tool(), gate.root()) != null;
+    }
+
+    /**
+     * Whether everything {@code asks} asks of the disk is known now; if not, it is looked at off the FX thread
+     * (the Run busy meanwhile, so a second press starts nothing) and {@code again} runs on the FX thread when it
+     * lands. A command never guesses a build fact and never looks at one on the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    private boolean factsKnown(String name, Runnable asks, Runnable again) {
+        if (com.editora.perf.Looked.allKnown(asks)) {
+            return true;
+        }
+        offFx(
+                name,
+                () -> {
+                    asks.run();
+                    return Boolean.TRUE;
+                },
+                done -> again.run());
+        return false;
+    }
+
+    /** What {@link #trusted} asks of the disk for {@code gate}: its tool's wrapper, trust summary and executable. */
+    private Runnable gateFacts(RunTrust.@Nullable Gate gate) {
+        return () -> {
+            if (gate != null) {
+                ops.buildExecutableFacts(gate.tool(), gate.root());
+            }
+        };
+    }
+
+    /** What {@code ops.buildExecutable(tool, root)} asks of the disk. */
+    private Runnable executableFacts(com.editora.build.BuildTool tool, @Nullable Path root) {
+        return () -> {
+            if (root != null) {
+                ops.buildExecutableFacts(tool, root);
+            }
+        };
+    }
+
+    /** {@code then} with {@code ops.buildExecutable(tool, root)} once what it asks of the disk is known. */
+    private void withExecutable(com.editora.build.BuildTool tool, Path root, Consumer<@Nullable List<String>> then) {
+        if (factsKnown("run-executable-look", executableFacts(tool, root), () -> withExecutable(tool, root, then))) {
+            then.accept(ops.buildExecutable(tool, root));
+        }
+    }
+
+    /** {@code then} once {@code gate} is known and trusted ({@link #factsKnown}, then {@link #trusted}). */
+    private void whenTrusted(RunTrust.@Nullable Gate gate, Runnable then) {
+        if (factsKnown("run-trust-look", gateFacts(gate), () -> whenTrusted(gate, then)) && trusted(gate)) {
+            then.run();
+        }
     }
 
     /**
@@ -512,7 +586,13 @@ final class RunCoordinator {
         // script, the folder, an env @file, the shebang, the interpreter.
         offFx(
                 "run-config-plan",
-                () -> ScriptConfigPlan.of(cfg, root, projectRoot, cwd, remote, elsewhere),
+                () -> {
+                    ScriptConfigPlan planned = ScriptConfigPlan.of(cfg, root, projectRoot, cwd, remote, elsewhere);
+                    if (planned.npm() != null && cwd != null) {
+                        warmGate(RunTrust.npm(cwd)); // the npm gate's question, looked at here
+                    }
+                    return planned;
+                },
                 plan -> runScriptConfigPlanned(cfg, args, cwd, remote, elsewhere, plan));
     }
 
@@ -610,29 +690,28 @@ final class RunCoordinator {
                     detected.manager());
             // A package script runs its pre/post hooks under the project's own package manager: npm's trust gate.
             RunTrust.Gate gate = RunTrust.npm(cwd);
-            if (!trusted(gate)) {
-                return;
-            }
             // On the Node.js Run File would pick here, as the Package Scripts window runs it (review C101).
-            NpmRunSupport.prepare(
-                    cwd,
-                    ops.projectRoot(),
-                    host.settings().getNodePath(),
-                    ScriptRunCommand.npm(manager, cfg.target(), args),
-                    npm -> {
-                        java.util.Map<String, String> npmEnv = new java.util.LinkedHashMap<>(npm.env());
-                        if (env.containsKey("NO_COLOR")) {
-                            npmEnv.remove("FORCE_COLOR"); // the configuration asks for no colour
-                        }
-                        npmEnv.putAll(env);
-                        launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
-                        runtimeCommand = npm.probe();
-                        pendingRuntimeSource = NodeRunLauncher.source(npm.node());
-                        addConsoleNotice(NodeRunLauncher.pinNotice(npm.node()));
-                        pendingCommandLine = true; // which manager ran: pnpm, yarn, the npm beside the Node
-                        pendingTrustGate = gate;
-                        streamRun(cfg.name(), cwd, npm.argv(), npmEnv, script);
-                    });
+            whenTrusted(
+                    gate,
+                    () -> NpmRunSupport.prepare(
+                            cwd,
+                            ops.projectRoot(),
+                            host.settings().getNodePath(),
+                            ScriptRunCommand.npm(manager, cfg.target(), args),
+                            npm -> {
+                                java.util.Map<String, String> npmEnv = new java.util.LinkedHashMap<>(npm.env());
+                                if (env.containsKey("NO_COLOR")) {
+                                    npmEnv.remove("FORCE_COLOR"); // the configuration asks for no colour
+                                }
+                                npmEnv.putAll(env);
+                                launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
+                                runtimeCommand = npm.probe();
+                                pendingRuntimeSource = NodeRunLauncher.source(npm.node());
+                                addConsoleNotice(NodeRunLauncher.pinNotice(npm.node()));
+                                pendingCommandLine = true; // which manager ran: pnpm, yarn, the npm beside the Node
+                                pendingTrustGate = gate;
+                                streamRun(cfg.name(), cwd, npm.argv(), npmEnv, script);
+                            }));
             return;
         }
         if (!ScriptRunCommand.SHELL.equals(cfg.type())) {
@@ -764,6 +843,7 @@ final class RunCoordinator {
                     // first, before anything runs, so "no" runs nothing at all.
                     RunTrust.Gate gate = com.editora.run.JvmScriptRun.trustGate(
                             language, script, cfg.workingDir().isBlank() && script != null ? null : cwd);
+                    warmGate(gate);
                     String toolName = script == null
                             ? com.editora.run.JvmScriptRun.tool(language)
                             : com.editora.run.JvmScriptRun.tool(language, script);
@@ -794,10 +874,7 @@ final class RunCoordinator {
                                     elsewhere ? java.util.Map.of() : System.getenv());
                     return new JvmScriptPlan(gate, toolName, tool, kotlinProgram, how, launch);
                 },
-                plan -> {
-                    if (!trusted(plan.gate())) {
-                        return;
-                    }
+                plan -> whenTrusted(plan.gate(), () -> {
                     String tool = plan.tool();
                     if (tool == null) {
                         host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(plan.toolName())));
@@ -828,7 +905,7 @@ final class RunCoordinator {
                     Path dir = cfg.workingDir().isBlank() && how.directory() != null ? how.directory() : cwd;
                     pendingTrustGate = plan.gate();
                     streamRun(cfg.name(), dir, how.argv(), how.env(), script);
-                });
+                }));
     }
 
     /** What a JVM-script configuration's Run read off the FX thread: its trust gate, its tool and its launch. */
@@ -1147,7 +1224,7 @@ final class RunCoordinator {
                     }
                     Path module = com.editora.dap.GoLaunch.moduleRoot(source);
                     if (module != null) {
-                        ops.warmBuildExecutable(com.editora.build.BuildTool.GO, module);
+                        ops.buildExecutableFacts(com.editora.build.BuildTool.GO, module);
                     }
                     return new GoPlan(declared, module);
                 },
@@ -1166,6 +1243,13 @@ final class RunCoordinator {
             return;
         }
         Path module = planned.module();
+        if (module != null
+                && !factsKnown(
+                        "run-go-trust-look",
+                        executableFacts(com.editora.build.BuildTool.GO, module),
+                        () -> runGoPlanned(run, source, folder, planned))) {
+            return;
+        }
         List<String> go = module != null
                 ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
                 : com.editora.build.BuildExecutable.resolve(
@@ -1215,7 +1299,7 @@ final class RunCoordinator {
                     com.editora.perf.BlockingSites.enter("RustLaunch.packageRoot");
                     Path found = com.editora.dap.RustLaunch.packageRoot(source);
                     if (found != null) {
-                        ops.warmBuildExecutable(com.editora.build.BuildTool.CARGO, found);
+                        ops.buildExecutableFacts(com.editora.build.BuildTool.CARGO, found);
                     }
                     return java.util.Optional.ofNullable(found);
                 },
@@ -1225,32 +1309,38 @@ final class RunCoordinator {
                         host.setStatus(tr("status.run.rustNoPackage", source.getFileName()));
                         return;
                     }
-                    List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
-                    if (cargo == null) {
-                        return; // the package was not trusted: nothing is built
-                    }
-                    if (!saveBuffersUnder(root, List.of("rust"))) {
-                        return;
-                    }
-                    offFx(
-                            "run-rust-plan",
-                            () -> {
-                                com.editora.perf.BlockingSites.enter("RustLaunch.plan");
-                                String text;
-                                try {
-                                    text = java.nio.file.Files.readString(source);
-                                } catch (java.io.IOException e) {
-                                    text = ""; // unreadable: Cargo says so
-                                }
-                                boolean hasProgram = java.nio.file.Files.isRegularFile(
-                                                root.resolve("src").resolve("main.rs"))
-                                        || java.nio.file.Files.isDirectory(
-                                                root.resolve("src").resolve("bin"));
-                                // No caret picks a test: a test file runs all its tests.
-                                return com.editora.dap.RustLaunch.plan(root, source, text, -1, hasProgram);
-                            },
-                            plan -> runRustPlanned(run, source, root, cargo, plan));
+                    withExecutable(com.editora.build.BuildTool.CARGO, root, cargo -> {
+                        if (cargo != null) { // else the package was not trusted: nothing is built
+                            runRustTrusted(run, source, root, cargo);
+                        }
+                    });
                 });
+    }
+
+    private void runRustTrusted(CompiledRun run, Path source, Path root, List<String> cargo) {
+        {
+            if (!saveBuffersUnder(root, List.of("rust"))) {
+                return;
+            }
+            offFx(
+                    "run-rust-plan",
+                    () -> {
+                        com.editora.perf.BlockingSites.enter("RustLaunch.plan");
+                        String text;
+                        try {
+                            text = java.nio.file.Files.readString(source);
+                        } catch (java.io.IOException e) {
+                            text = ""; // unreadable: Cargo says so
+                        }
+                        boolean hasProgram = java.nio.file.Files.isRegularFile(
+                                        root.resolve("src").resolve("main.rs"))
+                                || java.nio.file.Files.isDirectory(
+                                        root.resolve("src").resolve("bin"));
+                        // No caret picks a test: a test file runs all its tests.
+                        return com.editora.dap.RustLaunch.plan(root, source, text, -1, hasProgram);
+                    },
+                    plan -> runRustPlanned(run, source, root, cargo, plan));
+        }
     }
 
     private void runRustPlanned(
@@ -1497,7 +1587,19 @@ final class RunCoordinator {
         // Save first, as Debug and the gutter marker do. The save used to sit inside the Java launch, after
         // the before-launch build — which therefore compiled the file as it was on disk, and the program ran
         // without the edit on screen; a script configuration never saved at all.
-        Path script = cfg.isJava() ? null : configScript(cfg);
+        if (cfg.isJava() || cfg.target().isBlank()) {
+            runConfigSaved(cfg, null); // no script file to look for: nothing read
+            return;
+        }
+        // The script's file is looked for off the FX thread (PERF-01, Pauta 6.0.1).
+        Path root = configRoot();
+        offFx(
+                "run-config-script",
+                () -> java.util.Optional.ofNullable(configScript(cfg, root)),
+                found -> runConfigSaved(cfg, found.orElse(null)));
+    }
+
+    private void runConfigSaved(RunConfiguration cfg, @Nullable Path script) {
         if (!saveScriptAndActive(script)) {
             return;
         }
@@ -1513,9 +1615,10 @@ final class RunCoordinator {
     }
 
     /** A script configuration's script file, resolved as its run will resolve it; null when it has none. */
-    private @Nullable Path configScript(RunConfiguration cfg) {
-        Path cwd = RunConfigWorkingDirectory.resolve(cfg, configRoot());
-        return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, configRoot(), cwd);
+    private static @Nullable Path configScript(RunConfiguration cfg, @Nullable Path root) {
+        com.editora.perf.BlockingSites.enter("RunCoordinator.configScript");
+        Path cwd = RunConfigWorkingDirectory.resolve(cfg, root);
+        return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, root, cwd);
     }
 
     /**
@@ -1656,19 +1759,58 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.configNeedsJavaFile")); // the debugger is attached through it
             return;
         }
-        Path localModule = routing == null ? null : ops.javaProjectRoot(routing);
-        if (localModule == null || com.editora.deploy.DeployPaths.relative(localRoot, localModule) == null) {
-            localModule = localRoot;
-        }
-        boolean maven = ops.mavenProjectAt(localModule);
-        boolean gradle = !maven && ops.gradleProjectAt(localModule);
+        // The module, its build files, the launch plan (an env file's read included) and the Gradle build root are
+        // looked for off the FX thread (PERF-01, Pauta 6.0.1).
+        offFx(
+                "deploy-java-plan",
+                () -> {
+                    Path module = routing == null ? null : ops.javaProjectRoot(routing);
+                    if (module == null || com.editora.deploy.DeployPaths.relative(localRoot, module) == null) {
+                        module = localRoot;
+                    }
+                    boolean isMaven = ops.mavenProjectAt(module);
+                    boolean isGradle = !isMaven && ops.gradleProjectAt(module);
+                    Path onHost = hostPath(d, module);
+                    var result = !isMaven && !isGradle
+                            ? null
+                            : com.editora.run.JavaLaunchPlan.forConfiguration(
+                                    cfg, com.editora.run.JavaLaunchPlan.Inputs.of(onHost, "", isMaven));
+                    Path gradleAt = isGradle ? hostPath(d, gradleBuildRoot(localRoot, module)) : null;
+                    return new DeployedPlan(module, isMaven, isGradle, onHost, result, gradleAt);
+                },
+                p -> runDeployedJava(cfg, debug, d, routing, p));
+    }
+
+    /** What {@link #runDeployedJava} read off the FX thread. */
+    private record DeployedPlan(
+            Path localModule,
+            boolean maven,
+            boolean gradle,
+            Path hostModule,
+            com.editora.run.JavaLaunchPlan.@Nullable Result planned,
+            @Nullable Path gradleRoot) {}
+
+    /** {@code local} where the deployment {@code d} put it on its host: {@link #onLaunchHost}, for another thread. */
+    private static Path hostPath(DeploymentCoordinator.Deployed d, Path local) {
+        Path copy = d.paths().toHost(local);
+        return copy != null ? copy : d.remoteRoot();
+    }
+
+    private void runDeployedJava(
+            RunConfiguration cfg,
+            boolean debug,
+            DeploymentCoordinator.Deployed d,
+            @Nullable Path routing,
+            DeployedPlan p) {
+        Path localModule = p.localModule();
+        boolean maven = p.maven();
+        boolean gradle = p.gradle();
         if (!maven && !gradle) {
             host.setStatus(tr("status.deploy.javaNeedsBuild", cfg.name()));
             return;
         }
-        Path hostModule = onLaunchHost(localModule);
-        com.editora.run.JavaLaunchPlan.Result planned = com.editora.run.JavaLaunchPlan.forConfiguration(
-                cfg, com.editora.run.JavaLaunchPlan.Inputs.of(hostModule, "", maven));
+        Path hostModule = p.hostModule();
+        com.editora.run.JavaLaunchPlan.Result planned = java.util.Objects.requireNonNull(p.planned());
         com.editora.run.JavaLaunchPlan plan = planned.plan();
         if (plan == null) {
             reportPlanProblem(cfg, planned.problem());
@@ -1705,7 +1847,10 @@ final class RunCoordinator {
                     launch);
             return;
         }
-        Path gradleRoot = onLaunchHost(gradleBuildRoot(localRoot, localModule));
+        Path gradleRoot = p.gradleRoot();
+        if (gradleRoot == null) {
+            return; // not reached: a Gradle module always has its build root looked for
+        }
         Thread.ofVirtual().name("deploy-gradle-cp").start(() -> {
             String[] error = new String[1];
             List<String> cp =
@@ -1856,8 +2001,14 @@ final class RunCoordinator {
      * exclude each other and {@link #stopRun} reaches whichever is alive.
      */
     private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
-        Path cwd = beforeLaunchDir(cfg);
         Path routing = routingFor(host, cfg);
+        if (!factsKnown(
+                "run-before-launch-look",
+                () -> beforeLaunchFacts(cfg, routing, beforeLaunchDir(cfg, routing)),
+                () -> withBeforeLaunch(cfg, then))) {
+            return;
+        }
+        Path cwd = beforeLaunchDir(cfg, routing);
         Path local = routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing);
         Path project = local == null ? null : onLaunchHost(local);
         String jdkHome = project == null ? effectiveMavenJdk(null, cfg) : jdkHomeFor(project, cfg);
@@ -1873,6 +2024,25 @@ final class RunCoordinator {
                 stepConsole(cwd),
                 then);
         ops.onRunStateChanged(); // the step is running now: the toolbar's Stop button applies to it
+    }
+
+    /**
+     * What {@link #withBeforeLaunch} asks of the disk once {@code routing} and {@code cwd} are known (worked out on
+     * the FX thread): the Java project, its build files and the symbolic step's build tool there. No other effect.
+     */
+    private void beforeLaunchFacts(RunConfiguration cfg, @Nullable Path routing, @Nullable Path cwd) {
+        Path local = routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing);
+        Path project = local == null ? null : onLaunchHost(local);
+        if (project == null) {
+            effectiveMavenJdk(null, cfg);
+        } else {
+            jdkHomeFor(project, cfg);
+        }
+        Path toolRoot = project != null ? project : cwd;
+        BuildBeforeLaunch.Symbolic symbolic = BuildBeforeLaunch.symbolic(cfg.beforeLaunch());
+        if (symbolic != null && toolRoot != null) {
+            ops.buildExecutableFacts(symbolic.tool(), toolRoot);
+        }
     }
 
     /** The Run console as a before-launch step shows itself in it: a build, or the Maven classpath resolution. */
@@ -1932,7 +2102,7 @@ final class RunCoordinator {
                     if (tool == null || !BuildBeforeLaunch.wanted(buildBeforeRun, configuredStep, tool)) {
                         return new BuildFirstPlan(null, null, false);
                     }
-                    ops.warmBuildExecutable(tool, root); // its wrapper and trust, for the FX thread next
+                    ops.buildExecutableFacts(tool, root); // its wrapper and trust, for the FX thread next
                     return new BuildFirstPlan(
                             tool,
                             tool == com.editora.build.BuildTool.MAVEN
@@ -1940,31 +2110,43 @@ final class RunCoordinator {
                                     : null,
                             BuildBeforeLaunch.isTestSource(source, root));
                 },
-                plan -> {
-                    com.editora.build.BuildTool tool = plan.tool();
-                    if (tool == null) {
-                        then.accept(false);
-                        return;
-                    }
-                    List<String> executable = ops.buildExecutable(tool, root);
-                    if (executable == null) {
-                        return; // the trust gate said why
-                    }
-                    // Maven: from the module's reactor when one lists it (its uninstalled siblings compile first),
-                    // with the tasks tree's profiles and flags (reviews D5, D13).
-                    List<String> extra = tool == com.editora.build.BuildTool.MAVEN
-                            ? BuildBeforeLaunch.mavenExtraArgs(plan.reactor(), null, ops.mavenToggleArgs())
-                            : List.of();
-                    List<String> argv = BuildBeforeLaunch.compileArgv(tool, executable, plan.test(), extra);
-                    beforeLaunch.run(
-                            host,
-                            new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
-                            root,
-                            javaEnvironment(root, jdkHome, null),
-                            stepConsole(root),
-                            () -> then.accept(true));
-                    ops.onRunStateChanged();
-                });
+                plan -> buildBeforeLaunchPlanned(root, label, jdkHome, then, plan));
+    }
+
+    /** {@link #buildBeforeLaunch} once its plan has been read off the FX thread. */
+    private void buildBeforeLaunchPlanned(
+            Path root, String label, String jdkHome, Consumer<Boolean> then, BuildFirstPlan plan) {
+        {
+            com.editora.build.BuildTool tool = plan.tool();
+            if (tool == null) {
+                then.accept(false);
+                return;
+            }
+            if (!factsKnown(
+                    "run-build-before-look",
+                    executableFacts(tool, root),
+                    () -> buildBeforeLaunchPlanned(root, label, jdkHome, then, plan))) {
+                return;
+            }
+            List<String> executable = ops.buildExecutable(tool, root);
+            if (executable == null) {
+                return; // the trust gate said why
+            }
+            // Maven: from the module's reactor when one lists it (its uninstalled siblings compile first),
+            // with the tasks tree's profiles and flags (reviews D5, D13).
+            List<String> extra = tool == com.editora.build.BuildTool.MAVEN
+                    ? BuildBeforeLaunch.mavenExtraArgs(plan.reactor(), null, ops.mavenToggleArgs())
+                    : List.of();
+            List<String> argv = BuildBeforeLaunch.compileArgv(tool, executable, plan.test(), extra);
+            beforeLaunch.run(
+                    host,
+                    new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
+                    root,
+                    javaEnvironment(root, jdkHome, null),
+                    stepConsole(root),
+                    () -> then.accept(true));
+            ops.onRunStateChanged();
+        }
     }
 
     /** What the build before a launch read off the FX thread: the tool (null: no build), the reactor, a test. */
@@ -2002,6 +2184,12 @@ final class RunCoordinator {
             String jdkHome,
             String label,
             Consumer<List<String>> then) {
+        if (!factsKnown(
+                "run-maven-classpath-look",
+                executableFacts(com.editora.build.BuildTool.MAVEN, root),
+                () -> resolveMavenClasspath(root, scope, jdkHome, label, then))) {
+            return;
+        }
         List<String> executable = ops.buildExecutable(com.editora.build.BuildTool.MAVEN, root);
         if (executable == null) {
             return; // the trust gate said why
@@ -2161,13 +2349,17 @@ final class RunCoordinator {
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
     @Nullable
     Path beforeLaunchDir(RunConfiguration cfg) {
+        return beforeLaunchDir(cfg, routingFor(host, cfg));
+    }
+
+    /** {@link #beforeLaunchDir(RunConfiguration)} with the configuration's routing file already worked out. */
+    private @Nullable Path beforeLaunchDir(RunConfiguration cfg, @Nullable Path routing) {
         if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type()) && configRoot() != null) {
             return configRoot(); // the script runs in its own folder; a build/setup step stays at the root
         }
         // A Java configuration's step is a build (mvn compile, gradle classes): it belongs in the project root
         // whatever folder the program runs in — in a working directory of "sub" Maven found no pom (review A12).
         if (cfg.isJava()) {
-            Path routing = routingFor(host, cfg);
             Path project = routing == null ? null : ops.javaProjectRoot(routing);
             if (project == null) {
                 project = ops.projectRoot();
@@ -2180,7 +2372,6 @@ final class RunCoordinator {
         if (configured != null) {
             return configured;
         }
-        Path routing = routingFor(host, cfg);
         Path root = routing == null ? null : ops.javaProjectRoot(routing);
         return root != null ? root : Path.of(System.getProperty("user.dir"));
     }
@@ -2401,6 +2592,15 @@ final class RunCoordinator {
             EditorBuffer b, Path routing, @Nullable Path root, @Nullable String targetFqn) {
         if (root == null) {
             host.setStatus(tr("status.run.noProject"));
+            return;
+        }
+        if (!factsKnown(
+                "run-main-class-look",
+                () -> {
+                    ops.mavenProjectAt(root);
+                    ops.gradleProjectAt(root);
+                },
+                () -> startMainClassRunPlanned(b, routing, root, targetFqn))) {
             return;
         }
         if (b.isDirty() && !ops.saveBuffer(b)) {
@@ -2810,7 +3010,9 @@ final class RunCoordinator {
             ShellCommand.@Nullable Launch shell,
             @Nullable Path shellDir,
             @Nullable Path missingShellDir,
-            @Nullable List<String> scalaInputs) {}
+            @Nullable List<String> scalaInputs,
+            @Nullable String jvmToolName,
+            com.editora.run.ClojureRun.@Nullable Plan clojure) {}
 
     private FilePlan planFile(
             String language,
@@ -2824,6 +3026,7 @@ final class RunCoordinator {
         RunTrust.Gate gate = "scala".equals(language) && !com.editora.process.ExecTargets.runsHere(path)
                 ? null // Scala CLI is given a remote file alone (scalaCliInputs)
                 : RunTrust.forFile(language, path, content, project, java.nio.file.Files::isRegularFile);
+        warmGate(gate); // the trust question's wrapper and summary, for the FX thread next
         String tool = jvmTool(language, path);
         ShellCommand.Launch shell = null;
         Path dir = path.getParent();
@@ -2850,7 +3053,18 @@ final class RunCoordinator {
                 ? scalaCliInputs(
                         path, com.editora.process.ExecTargets.forPath(path).toTargetPath(path), content, project)
                 : null;
-        return new FilePlan(gate, tool, shell, dir, missing, scala);
+        String toolName = com.editora.run.JvmScriptRun.supports(language)
+                ? com.editora.run.JvmScriptRun.tool(language, path) // a Clojure file's head: read here
+                : null;
+        return new FilePlan(
+                gate,
+                tool,
+                shell,
+                dir,
+                missing,
+                scala,
+                toolName,
+                com.editora.run.JvmScriptRun.clojurePlan(language, path));
     }
 
     private void startFileRunNow(EditorBuffer buffer, boolean promptArgs, boolean trace) {
@@ -2878,7 +3092,11 @@ final class RunCoordinator {
     private void startFileRunPlanned(EditorBuffer buffer, Path path, boolean promptArgs, boolean trace, FilePlan plan) {
         // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
         // the project, not just the file — the workspace-trust gate first, so "no" runs nothing.
-        if (!trusted(plan.gate())) {
+        if (!factsKnown(
+                        "run-file-trust-look",
+                        gateFacts(plan.gate()),
+                        () -> startFileRunPlanned(buffer, path, promptArgs, trace, plan))
+                || !trusted(plan.gate())) {
             return;
         }
         // A Groovy (and later Kotlin, Scala, Clojure) file runs through its own tool, on the same JDK as Java.
@@ -3022,7 +3240,7 @@ final class RunCoordinator {
         }
         if (com.editora.run.JvmScriptRun.supports(buffer.getLanguage())) {
             // The tool decides the folder too: a Clojure file runs in its project's, where deps.edn is read.
-            String toolName = com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
+            String toolName = plan.jvmToolName(); // read with the plan, off the FX thread (PERF-01)
             String tool = plan.jvmTool();
             String executable = tool == null ? toolName : tool;
             if (executable == null) {
@@ -3038,7 +3256,8 @@ final class RunCoordinator {
                     "",
                     false,
                     env,
-                    com.editora.process.ExecTargets.runsHere(path) ? System.getenv() : java.util.Map.of());
+                    com.editora.process.ExecTargets.runsHere(path) ? System.getenv() : java.util.Map.of(),
+                    plan.clojure());
             Path where = how.directory() != null ? how.directory() : path.getParent();
             pendingTrustGate = plan.gate();
             streamRun(path.getFileName().toString(), where, how.argv(), how.env(), path);
@@ -3091,16 +3310,35 @@ final class RunCoordinator {
             panel().failed(tr(plan.error()));
             return;
         }
-        Path dir = chdir(plan.chdir(), ready.dir(), com.editora.vfs.Vfs.isRemote(ready.dir()));
-        if (dir != null) {
-            addConsoleNotice(ready.notice()); // "Running the compiled dist/index.js (built from src/index.ts)"
-            pendingRuntimeSource = ready.source(); // the chip's tooltip says why this Node.js
-            if (ready.route() == com.editora.run.TsRunRoute.Kind.PLAIN
-                    && com.editora.run.NodeRunPlan.isTypeScript(ready.target())) {
-                pendingOutputWatcher = tsImportHint();
-            }
-            streamRun(label, dir, plan.argv(), plan.env(), script);
+        String chdir = plan.chdir();
+        Path cwd = ready.dir();
+        if (chdir != null && !chdir.isBlank() && cwd != null && !com.editora.vfs.Vfs.isRemote(cwd)) {
+            // The shebang's env -C folder is looked for off the FX thread (PERF-01, Pauta 6.0.1).
+            Path wanted = cwd.resolve(chdir).normalize();
+            com.editora.perf.OffFx.then("run-node-chdir", () -> java.nio.file.Files.isDirectory(wanted), a -> {
+                if (!Boolean.TRUE.equals(a.value())) {
+                    host.setStatus(tr("status.run.shebangDirMissing", wanted.toString()));
+                    return;
+                }
+                streamNodeIn(label, ready, script, wanted);
+            });
+            return;
         }
+        Path dir = chdir(chdir, cwd, cwd != null && com.editora.vfs.Vfs.isRemote(cwd));
+        if (dir != null) {
+            streamNodeIn(label, ready, script, dir);
+        }
+    }
+
+    private void streamNodeIn(String label, NodeRunLauncher.Ready ready, @Nullable Path script, Path dir) {
+        com.editora.run.NodeRunPlan plan = ready.plan();
+        addConsoleNotice(ready.notice()); // "Running the compiled dist/index.js (built from src/index.ts)"
+        pendingRuntimeSource = ready.source(); // the chip's tooltip says why this Node.js
+        if (ready.route() == com.editora.run.TsRunRoute.Kind.PLAIN
+                && com.editora.run.NodeRunPlan.isTypeScript(ready.target())) {
+            pendingOutputWatcher = tsImportHint();
+        }
+        streamRun(label, dir, plan.argv(), plan.env(), script);
     }
 
     /**

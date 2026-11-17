@@ -50,6 +50,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * cannot do it, answers nothing, or answers for a document that has since changed.
  */
 @Tag("fx")
+// The server root, the build-folder and pom looks run off the FX thread (PERF-01, Pauta 6.0.1); here in place, so
+// a sync or a publish has done its work when it returns, as the assertions read it.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspCoordinatorCommandsFxTest {
 
     private static final String SOURCE = "class A {\n    void go() {}\n}\n";
@@ -1372,7 +1375,7 @@ class LspCoordinatorCommandsFxTest {
         var x = problem(1, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "x cannot be resolved");
         var y = problem(2, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "y cannot be resolved");
         var unused = problem(3, 8, 9, com.editora.text.LspDiagnostic.Severity.WARNING, "c is never used");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(unused, y, x)));
+        publish(b.getPath(), List.of(unused, y, x));
         fx.caret(b, 0, 0);
 
         fx.run(() -> fx.coordinator.gotoProblem(true));
@@ -1386,12 +1389,12 @@ class LspCoordinatorCommandsFxTest {
         fx.run(() -> fx.coordinator.gotoProblem(false));
         assertEquals(2, caretOf(b)[0], "backwards wraps to the last");
 
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(unused)));
+        publish(b.getPath(), List.of(unused));
         fx.run(() -> fx.coordinator.gotoProblem(false));
         assertEquals(3, caretOf(b)[0], "with no errors the warnings are walked");
         assertEquals(tr("status.lsp.problem", 4, "c is never used"), fx.host.lastStatus());
 
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of()));
+        publish(b.getPath(), List.of());
         fx.run(() -> fx.coordinator.gotoProblem(true));
         assertEquals(tr("status.lsp.noProblems"), fx.host.lastStatus());
     }
@@ -1405,7 +1408,7 @@ class LspCoordinatorCommandsFxTest {
         EditorBuffer b = fx.open("A.java", PROBLEMS);
         var x = problem(1, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "x cannot be resolved");
         var y = problem(2, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "y cannot be resolved");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(y, x)));
+        publish(b.getPath(), List.of(y, x));
         ProblemsPanel panel = FxTestSupport.callOnFx(() -> fx.coordinator.problemsPanel());
         javafx.scene.Scene window = FxTestSupport.callOnFx(
                 () -> new javafx.scene.Scene(new javafx.scene.layout.StackPane(panel), 300, 400)); // open
@@ -1435,7 +1438,7 @@ class LspCoordinatorCommandsFxTest {
         EditorBuffer b = fx.open("A.java", PROBLEMS);
         var hint = problem(1, 4, 7, com.editora.text.LspDiagnostic.Severity.HINT, "could be final");
         var x = problem(1, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "x cannot be resolved");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(hint, x)));
+        publish(b.getPath(), List.of(hint, x));
 
         fx.caret(b, 1, 12);
         fx.run(() -> fx.coordinator.problemAtCaret());
@@ -1482,7 +1485,7 @@ class LspCoordinatorCommandsFxTest {
         String message = "Invalid element name:\n - from\n\nOne of the following is expected:\n - to";
         var x = new com.editora.text.LspDiagnostic(
                 1, 12, 1, 13, com.editora.text.LspDiagnostic.Severity.ERROR, message, "cvc-complex-type.2.4.a", "xml");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(x)));
+        publish(b.getPath(), List.of(x));
 
         fx.caret(b, 1, 12);
         fx.run(() -> fx.coordinator.problemAtCaret());
@@ -1700,7 +1703,7 @@ class LspCoordinatorCommandsFxTest {
                 "Build path specifies execution environment JavaSE-1.8.",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(jdk)));
+        publish(root, List.of(jdk));
         assertEquals(
                 tr("status.lsp.projectProblem", root.getFileName().toString(), jdk.message()),
                 fx.host.lastStatus(),
@@ -1709,7 +1712,7 @@ class LspCoordinatorCommandsFxTest {
                 FxTestSupport.callOnFx(() -> fx.coordinator.problems()).containsKey(fx.ops.canonicalize(root)),
                 "and listed although no tab shows the folder");
         fx.host.errors.clear();
-        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(jdk)));
+        publish(root, List.of(jdk));
         assertTrue(fx.host.errors.isEmpty(), "once");
     }
 
@@ -2053,7 +2056,7 @@ class LspCoordinatorCommandsFxTest {
         String why = "A.java is a non-project file, only syntax errors are reported";
         var warning = new com.editora.text.LspDiagnostic(
                 0, 0, 0, 1, com.editora.text.LspDiagnostic.Severity.WARNING, why, null, "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        publish(b.getPath(), List.of(warning));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
         // the build file and its parse error, not the Java file jdtls names (eleventh review CM4)
@@ -2086,7 +2089,7 @@ class LspCoordinatorCommandsFxTest {
                         + "Could not find method thisIsNotAConfiguration() for arguments [x]",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause))); // replayed first
+        publish(root, List.of(cause)); // replayed first
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
         awaitError(tr(
                 "status.lsp.importProblemWhy",
@@ -2135,7 +2138,7 @@ class LspCoordinatorCommandsFxTest {
         String why = "A.java is not on the classpath of project project_d15135a6, only syntax errors are reported";
         var warning = new com.editora.text.LspDiagnostic(
                 0, 0, 0, 1, com.editora.text.LspDiagnostic.Severity.WARNING, why, null, "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        publish(b.getPath(), List.of(warning));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitError(tr("status.lsp.importProblemWhy", "jdtls", why.replaceFirst("[.\\s]+$", "")));
         awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
@@ -2177,7 +2180,7 @@ class LspCoordinatorCommandsFxTest {
                 "The supplied phased action failed.\nCould not find method thisIsNotAConfiguration()",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("gb"), List.of(cause)));
+        publish(root.resolve("gb"), List.of(cause));
         awaitError(tr(
                 "status.lsp.importProblemWhy",
                 tr("status.lsp.serverInFolder", "jdtls", "gb"),
@@ -2210,7 +2213,7 @@ class LspCoordinatorCommandsFxTest {
                 "The supplied phased action failed.\nCould not find method nope()",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("tools"), List.of(cause)));
+        publish(root.resolve("tools"), List.of(cause));
         awaitError(tr(
                 "status.lsp.importProblemWhy",
                 tr("status.lsp.serverInFolder", "jdtls", "tools"),
@@ -2266,8 +2269,8 @@ class LspCoordinatorCommandsFxTest {
                 "Main.java is not on the classpath of project shelf-debug-demo, only syntax errors are reported",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("pom.xml"), List.of(pom)));
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        publish(root.resolve("pom.xml"), List.of(pom));
+        publish(b.getPath(), List.of(warning));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitError(tr(
                 "status.lsp.importProblemWhy",
@@ -2294,7 +2297,7 @@ class LspCoordinatorCommandsFxTest {
                 "Sample.java is not on the classpath of project root, only syntax errors are reported",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        publish(b.getPath(), List.of(warning));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitStatus(tr("status.lsp.ready", "jdtls"));
         assertEquals(null, fx.host.lastError());
@@ -2321,7 +2324,7 @@ class LspCoordinatorCommandsFxTest {
                 null,
                 "jdtls");
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
-        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("app/pom.xml"), List.of(parent))); // after ready
+        publish(root.resolve("app/pom.xml"), List.of(parent)); // after ready
         awaitError(tr(
                 "status.lsp.importProblemWhy",
                 tr("status.lsp.serverInFolder", "jdtls", "app"),
@@ -2349,7 +2352,7 @@ class LspCoordinatorCommandsFxTest {
                 "Project build error: 'dependencies.dependency.version' for g:a:jar is missing.",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("pom.xml"), List.of(model)));
+        publish(root.resolve("pom.xml"), List.of(model));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
         EditorBuffer pom = FxTestSupport.callOnFx(() -> {
@@ -2382,7 +2385,7 @@ class LspCoordinatorCommandsFxTest {
                 "Project build error: 'dependencies.dependency.version' for g:a:jar is missing.",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("pom.xml"), List.of(model)));
+        publish(root.resolve("pom.xml"), List.of(model));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
         FxTestSupport.runOnFx(() -> fx.host.active = b);
@@ -2445,7 +2448,7 @@ class LspCoordinatorCommandsFxTest {
                 "Main.java is a non-project file, only syntax errors are reported",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        publish(b.getPath(), List.of(warning));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         for (int i = 0; i < 200 && fx.host.lastError() == null; i++) {
             Thread.sleep(10);
@@ -2537,7 +2540,7 @@ class LspCoordinatorCommandsFxTest {
                 "Scratch.java is a non-project file, only syntax errors are reported",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        publish(b.getPath(), List.of(warning));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitStatus(tr("status.lsp.ready", "jdtls"));
         assertEquals(null, fx.host.lastError());
@@ -2562,7 +2565,7 @@ class LspCoordinatorCommandsFxTest {
                         + "Could not find method thisIsNotAConfiguration() for arguments [x]",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause)));
+        publish(root, List.of(cause));
         Path other = java.nio.file.Files.createDirectories(root.resolve("other-project"));
         Path otherFile = java.nio.file.Files.writeString(other.resolve("B.java"), "class B {}");
         fx.run(() -> fx.manager.openDocument(otherFile, other, "java", "class B {}")); // a live server there
@@ -2609,7 +2612,7 @@ class LspCoordinatorCommandsFxTest {
                         + "Could not find method thisIsNotAConfiguration() for arguments [x]",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause)));
+        publish(root, List.of(cause));
         awaitError(tr(
                 "status.lsp.importProblemWhy",
                 "jdtls",
@@ -2635,10 +2638,10 @@ class LspCoordinatorCommandsFxTest {
                 "The supplied phased action failed.\nCould not find method nope()",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause)));
+        publish(root, List.of(cause));
         awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not find method nope()"));
         int said = fx.host.errors.size();
-        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause))); // published again
+        publish(root, List.of(cause)); // published again
         assertEquals(said, fx.host.errors.size(), "said once");
     }
 
@@ -2824,7 +2827,7 @@ class LspCoordinatorCommandsFxTest {
                 "The supplied phased action failed",
                 null,
                 "jdtls");
-        fx.run(() -> fx.coordinator.onDiagnostics(other, List.of(broken)));
+        publish(other, List.of(broken));
         assertTrue(FxTestSupport.callOnFx(
                 () -> fx.coordinator.problems().keySet().stream().anyMatch(p -> p.endsWith("other-project"))));
 
@@ -2833,5 +2836,14 @@ class LspCoordinatorCommandsFxTest {
                 FxTestSupport.callOnFx(
                         () -> fx.coordinator.problems().keySet().stream().anyMatch(p -> p.endsWith("other-project"))),
                 "the other project's build error stands");
+    }
+
+    /**
+     * Publishes {@code diagnostics} for {@code file} as a server's reader thread hands them on: whether the path is a
+     * folder is looked at there, off the FX thread (PERF-01, Pauta 6.0.1), then the FX thread takes them.
+     */
+    private void publish(java.nio.file.Path file, List<com.editora.text.LspDiagnostic> diagnostics) throws Exception {
+        com.editora.lsp.LspManager.isFolder(file);
+        fx.run(() -> fx.coordinator.onDiagnostics(file, diagnostics));
     }
 }

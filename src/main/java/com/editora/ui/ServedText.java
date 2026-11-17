@@ -1,9 +1,5 @@
 package com.editora.ui;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -15,10 +11,11 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Neither ACP's {@code fs/write_text_file} nor MCP's whole-buffer replacement carries a document version:
  * the agent sends "the file is now this", computed from whatever it read earlier. Everything typed between
- * that read and the write was replaced without notice. The editor therefore remembers a digest of the text it
+ * that read and the write was replaced without notice. The editor therefore remembers the text it
  * served per document and, at the write, compares it with the text that is there now.
  *
- * <p>Thread-safe; holds digests, not text. Keys are compared with {@code equals} (a path key, or the buffer
+ * <p>Thread-safe; holds the text served (at most {@value #MAX_CHARS} characters in all), never hashed. Keys
+ * are compared with {@code equals} (a path key, or the buffer
  * itself for an untitled one).
  */
 final class ServedText {
@@ -56,7 +53,12 @@ final class ServedText {
 
     private static final int MAX_ENTRIES = 2048;
 
-    private final Map<Object, byte[]> digests;
+    /** At most this many characters are kept in all; the oldest documents are forgotten first. */
+    private static final long MAX_CHARS = 32L * 1024 * 1024;
+
+    private final Map<Object, String> texts;
+
+    private long chars;
 
     /** Keyed by values that stay meaningful on their own (path keys): the most recent {@value #MAX_ENTRIES}. */
     ServedText() {
@@ -64,20 +66,39 @@ final class ServedText {
             private static final long serialVersionUID = 1L;
 
             @Override
-            protected boolean removeEldestEntry(Map.Entry<Object, byte[]> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<Object, String> eldest) {
                 return size() > MAX_ENTRIES;
             }
         });
     }
 
     /** Over a caller-chosen map — a {@link java.util.WeakHashMap} when the keys are the documents themselves. */
-    ServedText(Map<Object, byte[]> store) {
-        this.digests = store;
+    ServedText(Map<Object, String> store) {
+        this.texts = store;
     }
 
-    /** Records that the agent now knows {@code text} as the content of {@code key} (it read it, or wrote it). */
+    /**
+     * Records that the agent now knows {@code text} as the content of {@code key} (it read it, or wrote it). The
+     * text itself is kept, not a digest: this runs on the FX thread, where no document is hashed (PERF-01, Pauta
+     * 6.0.1); comparing it later is a walk over the two texts.
+     */
     synchronized void served(Object key, String text) {
-        digests.put(key, digest(text));
+        String before = texts.put(key, text == null ? "" : text);
+        chars += (text == null ? 0 : text.length()) - (before == null ? 0 : before.length());
+        if (chars > MAX_CHARS) {
+            chars = 0;
+            var it = texts.entrySet().iterator();
+            long total = texts.values().stream().mapToLong(String::length).sum();
+            while (total > MAX_CHARS && it.hasNext()) {
+                var e = it.next();
+                if (e.getKey().equals(key)) {
+                    continue; // the document just served stays
+                }
+                total -= e.getValue().length();
+                it.remove();
+            }
+            chars = total;
+        }
     }
 
     /**
@@ -87,42 +108,67 @@ final class ServedText {
      *     difference is then in the editor, where an agent that read the file by its own means never saw it
      */
     synchronized Verdict check(Object key, @Nullable String current, boolean unsavedChanges) {
-        byte[] seen = digests.get(key);
+        String seen = texts.get(key);
         if (seen == null) {
             return unsavedChanges ? Verdict.UNREAD_UNSAVED : Verdict.CURRENT;
         }
-        return Arrays.equals(seen, digest(current)) ? Verdict.CURRENT : Verdict.CHANGED_SINCE_READ;
+        return sameText(seen, current == null ? "" : current) ? Verdict.CURRENT : Verdict.CHANGED_SINCE_READ;
     }
 
     /** Whether {@code text} is exactly what the agent was last shown of {@code key} (false when never shown). */
     synchronized boolean knows(Object key, String text) {
-        byte[] seen = digests.get(key);
-        return seen != null && Arrays.equals(seen, digest(text));
+        String seen = texts.get(key);
+        return seen != null && sameText(seen, text == null ? "" : text);
     }
 
     /** Forgets {@code key} (its document is gone). */
     synchronized void forget(Object key) {
-        digests.remove(key);
+        String gone = texts.remove(key);
+        chars -= gone == null ? 0 : gone.length();
     }
 
     /** Forgets everything: a new agent session knows nothing of what the previous one read. */
     synchronized void clear() {
-        digests.clear();
+        texts.clear();
+        chars = 0;
     }
 
     /**
-     * Line terminators do not count: the same file is served with its own terminators while it has no buffer
-     * and with {@code \n} once it is open, and that is not a change anyone typed.
+     * Whether {@code a} and {@code b} are the same text. Line terminators do not count: the same file is served
+     * with its own terminators while it has no buffer and with {@code \n} once it is open, and that is not a
+     * change anyone typed. A walk over both, no copy.
      */
-    private static byte[] digest(@Nullable String text) {
-        String body = text == null ? "" : text;
-        if (body.indexOf('\r') >= 0) {
-            body = body.replace("\r\n", "\n").replace('\r', '\n');
+    static boolean sameText(String a, String b) {
+        int i = 0;
+        int j = 0;
+        while (i < a.length() && j < b.length()) {
+            char x = a.charAt(i);
+            char y = b.charAt(j);
+            if (x == '\r' || y == '\r') {
+                // \r\n and a lone \r both stand for \n
+                if (x == '\r') {
+                    i += i + 1 < a.length() && a.charAt(i + 1) == '\n' ? 2 : 1;
+                    x = '\n';
+                } else {
+                    i++;
+                }
+                if (y == '\r') {
+                    j += j + 1 < b.length() && b.charAt(j + 1) == '\n' ? 2 : 1;
+                    y = '\n';
+                } else {
+                    j++;
+                }
+                if (x != y) {
+                    return false;
+                }
+                continue;
+            }
+            if (x != y) {
+                return false;
+            }
+            i++;
+            j++;
         }
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(body.getBytes(StandardCharsets.UTF_8));
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 is unavailable", impossible);
-        }
+        return i == a.length() && j == b.length();
     }
 }

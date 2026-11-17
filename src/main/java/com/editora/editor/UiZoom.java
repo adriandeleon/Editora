@@ -153,6 +153,7 @@ public final class UiZoom {
             repoint(window);
         }
         refollow();
+        warmNeighbours();
         return true;
     }
 
@@ -242,12 +243,30 @@ public final class UiZoom {
         return sheet(url, percent);
     }
 
-    /** {@link #sheet(String)} at {@code atPercent}. */
+    /**
+     * {@link #sheet(String)} at {@code atPercent}. Off the FX thread a copy not made yet is made in place. On the
+     * FX thread it is never read or scaled there (PERF-01, Pauta 6.0.1): a copy not made yet answers the 100% sheet
+     * for now, is made on {@code ui-zoom-sheets}, and every open window is re-pointed to it when it lands, so a
+     * popup first opened while zoomed shows at 100% for a moment rather than not at all.
+     */
     static String sheet(String url, int atPercent) {
         String base = base(url);
         if (atPercent == Settings.DEFAULT_UI_ZOOM || !isScalable(base)) {
             return base;
         }
+        String key = base + "|" + atPercent;
+        String made = ZOOMED.get(key);
+        if (made != null) {
+            return made;
+        }
+        if (onFx()) {
+            makeLater(base, atPercent);
+            return base;
+        }
+        return make(base, atPercent);
+    }
+
+    private static String make(String base, int atPercent) {
         return ZOOMED.computeIfAbsent(base + "|" + atPercent, key -> {
             String zoomed = build(base, atPercent);
             if (zoomed == null) {
@@ -256,6 +275,81 @@ public final class UiZoom {
             BASES.put(zoomed, base);
             return zoomed;
         });
+    }
+
+    /** Sheet keys being made on {@code ui-zoom-sheets} for the FX thread. */
+    private static final Set<String> MAKING = ConcurrentHashMap.newKeySet();
+
+    private static final java.util.concurrent.ExecutorService SHEETS =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    Thread.ofPlatform().daemon().name("ui-zoom-sheets").factory());
+
+    private static void makeLater(String base, int atPercent) {
+        if (!MAKING.add(base + "|" + atPercent)) {
+            return;
+        }
+        SHEETS.execute(() -> {
+            try {
+                make(base, atPercent);
+            } finally {
+                MAKING.remove(base + "|" + atPercent);
+            }
+            javafx.application.Platform.runLater(UiZoom::landed);
+        });
+    }
+
+    /** A copy the FX thread asked for is made: re-point every window, and the theme when it is the one made. */
+    private static void landed() {
+        if (!MAKING.isEmpty()) {
+            return; // the last one to land re-points once for all
+        }
+        String theme = javafx.application.Application.getUserAgentStylesheet();
+        if (theme != null) {
+            String wanted = sheet(base(theme), percent);
+            if (!wanted.equals(theme)) {
+                javafx.application.Application.setUserAgentStylesheet(wanted);
+                themeChanged();
+            }
+        }
+        for (Window window : List.copyOf(Window.getWindows())) {
+            repoint(window);
+        }
+        warmNeighbours();
+    }
+
+    /**
+     * Makes the copies one zoom step either side of the current zoom for every sheet seen, on
+     * {@code ui-zoom-sheets}, so the next Zoom In or Zoom Out finds them made.
+     */
+    private static void warmNeighbours() {
+        int now = percent;
+        List<String> bases = new ArrayList<>(new java.util.LinkedHashSet<>(BASES.values()));
+        SHEETS.execute(() -> {
+            for (int p : new int[] {now - STEP, now + STEP}) {
+                int clamped = Settings.clampUiZoom(p);
+                for (String base : bases) {
+                    if (clamped != Settings.DEFAULT_UI_ZOOM) {
+                        make(base, clamped);
+                    }
+                }
+            }
+        });
+    }
+
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
+    /** TEST SEAM — waits (off the FX thread) until every copy asked for is made and has landed. */
+    public static void awaitSheetsForTest() throws Exception {
+        SHEETS.submit(() -> {}).get(10, java.util.concurrent.TimeUnit.SECONDS);
+        java.util.concurrent.CountDownLatch fx = new java.util.concurrent.CountDownLatch(1);
+        javafx.application.Platform.runLater(fx::countDown);
+        fx.await(10, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     /**
@@ -282,6 +376,9 @@ public final class UiZoom {
         return !url.startsWith("data:") && url.endsWith(".css");
     }
 
+    /** A sheet's 100% text, read once: a later zoom scales the kept text instead of reading the sheet again. */
+    private static final Map<String, String> TEXTS = new ConcurrentHashMap<>();
+
     private static @Nullable String build(String base, int atPercent) {
         com.editora.perf.BlockingSites.enter("UiZoom.build");
         try {
@@ -289,9 +386,12 @@ public final class UiZoom {
             if (url == null) {
                 return null;
             }
-            String css;
-            try (InputStream in = url.openStream()) {
-                css = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            String css = TEXTS.get(base);
+            if (css == null) {
+                try (InputStream in = url.openStream()) {
+                    css = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                }
+                TEXTS.put(base, css);
             }
             String scaled = UiZoomCss.scaleSheet(css, atPercent / 100.0);
             if (scaled.equals(css)) {

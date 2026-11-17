@@ -78,6 +78,9 @@ final class DebugCoordinator {
         /** Opens the Run Configurations page on {@code name} — see {@code RunCoordinator.Ops}. */
         void editConfiguration(String name);
 
+        /** What {@link #buildExecutable} asks of the disk, asked and nothing else (see {@code Looked.allKnown}). */
+        default void buildExecutableFacts(com.editora.build.BuildTool tool, Path root) {}
+
         /**
          * The argv prefix a launch may start {@code tool} with from {@code root} (the tasks tree's choice after
          * its trust gate), or null when the user declined to trust the project's wrapper — see
@@ -420,6 +423,22 @@ final class DebugCoordinator {
     private void startOffFx(String name, Function<DebugSession, Runnable> work) {
         Runnable job = work.apply(s());
         Thread.ofVirtual().name(name).start(job);
+    }
+
+    /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
+    private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy);
+
+    private void executableFacts(com.editora.build.BuildTool tool, Path root) {
+        ops.buildExecutableFacts(tool, root);
+    }
+
+    private void sayBusy() {
+        host.setStatus(tr("status.run.busy"));
+    }
+
+    private boolean factsKnown(String name, Runnable asks, Runnable again) {
+        DebugSession session = s();
+        return facts.known(name, asks, () -> inSession(session, again));
     }
 
     /** Runs {@code r} later on the FX thread as {@code session}'s; callable from any thread. */
@@ -1236,6 +1255,7 @@ final class DebugCoordinator {
         var s = host.settings();
         boolean on = debugSupportEnabled(); // effective: off in Simple UI mode
         ProjectScope scope = host.projectScope(); // a trusted project's debugger paths, else the user's
+        dap().setOnJavaDebugLocated(this::applySupport); // a new java-debug path, located off FX, applies again
         dap().configure(
                         on,
                         scope.debugTool("java", s.getJavaDebugPluginPath()),
@@ -1279,6 +1299,12 @@ final class DebugCoordinator {
                         com.editora.dap.DebugLanguages.PHP,
                         on && s.isPhpDebugEnabled(),
                         scope.debugTool("php", s.getPhpDebugPath()),
+                        found -> applyGating());
+        // vscode-bash-debug: as configured, else Editora's install or VS Code's extension.
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.BASH,
+                        on && s.isBashDebugEnabled(),
+                        scope.debugTool("bash", s.getBashDebugPath()),
                         found -> applyGating());
         // C and C++: the same CodeLLDB as Rust's.
         dap().configureExternal(
@@ -1694,14 +1720,14 @@ final class DebugCoordinator {
         if (newPath == null || newPath.equals(oldPath)) {
             return;
         }
-        boolean oldGone = false;
-        if (oldPath != null) {
-            try {
-                oldGone = !Files.exists(oldPath);
-            } catch (RuntimeException closedConnection) {
-                oldPath = null; // a remote file whose connection is gone: nothing can be asked about it
-            }
-        }
+        Path from = oldPath; // whether it is gone is asked off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("debug-path-moved", () -> from == null || !Files.exists(from), a -> {
+            boolean known = a.ok(); // a remote file whose connection is gone: nothing can be asked about it
+            pathMoved(buffer, known ? from : null, newPath, known && Boolean.TRUE.equals(a.value()));
+        });
+    }
+
+    private void pathMoved(EditorBuffer buffer, @Nullable Path oldPath, Path newPath, boolean oldGone) {
         var map = ops.breakpointMap();
         List<Breakpoint> stored = null;
         if (oldPath != null && oldGone) {
@@ -3309,7 +3335,7 @@ final class DebugCoordinator {
             return false;
         }
         try {
-            return ops.bufferForPath(frame.file()) != null || Files.isRegularFile(frame.file());
+            return ops.bufferForPath(frame.file()) != null || com.editora.dap.FrameFiles.isFile(frame.file());
         } catch (RuntimeException e) {
             return false;
         }
@@ -3431,39 +3457,16 @@ final class DebugCoordinator {
         }
     }
 
-    /** How many frames from the top a stop looks for one with source before settling for the top frame. */
-    private static final int MAX_SOURCE_SEARCH = 64;
-
-    /**
-     * Pure: the frame a stop selects. After a step into a JDK or library class whose text jdtls can supply (a
-     * {@code jdt://} source), that frame: the user asked to go there, and showing the caller instead made Step
-     * Into look as if it did nothing (B5). Any other stop: {@link #firstFrameWithSource}.
-     */
+    /** Pure: the frame a stop selects ({@link DebugFrameChoice#frameToShow}). */
     static int frameToShow(
             String reason, List<DapModels.StackFrameInfo> frames, Predicate<DapModels.StackFrameInfo> has) {
-        if ("step".equals(reason)
-                && !frames.isEmpty()
-                && (frames.get(0).sourceUri() != null || frames.get(0).reference() != null)) {
-            return 0; // a step into code the debugger has only in memory shows it too
-        }
-        return firstFrameWithSource(frames, has);
+        return DebugFrameChoice.frameToShow(reason, frames, has);
     }
 
-    /**
-     * Pure: the frame a core dump's stop selects — the topmost one whose source can be shown and is under one of
-     * {@code own} (the project, the program's folder); the topmost with source when none is.
-     */
+    /** Pure: the frame a core dump's stop selects ({@link DebugFrameChoice#ownFrame}). */
     static int ownFrame(
             List<DapModels.StackFrameInfo> frames, Predicate<DapModels.StackFrameInfo> has, List<Path> own) {
-        for (int i = 0; i < frames.size() && i < MAX_SOURCE_SEARCH; i++) {
-            DapModels.StackFrameInfo f = frames.get(i);
-            if (f.file() != null
-                    && has.test(f)
-                    && own.stream().anyMatch(f.file().toAbsolutePath()::startsWith)) {
-                return i;
-            }
-        }
-        return firstFrameWithSource(frames, has);
+        return DebugFrameChoice.ownFrame(frames, has, own);
     }
 
     /** Where a core dump's program's own code is: the project, and the folder of the program that dumped it. */
@@ -3481,17 +3484,9 @@ final class DebugCoordinator {
         return roots;
     }
 
-    /**
-     * Pure: the frame a new stop selects — the topmost one whose source can be shown, so pausing a thread that
-     * sits in {@code Thread.sleep} lands on the caller's line rather than nowhere; the top frame when none can.
-     */
+    /** Pure: the topmost frame with source ({@link DebugFrameChoice#firstFrameWithSource}). */
     static int firstFrameWithSource(List<DapModels.StackFrameInfo> frames, Predicate<DapModels.StackFrameInfo> has) {
-        for (int i = 0; i < frames.size() && i < MAX_SOURCE_SEARCH; i++) {
-            if (has.test(frames.get(i))) {
-                return i;
-            }
-        }
-        return 0;
+        return DebugFrameChoice.firstFrameWithSource(frames, has);
     }
 
     // --- launch.json and the user's own adapters ------------------------------------------------------
@@ -4123,6 +4118,12 @@ final class DebugCoordinator {
             com.editora.dap.DebugLanguage profile,
             java.util.Map<String, Object> request,
             java.util.Map<?, ?> cargo) {
+        if (!factsKnown(
+                "debug-cargo-trust-look",
+                facts.executable(com.editora.build.BuildTool.CARGO, workspace),
+                () -> cargoThenStart(workspace, name, anchor, profile, request, cargo))) {
+            return;
+        }
         List<String> cargoArgv = ops.buildExecutable(com.editora.build.BuildTool.CARGO, workspace);
         if (cargoArgv == null) {
             return; // not trusted
@@ -4775,6 +4776,13 @@ final class DebugCoordinator {
 
     private void debugGoIn(
             Path path, String text, int caret, List<String> args, LaunchExtras extras, @Nullable Path module) {
+        if (module != null
+                && !factsKnown(
+                        "debug-go-trust-look",
+                        facts.executable(com.editora.build.BuildTool.GO, module),
+                        () -> debugGoIn(path, text, caret, args, extras, module))) {
+            return;
+        }
         List<String> go = module != null
                 ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
                 : com.editora.build.BuildExecutable.resolve(
@@ -4860,6 +4868,12 @@ final class DebugCoordinator {
             boolean hasProgram) {
         if (root == null) {
             host.setStatus(tr("status.debug.rustNoPackage", path.getFileName()));
+            return;
+        }
+        if (!factsKnown(
+                "debug-rust-trust-look",
+                facts.executable(com.editora.build.BuildTool.CARGO, root),
+                () -> debugRustIn(path, text, caret, args, extras, root, hasProgram))) {
             return;
         }
         List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
@@ -5136,7 +5150,9 @@ final class DebugCoordinator {
                         () -> startOffFx("editora-dotnet-target", session -> () -> {
                             var listed =
                                     com.editora.dap.DotnetLaunch.queryTargetPath(dotnet, plan, DOTNET_QUERY_TIMEOUT);
-                            laterIn(session, () -> launchCsharpAssembly(path, plan, args, listed));
+                            Path built = listed.ok() ? com.editora.dap.DotnetLaunch.targetPath(listed.out()) : null;
+                            boolean there = built != null && java.nio.file.Files.isRegularFile(built); // off FX
+                            laterIn(session, () -> launchCsharpAssembly(path, plan, args, listed, there));
                         }));
         updateDebugAvailability();
     }
@@ -5146,7 +5162,8 @@ final class DebugCoordinator {
             Path path,
             com.editora.dap.DotnetLaunch.Plan plan,
             List<String> args,
-            com.editora.process.ProcessRunner.Result listed) {
+            com.editora.process.ProcessRunner.Result listed,
+            boolean there) {
         Path assembly = listed.ok() ? com.editora.dap.DotnetLaunch.targetPath(listed.out()) : null;
         if (!listed.ok()) {
             String why = (listed.err().isBlank() ? listed.out() : listed.err()).strip();
@@ -5157,7 +5174,7 @@ final class DebugCoordinator {
                             : why.lines().reduce((a, z) -> z).orElse(why)));
             return;
         }
-        if (assembly == null || !java.nio.file.Files.isRegularFile(assembly)) {
+        if (assembly == null || !there) {
             host.setStatus(tr("status.debug.csharpNoProgram", path.getFileName()));
             return;
         }
@@ -5167,22 +5184,14 @@ final class DebugCoordinator {
     }
 
     /**
-     * Debugs Ruby or PHP file {@code path} in its folder: a Ruby script under rdbg ({@code -- ruby <file>}), a PHP one by
-     * {@code php} with Xdebug, which vscode-php-debug starts ({@link com.editora.dap.ScriptLaunch}).
+     * Debugs a Ruby, PHP or Bash script {@code path} in its folder: under rdbg, by {@code php} with Xdebug, or under the
+     * bashdb vscode-bash-debug ships ({@link com.editora.dap.ScriptLaunch#plan}).
      */
     private void debugScriptFile(Path path, String language, List<String> args) {
         Path cwd = path.toAbsolutePath().getParent();
-        Path dir = cwd != null ? cwd : path.toAbsolutePath();
-        Runnable start = "ruby".equals(language)
-                ? () -> withClosedBreakpoints(() -> dap().startExternal(
-                                path,
-                                com.editora.dap.DebugLanguages.RUBY,
-                                com.editora.dap.ScriptLaunch.rubyLaunch(path, args, dir),
-                                com.editora.dap.ScriptLaunch.rubyTail(path, args)))
-                : () -> withClosedBreakpoints(() -> dap().startExternal(
-                                path,
-                                com.editora.dap.DebugLanguages.PHP,
-                                com.editora.dap.ScriptLaunch.phpLaunch(path, args, dir)));
+        var plan = com.editora.dap.ScriptLaunch.plan(language, path, args, cwd != null ? cwd : path.toAbsolutePath());
+        Runnable start = () ->
+                withClosedBreakpoints(() -> dap().startExternal(path, plan.language(), plan.launch(), plan.tail()));
         s().relaunch = start;
         start.run();
     }
@@ -5269,8 +5278,8 @@ final class DebugCoordinator {
         // A file no adapter can debug is told so first: an untitled one used to get a Save As dialog, and then
         // a shell script "Debugging is unavailable for this file (check Settings → Debugging)", which no
         // setting can change.
-        if (b != null && b.isShell()) {
-            host.setStatus(tr("status.debug.shellNotDebuggable"));
+        if (b != null && b.isShell() && !com.editora.dap.ScriptLaunch.isBashScript(b.getPath(), b.getContent())) {
+            host.setStatus(tr("status.debug.shellNotBash")); // bashdb debugs Bash scripts alone
             return;
         }
         if (b != null && b.getPath() == null && !DapServerRegistry.isDebuggable(b.getLanguage())) {
@@ -5313,7 +5322,12 @@ final class DebugCoordinator {
             EditorBuffer b, Path path, String language, List<String> nodeArgs, DebugPlanning.FileRead read) {
         // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
         // the project, not just the file — the workspace-trust gate first, as Run asks it, so "no" starts nothing.
-        if (!trusted(read.gate())) {
+        // The gate's facts and a Java file's project are looked at off the FX thread first when not known (PERF-01).
+        if (!factsKnown(
+                        "debug-file-look",
+                        facts.fileLaunch(read.gate(), language, path),
+                        () -> launchBufferPlanned(b, path, language, nodeArgs, read))
+                || !trusted(read.gate())) {
             return;
         }
         b.settleRunScan(); // compact-source detection is the load's off-FX scan; decide from its result
@@ -5364,7 +5378,7 @@ final class DebugCoordinator {
             debugCsharpFile(path, fileArgs);
             return;
         }
-        if ("ruby".equals(language) || "php".equals(language)) {
+        if ("ruby".equals(language) || "php".equals(language) || "bash".equals(language)) {
             debugScriptFile(path, language, fileArgs);
             return;
         }
@@ -5610,6 +5624,12 @@ final class DebugCoordinator {
      * this looks again a few times before saying only that there are errors.
      */
     private void showBuildErrors(Path routing, Map<Path, List<com.editora.text.LspDiagnostic>> published, int waits) {
+        if (!factsKnown(
+                "debug-build-errors-look",
+                () -> JavaProjectRoot.find(routing),
+                () -> showBuildErrors(routing, published, waits))) {
+            return;
+        }
         Map<Path, List<com.editora.text.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
         found.putAll(published);
         // Only this launch's project: the Problems window holds every open file's, of every language (review 2, A104).
@@ -5970,6 +5990,12 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.noProject"));
             return;
         }
+        if (!factsKnown(
+                "debug-java-build-look",
+                facts.javaConfig(cfg, buildRoot, root),
+                () -> debugJavaConfig(cfg, routing, read))) {
+            return;
+        }
         if (!saveJavaBuffers(routing, root, true)) {
             return; // every unsaved Java file of the project is written first (review B3)
         }
@@ -6067,6 +6093,13 @@ final class DebugCoordinator {
      */
     private void buildToolThenLaunch(
             @Nullable Path buildRoot, Path source, String label, Map<String, String> env, Runnable launch) {
+        if (buildRoot != null
+                && !factsKnown(
+                        "debug-build-before-look",
+                        facts.buildRoot(buildRoot),
+                        () -> buildToolThenLaunch(buildRoot, source, label, env, launch))) {
+            return;
+        }
         com.editora.build.BuildTool tool = buildRoot != null && com.editora.process.ExecTargets.runsHere(buildRoot)
                 ? BuildBeforeLaunch.toolAt(buildRoot)
                 : null;
@@ -6155,7 +6188,8 @@ final class DebugCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        if (!trusted(read.gate())) { // the project's trust first, as Run asks it, so "no" starts nothing
+        if (!factsKnown("debug-jvm-script-look", facts.gate(read.gate()), () -> debugJvmScriptConfig(cfg, args, read))
+                || !trusted(read.gate())) { // the project's trust first, as Run asks it, so "no" starts nothing
             return;
         }
         String jdkHome = cfg.jdkHome().isBlank() ? host.settings().getMavenJdkHome() : cfg.jdkHome();
@@ -6410,6 +6444,9 @@ final class DebugCoordinator {
             return;
         }
         Path routing = b.getPath();
+        if (!factsKnown("debug-main-class-look", facts.mainClass(routing), () -> startMainClassDebug(b, targetFqn))) {
+            return;
+        }
         Path buildRoot = JavaProjectRoot.find(routing);
         // A plain-folder project window has main classes too (review A16).
         Path root = JavaLaunchPrep.projectOf(routing, buildRoot, ops.projectRoot());
@@ -6676,6 +6713,13 @@ final class DebugCoordinator {
      * the test or app running on (review A4).
      */
     void attachToPort(Path anchorFile, String attachHost, int port, @Nullable Runnable stopOwner) {
+        if (anchorFile != null
+                && !factsKnown( // the anchor's project routes the attach: looked at off the FX thread (PERF-01)
+                        "debug-attach-look",
+                        () -> JavaProjectRoot.find(anchorFile),
+                        () -> attachToPort(anchorFile, attachHost, port, stopOwner))) {
+            return;
+        }
         if (s().relaunch == ONE_SHOT_ATTACH && dap().isActive()) {
             queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
             host.setStatus(tr("status.debug.attachQueued", port));
@@ -6730,58 +6774,11 @@ final class DebugCoordinator {
                 openJava.add(b.getPath());
             }
         });
-        return attachRouting(anchor, openJava, JavaProjectRoot.find(anchor), host::isLspManaged);
-    }
-
-    /**
-     * Pure: the file whose jdtls session starts the debug adapter for an attach. The anchor itself when it is
-     * open in a tab; otherwise an open Java file of the anchor's project (one already on the server first),
-     * else any open Java file already on the server, else the anchor — which then fails with the precise
-     * "no language server for file" rather than attaching through an unrelated project.
-     */
-    static @Nullable Path attachRouting(
-            Path anchor, List<Path> openJavaFiles, @Nullable Path projectRoot, Predicate<Path> managed) {
-        if (anchor == null) {
-            return openJavaFiles.stream().filter(managed).findFirst().orElse(null);
-        }
-        Path sameProject = null;
-        Path anyManaged = null;
-        for (Path open : openJavaFiles) {
-            if (PathKeys.sameNormalized(open, anchor)) {
-                return anchor;
-            }
-            boolean onServer = managed.test(open);
-            if (projectRoot != null && open.toAbsolutePath().normalize().startsWith(projectRoot)) {
-                if (sameProject == null || (onServer && !managed.test(sameProject))) {
-                    sameProject = open;
-                }
-            } else if (onServer && anyManaged == null) {
-                anyManaged = open;
-            }
-        }
-        return sameProject != null ? sameProject : anyManaged != null ? anyManaged : anchor;
+        return DebugAttach.attachRouting(anchor, openJava, JavaProjectRoot.find(anchor), host::isLspManaged);
     }
 
     /** What Attach offers when this project has attached nowhere yet: the JDWP default. */
     private static final String DEFAULT_ATTACH_ADDRESS = "localhost:5005";
-
-    /** The most addresses Attach remembers per project. */
-    static final int MAX_ATTACH_TARGETS = 8;
-
-    /** Pure: {@code address} first, then the earlier ones without it, at most {@link #MAX_ATTACH_TARGETS}. */
-    static List<String> rememberAttachTarget(List<String> earlier, String address) {
-        List<String> out = new ArrayList<>();
-        out.add(address);
-        for (String a : earlier) {
-            if (out.size() >= MAX_ATTACH_TARGETS) {
-                break;
-            }
-            if (a != null && !a.isBlank() && !a.equalsIgnoreCase(address)) {
-                out.add(a);
-            }
-        }
-        return out;
-    }
 
     /** The JVM adapter language of the active file Attach starts from, or null when it cannot (it says why). */
     private @Nullable String attachLanguage(@Nullable EditorBuffer b) {
@@ -6879,7 +6876,7 @@ final class DebugCoordinator {
                 tr("debug.attachProcess.prompt"),
                 () -> targets,
                 t -> tr("debug.attachProcess.row", t.name(), t.pid()),
-                DebugCoordinator::processDetail,
+                DebugAttach::processDetail,
                 t -> {
                     if (t != null) {
                         attachToProcess(t);
@@ -6892,35 +6889,10 @@ final class DebugCoordinator {
         picker.show(host.window());
     }
 
-    /** A row's second line: which debugger, and where it listens — or what to start the program with. Pure. */
-    static String processDetail(com.editora.dap.LocalProcesses.Target t) {
-        String kind = tr("debug.attachProcess.kind." + t.kind().name().toLowerCase(java.util.Locale.ROOT));
-        if (t.kind().byPid()) {
-            return tr(
-                    t.kind() == com.editora.dap.LocalProcesses.Kind.GO
-                            ? "debug.attachProcess.byPid"
-                            : "debug.attachProcess.byPidLldb",
-                    kind);
-        }
-        return t.attachable()
-                ? tr("debug.attachProcess.listening", kind, t.address())
-                : tr("debug.attachProcess.notListening", kind, startFlag(t.kind()));
-    }
-
-    /** What a program of {@code kind} is started with so a debugger can attach. Pure. */
-    static String startFlag(com.editora.dap.LocalProcesses.Kind kind) {
-        return switch (kind) {
-            case JAVA -> "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005";
-            case NODE -> "--inspect";
-            case PYTHON -> "-m debugpy --listen 5678";
-            case GO, RUST, NATIVE -> "";
-        };
-    }
-
     /** Attaches the debugger of {@code t}'s kind to it, or says what to start it with when it is not listening. */
     void attachToProcess(com.editora.dap.LocalProcesses.Target t) {
         if (!t.attachable()) {
-            host.setStatus(tr("status.debug.processNotListening", t.name(), startFlag(t.kind())));
+            host.setStatus(tr("status.debug.processNotListening", t.name(), DebugAttach.startFlag(t.kind())));
             return;
         }
         switch (t.kind()) {
@@ -7022,9 +6994,10 @@ final class DebugCoordinator {
         host.setStatus(tr("status.debug.core.reading", String.valueOf(core.getFileName())));
         Thread.ofPlatform().daemon().name("editora-core-dump").start(() -> {
             Path named = com.editora.dap.CoreDumps.programOf(core);
+            boolean there = named != null && Files.isRegularFile(named); // here, off the FX thread (PERF-01)
             Platform.runLater(() -> {
                 host.setStatus(null);
-                Path program = named != null && Files.isRegularFile(named)
+                Path program = there
                         ? named
                         : chooseFile(
                                 tr("debug.core.chooseProgram", String.valueOf(core.getFileName())), core.getParent());
@@ -7161,7 +7134,7 @@ final class DebugCoordinator {
             return;
         }
         // Offered first next time, in this project (review 2, A109: it was only kept for the window).
-        ops.persistDebugAttachTargets(rememberAttachTarget(ops.debugAttachTargets(), text));
+        ops.persistDebugAttachTargets(DebugAttach.rememberAttachTarget(ops.debugAttachTargets(), text));
         ops.openToolWindow();
         nameSession(file.getFileName().toString());
         String attachHost = hostName;
@@ -7363,7 +7336,7 @@ final class DebugCoordinator {
         java.util.Map<String, Object> request =
                 com.editora.dap.BrowserLaunch.launch(type, url, webRoot, served, exe, browserProfile(id), browserArgs);
         if (pageFile == null) {
-            ops.persistDebugBrowserUrls(rememberAttachTarget(ops.debugBrowserUrls(), url));
+            ops.persistDebugBrowserUrls(DebugAttach.rememberAttachTarget(ops.debugBrowserUrls(), url));
         }
         String browser = com.editora.web.Browsers.knownName(id);
         ops.openToolWindow();
@@ -7481,7 +7454,12 @@ final class DebugCoordinator {
         Map<String, String> env = read.env();
         s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
         if (com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
-            if (!trusted(com.editora.run.RunTrust.npm(cwd))) {
+            com.editora.run.RunTrust.Gate npmGate = com.editora.run.RunTrust.npm(cwd);
+            if (!factsKnown(
+                            "debug-npm-trust-look",
+                            facts.gate(npmGate),
+                            () -> debugNodeConfig(cfg, args, nodeOptions, root, read))
+                    || !trusted(npmGate)) {
                 return; // a package script runs its pre/post hooks: npm's workspace-trust gate, as Run asks it
             }
             // The project's own package manager, as Run and the npm tool window use it.
@@ -7745,7 +7723,7 @@ final class DebugCoordinator {
             var mark = manager.isBreakpoint(line) ? null : manager.memberMark(line);
             if (mark != null) {
                 mark.members().forEach(memberBreakpoints::toggle); // a method breakpoint's mark: removes it
-            } else if (breakpointAllowed(open, line)) {
+            } else if (breakpointAllowed(open, line, () -> toggleCardBreakpoint(file, line, text))) {
                 open.toggleBreakpoint(line);
             }
             return;
@@ -7780,7 +7758,7 @@ final class DebugCoordinator {
         EditorBuffer b = breakpointBuffer();
         if (b != null) {
             int line = b.getFocusedArea().getCurrentParagraph();
-            if (breakpointAllowed(b, line)) {
+            if (breakpointAllowed(b, line, this::toggleBreakpointAtCaret)) {
                 b.toggleBreakpoint(line);
             }
         }
@@ -7790,12 +7768,17 @@ final class DebugCoordinator {
      * Whether a breakpoint may go on {@code line} of {@code b}: anywhere a debugger can stop, which in a {@code .http}
      * file is only a script line (adl, 2026-10-16) — else says so. Removing one is always allowed.
      */
-    private boolean breakpointAllowed(EditorBuffer b, int line) {
+    private boolean breakpointAllowed(EditorBuffer b, int line, Runnable retry) {
         if (b.getBreakpointManager().isBreakpoint(line)) {
             return true;
         }
         if (b.isHttpFile()) {
-            if (com.editora.http.HttpScriptLines.isScriptLine(b.getContent(), line)) {
+            com.editora.http.HttpScriptLines.Map scripts = b.httpScriptMap();
+            if (scripts == null) {
+                b.whenHttpScriptMap(retry); // its script lines are parsed off FX: the command goes on when they land
+                return false;
+            }
+            if (scripts.isScriptLine(line)) {
                 return true;
             }
             host.setStatus(tr("status.debug.httpScriptLinesOnly"));
@@ -7842,7 +7825,7 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line)) {
+        if (!breakpointAllowed(b, line, this::editBreakpointAtCaret)) {
             return;
         }
         var mgr = b.getBreakpointManager();
@@ -8036,7 +8019,7 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line)) {
+        if (!breakpointAllowed(b, line, this::addTriggeredBreakpointAtCaret)) {
             return;
         }
         var mgr = b.getBreakpointManager();
@@ -8102,7 +8085,7 @@ final class DebugCoordinator {
 
     /** {@link #addLogpointAtCaret} for {@code line} of {@code b} — also what a Shift+click in the gutter runs. */
     void addLogpoint(EditorBuffer b, int line) {
-        if (!breakpointAllowed(b, line)) {
+        if (!breakpointAllowed(b, line, () -> addLogpoint(b, line))) {
             return;
         }
         var mgr = b.getBreakpointManager();
@@ -8353,7 +8336,12 @@ final class DebugCoordinator {
                     : b.getBreakpointManager().memberMark(line);
             if (mark != null) {
                 mark.members().forEach(memberBreakpoints::toggle); // a method breakpoint's mark: removes it
-            } else if (breakpointAllowed(b, line)) {
+            } else if (breakpointAllowed(b, line, () -> {
+                if (!b.getBreakpointManager().isBreakpoint(line)
+                        && breakpointAllowed(b, line, () -> {})) { // known now: never waits again
+                    b.toggleBreakpoint(line);
+                }
+            })) {
                 b.toggleBreakpoint(line);
             }
         });
@@ -9037,7 +9025,14 @@ final class DebugCoordinator {
      */
     private @Nullable String explainCodeReplace(@Nullable String message) {
         Path file = dap().sessionFile();
-        if (!CodeReplaceJdk.reasonless(message) || file == null || JavaProjectRoot.find(file) != null) {
+        if (!CodeReplaceJdk.reasonless(message) || file == null) {
+            return null;
+        }
+        if (!com.editora.perf.Looked.allKnown(() -> JavaProjectRoot.find(file))) {
+            JavaProjectRoot.warmLater(file); // not looked at yet: the reason is told once it is (PERF-01)
+            return null;
+        }
+        if (JavaProjectRoot.find(file) != null) {
             return null; // a build project is compiled for its own release, not jdtls's default
         }
         return CodeReplaceJdk.explain(
@@ -9485,7 +9480,7 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line)) {
+        if (!breakpointAllowed(b, line, this::toggleTemporaryBreakpointAtCaret)) {
             return;
         }
         var mgr = b.getBreakpointManager();
@@ -9513,7 +9508,7 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line)) {
+        if (!breakpointAllowed(b, line, this::toggleRecordingBreakpointAtCaret)) {
             return;
         }
         var mgr = b.getBreakpointManager();
@@ -9560,7 +9555,9 @@ final class DebugCoordinator {
      */
     void toggleLambdaBreakpointAtCaret() {
         EditorBuffer b = breakpointBuffer();
-        if (b != null && breakpointAllowed(b, b.getFocusedArea().getCurrentParagraph())) {
+        if (b != null
+                && breakpointAllowed(
+                        b, b.getFocusedArea().getCurrentParagraph(), this::toggleLambdaBreakpointAtCaret)) {
             lambdaBreakpoints.toggleAtCaret(b);
         }
     }
@@ -9759,7 +9756,7 @@ final class DebugCoordinator {
                 && offersOwnDebugFile(
                         b.getLanguage(),
                         b.isRunnable(),
-                        "java".equals(b.getLanguage()) && JavaProjectRoot.find(path) != null);
+                        "java".equals(b.getLanguage()) && JavaProjectRoot.inProjectOrUnknown(path));
     }
 
     /**

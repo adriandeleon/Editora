@@ -612,7 +612,26 @@ public final class DapManager {
             String jsPath) {
         shared.enabled = enabled;
         shared.pluginPath = javaPluginPath == null ? "" : javaPluginPath;
-        shared.bundlePaths = enabled ? locateKept() : List.of();
+        if (!enabled) {
+            shared.bundlePaths = List.of();
+        } else if (DebugAdapterLocator.locatedKnown(shared.pluginPath, home()) || !onFx()) {
+            shared.bundlePaths = locateKept();
+        } else {
+            // A java-debug path not looked at yet (typed in Settings a moment ago): looked for off the FX thread
+            // (PERF-01, Pauta 6.0.1), and the bundles in effect so far kept until it lands; then the owner applies
+            // the support again ({@link #setOnJavaDebugLocated}), which pushes the new bundles to jdtls.
+            String asked = shared.pluginPath;
+            com.editora.perf.OffFx.then(
+                    "java-debug-locate", () -> DebugAdapterLocator.locate(asked, home()), located -> {
+                        if (asked.equals(shared.pluginPath) && shared.enabled) {
+                            shared.bundlePaths = locateKept();
+                            Runnable then = onJavaDebugLocated;
+                            if (then != null) {
+                                then.run();
+                            }
+                        }
+                    });
+        }
         shared.pythonEnabled = pythonEnabled;
         shared.pythonCommand = pythonCommand == null ? "" : pythonCommand;
         shared.jsEnabled = jsEnabled;
@@ -630,6 +649,27 @@ public final class DapManager {
         if (!shared.enabled || !shared.jsEnabled) {
             shared.jsServer = null;
             shared.jsAvailable = false;
+        }
+    }
+
+    /** Run on the FX thread when a java-debug path {@link #configure} could not answer from memory was located. */
+    private volatile @Nullable Runnable onJavaDebugLocated;
+
+    /** Who applies the support again once a newly configured java-debug path has been looked at off FX. */
+    public void setOnJavaDebugLocated(@Nullable Runnable then) {
+        this.onJavaDebugLocated = then;
+    }
+
+    /** The java-debug path {@link #configure} was last given (a look off the FX thread may ask for it). */
+    public String javaDebugPluginPath() {
+        return shared.pluginPath;
+    }
+
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
         }
     }
 
@@ -1216,15 +1256,30 @@ public final class DapManager {
                 return;
             }
             // The reply's parse and the file's own main are read off the FX thread (PERF-01, Pauta 6.0.1).
+            DapPaths paths = pathsFor(file);
             JAVA_LAUNCH_PLAN.execute(() -> {
                 com.editora.perf.BlockingSites.enter("DapManager.ownMainClass");
                 List<MainClassOption> options = JdtlsReplies.parseMainClasses(res);
                 String own = ownMainClass(file);
                 String fromFile = options.isEmpty() && own == null ? JavaCompilation.mainClassFromFile(file) : null;
+                // which option is this file's: real paths compared here, off the FX thread
+                MainClassOption match = options.stream()
+                        .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
+                        .findFirst()
+                        .orElse(null);
                 fx(() -> {
                     if (isCurrent(epoch)) {
                         launchMainClass(
-                                file, picker, javaExecOverride, projectRoot, looseCwd, epoch, options, own, fromFile);
+                                file,
+                                picker,
+                                javaExecOverride,
+                                projectRoot,
+                                looseCwd,
+                                epoch,
+                                options,
+                                own,
+                                fromFile,
+                                match);
                     }
                 });
             });
@@ -1241,7 +1296,8 @@ public final class DapManager {
             long epoch,
             List<MainClassOption> options,
             @Nullable String own,
-            @Nullable String fromFile) {
+            @Nullable String fromFile,
+            @Nullable MainClassOption match) {
         DapPaths paths = pathsFor(file);
         // A project's main class runs in the project root — what Run, the gutter and a saved
         // configuration use — and a loose file in the window's project folder, else its own folder.
@@ -1259,10 +1315,6 @@ public final class DapManager {
             compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
             return;
         }
-        MainClassOption match = options.stream()
-                .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
-                .findFirst()
-                .orElse(null);
         if (match == null && own != null) {
             // The file declares a main that jdtls does not list: it is outside the project's source
             // folders (a script beside the project), or jdtls has not seen it yet. Debug the file — never
@@ -1313,14 +1365,23 @@ public final class DapManager {
         }
         Path source = optionSource(file, opt);
         Path dir = cwd == null ? null : pathsFor(file).fromAdapter(cwd);
-        Runnable compile = () -> compileAndLaunch(
-                source,
-                JavaLaunchSupport.qualified(opt.className(), JavaLaunchSupport.declaredPackage(source)),
-                javaExecOverride,
-                epoch,
-                null,
-                dir,
-                file);
+        // The source's package clause is read off the FX thread (PERF-01, Pauta 6.0.1).
+        Runnable compile = () -> JAVA_LAUNCH_PLAN.execute(() -> {
+            com.editora.perf.BlockingSites.enter("DapManager.declaredPackage");
+            String pkg = JavaLaunchSupport.declaredPackage(source);
+            fx(() -> {
+                if (isCurrent(epoch)) {
+                    compileAndLaunch(
+                            source,
+                            JavaLaunchSupport.qualified(opt.className(), pkg),
+                            javaExecOverride,
+                            epoch,
+                            null,
+                            dir,
+                            file);
+                }
+            });
+        });
         boolean built = takeLooseBuild();
         if (!built) {
             compile.run(); // no build ran for this launch: whatever jdtls's output holds may be from any earlier one
@@ -1460,16 +1521,26 @@ public final class DapManager {
         String uri = lsp.serverUri(file);
         executeCommand(file, "vscode.java.resolveMainMethod", List.of(uri), (res, err) -> {
             String name = err == null ? JavaLaunchSupport.projectName(res) : null;
-            int[] at = name == null ? JavaLaunchSupport.typeNamePosition(file) : null;
-            if (at == null) {
+            if (name != null) {
                 cb.accept(name);
                 return;
             }
-            executeCommand(
-                    file,
-                    "vscode.java.resolveElementAtSelection",
-                    List.of(uri, at[0], at[1]),
-                    (el, e2) -> cb.accept(e2 == null ? JavaLaunchSupport.projectName(el) : null));
+            // The type's position is read from the file off the FX thread (PERF-01, Pauta 6.0.1).
+            JAVA_LAUNCH_PLAN.execute(() -> {
+                com.editora.perf.BlockingSites.enter("DapManager.typeNamePosition");
+                int[] at = JavaLaunchSupport.typeNamePosition(file);
+                fx(() -> {
+                    if (at == null) {
+                        cb.accept(null);
+                        return;
+                    }
+                    executeCommand(
+                            file,
+                            "vscode.java.resolveElementAtSelection",
+                            List.of(uri, at[0], at[1]),
+                            (el, e2) -> cb.accept(e2 == null ? JavaLaunchSupport.projectName(el) : null));
+                });
+            });
         });
     }
 
@@ -2059,12 +2130,14 @@ public final class DapManager {
             lspLease = lsp.retain(file);
             DapClient c = new DapClient(sessionHost(epoch));
             c.setPaths(pathsFor(file));
+            boolean wrap = false;
             if (!attach && shared.programConsole) {
                 c.setRunsDebuggee(true);
                 LaunchConfig.inClientConsole(args);
             } else if (!attach) {
-                wrapForExitCode(file, args, epoch);
+                wrap = true; // on the connect thread below: making a wrapper writes files (PERF-01)
             }
+            boolean wrapExit = wrap;
             c.setBreakpoints(adapterBreakpoints(shared.breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(filtersFor("java"));
             if (!publishClient(epoch, c)) {
@@ -2074,45 +2147,52 @@ public final class DapManager {
             // Connect off the FX thread (the socket open blocks with retries), then launch/attach. The
             // connect future completes on the DAP reader thread, so every state change here must be
             // marshaled back to the FX thread (it touches the Debug panel + status bar).
-            io.submit(() -> connectJava(c, file, port).whenComplete((caps, e) -> {
-                if (e != null) {
-                    fail(epoch, tr("debug.error.connectFailed", msg(e)));
-                    return;
+            io.submit(() -> {
+                if (wrapExit) {
+                    // Before the launch request carries args: every launch path gets its wrapper, also one whose
+                    // plan made none ahead (a loose file compiled here, a compact file, a launch configuration).
+                    wrapForExitCode(file, args, epoch);
                 }
-                if (!isCurrent(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
-                    if (le != null) {
-                        String refused = attach ? DapErrors.refusedAttach(msg(le)) : null;
-                        if (refused != null) {
-                            // Nothing listens there: say so, and how a JVM is made to listen (review 2, A109).
-                            failWithConsole(
-                                    epoch,
-                                    tr("debug.console.attachRefused", refused),
-                                    tr("status.debug.attachRefused", refused));
-                            return;
-                        }
-                        fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
+                connectJava(c, file, port).whenComplete((caps, e) -> {
+                    if (e != null) {
+                        fail(epoch, tr("debug.error.connectFailed", msg(e)));
                         return;
                     }
-                    // Running once the adapter has the program, not when the request left: until then
-                    // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
-                    fx(() -> {
-                        if (!isCurrent(epoch, c)) {
+                    if (!isCurrent(epoch, c)) {
+                        c.dispose();
+                        return;
+                    }
+                    (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
+                        if (le != null) {
+                            String refused = attach ? DapErrors.refusedAttach(msg(le)) : null;
+                            if (refused != null) {
+                                // Nothing listens there: say so, and how a JVM is made to listen (review 2, A109).
+                                failWithConsole(
+                                        epoch,
+                                        tr("debug.console.attachRefused", refused),
+                                        tr("status.debug.attachRefused", refused));
+                                return;
+                            }
+                            fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
                             return;
                         }
-                        if (state == State.STARTING) {
-                            setState(State.RUNNING);
-                        }
-                        if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
-                            listener.onDebuggeeRuntime(
-                                    List.of(realJavaExec(epoch, javaExec)), runtimeWhere(file), Map.of());
-                        }
+                        // Running once the adapter has the program, not when the request left: until then
+                        // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
+                        fx(() -> {
+                            if (!isCurrent(epoch, c)) {
+                                return;
+                            }
+                            if (state == State.STARTING) {
+                                setState(State.RUNNING);
+                            }
+                            if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
+                                listener.onDebuggeeRuntime(
+                                        List.of(realJavaExec(epoch, javaExec)), runtimeWhere(file), Map.of());
+                            }
+                        });
                     });
                 });
-            }));
+            });
         });
     }
 
@@ -2346,6 +2426,9 @@ public final class DapManager {
         if (DebugLanguages.CSHARP.equals(language)) {
             return InstalledAdapter.NETCOREDBG;
         }
+        if (DebugLanguages.BASH.equals(language)) {
+            return InstalledAdapter.BASH_DEBUG;
+        }
         return DebugLanguages.PHP.equals(language) ? InstalledAdapter.PHP_DEBUG : null;
     }
 
@@ -2471,10 +2554,17 @@ public final class DapManager {
             List<DapModels.FileBreakpoints> bps,
             @Nullable List<String> filters,
             long epoch,
-            Map<String, Object> launch,
+            Map<String, Object> request,
             List<String> programTail)
             throws Exception {
         int port = external.transport() == ExternalAdapter.Transport.PORT_ARGUMENT ? freePort() : -1;
+        // vscode-bash-debug checks each program it names: its bashdb, bash, cat, mkfifo, pkill, by absolute path.
+        Map<String, Object> launch = DebugLanguages.BASH.equals(language) && executable != null
+                ? ScriptLaunch.withBashTools(
+                        request,
+                        Path.of(executable),
+                        name -> ProcessRunner.resolveExecutable(List.of(name)).getFirst())
+                : request;
         List<String> argv = new ArrayList<>(external.argv(executable, port));
         if (language == DebugLanguages.GDB) {
             argv.addAll(1, EvaluationLimits.gdbArguments(shared.evaluationTimeLimit)); // before -i dap
@@ -4861,6 +4951,17 @@ public final class DapManager {
         });
     }
 
+    /** Looks at {@code frames}' files here, off the FX thread, before the FX thread picks one (PERF-01). */
+    private static boolean warmed(@Nullable List<DapModels.StackFrameInfo> frames) {
+        FrameFiles.warm(frames);
+        return true;
+    }
+
+    /** {@link #fx(Runnable)}, after {@code warmed} has run on this thread. */
+    private void fx(boolean warmed, Runnable r) {
+        fx(r);
+    }
+
     public void stackTrace(int threadId, Consumer<List<DapModels.StackFrameInfo>> cb) {
         DapClient c = client;
         if (c == null) {
@@ -4868,7 +4969,7 @@ public final class DapManager {
             return;
         }
         c.stackTrace(threadId)
-                .whenComplete((frames, e) -> fx(() -> {
+                .whenComplete((frames, e) -> fx(warmed(frames), () -> {
                     if (client == c) {
                         cb.accept(originalFrames(frames));
                     }
@@ -4994,7 +5095,7 @@ public final class DapManager {
         if (console) {
             consoleEvaluations++;
         }
-        c.evaluateFull(expression, frameId, context) // the full answer: a string result can be repaired from it
+        c.evaluateFull(adapterExpression(expression), frameId, context) // the full answer: a string can be repaired
                 .thenCompose(full -> repairString(c, full))
                 .whenComplete((full, e) -> fx(() -> {
                     if (console && client == c) {
@@ -5086,7 +5187,7 @@ public final class DapManager {
         if (code) {
             consoleEvaluations++;
         }
-        c.evaluateFull(expression, frameId, context)
+        c.evaluateFull(adapterExpression(expression), frameId, context)
                 .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> fx(() -> {
                     if (code && client == c) {
@@ -5112,7 +5213,7 @@ public final class DapManager {
             cb.accept(null);
             return;
         }
-        c.evaluateFull(expression, frameId, "hover")
+        c.evaluateFull(adapterExpression(expression), frameId, "hover")
                 .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> fx(() -> {
                     if (client == c) {
@@ -5280,12 +5381,15 @@ public final class DapManager {
     private void presentStop(
             long epoch, DapClient c, int threadId, String reason, boolean event, boolean allThreadsStopped) {
         c.stackTrace(threadId)
-                .whenComplete((frames, e) -> fx(() -> {
+                .whenComplete((frames, e) -> fx(warmed(frames), () -> {
                     if (!isCurrent(epoch, c)) {
                         return;
                     }
                     if (e != null) {
                         LOG.log(Level.WARNING, "stackTrace failed for thread " + threadId, e);
+                    }
+                    if (event && passesBashEntry(c, threadId, frames)) {
+                        return; // bashdb's own stop at the script's first line, where no breakpoint is
                     }
                     if (event) {
                         if (allThreadsStopped) {
@@ -5310,6 +5414,54 @@ public final class DapManager {
                         reportException(epoch, c, threadId, stopCount);
                     }
                 }));
+    }
+
+    /**
+     * {@code expression} as the session's debugger reads it: in a Bash session, a variable written as in a script
+     * ({@code $total}, {@code ${total}}) is named bare, as bashdb's {@code examine} wants it (with a {@code $} it is
+     * expanded in the debugger's own shell, where the script's variables are not set). Else as it is.
+     */
+    String adapterExpression(String expression) {
+        return DebugLanguages.BASH.id().equals(sessionLanguage) ? ScriptLaunch.bashName(expression) : expression;
+    }
+
+    /** Whether this Bash session has had its first stop (bashdb stops at the script's first line). */
+    private boolean bashEntryPassed;
+
+    /**
+     * bashdb stops at the script's first command, and vscode-bash-debug reports it as any other stop: the first stop
+     * of a Bash session, on a line with no breakpoint, is not shown and the script goes on (as a program started under
+     * any other debugger does). True when that is so.
+     */
+    private boolean passesBashEntry(DapClient c, int threadId, @Nullable List<DapModels.StackFrameInfo> frames) {
+        if (bashEntryPassed || !DebugLanguages.BASH.id().equals(sessionLanguage)) {
+            return false;
+        }
+        bashEntryPassed = true;
+        DapModels.StackFrameInfo top = frames == null || frames.isEmpty() ? null : frames.getFirst();
+        if (top == null || top.file() == null || breakpointAt(top.file(), top.line())) {
+            return false;
+        }
+        c.resume(threadId);
+        return true;
+    }
+
+    /** Whether a breakpoint is set on 0-based {@code line} of {@code file}. */
+    private boolean breakpointAt(Path file, int line) {
+        for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
+            if (fb.file() != null
+                    && fb.file()
+                            .toAbsolutePath()
+                            .normalize()
+                            .equals(file.toAbsolutePath().normalize())) {
+                for (DapModels.LineBreakpoint b : fb.breakpoints()) {
+                    if (b.line() == line) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** Asks which exception {@code threadId} stopped on and reports it, unless the stop has ended meanwhile. */
@@ -5775,7 +5927,8 @@ public final class DapManager {
      * Starts the program of a launch java-debug runs itself (the program console off) through a wrapper that
      * records its exit code: {@code args}' {@code javaExec} becomes the wrapper, which runs the real one. Only for
      * a program on this machine and not on Windows (see {@link JavaExitCodeWrapper}); and only when the launch
-     * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know.
+     * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know. Off the FX
+     * thread: the connect thread, before the launch request.
      */
     private void wrapForExitCode(@Nullable Path file, Map<String, Object> args, long epoch) {
         Object java = args.get("javaExec");
@@ -5786,13 +5939,15 @@ public final class DapManager {
             return;
         }
         try {
-            // Made ahead of time off the FX thread for this java (the launch's plan): taken here, the next one made.
-            JavaExitCodeWrapper wrapper = Platform.isFxApplicationThread()
-                    ? SPARE_EXIT_WRAPPERS.remove(real)
-                    : JavaExitCodeWrapper.create(real);
+            // Called on the connect thread, never the FX thread (PERF-01): the one made ahead for this java (a
+            // launch's plan makes it) is taken, else one is made here — a launch without its wrapper never
+            // reports its exit code (the regression of #1664 for a loose file). The next one is made ahead.
+            JavaExitCodeWrapper spare = SPARE_EXIT_WRAPPERS.remove(real);
+            JavaExitCodeWrapper wrapper = spare != null ? spare : JavaExitCodeWrapper.create(real);
             prepareExitWrapper(real);
-            if (wrapper == null) {
-                return; // none ready yet: this program runs as before, the next has one
+            if (!isCurrent(epoch)) {
+                wrapper.delete(); // stopped meanwhile: no program runs through it
+                return;
             }
             releaseExitWrapper();
             exitWrapper = new ExitWrapper(epoch, wrapper, real);
@@ -5945,6 +6100,7 @@ public final class DapManager {
             if (!isCurrent(epoch)) {
                 return false;
             }
+            bashEntryPassed = false; // a new session: bashdb stops at its script's first line again
             candidate.setMemberBreakpoints(shared.memberBreakpoints); // sent on its initialized event
             candidate.setExtraExceptionFilters(exceptionExtras()); // its language's exception breakpoints need
             String language = sessionLanguage;

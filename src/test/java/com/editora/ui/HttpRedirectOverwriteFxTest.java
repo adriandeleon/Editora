@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * view names every file the run wrote.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HttpRedirectOverwriteFxTest {
 
     @BeforeAll

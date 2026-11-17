@@ -670,10 +670,15 @@ class AgentCoordinatorSessionFxTest {
                     Files.createDirectories(root.resolve("src")).resolve("Main.java"), "x");
             FxTestSupport.runOnFx(() ->
                     FxTestSupport.invokeWith(rig.coordinator, "openPathCandidate", String.class, "src/Main.java"));
+            // Whether it exists is looked at off the FX thread: the answer lands after the click.
+            SettingsListPagesFxTest.waitFor(() -> !rig.ops.openedPaths.isEmpty(), "the path opens");
             assertEquals(List.of(file), rig.ops.openedPaths);
 
             FxTestSupport.runOnFx(() ->
                     FxTestSupport.invokeWith(rig.coordinator, "openPathCandidate", String.class, "src/Gone.java"));
+            SettingsListPagesFxTest.waitFor(
+                    () -> tr("status.agent.pathNotFound", "src/Gone.java").equals(rig.host.lastStatus()),
+                    "the missing path is said");
             assertEquals(List.of(file), rig.ops.openedPaths);
             assertEquals(tr("status.agent.pathNotFound", "src/Gone.java"), rig.host.lastStatus());
         }

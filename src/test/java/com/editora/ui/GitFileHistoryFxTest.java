@@ -46,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * repository was listed in the active one.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class GitFileHistoryFxTest {
 
     @BeforeAll
@@ -554,6 +555,10 @@ class GitFileHistoryFxTest {
             assertTrue(window.placeholder().contains("scratch.txt"));
 
             window.onFx(() -> window.windows.gitFileHistoryForPath(repo.root));
+            // A folder is told apart off the FX thread (PERF-01): the answer lands a moment later.
+            for (int i = 0; i < 300 && !tr("status.git.history.noFile").equals(window.echo()); i++) {
+                Thread.sleep(10);
+            }
             assertEquals(tr("status.git.history.noFile"), window.echo(), "a folder");
 
             window.onFx(() -> window.run("file.new"));

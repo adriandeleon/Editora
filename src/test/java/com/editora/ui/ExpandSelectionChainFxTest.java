@@ -90,18 +90,9 @@ class ExpandSelectionChainFxTest {
         return List.of(range(wordStart, wordStart + word.length(), statement));
     }
 
-    @Test
-    void aNewLadderDoesNotReuseThePreviousLaddersChain() throws Exception {
-        CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
-        LspManager manager = FxTestSupport.field(fx.controller, "lspManager");
-        Object coordinator = FxTestSupport.field(fx.controller, "lspCoordinator");
-        Path file = Files.createTempDirectory("expand-chain").resolve("A.java");
-        Files.writeString(file, SRC);
-        SelectionRangeFake.install(manager, ExpandSelectionChainFxTest::answer);
-        fx.shared.getSettings().setLspSupport(true);
-        fx.shared.getSettings().setJavaLspEnabled(true);
-        manager.configure(true, Map.of("java", "jdtls"));
-        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+    /** Opens {@code file} as the active buffer on the Java server and syncs it. */
+    private EditorBuffer open(Object coordinator, Path file) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
             FxTestSupport.call(
                     coordinator,
                     "setServerAvailableForTest",
@@ -117,6 +108,29 @@ class ExpandSelectionChainFxTest {
             buffer.getArea().requestFocus();
             return buffer;
         });
+    }
+
+    @Test
+    void aNewLadderDoesNotReuseThePreviousLaddersChain() throws Exception {
+        CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+        LspManager manager = FxTestSupport.field(fx.controller, "lspManager");
+        Object coordinator = FxTestSupport.field(fx.controller, "lspCoordinator");
+        Path file = Files.createTempDirectory("expand-chain").resolve("A.java");
+        Files.writeString(file, SRC);
+        SelectionRangeFake.install(manager, ExpandSelectionChainFxTest::answer);
+        fx.shared.getSettings().setLspSupport(true);
+        fx.shared.getSettings().setJavaLspEnabled(true);
+        manager.configure(true, Map.of("java", "jdtls"));
+        // The server's root is looked for off the FX thread (PERF-01, Pauta 6.0.1), and the buffer opens on the server
+        // when it lands; LspRootMemoFxTest and ChecksOffFxThreadFxTest cover that. Here the look runs in place, so the
+        // buffer opens on the fake within the sync: this test is about the ladder, not about when a root lands.
+        com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
+        EditorBuffer b;
+        try {
+            b = open(coordinator, file);
+        } finally {
+            com.editora.perf.OffFx.runnerForTest(null);
+        }
         for (int i = 0; i < 100 && !manager.supportsSelectionRanges(file); i++) {
             Thread.sleep(50);
             FxTestSupport.drainFx();

@@ -50,6 +50,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * something irreversible, and what it does when a server asks for a refresh or refuses to start.
  */
 @Tag("fx")
+// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.0.1); here in place, so a sync has
+// opened the document when it returns, as the assertions read it.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspCoordinatorHooksFxTest {
 
     private static final String SOURCE = "class A {\n    void go() {}\n}\n";

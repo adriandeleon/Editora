@@ -195,6 +195,16 @@ final class PreviewCoordinator {
             EditorBuffer buffer,
             String text,
             java.util.function.Consumer<java.util.List<com.editora.markdown.MarkdownLint.Diagnostic>> onResult) {
+        java.nio.file.Path path = buffer == null ? null : buffer.getPath();
+        if (path != null
+                && com.editora.vfs.Vfs.isLocal(path)
+                && !lint().configKnown(path, () -> {
+                    if (host.editorArea().tabs().stream().anyMatch(t -> host.bufferOf(t) == buffer)) {
+                        buffer.setMarkdownLintEnabled(markdownLintEnabled());
+                    }
+                })) {
+            return; // its project config is being looked at off the FX thread: the lint runs when it lands
+        }
         markdownLintService.validate(
                 buffer,
                 text,

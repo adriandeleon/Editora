@@ -720,6 +720,39 @@ public class SharedConfig {
         sync.forget(file);
     }
 
+    /**
+     * Runs {@code work} on the config writer, after every write queued before it and before any queued after, and
+     * waits for its answer: for file work that must not interleave with a store's save (Settings sync writing the
+     * config directory's files). Never on the FX thread (PERF-01, Pauta 6.0.1): it waits.
+     */
+    public <T> T callWithWrites(java.util.concurrent.Callable<T> work) throws java.io.IOException {
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            throw new IllegalStateException("callWithWrites waits for the config writer: never on the FX thread");
+        }
+        java.util.concurrent.CompletableFuture<T> done = new java.util.concurrent.CompletableFuture<>();
+        writer.run(() -> {
+            try {
+                done.complete(work.call());
+            } catch (Exception | Error e) {
+                done.completeExceptionally(e);
+            }
+        });
+        try {
+            return done.get(1, java.util.concurrent.TimeUnit.MINUTES);
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof java.io.IOException io) {
+                throw io;
+            }
+            throw new java.io.IOException(cause);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new java.io.IOException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new java.io.IOException(e);
+        }
+    }
+
     /** The shared off-thread writer (settings + session state route through it; see {@link ConfigWriter}). */
     ConfigWriter writer() {
         return writer;

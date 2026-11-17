@@ -85,7 +85,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-01",
       "kind": "pending",
-      "reason": "Start-up, the settings and other stores, starting a program, file commands, installs and plugins no longer touch the disk or wait on the interface's own thread, but some checks still do, made as you type, as a file is sent to its language server, or on each command, so a slow disk can briefly freeze the window.",
+      "reason": "Nothing on the interface's own thread reads or writes the disk or waits any more, but a few things still search, hash or parse a whole document there: the find bar and Replace, telling whether an edited file is back to its saved text, and a few scans made as you type, so a very large file can briefly slow typing.",
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {

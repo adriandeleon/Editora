@@ -1258,12 +1258,12 @@ class DebugCoordinatorCommandsFxTest {
         List<String> eight = List.of("a:1", "b:2", "c:3", "d:4", "e:5", "f:6", "g:7", "h:8");
         assertEquals(
                 List.of("c:3", "a:1", "b:2", "d:4", "e:5", "f:6", "g:7", "h:8"),
-                DebugCoordinator.rememberAttachTarget(eight, "c:3"));
-        List<String> nine = DebugCoordinator.rememberAttachTarget(eight, "i:9");
-        assertEquals(DebugCoordinator.MAX_ATTACH_TARGETS, nine.size());
+                DebugAttach.rememberAttachTarget(eight, "c:3"));
+        List<String> nine = DebugAttach.rememberAttachTarget(eight, "i:9");
+        assertEquals(DebugAttach.MAX_ATTACH_TARGETS, nine.size());
         assertEquals("i:9", nine.get(0));
         assertFalse(nine.contains("h:8"), "the oldest one goes");
-        assertEquals(List.of("x:1"), DebugCoordinator.rememberAttachTarget(List.of("X:1"), "x:1"));
+        assertEquals(List.of("x:1"), DebugAttach.rememberAttachTarget(List.of("X:1"), "x:1"));
     }
 
     @Test
@@ -1746,7 +1746,8 @@ class DebugCoordinatorCommandsFxTest {
 
         FxTestSupport.runOnFx(() -> debug.chooseAdapterPath());
         assertEquals(
-                List.of("java", "python", "javascript", "go", "rust", "cpp", "csharp", "ruby", "php"), pickerRows());
+                List.of("java", "python", "javascript", "go", "rust", "cpp", "csharp", "ruby", "php", "bash"),
+                pickerRows());
         promptAnswer = "  " + python + " ";
         answerPicker(1, javafx.scene.input.KeyCode.ENTER);
 
@@ -1787,7 +1788,8 @@ class DebugCoordinatorCommandsFxTest {
         boolean javascript = host.settings.isJsDebugEnabled();
 
         FxTestSupport.runOnFx(() -> debug.chooseAdapterToggle());
-        assertEquals(List.of("python", "javascript", "go", "rust", "cpp", "csharp", "ruby", "php"), pickerRows());
+        assertEquals(
+                List.of("python", "javascript", "go", "rust", "cpp", "csharp", "ruby", "php", "bash"), pickerRows());
         answerPicker(0, javafx.scene.input.KeyCode.ENTER);
         assertTrue(host.settings.isPythonDebugEnabled());
         assertEquals(javascript, host.settings.isJsDebugEnabled(), "the other adapter is left as it was");
@@ -2180,9 +2182,9 @@ class DebugCoordinatorCommandsFxTest {
         Path a = Path.of("/proj/src/A.java");
         Path b = Path.of("/proj/src/B.java");
 
-        assertEquals(b, DebugCoordinator.attachRouting(null, List.of(a, b), null, b::equals));
-        assertNull(DebugCoordinator.attachRouting(null, List.of(a, b), null, p -> false));
-        assertNull(DebugCoordinator.attachRouting(null, List.of(), null, p -> true));
+        assertEquals(b, DebugAttach.attachRouting(null, List.of(a, b), null, b::equals));
+        assertNull(DebugAttach.attachRouting(null, List.of(a, b), null, p -> false));
+        assertNull(DebugAttach.attachRouting(null, List.of(), null, p -> true));
     }
 
     // --- stored breakpoints follow the file -------------------------------------------------------------
@@ -2217,6 +2219,11 @@ class DebugCoordinatorCommandsFxTest {
             debug.bufferPathChanged(b, file);
             debug.bufferPathChanged(b, renamed); // the same path again: nothing to carry over
         });
+        // Whether the old file is gone is asked off the FX thread (PERF-01): the breakpoints follow when it answers.
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (FxTestSupport.callOnFx(() -> store.get(renamed.toString())) == null && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
 
         assertNull(store.get(file.toString()), "nothing is left under the old name");
         assertEquals(
@@ -2245,6 +2252,11 @@ class DebugCoordinatorCommandsFxTest {
             b.setPath(copy);
             debug.bufferPathChanged(b, file);
         });
+        // Whether the original is still there is asked off the FX thread (PERF-01): wait for the copy's entry.
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (FxTestSupport.callOnFx(() -> store.get(copy.toString())) == null && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
 
         assertEquals(
                 List.of(2),

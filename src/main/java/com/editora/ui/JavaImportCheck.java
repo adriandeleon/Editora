@@ -183,7 +183,7 @@ final class JavaImportCheck {
                 if (d.severity() == LspDiagnostic.Severity.ERROR) {
                     String line = reasonLine(d.message());
                     if (line != null) {
-                        return new Reason(Files.isDirectory(p) ? p : p.getParent() == null ? p : p.getParent(), line);
+                        return new Reason(LspManager.isFolder(p) ? p : p.getParent() == null ? p : p.getParent(), line);
                     }
                 }
             }

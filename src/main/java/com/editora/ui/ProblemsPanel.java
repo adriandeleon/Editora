@@ -367,9 +367,24 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         summary.setText(total == 0 ? tr("problems.none") : tr("problems.summary", total, files));
     }
 
+    /**
+     * Which paths with problems are folders (a project's own problems): looked at off the FX thread (PERF-01,
+     * Pauta 6.0.1). Until the answer lands a path is grouped by its name, and the tree is rebuilt when it lands.
+     */
+    private final DiskFacts<Path, Boolean> folders = new DiskFacts<Path, Boolean>(
+                    "ProblemsPanel.languageOf", java.nio.file.Files::isDirectory)
+            .assuming(Boolean.FALSE)
+            .onLearned(() -> {
+                if (visible()) {
+                    rebuild();
+                } else {
+                    pendingRebuild = true;
+                }
+            });
+
     /** Friendly display name for a file's programming language (proper nouns, deliberately untranslated). */
-    private static String languageOf(Path file) {
-        if (java.nio.file.Files.isDirectory(file)) {
+    private String languageOf(Path file) {
+        if (Boolean.TRUE.equals(folders.get(file))) {
             return tr("problems.project"); // a project's own problems arrive on its folder: not "Plaintext" (CT8)
         }
         String name = com.editora.text.LanguageNames.display(LanguageRegistry.forFileName(file.toString()));

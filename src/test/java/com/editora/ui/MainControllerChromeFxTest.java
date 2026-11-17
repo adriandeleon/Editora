@@ -309,15 +309,24 @@ class MainControllerChromeFxTest {
         FxTestSupport.runOnFx(() -> addBuffer("class Untitled { public static void main(String[] a) {} }"));
         assertNull(FxTestSupport.callOnFx(controller::suggestedMainClass), "an unsaved buffer belongs to no project");
 
+        // Worked out off the FX thread (PERF-01): asked, then answered once the look for that file has landed.
         SaveDecisionsFxTest.open(async, fx, main);
-        assertEquals("demo.Tool", FxTestSupport.callOnFx(controller::suggestedMainClass));
+        assertEquals("demo.Tool", settledSuggestion(main));
         SaveDecisionsFxTest.open(async, fx, notMain);
-        assertNull(FxTestSupport.callOnFx(controller::suggestedMainClass), "a file with no main method");
+        assertNull(settledSuggestion(notMain), "a file with no main method");
         SaveDecisionsFxTest.open(async, fx, other);
         assertEquals(
                 "com.example.Launcher",
-                FxTestSupport.callOnFx(controller::suggestedMainClass),
+                settledSuggestion(other),
                 "what `gradle run` would start, not the file that happens to be open");
+    }
+
+    /** The suggestion for {@code file} once the look the first ask started has landed. */
+    private String settledSuggestion(Path file) throws Exception {
+        FxTestSupport.runOnFx(controller::suggestedMainClass);
+        SettingsRig.awaitFx(
+                "the suggestion for " + file.getFileName(), () -> controller.mainClassSuggestions.knows(file));
+        return FxTestSupport.callOnFx(controller::suggestedMainClass);
     }
 
     @Test

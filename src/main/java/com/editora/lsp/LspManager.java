@@ -351,6 +351,7 @@ public final class LspManager {
 
     public LspManager(BiConsumer<Path, List<LspDiagnostic>> onDiagnostics, BiConsumer<String, String> onStatus) {
         MANAGERS.add(this);
+        XmlServerSettings.listen(catalogLearned);
         this.onDiagnostics = onDiagnostics == null ? (p, d) -> {} : onDiagnostics;
         this.onStatus = onStatus == null ? (t, m) -> {} : onStatus;
         // The augmented PATH (a login shell, to recover nvm/fnm/asdf dirs) is warmed by configure(): at once
@@ -672,6 +673,13 @@ public final class LspManager {
     public void setHtmlMarkupChecks(java.util.function.BooleanSupplier on) {
         diagnostics.setHtmlMarkupChecks(on);
     }
+
+    /** A relative catalog's look changed its answer: every XML session is given its settings again. */
+    private final Runnable catalogLearned = () -> {
+        if (!closed) {
+            setXmlSettings(this.xmlServerSettings);
+        }
+    };
 
     /** The XML servers' settings (Settings → LSP → XML); each session gets them for its own root. */
     private volatile XmlServerSettings xmlServerSettings = XmlServerSettings.defaults();
@@ -1303,13 +1311,54 @@ public final class LspManager {
             sessionByDocUri.remove(uri, session);
             return;
         }
+        String languageId = LspServerRegistry.protocolLanguageId(routeLanguageId, file);
         if (JavaScriptShadow.wanted(file, routeLanguageId) && com.editora.process.ExecTargets.runsHere(file)) {
-            Path shadow = javaScriptShadow(uri, file, text);
-            if (shadow != null) {
-                session.alias(uri, DocumentUris.of(shadow), JavaScriptShadow::wireText);
+            // The stand-in must be on disk before jdtls hears of the document: it is written off the FX thread
+            // (PERF-01, Pauta 6.0.1) and the document opened when it is, with the text it has by then.
+            scriptOpens.put(uri, text == null ? "" : text);
+            SHADOW_WORK.execute(() -> {
+                com.editora.perf.BlockingSites.enter("LspManager.javaScriptShadow");
+                Path shadow = javaScriptShadow(uri, file, text);
+                runOnFx(() -> {
+                    String latestText = scriptOpens.remove(uri);
+                    if (latestText == null || closed || sessionByDocUri.get(uri) != session || session.isDisposed()) {
+                        return; // closed, or opened again, meanwhile
+                    }
+                    if (shadow != null) {
+                        session.alias(uri, DocumentUris.of(shadow), JavaScriptShadow::wireText);
+                    }
+                    session.didOpen(uri, languageId, latestText, this);
+                });
+            });
+            return;
+        }
+        session.didOpen(uri, languageId, text, this);
+    }
+
+    /** A Java script's document waiting for its stand-in, by key: the text it is to open with. */
+    private final Map<String, String> scriptOpens = new ConcurrentHashMap<>();
+
+    /** Writes and deletes the Java scripts' stand-ins, in order. */
+    private static final java.util.concurrent.ExecutorService SHADOW_WORK =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    Thread.ofPlatform().daemon().name("java-script-shadow").factory());
+
+    private static void runOnFx(Runnable r) {
+        boolean fx;
+        try {
+            fx = javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            fx = false;
+        }
+        if (fx) {
+            r.run();
+        } else {
+            try {
+                javafx.application.Platform.runLater(r);
+            } catch (IllegalStateException noToolkit) {
+                r.run(); // a unit test without the toolkit
             }
         }
-        session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId, file), text, this);
     }
 
     /** Where the stand-in {@code .java} files for Java scripts live (see {@link JavaScriptShadow}); lazily made. */
@@ -1383,6 +1432,10 @@ public final class LspManager {
      * a publish that will not come.
      */
     public boolean changeDocument(Path file, String text) {
+        String key = uri(file);
+        if (scriptOpens.computeIfPresent(key, (k, before) -> text == null ? "" : text) != null) {
+            return true; // not opened yet (its stand-in is being written): it opens with this text
+        }
         LanguageServerSession s = sessionFor(file);
         return s == null || s.didChange(uri(file), text);
     }
@@ -1417,7 +1470,11 @@ public final class LspManager {
         DocumentUris.forget(file);
         diagnostics.rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
         diagnostics.shownDiagnostics.remove(uri);
-        deleteJavaScriptShadow(javaScriptShadows.remove(uri));
+        scriptOpens.remove(uri);
+        Path shadow = javaScriptShadows.remove(uri);
+        if (shadow != null) {
+            SHADOW_WORK.execute(() -> deleteJavaScriptShadow(shadow)); // off the FX thread (PERF-01)
+        }
         if (s != null) {
             s.didClose(uri, this);
             maybeScheduleEviction(s);
@@ -3669,6 +3726,7 @@ public final class LspManager {
         MANAGERS.remove(this);
         closed = true;
         enabled = false;
+        XmlServerSettings.unlisten(catalogLearned);
         watching.closeRootWatchers();
         pythonLibraries.close();
         shutdownAll();
@@ -3676,15 +3734,18 @@ public final class LspManager {
         pendingEvictions.clear();
         detectExec.shutdown();
         startExec.shutdown();
-        synchronized (javaScriptShadows) {
-            if (javaScriptShadowRoot != null) {
-                try {
-                    Files.deleteIfExists(javaScriptShadowRoot);
-                } catch (java.io.IOException | RuntimeException ignored) {
-                    // a temporary folder
-                }
-            }
-        }
+        SHADOW_WORK.execute(
+                () -> { // after the stand-ins' own deletes, off the FX thread (PERF-01)
+                    synchronized (javaScriptShadows) {
+                        if (javaScriptShadowRoot != null) {
+                            try {
+                                Files.deleteIfExists(javaScriptShadowRoot);
+                            } catch (java.io.IOException | RuntimeException ignored) {
+                                // a temporary folder
+                            }
+                        }
+                    }
+                });
     }
 
     /** Whether {@link #close()} ran. */
@@ -3720,8 +3781,10 @@ public final class LspManager {
         latest.clear();
         diagnostics.diagnosticRequestGeneration.clear();
         codeActions.pendingApplyExpected.clear();
-        javaScriptShadows.values().forEach(LspManager::deleteJavaScriptShadow);
+        List<Path> shadows = List.copyOf(javaScriptShadows.values());
         javaScriptShadows.clear();
+        scriptOpens.clear();
+        SHADOW_WORK.execute(() -> shadows.forEach(LspManager::deleteJavaScriptShadow));
         sessions.forEach(this::disposeDeliberately);
     }
 
@@ -3827,7 +3890,34 @@ public final class LspManager {
                 || name.equals("build.gradle.kts")
                 || name.equals("settings.gradle")
                 || name.equals("settings.gradle.kts")
-                || java.nio.file.Files.isDirectory(file);
+                || isFolder(file);
+    }
+
+    /** Whether each path diagnostics arrived on is a folder: looked at on the reader thread, kept for the FX one. */
+    private static final Map<Path, Boolean> FOLDERS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Whether {@code file} is a folder. Off the FX thread it looks and keeps the answer; on it it answers what was
+     * kept, and "not a folder" for a path no reader thread looked at (a file's diagnostics, which is what a path
+     * the server published for usually is) (PERF-01, Pauta 6.0.1). Every publish is looked at on its reader thread
+     * before it reaches the FX thread ({@code LspDiagnostics}).
+     */
+    public static boolean isFolder(Path file) {
+        Path key = file.toAbsolutePath().normalize();
+        Boolean kept = FOLDERS.get(key);
+        if (kept != null) {
+            return kept;
+        }
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            return false;
+        }
+        com.editora.perf.BlockingSites.enter("LspManager.projectLevel");
+        boolean folder = java.nio.file.Files.isDirectory(key);
+        if (FOLDERS.size() > 4096) {
+            FOLDERS.clear();
+        }
+        FOLDERS.put(key, folder);
+        return folder;
     }
 
     /** See {@link JdtlsCommands#jdtlsGenerateCandidates}. */

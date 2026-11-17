@@ -93,6 +93,27 @@ class LogTailServiceTest {
     }
 
     @Test
+    void aFollowFromTheEndMeasuresTheFileOnItsOwnThread(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("a.log");
+        Files.writeString(file, "old\n");
+        Events events = new Events();
+        java.util.List<String> sites = new CopyOnWriteArrayList<>();
+        com.editora.perf.BlockingSites.listenForTest((site, thread) -> sites.add(site + "@" + thread.getName()));
+        try {
+            LogTailService.Handle handle = service.follow(file, -1, StandardCharsets.UTF_8, events);
+            await(() -> handle.offset() == 4, "the end measured");
+            append(file, "new\n");
+            await(() -> events.text().equals("new\n"), "only what came after the start");
+            assertEquals(8, handle.offset());
+            assertTrue(
+                    sites.stream().anyMatch(s -> s.startsWith("LogTailService.fromEnd@")),
+                    "the size was measured where the follow polls: " + sites);
+        } finally {
+            com.editora.perf.BlockingSites.listenForTest(null);
+        }
+    }
+
+    @Test
     void nothingIsDeliveredAfterStopAndTheOffsetStaysWhereDeliveryDid(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("a.log");
         Files.writeString(file, "");

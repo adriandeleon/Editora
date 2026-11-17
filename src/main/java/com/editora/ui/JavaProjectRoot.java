@@ -27,6 +27,31 @@ final class JavaProjectRoot {
         return FOUND.get(file);
     }
 
+    /** Looks for {@code file}'s root now and keeps it (off the FX thread), so its FX askers answer from memory. */
+    static void warm(Path file) {
+        FOUND.lookAgain(file);
+    }
+
+    /** Starts a look for {@code file}'s root on a thread of its own when nothing is kept, so a later ask finds it. */
+    static void warmLater(Path file) {
+        FOUND.warm(file);
+    }
+
+    /**
+     * For a menu row: whether {@code file} is in a project, or not known yet. A file no look has filled counts as
+     * in one (the row stays offered; the command waits for the look) and is looked at behind (PERF-01, Pauta 6.0.1).
+     */
+    static boolean inProjectOrUnknown(Path file) {
+        if (file == null) {
+            return false;
+        }
+        if (!com.editora.perf.Looked.allKnown(() -> FOUND.get(file))) {
+            FOUND.warm(file);
+            return true;
+        }
+        return FOUND.get(file) != null;
+    }
+
     /** The walk up the folders: off the FX thread by a launch's plan, answered from memory on it (PERF-01). */
     private static final com.editora.perf.Looked<Path, Path> FOUND =
             new com.editora.perf.Looked<>("JavaProjectRoot.find", file -> {

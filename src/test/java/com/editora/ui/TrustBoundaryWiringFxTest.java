@@ -87,7 +87,13 @@ class TrustBoundaryWiringFxTest {
 
     private void click(EditorBuffer buffer, String link) throws Exception {
         Consumer<String> handler = FxTestSupport.field(buffer, "openUrlHandler");
-        FxTestSupport.runOnFx(() -> handler.accept(link));
+        // A link is classified off the FX thread (it stats the target); here that look runs in place.
+        com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
+        try {
+            FxTestSupport.runOnFx(() -> handler.accept(link));
+        } finally {
+            com.editora.perf.OffFx.runnerForTest(null);
+        }
         FxTestSupport.drainFx();
     }
 
@@ -118,6 +124,10 @@ class TrustBoundaryWiringFxTest {
         assertTrue(echo().contains("outside the project"), echo());
 
         click(buffer, "smb://attacker/share");
+        for (int i = 0; i < 100 && !echo().contains("smb"); i++) {
+            Thread.sleep(20); // the refusal is said when the link's classification lands
+            FxTestSupport.drainFx();
+        }
         assertTrue(echo().contains("smb"), echo());
 
         // The window-level opener (tool output URLs, plugin openUrl, update page) has no document: a
@@ -131,6 +141,10 @@ class TrustBoundaryWiringFxTest {
                 throw new IllegalStateException(e);
             }
         });
+        for (int i = 0; i < 100 && !echo().contains("setup.command"); i++) {
+            Thread.sleep(20); // the refusal is said when the link's classification lands
+            FxTestSupport.drainFx();
+        }
         assertTrue(echo().contains("setup.command"), echo());
     }
 

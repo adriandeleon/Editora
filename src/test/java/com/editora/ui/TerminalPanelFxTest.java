@@ -341,6 +341,8 @@ class TerminalPanelFxTest {
         clickWithLinkModifier(6, 0); // inside the URL on the first row
         clickWithLinkModifier(1, 1); // a column inside the path on the second row
 
+        // A path is looked at off the FX thread (PERF-01): its click is acted on when the answer lands.
+        await(() -> call(() -> opened.size() >= 2), "the path opened");
         assertEquals(List.of("url https://example.com/docs", file + ":12:3"), opened);
     }
 
@@ -381,6 +383,7 @@ class TerminalPanelFxTest {
         clickWithLinkModifier(1, 1); // "Bar", a file:// link
         clickWithLinkModifier(1, 2); // "trap": a scheme that is never a link
 
+        await(() -> call(() -> opened.size() >= 2), "the file link opened"); // looked at off the FX thread
         assertEquals(List.of("url https://example.com/manual", "file " + file), opened);
 
         mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_MOVED, 5, 0);

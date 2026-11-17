@@ -24,6 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * made-up {@code Untitled-N.py}; saved, its real file takes over.
  */
 @Tag("fx")
+// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.0.1); here in place, so a sync has
+// opened the document when it returns, as the assertions read it.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspUntitledPythonFxTest {
 
     @TempDir

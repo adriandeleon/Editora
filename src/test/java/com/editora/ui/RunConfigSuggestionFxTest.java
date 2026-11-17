@@ -49,7 +49,17 @@ class RunConfigSuggestionFxTest {
         }
     }
 
+    /** The suggestion for the active file, once the look the first ask started has landed (off FX, PERF-01). */
     private String suggestion() throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "suggestedMainClass", new Class[] {}));
+        java.nio.file.Path active = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = fx.controller.activeBuffer();
+            return b == null ? null : b.getPath();
+        });
+        if (active != null && active.toString().endsWith(".java")) {
+            com.editora.ui.SettingsRig.awaitFx(
+                    "the suggestion", () -> fx.controller.mainClassSuggestions.knows(active));
+        }
         return FxTestSupport.callOnFx(
                 () -> (String) FxTestSupport.call(fx.controller, "suggestedMainClass", new Class[] {}));
     }

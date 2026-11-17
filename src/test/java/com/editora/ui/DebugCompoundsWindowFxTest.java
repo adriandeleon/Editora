@@ -93,6 +93,8 @@ class DebugCompoundsWindowFxTest {
         assertTrue(config.getWorkspaceState().getRunCompounds().isEmpty());
         assertEquals(1, config.getWorkspaceState().getRunConfigurations().size(), "its configurations stay");
         FxTestSupport.runOnFx(stage::close);
+        // The window saves off the FX thread (PERF-01): those writes land before the test's folder is deleted.
+        assertTrue(config.shared().flushWrites());
     }
 
     private static String tr(String key) {

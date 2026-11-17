@@ -1257,9 +1257,75 @@ public final class BufferCompletion {
         if (!structural && !(autocompleteMermaid && !prefix.isEmpty() && mermaidFenceAbove(a, line))) {
             return false;
         }
-        MarkdownCompletions.Offer offer =
-                markdown.offer(a.getText(), line, column, prefix, host.getSpellLanguage(), manual);
-        return showOffer(a, caret, prefix, manual, line, column, offer);
+        String text = a.getText();
+        String dictLang = host.getSpellLanguage();
+        return offerOffFx(
+                a,
+                caret,
+                prefix,
+                manual,
+                line,
+                column,
+                () -> markdown.offer(text, line, column, prefix, dictLang, manual));
+    }
+
+    /** Where a structural offer is worked out. TEST SEAM: a test may run it in place. */
+    static java.util.function.Consumer<Runnable> offerRunner =
+            r -> Thread.ofVirtual().name("structural-completion").start(r);
+
+    /** TEST SEAM — where a structural offer is worked out; {@code null} restores the virtual thread. */
+    public static void offerRunnerForTest(java.util.function.@Nullable Consumer<Runnable> runner) {
+        offerRunner = runner != null
+                ? runner
+                : r -> Thread.ofVirtual().name("structural-completion").start(r);
+    }
+
+    /** The latest structural ask: an answer to an older one is dropped. */
+    private long offerAsk;
+    /** The document version and caret an ask found nothing for: the next pass at them goes on as for prose. */
+    private long noOfferVersion = -1;
+
+    private int noOfferCaret = -1;
+
+    /**
+     * Works out a structural offer off the JavaFX thread (PERF-01, Pauta 6.0.1): it scans the whole document and
+     * may list a folder or read another file. Answers true (handled) while it is out; when it lands for the same
+     * text and caret it is shown, and when it has nothing the completion runs again as for ordinary prose.
+     */
+    private boolean offerOffFx(
+            CodeArea a,
+            int caret,
+            String prefix,
+            boolean manual,
+            int line,
+            int column,
+            java.util.function.Supplier<MarkdownCompletions.@Nullable Offer> work) {
+        long version = host.docVersion();
+        if (version == noOfferVersion && caret == noOfferCaret) {
+            return false;
+        }
+        long ask = ++offerAsk;
+        offerRunner.accept(() -> {
+            com.editora.perf.BlockingSites.enter("BufferCompletion.structuralOffer");
+            MarkdownCompletions.Offer found;
+            try {
+                found = work.get();
+            } catch (RuntimeException e) {
+                found = null;
+            }
+            MarkdownCompletions.Offer offer = found;
+            com.editora.perf.OffFx.onFx(() -> {
+                if (ask != offerAsk || host.docVersion() != version || a.getCaretPosition() != caret) {
+                    return; // the text or the caret moved on: a newer ask answers
+                }
+                if (offer == null || !showOffer(a, caret, prefix, manual, line, column, offer)) {
+                    noOfferVersion = version;
+                    noOfferCaret = caret;
+                    updateCompletion(a, manual);
+                }
+            });
+        });
+        return true;
     }
 
     /**
@@ -1279,13 +1345,17 @@ public final class BufferCompletion {
         if (open < 0 || before.indexOf("}}", open) >= 0) {
             return false;
         }
-        MarkdownCompletions.Offer offer = HttpCompletions.offer(
-                a.getText(),
+        String text = a.getText();
+        String after = lineText.substring(before.length());
+        var variables = httpVariables == null ? null : httpVariables.get();
+        return offerOffFx(
+                a,
+                caret,
+                prefix,
+                manual,
                 line,
-                before,
-                lineText.substring(before.length()),
-                httpVariables == null ? null : httpVariables.get());
-        return showOffer(a, caret, prefix, manual, line, column, offer);
+                column,
+                () -> HttpCompletions.offer(text, line, before, after, variables));
     }
 
     /** Shows a structural {@code offer} (rows that replace from {@code offer.start()}) as the local list. */

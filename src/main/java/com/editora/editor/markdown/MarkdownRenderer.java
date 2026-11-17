@@ -2138,8 +2138,15 @@ public final class MarkdownRenderer {
             }
             Path target = baseDir.resolve(path).normalize();
             if (path.startsWith("/") && baseDir.getFileSystem() == java.nio.file.FileSystems.getDefault()) {
-                Path found = ROOTED.get(new Rooted(baseDir.toAbsolutePath(), path));
-                target = found != null ? found : target;
+                Rooted key = new Rooted(baseDir.toAbsolutePath(), path);
+                if (javafx.application.Platform.isFxApplicationThread() && !ROOTED.knows(key)) {
+                    // Never looked up the folders on the FX thread (PERF-01, Pauta 6.0.1): a note's hover asks
+                    // here; it shows the path as written, and the next render finds the looked-up one.
+                    Thread.ofVirtual().name("markdown-rooted-look").start(() -> ROOTED.lookAgain(key));
+                } else {
+                    Path found = ROOTED.get(key);
+                    target = found != null ? found : target;
+                }
             }
             return target.toUri().toString();
         } catch (RuntimeException e) {
