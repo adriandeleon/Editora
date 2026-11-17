@@ -1165,6 +1165,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Enter on an empty last line of a Clojure or other Lisp file no longer fails.** With the caret at the very end
+  of the file after a line break, Enter threw an error instead of indenting the new line.
+
 - **Debugger review fixes.** A review of the whole debugger found these, now fixed:
   - **Several sessions at once.** A compound of saved Java, Go, Rust or Node configurations launched every member
     into its last session; each now starts its own. A Debug Test attach goes to the session waiting for it, not to
