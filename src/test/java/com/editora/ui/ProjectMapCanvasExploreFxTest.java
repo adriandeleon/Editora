@@ -246,6 +246,7 @@ class ProjectMapCanvasExploreFxTest {
 
     @Test
     void aFiveThousandFileFolderIsListedWholeAndScrollsToItsLastRowWithNoMore() throws Exception {
+        com.editora.perf.OffFx.runnerForTest(null); // its tooltip reads off the FX thread: where the app reads it
         Path project = project();
         Path big = Files.createDirectory(project.resolve("big"));
         for (int i = 0; i < 5_000; i++) {
