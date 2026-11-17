@@ -129,8 +129,15 @@ class ExpandSelectionChainFxTest {
         EditorBuffer b;
         try {
             b = open(coordinator, file);
-            // The server's start answers later on a slow runner: in place until it is attached.
-            com.editora.testkit.Await.holdsWithin(() -> manager.supportsSelectionRanges(file), Duration.ofSeconds(20));
+            // The server's start answers later on a slow runner: in place until it is attached, and the buffer synced
+            // again now and then, as an edit would, in case its first open went out before the server was up.
+            for (int i = 0; i < 10 && !manager.supportsSelectionRanges(file); i++) {
+                com.editora.testkit.Await.holdsWithin(
+                        () -> manager.supportsSelectionRanges(file), Duration.ofSeconds(2));
+                EditorBuffer opened = b;
+                FxTestSupport.runOnFx(() ->
+                        FxTestSupport.call(coordinator, "syncBuffer", new Class<?>[] {EditorBuffer.class}, opened));
+            }
             FxTestSupport.drainFx();
         } finally {
             com.editora.perf.OffFx.runnerForTest(null);
