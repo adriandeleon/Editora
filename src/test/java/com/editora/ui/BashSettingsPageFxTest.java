@@ -153,11 +153,6 @@ class BashSettingsPageFxTest {
 
     /** Waits for shfmt's pill to say {@code text}: the tools are looked for off the FX thread (PERF-01). */
     private static void pillShows(Map<String, ToolStatusRow> status, String text) throws Exception {
-        long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (!text.equals(
-                        FxTestSupport.callOnFx(() -> status.get("shfmt").pill().getText()))
-                && System.nanoTime() < until) {
-            Thread.sleep(20);
-        }
+        OnFx.holdsWithin(() -> text.equals(status.get("shfmt").pill().getText()), java.time.Duration.ofSeconds(10));
     }
 }

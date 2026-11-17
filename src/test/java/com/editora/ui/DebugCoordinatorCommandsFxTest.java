@@ -842,11 +842,7 @@ class DebugCoordinatorCommandsFxTest {
         session("launch");
         List<DebugSession> both = FxTestSupport.callOnFx(() -> debug.sessions().all());
         assertEquals(2, both.size());
-        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive()))
-                && System.nanoTime() < until) {
-            Thread.sleep(20);
-        }
+        OnFx.holdsWithin(() -> both.stream().allMatch(x -> x.dap.isActive()), java.time.Duration.ofSeconds(10));
         assertTrue(
                 FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive())),
                 "both sessions run a program of their own");

@@ -220,7 +220,10 @@ class JsDebugStartFxTest {
         Path built = Files.writeString(project.resolve("main.js"), "console.log('hi');\n");
         CountDownLatch checking = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Thread> checker =
+                new java.util.concurrent.atomic.AtomicReference<>();
         dap.setFileTimesForTest(f -> {
+            checker.set(Thread.currentThread());
             checking.countDown();
             try {
                 release.await(WAIT, TimeUnit.SECONDS);
@@ -233,11 +236,8 @@ class JsDebugStartFxTest {
             dap.setProgramConsole(true);
             dap.startLaunch(source, "javascript", (options, chosen) -> {});
         });
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (adapter.sessionCount() == 0) {
-            assertTrue(System.nanoTime() < deadline, "no session; errors " + errors + ", output " + output);
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> adapter.sessionCount() > 0, java.time.Duration.ofSeconds(WAIT));
+        assertTrue(adapter.sessionCount() > 0, "no session; errors " + errors + ", output " + output);
         FakeDebugAdapter.Session session = adapter.awaitSession();
         session.awaitRequest("launch");
         Path marker = dir.resolve("program-ran");
@@ -248,8 +248,12 @@ class JsDebugStartFxTest {
         onFx(dap::stop);
         release.countDown();
 
-        Thread.sleep(1_000); // the check's answer reaches the FX thread, which would start the program
-        onFx(() -> {}); // and whatever it queued has run
+        // The check's thread ends by handing its answer to the FX thread, which would start the program: wait for
+        // that thread, then for what it queued.
+        checker.get().join(TimeUnit.SECONDS.toMillis(WAIT));
+        assertTrue(!checker.get().isAlive(), "the check finished");
+        onFx(() -> {});
+        onFx(() -> {}); // and whatever that queued has run
         assertTrue(Files.notExists(marker), "a program was started for a session that had ended");
     }
 
