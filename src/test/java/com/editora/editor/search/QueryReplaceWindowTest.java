@@ -99,4 +99,43 @@ class QueryReplaceWindowTest {
                 RuntimeException.class,
                 () -> QueryReplace.nextIn(new Counted("foo"), 0, spec("foo", "$3", true, false, false)));
     }
+
+    @Test
+    void aPieceTooShortAsksForMoreAndALongerOneGivesTheWholeDocumentsAnswer() {
+        String doc = "a".repeat(40_000) + "neeedle" + "b".repeat(40_000);
+        Counted whole = new Counted(doc);
+        Spec s = spec("ne+dle", "X", true, false, false);
+        Match expected = QueryReplace.nextIn(whole, 0, s).orElseThrow();
+
+        QueryReplace.Piece small = QueryReplace.piece(whole, 0, 100);
+        assertThrows(QueryReplace.NeedMore.class, () -> QueryReplace.nextIn(small, 0, s), "the match is past it");
+
+        // What the session does: double the piece until the search no longer reads past it.
+        int size = 100;
+        Optional<Match> found = Optional.empty();
+        for (boolean done = false; !done; ) {
+            try {
+                found = QueryReplace.nextIn(QueryReplace.piece(whole, 0, size), 0, s);
+                done = true;
+            } catch (QueryReplace.NeedMore more) {
+                size *= 2;
+            }
+        }
+        Match m = found.orElseThrow();
+        assertEquals(expected, m, "the answer the whole document gives");
+        assertEquals(40_000, m.start());
+        assertEquals("X", m.replacement());
+        assertEquals("neeedle", QueryReplace.piece(whole, 0, size).text(m.start(), m.end()));
+    }
+
+    @Test
+    void aLookbehindAcrossAPageBoundaryReadsThePreviousPage() {
+        int boundary = QueryReplace.PAGE;
+        String doc = "x".repeat(boundary - 1) + "ab" + "x".repeat(boundary) + "ab";
+        Spec s = spec("(?<=a)b", "B", true, false, false);
+        Match m = QueryReplace.nextIn(new Counted(doc), boundary - 4, s).orElseThrow();
+        assertEquals(boundary, m.start(), "the b just past the boundary, after the a just before it");
+        Match next = QueryReplace.nextIn(new Counted(doc), boundary + 1, s).orElseThrow();
+        assertEquals(doc.length() - 1, next.start(), "and the next one two pages on");
+    }
 }
