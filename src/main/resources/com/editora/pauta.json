@@ -57,14 +57,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1558"
     },
     {
-      "rule": "PERF-08",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-08",
-      "kind": "pending",
-      "reason": "A few Markdown typing helpers (list continuation, emphasis pairs) still read the whole document on the keys they handle.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
       "rule": "ACC-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-07",
