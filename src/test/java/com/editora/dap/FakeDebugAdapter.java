@@ -158,6 +158,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set, {@code launch} is answered only when this completes (the adapter still starting the JVM). */
     public volatile CompletableFuture<Void> launchGate;
 
+    /** When set, {@code setFunctionBreakpoints} and {@code setDataBreakpoints} are answered only when this completes. */
+    public volatile CompletableFuture<Void> memberBreakpointGate;
+
+    /** When set, {@code setVariable} is answered with no {@code value}, as some adapters do. */
+    public volatile boolean setVariableWithoutValue;
+
     /** When set, every {@code evaluate} is answered only when this completes (a slow expression). */
     public volatile CompletableFuture<org.eclipse.lsp4j.debug.EvaluateResponse> evaluateGate;
 
@@ -746,7 +752,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             functionBreakpoints.add(names);
             record("setFunctionBreakpoints");
-            return CompletableFuture.completedFuture(new org.eclipse.lsp4j.debug.SetFunctionBreakpointsResponse());
+            CompletableFuture<Void> gate = memberBreakpointGate;
+            var answer = new org.eclipse.lsp4j.debug.SetFunctionBreakpointsResponse();
+            return gate == null ? CompletableFuture.completedFuture(answer) : gate.thenApply(v -> answer);
         }
 
         @Override
@@ -758,7 +766,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             dataBreakpoints.add(ids);
             record("setDataBreakpoints");
-            return CompletableFuture.completedFuture(new org.eclipse.lsp4j.debug.SetDataBreakpointsResponse());
+            CompletableFuture<Void> gate = memberBreakpointGate;
+            var answer = new org.eclipse.lsp4j.debug.SetDataBreakpointsResponse();
+            return gate == null ? CompletableFuture.completedFuture(answer) : gate.thenApply(v -> answer);
         }
 
         @Override
@@ -1109,6 +1119,15 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             org.eclipse.lsp4j.debug.SetVariableResponse response = new org.eclipse.lsp4j.debug.SetVariableResponse();
             response.setValue(args.getValue());
+            if (setVariableWithoutValue) {
+                try { // the setter refuses null; the wire can still carry an answer without it
+                    java.lang.reflect.Field value = response.getClass().getDeclaredField("value");
+                    value.setAccessible(true);
+                    value.set(response, null);
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
             return CompletableFuture.completedFuture(response);
         }
         // --- scripted control: pause, jump to line, continued ------------------------------------------

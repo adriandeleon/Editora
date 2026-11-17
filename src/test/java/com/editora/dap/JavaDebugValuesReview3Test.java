@@ -78,6 +78,31 @@ class JavaDebugValuesReview3Test {
     }
 
     @Test
+    void aToStringEditoraGaveUpOnNoLongerHoldsResumeAndStep() {
+        AtomicLong now = new AtomicLong();
+        LazyValues values = new LazyValues(now::get);
+        CompletableFuture<List<DapModels.VariableInfo>> slow = new CompletableFuture<>();
+        values.resolveAll(List.of(lazy("loops", "Loops@1", 1)), ref -> slow);
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(LazyValues.BUDGET_MILLIS + 100));
+        assertEquals("Loops@1", values.stuck(), "a step now would wait behind it");
+
+        // The request's own time limit: Editora gives up on the answer, the adapter may still be running it.
+        slow.completeExceptionally(new java.util.concurrent.TimeoutException());
+        assertNull(values.stuck(), "Resume and Step were refused for the rest of the session");
+    }
+
+    @Test
+    void aToStringThatIsNeverAnsweredHoldsTheControlsOnlySoLong() {
+        AtomicLong now = new AtomicLong();
+        LazyValues values = new LazyValues(now::get);
+        values.resolveAll(List.of(lazy("loops", "Loops@1", 1)), ref -> new CompletableFuture<>());
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(LazyValues.GIVE_UP_MILLIS - 1));
+        assertEquals("Loops@1", values.stuck());
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(2));
+        assertNull(values.stuck(), "past the time a request is waited for, the user can Resume");
+    }
+
+    @Test
     void theBudgetCountsOnlyTimeWithAToStringOutstanding() {
         AtomicLong now = new AtomicLong();
         LazyValues values = new LazyValues(now::get);
