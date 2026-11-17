@@ -818,6 +818,40 @@ class DebugCoordinatorCommandsFxTest {
                 "none is started");
     }
 
+    /**
+     * A compound's plans land after its loop opened every session and focused the last: each still starts the session
+     * that asked for it, not the focused one (review 2026-11-17: all members launched into the last session).
+     */
+    @Test
+    void aCompoundsPlansThatLandLaterEachStartTheirOwnSession() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        configs.add(config("Server", "java", "demo.Args", ""));
+        configs.add(config("Client", "java", "demo.Args", ""));
+        List<Runnable> held = new ArrayList<>();
+        DebugPlanning.planner = (name, task) -> held.add(task); // read later, as the planner thread does
+        FxTestSupport.runOnFx(() ->
+                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        DebugPlanning.planner = (name, task) -> task.run();
+        FxTestSupport.runOnFx(() -> {
+            while (!held.isEmpty()) {
+                held.removeFirst().run();
+            }
+        });
+        session("launch");
+        session("launch");
+        List<DebugSession> both = FxTestSupport.callOnFx(() -> debug.sessions().all());
+        assertEquals(2, both.size());
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive()))
+                && System.nanoTime() < until) {
+            Thread.sleep(20);
+        }
+        assertTrue(
+                FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive())),
+                "both sessions run a program of their own");
+    }
+
     /** The other unsaved Java files of the project are saved before a launch; other files are not (review B3). */
     @Test
     void unsavedJavaFilesOfTheProjectAreSavedBeforeDebug() throws Exception {

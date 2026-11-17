@@ -75,6 +75,98 @@ class DotnetTestsTest {
     }
 
     @Test
+    void aHelperTypeInsideATestClassIsNotTheTestClass() {
+        String text = """
+                namespace Shop.Tests;
+
+                public class OrderTests
+                {
+                    private record Row(string Name, int Qty);
+
+                    private class FakeRepo : IRepo
+                    {
+                        public int Count() { return 0; }
+                    }
+
+                    [Fact]
+                    public void Totals()
+                    {
+                        var r = new Row("a", 1);
+                    }
+                }
+                """;
+        assertEquals(
+                new Target("Shop.Tests", "OrderTests", "Totals"), DotnetTests.testAt(text, 15), "after the helpers");
+        assertEquals(new Target("Shop.Tests", "OrderTests", null), DotnetTests.testAt(text, 4), "on the record");
+        assertEquals(
+                new Target("Shop.Tests", "OrderTests", null),
+                DotnetTests.testAt(text, 8),
+                "inside the fake: its test class");
+    }
+
+    @Test
+    void aTestClassNestedInAnotherIsNamedOuterPlusInner() {
+        String text = """
+                namespace Shop.Tests;
+
+                public class CartTests
+                {
+                    public class WhenEmpty
+                    {
+                        [Fact]
+                        public void HasNoItems()
+                        {
+                        }
+                    }
+
+                    [Fact]
+                    public void Adds() { }
+                }
+                """;
+        Target nested = DotnetTests.testAt(text, 8);
+        assertEquals(new Target("Shop.Tests", "CartTests+WhenEmpty", "HasNoItems"), nested);
+        assertEquals("Shop.Tests.CartTests+WhenEmpty", nested.fullClassName());
+        assertEquals("WhenEmpty.HasNoItems", nested.displayName());
+        assertEquals(
+                "FullyQualifiedName=Shop.Tests.CartTests+WhenEmpty.HasNoItems"
+                        + "|FullyQualifiedName~Shop.Tests.CartTests+WhenEmpty.HasNoItems\\(",
+                DotnetTests.filter(nested));
+        assertEquals(new Target("Shop.Tests", "CartTests", "Adds"), DotnetTests.testAt(text, 13), "after the nested");
+    }
+
+    @Test
+    void anAttributeOnTheMethodsLineMakesItATest() {
+        String text = """
+                public class OneLine
+                {
+                    [Fact] public void First() { Assert.True(true); }
+                    [Theory, InlineData(1)] public void Second(int n)
+                    {
+                        Assert.Equal(1, n);
+                    }
+                }
+                """;
+        assertEquals(new Target("", "OneLine", "First"), DotnetTests.testAt(text, 2));
+        assertEquals(new Target("", "OneLine", "Second"), DotnetTests.testAt(text, 5));
+    }
+
+    @Test
+    void aCallInATestIsNotAnotherMethod() {
+        String text = """
+                public class Calls
+                {
+                    [Fact]
+                    public void Works()
+                    {
+                        return Helper(1);
+                        var s = "{";
+                    }
+                }
+                """;
+        assertEquals(new Target("", "Calls", "Works"), DotnetTests.testAt(text, 6));
+    }
+
+    @Test
     void theFilterNamesTheTestOrItsClass() {
         assertEquals(
                 "FullyQualifiedName=Shop.Tests.PriceTests.Total|FullyQualifiedName~Shop.Tests.PriceTests.Total\\(",

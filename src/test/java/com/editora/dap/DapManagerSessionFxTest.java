@@ -7,6 +7,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -913,6 +914,8 @@ class DapManagerSessionFxTest {
         session.awaitRequests("setFunctionBreakpoints", 2);
         assertEquals(List.of(), session.functionBreakpoints.get(1), "no method breakpoint stops it either");
 
+        session.framePath = file.toString();
+        session.frameLine = 4; // the cursor line, 1-based
         stop(session, 7);
         session.awaitRequests("setBreakpoints", 6);
         session.awaitRequests("setFunctionBreakpoints", 3);
@@ -977,6 +980,8 @@ class DapManagerSessionFxTest {
         assertEquals(List.of(2, 4), lines(session.breakpoints.get(2)), "the real breakpoint plus the cursor line");
         await("the resume", () -> "RUNNING".equals(lastState()));
 
+        session.framePath = file.toString();
+        session.frameLine = 4; // the cursor line, 1-based
         stop(session, 7);
         session.awaitRequests("setBreakpoints", 4);
         assertEquals(file.toString(), session.breakpoints.get(3).getSource().getPath());
@@ -986,6 +991,70 @@ class DapManagerSessionFxTest {
         session.awaitDelivered();
         drainFx();
         assertEquals(4, session.breakpoints.size(), "a later stop has nothing to clean up");
+    }
+
+    /**
+     * The window resumes some stops without showing them (a logpoint it writes itself, a recording breakpoint, filters
+     * or a hit count that did not match, Thread Dump's pause): Run to Cursor cleared its temporary breakpoint at such a
+     * stop and never reached the cursor. It goes on until the program stops there, or is not resumed from a stop.
+     */
+    @Test
+    void runToCursorGoesOnPastAStopThatIsResumedAndEndsAtAStep() throws Exception {
+        project();
+        breakpoints =
+                List.of(new DapModels.FileBreakpoints(file, List.of(new DapModels.LineBreakpoint(1, null, null))));
+        FakeDebugAdapter.Session session = launch();
+        session.awaitRequests("setBreakpoints", 1);
+        stop(session, 7);
+
+        onFx(() -> dap.runToCursor(file, 3));
+        session.awaitRequests("setBreakpoints", 2);
+        session.awaitRequests("continue", 1);
+        await("the resume", () -> "RUNNING".equals(lastState()));
+
+        stop(session, 7); // on the way: line 3 (1-based), e.g. a logpoint the window writes and resumes
+        onFx(dap::resume);
+        session.awaitRequests("continue", 2);
+        session.awaitDelivered();
+        drainFx();
+        assertEquals(2, session.breakpoints.size(), "the temporary breakpoint stays for the rest of the trip");
+
+        session.framePath = file.toString();
+        session.frameLine = 4; // the cursor
+        stop(session, 7);
+        session.awaitRequests("setBreakpoints", 3);
+        assertEquals(List.of(2), lines(session.breakpoints.get(2)), "there it has done its job");
+
+        session.framePath = null;
+        session.frameLine = 3;
+        onFx(() -> dap.runToCursor(file, 3));
+        session.awaitRequests("setBreakpoints", 4);
+        stop(session, 7); // stopped on the way, and the user steps from there
+        onFx(dap::stepOver);
+        session.awaitRequest("next");
+        assertEquals(5, session.breakpoints.size(), "a step ends the trip: " + session.requests);
+        assertEquals(List.of(2), lines(session.breakpoints.get(4)));
+    }
+
+    /** A stop on the way that the window shows the user (a real breakpoint) ends the trip, as in VS Code and IntelliJ. */
+    @Test
+    void runToCursorEndsAtAStopShownOnTheWay() throws Exception {
+        project();
+        breakpoints =
+                List.of(new DapModels.FileBreakpoints(file, List.of(new DapModels.LineBreakpoint(1, null, null))));
+        FakeDebugAdapter.Session session = launch();
+        session.awaitRequests("setBreakpoints", 1);
+        stop(session, 7);
+        onFx(() -> dap.runToCursor(file, 3));
+        session.awaitRequests("setBreakpoints", 2);
+        session.awaitRequests("continue", 1);
+        await("the resume", () -> "RUNNING".equals(lastState()));
+
+        stop(session, 7); // a breakpoint on the way, shown to the user
+        onFx(dap::stopShown);
+        session.awaitRequests("setBreakpoints", 3);
+        assertEquals(
+                List.of(2), lines(session.breakpoints.get(2)), "the user's breakpoints are back, the cursor's gone");
     }
 
     @Test
@@ -1281,6 +1350,53 @@ class DapManagerSessionFxTest {
         assertEquals("launch failed: No module named app", errors.get(0));
         await("the session to end", () -> "INACTIVE".equals(lastState()));
         onFx(() -> assertFalse(dap.isActive()));
+    }
+
+    /**
+     * An adapter that dies while the session starts — {@code gdb -i dap} before GDB 14, a crashing debugpy — ended the
+     * session with "Starting…" then "Not debugging" and nothing else: say so, with what it wrote to stderr. A later
+     * session whose adapter Editora does not start (jdtls' java-debug, a remote js-debug) is not told the earlier one's
+     * stderr.
+     */
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the stand-in interpreter is a bash script
+    void anAdapterThatDiesWhileStartingSaysSoWithItsStderr() throws Exception {
+        Path python = dir.resolve("python-dies");
+        Files.writeString(
+                python,
+                "#!/bin/bash\nif [ \"$1\" = \"-c\" ]; then exit 0; fi\necho 'Interpreter dap unrecognized' >&2\nexit 1\n");
+        Files.setPosixFilePermissions(python, PosixFilePermissions.fromString("rwxr-xr-x"));
+        CountDownLatch detected = new CountDownLatch(1);
+        onFx(() -> {
+            dap.configure(true, dir.resolve("no-plugin-here").toString(), true, python.toString(), false, "");
+            dap.detectPython(ok -> detected.countDown());
+        });
+        assertTrue(detected.await(30, TimeUnit.SECONDS), "the probe finished");
+        Path script = Files.writeString(dir.resolve("app.py"), "x = 1\n");
+
+        onFx(() -> dap.startLaunch(script, "python", noPicker));
+
+        await("the failure", () -> !errors.isEmpty());
+        assertEquals(
+                com.editora.i18n.Messages.tr("debug.error.adapterDied", DebugLanguages.PYTHON.displayName())
+                        + "\nInterpreter dap unrecognized",
+                errors.get(0));
+        await("the session to end", () -> "INACTIVE".equals(lastState()));
+        assertEquals(1, errors.size(), "reported once: " + errors);
+
+        // A Java session (no stderr of its own) whose adapter drops the connection before the program runs.
+        errors.clear();
+        project();
+        adapter.launchGate = new CompletableFuture<>();
+        onFx(() -> dap.startLaunch(file, "java", noPicker, "", root));
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+        session.dropConnection();
+        await("the failure", () -> !errors.isEmpty());
+        assertEquals(
+                List.of(com.editora.i18n.Messages.tr("debug.error.adapterDied", DebugLanguages.JAVA.displayName())),
+                errors,
+                "the Python adapter's stderr is not this session's");
     }
 
     @Test

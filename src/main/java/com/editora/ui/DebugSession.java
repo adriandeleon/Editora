@@ -48,6 +48,21 @@ final class DebugSession {
     /** C#'s Debug Test at Caret: the {@code dotnet test} run the session attaches to (stopped with it). */
     com.editora.run.@Nullable RunService testHost;
 
+    /**
+     * JVMs of this session's run that printed their banner while one of them was being debugged (several surefire
+     * forks, a multi-module build), attached in turn as each one-shot session of it ends (review D11). Each waits
+     * suspended. Stop on this session ends them with the run; another session's Stop leaves them be.
+     */
+    final java.util.ArrayDeque<Runnable> queuedAttaches = new java.util.ArrayDeque<>();
+
+    /**
+     * The breakpoints this session was told of in files with no open tab, by file key: re-anchored at its start
+     * ({@code DebugCoordinator.withClosedBreakpoints}) and updated as they are edited from the Breakpoints list, a Map
+     * card or an import. Its own: another session started later, past other triggers, has its own set.
+     */
+    final java.util.Map<String, com.editora.dap.DapModels.FileBreakpoints> closedBreakpoints =
+            new java.util.LinkedHashMap<>();
+
     /** The text each file of the session was launched from (see {@link LaunchedLines}). */
     final LaunchedLines launchedLines = new LaunchedLines();
 

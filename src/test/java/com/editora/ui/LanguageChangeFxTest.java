@@ -96,6 +96,11 @@ class LanguageChangeFxTest {
 
         FxTestSupport.runOnFx(() -> b.setLanguageOverride("shell"));
 
+        // The text is scanned off the FX thread (PERF-01): the glyph shows when the scan lands, not at the next edit.
+        long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (!FxTestSupport.callOnFx(b::isRunnable) && System.nanoTime() < until) {
+            Thread.sleep(20);
+        }
         assertTrue(FxTestSupport.callOnFx(b::isRunnable), "picked as Shell: the Run glyph shows straight away");
     }
     /** An extension-less file that names its language in a vim or emacs modeline opens as that language. */

@@ -185,8 +185,26 @@ public final class DapManager {
      * own pipes, so js-debug's copies of it (console.log through the inspector) are not shown a second time.
      */
     private volatile boolean jsClientConsole;
-    /** js-debug's stderr for the starting JavaScript session, for the message when it dies while starting. */
-    private volatile @Nullable AdapterStderr jsAdapterStderr;
+    /** A session's adapter's standard error, with the session it belongs to. */
+    private record SessionStderr(long epoch, AdapterStderr stderr) {}
+
+    /**
+     * The current session's adapter's stderr (any adapter Editora starts and drains), for the message when it dies
+     * while starting. Tagged with its session: a remote session has none, and must not show the last local one's.
+     */
+    private volatile @Nullable SessionStderr adapterStderr;
+
+    /** Records {@code stderr} as the adapter's of session {@code epoch}; returns it. */
+    private AdapterStderr adapterStderr(long epoch, AdapterStderr stderr) {
+        adapterStderr = new SessionStderr(epoch, stderr);
+        return stderr;
+    }
+
+    /** The stderr of session {@code epoch}'s adapter, or null when it has none (or another session's). */
+    private @Nullable AdapterStderr adapterStderr(long epoch) {
+        SessionStderr kept = adapterStderr;
+        return kept != null && kept.epoch() == epoch ? kept.stderr() : null;
+    }
 
     /**
      * The {@code launch} or {@code attach} a socket adapter has not answered yet: the session it was sent for, when,
@@ -2625,7 +2643,8 @@ public final class DapManager {
         java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connected;
         switch (external.transport()) {
             case STDIO -> {
-                stderr = AdapterStderr.drain(proc); // DAP is on stdin/stdout; an undrained PIPE deadlocks
+                // DAP is on stdin/stdout; an undrained PIPE deadlocks
+                stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
                 if (!publishClient(epoch, c)) {
                     com.editora.process.ProcessRegistry.killTree(proc);
                     c.dispose();
@@ -2634,7 +2653,7 @@ public final class DapManager {
                 connected = c.connectStdio(proc, language.adapterId());
             }
             case PORT_ARGUMENT -> {
-                stderr = AdapterStderr.drain(proc);
+                stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
                 drainToConsole(proc.getInputStream(), epoch);
                 c.setAdapterProcess(proc); // killed on dispose: it serves the socket
                 if (!publishClient(epoch, c)) {
@@ -2676,12 +2695,13 @@ public final class DapManager {
                 c.dispose();
                 return;
             }
-            (attach ? c.attach(launch) : c.launch(launch)).whenComplete((v, le) -> {
-                if (le != null) {
-                    String key = attach ? "debug.error.attachFailed" : "debug.error.launchFailed";
-                    fail(epoch, tr(key, msg(le)) + AdapterStderr.suffix(tail));
-                }
-            });
+            trackLaunch(epoch, false, () -> attach ? c.attach(launch) : c.launch(launch))
+                    .whenComplete((v, le) -> {
+                        if (le != null) {
+                            String key = attach ? "debug.error.attachFailed" : "debug.error.launchFailed";
+                            fail(epoch, tr(key, msg(le)) + AdapterStderr.suffix(tail));
+                        }
+                    });
             fx(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
@@ -3071,7 +3091,8 @@ public final class DapManager {
             }
         }
         Process proc = BusyExecutable.start(pb);
-        AdapterStderr stderr = AdapterStderr.drain(proc); // DAP is on stdin/stdout; an undrained PIPE deadlocks
+        // DAP is on stdin/stdout; an undrained PIPE deadlocks
+        AdapterStderr stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
         boolean console = shared.programConsole;
         PythonLaunch.Target target =
                 module != null ? module : PythonLaunch.Target.script(file.toString(), programArgs, cwdOf(file));
@@ -3215,7 +3236,7 @@ public final class DapManager {
                 c.dispose();
                 return;
             }
-            c.launch(launch).whenComplete((v, le) -> {
+            trackLaunch(epoch, false, () -> c.launch(launch)).whenComplete((v, le) -> {
                 if (le != null) {
                     fail(epoch, launchFailure(le, launch) + AdapterStderr.suffix(stderr));
                 }
@@ -3685,8 +3706,7 @@ public final class DapManager {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         ProcessRunner.applyUserEnv(pb);
         Process proc = BusyExecutable.start(pb);
-        AdapterStderr stderr = AdapterStderr.drain(proc);
-        jsAdapterStderr = stderr;
+        AdapterStderr stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
         int port = listeningPort(proc.getInputStream(), java.time.Duration.ofSeconds(20));
         if (port < 0) {
             boolean ended = false;
@@ -3854,33 +3874,33 @@ public final class DapManager {
         }
         c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, tr("debug.error.jsConnect", msg(e)) + AdapterStderr.suffix(jsAdapterStderr));
+                fail(epoch, tr("debug.error.jsConnect", msg(e)) + AdapterStderr.suffix(adapterStderr(epoch)));
                 return;
             }
             if (!isCurrent(epoch)) {
                 c.dispose();
                 return;
             }
-            UnansweredLaunch sent = new UnansweredLaunch(
-                    epoch, System.nanoTime(), BrowserLaunch.isBrowserType(String.valueOf(request.get("type"))));
-            unansweredLaunch = sent;
-            (attach ? c.attach(request) : c.launch(request)).whenComplete((v, le) -> {
-                if (unansweredLaunch == sent) {
-                    unansweredLaunch = null; // answered, or refused: the refusal is reported below
-                }
-                if (le != null) {
-                    fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
-                } else if (attach && Boolean.FALSE.equals(request.get("continueOnAttach"))) {
-                    // A user's Node.js attach: nothing else says it worked, a running server prints nothing (D103).
-                    onOutput(
+            trackLaunch(
                             epoch,
-                            tr(
-                                            "debug.js.attached",
-                                            request.getOrDefault("address", "127.0.0.1") + ":" + request.get("port"))
-                                    + "\n",
-                            COMMAND_CATEGORY);
-                }
-            });
+                            BrowserLaunch.isBrowserType(String.valueOf(request.get("type"))),
+                            () -> attach ? c.attach(request) : c.launch(request))
+                    .whenComplete((v, le) -> {
+                        if (le != null) {
+                            fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
+                        } else if (attach && Boolean.FALSE.equals(request.get("continueOnAttach"))) {
+                            // A user's Node.js attach: nothing else says it worked, a running server prints nothing
+                            // (D103).
+                            onOutput(
+                                    epoch,
+                                    tr(
+                                                    "debug.js.attached",
+                                                    request.getOrDefault("address", "127.0.0.1") + ":"
+                                                            + request.get("port"))
+                                            + "\n",
+                                    COMMAND_CATEGORY);
+                        }
+                    });
             fx(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
@@ -4214,6 +4234,7 @@ public final class DapManager {
         long epoch = sessionEpoch;
         int threadId = currentThreadId;
         stepInFlight = false;
+        tempTripResumed = tempBreakpointFile != null; // a Run to Cursor trip goes on from here
         stoppedThreads.remove(threadId);
         boolean wholeProgram = allSuspended && javaDebugSession();
         allSuspended = false;
@@ -4476,14 +4497,29 @@ public final class DapManager {
     /** While a run-to-cursor temp breakpoint is planted: the file holding it (re-sent clean on stop). */
     private @Nullable Path tempBreakpointFile;
 
+    /** The 0-based line of the run-to-cursor temp breakpoint in {@link #tempBreakpointFile}. */
+    private int tempBreakpointLine = -1;
+
+    /**
+     * The program was resumed toward the run-to-cursor line, by Run to Cursor itself or by a Resume from a stop on the
+     * way (FX thread). A stop elsewhere then keeps the temp breakpoint for the next resume: the window resumes some
+     * stops without showing them — a logpoint it writes itself, a recording breakpoint, a breakpoint whose filters or
+     * hit count did not match, Thread Dump's pause — and clearing it at those left Run to Cursor never arriving. A stop
+     * reached any other way (a step) ends the trip.
+     */
+    private boolean tempTripResumed;
+
     /** Resumes and stops at {@code line} (0-based) in {@code file} via a temporary breakpoint that is
-     *  removed on the next stop (or on termination). Call on the FX thread while SUSPENDED. */
+     *  removed when the program stops there, stops elsewhere and is not resumed, or ends
+     *  ({@link #settleTempBreakpoint}). Call on the FX thread while SUSPENDED. */
     public void runToCursor(Path file, int line) {
         DapClient c = client;
         if (c == null || state != State.SUSPENDED || file == null || refusePostMortem()) {
             return;
         }
+        clearTempBreakpoint(); // the last trip's, kept from a stop on the way
         tempBreakpointFile = file;
+        tempBreakpointLine = line;
         c.sendSetBreakpoints(adapterBreakpoint(withTempLine(shared.breakpointsSupplier.get(), file, line)));
         resume();
     }
@@ -4496,14 +4532,16 @@ public final class DapManager {
 
     /**
      * Force Run to Cursor (IntelliJ, Visual Studio): runs to {@code line} (0-based) of {@code file} with every
-     * breakpoint set aside, so none on the way stops the program. Exception breakpoints still stop it. The next stop,
-     * wherever it is, puts the breakpoints back. FX thread, while SUSPENDED.
+     * breakpoint set aside, so none on the way stops the program. Exception breakpoints still stop it. The stop at the
+     * cursor, or any stop the program is not resumed from, puts the breakpoints back ({@link #settleTempBreakpoint}).
+     * FX thread, while SUSPENDED.
      */
     public void forceRunToCursor(Path file, int line) {
         DapClient c = client;
         if (c == null || state != State.SUSPENDED || file == null || refusePostMortem()) {
             return;
         }
+        clearTempBreakpoint(); // the last trip's, kept from a stop on the way
         List<Path> muted = new ArrayList<>();
         for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
             if (fb.file() != null
@@ -4519,6 +4557,7 @@ public final class DapManager {
             c.setMemberBreakpoints(List.of());
         }
         tempBreakpointFile = file;
+        tempBreakpointLine = line;
         c.sendSetBreakpoints(adapterBreakpoint(
                 new DapModels.FileBreakpoints(file, List.of(new DapModels.LineBreakpoint(line, null, null)))));
         resume();
@@ -4597,10 +4636,22 @@ public final class DapManager {
         return new DapModels.FileBreakpoints(file, lines);
     }
 
+    /**
+     * The window showed the current stop to the user (not one it resumes by itself: a logpoint, a recording or
+     * filtered breakpoint): a Run to Cursor trip ends there, as in VS Code and IntelliJ. FX thread.
+     */
+    public void stopShown() {
+        if (tempBreakpointFile != null || !forceRunMuted.isEmpty() || forceRunMutedMembers) {
+            clearTempBreakpoint();
+        }
+    }
+
     /** Restores the real breakpoint set after a run-to-cursor temp breakpoint did its job (FX thread). */
     private void clearTempBreakpoint() {
         Path f = tempBreakpointFile;
         tempBreakpointFile = null;
+        tempBreakpointLine = -1;
+        tempTripResumed = false;
         List<Path> muted = forceRunMuted;
         forceRunMuted = List.of();
         DapClient c = client;
@@ -4756,6 +4807,7 @@ public final class DapManager {
         if (refusePostMortem() || refuseWhileEvaluating()) {
             return;
         }
+        clearTempBreakpoint(); // a Run to Cursor trip kept from a stop on the way ends with a step
         long epoch = sessionEpoch;
         int threadId = currentThreadId;
         int stops = stopCount;
@@ -4864,19 +4916,43 @@ public final class DapManager {
             if (programRunning) {
                 outputPump.flush();
                 listener.onAdapterLost();
-            } else if (jsSession && (state == State.STARTING || unanswered != null)) {
-                // js-debug died before the program ran: ending quietly showed "Starting…" then "Not debugging"
-                // and nothing else (review D4) — say so, with what it wrote to stderr. So does a launch it never
-                // answered: js-debug 1.117 closes the connection, with no error, when the browser it started has
-                // exited or is not ready within its "timeout" — the session ended with nothing said at all.
-                listener.onError((unanswered != null && unanswered.browser()
-                                ? tr(
-                                        "debug.error.browserNotReady",
-                                        TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - unanswered.sentNanos()))
-                                : tr("debug.error.jsAdapterDied"))
-                        + AdapterStderr.suffix(jsAdapterStderr));
+            } else if (state == State.STARTING || unanswered != null) {
+                // The adapter died before the program ran: ending quietly showed "Starting…" then "Not debugging"
+                // and nothing else (review D4) — say so, with what it wrote to stderr (`gdb -i dap` before GDB 14:
+                // "Interpreter `dap' unrecognized"). The connect or launch failure that would say it comes after
+                // this has ended the session, and is dropped. So does a launch it never answered: js-debug 1.117
+                // closes the connection, with no error, when the browser it started has exited or is not ready
+                // within its "timeout" — the session ended with nothing said at all.
+                listener.onError(adapterDiedText(unanswered) + AdapterStderr.suffix(adapterStderr(epoch)));
             }
             endSession(epoch);
+        });
+    }
+
+    /** What the user is told when the adapter of the starting session ended (FX thread). */
+    private String adapterDiedText(@Nullable UnansweredLaunch unanswered) {
+        if (jsSession) {
+            return unanswered != null && unanswered.browser()
+                    ? tr(
+                            "debug.error.browserNotReady",
+                            TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - unanswered.sentNanos()))
+                    : tr("debug.error.jsAdapterDied");
+        }
+        DebugLanguage language = DebugLanguages.byId(sessionLanguage);
+        return tr("debug.error.adapterDied", language == null ? sessionLanguage : language.displayName());
+    }
+
+    /**
+     * Sends a session's {@code launch} or {@code attach} ({@code send}), remembered as {@link #unansweredLaunch} until
+     * the adapter answers: an adapter that closes the connection before it does has not started the program.
+     */
+    private CompletableFuture<Void> trackLaunch(long epoch, boolean browser, Supplier<CompletableFuture<Void>> send) {
+        UnansweredLaunch sent = new UnansweredLaunch(epoch, System.nanoTime(), browser);
+        unansweredLaunch = sent;
+        return send.get().whenComplete((v, e) -> {
+            if (unansweredLaunch == sent) {
+                unansweredLaunch = null; // answered, or refused: the refusal is reported by the caller
+            }
         });
     }
 
@@ -4884,18 +4960,14 @@ public final class DapManager {
     private static final long DROPPED_LAUNCH_STDERR_MILLIS = 300;
 
     /**
-     * js-debug writes why it dropped a launch ("Unable to launch browser: …") to its standard error as it closes the
-     * connection, and nothing orders the two: gives those lines a moment to arrive, so the message has them. Only for
-     * a launch still unanswered, and never on the FX thread.
+     * An adapter writes why it gave up ("Unable to launch browser: …", "Interpreter `dap' unrecognized") to its
+     * standard error as it closes the connection, and nothing orders the two: gives those lines a moment to arrive, so
+     * the message has them. Only for a session that did not end normally ({@code terminated}) and whose adapter's
+     * stderr is drained, and never on the FX thread.
      */
     private void awaitWhyLaunchWasDropped(long epoch) {
-        UnansweredLaunch pending = unansweredLaunch;
-        AdapterStderr stderr = jsAdapterStderr;
-        if (!jsSession
-                || pending == null
-                || pending.epoch() != epoch
-                || stderr == null
-                || Platform.isFxApplicationThread()) {
+        AdapterStderr stderr = adapterStderr(epoch);
+        if (terminatedEpoch == epoch || stderr == null || Platform.isFxApplicationThread()) {
             return;
         }
         long end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DROPPED_LAUNCH_STDERR_MILLIS);
@@ -4943,7 +5015,7 @@ public final class DapManager {
         threadStatuses(statuses -> {
             List<CompletableFuture<List<DapModels.StackFrameInfo>>> asked = new ArrayList<>();
             for (DapModels.ThreadStatus t : statuses) {
-                asked.add(c.stackTrace(t.id()).exceptionally(e -> List.of()));
+                asked.add(c.stackTrace(t.id(), false).exceptionally(e -> List.of()));
             }
             CompletableFuture.allOf(asked.toArray(CompletableFuture[]::new))
                     .whenComplete((v, e) -> fx(() -> {
@@ -5415,7 +5487,7 @@ public final class DapManager {
                         }
                         resumedSinceSuspendAll.remove(threadId);
                         stoppedThreads.put(threadId, reason == null ? "" : reason);
-                        clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
+                        settleTempBreakpoint(frames);
                     } else if (state != State.RUNNING || !stoppedThreads.containsKey(threadId)) {
                         return;
                     }
@@ -5430,6 +5502,37 @@ public final class DapManager {
                         reportException(epoch, c, threadId, stopCount);
                     }
                 }));
+    }
+
+    /**
+     * A stop while a Run to Cursor temp breakpoint is planted (FX thread). At the cursor line, or reached by a step, it
+     * has done its job and goes; elsewhere after a resume it stays until the program is resumed from this stop or the
+     * user acts otherwise ({@link #tempTripResumed}): the window may be about to resume it without showing it.
+     */
+    private void settleTempBreakpoint(@Nullable List<DapModels.StackFrameInfo> frames) {
+        Path f = tempBreakpointFile;
+        if (f == null && forceRunMuted.isEmpty() && !forceRunMutedMembers) {
+            return;
+        }
+        if (tempTripResumed && f != null && !atLine(frames, f, tempBreakpointLine)) {
+            tempTripResumed = false; // kept: a resume from this stop carries the trip on, anything else ends it
+            return;
+        }
+        clearTempBreakpoint();
+    }
+
+    /** Whether {@code frames}' top frame is on 0-based {@code line} of {@code file}, as the adapter or the user names it. */
+    private boolean atLine(@Nullable List<DapModels.StackFrameInfo> frames, Path file, int line) {
+        if (frames == null || frames.isEmpty()) {
+            return false;
+        }
+        for (DapModels.StackFrameInfo top :
+                List.of(frames.getFirst(), originalFrames(frames).getFirst())) {
+            if (top.line() == line && top.file() != null && com.editora.config.PathKeys.samePath(top.file(), file)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -5455,29 +5558,52 @@ public final class DapManager {
         }
         bashEntryPassed = true;
         DapModels.StackFrameInfo top = frames == null || frames.isEmpty() ? null : frames.getFirst();
-        if (top == null || top.file() == null || breakpointAt(top.file(), top.line())) {
+        if (top == null
+                || top.file() == null
+                || plainBreakpointAt(shared.breakpointsSupplier.get(), top.file(), top.line())) {
             return false;
         }
         c.resume(threadId);
         return true;
     }
 
-    /** Whether a breakpoint is set on 0-based {@code line} of {@code file}. */
-    private boolean breakpointAt(Path file, int line) {
-        for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
-            if (fb.file() != null
-                    && fb.file()
-                            .toAbsolutePath()
-                            .normalize()
-                            .equals(file.toAbsolutePath().normalize())) {
+    /**
+     * Whether a plain breakpoint — no condition, hit count, log message, filters or recording — is set on 0-based
+     * {@code line} of {@code file}: the one kind for which bashdb's entry stop is the stop the user asked for. Any other
+     * kind would have the entry stop shown as a pause the user never asked for: bashdb stops at the first command
+     * before it evaluates breakpoints, so the stop says nothing about the condition, and a log message is not a stop.
+     * Such a breakpoint on the script's very first command is passed over with the entry stop (bashdb does not check
+     * the line it continues from again). Pure.
+     */
+    static boolean plainBreakpointAt(List<DapModels.FileBreakpoints> all, Path file, int line) {
+        for (DapModels.FileBreakpoints fb : all) {
+            if (fb.file() != null && com.editora.config.PathKeys.samePath(normalized(fb.file()), normalized(file))) {
                 for (DapModels.LineBreakpoint b : fb.breakpoints()) {
-                    if (b.line() == line) {
+                    if (b.line() == line
+                            && blank(b.condition())
+                            && blank(b.logMessage())
+                            && blank(b.hitCondition())
+                            && !b.recording()
+                            && b.filters().none()) {
                         return true;
                     }
                 }
             }
         }
         return false;
+    }
+
+    private static boolean blank(@Nullable String s) {
+        return s == null || s.isBlank();
+    }
+
+    /** {@code p} absolute and normalized (bashdb names a script as it was started), or as it is when it cannot be. */
+    private static Path normalized(Path p) {
+        try {
+            return p.toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return p;
+        }
     }
 
     /** Asks which exception {@code threadId} stopped on and reports it, unless the stop has ended meanwhile. */
@@ -5768,9 +5894,16 @@ public final class DapManager {
                     // notice, which comes first in the console as before.
                     Path from = dir;
                     Thread.ofVirtual().name("dap-js-stale-check").start(() -> {
-                        boolean stale = JsLaunch.builtIsStale(source, built, DapManager::modifiedTime);
+                        boolean stale = JsLaunch.builtIsStale(source, built, fileTimes);
                         fx(() -> {
-                            if (stale && isCurrent(epoch)) {
+                            if (!isCurrent(epoch)) {
+                                // Stop or Restart while the times were read: no program for a session that is gone.
+                                program.kill();
+                                started.completeExceptionally(
+                                        new java.util.concurrent.CancellationException("the session has ended"));
+                                return;
+                            }
+                            if (stale) {
                                 // A notice, not stderr: js-debug's copies of the program's streams are dropped.
                                 onNotice(
                                         epoch,
@@ -5857,6 +5990,15 @@ public final class DapManager {
             program.kill();
             started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
         }
+    }
+
+    /** How a file's modification time is read for the compiled-JavaScript check (a test holds it). */
+    private volatile java.util.function.Function<Path, Optional<java.time.Instant>> fileTimes =
+            DapManager::modifiedTime;
+
+    /** Test seam for {@link #fileTimes}. */
+    void setFileTimesForTest(java.util.function.Function<Path, Optional<java.time.Instant>> times) {
+        this.fileTimes = times;
     }
 
     private static Optional<java.time.Instant> modifiedTime(Path file) {

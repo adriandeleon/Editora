@@ -254,7 +254,9 @@ public final class LocalProcesses {
                 String value = m.group(2);
                 if (value != null && !value.isEmpty()) {
                     String[] hp = hostPort(value);
-                    if (hp != null && parsePort(hp[1]) > 0) {
+                    if (hp != null && hp[1].strip().equals("0")) {
+                        port = 0; // a port chosen when it starts (--inspect=0): not one to offer
+                    } else if (hp != null && parsePort(hp[1]) > 0) {
                         host = hp[0];
                         port = parsePort(hp[1]);
                     }

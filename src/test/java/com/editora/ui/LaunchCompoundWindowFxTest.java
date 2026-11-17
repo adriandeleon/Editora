@@ -45,6 +45,7 @@ class LaunchCompoundWindowFxTest {
         fx = FxWindowFixture.create();
         debug = FxTestSupport.field(fx.controller, "debugCoordinator");
         root = Files.createDirectories(fx.configDir.resolve("pair")).toRealPath();
+        fx.shared.getTrustStore().trust(root); // its preLaunchTasks run only in a trusted folder
         Files.writeString(root.resolve("server.rb"), "x = 1\nputs x\n");
         Files.writeString(root.resolve("client.rb"), "y = 1\nputs y\n");
         Files.createDirectories(root.resolve(".vscode"));

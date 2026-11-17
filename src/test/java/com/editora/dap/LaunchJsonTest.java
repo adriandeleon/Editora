@@ -152,6 +152,39 @@ class LaunchJsonTest {
     }
 
     @Test
+    void aShellTasksCommandAndArgumentsWithSpacesAreQuoted() throws Exception {
+        LaunchJson.File tasks = LaunchJson.parse("""
+                { "tasks": [
+                  { "label": "tool", "type": "shell", "command": "/opt/my tools/run", "args": ["a b", "x"] },
+                  { "label": "win", "type": "shell", "command": "C:\\\\Program Files\\\\t.exe", "args": ["my file.txt"] },
+                  { "label": "line", "type": "shell", "command": "npm run build && echo done" },
+                  { "label": "home", "type": "shell", "command": "$HOME/bin/x", "args": ["y"] }
+                ] }
+                """);
+        assertEquals(
+                List.of("sh", "-c", "'/opt/my tools/run' 'a b' x"),
+                LaunchJson.taskArgv(LaunchJson.task(tasks, "tool"), false));
+        assertEquals(
+                List.of("cmd", "/c", "\"C:\\Program Files\\t.exe\" \"my file.txt\""),
+                LaunchJson.taskArgv(LaunchJson.task(tasks, "win"), true));
+        assertEquals(
+                List.of("sh", "-c", "npm run build && echo done"),
+                LaunchJson.taskArgv(LaunchJson.task(tasks, "line"), false),
+                "a command alone is a whole command line");
+        assertEquals(
+                List.of("cmd", "/c", "npm run build && echo done"),
+                LaunchJson.taskArgv(LaunchJson.task(tasks, "line"), true));
+        assertEquals(
+                List.of("sh", "-c", "$HOME/bin/x y"),
+                LaunchJson.taskArgv(LaunchJson.task(tasks, "home"), false),
+                "a command without spaces still expands");
+        assertEquals("plain", LaunchJson.cmdQuote("plain"));
+        assertEquals("\"\"", LaunchJson.cmdQuote(""));
+        assertEquals("\"a&b\"", LaunchJson.cmdQuote("a&b"));
+        assertEquals("\"say \\\"hi\\\"\"", LaunchJson.cmdQuote("say \"hi\""));
+    }
+
+    @Test
     void aTasksPlainCommandIsItsCommandLine() throws Exception {
         LaunchJson.File tasks = LaunchJson.parse("""
                 { "tasks": [
@@ -167,7 +200,8 @@ class LaunchJsonTest {
                 List.of("sh", "-c", "make all 'it'\"'\"'s' 'a b'"),
                 LaunchJson.taskArgv(LaunchJson.task(tasks, "build"), false));
         assertEquals(
-                List.of("cmd", "/c", "make all it's a b"), LaunchJson.taskArgv(LaunchJson.task(tasks, "build"), true));
+                List.of("cmd", "/c", "make all it's \"a b\""),
+                LaunchJson.taskArgv(LaunchJson.task(tasks, "build"), true));
         assertEquals(List.of("./run", "x"), LaunchJson.taskArgv(LaunchJson.task(tasks, "run"), false));
         assertEquals(List.of("true"), LaunchJson.taskArgv(LaunchJson.task(tasks, "old"), false), "process by default");
         assertNull(LaunchJson.taskArgv(LaunchJson.task(tasks, "cargo"), false), "an extension's task type");

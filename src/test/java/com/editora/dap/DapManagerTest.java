@@ -39,6 +39,31 @@ class DapManagerTest {
         }
     }
 
+    /**
+     * bashdb's entry stop is shown only when the user put a plain breakpoint on that line: a conditional one, a hit
+     * count, a logpoint, a recording or filtered one would have it shown as a pause the user never asked for.
+     */
+    @Test
+    void onlyAPlainBreakpointOnTheFirstLineKeepsBashdbsEntryStop() {
+        Path script = Path.of("work", "run.sh").toAbsolutePath();
+        java.util.function.Function<DapModels.LineBreakpoint, Boolean> at = b -> DapManager.plainBreakpointAt(
+                java.util.List.of(new DapModels.FileBreakpoints(script, java.util.List.of(b))), script, 0);
+        assertTrue(at.apply(new DapModels.LineBreakpoint(0, null, null)));
+        assertTrue(at.apply(new DapModels.LineBreakpoint(0, " ", "")), "blank is none");
+        assertFalse(at.apply(new DapModels.LineBreakpoint(0, "x > 1", null)), "a condition");
+        assertFalse(at.apply(new DapModels.LineBreakpoint(0, null, "at {x}")), "a logpoint");
+        assertFalse(at.apply(new DapModels.LineBreakpoint(0, null, null, "3", 0, false)), "a hit count");
+        assertFalse(at.apply(new DapModels.LineBreakpoint(0, null, null, null, 0, true)), "a recording breakpoint");
+        assertFalse(at.apply(new DapModels.LineBreakpoint(4, null, null)), "another line");
+        assertTrue(
+                DapManager.plainBreakpointAt(
+                        java.util.List.of(new DapModels.FileBreakpoints(
+                                script, java.util.List.of(new DapModels.LineBreakpoint(0, null, null)))),
+                        script.getParent().resolve("../work/run.sh"),
+                        0),
+                "the same file however it is named");
+    }
+
     @Test
     void protocolRequestsHaveABoundedDeadline() {
         CompletableFuture<String> silent = new CompletableFuture<>();

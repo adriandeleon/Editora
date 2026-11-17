@@ -61,6 +61,9 @@ final class DebugValues {
                 break;
             }
         }
+        if (lines.length == 0) {
+            return " …"; // only line breaks: split leaves nothing
+        }
         String last = lines[lines.length - 1].strip();
         boolean closes = last.equals("}") || last.equals("};");
         return capped(first) + (first.endsWith("{") && closes ? " … }" : " …");

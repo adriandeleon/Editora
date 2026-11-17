@@ -46,6 +46,7 @@ final class PatchReviewPane implements TabContent {
         root.getStyleClass().add("patch-review");
         files.getItems().setAll(entries);
         files.getStyleClass().add("patch-file-list");
+        files.setAccessibleText(title); // the list of the review's files, named for a screen reader (ACC-01)
         files.setCellFactory(v -> new FileCell());
         UiZoom.prefWidth(files, 245);
         UiZoom.minWidth(files, 170);

@@ -23,8 +23,11 @@ final class DebugFacts {
 
     private final Runnable busy;
 
-    /** Whether a look is under way: a second launch is refused until it lands. */
-    private boolean looking;
+    /**
+     * Who has a look under way (a session): a second launch of the same one is refused until it lands, while another
+     * one's (a compound's next member) looks at the same time.
+     */
+    private final java.util.Set<Object> looking = new java.util.HashSet<>();
 
     DebugFacts(BiConsumer<BuildTool, Path> executableFacts, Runnable busy) {
         this.executableFacts = executableFacts;
@@ -33,17 +36,17 @@ final class DebugFacts {
 
     /**
      * Whether everything {@code asks} asks of the disk is known now. If not, it is looked at off the FX thread and
-     * {@code again} runs on the FX thread when it lands; a second ask while a look is under way is refused.
+     * {@code again} runs on the FX thread when it lands; a second ask of {@code who}'s while its look is under way is
+     * refused.
      */
-    boolean known(String name, Runnable asks, Runnable again) {
+    boolean known(String name, Object who, Runnable asks, Runnable again) {
         if (com.editora.perf.Looked.allKnown(asks)) {
             return true;
         }
-        if (looking) {
+        if (!looking.add(who)) {
             busy.run();
             return false;
         }
-        looking = true;
         DebugPlanning.offFx(
                 name,
                 () -> {
@@ -51,7 +54,7 @@ final class DebugFacts {
                     return Boolean.TRUE;
                 },
                 done -> {
-                    looking = false;
+                    looking.remove(who);
                     again.run();
                 });
         return false;

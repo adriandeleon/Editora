@@ -137,7 +137,7 @@ class EverySettingHasACommandFxTest {
     @Test
     void everySettingARowWritesIsWrittenByAPaletteCommand() throws Exception {
         baseline = FxTestSupport.callOnFx(() -> json.valueToTree(settings()));
-        Map<String, String> rowSettings = FxTestSupport.callOnFx(EverySettingHasACommandFxTest::whatTheRowsWrite);
+        Map<String, String> rowSettings = whatTheRowsWrite();
         assertTrue(rowSettings.size() > 300, "the rows were found and changed: " + rowSettings.size());
         Set<String> commandSettings = whatTheCommandsWrite();
         assertTrue(commandSettings.size() > 200, "the commands were found and run: " + commandSettings.size());
@@ -157,33 +157,39 @@ class EverySettingHasACommandFxTest {
     // ---- the rows ----
 
     /** Every setting some row of the Settings window writes, with the row that writes it (page ▸ title). */
-    private static Map<String, String> whatTheRowsWrite() {
+    private static Map<String, String> whatTheRowsWrite() throws Exception {
         Map<String, String> out = new TreeMap<>();
-        for (SettingsSearch.Row row : List.copyOf(window.rows)) {
-            List<Node> controls = new ArrayList<>();
-            controlsIn(row.node(), controls);
-            for (Node control : controls) {
-                Set<String> wrote = new TreeSet<>();
-                if (control instanceof TextField field) {
-                    // A text a row refuses is not kept: try the next likely value until one is.
-                    for (String candidate : candidates(field.getText())) {
-                        wrote = written(() -> {
-                            field.setText(candidate);
-                            field.fireEvent(new ActionEvent());
-                        });
-                        if (!wrote.isEmpty()) {
-                            break;
-                        }
-                    }
-                } else {
-                    wrote = written(() -> change(control));
-                }
-                for (String setting : wrote) {
-                    out.putIfAbsent(setting, row.page() + " ▸ " + title(row.node()));
-                }
-            }
+        // A row at a time on the FX thread: all of them in one task outlast its time limit on a slow machine.
+        for (SettingsSearch.Row row : FxTestSupport.callOnFx(() -> List.copyOf(window.rows))) {
+            FxTestSupport.runOnFx(() -> rowWrites(row, out));
         }
         return out;
+    }
+
+    /** What {@code row}'s controls write, into {@code out}. FX thread. */
+    private static void rowWrites(SettingsSearch.Row row, Map<String, String> out) {
+        List<Node> controls = new ArrayList<>();
+        controlsIn(row.node(), controls);
+        for (Node control : controls) {
+            Set<String> wrote = new TreeSet<>();
+            if (control instanceof TextField field) {
+                // A text a row refuses is not kept: try the next likely value until one is.
+                for (String candidate : candidates(field.getText())) {
+                    wrote = written(() -> {
+                        field.setText(candidate);
+                        field.fireEvent(new ActionEvent());
+                    });
+                    if (!wrote.isEmpty()) {
+                        break;
+                    }
+                }
+            } else {
+                wrote = written(() -> change(control));
+            }
+            for (String setting : wrote) {
+                out.putIfAbsent(setting, row.page() + " ▸ " + title(row.node()));
+            }
+        }
     }
 
     private static String title(Node row) {

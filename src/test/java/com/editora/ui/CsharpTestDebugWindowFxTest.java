@@ -184,6 +184,27 @@ class CsharpTestDebugWindowFxTest {
         await("the run ended", () -> !call(host::isRunning));
     }
 
+    /**
+     * The session ends without Stop (the attach failed, the adapter went): the test host would wait for a debugger
+     * forever, so the run is stopped a moment later (review 2026-11-17); meanwhile the session counts as live.
+     */
+    @Test
+    void theRunIsStoppedWhenItsSessionEndsWithoutStop() throws Exception {
+        CsharpTestDebug.summaryGrace = javafx.util.Duration.millis(200);
+        try {
+            open(root.resolve("PriceTests.cs"), 7);
+            run("test.debugAtCaret");
+            FakeDebugAdapter.Session session = adapter.awaitSession();
+            session.awaitRequest("attach");
+            com.editora.run.RunService host = call(() -> debug.s().testHost);
+            assertTrue(host != null && call(host::isRunning));
+            session.terminate(); // the adapter ends the session: no Stop
+            await("the run ended", () -> !call(host::isRunning));
+        } finally {
+            CsharpTestDebug.summaryGrace = javafx.util.Duration.seconds(10);
+        }
+    }
+
     @Test
     void aFileOutsideATestProjectIsNotDebuggedAsATest() throws Exception {
         open(fx.configDir.resolve("Shop").toRealPath().resolve("Program.cs"), 7);

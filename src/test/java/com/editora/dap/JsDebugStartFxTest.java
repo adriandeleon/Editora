@@ -205,6 +205,54 @@ class JsDebugStartFxTest {
         assertTrue(session.disconnected.await(WAIT, TimeUnit.SECONDS));
     }
 
+    /**
+     * A TypeScript file's compiled JavaScript is checked for being older than its source before js-debug's program is
+     * started. A Stop during that check went on to start the program anyway, for a session that no longer existed.
+     */
+    @Test
+    void aStopWhileTheCompiledFileIsCheckedStartsNoProgram() throws Exception {
+        Path node = node("echo \"Debug server listening at 127.0.0.1:" + adapter.port() + "\"\nexec sleep 300");
+        Files.writeString(node, Files.readString(node).replace("v22.11.0", "v24.0.0")); // one that runs TypeScript
+        enableJs(node);
+        Path project = Files.createDirectories(dir.resolve("app"));
+        Files.writeString(project.resolve("package.json"), "{\"name\": \"app\"}\n");
+        Path source = Files.writeString(project.resolve("main.ts"), "console.log('hi');\n");
+        Path built = Files.writeString(project.resolve("main.js"), "console.log('hi');\n");
+        CountDownLatch checking = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        dap.setFileTimesForTest(f -> {
+            checking.countDown();
+            try {
+                release.await(WAIT, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return java.util.Optional.of(java.time.Instant.EPOCH);
+        });
+        onFx(() -> {
+            dap.setProgramConsole(true);
+            dap.startLaunch(source, "javascript", (options, chosen) -> {});
+        });
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
+        while (adapter.sessionCount() == 0) {
+            assertTrue(System.nanoTime() < deadline, "no session; errors " + errors + ", output " + output);
+            Thread.sleep(20);
+        }
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+        Path marker = dir.resolve("program-ran");
+        session.runInTerminal( // not answered once the session is gone: the connection is closed
+                project.toString(), List.of("/bin/sh", "-c", "touch '" + marker + "'", built.toString()), Map.of());
+        assertTrue(checking.await(WAIT, TimeUnit.SECONDS), "the compiled file is checked");
+
+        onFx(dap::stop);
+        release.countDown();
+
+        Thread.sleep(1_000); // the check's answer reaches the FX thread, which would start the program
+        onFx(() -> {}); // and whatever it queued has run
+        assertTrue(Files.notExists(marker), "a program was started for a session that had ended");
+    }
+
     @Test
     void aNodeTooOldForJsDebugIsReported() throws Exception {
         Path node = dir.resolve("node");

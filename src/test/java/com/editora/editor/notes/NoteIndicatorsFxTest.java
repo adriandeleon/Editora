@@ -209,9 +209,10 @@ class NoteIndicatorsFxTest {
                 Bounds textStart = charBox(b[0], 0);
                 int[] top = paintedAt(b[0], first);
                 int[] bottom = paintedAt(b[0], last);
-                assertEquals(first.getMinX(), top[0], 1.5, "row 1 begins at the note, not at the line's start");
-                assertEquals(textStart.getMinX(), bottom[0], 1.5, "row 2 begins where the text does");
-                assertEquals(last.getMaxX(), bottom[1], 1.5, "and ends with the note, not at the row's end");
+                // Painted on whole pixels: macOS rounds a fractional edge up to 1.6 px away.
+                assertEquals(first.getMinX(), top[0], 2.0, "row 1 begins at the note, not at the line's start");
+                assertEquals(textStart.getMinX(), bottom[0], 2.0, "row 2 begins where the text does");
+                assertEquals(last.getMaxX(), bottom[1], 2.0, "and ends with the note, not at the row's end");
                 Bounds below = charBox(b[0], row2[0] * 2 + 2);
                 assertEquals(null, paintedAt(b[0], below), "the rows after the note are not painted");
             });

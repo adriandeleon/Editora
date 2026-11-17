@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@ExtendWith(OffFxInPlace.class) // the Doctor looks at the disk off the FX thread first; here it lands at once
 class DoctorCoordinatorFxTest {
 
     @BeforeAll

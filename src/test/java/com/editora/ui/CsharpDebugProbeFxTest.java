@@ -268,6 +268,7 @@ class CsharpDebugProbeFxTest {
         try {
             MainController c = fx.controller;
             fx.shared.getTrustStore().trust(root); // the user's own project: MSBuild runs its targets
+            fx.shared.getTrustStore().trust(lone.getParent()); // a lone file's build imports Directory.Build.* too
             DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
             DapManager dap = FxTestSupport.field(c, "dapManager");
             await("C# debugging available", 60, () -> call(() -> debug.debugEffectiveFor("csharp")));

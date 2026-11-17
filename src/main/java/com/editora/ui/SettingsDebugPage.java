@@ -587,7 +587,10 @@ final class SettingsDebugPage {
             java.util.function.Supplier<String> getCommand,
             java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
 
-    /** The debug adapters with a card of their own (java/python/javascript/go/rust), in display order. */
+    /**
+     * The debug adapters with a card of their own (Java, Python, JavaScript, Go, Rust, C#, Ruby, PHP, Bash), in display
+     * order.
+     */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
         return java.util.List.of(
                 new DebugAdapterUi(
@@ -719,7 +722,15 @@ final class SettingsDebugPage {
                         v -> config.getSettings().setPhpDebugEnabled(v),
                         () -> config.getSettings().isPhpDebugEnabled(),
                         v -> config.getSettings().setPhpDebugPath(v),
-                        () -> config.getSettings().getPhpDebugPath()));
+                        () -> config.getSettings().getPhpDebugPath()),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.BASH,
+                        "bashDebug.js",
+                        "debug bash shell sh bashdb bash-debug vscode-bash-debug node path found install",
+                        v -> config.getSettings().setBashDebugEnabled(v),
+                        () -> config.getSettings().isBashDebugEnabled(),
+                        v -> config.getSettings().setBashDebugPath(v),
+                        () -> config.getSettings().getBashDebugPath()));
     }
 
     /**
