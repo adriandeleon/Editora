@@ -1376,7 +1376,7 @@ public class SettingsWindow {
                 JdkChoice.configure(mavenJdkCombo, tr("settings.maven.jdk.system"));
                 mavenJdkCombo.setId("settings-maven-jdk");
                 mavenJdkCombo.valueProperty().addListener((obs, was, now) -> {
-                    if (!loading) {
+                    if (!loading && !JdkChoice.sameHome(was, now)) { // not the version landing (JdkChoice.select)
                         config.getSettings().setMavenJdkHome(now == null ? "" : now.home());
                         apply();
                     }

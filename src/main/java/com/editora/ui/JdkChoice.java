@@ -60,31 +60,44 @@ record JdkChoice(String home, int major) {
 
     /**
      * Fills {@code combo} with this machine's JDKs and selects {@code home}. The JDKs are looked for off the FX
-     * thread (PERF-01, Pauta 6.0.1): until they land the list holds the inherited choice and {@code home}, selected;
-     * then the whole list, the selection kept (the same item, so no change is heard). A later call's list wins.
+     * thread (PERF-01, Pauta 6.0.1): until they land the list holds the inherited choice and {@code home} (its
+     * version not known yet), selected; then the whole list, with the same home selected, now with its version. The
+     * value changes then but its home does not: a listener that saves the home asks {@link #sameHome} first. A later
+     * call's list wins.
      */
     static void select(ComboBox<JdkChoice> combo, String home) {
         String wanted = home == null ? "" : home.strip();
         long mine = nextLook(combo);
         combo.getItems().setAll(known(wanted));
         selectHome(combo, wanted);
+        LOOKING.incrementAndGet();
         com.editora.perf.OffFx.then("JdkChoice.discover", () -> discover(wanted), found -> {
+            LOOKING.decrementAndGet();
             if (mine != look(combo) || !found.ok()) {
                 return; // a later fill is under way, or the look failed: the short list stays
             }
             JdkChoice current = combo.getValue();
             List<JdkChoice> all = new ArrayList<>(found.or(List.of()));
-            if (current != null) {
-                all.replaceAll(c -> c.equals(current) ? current : c); // the selected item itself: no change
-                if (!all.contains(current)) {
-                    all.add(current);
-                }
+            // The selected home as the look found it (with its version), else kept as it was.
+            JdkChoice selected = current == null
+                    ? null
+                    : all.stream()
+                            .filter(c -> c.home().equals(current.home()))
+                            .findFirst()
+                            .orElse(current);
+            if (selected != null && !all.contains(selected)) {
+                all.add(selected);
             }
             combo.getItems().setAll(all);
-            if (current != null) {
-                combo.getSelectionModel().select(current);
+            if (selected != null) {
+                combo.getSelectionModel().select(selected);
             }
         });
+    }
+
+    /** Whether {@code a} and {@code b} name the same JDK home (a version learned later is no change of choice). */
+    static boolean sameHome(@Nullable JdkChoice a, @Nullable JdkChoice b) {
+        return (a == null ? "" : a.home()).equals(b == null ? "" : b.home());
     }
 
     /** What is known without a look: the inherited choice, and {@code selected} when one is. */
@@ -106,6 +119,15 @@ record JdkChoice(String home, int major) {
     }
 
     private static final String LOOK = "jdk-choice-look";
+
+    /** The {@link #select} looks not landed yet. */
+    private static final java.util.concurrent.atomic.AtomicInteger LOOKING =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Whether a {@link #select} look has not landed yet: a test waits for the versions before it reads a combo. */
+    static boolean looking() {
+        return LOOKING.get() > 0;
+    }
 
     private static long nextLook(ComboBox<JdkChoice> combo) {
         long next = look(combo) + 1;

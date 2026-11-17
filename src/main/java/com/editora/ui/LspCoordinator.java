@@ -5179,11 +5179,32 @@ final class LspCoordinator {
                 return;
             }
             if (edits.isEmpty() || com.editora.text.LspTextEdits.changesNothing(snapshot, edits)) {
-                host.setStatus(FormatOutcomes.noChange( // a failed request, or shfmt's no-op (HTML A5, Bash B3)
-                        edits.isEmpty() ? lspManager.formatFailure(path) : null,
-                        lspManager.managedServerId(path),
+                var failure = edits.isEmpty() ? lspManager.formatFailure(path) : null;
+                String serverId = lspManager.managedServerId(path);
+                String logged = edits.isEmpty() ? lspManager.errorLoggedSince(path, errorsBefore) : null;
+                Runnable report = () -> host.setStatus(FormatOutcomes.noChange( // a failed request, or shfmt's no-op
+                        failure, // (HTML A5, Bash B3)
+                        serverId,
                         () -> !edits.isEmpty() || bashToolFound("shfmt"), // a no-op edit: shfmt ran
-                        edits.isEmpty() ? lspManager.errorLoggedSince(path, errorsBefore) : null));
+                        logged));
+                // Whether shfmt is there is never guessed: a path nothing has looked at yet is looked at off the FX
+                // thread first, "Formatting…" standing meanwhile (PERF-01, Pauta 6.0.1).
+                if (edits.isEmpty()
+                        && failure == null
+                        && BashLspUi.isBash(serverId)
+                        && !com.editora.perf.Looked.allKnown(() -> bashToolFound("shfmt"))) {
+                    List<String> shfmt = List.of(bashToolCommand("shfmt"));
+                    com.editora.perf.OffFx.then(
+                            "LspCoordinator.shfmtFound",
+                            () -> com.editora.doctor.DoctorProbes.lookAt(shfmt),
+                            looked -> {
+                                if (buffer == host.activeBuffer()) {
+                                    report.run();
+                                }
+                            });
+                    return;
+                }
+                report.run();
                 return;
             }
             if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
