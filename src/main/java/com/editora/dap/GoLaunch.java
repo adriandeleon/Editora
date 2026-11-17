@@ -47,8 +47,12 @@ public final class GoLaunch {
         if (line >= lines.length) {
             return null;
         }
+        boolean[] quoted = startsQuoted(lines, line);
         for (int i = line; i >= 0; i--) {
             String l = lines[i];
+            if (quoted[i]) {
+                continue; // inside a raw string or a block comment: neither a declaration nor a closing brace
+            }
             if (i < line && l.startsWith("}")) {
                 return null; // the caret is below a function's end, not in one
             }
@@ -61,6 +65,49 @@ public final class GoLaunch {
             }
         }
         return null;
+    }
+
+    /**
+     * For each of {@code lines} up to {@code last}, whether it starts inside a raw string ({@code `…`}) or a block
+     * comment, read from the top of the file: such a line's first column is text, not code.
+     */
+    static boolean[] startsQuoted(String[] lines, int last) {
+        boolean[] quoted = new boolean[lines.length];
+        boolean raw = false;
+        boolean comment = false;
+        for (int i = 0; i <= last && i < lines.length; i++) {
+            quoted[i] = raw || comment;
+            String l = lines[i];
+            char quote = 0; // inside an interpreted string or a rune, which end with their line
+            for (int c = 0; c < l.length(); c++) {
+                char ch = l.charAt(c);
+                char next = c + 1 < l.length() ? l.charAt(c + 1) : 0;
+                if (raw) {
+                    raw = ch != '`';
+                } else if (comment) {
+                    if (ch == '*' && next == '/') {
+                        comment = false;
+                        c++;
+                    }
+                } else if (quote != 0) {
+                    if (ch == '\\') {
+                        c++;
+                    } else if (ch == quote) {
+                        quote = 0;
+                    }
+                } else if (ch == '`') {
+                    raw = true;
+                } else if (ch == '"' || ch == '\'') {
+                    quote = ch;
+                } else if (ch == '/' && next == '/') {
+                    break;
+                } else if (ch == '/' && next == '*') {
+                    comment = true;
+                    c++;
+                }
+            }
+        }
+        return quoted;
     }
 
     /**
@@ -184,11 +231,64 @@ public final class GoLaunch {
      * which a file tree, a watcher and {@code git status} all see meanwhile.
      */
     public static String debugBinary() {
-        String name = "editora-dlv-"
+        String name = DEBUG_BINARY_PREFIX
                 + Long.toUnsignedString(
                         java.util.concurrent.ThreadLocalRandom.current().nextLong(), 36)
                 + (com.editora.Os.isWindows() ? ".exe" : "");
         return Path.of(System.getProperty("java.io.tmpdir"), name).toString();
+    }
+
+    /** The prefix of {@link #debugBinary}'s file names. */
+    private static final String DEBUG_BINARY_PREFIX = "editora-dlv-";
+
+    /**
+     * Deletes {@code path} when it is a program {@link #debugBinary} named — the session that built it has ended. Any
+     * other path, or an error (Windows holding a file still running), is left alone.
+     */
+    public static void deleteDebugBinary(@Nullable String path) {
+        if (path == null) {
+            return;
+        }
+        try {
+            Path p = Path.of(path);
+            Path name = p.getFileName();
+            if (name != null && name.toString().startsWith(DEBUG_BINARY_PREFIX)) {
+                Files.deleteIfExists(p);
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            // left for deleteStaleDebugBinaries
+        }
+    }
+
+    /**
+     * Deletes the programs {@link #debugBinary} named in the temporary folder that are over an hour old: those of
+     * sessions that ended without deleting theirs (Editora quit, or crashed). For start-up; never throws.
+     */
+    public static int deleteStaleDebugBinaries() {
+        return deleteStaleDebugBinaries(
+                Path.of(System.getProperty("java.io.tmpdir")),
+                java.time.Instant.now().minus(java.time.Duration.ofHours(1)));
+    }
+
+    /** Deletes {@link #debugBinary}'s programs in {@code dir} last changed before {@code before}; how many it deleted. */
+    static int deleteStaleDebugBinaries(Path dir, java.time.Instant before) {
+        int deleted = 0;
+        try (java.nio.file.DirectoryStream<Path> files = Files.newDirectoryStream(dir, DEBUG_BINARY_PREFIX + "*")) {
+            for (Path f : files) {
+                try {
+                    if (Files.isRegularFile(f)
+                            && Files.getLastModifiedTime(f).toInstant().isBefore(before)
+                            && Files.deleteIfExists(f)) {
+                        deleted++;
+                    }
+                } catch (java.io.IOException | RuntimeException e) {
+                    // in use, or gone: the next start-up tries again
+                }
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            // no temporary folder to read
+        }
+        return deleted;
     }
 
     /**
