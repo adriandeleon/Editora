@@ -57,14 +57,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1558"
     },
     {
-      "rule": "PERF-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-01",
-      "kind": "pending",
-      "reason": "Nothing on the interface's own thread reads or writes the disk or waits any more, but some work still searches, diffs or parses a whole document or project there: Search Everywhere, the text sent to a language server, Markdown editing and a few commands, so a very large file or project can briefly slow typing.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
       "rule": "PERF-08",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-08",
