@@ -1387,7 +1387,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   statement for each installer, archive and jar, naming the repository, commit and tag that built it.
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
-- Updated commonmark-java to 0.31.0, Apache MINA SSHD to 2.20.1, Gson to 2.15.0 and joni to 2.2.8.
+- **Updated commonmark-java to 0.31.0, Apache MINA SSHD to 2.20.1, Gson to 2.15.0 and joni to 2.2.8.**
 
 ### Fixed
 
@@ -2454,8 +2454,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no Java new enough for the installed jdtls is found, and when the JDK the window's project gets (the release its
   build file states, `${…}` properties, Spring Boot's `java.version`, a Kotlin `jvmToolchain` and a reactor's
   modules read, else the default) has no sources (`arg0` parameters), naming each and the package that adds them.
-- Navigate lists Go to Declaration, Peek Definition and Copy Qualified Name; the editor's LSP submenu lists Call and
-  Type Hierarchy.
+- **Navigate and the editor's LSP submenu list more code navigation.** Navigate lists Go to Declaration, Peek
+  Definition and Copy Qualified Name; the editor's LSP submenu lists Call and Type Hierarchy.
 - **Code-action lightbulb in the gutter** (IntelliJ's intention bulb). When the caret rests on a line where the
   language server has a fix for an error, a red bulb with a `!` shows in the gutter; an amber one for other quick
   actions, a warning's included. Refactorings, source actions and Add Javadoc, which servers offer nearly
@@ -2793,12 +2793,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Two Java projects in one window** each get their own status line, named by folder, so one's failed import is no
   longer followed by the other's "Loaded and ready". A Maven project's missing dependency is said once, at ready,
   and a fixed `pom.xml` ends on ready.
-- Menu rows keep their prefix when two would otherwise read the same ("Rerun Last" twice in Run, "Find in Files" in
-  Find and Window). Go to Class puts `Map.Entry` first for "Entry", ranking shaded copies as nested types.
-  Implementation rows are sorted by class and line. Refactor This puts what acts on the selection before Extract
-  Interface. Postfix completion rows match past the shared qualifier, and the camel-hump matcher no longer slows
-  down on long many-word texts. Settings no longer logs an error after an install when its Mermaid page was never
-  opened.
+- **Clearer menu rows, better Go to Class ranking and steadier pickers.** Menu rows keep their prefix when two would
+  otherwise read the same ("Rerun Last" twice in Run, "Find in Files" in Find and Window). Go to Class puts
+  `Map.Entry` first for "Entry", ranking shaded copies as nested types. Implementation rows are sorted by class and
+  line. Refactor This puts what acts on the selection before Extract Interface. Postfix completion rows match past the
+  shared qualifier, and the camel-hump matcher no longer slows down on long many-word texts. Settings no longer logs
+  an error after an install when its Mermaid page was never opened.
 - **Java: a failed import names the real cause** (a Gradle build's "Could not find method …", not the generic
   "Could not fetch model"), and belongs to its own project: in a window of several projects one failed import no
   longer marks the others, and it clears once that project imports.
@@ -4291,12 +4291,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run in the background.
 - **Command palette:** a command is also found by the first part of its id, so "markdown table" finds the
   `Table: …` commands.
-- Smaller Markdown additions: an image or diagram in the preview can be enlarged from the keyboard and the menu;
-  hidden front matter is also left out of print; the default view applies to untitled Markdown buffers; ordered
-  lists are renumbered after deleting or cutting and pasting whole items; Paste as Markdown handles merged cells,
-  nested tables and definition lists; links in the completion documentation popup can be followed;
-  "Disable for This Project" can edit YAML and `.markdownlint-cli2` configs; a changed `.markdownlint` file outside
-  a project is noticed when the window regains focus.
+- **Smaller Markdown additions in the preview, print, lists and paste.** Smaller Markdown additions: an image or
+  diagram in the preview can be enlarged from the keyboard and the menu; hidden front matter is also left out of
+  print; the default view applies to untitled Markdown buffers; ordered lists are renumbered after deleting or cutting
+  and pasting whole items; Paste as Markdown handles merged cells, nested tables and definition lists; links in the
+  completion documentation popup can be followed; "Disable for This Project" can edit YAML and `.markdownlint-cli2`
+  configs; a changed `.markdownlint` file outside a project is noticed when the window regains focus.
 - **Markdown: more syntax, in the preview and in every export.** GitHub alerts (`> [!NOTE]`, `[!TIP]`,
   `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), emoji shortcodes (`:rocket:`), `==highlight==`, `^superscript^` and
   `~subscript~`, definition lists, ```` ```math ```` fences and `\(…\)` / `\[…\]` math. In the preview: task
@@ -4910,12 +4910,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Snippets: a trigger typed out in full is no longer taken over by another completion. In Markdown and
-  plain text, the dictionary's inline suggestion (`date` offered `d` for "dated") is not shown over a
-  trigger, so Tab expands it; the bundled `date` and `time`, which Tab alone leaves be, are offered inline
-  instead (`date → Current date (YYYY-MM-DD)`) and Tab expands them. With a language server, the typed
-  trigger's snippet leads the completion list and is the highlighted row, where Tab used to accept the
-  server's first row. An AI inline suggestion is likewise not shown over a trigger Tab expands.
+- **Snippets: a trigger typed out in full is no longer taken over by another completion.** In Markdown and plain text,
+  the dictionary's inline suggestion (`date` offered `d` for "dated") is not shown over a trigger, so Tab expands it;
+  the bundled `date` and `time`, which Tab alone leaves be, are offered inline instead
+  (`date → Current date (YYYY-MM-DD)`) and Tab expands them. With a language server, the typed trigger's snippet leads
+  the completion list and is the highlighted row, where Tab used to accept the server's first row. An AI inline
+  suggestion is likewise not shown over a trigger Tab expands.
 - **`editora --help` described `--no-session` with `--single-window`'s second line.** The "instead of
   restoring all windows; doesn't change the saved layout" continuation now sits under `--single-window`,
   the option it explains, as the README already had it.
@@ -4958,41 +4958,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The repository field on Settings → Sync shows the whole URL.** It was too narrow for an ordinary
   `https://github.com/<you>/<repository>` address.
 
-- Paging a full-width Markdown preview (Space, Page Down) just after it rendered jumped to wherever the
-  hidden editor was scrolled instead of moving one page, and a re-render put the preview back there too.
-  The preview follows the editor's scroll position only in Split view now.
-- Right-clicking a class row in Test Results opened no menu, so "Go to Test Class", "Rerun This Class"
-  and "Debug This Class" could not be reached; only test rows had one.
+- **A full-width Markdown preview pages one screen at a time.** Paging a full-width Markdown preview (Space, Page
+  Down) just after it rendered jumped to wherever the hidden editor was scrolled instead of moving one page, and a
+  re-render put the preview back there too. The preview follows the editor's scroll position only in Split view now.
+- **Class rows in Test Results have a right-click menu.** Right-clicking a class row in Test Results opened no menu,
+  so "Go to Test Class", "Rerun This Class" and "Debug This Class" could not be reached; only test rows had one.
 - **Setting a bookmark mnemonic in a narrowed buffer no longer deletes the project's bookmarks.** The
   bookmark could not be found in the store while the buffer was narrowed, and the store was then emptied.
   The command is now refused until the buffer is widened. Setting a mnemonic also no longer shuffles the
   order of the files in the Bookmarks tool window.
-- A Word (`.docx`) export no longer puts an empty paragraph in front of every Mermaid block or display
-  formula it has to write as source — which, without `mmdc` installed, was every Mermaid block.
-- Dragging a picture from a browser into a Markdown document no longer inserts an empty link (`![](< >)`)
-  when the drag carries neither pixels nor an address; it reports that the picture could not be inserted.
+- **Word export puts no empty paragraph before Mermaid blocks or formulas.** A Word (`.docx`) export no longer puts an
+  empty paragraph in front of every Mermaid block or display formula it has to write as source — which, without `mmdc`
+  installed, was every Mermaid block.
+- **Dragging a picture with nothing to insert no longer adds an empty link.** Dragging a picture from a browser into a
+  Markdown document no longer inserts an empty link (`![](< >)`) when the drag carries neither pixels nor an address;
+  it reports that the picture could not be inserted.
 - **Installing a language server or debug adapter no longer leaves a broken one behind.** A download that
   turned out to be incomplete or not the expected tool was unpacked over the installed version before it
   was checked: the working version was gone, and the half-unpacked folder was then detected as installed,
   so the editor never offered to install it again. The new version is now unpacked beside the old one and
   replaces it only once it is complete; a failed install leaves things as they were.
-- Installing the Maven `pom.xml` server reported success, and saved a launch command, when the download
-  was an error page rather than the server.
-- A language-server archive whose binary was a link to a file outside the install is no longer accepted
-  (the file it pointed at was marked executable and saved as the server's command).
-- The "Install this plugin?" question ran the version and the author together ("Greeter 1.0Ada"); the
-  author is now in brackets.
-- The interrupted-save prompt for a file that no longer exists offered "Keep Current File", which
-  deleted the backup — the only copy left. The button now reads "Delete Backup".
-- MCP `todo_scan` reported each marker one line down and one column to the right.
-- MCP `find_in_files` searched the project of the window that was focused last instead of the window
-  the MCP server belongs to.
-- `Buffer: Toggle Pin` on the Welcome tab (or an image, PDF or hex tab) no longer fails with an internal
-  error after pinning the tab, which left a Welcome tab that Close All skipped. It now says there is no
-  file open.
-- Scrolling a file with code lenses on no longer leaves the language server counting references for the
-  lines scrolled away from: a superseded code-lens request now cancels the `codeLens/resolve` requests it
-  had started (with jdtls, a reference search each).
+- **Installing the `pom.xml` server fails when the download is an error page.** Installing the Maven `pom.xml` server
+  reported success, and saved a launch command, when the download was an error page rather than the server.
+- **A language-server archive whose binary links outside the install is refused.** A language-server archive whose
+  binary was a link to a file outside the install is no longer accepted (the file it pointed at was marked executable
+  and saved as the server's command).
+- **The "Install this plugin?" question no longer runs the version and author together.** The "Install this plugin?"
+  question ran the version and the author together ("Greeter 1.0Ada"); the author is now in brackets.
+- **The interrupted-save prompt for a missing file says Delete Backup.** The interrupted-save prompt for a file that
+  no longer exists offered "Keep Current File", which deleted the backup — the only copy left. The button now reads
+  "Delete Backup".
+- **MCP `todo_scan` reported each marker one line down and one column to the right.**
+- **MCP `find_in_files` searches its own window's project.** MCP `find_in_files` searched the project of the window
+  that was focused last instead of the window the MCP server belongs to.
+- **Pinning the Welcome tab or a viewer tab no longer fails.** `Buffer: Toggle Pin` on the Welcome tab (or an image,
+  PDF or hex tab) no longer fails with an internal error after pinning the tab, which left a Welcome tab that Close
+  All skipped. It now says there is no file open.
+- **Scrolling past code lenses cancels their reference searches.** Scrolling a file with code lenses on no longer
+  leaves the language server counting references for the lines scrolled away from: a superseded code-lens request now
+  cancels the `codeLens/resolve` requests it had started (with jdtls, a reference search each).
 - **Project filter: Enter opens the first match.** After typing in the Project tool window's filter, Enter
   did nothing, because no match was highlighted — and Down first landed on the project's own row, where
   Enter collapsed the result list. The first match is now highlighted when the results arrive, so Enter
@@ -5003,26 +5007,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   watched for changes.
 - **Project Map: Escape on a preview card's right-click menu closes only the menu.** It closed the card
   as well.
-- The systemd timer preview described `OnCalendar=*:30` as "Daily at minute 30 past every hour"; it now
-  reads "At minute 30 past every hour".
-- AI Agent: starting a new session, switching agent or resuming a past chat no longer puts
-  "(agent exited)" into the fresh transcript, and the first prompt after it keeps its "Working…" state
-  and Stop button until the reply is complete. The process the editor had just stopped was reported as
-  an agent that quit, which could also discard the session that replaced it.
-- Settings: the Install button for the `typst` program (Typst page) and the one for Typst's language
-  server (Language Servers page) shared one "installed" state. One of them never changed to
-  "Installed", and the other showed whichever of the two checks finished last.
-- Settings ▸ Keymaps: the Up arrow on the first shortcut row moved the focus out of the list, to the
-  filter field. It now stays on the row, as the Down arrow does on the last one.
-- Save As into a folder reached through a symbolic link (`/home` on some Linux systems, `/tmp` and `/var`
-  on macOS) lost the personal notes of the copy: they were stored under the path as typed and looked up
-  under the real one. A file that does not exist yet is now keyed the way it will be once it is written.
-- On macOS a save Editora made itself was often taken for a change by another program, which refreshed
-  Git, the diffs and the index after it: the file watcher there reports a write up to two seconds later,
-  longer than the editor waited for it.
-- Clicking the right-hand half of a code lens ran the lenses of the line below it, or nothing.
-- On macOS, Enter did nothing in the "modified outside Editora" prompt of a file without unsaved changes.
-  Reload is now the default button there, so Enter reloads as it does on Windows and Linux.
+- **The systemd timer preview reads `OnCalendar=*:30` correctly.** The systemd timer preview described
+  `OnCalendar=*:30` as "Daily at minute 30 past every hour"; it now reads "At minute 30 past every hour".
+- **AI Agent: a new, switched or resumed session starts clean.** AI Agent: starting a new session, switching agent or
+  resuming a past chat no longer puts "(agent exited)" into the fresh transcript, and the first prompt after it keeps
+  its "Working…" state and Stop button until the reply is complete. The process the editor had just stopped was
+  reported as an agent that quit, which could also discard the session that replaced it.
+- **Settings: the two Typst Install buttons each show their own state.** Settings: the Install button for the `typst`
+  program (Typst page) and the one for Typst's language server (Language Servers page) shared one "installed" state.
+  One of them never changed to "Installed", and the other showed whichever of the two checks finished last.
+- **Settings ▸ Keymaps: the Up arrow on the first shortcut row moved the focus out of the list, to the filter field.**
+  It now stays on the row, as the Down arrow does on the last one.
+- **Save As through a symbolic link keeps the copy's personal notes.** Save As into a folder reached through a
+  symbolic link (`/home` on some Linux systems, `/tmp` and `/var` on macOS) lost the personal notes of the copy: they
+  were stored under the path as typed and looked up under the real one. A file that does not exist yet is now keyed
+  the way it will be once it is written.
+- **On macOS, Editora's own saves are no longer taken for outside changes.** On macOS a save Editora made itself was
+  often taken for a change by another program, which refreshed Git, the diffs and the index after it: the file watcher
+  there reports a write up to two seconds later, longer than the editor waited for it.
+- **Clicking the right-hand half of a code lens ran the lenses of the line below it, or nothing.**
+- **On macOS, Enter did nothing in the "modified outside Editora" prompt of a file without unsaved changes.** Reload
+  is now the default button there, so Enter reloads as it does on Windows and Linux.
 
 ## [0.20.0] - 2026-10-08
 
@@ -5038,19 +5043,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `View: Toggle Page Footer in Print and PDF`.
 - **Print Selection…** and **Export Selection to PDF…** in the editor's right-click menu and the palette:
   the selected lines, numbered as in the file. Print… and Export to PDF… are in that menu too.
-- Image tabs can be printed and exported to PDF. The Project Map's output is in the palette as
+- **Image tabs can be printed and exported to PDF.** The Project Map's output is in the palette as
   `Project Map: Print…` and `Project Map: Export to PDF…`.
-- Exported PDFs have clickable links (web, mail and `#heading`), bookmarks from the headings, and a
-  title, creator and date. Fenced code in a Markdown PDF is syntax-coloured.
-- Print Preview: zoom (Fit Page, Fit Width, 50–400%; Ctrl+wheel, Ctrl +/−/0) and a page number you can
-  type. The window remembers its size and zoom for the session. Printed links show their address.
-- With no printer installed, Print offers Export to PDF instead of only a status-bar message.
-- PDF export shows page progress and says when a second export is queued. New commands
+- **Exported PDFs have links, bookmarks, metadata and coloured code.** Exported PDFs have clickable links (web, mail
+  and `#heading`), bookmarks from the headings, and a title, creator and date. Fenced code in a Markdown PDF is
+  syntax-coloured.
+- **Print Preview: zoom (Fit Page, Fit Width, 50–400%; Ctrl+wheel, Ctrl +/−/0) and a page number you can type.** The
+  window remembers its size and zoom for the session. Printed links show their address.
+- **With no printer installed, Print offers Export to PDF instead of only a status-bar message.**
+- **PDF export shows page progress and says when a second export is queued.** New commands
   `File: Open Last Exported File` and `File: Cancel PDF Export`.
-- Project Map: a command `Project: Toggle Tree / Map View` (no default key), a "?" popover listing the
-  mouse and keyboard controls, and an options (⋯) menu holding Keep current zoom, Focus new column, Hide
-  all open Personal Notes, Print… and PDF…. Tree/Map and the two navigation options are remembered per
-  workspace (workspace-state schema 13).
+- **Project Map: a Tree/Map toggle command, a controls popover and an options menu.** Project Map: a command
+  `Project: Toggle Tree / Map View` (no default key), a "?" popover listing the mouse and keyboard controls, and an
+  options (⋯) menu holding Keep current zoom, Focus new column, Hide all open Personal Notes, Print… and PDF….
+  Tree/Map and the two navigation options are remembered per workspace (workspace-state schema 13).
 - **Settings sync** _(Beta)_. Keeps your snippets, abbreviations, templates and personal dictionary the
   same on every computer, through a private Git repository you own (Settings → Sync). Paste the
   repository URL, or use **Create on GitHub…** when `gh` is signed in, and Connect: it first shows what
@@ -5063,9 +5069,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the status bar. Preferences (`settings.json`), keymaps, macros and themes are not synced. Off by
   default. New commands `Settings Sync: Set Up…`, `Settings Sync: Sync Now` and
   `Settings Sync: Toggle Sync Automatically`. Settings schema 115.
-- GitHub tool window: a row under the toolbar shows the repository's URL (click to open it on GitHub,
-  right-click to copy), the branch checked out, and the GitHub account `gh` is signed in with. It replaces
-  the `owner/name` label in the toolbar. The account needs gh 2.81 or newer.
+- **GitHub tool window: a row shows the repository, branch and signed-in account.** GitHub tool window: a row under
+  the toolbar shows the repository's URL (click to open it on GitHub, right-click to copy), the branch checked out,
+  and the GitHub account `gh` is signed in with. It replaces the `owner/name` label in the toolbar. The account needs
+  gh 2.81 or newer.
 - **Crash recovery.** Unsaved edits, including untitled buffers, in every window, are kept in the config
   folder while you work and offered back on the next launch if Editora did not close normally (crash,
   kill, logout, power loss). Restoring opens the text as unsaved tabs and never writes your files; a file
@@ -5073,54 +5080,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Buffers over 16 million characters are not covered. New setting **Keep a recovery copy of unsaved
   edits** (Settings → Workspace, on by default) and commands `File: Recover Unsaved Edits…` and
   `View: Toggle Crash Recovery`. Settings schema 112.
-- If Editora is interrupted in the middle of a refactoring that moves or deletes files, the next time
-  the project is opened it offers to put the files back.
-- Project tree: Delete moves files to the trash on Linux and macOS (the dialog says which will happen;
-  a permanent delete now defaults to Cancel), and a new "Undo Move" in the tree menu reverses the last
-  drag-move. Windows still deletes permanently.
-- Git: a merge, rebase, cherry-pick or revert in progress is shown in the status bar (`main · MERGING`)
-  and as a banner in the Commit window with Continue, Skip and Abort (`Git: Continue Operation`,
-  `Git: Skip Commit`, `Git: Abort Operation`). Conflicted files have their own Conflicts group with
-  Resolve (the three-way resolver), keep-one-side actions named for what they are in the current
-  operation, and Mark Resolved. Finishing a resolution saves and stages the file. A merge commit is
-  prefilled with Git's prepared message.
-- Git: a "Pull mode" setting (fast-forward only, which stays the default; rebase; merge) and
-  `Git: Pull (Rebase)` / `Git: Pull (Merge)`. A pull that cannot fast-forward because the branch
-  diverged offers Rebase or Merge instead of an error. Rebase and merge pulls carry uncommitted changes
+- **An interrupted refactoring that moves or deletes files can be put back.** If Editora is interrupted in the middle
+  of a refactoring that moves or deletes files, the next time the project is opened it offers to put the files back.
+- **Project tree: Delete moves to the trash on Linux and macOS, with Undo Move.** Project tree: Delete moves files to
+  the trash on Linux and macOS (the dialog says which will happen; a permanent delete now defaults to Cancel), and a
+  new "Undo Move" in the tree menu reverses the last drag-move. Windows still deletes permanently.
+- **Git: merges, rebases, cherry-picks and reverts in progress can be continued or aborted.** Git: a merge, rebase,
+  cherry-pick or revert in progress is shown in the status bar (`main · MERGING`) and as a banner in the Commit window
+  with Continue, Skip and Abort (`Git: Continue Operation`, `Git: Skip Commit`, `Git: Abort Operation`). Conflicted
+  files have their own Conflicts group with Resolve (the three-way resolver), keep-one-side actions named for what
+  they are in the current operation, and Mark Resolved. Finishing a resolution saves and stages the file. A merge
+  commit is prefilled with Git's prepared message.
+- **Git: a Pull mode setting, and rebase or merge pulls.** Git: a "Pull mode" setting (fast-forward only, which stays
+  the default; rebase; merge) and `Git: Pull (Rebase)` / `Git: Pull (Merge)`. A pull that cannot fast-forward because
+  the branch diverged offers Rebase or Merge instead of an error. Rebase and merge pulls carry uncommitted changes
   across with `--autostash` and say what happened to them.
-- Git: branch management from the branch dropdown (a row's `⋯`, right-click or the Menu key) and the
-  palette: new branch from any branch or tag, rename, merge into current, rebase onto, set or unset
-  upstream, compare with current, check out a tag or revision by name, delete locally (unmerged commits
-  are confirmed with their count) and delete on the remote. Remote branches are grouped by remote when
-  there are several.
-- Git: `Force Push` (always `--force-with-lease`, confirmed), `Push to…` another remote or branch name,
-  and `Push Tags`. A push rejected as non-fast-forward offers Pull-then-Push, Force-with-Lease or Cancel.
-- Git: `Manage Remotes…` (add, rename, set URL, fetch, prune, remove), `Fetch Remote…`, and
-  `Manage Worktrees…` (list, add, open in a new window, remove, prune).
-- Git Log: history loads a page at a time as you scroll instead of stopping at 200 commits; an
-  all-branches view and a commit graph; a details area with the full message, author, date, hash,
-  parents and refs; Enter in the filter box searches the whole history (message words, `author:`,
-  `content:`, `since:`/`until:`, `path:`); file history follows renames; Enter on a commit opens
-  everything it changed as one review, and two selected commits can be compared.
-- Git: tags. New Tag…, Checkout, Push and Delete from a commit row and from the palette.
-- Git: work on a file's changes in the editor. `Git: Next Change` / `Previous Change`; clicking a gutter
-  change bar (or `Git: Peek Change at Caret`) opens a card with the old and new lines and Revert Hunk,
-  Stage Hunk, Copy Old Text and Open Diff; `Git: Revert Hunk at Caret` is an undoable edit and
-  `Git: Stage Hunk at Caret` stages only that change. Editor tabs are tinted by their file's Git status
-  and the minimap marks changed lines.
-- Git: `Git: Stashes…` lists every stash with its files; Enter shows its changes, and each stash can be
-  applied, popped, dropped, branched from or copied by name. `Stash Changes…` offers include untracked,
-  staged only and keep index.
-- Git blame: ignore-whitespace and detect-moved-lines toggles, automatic use of
-  `.git-blame-ignore-revs`, and `Git: Annotate Previous Revision` to walk a line back through history.
-- Git: `Apply Patch…` (to the working tree or the index, checked first, with a 3-way offer when it does
-  not fit) and `Create Patch…` from staged changes, unstaged changes or a commit.
-- Commit window: Amend, Commit and Push, Sign off, `Git: Undo Last Commit…`, a subject and body length
-  guide, recent messages, `commit.template` support, `Unstage All`, `Discard All Changes…`, Space to
-  stage or unstage the selected rows, and per-file added/removed line counts.
-- Git: "Fetch automatically" (Settings → Git, off by default). The background fetch never prompts and
-  runs only in a trusted folder or in a repository you fetched, pulled or pushed in during the session.
-- Git: the clone form takes a branch, a shallow depth and a submodules option.
+- **Git: branch management from the branch dropdown and the palette.** Git: branch management from the branch dropdown
+  (a row's `⋯`, right-click or the Menu key) and the palette: new branch from any branch or tag, rename, merge into
+  current, rebase onto, set or unset upstream, compare with current, check out a tag or revision by name, delete
+  locally (unmerged commits are confirmed with their count) and delete on the remote. Remote branches are grouped by
+  remote when there are several.
+- **Git: `Force Push` (always `--force-with-lease`, confirmed), `Push to…` another remote or branch name, and
+  `Push Tags`.** A push rejected as non-fast-forward offers Pull-then-Push, Force-with-Lease or Cancel.
+- **Git: manage remotes and worktrees.** Git: `Manage Remotes…` (add, rename, set URL, fetch, prune, remove),
+  `Fetch Remote…`, and `Manage Worktrees…` (list, add, open in a new window, remove, prune).
+- **Git Log: paged history, an all-branches graph, commit details and history search.** Git Log: history loads a page
+  at a time as you scroll instead of stopping at 200 commits; an all-branches view and a commit graph; a details area
+  with the full message, author, date, hash, parents and refs; Enter in the filter box searches the whole history
+  (message words, `author:`, `content:`, `since:`/`until:`, `path:`); file history follows renames; Enter on a commit
+  opens everything it changed as one review, and two selected commits can be compared.
+- **Git: tags.** New Tag…, Checkout, Push and Delete from a commit row and from the palette.
+- **Git: work on a file's changes in the editor.** `Git: Next Change` / `Previous Change`; clicking a gutter change
+  bar (or `Git: Peek Change at Caret`) opens a card with the old and new lines and Revert Hunk, Stage Hunk, Copy Old
+  Text and Open Diff; `Git: Revert Hunk at Caret` is an undoable edit and `Git: Stage Hunk at Caret` stages only that
+  change. Editor tabs are tinted by their file's Git status and the minimap marks changed lines.
+- **Git: a Stashes list with apply, pop, drop and branch, and more stash options.** Git: `Git: Stashes…` lists every
+  stash with its files; Enter shows its changes, and each stash can be applied, popped, dropped, branched from or
+  copied by name. `Stash Changes…` offers include untracked, staged only and keep index.
+- **Git blame: whitespace and moved-line options, ignore-revs file, previous revision.** Git blame: ignore-whitespace
+  and detect-moved-lines toggles, automatic use of `.git-blame-ignore-revs`, and `Git: Annotate Previous Revision` to
+  walk a line back through history.
+- **Git: apply and create patches.** Git: `Apply Patch…` (to the working tree or the index, checked first, with a
+  3-way offer when it does not fit) and `Create Patch…` from staged changes, unstaged changes or a commit.
+- **Commit window: amend, commit and push, sign off and more staging actions.** Commit window: Amend, Commit and Push,
+  Sign off, `Git: Undo Last Commit…`, a subject and body length guide, recent messages, `commit.template` support,
+  `Unstage All`, `Discard All Changes…`, Space to stage or unstage the selected rows, and per-file added/removed line
+  counts.
+- **Git: "Fetch automatically" (Settings → Git, off by default).** The background fetch never prompts and runs only in
+  a trusted folder or in a repository you fetched, pulled or pushed in during the session.
+- **Git: the clone form takes a branch, a shallow depth and a submodules option.**
 - **Java refactorings that ask where to, or what.** With the Java language server, the Code Actions menu
   now carries out **Move** (a class to another package, a nested class to its own file or another class,
   a static member to another class, an instance method onto one of its parameters or fields), **Extract
@@ -5140,48 +5148,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spell check per file type.** Settings → Spell Check → File Types and `Spell Check: Toggle for This
   File Type`. Data and configuration formats (JSON, YAML, TOML, XML, CSV, INI, properties and similar) are
   off by default; HTML and Typst documents have their text checked, not only comments. Settings schema 113.
-- Spell check commands: Next / Previous Misspelling, Correct Word at Caret, Add Word at Caret to
-  Dictionary, Ignore Word at Caret, Reload Personal Dictionary. Bound in the Emacs (`M-$`), Sublime (`F6`,
-  `Ctrl+F6`) and CUA (`F7`) keymaps. The status bar shows the dictionary in use; the language picker shows
-  names, marks the current one and can return a file to the default.
-- Snippets: the fields of a running snippet are outlined, mirrors underlined and the final caret marked;
-  the status bar shows "Snippet 2/3".
-- Snippets: new setting **Expand snippets with Tab** (Settings → Snippets, on by default) and
-  `View: Toggle Snippet Expansion on Tab`. Settings schema 114.
-- Snippets: bundled snippets for JavaScript, TypeScript (also used in JSX/TSX), PHP, Lua, TOML, Dockerfile
-  and Terraform. Added the variables `UUID`, `RANDOM`, `RANDOM_HEX`, `CURRENT_*`, `LINE_COMMENT`,
-  `BLOCK_COMMENT_*`, `WORKSPACE_*`, `RELATIVE_FILEPATH` and `TM_CURRENT_WORD`. Bundled snippets can be
-  disabled; a snippet can have several triggers; the Settings list has a filter and a trigger column.
-- Macros can drive prompts: text and keys typed into the find bar, an overlay prompt or a picker are
-  recorded and replayed into that prompt (`C-s foo Enter Esc` replays as a search). A command that opens a
-  blocking dialog, and a mouse click, show a status hint while recording.
-- Macros: Esc (or `C-g`) cancels a recording. New commands `Macro: Cancel Recording` and
-  `Macro: Start or Stop Recording`, a Tools → Macros submenu, and default keys in the CUA
-  (`Ctrl+Shift+R`, record) and Sublime (`Ctrl+Shift+Q`, replay) keymaps. Long replays run in slices with
-  progress in the status bar and stop on Esc.
+- **Spell check commands for misspellings and the dictionary, with keymap bindings.** Spell check commands: Next /
+  Previous Misspelling, Correct Word at Caret, Add Word at Caret to Dictionary, Ignore Word at Caret, Reload Personal
+  Dictionary. Bound in the Emacs (`M-$`), Sublime (`F6`, `Ctrl+F6`) and CUA (`F7`) keymaps. The status bar shows the
+  dictionary in use; the language picker shows names, marks the current one and can return a file to the default.
+- **Snippets: a running snippet's fields are marked and the status bar counts them.** Snippets: the fields of a
+  running snippet are outlined, mirrors underlined and the final caret marked; the status bar shows "Snippet 2/3".
+- **Snippets: a setting and command to turn Tab expansion off.** Snippets: new setting **Expand snippets with Tab**
+  (Settings → Snippets, on by default) and `View: Toggle Snippet Expansion on Tab`. Settings schema 114.
+- **Snippets: bundled snippets for JavaScript, TypeScript (also used in JSX/TSX), PHP, Lua, TOML, Dockerfile and
+  Terraform.** Added the variables `UUID`, `RANDOM`, `RANDOM_HEX`, `CURRENT_*`, `LINE_COMMENT`, `BLOCK_COMMENT_*`,
+  `WORKSPACE_*`, `RELATIVE_FILEPATH` and `TM_CURRENT_WORD`. Bundled snippets can be disabled; a snippet can have
+  several triggers; the Settings list has a filter and a trigger column.
+- **Macros record and replay what is typed into prompts.** Macros can drive prompts: text and keys typed into the find
+  bar, an overlay prompt or a picker are recorded and replayed into that prompt (`C-s foo Enter Esc` replays as a
+  search). A command that opens a blocking dialog, and a mouse click, show a status hint while recording.
+- **Macros: Esc (or `C-g`) cancels a recording.** New commands `Macro: Cancel Recording` and
+  `Macro: Start or Stop Recording`, a Tools → Macros submenu, and default keys in the CUA (`Ctrl+Shift+R`, record) and
+  Sublime (`Ctrl+Shift+Q`, replay) keymaps. Long replays run in slices with progress in the status bar and stop on
+  Esc.
 - **New Project From Template** asks for a project name and a location, creates that folder, and opens it
   as a project on the template's main file.
-- Templates: the wizard asks for a template's main name (package, file base name) with readable,
-  translated labels, and template JSON can supply its own `labels`. "Edit User Templates" lets you pick a
-  template to open, start a new one, or copy a bundled template (multi-file included) to customize. The
-  picker shows where each template comes from, and plugin templates appear in Settings → Templates.
+- **Templates: readable name prompts and easier editing of your own templates.** Templates: the wizard asks for a
+  template's main name (package, file base name) with readable, translated labels, and template JSON can supply its
+  own `labels`. "Edit User Templates" lets you pick a template to open, start a new one, or copy a bundled template
+  (multi-file included) to customize. The picker shows where each template comes from, and plugin templates appear in
+  Settings → Templates.
 
 ### Changed
 
-- Project Map, changed behaviour: clicking an open folder selects it and brings its column into view
-  (collapse with the row's chevron or the column's ×); Escape closes open cards, then clears the search,
-  then returns to the editor (Ctrl/Cmd+0 and the Fit button still fit); the default flow is Left → Right
-  for workspaces with no stored flow; columns follow the Project "show hidden files" setting and the
-  per-column checkbox is now "Show hidden"; at most eight cards are open in total, previews and notes
-  together.
-- CSV Print, Export to PDF, Excel and ODS output what the grid shows: its visible rows in displayed
-  order, with its header setting. From source mode they output the whole file with row 1 as the header.
-- The page size setting is named **PDF page size**: printing uses the paper chosen in Page Setup. For a
-  new installation it defaults to the region's paper (Letter or A4); an existing choice is kept. It does
-  not apply to Mermaid, Graphviz, PlantUML or Typst PDFs, which are sized by their tools. Settings
-  schema 116.
-- Command titles: "View: Toggle Line Numbers in Print and PDF", "View: Toggle Syntax Highlighting in
-  Print and PDF", "CSV: Print…", "CSV: Export to PDF…".
+- **Project Map, changed behaviour: folder clicks, Escape, flow, hidden files and card limit.** Project Map, changed
+  behaviour: clicking an open folder selects it and brings its column into view (collapse with the row's chevron or
+  the column's ×); Escape closes open cards, then clears the search, then returns to the editor (Ctrl/Cmd+0 and the
+  Fit button still fit); the default flow is Left → Right for workspaces with no stored flow; columns follow the
+  Project "show hidden files" setting and the per-column checkbox is now "Show hidden"; at most eight cards are open
+  in total, previews and notes together.
+- **CSV print and export output what the grid shows.** CSV Print, Export to PDF, Excel and ODS output what the grid
+  shows: its visible rows in displayed order, with its header setting. From source mode they output the whole file
+  with row 1 as the header.
+- **The page size setting is PDF page size, defaulting to the region's paper.** The page size setting is named **PDF
+  page size**: printing uses the paper chosen in Page Setup. For a new installation it defaults to the region's paper
+  (Letter or A4); an existing choice is kept. It does not apply to Mermaid, Graphviz, PlantUML or Typst PDFs, which
+  are sized by their tools. Settings schema 116.
+- **Command titles for Print and PDF and CSV printing are renamed.** Command titles: "View: Toggle Line Numbers in
+  Print and PDF", "View: Toggle Syntax Highlighting in Print and PDF", "CSV: Print…", "CSV: Export to PDF…".
 - **Print and Export to PDF are in the File menu.** "Print…" and "Export to PDF…" for the current file are
   in the File menu (also in Simple UI mode) and on the tab right-click menu; before, they were reachable
   only from the palette. The commands for the rendered preview are renamed "File: Print Rendered Preview…"
@@ -5191,103 +5201,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paper size with its margins, and turns pages from the keyboard (Page Up/Down, Left/Right, Home/End).
   Printing shows "Printing page n of N…" with a Cancel. The window is modal to its own window only, is
   centred on it and has a minimum size.
-- Export Save dialogs (PDF, HTML, Word, ODT, spreadsheet, CSV) open beside the document, or else in the
-  last export folder; they add a missing extension and ask before replacing an existing file.
-- Run Configurations: the form only enables the fields the selected type uses. A Java main class has no
-  Script / target; a Python, shell, Make or NPM configuration has no Main class, Module, VM arguments or
-  JDK. A disabled field keeps its value, and the JDK field now follows the type as soon as it is changed.
-- GitHub: the tool window names the repository `gh` resolved, filters pull requests and issues by state
-  (open, closed, merged, all) and "Mine", offers "load more" instead of stopping at 50 (30 for runs),
-  and shows a spinner while `gh` is working. Row menus open with the Menu key, and the segment buttons
-  can be reached with Tab.
-- GitHub: the status-bar checks indicator appears on its own, names the pull request, updates while
-  checks are pending, and opens a list of the checks with links and failure logs.
-- GitHub: Create Pull Request starts from the branch's commits and the repository's template, with a
-  base-branch chooser, the head branch shown and a push offer when the branch is unpushed or ahead. It
-  refuses the default branch and offers the pull request a branch already has. The Create and Submit
-  Review forms stay open while `gh` runs and keep what you typed if it fails.
-- GitHub: new commands Show Pull Requests, Show Issues, Rerun Selected Workflow Run, Rerun Failed Jobs,
-  Cancel Selected Workflow Run, Copy URL of Selected Row and Show Pull Request Checks, and a
-  VCS ▸ GitHub submenu.
-- GitHub: with Git support off, GitHub commands say so and name the command that turns it on.
-- GitHub: the checks indicator requires `gh` 2.50 (Settings said 2.4). An older `gh` is detected, and
-  Settings, Doctor and the checks command say which version is needed.
+- **Export Save dialogs open beside the document and ask before replacing.** Export Save dialogs (PDF, HTML, Word,
+  ODT, spreadsheet, CSV) open beside the document, or else in the last export folder; they add a missing extension and
+  ask before replacing an existing file.
+- **Run Configurations: the form only enables the fields the selected type uses.** A Java main class has no Script /
+  target; a Python, shell, Make or NPM configuration has no Main class, Module, VM arguments or JDK. A disabled field
+  keeps its value, and the JDK field now follows the type as soon as it is changed.
+- **GitHub: the tool window filters, loads more and shows when `gh` is working.** GitHub: the tool window names the
+  repository `gh` resolved, filters pull requests and issues by state (open, closed, merged, all) and "Mine", offers
+  "load more" instead of stopping at 50 (30 for runs), and shows a spinner while `gh` is working. Row menus open with
+  the Menu key, and the segment buttons can be reached with Tab.
+- **GitHub: the checks indicator names the pull request and lists its checks.** GitHub: the status-bar checks
+  indicator appears on its own, names the pull request, updates while checks are pending, and opens a list of the
+  checks with links and failure logs.
+- **GitHub: Create Pull Request starts from the branch's commits and template.** GitHub: Create Pull Request starts
+  from the branch's commits and the repository's template, with a base-branch chooser, the head branch shown and a
+  push offer when the branch is unpushed or ahead. It refuses the default branch and offers the pull request a branch
+  already has. The Create and Submit Review forms stay open while `gh` runs and keep what you typed if it fails.
+- **GitHub: new commands for pull requests, issues, workflow runs and checks.** GitHub: new commands Show Pull
+  Requests, Show Issues, Rerun Selected Workflow Run, Rerun Failed Jobs, Cancel Selected Workflow Run, Copy URL of
+  Selected Row and Show Pull Request Checks, and a VCS ▸ GitHub submenu.
+- **GitHub: with Git support off, GitHub commands say so and name the command that turns it on.**
+- **GitHub: the checks indicator requires `gh` 2.50 (Settings said 2.4).** An older `gh` is detected, and Settings,
+  Doctor and the checks command say which version is needed.
 
-- Launching Editora again (no file, `--project`, `--dev`) now goes to the running editor on the same
-  config directory instead of starting a second process; `--new-instance` starts a separate one.
-- "Reset to Defaults" first saves the previous settings as `settings.json.before-reset-<date>.bak` and
-  names the file in the status bar; it no longer lowers Local History limits.
-- Lowering a Local History limit (Settings or the `history.setMax*` commands) asks first, stating how
-  many revisions from how many files would be removed, instead of deleting them at once.
-- The Rename preview lists files and folders a rename would delete and files it would replace; a code
-  action or refactoring that deletes a folder or replaces an existing file asks first, naming the paths.
-- Git Log: Reset states how many commits leave the branch and how many are not on the upstream; Soft
-  and Mixed ask before stranding commits; checking out a commit reports the detached HEAD. "Delete" on
-  an untracked folder says it is a folder and how many files it removes.
-- MCP: `edit_buffer` replaces a whole buffer only with `replace_whole_buffer: true`; unknown arguments
-  and empty or relative paths are rejected for every tool; `save_buffer` reports `saved` only once the
-  file is written.
-- Typst: a one-page PNG/SVG export is written under the chosen name, and the export asks before
-  replacing existing page files (`name-1.png`, …).
-- Dragging a folder or several items in the Project tree asks first; Settings → Templates → Remove asks
-  for confirmation.
-- The VCS menu is grouped into submenus (Changes, Branches, Remotes & Worktrees, Tags, Stash, Patches,
-  History & Blame, Compare) with the daily actions at the top level.
-- A Git command that stops on conflicts (pull, merge, rebase, revert, cherry-pick, stash pop, 3-way
-  patch) opens the Commit window with its conflicts instead of an error dialog.
-- A successful local Git command no longer raises the Output console, so a Git Log row action keeps the
-  log visible. Network commands and failures still raise it.
-- Deleted lines are marked in the gutter by a corner flag at the top of the following line instead of a
-  full-height red bar, and change bars have a wider click target.
-- Log reads run on their own lane, so a slow history search no longer delays status and gutter updates,
-  and a running search is cancelled when it is replaced or cleared.
+- **Launching Editora again goes to the running editor.** Launching Editora again (no file, `--project`, `--dev`) now
+  goes to the running editor on the same config directory instead of starting a second process; `--new-instance`
+  starts a separate one.
+- **Reset to Defaults backs up the previous settings first.** "Reset to Defaults" first saves the previous settings as
+  `settings.json.before-reset-<date>.bak` and names the file in the status bar; it no longer lowers Local History
+  limits.
+- **Lowering a Local History limit asks before removing revisions.** Lowering a Local History limit (Settings or the
+  `history.setMax*` commands) asks first, stating how many revisions from how many files would be removed, instead of
+  deleting them at once.
+- **Renames and refactorings say which files and folders they delete or replace.** The Rename preview lists files and
+  folders a rename would delete and files it would replace; a code action or refactoring that deletes a folder or
+  replaces an existing file asks first, naming the paths.
+- **Git Log: Reset, Soft and Mixed, checkout and Delete say what they will do.** Git Log: Reset states how many
+  commits leave the branch and how many are not on the upstream; Soft and Mixed ask before stranding commits; checking
+  out a commit reports the detached HEAD. "Delete" on an untracked folder says it is a folder and how many files it
+  removes.
+- **MCP: stricter `edit_buffer` and argument checks, and a truthful `save_buffer`.** MCP: `edit_buffer` replaces a
+  whole buffer only with `replace_whole_buffer: true`; unknown arguments and empty or relative paths are rejected for
+  every tool; `save_buffer` reports `saved` only once the file is written.
+- **Typst: a one-page image export uses the chosen name and asks before replacing.** Typst: a one-page PNG/SVG export
+  is written under the chosen name, and the export asks before replacing existing page files (`name-1.png`, …).
+- **Dragging a folder or several items in the Project tree asks first; Settings → Templates → Remove asks for
+  confirmation.**
+- **The VCS menu is grouped into submenus.** The VCS menu is grouped into submenus (Changes, Branches, Remotes &
+  Worktrees, Tags, Stash, Patches, History & Blame, Compare) with the daily actions at the top level.
+- **A Git command that stops on conflicts opens the Commit window.** A Git command that stops on conflicts (pull,
+  merge, rebase, revert, cherry-pick, stash pop, 3-way patch) opens the Commit window with its conflicts instead of an
+  error dialog.
+- **A successful local Git command no longer raises the Output console, so a Git Log row action keeps the log
+  visible.** Network commands and failures still raise it.
+- **Deleted lines are marked by a corner flag in the gutter.** Deleted lines are marked in the gutter by a corner flag
+  at the top of the following line instead of a full-height red bar, and change bars have a wider click target.
+- **A slow Git history search no longer delays status and gutter updates.** Log reads run on their own lane, so a slow
+  history search no longer delays status and gutter updates, and a running search is cancelled when it is replaced or
+  cleared.
 
-- The `samples/` corpus for manual testing now covers more of the editor. Every syntax sample is a
-  complete, commented program instead of a ten-line stub, and there are new fixtures for Astro, JSX and
-  ignore files, sticky scroll and fold levels (one long file), related-file pairs, the HTML live
-  preview, Markdown lint and extensions, every recognised log format, shell and shebang scripts, a
-  script to debug, tests in the Maven, npm, Cargo and Go projects, more of the HTTP client format,
-  diff3 conflicts, and JPEG/GIF/BMP images. A test now fails if a bundled grammar has no sample.
-- After a pull, clicking a file's change graph (`4 ++--`) in the Git tab opens a diff of that file
-  between the commit you were on and the one the pull brought. Clicking the file name still opens the
-  file.
-- Clone, fetch, pull and push now open the Output window's Git tab as soon as they start and show the
-  command running there: the `git` command line, then Git's own progress (counting, receiving,
-  resolving, writing) updating in place, then the exit line. Before, the tab only appeared once the
-  command had finished. While one runs, the tab's Stop button (or the new `Git: Cancel Running Command`)
-  cancels it.
+- **The `samples/` corpus for manual testing now covers more of the editor.** Every syntax sample is a complete,
+  commented program instead of a ten-line stub, and there are new fixtures for Astro, JSX and ignore files, sticky
+  scroll and fold levels (one long file), related-file pairs, the HTML live preview, Markdown lint and extensions,
+  every recognised log format, shell and shebang scripts, a script to debug, tests in the Maven, npm, Cargo and Go
+  projects, more of the HTTP client format, diff3 conflicts, and JPEG/GIF/BMP images. A test now fails if a bundled
+  grammar has no sample.
+- **After a pull, a file's change graph opens what the pull changed in it.** After a pull, clicking a file's change
+  graph (`4 ++--`) in the Git tab opens a diff of that file between the commit you were on and the one the pull
+  brought. Clicking the file name still opens the file.
+- **Clone, fetch, pull and push show their progress in the Git tab and can be stopped.** Clone, fetch, pull and push
+  now open the Output window's Git tab as soon as they start and show the command running there: the `git` command
+  line, then Git's own progress (counting, receiving, resolving, writing) updating in place, then the exit line.
+  Before, the tab only appeared once the command had finished. While one runs, the tab's Stop button (or the new
+  `Git: Cancel Running Command`) cancels it.
 
-- The log viewer's controls are now a bar above the log instead of a box floating over its first two
-  lines. The bar shows how many lines a filter is showing ("65 of 185 lines"), the Follow button is
-  labelled, the level list includes Fatal, and all three controls can be reached with Tab. A new
-  `Log: Focus Filter` command puts the keyboard in the filter field; Escape returns to the log.
-- A log filter now keeps or hides whole records. A pattern that matches any line of a record shows all of
-  it, so an exception appears with the line that says what failed, and a matched ERROR line keeps its
-  stack trace. Filtered lines keep their real line numbers.
-- More files open as logs: rotated logs (`app.log.1`, `app.log.2026-10-06`), `access_log` / `error_log`,
-  `syslog`, `catalina.out`, `nohup.out`, and files such as `server.out` or an extensionless file in
-  `/var/log` whose content looks like a log. `Log: View as Log` is now a toggle.
-- More log formats get level colours: .NET (`info:`, `warn:`, `fail:`), a lowercase level after a
-  timestamp, syslog `error:` prefixes, klog (Kubernetes), pino/bunyan numeric levels, and a JSON level
-  key anywhere in the line. `Log: Next Error` is renamed `Log: Next Warning or Error`, which is what it does.
-- Following a log no longer drops the top of a large one: the 12 MB limit now applies to what the follow
-  adds, not to what was already open.
-- Spell check: "Ignore" now holds in every open file for the session. The technical dictionary has 264
-  more terms.
-- Snippets and templates: your own entry overrides a plugin's with the same name or id (the order is
-  bundled, plugin, user). Editing a bundled snippet in Settings replaces it under all its triggers.
-- Snippets: Tab no longer expands inside comments or strings, or in CSV/TSV files, and the bundled `date`
-  and `time` snippets are offered in the popup and picker only. Markdown's one-letter triggers (`b`, `i`,
-  `l`, `u`, `n`, `t`, `w`, `c`) are removed. An unknown `$name` in a snippet body stays in the text.
-- Template bodies treat only `${variable}`, `${variable:default}` and `${cursor}` as special; `$1`,
-  `$HOME`, `${arr[0]}` and backslashes are written as they are, and `$${name}` writes a literal `${name}`.
-  A user template that relied on snippet-style `$1` tab stops now gets that text literally. A template
-  file with no `name` is skipped and reported.
-- Multi-file templates always require a folder; a blank one is refused in the wizard. Before a template
-  writes anything it lists the files that already exist and lets you create only the missing ones.
-- Macros: `macros.json` is version 2 with stored ids, migrated automatically; existing key bindings are
-  kept. Saved macros appear in the palette as "Macro: ‹name›". One replay is one undo step, also with a
-  count; `C-u N` on a replay is capped at 10,000.
+- **The log viewer's controls are now a bar above the log instead of a box floating over its first two lines.** The
+  bar shows how many lines a filter is showing ("65 of 185 lines"), the Follow button is labelled, the level list
+  includes Fatal, and all three controls can be reached with Tab. A new `Log: Focus Filter` command puts the keyboard
+  in the filter field; Escape returns to the log.
+- **A log filter now keeps or hides whole records.** A pattern that matches any line of a record shows all of it, so
+  an exception appears with the line that says what failed, and a matched ERROR line keeps its stack trace. Filtered
+  lines keep their real line numbers.
+- **More files open as logs, and View as Log is a toggle.** More files open as logs: rotated logs (`app.log.1`,
+  `app.log.2026-10-06`), `access_log` / `error_log`, `syslog`, `catalina.out`, `nohup.out`, and files such as
+  `server.out` or an extensionless file in `/var/log` whose content looks like a log. `Log: View as Log` is now a
+  toggle.
+- **More log formats get level colours.** More log formats get level colours: .NET (`info:`, `warn:`, `fail:`), a
+  lowercase level after a timestamp, syslog `error:` prefixes, klog (Kubernetes), pino/bunyan numeric levels, and a
+  JSON level key anywhere in the line. `Log: Next Error` is renamed `Log: Next Warning or Error`, which is what it
+  does.
+- **Following a large log keeps its top.** Following a log no longer drops the top of a large one: the 12 MB limit now
+  applies to what the follow adds, not to what was already open.
+- **Spell check: "Ignore" now holds in every open file for the session.** The technical dictionary has 264 more terms.
+- **Snippets and templates: your own entry overrides a plugin's.** Snippets and templates: your own entry overrides a
+  plugin's with the same name or id (the order is bundled, plugin, user). Editing a bundled snippet in Settings
+  replaces it under all its triggers.
+- **Snippets: Tab expands in fewer places, and Markdown's one-letter triggers are gone.** Snippets: Tab no longer
+  expands inside comments or strings, or in CSV/TSV files, and the bundled `date` and `time` snippets are offered in
+  the popup and picker only. Markdown's one-letter triggers (`b`, `i`, `l`, `u`, `n`, `t`, `w`, `c`) are removed. An
+  unknown `$name` in a snippet body stays in the text.
+- **Template bodies treat only `${variable}`, `${variable:default}` and `${cursor}` as special.** Template bodies
+  treat only `${variable}`, `${variable:default}` and `${cursor}` as special; `$1`, `$HOME`, `${arr[0]}` and
+  backslashes are written as they are, and `$${name}` writes a literal `${name}`. A user template that relied on
+  snippet-style `$1` tab stops now gets that text literally. A template file with no `name` is skipped and reported.
+- **Multi-file templates always require a folder; a blank one is refused in the wizard.** Before a template writes
+  anything it lists the files that already exist and lets you create only the missing ones.
+- **Macros: `macros.json` is version 2 with stored ids, migrated automatically; existing key bindings are kept.**
+  Saved macros appear in the palette as "Macro: ‹name›". One replay is one undo step, also with a count; `C-u N` on a
+  replay is capped at 10,000.
 
 ### Fixed
 
@@ -5339,7 +5361,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     no longer zooms, pinch zooms (untested on real devices). History is bounded and treats a run of
     arrow-key moves as one step.
   - Project tree and Map: names that differ only by case sort deterministically.
-- Print and Export to PDF, second round from the review:
+- **Print and Export to PDF, second round from the review:**
   - Printed Markdown fills each page: long lists, quotes, code blocks, tables and paragraphs continue
     from the current page, and a heading stays with what follows. Long inline code wraps instead of
     running off the page. A file ending in a newline no longer prints an empty numbered last line, and an
@@ -5360,7 +5382,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Closing a window during a PDF export no longer leaves an `.editora-export-*` folder behind, and a
     failed DOT/PlantUML print no longer leaves a temporary file. An abandoned print job is cancelled.
   - A PDF open in a tab reloads when an export replaces its file.
-- Printing, from a review of Print, Print Preview and Export to PDF:
+- **Printing, from a review of Print, Print Preview and Export to PDF:**
   - Printed Markdown and CSV pages are always light. With a dark theme they came out as a dark sheet, and
     Mermaid, DOT/PlantUML and math printed in the dark palette.
   - A printed table taller than a page splits between rows and repeats its header; it used to break into
@@ -5376,7 +5398,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Running Print twice no longer opens two previews, a failure while preparing or printing is reported
     instead of leaving "Preparing…" in the status bar, and a very large source file no longer builds
     every page up front.
-- Export to PDF:
+- **Export to PDF:**
   - A table row or CSV cell taller than a page continues on the next page; its text used to run off the
     bottom and be lost.
   - Task lists show their checkboxes (searchable as `[x]` / `[ ]`), `~~strikethrough~~` is struck, and
@@ -5388,37 +5410,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     preview cannot be exported; a JSON, YAML, TOML or XML file that does not parse says so.
   - Failure dialogs for print, PDF and Word/ODT export no longer show "failed: " with nothing after it,
     or "null".
-- Tabs restored from the last session no longer keep the muted italic read-only title for files that
-  are editable. The title was drawn while the file was still loading and never redrawn afterwards.
-- Abbreviations that contain punctuation now expand: `adl-fn`, `;sig`, `e.g`. Only letters and digits were
-  looked up, so such an entry could be saved in Settings and never expanded, with nothing saying why. The
-  longest match wins (`adl-fn` over a separate `fn`), and a space typed around the abbreviation in Settings
-  no longer stops it matching.
-- Settings: closing the window no longer drops what was typed last in a list-and-form page. An
-  abbreviation's expansion, a remote site's host or an external tool's command typed and followed straight
-  by Close or Escape (no Enter, no Save, no click elsewhere) was not saved; an abbreviation left that way
-  had an empty expansion and never expanded.
-- In an `.http` / `.rest` file, a `# @name x` comment now names the request wherever it appears. After a
-  `###` separator, with or without a title, it was ignored, so `{{x.response.body.$.id}}` in a later
-  request resolved to nothing unless the named request was the first in the file. A request with a
-  `### Title` and no `@name` can still be referred to by its title.
-- GitHub: being offline when Editora starts no longer disables the integration for the session as "not
-  authenticated". A missing or signed-out `gh` is checked again when a command needs it, and a rejected
-  token is reported as such.
-- GitHub: a `gh` path containing spaces (for example `C:\Program Files\GitHub CLI\gh.exe`) works.
-- GitHub: a pull request too large for a single diff (over 300 files or 20,000 lines) opens for review
-  from GitHub's file list, and the review tab says so. A file diff shows each hunk at its real line
-  numbers and marks a missing final newline. A one-file pull request opens the review tab, so its
-  description, Open on GitHub, Submit Review and Refresh are reachable.
-- GitHub: a failed CI log larger than 10 MB shows its end, where the failure is, instead of its
-  beginning. The log's Stop button stops `gh`, and lists, long checkouts and background checks no longer
-  queue behind each other.
-- GitHub: the tool window recognises scp-style remotes without a user, GitHub remotes other than
-  `origin`, and Enterprise hosts `gh` is signed in to. Saving unrelated settings no longer closes it.
-- GitHub: checking out a pull request from the tool window supersedes pending saves in that repository,
-  not the active tab's. Open on GitHub works for files whose name starts with `-`. A reviewer typed as
-  `@a, a` is added once. Workflow run ids are no longer digit-grouped, and tooltips show relative and
-  local times.
+- **Tabs restored from the last session no longer keep the muted italic read-only title for files that are editable.**
+  The title was drawn while the file was still loading and never redrawn afterwards.
+- **Abbreviations that contain punctuation now expand: `adl-fn`, `;sig`, `e.g`.** Only letters and digits were looked
+  up, so such an entry could be saved in Settings and never expanded, with nothing saying why. The longest match wins
+  (`adl-fn` over a separate `fn`), and a space typed around the abbreviation in Settings no longer stops it matching.
+- **Settings: closing the window no longer drops what was typed last in a list-and-form page.** An abbreviation's
+  expansion, a remote site's host or an external tool's command typed and followed straight by Close or Escape (no
+  Enter, no Save, no click elsewhere) was not saved; an abbreviation left that way had an empty expansion and never
+  expanded.
+- **In an `.http` / `.rest` file, a `# @name x` comment now names the request wherever it appears.** After a `###`
+  separator, with or without a title, it was ignored, so `{{x.response.body.$.id}}` in a later request resolved to
+  nothing unless the named request was the first in the file. A request with a `### Title` and no `@name` can still be
+  referred to by its title.
+- **GitHub: being offline when Editora starts no longer disables the integration for the session as "not
+  authenticated".** A missing or signed-out `gh` is checked again when a command needs it, and a rejected token is
+  reported as such.
+- **GitHub: a `gh` path containing spaces (for example `C:\Program Files\GitHub CLI\gh.exe`) works.**
+- **GitHub: very large and one-file pull requests open for review.** GitHub: a pull request too large for a single
+  diff (over 300 files or 20,000 lines) opens for review from GitHub's file list, and the review tab says so. A file
+  diff shows each hunk at its real line numbers and marks a missing final newline. A one-file pull request opens the
+  review tab, so its description, Open on GitHub, Submit Review and Refresh are reachable.
+- **GitHub: a failed CI log larger than 10 MB shows its end, where the failure is, instead of its beginning.** The
+  log's Stop button stops `gh`, and lists, long checkouts and background checks no longer queue behind each other.
+- **GitHub: the tool window recognises more remotes and Enterprise hosts.** GitHub: the tool window recognises
+  scp-style remotes without a user, GitHub remotes other than `origin`, and Enterprise hosts `gh` is signed in to.
+  Saving unrelated settings no longer closes it.
+- **GitHub: fixes to pull request checkout, Open on GitHub, reviewers and run ids.** GitHub: checking out a pull
+  request from the tool window supersedes pending saves in that repository, not the active tab's. Open on GitHub works
+  for files whose name starts with `-`. A reviewer typed as `@a, a` is added once. Workflow run ids are no longer
+  digit-grouped, and tooltips show relative and local times.
 - **Data-loss review fixes.** A review of every path that writes, deletes, replaces or discards user
   data found 58 issues; this release fixes them, with the limits noted at the end of this entry.
   - *Unsaved edits.* Deleting a file from the Project tree now asks every window that has unsaved edits
@@ -5471,174 +5492,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - *Not fully fixed.* Linux POSIX ACLs are still dropped on save. Switching branch from a detached HEAD
     with unreferenced commits does not warn. Tree delete has no trash on Windows. A config write that
     still fails at quit is not reported before the window closes.
-- Git: a repository Git refuses to work in (for example "dubious ownership") says why in the status bar
-  and the Commit window instead of looking like no repository.
-- Git: commands never start an external editor, so continuing a rebase no longer hangs waiting for one.
-- Git: reverting a merge commit asks which parent is the mainline instead of failing.
-- Git: a missing globally configured `blame.ignoreRevsFile` no longer empties the blame column.
-- Git: the Commit window's header no longer cuts the push indicator to "↑…".
-- Java's **Change signature** code action was listed and then failed with "Could not apply".
-- Git: a click on empty space or a section header in the branch dropdown no longer checks out the
-  selected branch; only a click on a row activates it. Dropdown actions are refused if another
-  repository became active while it was open.
-- Git: unstaging a renamed file also unstages the deletion of its old path, instead of leaving a
-  half-staged rename.
-- Git: the first push of a branch goes to the configured push remote (`branch.<name>.pushRemote`,
-  `remote.pushDefault`) or the only remote, instead of always `origin`.
-- Git: blame, status, diffs and file lists larger than 10 MB are no longer shown or cached in part.
-  Blame uses a compact format, so large files are annotated in full.
-- Git: staging a new executable file or symlink from the diff viewer keeps its mode.
-- Git: blame annotations and gutter change bars follow unsaved line insertions and deletions.
-- Git: the `Git Log: …` palette commands no longer act on a hidden log's remembered selection; they
-  open the log and ask for a commit.
-- Git: the Commit window keeps its selection, collapsed groups and scroll position across status
-  updates. Ctrl/Cmd+Enter no longer commits with nothing staged or while a commit is running, and text
-  typed during a commit is kept.
-- Git: Clone accepts `~` and relative destinations, creates missing parent folders and accepts an
-  existing empty folder.
-- Git: a repository created inside an already-open one is noticed without a manual refresh, and Git is
-  found again after being installed without restarting Editora.
-- Git: blame works in SHA-256 repositories; file names with non-ASCII characters plus a tab, quote or
-  backslash parse correctly under `core.quotePath=false`; an inherited `GIT_DIR` or `GIT_WORK_TREE` no
-  longer redirects every folder to one repository; the Git console no longer stalls on output lines
-  with very long runs of whitespace.
-- Git: remaining English-only error headers are localized, and relative times read "1 day ago" instead
-  of "1 days ago".
-- Following a log through a pattern filter no longer joins lines together (`ERROR bERROR c`), and a line
-  written in two parts is no longer missed by the filter.
-- Pausing and resuming Follow no longer skips the lines written in between, and turning Follow on no
-  longer skips lines written since the file was opened.
-- A log that is being followed no longer raises "File Changed on Disk" every time the window regains
-  focus.
-- Follow now survives log rotation. It waits while the file is missing and reads the new file from its
-  start; before, it stopped with an error that showed only the file's path.
-- New lines in a followed log no longer move the caret, drop the selection, or pull the view to the end
-  while you are reading further up.
-- Applying or clearing a log filter keeps you on the line you were on instead of jumping to the end.
-- Filtering a large log no longer freezes the window while the filter runs, and pressing Enter in the
-  filter field no longer applies the filter twice.
-- The log viewer now recognises all six levels of the .NET console logger. `dbug:` and `trce:` lines were
-  treated as part of the record above them, so they took its colour, level filter and grouping.
-- A level or pattern set from the command palette now shows in the log's controls, and is no longer
-  dropped by the next change made there.
-- In a filtered log, stack-trace lines are tinted with their own record's level, not the level of
-  whichever line the filter left above them.
-- Undo no longer removes the newest lines of a followed log.
-- Followed text is decoded with the file's own encoding (it was always read as UTF-8), and Windows line
-  endings no longer stop `$` from matching.
-- With word wrap on, the level tint covers every row of a wrapped line, not only the first. The tints
-  are now derived from the editor theme, so they are visible on dark themes.
-- A filter pattern that is not a valid regular expression is marked as being matched as plain text.
-- Stack-trace lines such as `at com.example.ERROR_CODES.lookup(...)` are no longer mistaken for ERROR
-  records.
-- An exported patch now applies to a file with Windows (CRLF) line endings. The diff viewer compares text
-  with plain line feeds, and the patch was written from that text, so Git rejected it for a CRLF file.
-  Each side's own line ending is put back, and a Latin-1 / Windows-1252 file's patch is written in that
-  encoding rather than UTF-8.
-- Export Patch no longer freezes the window on a large rewritten file (a re-indented 40,000-line file took
-  27 seconds). The patch is computed in the background, and two texts too far apart to search are exported
-  as one hunk.
-- In a block of rewritten lines the diff viewer lists the removed lines first and their replacements
-  after them. With smart alignment on, unrelated new lines were shown above the lines they replaced.
-- A `.patch`/`.diff` file opened as a diff shows the line numbers its hunk headers state, so a hunk at
-  line 500 is no longer numbered from 1 and the jump between two hunks is visible.
-- The merge resolver treats changes on neighbouring lines as one conflict, as Git does. It used to merge
-  them on its own, so a region Git had reported as a conflict could be resolved without ever being shown.
-- The merge resolver no longer silently discards conflicts you already resolved by hand. When the file has
-  moved on from Git's merge of the three versions, it asks whether to start again from Git's versions or
-  to resolve the markers the file still has.
-- Open diffs you cannot see — other tabs, the other files of a review — are no longer re-read on every
-  window focus, file change and apply; each catches up when it is shown.
-- Export Patch is disabled when a side is binary or too large to load, instead of exporting a patch of the
-  placeholder text.
-- In a diff, Save becomes available again after an Undo that follows a Save, and Undo no longer counts an
-  undo when the file has nothing left to undo.
-- "Ignore whitespace" and "Ignore case" now also apply to very large rewrites that use the simplified
-  comparison.
-- The unified view lists a change block's removed lines before its added lines instead of alternating them.
-- The floating controls at the top-right of the editor no longer overlap. In Expert mode the "E" exit
-  button sat on top of an HTML file's open-in-browser button, a Markdown file's Editor/Split/Preview
-  toggle or a log file's controls; they now share one row. In Zen mode the "Z" also clears the HTML and
-  log controls, not only the preview toggle.
-- Spell check: typing in a very long line with no whitespace took about 0.7 s per key; scrolling a
-  viewport full of squiggles is about ten times cheaper.
-- Spell check: Add to Dictionary and Ignore did nothing for words with a typographic apostrophe;
-  possessives and plurals of dictionary words were flagged; the first word of a Spanish question or
-  exclamation, `_emphasis_` / `~~strike~~` text and words after a comma with no space were never checked;
-  non-Latin text was underlined wholesale and `café`-style loan words were flagged in English.
-- Spell check: a hand-edited `dictionary.txt` was not re-read until restart; prose autocomplete offered
-  nothing with Spanish (Mexico) selected; an unknown spell language in settings.json silently disabled
-  checking; suggestions stalled the right-click, included split-word junk and were enabled in read-only
-  files; corrections were offered inside Markdown code fences.
-- Snippets: a session now ends when the caret leaves its fields, so Tab indents again after clicking
-  elsewhere, switching tabs or moving to the other split view. Auto-pairs, Enter auto-indent and smart
-  Backspace work inside a field; undoing a typo in a field keeps Tab going to the next stop.
-- Snippets: changes reach every open window and a user snippet file reloads when saved. A broken file is
-  reported at once with its name, reason and line, and only the bad entry is skipped. Saving from Settings
-  keeps the comments in the file. Two-word triggers such as `else if` expand, space-indented bodies follow
-  the file's indent style, blank body lines get no trailing whitespace, and `scope` is honoured.
-- Macros: a replay chord ending in a printable key (`C-x e`) typed that key when the macro contained
-  Backspace or arrows. A macro that runs a saved macro skipped it on replay. Tab, Shift+Tab, Enter and
-  Escape now replay through the same path as the key (snippet expansion, outdent, auto-indent); typing at
-  several carets replays at every caret; `C-u N x`, Shift+Insert and input-method text are recorded.
-- Macros: an empty recording no longer discards the previous macro, and Replay Last works after a restart
-  and in a second window. Name and Save reports an empty name and asks before replacing; names in any
-  script and case variants get their own command id. Delete Saved confirms and removes the key binding.
-  Replay status reports skipped typing on a read-only buffer and missing commands. A hand-edited
-  `macros.json` with a null list no longer stops a window from opening.
-- Settings → Macros: steps are shown and edited by kind (command picker, multi-line text, key capture),
-  edits are not dropped on selection change, buttons are not truncated, and the note shows the active
-  keymap's chords instead of F3/F4.
-- Templates: new files open with the caret at `${cursor}`, in the file that marks it. The Java Class
-  template writes the `package` line of its folder, and a template's `language` sets the created file's
-  grammar. Java package inference stops at the project root and no longer treats `src/main/resources` or
-  an ancestor folder called `src` as a source root.
-- Templates: changes are live in every window; invalid template files are reported with file, reason and
-  line; a template path can no longer leave the target folder through a symlinked directory; failures are
-  shown as errors and the wizard keeps what you typed. Shell and Zsh files are created executable, and
-  template files end with a newline and follow `.editorconfig` line endings.
-- New File: `release-1.2` under Markdown becomes `release-1.2.md`; reserved Windows names, illegal
-  characters, Java keywords, `Foo.txt` as a class name and `~/…` are refused with a specific message.
+- **Git: a repository Git refuses to work in says why.** Git: a repository Git refuses to work in (for example
+  "dubious ownership") says why in the status bar and the Commit window instead of looking like no repository.
+- **Git: commands never start an external editor, so continuing a rebase no longer hangs waiting for one.**
+- **Git: reverting a merge commit asks which parent is the mainline instead of failing.**
+- **Git: a missing globally configured `blame.ignoreRevsFile` no longer empties the blame column.**
+- **Git: the Commit window's header no longer cuts the push indicator to "↑…".**
+- **Java's Change signature code action no longer fails.** Java's **Change signature** code action was listed and then
+  failed with "Could not apply".
+- **Git: only a click on a branch row checks it out.** Git: a click on empty space or a section header in the branch
+  dropdown no longer checks out the selected branch; only a click on a row activates it. Dropdown actions are refused
+  if another repository became active while it was open.
+- **Git: unstaging a renamed file also unstages the deletion of its old path, instead of leaving a half-staged
+  rename.**
+- **Git: a branch's first push goes to the configured push remote.** Git: the first push of a branch goes to the
+  configured push remote (`branch.<name>.pushRemote`, `remote.pushDefault`) or the only remote, instead of always
+  `origin`.
+- **Git: blame, status, diffs and file lists larger than 10 MB are no longer shown or cached in part.** Blame uses a
+  compact format, so large files are annotated in full.
+- **Git: staging a new executable file or symlink from the diff viewer keeps its mode.**
+- **Git: blame annotations and gutter change bars follow unsaved line insertions and deletions.**
+- **Git: the `Git Log: …` palette commands open the log and ask for a commit.** Git: the `Git Log: …` palette commands
+  no longer act on a hidden log's remembered selection; they open the log and ask for a commit.
+- **Git: the Commit window keeps its selection, collapsed groups and scroll position across status updates.**
+  Ctrl/Cmd+Enter no longer commits with nothing staged or while a commit is running, and text typed during a commit is
+  kept.
+- **Git: Clone accepts `~` and relative destinations, creates missing parent folders and accepts an existing empty
+  folder.**
+- **Git: new repositories and a newly installed Git are found without a restart.** Git: a repository created inside an
+  already-open one is noticed without a manual refresh, and Git is found again after being installed without
+  restarting Editora.
+- **Git: blame, file names, `GIT_DIR` and the console behave in more repositories.** Git: blame works in SHA-256
+  repositories; file names with non-ASCII characters plus a tab, quote or backslash parse correctly under
+  `core.quotePath=false`; an inherited `GIT_DIR` or `GIT_WORK_TREE` no longer redirects every folder to one
+  repository; the Git console no longer stalls on output lines with very long runs of whitespace.
+- **Git: remaining English-only error headers are localized, and relative times read "1 day ago" instead of "1 days
+  ago".**
+- **Following a log through a pattern filter keeps lines apart.** Following a log through a pattern filter no longer
+  joins lines together (`ERROR bERROR c`), and a line written in two parts is no longer missed by the filter.
+- **Pausing or turning on Follow no longer skips lines.** Pausing and resuming Follow no longer skips the lines
+  written in between, and turning Follow on no longer skips lines written since the file was opened.
+- **A log that is being followed no longer raises "File Changed on Disk" every time the window regains focus.**
+- **Follow now survives log rotation.** It waits while the file is missing and reads the new file from its start;
+  before, it stopped with an error that showed only the file's path.
+- **New lines in a followed log leave your caret and view alone.** New lines in a followed log no longer move the
+  caret, drop the selection, or pull the view to the end while you are reading further up.
+- **Applying or clearing a log filter keeps you on the line you were on instead of jumping to the end.**
+- **Filtering a large log no longer freezes the window.** Filtering a large log no longer freezes the window while the
+  filter runs, and pressing Enter in the filter field no longer applies the filter twice.
+- **The log viewer now recognises all six levels of the .NET console logger.** `dbug:` and `trce:` lines were treated
+  as part of the record above them, so they took its colour, level filter and grouping.
+- **A log level or pattern set from the palette shows in the log's controls.** A level or pattern set from the command
+  palette now shows in the log's controls, and is no longer dropped by the next change made there.
+- **In a filtered log, stack-trace lines take their own record's level colour.** In a filtered log, stack-trace lines
+  are tinted with their own record's level, not the level of whichever line the filter left above them.
+- **Undo no longer removes the newest lines of a followed log.**
+- **Followed log text uses the file's encoding and handles Windows line endings.** Followed text is decoded with the
+  file's own encoding (it was always read as UTF-8), and Windows line endings no longer stop `$` from matching.
+- **With word wrap on, the level tint covers every row of a wrapped line, not only the first.** The tints are now
+  derived from the editor theme, so they are visible on dark themes.
+- **A filter pattern that is not a valid regular expression is marked as being matched as plain text.**
+- **Stack-trace lines such as `at com.example.ERROR_CODES.lookup(...)` are no longer mistaken for ERROR records.**
+- **An exported patch now applies to a file with Windows (CRLF) line endings.** The diff viewer compares text with
+  plain line feeds, and the patch was written from that text, so Git rejected it for a CRLF file. Each side's own line
+  ending is put back, and a Latin-1 / Windows-1252 file's patch is written in that encoding rather than UTF-8.
+- **Export Patch no longer freezes the window on a large rewritten file (a re-indented 40,000-line file took 27
+  seconds).** The patch is computed in the background, and two texts too far apart to search are exported as one hunk.
+- **In a block of rewritten lines the diff viewer lists the removed lines first and their replacements after them.**
+  With smart alignment on, unrelated new lines were shown above the lines they replaced.
+- **A patch file opened as a diff shows its hunks' real line numbers.** A `.patch`/`.diff` file opened as a diff shows
+  the line numbers its hunk headers state, so a hunk at line 500 is no longer numbered from 1 and the jump between two
+  hunks is visible.
+- **The merge resolver treats changes on neighbouring lines as one conflict, as Git does.** It used to merge them on
+  its own, so a region Git had reported as a conflict could be resolved without ever being shown.
+- **The merge resolver no longer silently discards conflicts you already resolved by hand.** When the file has moved
+  on from Git's merge of the three versions, it asks whether to start again from Git's versions or to resolve the
+  markers the file still has.
+- **Diffs you cannot see are no longer re-read until shown.** Open diffs you cannot see — other tabs, the other files
+  of a review — are no longer re-read on every window focus, file change and apply; each catches up when it is shown.
+- **Export Patch is disabled for a binary or too-large side.** Export Patch is disabled when a side is binary or too
+  large to load, instead of exporting a patch of the placeholder text.
+- **In a diff, Save and Undo track an Undo after a Save correctly.** In a diff, Save becomes available again after an
+  Undo that follows a Save, and Undo no longer counts an undo when the file has nothing left to undo.
+- **"Ignore whitespace" and "Ignore case" now also apply to very large rewrites that use the simplified comparison.**
+- **The unified view lists a change block's removed lines before its added lines instead of alternating them.**
+- **The floating controls at the top-right of the editor no longer overlap.** In Expert mode the "E" exit button sat
+  on top of an HTML file's open-in-browser button, a Markdown file's Editor/Split/Preview toggle or a log file's
+  controls; they now share one row. In Zen mode the "Z" also clears the HTML and log controls, not only the preview
+  toggle.
+- **Spell check: faster typing in long lines and cheaper scrolling.** Spell check: typing in a very long line with no
+  whitespace took about 0.7 s per key; scrolling a viewport full of squiggles is about ten times cheaper.
+- **Spell check: more words are checked correctly, and dictionary actions work for them.** Spell check: Add to
+  Dictionary and Ignore did nothing for words with a typographic apostrophe; possessives and plurals of dictionary
+  words were flagged; the first word of a Spanish question or exclamation, `_emphasis_` / `~~strike~~` text and words
+  after a comma with no space were never checked; non-Latin text was underlined wholesale and `café`-style loan words
+  were flagged in English.
+- **Spell check: dictionary, language and suggestion fixes.** Spell check: a hand-edited `dictionary.txt` was not
+  re-read until restart; prose autocomplete offered nothing with Spanish (Mexico) selected; an unknown spell language
+  in settings.json silently disabled checking; suggestions stalled the right-click, included split-word junk and were
+  enabled in read-only files; corrections were offered inside Markdown code fences.
+- **Snippets: a session ends when the caret leaves its fields, and editing inside a field works.** Snippets: a session
+  now ends when the caret leaves its fields, so Tab indents again after clicking elsewhere, switching tabs or moving
+  to the other split view. Auto-pairs, Enter auto-indent and smart Backspace work inside a field; undoing a typo in a
+  field keeps Tab going to the next stop.
+- **Snippets: changes reach every open window and a user snippet file reloads when saved.** A broken file is reported
+  at once with its name, reason and line, and only the bad entry is skipped. Saving from Settings keeps the comments
+  in the file. Two-word triggers such as `else if` expand, space-indented bodies follow the file's indent style, blank
+  body lines get no trailing whitespace, and `scope` is honoured.
+- **Macros: a replay chord ending in a printable key (`C-x e`) typed that key when the macro contained Backspace or
+  arrows.** A macro that runs a saved macro skipped it on replay. Tab, Shift+Tab, Enter and Escape now replay through
+  the same path as the key (snippet expansion, outdent, auto-indent); typing at several carets replays at every caret;
+  `C-u N x`, Shift+Insert and input-method text are recorded.
+- **Macros: recordings, saved macros and Replay Last are kept and handled safely.** Macros: an empty recording no
+  longer discards the previous macro, and Replay Last works after a restart and in a second window. Name and Save
+  reports an empty name and asks before replacing; names in any script and case variants get their own command id.
+  Delete Saved confirms and removes the key binding. Replay status reports skipped typing on a read-only buffer and
+  missing commands. A hand-edited `macros.json` with a null list no longer stops a window from opening.
+- **Settings → Macros: steps are edited by kind and the note shows the active keymap.** Settings → Macros: steps are
+  shown and edited by kind (command picker, multi-line text, key capture), edits are not dropped on selection change,
+  buttons are not truncated, and the note shows the active keymap's chords instead of F3/F4.
+- **Templates: new files open with the caret at `${cursor}`, in the file that marks it.** The Java Class template
+  writes the `package` line of its folder, and a template's `language` sets the created file's grammar. Java package
+  inference stops at the project root and no longer treats `src/main/resources` or an ancestor folder called `src` as
+  a source root.
+- **Templates: live in every window, with clearer errors and safer paths.** Templates: changes are live in every
+  window; invalid template files are reported with file, reason and line; a template path can no longer leave the
+  target folder through a symlinked directory; failures are shown as errors and the wizard keeps what you typed. Shell
+  and Zsh files are created executable, and template files end with a newline and follow `.editorconfig` line endings.
+- **New File: better extensions and specific messages for names it refuses.** New File: `release-1.2` under Markdown
+  becomes `release-1.2.md`; reserved Windows names, illegal characters, Java keywords, `Foo.txt` as a class name and
+  `~/…` are refused with a specific message.
 
 ## [0.19.0] - 2026-10-06
 
 ### Security
 
-- Updated jackson-databind to 2.22.3, which fixes CVE-2026-91776 and CVE-2026-91777 (two ways for crafted
-  JSON to make parsing consume excessive memory or time).
-- Background Git reads (gutter diff, blob view, blame, folder review) no longer fetch missing objects on
-  demand, so a partial-clone repository's own config can no longer make opening a file run its transport
-  program.
-- The Astro language server no longer loads a TypeScript SDK from an untrusted folder. It uses the SDK
-  beside the server, or is not started until the folder is trusted; the trust prompt lists the SDK.
-- Updated Apache MINA SSHD to 2.20.0, which fixes CVE-2026-94002 (a malicious SFTP server could exhaust the
-  editor's memory). The remote connection root is now resolved to an absolute path at connect time, as
-  2.17+ requires.
-- Opening a file no longer lets its folder's `.git/config` run programs. The status, diff, log, blame
-  and blob lookups Editora runs by itself now override `core.fsmonitor`, hooks, external diff and
-  textconv drivers; commands you start (commit, checkout, push, …) still run your hooks. Ref names that
-  start with `-` are refused, and Git never waits on a hidden terminal prompt.
-- Hardened the places where content you merely opened could reach outside its own folder or the app.
-  Links (Markdown preview and Ctrl/Cmd-click, tool output, plugins, the update page) now go through one
-  check: only `http`, `https` and `mailto` are handed to the system; a relative or `file:` link opens
-  inside the editor when it is a file in the project or the document's folder; anything else is refused
-  with a status message. `.http` body files and `>>` response targets can no longer follow a symlink out of
-  the request's folder. PlantUML previews run with `PLANTUML_SECURITY_PROFILE=SANDBOX` (no local-file or URL
-  `!include`; export the variable yourself to choose another profile), and every preview renderer
-  (PlantUML, Graphviz, Mermaid, Typst) starts without secret-looking environment variables. Agent replies,
-  language-server hovers and completion docs, and pull-request text no longer load remote images — they
-  show the alt text and URL instead. The HTML Live Preview server answers only its own browser tab (Host
-  check plus an unguessable URL prefix) and refuses to serve a home directory or drive root. PDF/DOCX/ODT
-  export fetches images through the same internal-address guard and size cap as the preview; oversized
-  SVG dimensions are clamped. An agent's file reads and writes are confined to the session folder and can
-  never touch Editora's own configuration. A hostile `.editorconfig` section can no longer freeze a window
-  when a file opens. Markdown copied as rich text carries no raw HTML or `javascript:` links, and HTML
-  export neutralises `javascript:` URLs. A plugin whose capabilities cannot be shown is left disabled, and
-  in-app installers download only from the hosts their catalog names.
+- **Updated jackson-databind to 2.22.3 for two CVEs.** Updated jackson-databind to 2.22.3, which fixes CVE-2026-91776
+  and CVE-2026-91777 (two ways for crafted JSON to make parsing consume excessive memory or time).
+- **Background Git reads no longer fetch missing objects in a partial clone.** Background Git reads (gutter diff, blob
+  view, blame, folder review) no longer fetch missing objects on demand, so a partial-clone repository's own config
+  can no longer make opening a file run its transport program.
+- **The Astro language server no longer loads a TypeScript SDK from an untrusted folder.** It uses the SDK beside the
+  server, or is not started until the folder is trusted; the trust prompt lists the SDK.
+- **Updated Apache MINA SSHD to 2.20.0 for CVE-2026-94002.** Updated Apache MINA SSHD to 2.20.0, which fixes
+  CVE-2026-94002 (a malicious SFTP server could exhaust the editor's memory). The remote connection root is now
+  resolved to an absolute path at connect time, as 2.17+ requires.
+- **Opening a file no longer lets its folder's `.git/config` run programs.** The status, diff, log, blame and blob
+  lookups Editora runs by itself now override `core.fsmonitor`, hooks, external diff and textconv drivers; commands
+  you start (commit, checkout, push, …) still run your hooks. Ref names that start with `-` are refused, and Git never
+  waits on a hidden terminal prompt.
+- **Hardened the places where content you merely opened could reach outside its own folder or the app.** Links
+  (Markdown preview and Ctrl/Cmd-click, tool output, plugins, the update page) now go through one check: only `http`,
+  `https` and `mailto` are handed to the system; a relative or `file:` link opens inside the editor when it is a file
+  in the project or the document's folder; anything else is refused with a status message. `.http` body files and `>>`
+  response targets can no longer follow a symlink out of the request's folder. PlantUML previews run with
+  `PLANTUML_SECURITY_PROFILE=SANDBOX` (no local-file or URL `!include`; export the variable yourself to choose another
+  profile), and every preview renderer (PlantUML, Graphviz, Mermaid, Typst) starts without secret-looking environment
+  variables. Agent replies, language-server hovers and completion docs, and pull-request text no longer load remote
+  images — they show the alt text and URL instead. The HTML Live Preview server answers only its own browser tab (Host
+  check plus an unguessable URL prefix) and refuses to serve a home directory or drive root. PDF/DOCX/ODT export
+  fetches images through the same internal-address guard and size cap as the preview; oversized SVG dimensions are
+  clamped. An agent's file reads and writes are confined to the session folder and can never touch Editora's own
+  configuration. A hostile `.editorconfig` section can no longer freeze a window when a file opens. Markdown copied as
+  rich text carries no raw HTML or `javascript:` links, and HTML export neutralises `javascript:` URLs. A plugin whose
+  capabilities cannot be shown is left disabled, and in-app installers download only from the hosts their catalog
+  names.
 
 ### Changed
 
-Behaviour you will notice as different, rather than fixed or faster.
+Behaviour you will notice as different, rather than fixed. The entries headed "Performance" are what got faster.
 
 - **Editing**
   - The editor's right-click Cut and Copy are disabled when there are several carets and nothing is
@@ -5801,16 +5823,14 @@ Behaviour you will notice as different, rather than fixed or faster.
   - Quitting now asks running language servers and programs to stop (SIGTERM) and waits briefly before
     force-killing whatever is left, instead of killing everything at once.
 
-### Performance
-
-- **Syntax highlighting**
+- **Performance: Syntax highlighting**
   - Highlighting after an edit re-tokenizes only the lines the edit affects and stops where the grammar
     state is back to what it was, instead of running to the end of the file. In a 79,000-line Java file an
     edit near the top settled in about 0.5 s instead of 5–7 s, and the interface stall when the colours
     apply went from 140–250 ms to about 30 ms. Opening a block comment still recolours to its close.
   - Opening a file no longer waits while another tab's first grammar of the session compiles; many tabs of
     one language no longer tie up the highlighter's threads; tokenizing is roughly 18% faster.
-- **Large files and memory**
+- **Performance: Large files and memory**
   - Large files open without freezing the window: a 49 MB file used to block the interface for about three
     seconds and a 20 MB file for about one and a half; both now stay under about half a second to a second.
     The file's lines are prepared while it is being read, and a loaded file keeps one copy of its text in
@@ -5827,19 +5847,19 @@ Behaviour you will notice as different, rather than fixed or faster.
     memory as well as by count, and release their pages when the tab closes.
   - Saving no longer keeps a second, encoded copy of every saved open file in memory, and no longer hashes
     the file on the interface thread after each save.
-- **Consoles**
+- **Performance: Consoles**
   - A program or build that prints quickly no longer monopolises the interface. The Run, Output and Debug
     consoles apply each batch of lines as a single edit and take at most one batch per frame; 200,000 build
     lines that used to freeze the window for about a minute now stream in about 13 seconds with the window
     responsive.
-- **Find**
+- **Performance: Find**
   - Find in a very large file no longer freezes the editor: documents over about half a million characters
     are searched in the background, and a query with a huge number of matches holds at most 100,000 of them
     around the current one instead of every match (a search for "e" in a 45 MB buffer took a third of a
     second and 105 MB on every edit). Changed: when there are more matches than are held, the count reads
     "N of 100,000+" until the last match is reached; Next/Previous, Replace and Replace All still reach
     every match. 'Select All Matches' places carets on the matches held (at most 100,000).
-- **Typing and the status bar**
+- **Performance: Typing and the status bar**
   - Enter, Tab, Shift-Tab, a typed closing bracket and snippet-prefix Tab read only the lines around the
     caret instead of copying the whole document on every keystroke; the detected indent unit is remembered
     until the top of the file changes.
@@ -5852,7 +5872,7 @@ Behaviour you will notice as different, rather than fixed or faster.
   - The Run-glyph scan after each typing pause runs in the background; the Structure tool window no longer
     rebuilds its tree when the outline is unchanged; closed tabs are no longer kept in memory by the last
     kill, yank or expand-selection.
-- **Scrolling and overlays**
+- **Performance: Scrolling and overlays**
   - Sticky scroll no longer rebuilds its pinned rows on every scroll step; a row is rebuilt only when its
     line or its text/colouring changes.
   - Background tabs and clean files no longer hold a viewport-sized texture for the LSP-diagnostic,
@@ -5862,7 +5882,7 @@ Behaviour you will notice as different, rather than fixed or faster.
   - Gutter rows build a fold chevron only where a fold starts and create tooltips on first hover.
   - The log overlay no longer re-detects the level of every visible line (stack-trace lines included) on
     each repaint; the spell overlay no longer copies the whole document on each settled edit in Markdown.
-- **Project tool window, search and Git**
+- **Performance: Project tool window, search and Git**
   - Sorting a folder listing no longer asks the disk whether each entry is a directory on every comparison;
     expanding a folder no longer waits behind a Project filter search; a superseded filter search, TODO
     scan or index walk stops instead of finishing.
@@ -5875,7 +5895,7 @@ Behaviour you will notice as different, rather than fixed or faster.
     its size budget; trimming to the budget no longer rescans the project per evicted revision.
   - Log viewer: following a log that grew by more than the follow limit between polls, or was rotated to a
     large file, reads only the tail that is kept.
-- **Startup and tabs**
+- **Performance: Startup and tabs**
   - A restored session no longer lays out the tabs you are not looking at. A background tab is still loaded
     and highlighted, but its editor joins the window the first time you select it. Restoring a 30-file
     session used about a fifth of the interface-thread time and 140 MB less memory in testing. Changed: the
@@ -5888,7 +5908,7 @@ Behaviour you will notice as different, rather than fixed or faster.
   - Packaged builds train their startup cache on a launch that restores a session and opens a file, rather
     than on an empty window (effect on the packaged build not yet measured).
   - `EDITORA_PERF=1` now also reports a launch that opens no file, and when the session finished restoring.
-- **Language servers, debugging and the AI agent**
+- **Performance: Language servers, debugging and the AI agent**
   - A server that announces its features one at a time (jdtls, tinymist) no longer makes Editora re-request
     diagnostics, folding ranges, semantic tokens and inlay hints for every open tab once per announcement.
     The burst is one refresh, for that server's files only; semantic tokens and inlay hints are fetched for
@@ -5907,6 +5927,33 @@ Behaviour you will notice as different, rather than fixed or faster.
   - Sending a prompt, Stop, Resume, Step or an evaluation can no longer freeze the window when the agent or
     the debug adapter is not reading its input. Opening, saving and full-syncing a large document no longer
     encodes it as JSON on the interface thread.
+
+- **Packaging and release hardening.** Installers and archives now carry the licence: `LICENSE` and `NOTICE`
+  are inside the application (and as plain files in the Linux tarball, the AppImage and the experimental
+  Native Image archives), the `.deb`/`.rpm`/`.msi` are built with the MIT text, each bundled font family ships
+  its Open Font License, and `NOTICE` now names every bundled library (commonmark, LSP4J, JLaTeXMath,
+  java-diff-utils, SnakeYAML, the Jackson TOML/YAML formats, SLF4J and others were missing).
+  - **Windows:** the MSI no longer registers `.bat`, `.cmd`, `.js`, `.ps1`, `.psm1`, `.py`, `.pyw`, `.rb` and
+    `.sh`. The installer registers each listed type machine-wide, so on a PC with no per-user choice for them a
+    double-click would have opened Editora instead of running the script. They remain editable through
+    *Open with → Choose another app*. `.txt` is now registered (and first), so Windows keeps treating
+    `text/plain` as `.txt`.
+  - **Linux `.deb`:** installing no longer discards other applications' defaults in the shared
+    `mimeapps.list` — the file is replaced atomically, what Editora's Expert Mode default displaces is
+    remembered and restored on removal, and a `/usr/bin/editora` that belongs to something else is not
+    overwritten.
+  - **Linux tarball:** `sudo ./install.sh` now leaves `/opt/editora` owned by root (it stayed writable by the
+    user who unpacked the archive), `--prefix DIR` refuses to replace or remove a `DIR/editora` that is not an
+    Editora install, and a prefix containing spaces produces a working menu entry.
+  - **Releases** stop before publishing when an expected installer is missing or the tag does not match the
+    project version; the release tooling is pinned and checksum-verified (actions, JReleaser, Maven,
+    `appimagetool`), and the Apple Silicon build moved to the `macos-15` runner ahead of `macos-14`'s
+    retirement.
+  - **Builds:** `-Pdist` now always starts from a clean `target/` (and `-Pfatjar` from clean classes), so a
+    forgotten `clean` can no longer package stale classes; CI also runs the non-UI test suite on Windows and
+    macOS.
+- **Experimental Windows Native Image builds include what they need to start.** Experimental Windows Native Image
+  builds now include the host charset and JavaFX Windows theme bundle needed during startup.
 
 ### Fixed
 
@@ -6762,355 +6809,389 @@ Behaviour you will notice as different, rather than fixed or faster.
   - The build commit and branch shown for development builds are looked up in the background from the
     build's own checkout, so a slow or stuck `git` can no longer freeze the window at startup.
 
-### Packaging
-
-- **Packaging and release hardening.** Installers and archives now carry the licence: `LICENSE` and `NOTICE`
-  are inside the application (and as plain files in the Linux tarball, the AppImage and the experimental
-  Native Image archives), the `.deb`/`.rpm`/`.msi` are built with the MIT text, each bundled font family ships
-  its Open Font License, and `NOTICE` now names every bundled library (commonmark, LSP4J, JLaTeXMath,
-  java-diff-utils, SnakeYAML, the Jackson TOML/YAML formats, SLF4J and others were missing).
-  - **Windows:** the MSI no longer registers `.bat`, `.cmd`, `.js`, `.ps1`, `.psm1`, `.py`, `.pyw`, `.rb` and
-    `.sh`. The installer registers each listed type machine-wide, so on a PC with no per-user choice for them a
-    double-click would have opened Editora instead of running the script. They remain editable through
-    *Open with → Choose another app*. `.txt` is now registered (and first), so Windows keeps treating
-    `text/plain` as `.txt`.
-  - **Linux `.deb`:** installing no longer discards other applications' defaults in the shared
-    `mimeapps.list` — the file is replaced atomically, what Editora's Expert Mode default displaces is
-    remembered and restored on removal, and a `/usr/bin/editora` that belongs to something else is not
-    overwritten.
-  - **Linux tarball:** `sudo ./install.sh` now leaves `/opt/editora` owned by root (it stayed writable by the
-    user who unpacked the archive), `--prefix DIR` refuses to replace or remove a `DIR/editora` that is not an
-    Editora install, and a prefix containing spaces produces a working menu entry.
-  - **Releases** stop before publishing when an expected installer is missing or the tag does not match the
-    project version; the release tooling is pinned and checksum-verified (actions, JReleaser, Maven,
-    `appimagetool`), and the Apple Silicon build moved to the `macos-15` runner ahead of `macos-14`'s
-    retirement.
-  - **Builds:** `-Pdist` now always starts from a clean `target/` (and `-Pfatjar` from clean classes), so a
-    forgotten `clean` can no longer package stale classes; CI also runs the non-UI test suite on Windows and
-    macOS.
-- Experimental Windows Native Image builds now include the host charset and JavaFX Windows theme
-  bundle needed during startup.
-
 ## [0.18.6] - 2026-09-28
 
-- Fixed Git output colors being overridden by the active editor theme; diffstat additions and deletions
-  now render in green and red while file links retain their accent color.
+### Added
 
-- Git output now colors diffstat additions and deletions separately, emphasizes file and change totals,
-  and highlights create/delete modes and remote update markers while keeping file paths clickable.
-
-- Running a standalone compact source with an unreadable Java launcher now has its own status message,
-  leaving the project main-class setup hint intact. Message-catalog tests reject duplicate keys.
-
-- Local File History now queues blob cleanup before acknowledging a durable index write, so a
-  later pre-delete snapshot cannot lose its recovery body to an older cleanup pass.
-
-- Markdown preview tables now account for cell padding when sizing columns, so compact values stay
-  readable instead of wrapping or collapsing.
-
-- Anchored popups, including the Welcome screen's Git menu, now stay within the window bounds.
-
-- Tagged releases now attempt experimental Linux x64, macOS x64/arm64, and Windows x64 GraalVM
-  Native Image archives alongside the usual JVM packages. Each extracted archive must pass a
-  GUI workflow smoke test before upload; an experimental build failure does not block the
-  ordinary release. The archives use separate settings and remain subject to the measured
-  performance and plugin limitations.
-
-- Added an isolated experimental StaticFX/GraalVM native build profile, a real EditorBuffer
-  correctness/stress probe, and JVM/AOT/native measurement tooling. This does not replace the JVM
-  distribution; limitations and measured acceptance status are in `docs/native-image-staticfx.md`.
-
-- Extensionless Java `--source 25+` shebang files can now be debugged with breakpoints, stepping,
-  and local variables. Debug compiles a line-preserving temporary `.java` copy, maps breakpoints and
-  stack frames back to the original file, and removes the temporary source and compiled classes after
-  the session.
-- Added an opt-in live compact-source Debug probe that checks a breakpoint, source location,
-  local-variable values, stepping, and the window's Debug command through the installed JDT LS and
-  Java debug adapter. Pull-request CI runs it alongside the live JDT LS compact-source probe.
-- Debugging a compact `.java` file now compiles its implicit class with the selected JDK's `javac`,
-  launches it with the matching `java`, and passes the selected JDK environment to the debuggee.
-  A helper type in the file no longer causes Debug to choose the wrong main class, and sibling
-  source files resolve from the file's directory.
-- The Default JDK choice now also runs and debugs standalone Java source files. Run probes that selected
-  executable, so an older Java on PATH cannot reject a file launched with JDK 25; Doctor reports the same
-  choice. Run reports when the selected Java launcher cannot be probed, and extensionless Java shebangs
-  reject source releases below 25 or newer than the selected JDK.
-  Compact-source diagnostics are no longer hidden by message text. Live checks against the bundled JDT LS
-  cover Maven and loose files, implicit imports, completion, and genuine compiler errors.
-- Compact Java and Python files can now be run with language services disabled. Interactive Run
-  prompts appear before the program receives input, and compact Java gutter markers select a
-  launchable `main(String[])` ahead of `main()` while ignoring private or unsupported signatures.
-- Added a dedicated LM Studio / Bionic provider for AI actions and an AI Agent preset using
-  OpenCode over ACP. The preset shares the local endpoint, model and optional token without
-  writing OpenCode config files; local settings stay separate from existing cloud settings.
-  Model and mode selectors now also support current ACP `configOptions`, as used by OpenCode.
-  Generated `explanation.md` buffers include the provider agent and model reported by the server;
+- **Git output colors diffstats, totals, modes and remote update markers.** Git output now colors diffstat additions
+  and deletions separately, emphasizes file and change totals, and highlights create/delete modes and remote update
+  markers while keeping file paths clickable.
+- **Tagged releases attempt experimental GraalVM Native Image archives.** Tagged releases now attempt experimental
+  Linux x64, macOS x64/arm64, and Windows x64 GraalVM Native Image archives alongside the usual JVM packages. Each
+  extracted archive must pass a GUI workflow smoke test before upload; an experimental build failure does not block
+  the ordinary release. The archives use separate settings and remain subject to the measured performance and plugin
+  limitations.
+- **An experimental StaticFX/GraalVM native build profile, with probes and measurement tools.** Added an isolated
+  experimental StaticFX/GraalVM native build profile, a real EditorBuffer correctness/stress probe, and JVM/AOT/native
+  measurement tooling. This does not replace the JVM distribution; limitations and measured acceptance status are in
+  `docs/native-image-staticfx.md`.
+- **Extensionless Java `--source 25+` shebang files can now be debugged with breakpoints, stepping, and local
+  variables.** Debug compiles a line-preserving temporary `.java` copy, maps breakpoints and stack frames back to the
+  original file, and removes the temporary source and compiled classes after the session.
+- **An opt-in live probe checks debugging a compact Java source file.** Added an opt-in live compact-source Debug
+  probe that checks a breakpoint, source location, local-variable values, stepping, and the window's Debug command
+  through the installed JDT LS and Java debug adapter. Pull-request CI runs it alongside the live JDT LS
+  compact-source probe.
+- **Added a dedicated LM Studio / Bionic provider for AI actions and an AI Agent preset using OpenCode over ACP.** The
+  preset shares the local endpoint, model and optional token without writing OpenCode config files; local settings
+  stay separate from existing cloud settings. Model and mode selectors now also support current ACP `configOptions`,
+  as used by OpenCode. Generated `explanation.md` buffers include the provider agent and model reported by the server;
   when response metadata is unavailable, they use the requested model or explicitly show Unknown.
-- AI Actions can use the Codex ACP adapter and an existing Codex login for explain, rewrite and
-  commit-message generation. Separate text-only sessions leave the Agent chat intact; API keys and
-  endpoints are not used by Codex. Settings now explain adapter installation and login requirements.
-  When AI Actions is enabled and connected, the editor's right-click menu also exposes Explain and
-  Rewrite under an **AI Actions** submenu; the submenu disappears when that effective gate is off.
-  Generated `explanation.md` buffers now end with the agent and actual response model.
-- Successful manual AI connection checks now restore selection and commit-action buttons after a
-  failed startup probe. Health checks run independently of active generations.
+- **AI Actions can use the Codex ACP adapter and an existing Codex login for explain, rewrite and commit-message
+  generation.** Separate text-only sessions leave the Agent chat intact; API keys and endpoints are not used by Codex.
+  Settings now explain adapter installation and login requirements. When AI Actions is enabled and connected, the
+  editor's right-click menu also exposes Explain and Rewrite under an **AI Actions** submenu; the submenu disappears
+  when that effective gate is off. Generated `explanation.md` buffers now end with the agent and actual response
+  model.
+
+### Changed
+
+- **Compact Java and Python files can now be run with language services disabled.** Interactive Run prompts appear
+  before the program receives input, and compact Java gutter markers select a launchable `main(String[])` ahead of
+  `main()` while ignoring private or unsupported signatures.
+
+### Fixed
+
+- **Git output keeps its own colors under any editor theme.** Fixed Git output colors being overridden by the active
+  editor theme; diffstat additions and deletions now render in green and red while file links retain their accent
+  color.
+- **Running a compact source with an unreadable Java launcher has its own status message.** Running a standalone
+  compact source with an unreadable Java launcher now has its own status message, leaving the project main-class setup
+  hint intact. Message-catalog tests reject duplicate keys.
+- **Local File History keeps a later snapshot's body safe from an older cleanup pass.** Local File History now queues
+  blob cleanup before acknowledging a durable index write, so a later pre-delete snapshot cannot lose its recovery
+  body to an older cleanup pass.
+- **Markdown preview tables size columns with cell padding counted.** Markdown preview tables now account for cell
+  padding when sizing columns, so compact values stay readable instead of wrapping or collapsing.
+- **Anchored popups, including the Welcome screen's Git menu, now stay within the window bounds.**
+- **Debugging a compact `.java` file uses the selected JDK and picks the right main class.** Debugging a compact
+  `.java` file now compiles its implicit class with the selected JDK's `javac`, launches it with the matching `java`,
+  and passes the selected JDK environment to the debuggee. A helper type in the file no longer causes Debug to choose
+  the wrong main class, and sibling source files resolve from the file's directory.
+- **The Default JDK choice now also runs and debugs standalone Java source files.** Run probes that selected
+  executable, so an older Java on PATH cannot reject a file launched with JDK 25; Doctor reports the same choice. Run
+  reports when the selected Java launcher cannot be probed, and extensionless Java shebangs reject source releases
+  below 25 or newer than the selected JDK. Compact-source diagnostics are no longer hidden by message text. Live
+  checks against the bundled JDT LS cover Maven and loose files, implicit imports, completion, and genuine compiler
+  errors.
+- **Successful manual AI connection checks now restore selection and commit-action buttons after a failed startup
+  probe.** Health checks run independently of active generations.
 
 ## [0.18.5] - 2026-09-19
 
-- Autosave now recognizes a preceding application save even when its UI acknowledgment arrives before
-  the autosave worker checks the file, while still preserving genuine external changes.
-- Improved continuous Java editing: completion owns Enter/Tab correctly, member triggers are immediate,
-  identifier completion starts after a short pause, complete lists filter locally, and obsolete requests
-  are cancelled. Completion retains overloads, server filter/range/default metadata, commit characters,
-  and selection feedback; Java calls reuse existing parentheses and request signature help. Auto-imports
-  survive safe continued typing and preserve selected arguments. Signature/hover/diagnostic responses
-  are guarded against newer editing state, and no-op syncs no longer advance the protocol version.
-  Signature help now supports overload navigation across multiline calls; nested method snippets
-  restore outer arguments, and completion with eager or safely rebased deferred imports undoes/redoes as
-  one action while preserving later typing as separate undo steps, including split views. Incremental
-  synchronization uses optimized newline search to reduce large-file range calculation cost.
-  Java server launches join pending document lifecycle work before completion/resolve,
-  fixing missing or removed imports reproduced in real Maven/Gradle module probes.
-  Finished zero-argument Java calls and method references no longer request invocation signature help;
-  active argument placeholders retain it.
+### Added
 
-- Added a global Maven JDK selector and per-project run-configuration override. Run, debug, Maven
-  classpath resolution, before-launch steps, and Maven task invocations now use the selected toolchain;
-  installed JDK discovery includes standard platform locations plus SDKMAN, asdf, mise, Jabba, and
-  JetBrains-managed JDKs.
-- Running a file or saved configuration now always opens and focuses the Run tool window; pressing Run while
-  a program is already active brings its existing console back into focus and keeps it open across later UI
-  availability refreshes.
-- Run, build, and external-tool console action buttons now retain their full labels when a long command line
-  fills the status header instead of collapsing to ellipses.
-- Save, Save As, close, reload, and Git working-tree operations now revalidate exact document and disk
-  preimages, protect pending writes across windows, and preserve newer edits or external changes instead of
-  silently overwriting them.
-- LSP document renames, resource edits, saves, diagnostics, and navigation now retain URI/version/session
-  identity through asynchronous delivery; stale or unverifiable edits are refused, and negotiated save text
-  reflects the bytes that reached disk.
-- Diff and merge Result drafts participate in tab/window close protection. Binary or degraded comparisons
-  stay read-only, stale local/index hunks are rejected, and manual merge edits cannot be erased by a later
-  resolution choice.
-- Git paths are handled literally, conflicted porcelain-v2 entries remain visible, history mutations use the
-  protected working-tree path, and stale refreshes cannot repaint a different active file.
-- Regex replacement now evaluates the actual match context and all programmatic replace/diff paths honor a
-  buffer's read-only state. Patch output also preserves missing-final-newline markers for both changed sides.
+- **Added a global Maven JDK selector and per-project run-configuration override.** Run, debug, Maven classpath
+  resolution, before-launch steps, and Maven task invocations now use the selected toolchain; installed JDK discovery
+  includes standard platform locations plus SDKMAN, asdf, mise, Jabba, and JetBrains-managed JDKs.
+
+### Changed
+
+- **Running a file or configuration always opens and focuses the Run tool window.** Running a file or saved
+  configuration now always opens and focuses the Run tool window; pressing Run while a program is already active
+  brings its existing console back into focus and keeps it open across later UI availability refreshes.
+
+### Fixed
+
+- **Autosave recognizes a save Editora just made, while keeping real external changes.** Autosave now recognizes a
+  preceding application save even when its UI acknowledgment arrives before the autosave worker checks the file, while
+  still preserving genuine external changes.
+- **Java completion, imports, signature help and undo behave correctly while you keep typing.** Improved continuous
+  Java editing: completion owns Enter/Tab correctly, member triggers are immediate, identifier completion starts after
+  a short pause, complete lists filter locally, and obsolete requests are cancelled. Completion retains overloads,
+  server filter/range/default metadata, commit characters, and selection feedback; Java calls reuse existing
+  parentheses and request signature help. Auto-imports survive safe continued typing and preserve selected arguments.
+  Signature/hover/diagnostic responses are guarded against newer editing state, and no-op syncs no longer advance the
+  protocol version. Signature help now supports overload navigation across multiline calls; nested method snippets
+  restore outer arguments, and completion with eager or safely rebased deferred imports undoes/redoes as one action
+  while preserving later typing as separate undo steps, including split views. Incremental synchronization uses
+  optimized newline search to reduce large-file range calculation cost. Java server launches join pending document
+  lifecycle work before completion/resolve, fixing missing or removed imports reproduced in real Maven/Gradle module
+  probes. Finished zero-argument Java calls and method references no longer request invocation signature help; active
+  argument placeholders retain it.
+- **Console action buttons keep their full labels beside a long command line.** Run, build, and external-tool console
+  action buttons now retain their full labels when a long command line fills the status header instead of collapsing
+  to ellipses.
+- **Saves, closes, reloads and Git operations no longer overwrite newer edits or disk changes.** Save, Save As, close,
+  reload, and Git working-tree operations now revalidate exact document and disk preimages, protect pending writes
+  across windows, and preserve newer edits or external changes instead of silently overwriting them.
+- **LSP edits, saves and diagnostics stay tied to the document they were made for.** LSP document renames, resource
+  edits, saves, diagnostics, and navigation now retain URI/version/session identity through asynchronous delivery;
+  stale or unverifiable edits are refused, and negotiated save text reflects the bytes that reached disk.
+- **Diff and merge Result drafts participate in tab/window close protection.** Binary or degraded comparisons stay
+  read-only, stale local/index hunks are rejected, and manual merge edits cannot be erased by a later resolution
+  choice.
+- **Git paths are taken literally and conflicted entries stay visible.** Git paths are handled literally, conflicted
+  porcelain-v2 entries remain visible, history mutations use the protected working-tree path, and stale refreshes
+  cannot repaint a different active file.
+- **Regex replacement uses the real match context and respects read-only buffers.** Regex replacement now evaluates
+  the actual match context and all programmatic replace/diff paths honor a buffer's read-only state. Patch output also
+  preserves missing-final-newline markers for both changed sides.
 
 ## [0.18.4] - 2026-09-15
 
-- Closed a Local History garbage-collection race so a collection request arriving after an in-flight
-  revision computed its hash cannot delete the revision body before its index entry is published.
-- Made Editora's Java 27 compatibility a blocking CI lane while retaining Java 25 as the release
-  baseline, upgraded JaCoCo for Java 27 class files, and isolated formatting on JDK 25 until its
-  javac-dependent formatter supports 27.
-- Fixed streamed AI responses on Java 27 so the response timeout still bounds header and idle-read
-  waits without imposing an absolute deadline on a healthy long-running generation.
-- Updated JSVG, Apache SSHD, SLF4J, JUnit, Spotless, and Palantir Java Format to their
-  current compatible releases.
-- Updated the Maven build plugins and made the documented Maven 3.9 and JDK 25+ build requirements
-  executable through Maven Enforcer.
-- Upgraded the UI runtime from JavaFX 26.0.2 to JavaFX 27. The JDK 25 baseline already satisfies
-  JavaFX 27's minimum, and the now-stable extended-window API no longer needs the preview flag.
-- Added editor context-menu and command-palette actions to debug the JUnit test method at the caret through
-  Maven or Gradle, with automatic attachment to the suspended test JVM.
-- Personal Notes now render source-line references with the same compact, subdued treatment used by the
-  Structure and Bookmarks tool windows.
+### Added
+
+- **Debug the JUnit test method at the caret through Maven or Gradle.** Added editor context-menu and command-palette
+  actions to debug the JUnit test method at the caret through Maven or Gradle, with automatic attachment to the
+  suspended test JVM.
+
+### Changed
+
+- **Java 27 compatibility is a blocking CI lane, with Java 25 the release baseline.** Made Editora's Java 27
+  compatibility a blocking CI lane while retaining Java 25 as the release baseline, upgraded JaCoCo for Java 27 class
+  files, and isolated formatting on JDK 25 until its javac-dependent formatter supports 27.
+- **Updated JSVG, Apache SSHD, SLF4J, JUnit, Spotless, and Palantir Java Format to their current compatible
+  releases.**
+- **Updated the Maven build plugins and enforced the Maven 3.9 and JDK 25+ requirements.** Updated the Maven build
+  plugins and made the documented Maven 3.9 and JDK 25+ build requirements executable through Maven Enforcer.
+- **Upgraded the UI runtime from JavaFX 26.0.2 to JavaFX 27.** The JDK 25 baseline already satisfies JavaFX 27's
+  minimum, and the now-stable extended-window API no longer needs the preview flag.
+- **Personal Notes show source-line references in the compact, subdued style.** Personal Notes now render source-line
+  references with the same compact, subdued treatment used by the Structure and Bookmarks tool windows.
+
+### Fixed
+
+- **A Local History garbage-collection race no longer deletes a new revision's body.** Closed a Local History
+  garbage-collection race so a collection request arriving after an in-flight revision computed its hash cannot delete
+  the revision body before its index entry is published.
+- **Streamed AI responses on Java 27 are no longer cut off by an absolute deadline.** Fixed streamed AI responses on
+  Java 27 so the response timeout still bounds header and idle-read waits without imposing an absolute deadline on a
+  healthy long-running generation.
 
 ## [0.18.3] - 2026-09-11
 
-- Added Project Map session options to keep the current zoom while opening folders and focus newly created
-  columns independently.
-- Changed the Emacs `C-x 1` command so that, when the editor is already unsplit, it closes every open tool
-  window, including floating windows.
-- Structure, Bookmark, and Personal Note navigation now keep the selected line visible below sticky-scroll
-  headers instead of placing it underneath the overlay.
+### Added
+
+- **Project Map options to keep the zoom and focus new columns.** Added Project Map session options to keep the
+  current zoom while opening folders and focus newly created columns independently.
+
+### Changed
+
+- **Emacs `C-x 1` in an unsplit editor closes every open tool window.** Changed the Emacs `C-x 1` command so that,
+  when the editor is already unsplit, it closes every open tool window, including floating windows.
+
+### Fixed
+
+- **Navigating from Structure, Bookmarks or Personal Notes keeps the line below sticky headers.** Structure, Bookmark,
+  and Personal Note navigation now keep the selected line visible below sticky-scroll headers instead of placing it
+  underneath the overlay.
 
 ## [0.18.2] - 2026-09-11
 
-- Added Emacs tool-window keys: `C-x 0` closes the current window, `C-x ^` grows the bottom window (`C-u C-x
-  ^` shrinks it), `C-x >` and `C-x <` resize side windows toward or away from the editor, and repeated `C-x f`
-  toggles maximize / restore.
-- Fixed the Emacs `C-x 1` command so it collapses independent editor groups as well as a second view of the
-  active document.
-- Color Save buttons green and Discard buttons red throughout the application, while neutral actions such as Cancel retain their existing appearance.
-- Ordinary editable tab labels now pin the upright Inter UI face instead of inheriting an editor font or
-  retaining the temporary italic read-only styling used while their contents load.
+### Added
+
+- **Emacs keys to close, resize and maximize tool windows.** Added Emacs tool-window keys: `C-x 0` closes the current
+  window, `C-x ^` grows the bottom window (`C-u C-x ^` shrinks it), `C-x >` and `C-x <` resize side windows toward or
+  away from the editor, and repeated `C-x f` toggles maximize / restore.
+
+### Changed
+
+- **Save buttons are green and Discard buttons red throughout the app.** Color Save buttons green and Discard buttons
+  red throughout the application, while neutral actions such as Cancel retain their existing appearance.
+- **Editable tab labels use the upright Inter font.** Ordinary editable tab labels now pin the upright Inter UI face
+  instead of inheriting an editor font or retaining the temporary italic read-only styling used while their contents
+  load.
+
+### Fixed
+
+- **Emacs `C-x 1` also collapses independent editor groups.** Fixed the Emacs `C-x 1` command so it collapses
+  independent editor groups as well as a second view of the active document.
 
 ## [0.18.1] - 2026-09-10
 
 ### Fixed
 
-- Local History garbage collection now preserves blobs written by an in-flight publication until its
-  complete index becomes durable.
-- Git file history now compares a selected revision with the editable working file on double-click or Enter,
-  exposing the diff viewer's line, hunk, whole-file, Result, Undo, and Save controls. Full-repository Git logs
-  retain their parent-to-commit inspection and add **Compare with Working Tree** to each file's menu.
-- Undo after distributed multi-cursor paste no longer fails when the edit batch shortens the document.
-- ACP agent writes to closed files now use staged atomic replacement, so an interrupted write preserves the
-  prior file instead of leaving it truncated or partially replaced; agent writes also respect read-only
-  buffers.
-- Remote SFTP saves now detect exact server-byte changes since the last open or successful save, prompt
-  before overwriting them, use a server-side atomic rename when supported, and retain the prior remote copy
-  when safe replacement is unavailable or interrupted.
-- Git branch switches, discard, and stash operations now invalidate overlapping pending editor saves before
-  and after the working tree changes; mixed tracked/untracked discards finish in order before clean buffers
-  reload, while dirty and deleted open copies remain recoverable.
-- LSP workspace resource edits now reject buffers changed, closed, or made read-only after filesystem staging,
-  cancel older queued saves, restore earlier text edits after an FX-side failure, and retain/report recovery
-  files instead of overwriting concurrent filesystem changes when rollback cannot complete.
-- Deleting files from the Project tree now resolves dirty-buffer Save/Discard/Cancel choices first, waits
-  for recoverable Local History to become durable, rejects changed preimages as one batch, and prevents a
-  pending save from recreating a deleted path.
-- Local File History restores now reject corrupted revision bodies, preserve files changed while a revision
-  is loading, use guarded document writes, and leave editor changes untouched when an asynchronous restore
-  becomes stale.
-- Replace in Files now preserves the disk copy when a formerly closed file opens during the operation,
-  reports history and decoding failures accurately, and keeps each open-buffer replacement separate from
-  the user's preceding undo history.
-- Closing a window or using Save As no longer cancels a newer in-flight save from another window editing the
-  same file through the same path, a normalized alias, a case alias, or a symlink.
-- Saving an existing file now fails without touching its bytes when Editora cannot create a safe staging
-  file, instead of falling back to an in-place write that could truncate the only disk copy.
-- Opening or restoring editable files no longer flashes the yellow **View Mode** banner or retains a stale
-  **Read-Only** status while their content loads.
-- Sticky headers for long lines (such as generated HTML) no longer expand the editor beyond its viewport
-  and push the minimap off screen when scrolling.
+- **Local History garbage collection keeps blobs of an in-flight publication.** Local History garbage collection now
+  preserves blobs written by an in-flight publication until its complete index becomes durable.
+- **Git file history compares a revision with the editable working file.** Git file history now compares a selected
+  revision with the editable working file on double-click or Enter, exposing the diff viewer's line, hunk, whole-file,
+  Result, Undo, and Save controls. Full-repository Git logs retain their parent-to-commit inspection and add **Compare
+  with Working Tree** to each file's menu.
+- **Undo after distributed multi-cursor paste no longer fails when the edit batch shortens the document.**
+- **AI agent writes to closed files are atomic and respect read-only buffers.** ACP agent writes to closed files now
+  use staged atomic replacement, so an interrupted write preserves the prior file instead of leaving it truncated or
+  partially replaced; agent writes also respect read-only buffers.
+- **Remote SFTP saves detect changes on the server and replace files safely.** Remote SFTP saves now detect exact
+  server-byte changes since the last open or successful save, prompt before overwriting them, use a server-side atomic
+  rename when supported, and retain the prior remote copy when safe replacement is unavailable or interrupted.
+- **Git branch switches, discard and stash no longer clash with pending editor saves.** Git branch switches, discard,
+  and stash operations now invalidate overlapping pending editor saves before and after the working tree changes;
+  mixed tracked/untracked discards finish in order before clean buffers reload, while dirty and deleted open copies
+  remain recoverable.
+- **LSP workspace resource edits refuse changed buffers and keep recovery files.** LSP workspace resource edits now
+  reject buffers changed, closed, or made read-only after filesystem staging, cancel older queued saves, restore
+  earlier text edits after an FX-side failure, and retain/report recovery files instead of overwriting concurrent
+  filesystem changes when rollback cannot complete.
+- **Deleting files from the Project tree handles unsaved buffers and history first.** Deleting files from the Project
+  tree now resolves dirty-buffer Save/Discard/Cancel choices first, waits for recoverable Local History to become
+  durable, rejects changed preimages as one batch, and prevents a pending save from recreating a deleted path.
+- **Local File History restores reject corrupted revisions and stale results.** Local File History restores now reject
+  corrupted revision bodies, preserve files changed while a revision is loading, use guarded document writes, and
+  leave editor changes untouched when an asynchronous restore becomes stale.
+- **Replace in Files keeps the disk copy safe and its undo steps separate.** Replace in Files now preserves the disk
+  copy when a formerly closed file opens during the operation, reports history and decoding failures accurately, and
+  keeps each open-buffer replacement separate from the user's preceding undo history.
+- **Closing a window or Save As no longer cancels another window's newer save of the file.** Closing a window or using
+  Save As no longer cancels a newer in-flight save from another window editing the same file through the same path, a
+  normalized alias, a case alias, or a symlink.
+- **Saving fails safely, without touching the file, when no staging file can be made.** Saving an existing file now
+  fails without touching its bytes when Editora cannot create a safe staging file, instead of falling back to an
+  in-place write that could truncate the only disk copy.
+- **Opening editable files no longer flashes the View Mode banner or a stale Read-Only status.** Opening or restoring
+  editable files no longer flashes the yellow **View Mode** banner or retains a stale **Read-Only** status while their
+  content loads.
+- **Sticky headers for long lines no longer widen the editor past its viewport.** Sticky headers for long lines (such
+  as generated HTML) no longer expand the editor beyond its viewport and push the minimap off screen when scrolling.
 
 ## [0.18.0] - 2026-09-09
 
-- `.astro` files are now recognized as Astro, use the official Astro TextMate grammar for mixed
-  frontmatter/HTML/CSS syntax highlighting and Structure symbols, and support the configurable
-  `astro-ls` language server with automatic detection and one-click npm installation.
-
-- Bookmarks and Personal Notes can now be attached to folders from the Project tree; folder entries carry
-  folder icons in their tool windows, open the Project explorer tree with the owning folder selected when
-  activated, and expose Personal Notes as folder-row tooltips.
-- Project-tree open-file, bookmark, and Personal Note indicators now appear after the file or folder name.
-
 ### Added
 
-- Project Canvas Personal Notes badges now open independent, editable note cards for files and folders. Each
-  card keeps a parent connector, can coexist with its code preview, and can be temporarily hidden with the
-  default-off “Hide all open Personal Notes” filter toggle.
-- The Project Map can now filter its visible working set to bookmarked files or files with Personal Notes.
-- Floating Project Map previews now have a live connector to their source file row, including while the
-  map is panned or zoomed and while a preview is moved or resized.
+- **Astro files: highlighting, Structure and the `astro-ls` language server.** `.astro` files are now recognized as
+  Astro, use the official Astro TextMate grammar for mixed frontmatter/HTML/CSS syntax highlighting and Structure
+  symbols, and support the configurable `astro-ls` language server with automatic detection and one-click npm
+  installation.
+- **Bookmarks and Personal Notes can be attached to folders.** Bookmarks and Personal Notes can now be attached to
+  folders from the Project tree; folder entries carry folder icons in their tool windows, open the Project explorer
+  tree with the owning folder selected when activated, and expose Personal Notes as folder-row tooltips.
+- **Project Canvas Personal Notes badges now open independent, editable note cards for files and folders.** Each card
+  keeps a parent connector, can coexist with its code preview, and can be temporarily hidden with the default-off
+  “Hide all open Personal Notes” filter toggle.
+- **The Project Map can now filter its visible working set to bookmarked files or files with Personal Notes.**
+- **Floating Project Map previews have a live connector to their file row.** Floating Project Map previews now have a
+  live connector to their source file row, including while the map is panned or zoomed and while a preview is moved or
+  resized.
+
+### Changed
+
+- **Project-tree open-file, bookmark, and Personal Note indicators now appear after the file or folder name.**
 
 ### Fixed
 
 - **The Welcome page keeps long Recent lists compact.** It now shows the five newest valid files first and
   provides an accessible disclosure chevron to show or hide any remaining entries.
-- The Quit confirmation now presents its destructive Quit action as a red danger button while keeping
-  Cancel neutral.
-- Save, history, bulk-replace, search, preview, process, and configuration shutdown paths now preserve
-  acknowledged data and bounded lifecycle ownership during concurrent completion, cancellation, and exit.
-- Personal Notes hover previews in the editor and Project tree now share a soft, light-yellow paper color
-  reminiscent of a Post-it note.
-- Editor overlays now cap their backing textures using the window's HiDPI output scale, preventing
-  JavaFX Metal renderer crashes when an unwrapped long line makes an overlay wider than the GPU limit.
-- Astro language-server startup now discovers and supplies its required TypeScript SDK, including a
-  workspace-hoisted or Editora-installed SDK, instead of entering the crash-restart guard at initialization.
-- The HTML **Open in Browser** control now stays inside the code editor when the minimap is shown instead
-  of floating over the minimap.
+- **The Quit confirmation now presents its destructive Quit action as a red danger button while keeping Cancel
+  neutral.**
+- **Shutdown, cancellation and concurrent completion keep acknowledged data.** Save, history, bulk-replace, search,
+  preview, process, and configuration shutdown paths now preserve acknowledged data and bounded lifecycle ownership
+  during concurrent completion, cancellation, and exit.
+- **Personal Notes hover previews have a light-yellow paper color.** Personal Notes hover previews in the editor and
+  Project tree now share a soft, light-yellow paper color reminiscent of a Post-it note.
+- **Editor overlays cap their textures, preventing Metal renderer crashes on long lines.** Editor overlays now cap
+  their backing textures using the window's HiDPI output scale, preventing JavaFX Metal renderer crashes when an
+  unwrapped long line makes an overlay wider than the GPU limit.
+- **The Astro language server finds its TypeScript SDK and no longer crash-restarts.** Astro language-server startup
+  now discovers and supplies its required TypeScript SDK, including a workspace-hoisted or Editora-installed SDK,
+  instead of entering the crash-restart guard at initialization.
+- **The HTML Open in Browser control stays inside the editor when the minimap is shown.** The HTML **Open in Browser**
+  control now stays inside the code editor when the minimap is shown instead of floating over the minimap.
 
 ## [0.17.0] - 2026-09-08
 
 ### Changed
 
-- Run configurations now open in their own project/session-scoped window instead of appearing among
-  application-wide Settings.
+- **Run configurations open in their own project window, not in Settings.** Run configurations now open in their own
+  project/session-scoped window instead of appearing among application-wide Settings.
 
-### Internal
+- **Internal: `MainController` workflows split into per-window coordinators.** Split `MainController` workflows into per-window
+  coordinators for commands, editing, templates, settings, run configurations, navigation, previews/exports, Git
+  actions, chrome, MCP, files, sessions, test navigation and install prompts. Preserve command IDs/order, FXML and
+  public window APIs.
+- **Internal: Extracted completion, ghost text and popup state from `EditorBuffer` into `BufferCompletion`.** Production Java
+  files now stay below 10,000 lines, with a regression check enforcing the ceiling.
 
-- Split `MainController` workflows into per-window coordinators for commands, editing, templates,
-  settings, run configurations, navigation, previews/exports, Git actions, chrome, MCP, files, sessions,
-  test navigation and install prompts. Preserve command IDs/order, FXML and public window APIs.
-- Extracted completion, ghost text and popup state from `EditorBuffer` into `BufferCompletion`.
-  Production Java files now stay below 10,000 lines, with a regression check enforcing the ceiling.
+- **Context menus use one consistent Inter font throughout the app.** Context menus now use one consistent Inter font,
+  size, weight, and style throughout the application instead of inheriting typography from the file, editor, toolbar,
+  or other control that opened them.
+- **Recursive folder comparison now prunes `.git` metadata and paths matched by either root's `.gitignore`.** Its scan
+  reuses file attributes instead of restating every file, builds the review rows off the JavaFX thread, and avoids
+  redundant list copies when the result is displayed.
+- **Multi-file diff and folder-review file lists can now be resized horizontally with a draggable divider.**
+- **File Information opens from the status bar's file-size segment.** File Information now opens and closes from the
+  file-size segment in the status bar; its redundant tool-window stripe icon has been removed.
+- **The Run console colors log levels, opens links and has Select All / Copy.** The Run console now matches Output's
+  richer console behavior: recognized log levels are color-coded, HTTP(S) URLs are styled and open on click, and the
+  standard Select All / Copy context menu is available.
+- **npm and Make run configurations with no working directory run at the project root.** NPM and Make run
+  configurations with a blank working directory now run at the open project's root, as the settings hint promises,
+  instead of interpreting the target name as a path relative to Editora's install or launch directory. Their
+  before-launch commands use the same project-root default.
+- **Project Map pan and zoom repaint once per pulse and skip off-screen connectors.** Project Map pan and zoom
+  gestures now coalesce rendering to one Canvas repaint per JavaFX pulse, and tall columns no longer rasterize
+  connectors for rows outside the viewport overscan.
+- **Project Map filename searches open the columns that reveal every match.** Project Map filename searches now open
+  the ancestor columns needed to reveal every matching file; clearing the query restores the branches that were open
+  before the search.
+- **Diff-toolbar controls have descriptive tooltips.** Diff-toolbar controls now provide descriptive, localized
+  tooltips for whitespace matching, word emphasis, comparison rules, context collapsing, wrapping, layout switching,
+  and patch export.
+- **Editable diff apply controls stay beside the center seam.** Editable diff apply controls now stay beside the
+  center seam even when the left file is the local target, instead of appearing in the window's outer-left gutter.
+- **The standalone diff's restore control shows Editora's mark.** The standalone diff control that restores the full
+  interface now uses Editora's application mark instead of a generic wrench.
+- **Diff refreshes are generation-guarded and preserve the selected change, scroll positions, focused side, and
+  divider.** Syntax highlighting now runs off the JavaFX thread and stale highlight work is discarded.
+- **Diff apply actions are safer and do not rely on color alone.** Diff apply actions reject stale local content,
+  expose a dedicated final-newline apply action, and keep Undo and Save disabled until an apply succeeds. Add/remove
+  signs and keyboard-operable gutter actions supplement color for accessibility.
+- **Project Map: right-to-left flow, better column placement and preview cards.** The Project Map defaults to a
+  right-to-left flow, remembers the last selected direction, centres each newly opened column on the folder that
+  opened it while keeping it beyond the parent column without overlap, opens a file row directly in an editor tab,
+  clips panned content to the canvas below its toolbar, hides column controls when zoom leaves too little header
+  space, and exposes canvas preview through a dedicated icon. Preview cards open beyond their source column in the
+  active flow direction, expand to fit long lines when the viewport permits, and are visibly marked read-only while
+  retaining context-menu copy, bookmark, and Personal Note actions for clicked code.
+- **Expert mode's exit control sits inside the code view.** Expert mode's floating **E** exit control now lives inside
+  the active code viewport and clears the minimap instead of overlapping the window title bar or minimap.
+- **Expert mode, including `--expert` CLI launches, now keeps the menu bar visible from the first frame.**
+- **Files opened from the command line no longer stay marked Read-Only.** Files opened asynchronously from the command
+  line no longer retain a stale **Read-Only** status after their temporary loading shell becomes editable.
+- **Structure colors signatures, shows return types and compact line labels.** The Structure window now syntax-colors
+  individual signature tokens, includes source-derived return types, and shows source positions as compact, muted
+  `line N` labels; Bookmarks uses the same line-label treatment. Structure also no longer mistakes inner control-flow
+  blocks or calls such as `run()` for nested method declarations in its non-LSP fallback outline.
 
 ### Added
 
-- Project-tree folders can now be compared recursively with HEAD, a branch, a tag, or a selected revision.
-  The lazy multi-file review is scoped to that folder and includes staged, unstaged, deleted, and untracked
-  files while respecting Git ignore rules.
-- `editora --diff-ui LEFT RIGHT` now opens an isolated, session-free diff workspace with only the comparison
-  UI visible. A full-UI icon in the diff toolbar restores normal Editora chrome without closing or reloading
-  the comparison.
-- Side-by-side diffs now draw JetBrains-style change ribbons between related hunks, with a compact
-  right-edge overview track for changes across the full document.
-- The diff viewer now opens multi-file patches as one navigable review with per-file statistics; supports
-  exact, trimmed, or ignored-whitespace matching, context collapsing, long-line wrapping, and word emphasis;
-  and exposes Stage/Unstage/Revert hunk and line actions, Copy Hunk, and Open Changed Line from Git diffs.
-- The Commit tool window and command palette can now open all staged files or all unstaged/untracked files
-  as one repository review, with per-file status, statistics, navigation, and the usual Git hunk actions.
-- Recursive folder comparison now scans off-thread and opens only changed, left-only, or right-only files in
-  a lazy multi-file review. It is available from the VCS menu, command palette, and `--diff-ui DIR DIR`.
-- Editable local comparisons can now open a syntax-highlighted Result draft below the diff. Draft changes
-  re-diff after a short idle delay and apply to the real editor as one guarded, undoable change; they are
-  never saved implicitly.
-- The VCS menu and command palette can compare clipboard or empty text with the active file. Every full diff
-  can swap left and right sides without changing which local file receives edits; dirty Result drafts block
-  swapping until they are applied or reset.
-- Diff comparison rules now support case-insensitive matching and bounded smart line alignment. Smart mode
-  pairs related changed lines around insertions/removals instead of cascading mismatched rows, with a
-  positional fallback for large blocks; comparison rules never replace either side's original displayed text.
-- Diff comparisons now retain CRLF and final-newline semantics (including exported patch markers), detect
-  binary inputs before decoding, and degrade very large inputs to bounded line or metadata comparisons.
-- Merge resolution now loads Git's common-ancestor, ours, and theirs index stages for a true three-way
-  merge. Independent and identical edits are combined automatically; divergent regions show Base/Ours/Theirs
-  choices above an editable Result pane, with stale-buffer protection when applying the resolution.
-- Run configurations now support named NPM scripts (`npm run <script>`) and pass configuration
-  arguments after npm's `--` separator.
-- The Project Map preview now supports common bitmap images and independent text/image zoom controls.
-- Project Tree and Map file menus can add first-line bookmarks and Personal Notes directly, with small
-  per-file indicators for both kinds of annotation.
-
-### Changed
-
-- Context menus now use one consistent Inter font, size, weight, and style throughout the application
-  instead of inheriting typography from the file, editor, toolbar, or other control that opened them.
-- Recursive folder comparison now prunes `.git` metadata and paths matched by either root's `.gitignore`.
-  Its scan reuses file attributes instead of restating every file, builds the review rows off the JavaFX
-  thread, and avoids redundant list copies when the result is displayed.
-- Multi-file diff and folder-review file lists can now be resized horizontally with a draggable divider.
-- File Information now opens and closes from the file-size segment in the status bar; its redundant
-  tool-window stripe icon has been removed.
-- The Run console now matches Output's richer console behavior: recognized log levels are color-coded,
-  HTTP(S) URLs are styled and open on click, and the standard Select All / Copy context menu is available.
-- NPM and Make run configurations with a blank working directory now run at the open project's root, as the
-  settings hint promises, instead of interpreting the target name as a path relative to Editora's install or
-  launch directory. Their before-launch commands use the same project-root default.
-- Project Map pan and zoom gestures now coalesce rendering to one Canvas repaint per JavaFX pulse, and tall
-  columns no longer rasterize connectors for rows outside the viewport overscan.
-- Project Map filename searches now open the ancestor columns needed to reveal every matching file; clearing
-  the query restores the branches that were open before the search.
-- Diff-toolbar controls now provide descriptive, localized tooltips for whitespace matching, word emphasis,
-  comparison rules, context collapsing, wrapping, layout switching, and patch export.
-- Editable diff apply controls now stay beside the center seam even when the left file is the local target,
-  instead of appearing in the window's outer-left gutter.
-- The standalone diff control that restores the full interface now uses Editora's application mark instead
-  of a generic wrench.
-- Diff refreshes are generation-guarded and preserve the selected change, scroll positions, focused side,
-  and divider. Syntax highlighting now runs off the JavaFX thread and stale highlight work is discarded.
-- Diff apply actions reject stale local content, expose a dedicated final-newline apply action, and keep Undo
-  and Save disabled until an apply succeeds. Add/remove signs and keyboard-operable gutter actions supplement
-  color for accessibility.
-- The Project Map defaults to a right-to-left flow, remembers the last selected direction, centres each newly
-  opened column on the folder that opened it while keeping it beyond the parent column without overlap, opens a
-  file row directly in an editor tab, clips panned content to the canvas below its toolbar, hides column controls when
-  zoom leaves too little header space, and exposes canvas preview through a dedicated icon. Preview cards open beyond
-  their source column in the active flow direction, expand to fit long lines when the viewport permits, and are visibly
-  marked read-only while retaining context-menu copy, bookmark, and Personal Note actions for clicked code.
-- Expert mode's floating **E** exit control now lives inside the active code viewport and clears the
-  minimap instead of overlapping the window title bar or minimap.
-- Expert mode, including `--expert` CLI launches, now keeps the menu bar visible from the first frame.
-- Files opened asynchronously from the command line no longer retain a stale **Read-Only** status after
-  their temporary loading shell becomes editable.
-- The Structure window now syntax-colors individual signature tokens, includes source-derived return types,
-  and shows source positions as compact, muted `line N` labels; Bookmarks uses the same line-label treatment.
-  Structure also no longer mistakes inner control-flow
-  blocks or calls such as `run()` for nested method declarations in its non-LSP fallback outline.
+- **Project-tree folders can now be compared recursively with HEAD, a branch, a tag, or a selected revision.** The
+  lazy multi-file review is scoped to that folder and includes staged, unstaged, deleted, and untracked files while
+  respecting Git ignore rules.
+- **`editora --diff-ui LEFT RIGHT` now opens an isolated, session-free diff workspace with only the comparison UI
+  visible.** A full-UI icon in the diff toolbar restores normal Editora chrome without closing or reloading the
+  comparison.
+- **Side-by-side diffs draw change ribbons and an overview track.** Side-by-side diffs now draw JetBrains-style change
+  ribbons between related hunks, with a compact right-edge overview track for changes across the full document.
+- **The diff viewer opens multi-file patches as one review, with hunk and line actions.** The diff viewer now opens
+  multi-file patches as one navigable review with per-file statistics; supports exact, trimmed, or ignored-whitespace
+  matching, context collapsing, long-line wrapping, and word emphasis; and exposes Stage/Unstage/Revert hunk and line
+  actions, Copy Hunk, and Open Changed Line from Git diffs.
+- **Open all staged or all unstaged files as one repository review.** The Commit tool window and command palette can
+  now open all staged files or all unstaged/untracked files as one repository review, with per-file status,
+  statistics, navigation, and the usual Git hunk actions.
+- **Recursive folder comparison opens only the changed files in a lazy review.** Recursive folder comparison now scans
+  off-thread and opens only changed, left-only, or right-only files in a lazy multi-file review. It is available from
+  the VCS menu, command palette, and `--diff-ui DIR DIR`.
+- **Editable local comparisons can now open a syntax-highlighted Result draft below the diff.** Draft changes re-diff
+  after a short idle delay and apply to the real editor as one guarded, undoable change; they are never saved
+  implicitly.
+- **The VCS menu and command palette can compare clipboard or empty text with the active file.** Every full diff can
+  swap left and right sides without changing which local file receives edits; dirty Result drafts block swapping until
+  they are applied or reset.
+- **Diff comparison rules now support case-insensitive matching and bounded smart line alignment.** Smart mode pairs
+  related changed lines around insertions/removals instead of cascading mismatched rows, with a positional fallback
+  for large blocks; comparison rules never replace either side's original displayed text.
+- **Diffs keep CRLF and final-newline details and handle binary and very large inputs.** Diff comparisons now retain
+  CRLF and final-newline semantics (including exported patch markers), detect binary inputs before decoding, and
+  degrade very large inputs to bounded line or metadata comparisons.
+- **Merge resolution now loads Git's common-ancestor, ours, and theirs index stages for a true three-way merge.**
+  Independent and identical edits are combined automatically; divergent regions show Base/Ours/Theirs choices above an
+  editable Result pane, with stale-buffer protection when applying the resolution.
+- **Run configurations for named npm scripts.** Run configurations now support named NPM scripts (`npm run <script>`)
+  and pass configuration arguments after npm's `--` separator.
+- **The Project Map preview now supports common bitmap images and independent text/image zoom controls.**
+- **Project Tree and Map file menus add bookmarks and Personal Notes directly.** Project Tree and Map file menus can
+  add first-line bookmarks and Personal Notes directly, with small per-file indicators for both kinds of annotation.
 
 ## [0.16.0] - 2026-09-02
 
@@ -7268,8 +7349,6 @@ Behaviour you will notice as different, rather than fixed or faster.
   `Edit ▸ Undo` and right-click ▸ Undo showed two different icons for the same command. The two sets are
   now checked against each other rather than by eye, so redrawing an icon in one place cannot silently
   leave the other behind.
-
-### Performance
 
 - **Print pagination is roughly twice as fast.** It was 94% layout: the search for how many blocks fit a
   page laid out a candidate group per step of a binary search, per piece emitted — on this repository's
@@ -7514,8 +7593,6 @@ Behaviour you will notice as different, rather than fixed or faster.
   **POI 5.5.1 brings commons-collections4 4.5.0**, which unlike 4.4 ships its own module descriptor, so the
   hand-written one for the native build was removed. Left in place it would have failed the packaged build
   only — the test suite stays green either way.
-
-### Performance
 
 - **Toggling Simple UI mode blocked the interface for 230–550 ms; it is now 48–108 ms** (median 233 → 55),
   measured over five open source files. Four causes, none of them work that needed doing:
@@ -7795,7 +7872,7 @@ you wanted before you could type its name, and every jump cost you your place. T
   The `.rpm` remains without an association: it uses jpackage's own desktop entry and ignores the
   maintainer-script overrides the `.deb` relies on. RPM users can still open files from within Editora.
 
-### Performance
+### Changed
 
 - **Peak memory is down from ~908 MB to ~653 MB** on a four-file session, measured on the installed
   package against a copy of a real configuration.
@@ -7822,6 +7899,13 @@ you wanted before you could type its name, and every jump cost you your place. T
   during window construction — it serves a check that is throttled to once a day and runs off-thread, so
   none of it belonged on the startup path.
 
+- **Internal: A navigation roadmap records the gaps and the order they were closed in.**
+  [`docs/reference/navigation-roadmap.md`](docs/reference/navigation-roadmap.md) records where navigation stood
+  before this release, the four gaps that mattered, and the order they were closed in. It is kept as a roadmap rather than folded into the
+  architecture notes because most of its value is the reasoning that did *not* survive contact — the decisions
+  reversed along the way (the symbol index ended up on by default but lazy, rather than opt-in), and the one item
+  dropped outright (a symbol breadcrumb, which sticky scroll subsumed).
+
 ### Fixed
 
 - **The Linux package now describes itself properly in GNOME Software** (and other software centres),
@@ -7845,14 +7929,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   One thing this cannot fix: **"Potentially Unsafe — Provided by a third party"**. That label is about
   where a package came from, not what it says about itself — a software centre applies it to anything not
   installed from a configured repository, and no file inside a `.deb` can assert otherwise.
-
-### Internal
-
-- [`docs/navigation-roadmap.md`](docs/navigation-roadmap.md) records where navigation stood before this
-  release, the four gaps that mattered, and the order they were closed in. It is kept as a roadmap rather
-  than folded into the architecture notes because most of its value is the reasoning that did *not* survive
-  contact — the decisions reversed along the way (the symbol index ended up on by default but lazy, rather
-  than opt-in), and the one item dropped outright (a symbol breadcrumb, which sticky scroll subsumed).
 
 ## [0.12.3] - 2026-08-17
 
@@ -8011,12 +8087,58 @@ you wanted before you could type its name, and every jump cost you your place. T
 
 ### Changed
 
-- File Templates is no longer labelled *beta* in Settings.
+- **File Templates is no longer labelled *beta* in Settings.**
 
-- The in-app jdtls install is pinned to a milestone build rather than the rolling `-latest` tarball. Two
-  users installing a week apart were getting different servers, and an untested overnight build shipped
-  straight to them — which matters more for jdtls than for most servers, because Editora's handling of it
-  is measured against specific builds. A test fails if the pin drifts between the two files that carry it.
+- **The in-app jdtls install is pinned to a milestone build rather than the rolling `-latest` tarball.** Two users
+  installing a week apart were getting different servers, and an untested overnight build shipped straight to them —
+  which matters more for jdtls than for most servers, because Editora's handling of it is measured against specific
+  builds. A test fails if the pin drifts between the two files that carry it.
+
+- **Internal: Routine dependency bumps, all patch or minor.** Routine dependency bumps, taken as one batch: JavaFX 26.0.1 →
+  26.0.2, Jackson 2.19.0 → 2.22.1, Gson 2.11.0 → 2.14.0, Lucene 10.2.2 → 10.5.0, java-diff-utils 4.12 → 4.17, joni
+  2.2.6 → 2.2.7, jcodings 1.0.58 → 1.0.64, JUnit 5.11.4 → 5.14.4. All patch or minor.
+
+  Verified with a packaged build as well as the suite, because a dependency change here can break the
+  *installer* while every test passes: java-diff-utils is an automatic module carrying a moditect
+  descriptor, and JavaFX is linked into the runtime image. The app image builds and its AOT training run —
+  which launches the real GUI — completes, which is what says the jimage is whole.
+
+  Deliberately not taken: PDFBox, POI and MINA SSHD, whose jlink descriptors are hand-written and want a
+  build and a launch of their own; commonmark, where a 0.x minor can move the API; and the early-access,
+  alpha, milestone and major offers (JavaFX 28-ea, slf4j 2.1.0-alpha1, SSHD 3.0.0-M5, JUnit 6, LSP4J 1.0.0,
+  JSVG 2.1.0).
+
+- **Internal: The run-configuration selector rebuilds its rows in one step.** The toolbar's run-configuration selector rebuilds
+  its rows in one assignment rather than replacing them and then appending its trailing "Edit Configurations…" row. A
+  ComboBox whose items shrink while its popup is being clicked makes JavaFX throw out of its own event handling —
+  reproduced against JavaFX 26 — and the two steps left the list one row short in between. Not presented as the fix
+  for the crash that prompted the look: nothing in that report names a control, and this was simply the one place in
+  the app with the shape.
+
+- **Internal: `RunConfigToolbarFxTest` no longer races the program it launches.** It asserted the Stop button was enabled
+  straight after starting `java -version`, and "is it running" is a live reading of the OS — so if the UI thread was
+  descheduled for longer than that program takes, the child was already gone. It now runs a sleeper it stops itself,
+  which also covers what the Stop button is for.
+
+- **Internal: A crash on the UI thread records what had keyboard focus.** An uncaught exception on the UI thread now records **what had keyboard focus** beside it. A crash inside a JavaFX control's own event handling produces a stack with no
+  application frames at all, so it names the control's class and nothing about which of the app's many lists or trees
+  it was — which is the difference between a report that can be acted on and one that cannot.
+
+- **Internal: The build's AOT cache is now trained under the same garbage collector the packaged app runs.** The switch to G1 in
+  0.11.0 updated the launcher but not the trainer, which kept training under SerialGC. **No user-visible effect**: a
+  GC mismatch turns out not to invalidate the cache, the archived heap data follows the runtime collector rather than
+  the training one, and 8 interleaved startup runs of each build found no difference beyond the noise. A test now
+  fails if the trainer's options and the launcher's drift apart again, since the next flag to diverge may not be as
+  harmless.
+
+- **Internal: `scripts/measure-startup.sh` runs on macOS.** It used `timeout` and `date +%s%3N`, both GNU-only and neither
+  present on a stock macOS, so the startup harness `CLAUDE.md` presents as the permanent way to measure cold start
+  could not run on the primary development machine at all. Both are now capability- detected. Three further defects
+  surfaced while fixing it: a `grep` that matched nothing killed the script under `set -e` before its own diagnostic
+  could print, so a failed measurement exited 1 explaining nothing; the log that diagnostic pointed at was deleted by
+  the exit trap before anyone could read it; and the usage text was a hardcoded line range that had already drifted.
+  Measured impact of the missing timestamp: the fallback origin overstated time-to-first-paint by roughly 30% on
+  macOS, all of it in the pre-`main` phase.
 
 ### Fixed
 
@@ -8051,54 +8173,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   java?" request with a bare path, which is not JSON; it was parsed as JSON anyway, logged a stack trace,
   and then fell through to the same value. Nothing was broken except the log — which is the problem, since
   a routine failure firing on every launch trains you to ignore the one that matters.
-
-### Internal
-
-- Routine dependency bumps, taken as one batch: JavaFX 26.0.1 → 26.0.2, Jackson 2.19.0 → 2.22.1, Gson
-  2.11.0 → 2.14.0, Lucene 10.2.2 → 10.5.0, java-diff-utils 4.12 → 4.17, joni 2.2.6 → 2.2.7, jcodings
-  1.0.58 → 1.0.64, JUnit 5.11.4 → 5.14.4. All patch or minor.
-
-  Verified with a packaged build as well as the suite, because a dependency change here can break the
-  *installer* while every test passes: java-diff-utils is an automatic module carrying a moditect
-  descriptor, and JavaFX is linked into the runtime image. The app image builds and its AOT training run —
-  which launches the real GUI — completes, which is what says the jimage is whole.
-
-  Deliberately not taken: PDFBox, POI and MINA SSHD, whose jlink descriptors are hand-written and want a
-  build and a launch of their own; commonmark, where a 0.x minor can move the API; and the early-access,
-  alpha, milestone and major offers (JavaFX 28-ea, slf4j 2.1.0-alpha1, SSHD 3.0.0-M5, JUnit 6, LSP4J 1.0.0,
-  JSVG 2.1.0).
-
-- The toolbar's run-configuration selector rebuilds its rows in one assignment rather than replacing them and
-  then appending its trailing "Edit Configurations…" row. A ComboBox whose items shrink while its popup is
-  being clicked makes JavaFX throw out of its own event handling — reproduced against JavaFX 26 — and the two
-  steps left the list one row short in between. Not presented as the fix for the crash that prompted the
-  look: nothing in that report names a control, and this was simply the one place in the app with the shape.
-
-- `RunConfigToolbarFxTest` no longer races the program it launches. It asserted the Stop button was enabled
-  straight after starting `java -version`, and "is it running" is a live reading of the OS — so if the UI
-  thread was descheduled for longer than that program takes, the child was already gone. It now runs a
-  sleeper it stops itself, which also covers what the Stop button is for.
-
-- An uncaught exception on the UI thread now records **what had keyboard focus** beside it. A crash inside a
-  JavaFX control's own event handling produces a stack with no application frames at all, so it names the
-  control's class and nothing about which of the app's many lists or trees it was — which is the difference
-  between a report that can be acted on and one that cannot.
-
-- The build's AOT cache is now trained under the same garbage collector the packaged app runs. The switch to
-  G1 in 0.11.0 updated the launcher but not the trainer, which kept training under SerialGC. **No user-visible
-  effect**: a GC mismatch turns out not to invalidate the cache, the archived heap data follows the runtime
-  collector rather than the training one, and 8 interleaved startup runs of each build found no difference
-  beyond the noise. A test now fails if the trainer's options and the launcher's drift apart again, since the
-  next flag to diverge may not be as harmless.
-
-- `scripts/measure-startup.sh` runs on macOS. It used `timeout` and `date +%s%3N`, both GNU-only and
-  neither present on a stock macOS, so the startup harness `CLAUDE.md` presents as the permanent way to
-  measure cold start could not run on the primary development machine at all. Both are now capability-
-  detected. Three further defects surfaced while fixing it: a `grep` that matched nothing killed the script
-  under `set -e` before its own diagnostic could print, so a failed measurement exited 1 explaining nothing;
-  the log that diagnostic pointed at was deleted by the exit trap before anyone could read it; and the usage
-  text was a hardcoded line range that had already drifted. Measured impact of the missing timestamp: the
-  fallback origin overstated time-to-first-paint by roughly 30% on macOS, all of it in the pre-`main` phase.
 
 ## [0.11.0] - 2026-08-11
 
@@ -8218,7 +8292,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   the code after it aside, the way IntelliJ and VS Code do it. They remain annotations, not text: selecting or
   copying a line still gives you exactly what is in the file.
 
-
 - **Inlay hints no longer label every argument of every call.** `System.out.println("Hello")` used to earn a
   grey `x:`, because the JDK declares `println(String x)` — a hint that tells you nothing, and the common case
   rather than an edge one. Names that explain nothing (`x`, `arg0`) and names that merely repeat their
@@ -8271,8 +8344,6 @@ you wanted before you could type its name, and every jump cost you your place. T
 
 - **The Maven icon is legible at icon size.** It was the official Apache Maven mark, a two-feather
   illustration whose hairline quills collapsed into a smudge at 19px; it is now a single bold feather.
-
-### Performance
 
 - **Typing no longer gets slower the longer you leave Editora open.** Every keystroke permanently leaked two
   JavaFX animation timers through the 80-column ruler, which measured the caret with a zero-width query —
@@ -8561,8 +8632,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   name otherwise. Adding twice from the same file gets you "App" and "App (2)" rather than two entries with
   the same name, which previously collided into a single palette command.
 
-### Performance
-
 - **Closing a large tab no longer stalls highlighting everywhere else.** Files of the same language share one
   grammar, and only one of them can be tokenized at a time, so a background pass over a very large document
   held that lock for its whole duration and every other file of that language waited behind it. Two paths let
@@ -8667,7 +8736,6 @@ you wanted before you could type its name, and every jump cost you your place. T
 - **Gradle `application` main class** — saving a run configuration in a Gradle project now pre-fills the main
   class the build declares (`mainClass = '…'`, `mainClass.set("…")`, or the legacy `mainClassName`), so the
   config matches what `gradle run` would launch instead of whichever file is open.
-
 
 - **Debug via build tool** — debug a Gradle or Spring Boot app by launching it under a suspended JVM
   (Gradle `run`/`bootRun --debug-jvm`, Maven `spring-boot:run` with a JDWP agent) and attaching the debugger
@@ -8866,8 +8934,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   including regressions for the four defects found in the recent audit. No behaviour change; this is why the
   next one gets caught by the suite instead of by you.
 
-### Performance
-
 - **Incremental document sync (LSP).** For servers that accept incremental changes (jdtls, pyright,
   tsserver, gopls, rust-analyzer — most of them), each typing pause now sends only the changed splice of
   the document instead of the whole text — a fraction of the transport, and the server can process the
@@ -8911,7 +8977,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   `C-p`, `C-a`, `C-e`, `M-f`, `M-b`) now move **every** caret, not just the primary one — matching how the
   arrow keys already behaved. (Document/paragraph/sentence/page motions stay primary-only.)
 
-
 - **The Maven-aware `pom.xml` language server now actually starts** — it was enabled by default, offered by
   the in-app installer, shown as configured in Settings and reported found by Doctor, yet every `pom.xml`
   silently fell back to the plain XML server. Its configured command was the one that never reached the LSP
@@ -8937,7 +9002,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   classpath fallback now resolves sibling-module dependencies in a reactor build (it runs from the reactor
   root with `-pl <module> -am` instead of only the module), so a submodule that depends on an uninstalled
   sibling runs correctly.
-
 
 - **Format Document no longer mangles the file.** A multi-edit format was applied top-to-bottom using
   offsets computed against the *original* text, so the first edit that changed a line's length shifted
@@ -9013,8 +9077,9 @@ you wanted before you could type its name, and every jump cost you your place. T
   (Open File is disabled for a deleted file), plus Enter to open a diff.
 - **Startup instrumentation** (`EDITORA_PERF=1`, `scripts/measure-startup.sh`) measuring launch through to the
   first frame that actually carries the file's content. Inert by default.
-- `view.toggleStructuredPreview` — the structured-data preview had a Settings checkbox but no palette
-  command, unlike every other setting.
+- **`view.toggleStructuredPreview`: a palette command for the structured-data preview.**
+  `view.toggleStructuredPreview` — the structured-data preview had a Settings checkbox but no palette command, unlike
+  every other setting.
 
 ### Changed
 
@@ -9108,9 +9173,9 @@ you wanted before you could type its name, and every jump cost you your place. T
   uniformly `LSP:`. A new test (`MessagesTest.aCommandFamilyIsEitherFullyPrefixedOrFullyBare`) pins the
   convention across all six catalogs, so a family can no longer drift into a half-prefixed state.
 
-- Fixed one command (`view.toggleSearchGitignore`) that used the verb "Toggle" as a pseudo-prefix instead of
-  its family's, in every language, and eight non-breaking spaces before colons in the French catalog where
-  the other 741 use a regular space.
+- **Fixed one command's prefix and the French catalog's spaces before colons.** Fixed one command
+  (`view.toggleSearchGitignore`) that used the verb "Toggle" as a pseudo-prefix instead of its family's, in every
+  language, and eight non-breaking spaces before colons in the French catalog where the other 741 use a regular space.
 
 ## [0.9.8] - 2026-07-20
 
@@ -9149,11 +9214,12 @@ you wanted before you could type its name, and every jump cost you your place. T
 - **One pair of preview commands for every file type.** The per-type toggles (Markdown preview, CSV grid, …)
   are replaced by shared `view.togglePreview` and `view.toggleSplitPreview` commands that act on whatever the
   active file previews as. Each preview type still has its own Settings checkbox.
-- The GitHub tool window is **repo-scoped rather than buffer-scoped**, so it no longer disappears when you
-  switch to the Welcome tab, and it only appears when the repo has an open PR, issue, or workflow run.
-- The release flow reopens `master` at the next patch `-SNAPSHOT` automatically once a release publishes, so
-  the only manual version edit is setting the release version before tagging. Pre-releases (`-rcN`) don't
-  advance it.
+- **The GitHub tool window follows the repository, not the open file.** The GitHub tool window is **repo-scoped rather
+  than buffer-scoped**, so it no longer disappears when you switch to the Welcome tab, and it only appears when the
+  repo has an open PR, issue, or workflow run.
+- **After a release, `master` moves to the next `-SNAPSHOT` by itself.** The release flow reopens `master` at the next
+  patch `-SNAPSHOT` automatically once a release publishes, so the only manual version edit is setting the release
+  version before tagging. Pre-releases (`-rcN`) don't advance it.
 
 ### Fixed
 
@@ -9174,11 +9240,11 @@ you wanted before you could type its name, and every jump cost you your place. T
   updates live instead of only at the end; a stale report from a previous run is never merged; and the detail
   pane shows a header for every selection (and the run summary when nothing is selected) instead of going
   blank for a passing test.
-- The GitHub panel's PR/issue toggle now shows a clearly visible selected state.
+- **The GitHub panel's PR/issue toggle now shows a clearly visible selected state.**
 
 ## [0.9.7] - 2026-07-18
 
-### Performance
+### Changed
 
 - **Opening the first file of a language no longer freezes the editor for a beat.** Starting a language server
   (forking the jdtls/pyright/tsserver process, scanning `PATH`, writing the process ledger) ran on the UI thread.
@@ -9208,8 +9274,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   scans and copies the whole document — on every caret move and keystroke (and re-materialized the whole
   document per keystroke besides). The size now updates only when the file actually changes, debounced, so
   arrow-keying and typing no longer allocate the entire document on the UI thread. (#542)
-
-### Changed
 
 - **Bookmarks and Personal Notes now group by project, so they don't appear/disappear when you switch projects.**
   Each panel always shows the **General** (no-project) group and the **current project**, and a new **"Show all
@@ -9319,14 +9383,12 @@ you wanted before you could type its name, and every jump cost you your place. T
   connected to asks you first, showing its fingerprint to compare — and a host whose key has *changed* is
   refused outright, without offering a button that waves it through.
 
-
 - **The exported configuration archive is no longer readable by other users.** Settings → Advanced → "Export
   Configuration" writes a zip of the config directory into your home folder — including `settings.toml`, and so
   the AI provider's API key, plus your private notes. The archive was created world-readable, which undid the
   lock-down of the files it copies. The session log (`editora-session.log`), which records your file paths and
   error text, was the same. Both are now owner-only, from one shared helper. (From a per-feature audit of the
   Appearance / Interface / Tool Windows / Advanced pages.)
-
 
 - **Your Anthropic API key is no longer sent to a local or third-party AI endpoint.** `ANTHROPIC_API_KEY` is
   exported on most developer machines, and Editora fell back to it for *any* provider — so selecting the
@@ -9341,7 +9403,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   key, a billable credential, while `notes.json` holds the user's private notes. Every config file is now
   owner-only, applied when the file is created so it is never briefly readable, and rewriting a file left
   world-readable by an earlier version tightens it. (From a per-feature audit of the AI pages.)
-
 
 - **The MCP server's access token is no longer readable by other users on the machine.** It was written with
   default permissions (world-readable) into a world-traversable config directory, and that token is the only
@@ -9515,13 +9576,11 @@ you wanted before you could type its name, and every jump cost you your place. T
   (a restricted name, or an embedded control character — a header-injection attempt) is shown as a warning atop
   the response report instead of vanishing. (From the deferred backlog.)
 
-
 - **Git now works for a project opened through a symlink.** `git rev-parse --show-toplevel` reports the repo's
   real path, while an open file keeps its as-opened (symlinked) path — so for a repo reached through a symlink
   (a macOS `/tmp` project, or a symlinked work directory) the two never matched, and Compare-with-HEAD, stage,
   unstage, revert, and file history all reported "not in repo" or did nothing. Both paths are now
   symlink-resolved before comparing. (From the deferred backlog.)
-
 
 - **A user theme that defines its colours by reference is no longer read as light.** A theme file can set up a
   palette and point the standard tokens at it (`-color-bg-default: -color-dark-1;`) — ordinary CSS authoring.
@@ -9542,7 +9601,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   covered the day it's added; text zoom and your keybindings are still deliberately preserved. (From a
   per-feature audit of the Appearance / Interface / Tool Windows / Advanced pages.)
 
-
 - **The crontab preview described the day-of-month/day-of-week rule backwards.** `0 0 13 * 5` was explained as
   "on day 13 of the month **and** on Friday" — i.e. Friday the 13th. It actually runs on *every* Friday and
   *every* 13th, which is cron's most famous gotcha and the reason the preview exists. The next-run times shown
@@ -9561,7 +9619,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   nothing left to render and no toggle to escape with; and it also bounced a GitHub Actions workflow — which is
   YAML, but has its own preview — out of a view mode that is remembered per file. (From a per-feature audit of
   the previews.)
-
 
 - **A breakpoint (or a bookmark) on one of two adjacent identical lines could vanish for good.** Both are kept
   in a line-keyed map and are re-anchored to their saved line text when a file is opened, so when an edit made
@@ -9593,7 +9650,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   Edit Breakpoint only ever asked for a condition, despite its own description promising "condition, log
   message". It is now a form with all three (condition, log message, enabled). A log message turns a breakpoint
   into a logpoint: the debugger logs it and never suspends. (From a per-feature audit of Debugging.)
-
 
 - **Turning a language server off in Settings now actually stops it, and changing its command now takes
   effect.** Neither did: the code that shuts down one server's sessions could never match them, so a disabled
@@ -9869,7 +9925,6 @@ you wanted before you could type its name, and every jump cost you your place. T
   the same dictionary at once (session restore, a language switch), only the first was told when it finished
   loading — the rest silently showed no spell check at all.
 
-
 - **Spell check no longer squiggles inside Markdown fenced code blocks.** The "skip ``` code fences" rule was
   never actually switched on (it was decided before the file's language was known), so opening a README put red
   squiggles on `sudo`, `cd`, `xzf` and friends inside its code blocks. (From a per-feature audit of Spell
@@ -9884,7 +9939,6 @@ you wanted before you could type its name, and every jump cost you your place. T
 
 - **Editora no longer builds the spell-check dictionary at startup when spell check is turned off** — it cost
   ~200 ms of CPU and ~1 MB of memory per language on every launch regardless of the setting.
-
 
 - **A running plugin-defined shell command no longer delays quitting Editora** — it ran on a non-daemon thread
   that could hold the JVM open until the command (or its 2-minute timeout) finished; it's now a daemon thread.
@@ -9977,8 +10031,6 @@ you wanted before you could type its name, and every jump cost you your place. T
 - **Pressing Enter on a Markdown ordered-list item with an absurdly long number no longer throws.** A list
   marker whose number overflowed a 64-bit integer (20+ digits) raised an uncaught error on Enter; it now falls
   back to a plain newline.
-
-### Added
 
 - **Editora now tells you when a new version is available.** On startup (at most once a day) it checks GitHub
   for a newer release; when one exists, a subtle "Update: X.Y.Z" indicator appears in the status bar — click it
@@ -10126,13 +10178,14 @@ you wanted before you could type its name, and every jump cost you your place. T
 - **In the Commit tool window, a file's status letter and its color can no longer disagree** — a file staged
   as modified but deleted in the working tree showed "M" in the deleted (grey) color. Both now come from the
   same classification.
-- Closing a project window can no longer throw on the filesystem-watcher thread (a race between `dispose()`
-  and the watch loop).
+- **Closing a project window no longer throws on the file watcher's thread.** Closing a project window can no longer
+  throw on the filesystem-watcher thread (a race between `dispose()` and the watch loop).
 
 ### Changed
 
-- The Project tree builds a row's right-click menu on demand rather than on every cell render, so scrolling a
-  large tree (or any Git-status refresh) no longer allocates a ~20-node menu per visible row.
+- **The Project tree builds a row's right-click menu only when asked.** The Project tree builds a row's right-click
+  menu on demand rather than on every cell render, so scrolling a large tree (or any Git-status refresh) no longer
+  allocates a ~20-node menu per visible row.
 - **The Project tool window now shows a single-letter Git status on each changed file (M / A / D / R / U),
   matching the Commit tool window.** The colors it already had stay (modified = blue, added = green,
   deleted = gray, renamed = violet, untracked = olive), and the letter is prefixed like the Commit window's
@@ -10183,10 +10236,9 @@ you wanted before you could type its name, and every jump cost you your place. T
   `--release`-style toggles, Gradle's on-demand "Load all tasks…" — is unchanged. `tool.<tool>` now opens the
   tasks window; the output console is `tool.<tool>Output`.
 
-- The editor install banner for a missing **language server** now says "*X* language server isn't
-  installed" instead of "*X* language support isn't installed" — clearer that it offers the optional LSP
-  (code intelligence), not the language's render/run tool, which may already work (e.g. the Typst preview
-  renders via the typst CLI even when the tinymist language server isn't installed).
+- **The install banner for a missing language server says language server.** The editor install banner for a missing **language server** now says "*X* language server isn't installed" instead of "*X* language support isn't installed"
+  — clearer that it offers the optional LSP (code intelligence), not the language's render/run tool, which may already
+  work (e.g. the Typst preview renders via the typst CLI even when the tinymist language server isn't installed).
 
 ### Fixed
 
@@ -10565,6 +10617,384 @@ instead.)
   **Connected** or a red **Not working: …** (with the HTTP error / "timed out"). Real streaming AI
   requests also gained a 120 s time-to-first-response cap (unchanged for a healthy generation).
 
+- **Blank editor after switching tabs.** Clicking a tab could occasionally show a blank editor until you
+  clicked it a second time to give it focus. The editor area now repaints on the layout pulse right after the
+  tab is shown, so its content appears on the first click (without moving the scroll position or stealing
+  focus from a Find-in-Files preview).
+
+- **Markdown print preview: tables no longer get pushed to their own page.** When printing (or print-
+  previewing) a Markdown file, a table could be bumped onto the next page even when it easily fit under the
+  preceding heading, leaving the first page mostly blank. The page-layout measurement was collapsing the
+  table's columns and over-estimating its height; it now measures at the real page width, so the printed
+  output matches the on-screen preview.
+
+- **New File From Template no longer doubles the extension.** When a template's file-name pattern ends in
+  an extension (e.g. `${baseName}.md`) and you typed a name that already included it (`notes.md`), the new
+  file came out as `notes.md.md`. The engine now collapses a doubled trailing extension — but only when the
+  two extensions are identical, so `types.d.ts`, `foo.tar.gz`, and `app.min.js` are left alone.
+
+- **Release builds package from a clean tree, fixing a rare "dead keyboard" in the installer.** The
+  native-installer build fed jlink from an incrementally-compiled `target/`, where a synthetic
+  `$SwitchMap` class (emitted for a `switch` over an enum, e.g. the key dispatcher's) could go missing if
+  a background compiler or an interrupted build left `target/classes` inconsistent — javac won't
+  regenerate it while the source looks up-to-date. The packaged app then threw a `ClassNotFoundException`
+  on the first keypress. The release workflow now runs `clean` before `-Pdist`, guaranteeing every class
+  is regenerated. (Only the native installers could be affected, and only when built from a dirty tree;
+  `mvn javafx:run` and the fat jar were never affected.)
+
+- **Markdown "Insert Table" size picker no longer fills the editor.** The grid picker was stretched to
+  cover the whole code area; it now hugs the grid (with padding) and is centered.
+
+- **Structure tool window: methods no longer show a doubled `()`.** When a language server (e.g. jdtls)
+  already includes the parameter list in a method's name (`setX(Foo)`), the outline no longer appended a
+  redundant empty `()` — so it reads `setX(Foo)` instead of `setX(Foo)()`.
+
+- **File templates now prompt for a variable used in the file-name pattern.** A single-file template whose file name was e.g. `${baseName:Main}.java` never asked for `baseName` at creation time, so it silently used the default and always produced `Main.java` — even though the same variable worked in the body. The file-identity built-ins (`baseName`/`fileName`/`extension`) can't be derived for a brand-new file, so when they appear in the *file-name pattern* they're now prompted in the wizard (the answer flows into both the file name and the body); used only in the body, they're still auto-derived as before.
+- **Markdown-preview code blocks stay readable when the preview theme is toggled independently.** Code-block syntax colors followed the *editor* theme, so forcing the preview to the opposite brightness (the sun/moon toggle) left dark tokens on a light code background (or vice versa). They now follow the preview's own light/dark — a fixed GitHub Primer palette matching the preview's prose — while still tracking the editor theme when the preview follows the app.
+- **The 80-column ruler no longer jumps to the left edge when word wrap is on.** The ruler derived its per-column width from the caret x at the start vs. the end of the longest visible line; with wrap on, that line spans multiple visual rows, so the two points sat on different rows and the width collapsed — planting the ruler near column 13 instead of 80. It now measures the advance on a single visual row (falling back to an adjacent-column advance when the line wraps), so the ruler stays at the correct column in both modes.
+- **Settings labels no longer truncate.** A long settings-row label (e.g. "Max size / project (MB)" under Workspace → Local History) was clipped to "…"; the label column now keeps its alignment floor but grows to fit longer labels (and translations). The Settings window also has a minimum size now, so wide rows (e.g. the large-file threshold row + its unit) can't be clipped by shrinking it.
+- **Flaky FX test fixed.** The headless-FX harness could intermittently error with `NoSuchFileException: settings.toml.tmp` — it now flushes pending async config writes before deleting the temp config dir (`FxWindowFixture`).
+- **Clearer Mermaid render error when headless Chrome is missing.** A failed `mmdc` render whose error is the Puppeteer "Could not find Chrome" stack now leads with a one-line fix (the `npx puppeteer browsers install chrome-headless-shell` command).
+- **Multi-line `$$…$$` block math now exports as an image** to PDF/DOCX/ODT. A display-math block with the `$$` delimiters on their own lines was exported as raw text (the export's `soleDisplayMath` bailed on the soft line breaks); single-line `$$…$$` and inline `$…$` were unaffected.
+- **Markdown preview: multi-line `$$…$$` block math now renders.** A display-math block with the `$$` delimiters on their own lines was shown as raw text (the paragraph scanner bailed on the soft line breaks); single-line `$$…$$` and inline `$…$` were unaffected.
+- **PDF export now works in packaged builds.** PDFBox + pdfbox-io + fontbox all log via commons-logging, which jlink was silently pruning (jdeps dropped the `requires` under `--ignore-missing-deps`), so every packaged PDF export failed with `NoClassDefFoundError: org/apache/commons/logging/LogFactory`. Fixed with hand-written module descriptors; also made the PDF/print/office export services catch `Throwable` so a failure reports instead of hanging the status.
+- **Minimap now shows in Markdown SPLIT view.** It had been hidden whenever the preview was on (gated to `EDITOR` mode only); it now hides only in full `PREVIEW` (no editor surface), and stays visible in SPLIT where the editor is on screen.
+- **Markdown → PDF export no longer fails on SVG images.** A badge/image served as SVG (e.g. shields.io) made the whole export throw (`IllegalArgumentException: Image type UNKNOWN`); SVG images are now rasterized to PNG (via the same JSVG path the on-screen preview uses) and any undecodable image degrades to alt text instead of aborting.
+- **Tool-window consoles really match the editor font now.** The `.run-output`/`.debug-console` CSS carried a `-fx-font-size` that overrode the programmatic font on every CSS pass, so the External Tools / Run / Debug consoles kept rendering at 12px regardless. Removed the font from those CSS rules so the editor-matched `setFont` sticks (guarded by a new `ConsoleFontFxTest`).
+- **Tool-window consoles now actually pick up the editor font.** The previous attempt set `-fx-font-size` via `setStyle`, which a JavaFX `TextArea` ignores; the consoles (External Tools / Run / Debug) now set the control's `font` property directly so they match the editor's family + size.
+- **Command palette: clicking a result now runs it.** A card-wide `MOUSE_CLICKED` consume filter was swallowing the result cells' click-to-run handler (only Enter worked).
+- **Command palette: removed the stray separator line above the command description.**
+
+- **Project / Current-Folder filter now finds top-level files in a large root.** The filter-box search walked the tree depth-first, so under a big root (e.g. a home directory with huge `.cache`/`.m2`/`node_modules` subtrees) it exhausted its visit budget deep inside one subtree before ever reaching a shallow file like `.profile` — which then never appeared in the results. The search is now breadth-first, visiting every shallower entry before descending, so top-level matches are never starved by a deep sibling subtree.
+
+- **Hardened several spots against NullPointerExceptions from corrupted config or non-conforming servers** (found via a full-codebase null-flow audit). `Macro` now defaults a missing `name` to `""`, so a hand-edited/corrupted `macros.json` entry without a name can't NPE macro lookups (find/save/delete). `SnippetManager` skips a snippet file whose content is the literal `null` instead of throwing. `LspManager` go-to-definition / find-references guard a `Location`/`LocationLink` range that a non-conforming language server leaves null. `DapClient.evaluate` tolerates a null adapter response like `evaluateFull` already did. (The wider audit found the `ui`/`editor`/`MainController` packages already guard nullable returns consistently.)
+
+- **Hardened the Bookmarks drag-reorder against a theoretical NPE.** `handleDrop` dereferenced a dragged mark row's `getParent()` directly; it's always non-null today (a mark is always under a file group), but a defensive guard now returns early if a detached row is ever dropped, so a future tree-shape change can't turn it into a crash.
+
+- **Markdown preview no longer renders HTML comments.** `<!-- … -->` blocks (and inline comments) were shown as visible text/code in the preview (and PDF/print export); they're now hidden, matching GitHub and every other Markdown renderer.
+- **Markdown preview hides the editor minimap.** In Split/Preview mode the minimap was wedged between the editor and the preview; it's now hidden while the preview is shown (the preview is the overview) and restored when you return to the plain editor view.
+
+- **The "install language support?" banner no longer shows when the language server is actually installed and running.** It was reading the server-availability flag before startup detection finished (and never re-checking), so it could falsely claim e.g. Java support was missing while jdtls was serving the file. The banner now only appears once a server is *confirmed* absent (not merely "not probed yet"), never when a live session is already serving the file, and re-evaluates as soon as detection settles. Also fixed the banner text dropping its apostrophe ("isnt") — the message runs through `MessageFormat`, where `'` must be doubled.
+
+- **A "Compare with HEAD" diff no longer blanks its HEAD pane on refresh.** In a window with no project open, opening a file's vs-HEAD diff and then triggering a refresh (clicking an "apply change" chevron, or regaining window focus) could empty the left (HEAD) pane and render the whole working side as all-added. The diff's HEAD side was re-fetched against the *live* repo root, which the Git status machine drops to "none" when the active tab is a diff tab with no backing buffer (a No-Project window has no project root to fall back to) — so the re-fetch ran against a null root and returned nothing. The diff now captures the repo root when it's opened and reuses it on every refresh. Affected all Git-backed diffs (vs HEAD, vs commit, Git-panel staged/unstaged rows, a commit's file, and the Local File History revision diff). Covered by a new FX regression test.
+
+- **Tool-window sizes are now remembered when you quit with them open.** Resizing a tool window (e.g. the Project panel) and quitting with it still open used to reset its divider to the default on next launch — the position was only captured when a tool window was *hidden*, never on quit. The session now captures the live divider positions on quit, so the layout comes back as you left it. (Window size/position already persisted.)
+- **Minimap no longer shows a second, stale viewport box on large files.** The minimap's content render calls `canvas.snapshot()`, which forces a synchronous layout pass that could settle the editor's viewport and re-enter the minimap's redraw mid-render — painting a duplicate viewport highlight that lingered. The minimap now guards against re-entrant paints, so exactly one viewport box is drawn.
+- **Tidier, better-fitting Settings → Templates page.** It showed "Templates" three times (page title + two section headers) and its body editor was tall enough to overflow the window. The section headers are now **"Author"** and **"Manage templates"**, and the template/snippet body editors use a more modest height (they still grow to fill a taller window).
+- **Settings page titles no longer shave the bold heading.** The big bold heading on each Settings page (e.g. "Markdown") looked like it was missing slivers of its letters — a JavaFX `Label` clips its text to the glyphs' logical (advance-based) bounds, which cuts the outer strokes of bold faces (pipeline- and font-independent). The heading is now a `Text` node with `TextBoundsType.VISUAL`, which renders the full glyph ink without clipping.
+- **EditorConfig BOM charset no longer truncates files on open.** When a project's `.editorconfig` declared `charset = utf-8-bom` (or `utf-16le`/`utf-16be`) but a file on disk had no actual byte-order mark, the first 2–3 content bytes were silently dropped on open — and saving re-added a BOM, corrupting the file. `EditorConfigCharset.decode` now strips the BOM only when the bytes really start with it.
+- **Typing a closing bracket over a selection no longer silently deletes it.** With text selected, typing `)`/`]`/`}` where the next character was that same bracket "typed over" it and discarded the selection without inserting anything. It now replaces the selection like normal typing. (`AutoClose.decide` gates skip-over on having no selection.)
+- **Regex "Replace All" now respects the whole-word toggle.** With both *Regex* and *Whole word* enabled, Replace All replaced every unbounded occurrence instead of the `\b`-bounded matches it had highlighted and counted. It now uses the same `SearchMatcher.compileRegex` as the search/highlight path.
+- **A hung `javac` can no longer freeze debugging.** The loose-Java compile-and-debug fallback now runs the compile through `ProcessRunner` with a 60-second timeout (and concurrent pipe draining), so a stuck compiler can't pin the single-threaded debug-adapter executor and block every later debug start.
+
+- **"Add to Dictionary" now persists to `dictionary.txt`.** The added word was applied for the current
+  session but never written to disk, so it reappeared as misspelled after a restart. The buffer added the
+  word to the shared dictionary set before calling the persist callback, and `addUserWord` only writes the
+  file when the word is newly added to that (same) set — so the write was always skipped. The word is now
+  persisted on the first add.
+- **Structure tool window no longer jumps the editor back while navigating.** A language server that
+  re-announces readiness repeatedly (jdtls re-sends `language/status` "ServiceReady" on workspace events)
+  re-pushed the same document symbols, rebuilding the outline tree, resetting the selection to the first
+  row, and snapping the editor back to the top of the file as you clicked around. Re-pushing an unchanged
+  outline is now a no-op, and a genuine rebuild preserves the symbol you had selected.
+- **Java LSP (jdtls) now initializes reliably; completion works.** jdtls was launched without a `-data`
+  workspace, so every project shared one default Eclipse workspace and deadlocked on its `.lock` (contending
+  with a leaked previous run or another editor) — the server never finished `initialize`, leaving the
+  status-bar loading bar spinning forever and autocomplete dead. Each project root now gets its own jdtls
+  workspace under `<config>/jdtls-workspaces/<hash>` (its index persists across sessions, so later opens are
+  faster). A user-supplied `-data` in the configured command is respected. A language server's **stderr** is
+  also now captured into the Debug Log (it was discarded), so when a server fails to start the reason —
+  missing JDK, a locked workspace, a bad command — is finally visible.
+
+- **Opening a large source file no longer freezes the UI.** Computing fold regions on open recreated a gutter
+  graphic for *every* fold header in the file (thousands, for a big file like a 12k-line Java source) on the
+  JavaFX thread, blocking it for several seconds. The fold recompute now only refreshes the chevrons of
+  currently-visible rows — offscreen rows get the correct fold state when the gutter factory builds them on
+  scroll — cutting the per-open cost from seconds to a few milliseconds.
+
+- **Breadcrumb dropdown uses the same file icons as the Project tool window.** The folder dropdown on a
+  breadcrumb crumb now shows per-type file glyphs (and the boxed folder icon) via `FileIcons`, instead of a
+  single generic file icon — matching the Project tree.
+
+- **The Git Log tool window refreshes when opened.** Opening it — via the stripe icon (which toggles the
+  window directly) or a command — now reloads the commit history, so it no longer shows stale commits from a
+  previous open. (Opening via the stripe button previously bypassed the load entirely.)
+
+- **Tool windows that act on the active file now hide on non-buffer tabs.** The **Git Commit** and **Git Log**
+  stripe buttons — and **plugin** tool windows (e.g. GnuPG, the Regex tester) — only appear when there's an
+  open editor buffer to act on; on the Welcome tab (or any non-buffer tab) they're hidden, matching how the
+  Structure/File-Info/TODO windows already behave. Commit/Log additionally stay gated on being inside a repo.
+
+- **Find/Replace bar buttons disable when there's no search term.** Prev, Next, Replace, Replace-All, and
+  the case/regex/whole-word toggles are now disabled while the Find field is empty — nothing they do is
+  meaningful without a query (an empty *replacement* still works as "delete matches").
+
+- **Buffer-only tool windows are hidden when there's no buffer to act on.** The Structure, File Information,
+  TODO, Markdown Lint, and External Tools stripe buttons no longer show on the Welcome page (or other
+  non-buffer tabs) — they now gate their availability on an actionable active editor buffer (Markdown Lint
+  additionally needs a Markdown buffer; External Tools needs a buffer and non-Simple mode), mirroring how
+  Run / Debug / HTTP / Commit already gate their buttons.
+
+- **Settings → Editor → "Enable log viewer" checkbox now reflects the actual setting.** It was omitted from
+  the Settings window's `load()` (the value was only synced in `syncViewChecks()`, which `load()` doesn't
+  call), so the box always rendered unchecked even though the log viewer was on. The feature itself was
+  unaffected — only the checkbox display.
+
+- **Zen mode is now per-window and restores chrome reliably.** Zen mode used to hide the toolbar, status
+  bar, tab bar, breadcrumb, and editor view options by flipping the *shared, app-wide* view preferences and
+  snapshotting/restoring them — so entering Zen in one window changed every window (and the saved settings),
+  and the restore could desync. Zen is now a **per-window effective overlay** (like Simple UI mode): it lives
+  in the window's own session state and is layered on top of the saved prefs without mutating them, so one
+  window can be in Zen while another isn't, leaving Zen always restores exactly what was showing, and your
+  saved view preferences are never touched.
+
+- **Git menu items are hidden/disabled when there's no VCS.** The tab right-click menu no longer shows
+  **Compare with HEAD** and **Git: Show File History** when the file isn't under Git (feature off, or not
+  inside a repo) — only "Compare With…" (which isn't a Git action) remains. The Project tool window's **Git**
+  submenu is greyed out in the same case. Both now key off "Git available" (enabled *and* inside a repo)
+  rather than just the feature toggle.
+
+- **HTTP Client: you can now right-click the response body to copy it.** The response body is a read-only
+  RichTextFX editor, which (unlike the headers' text area) has no built-in context menu, so right-clicking the
+  JSON/XML/etc. output did nothing. It now has a **Copy** / **Select All** menu — Copy puts the selection, or
+  the whole body when nothing is selected, on the clipboard.
+
+- **Loading a large file (5–50 MB) with a language server enabled no longer freezes the editor.** Large-file
+  mode already turns off syntax highlighting and the minimap, but LSP stayed on — so opening, say, a big
+  `.json`/`.xml`/`.log` with its server enabled sent the whole document to the server and then mapped and
+  rendered the flood of diagnostics it returned (the Problems tree, minimap, and scrollbar stripes) on the UI
+  thread, locking up the editor. LSP is now disabled in large-file mode too (like highlighting, the minimap,
+  Git change bars, and inline blame), so the file just opens as fast, plain text. Autocomplete is likewise
+  disabled in large-file mode — it allocated the whole document on every keystroke to find the word prefix
+  (the same per-cursor-move cost brace matching already avoids), which made typing in a large file stutter.
+
+- **Diff viewer: next/previous-change no longer makes the scroll jump erratically.** The two side-by-side
+  panes were kept in sync by copying the absolute pixel scroll position from one to the other, in both
+  directions. That value is a RichTextFX *estimate* refined as lines are measured, so each pane settled to a
+  slightly different value and pushed the other back — a feedback loop, worst when navigation jumped into an
+  unmeasured region. Now only the *focused* (actively scrolled) pane drives the other, so interactive sync is
+  strictly one-directional and cannot oscillate. Next/previous-change navigation bypasses the sync entirely:
+  it pins *both* panes to the same top row explicitly (the rows are 1:1 aligned, so this can't desync) and
+  puts the selection caret at the block's top so caret-follow agrees with the scroll.
+
+- **Spell check no longer flags commands, URLs, paths, and identifiers.** Tokens like `./mvnw`,
+  `javafx:run`, `https://github.com/…`, `path/to/file.txt`, `snake_case`, and `a@b.com` were getting red
+  squiggles — in Markdown prose, in fenced ` ``` ` code blocks, and in comments/strings of Java/Python/Shell
+  and other code files. The checker now recognizes a flagged word that's part of a URL, path, e-mail, or
+  dotted/underscored/colon-joined token and leaves it alone (ordinary words, including hyphenated ones like
+  `well-known`, are still checked). In Markdown it additionally skips whole fenced code blocks and link
+  targets. The check runs only for the few already-flagged words, so it doesn't affect scroll performance.
+
+- **Language servers and debug adapters no longer pile up as orphaned processes.** Previously the external
+  servers Editora spawns (e.g. `jdtls`) were only killed when a window was closed through the app — so
+  force-quitting, a crash, an OS quit, or a `kill` left them running, where they accumulate and hold their
+  workspace locks. Now a central `ProcessRegistry` reaps them three ways: a **JVM shutdown hook** force-kills
+  every spawned server tree on exit (covers normal quit and SIGTERM/`kill`); the per-server **teardown
+  escalates** (SIGTERM the whole tree, then force-kill anything that ignores it after a grace period); and a
+  small on-disk **ledger** lets a fresh launch **reap any server leaked by a previous run that died hard**
+  (SIGKILL / power loss), matched by PID + start time + executable so it can never kill an unrelated process.
+
+- **Silenced a spurious LSP "Internal error" log.** Language servers that support pull diagnostics
+  (the HTML/CSS/JSON servers) send a `workspace/diagnostic/refresh` request; the client didn't implement it,
+  so lsp4j logged a SEVERE `UnsupportedOperationException` each time (visible in the debug log / dev console).
+  The client now acknowledges the request. Diagnostics were never actually affected — they already refresh on
+  each edit, on save, and when a server reports ready.
+
+- **Find/Replace highlights now stay in sync when you edit the buffer.** With the find bar open, editing the
+  text left the match highlights painted at their old offsets (no longer aligned with the searched text).
+  The bar now re-runs the search on each (debounced) edit and re-highlights at the new positions — without
+  moving the caret or selection, so it doesn't interfere with typing.
+
+- **Right-click Cut/Copy/Paste now act on a column (box) selection.** The editor context menu's
+  Cut/Copy/Paste called the native single-caret operations, so on an Alt+drag column/box selection they only
+  touched the primary row — even though the `edit.cut`/`copy`/`paste` *commands* already worked (they route
+  through the multi-caret-aware path). The menu items now use that same path (falling back to the native op
+  when there's a single caret), Cut/Copy are enabled on a box selection even when the primary selection is
+  empty, and the mutating Cut/Paste are gated to editable buffers.
+
+- **Every window that was open at quit now reopens.** With multiple project windows open, a Cmd-Q / OS quit
+  fired each window's close handler in turn, and the eager "mark closed" drained the saved open-window set
+  down to just the last window — so only one reopened on the next launch. Closing a window is now reconciled
+  on a short debounce that can't elapse during a quit's close-handler burst: a genuine single close persists
+  the reduced set (that window is forgotten), but a quit exits the JVM before the timer fires, leaving the
+  full pre-quit set on disk so every window reopens. (`app.quit` already worked — it fires no close handlers.)
+
+- **LSP completion now triggers on each server's own trigger characters** (e.g. `<` for HTML, `:` / space
+  for CSS), not just on `.` or a 2-character word prefix. This makes HTML/CSS/JSON/YAML autocomplete behave
+  like VS Code — typing `<` in an HTML file now pops up tag completions. The trigger set is read from the
+  server's advertised capabilities, so every language server gets its correct triggers.
+- **LSP pull diagnostics** (`textDocument/diagnostic`, LSP 3.17) are now supported. Servers that deliver
+  diagnostics on request rather than by pushing `publishDiagnostics` — vscode-html/css/json and others — now
+  surface their warnings/errors as squiggles and in the Problems panel. Push-only servers (jdtls, Pyright,
+  tsserver) are unaffected.
+
+- **LSP (and DAP) failed to initialize in the packaged native build** — in the modular `jlink` runtime,
+  `lsp4j` is a real module that didn't open its packages to `gson`, so its JSON-RPC `initialize` threw
+  `InaccessibleObjectException` the moment a language server (or debugger) started. The `lsp4j` modules
+  are now built as open modules. Only affected the installers / app image (not `mvn javafx:run`).
+
+- **Settings → Mermaid:** the `mmdc`/`maid` detection status is now colored green (found) / red
+  (missing), matching the LSP and Git status labels, instead of plain text.
+
+- **Windows: keyboard froze and the command palette wouldn't open.** Two distinct bugs (found via
+  on-device key-event logging):
+  - **Keyboard freeze on Alt.** A bare `Alt` or an *unbound* `Alt+<key>` was interpreted by Windows as
+    menu/mnemonic activation, putting the window into "menu mode" — which froze all keyboard input
+    app-wide (mouse still worked, restart required) and broke the many `M-` chords. Editora now consumes
+    the bare Alt and any unbound plain-Alt key on Windows/Linux so menu mode never engages. Bound `M-`
+    chords work as before; **AltGr** (Ctrl+Alt) is left alone so international layouts keep composing
+    characters; macOS is unchanged.
+  - **Command palette (`M-x`) never appeared.** It was a `javafx.stage.Popup`, which on Windows doesn't
+    reliably take OS keyboard focus — focus got orphaned and the keyboard went dead. It's now an in-scene
+    overlay (centered card + dim backdrop) that takes focus correctly on every platform.
+
+  (Note: if a *specific* chord like `Alt+X` still does nothing on Windows, check for a global hotkey
+  manager — e.g. XKeymaps — grabbing it before Editora; that's external to the editor.)
+
+- **Diagnostic hover tooltip flickered while the mouse moved over a mark** — the tooltip was re-shown
+  (and re-positioned to the cursor) on every mouse-move event, so hovering a squiggle or a scrollbar
+  diagnostic mark looked janky. It's now shown once and left in place until you move to a different
+  mark/message. Applies to the editor squiggle hover, the Mermaid-lint hover, and the scrollbar
+  diagnostic stripe.
+
+- **LSP error squiggles / Problems never appeared when the file path involved a symlink** — a language
+  server reports diagnostics under the file's *real* (canonical) path (e.g. `/private/tmp/…` for a
+  `/tmp/…` symlink on macOS, or any symlinked project directory), but the open tab was matched by a
+  non-symlink-resolved path, so **every diagnostic was silently dropped**. The match now uses the
+  canonical (symlink-resolved) path on both sides.
+- **jdtls (and other wrapper-script servers) leaked orphaned processes and could hang on restart** — the
+  Homebrew `jdtls` launcher is a wrapper (`jdtls` → python → java); Editora only killed the wrapper on
+  shutdown, orphaning the real server JVM, which kept running and held its Eclipse workspace lock so the
+  next session for that folder couldn't start (stuck on "Starting…", no completion/diagnostics). Editora
+  now tears down the **whole process tree**. *(Orphans left by an earlier version may need a one-time
+  manual kill, e.g. `pkill -f org.eclipse.jdt.ls`.)*
+- **A chatty language server could deadlock during startup** — its stderr stream was never drained, so
+  once the ~64 KB OS pipe buffer filled the server blocked. The server's stderr is now discarded.
+
+- **Language servers installed via a Node version manager (nvm/fnm/asdf) showed "not found" in the
+  packaged app** — a Finder-launched `.app` inherits a stripped `PATH` that omits the version manager's
+  bin dir (e.g. nvm's `~/.nvm/versions/node/<ver>/bin`), so npm-global servers like
+  `typescript-language-server`, `pyright-langserver`, `vscode-json-language-server`,
+  `bash-language-server`, and `yaml-language-server` couldn't be located even though they were installed.
+  `ProcessRunner` now resolves the user's **login-shell `PATH`** once (running `$SHELL -l -i -c` with a
+  timeout) and folds it into the PATH it gives every subprocess, recovering all version-manager and
+  profile-set dirs at a stroke. This also helps Git (a Homebrew `git`) and Mermaid (`mmdc`/`maid`).
+- **LSP loading bar in the status bar never stopped spinning** — it was only cleared by incoming
+  diagnostics or jdtls's vendor-specific status message, so a file with no diagnostics (or any non-jdtls
+  server) left it running indefinitely. It now clears as soon as the universal LSP `initialize`
+  handshake completes.
+
+- **Intermittent black screen / render glitches in the packaged macOS app after opening many files** —
+  JavaFX's GPU texture pool defaults to a 512 MB ceiling; with enough open files (each holding editor +
+  overlay + minimap textures, plus cached preview/diagram images) it filled up and the render thread
+  threw `NullPointerException`s (null `RTTexture` / mask texture), showing as a black window. Reduced
+  retained GPU memory so it no longer scales with the number of open files — background tabs now drop
+  their minimap snapshot (regenerated when shown), and the Markdown image + Mermaid diagram caches are
+  LRU-bounded — and raised the Prism texture caps (`prism.maxvram`, `prism.maxTextureSize`) in the
+  packaged app and dev run as a safety net. (Only reproduced in the jlink/jpackage build, not under
+  `mvn javafx:run`.)
+- **Editor froze (render thread crashed) when opening a Markdown file straight into Preview/Split
+  mode** — the editor's `Canvas` overlays (minimap, whitespace, spell-check, note-highlight, Mermaid
+  lint) were sized directly from the editor pane, which is momentarily zero-width while a Markdown
+  buffer opens into Preview/Split. A buffered draw on a zero/NaN-sized canvas made JavaFX allocate a
+  null GPU texture and the render thread NPE'd in `NGCanvas` — stalling the whole pipeline so the UI
+  looked hung. Canvas dimensions are now clamped to a finite, in-range size (new unit-tested
+  `CanvasGuards`) and overlays skip painting into a collapsed surface.
+- **External tools not found in the installed app** — a GUI-launched app (a macOS `.app` from Finder,
+  a Linux `.desktop`) inherits a stripped `PATH` that omits Homebrew / npm / Node locations, so `mmdc`,
+  `npx`/`maid` (and a Homebrew-installed `git`) showed up as "not found" even when installed. Editora now
+  augments the subprocess `PATH` with the usual install dirs (e.g. `/opt/homebrew/bin`, `/usr/local/bin`)
+  and resolves a bare command name to its absolute path before launching. Setting an absolute path in
+  Settings still works as an override.
+- **App freeze with several Markdown previews open (macOS)** — rendering SVG badges in the Markdown
+  preview pulled in AWT/Java2D, whose native macOS pipeline contended with JavaFX for the AppKit run
+  loop, an intermittent deadlock that grew more likely the more previews were open. AWT/Java2D now runs
+  headless (software rasterization only), eliminating the conflict; SVG badges still render.
+- **Markdown preview table columns no longer collapse to one character.** The **Markdown preview table** columns no
+  longer collapse to one character wide (short headers like "Phase"/"Depends on" stacking letter-by-letter); columns
+  now size proportionally to their content.
+- **Thread leak on tab close** — each open file's two background worker threads (Markdown preview +
+  syntax highlighter) are now shut down when its tab closes, instead of lingering for the rest of the
+  session.
+- **Clicking the status message again closes the message log.** The **message log** opened from the status bar now
+  toggles: clicking the status message again closes the popup.
+- **The Welcome page scrolls when it does not fit, and its tab can be dragged.** The **Welcome page** now shows a
+  scrollbar (vertical or horizontal) when its content doesn't fit the window, and its tab can be dragged to reorder
+  like any other tab.
+
+- **In-app file rename now carries bookmarks and personal notes to the new path** — renaming an open
+  file from the tab/right-click menu already moved its folds and recent-files entry; it now also re-keys
+  that file's bookmarks and notes, so they no longer get stranded under the old path.
+
+- **The About dialog shows the settings path actually in use.** The About dialog now shows the **live**
+  config/settings path, so `--dev` (`~/.editora-dev/`) and `--config-dir` are reflected (it previously always showed
+  the default `~/.editora/settings.toml`).
+
+- **Bookmarks no longer drift to the wrong line when a file is edited outside the editor.** Bookmarks
+  followed their content only for edits made inside Editora, so changing a file in another program
+  left its markers on stale lines. Each bookmark now re-anchors to its saved line text when the file
+  is opened (re-found at the nearest matching line), and the corrected position is saved back so the
+  session self-heals.
+- **Adding a bookmark no longer shifts that line's text indentation.** The gutter now reserves a
+  fixed-width bookmark column on every line, so the marker glyph no longer widens only the bookmarked
+  row (which had pushed its text rightward).
+- **A bookmark's gutter marker now follows its line when an edit moves it.** Inserting or deleting
+  lines above a bookmark already moved the bookmark (and its Bookmarks-panel entry), but the gutter
+  glyph wasn't repainted onto the new line; it is now.
+- **Switching or closing a project in Zen mode no longer breaks the layout.** Switching projects (or "No Project"), or
+  closing/deleting a project, while in Zen mode no longer leaves the UI permanently mangled. Zen stores its
+  "everything off" view state in the global settings while keeping the restore snapshot in the per-session state;
+  swapping sessions orphaned that snapshot. The editor now exits Zen (restoring the real view settings) before a
+  session switch and lands the incoming session in normal view.
+- **The `M-<` / `M->` (document start/end) and `M-%` (find & replace) keybindings now work.** They were stored in
+  Emacs notation (`M-<`) but the dispatcher emits shifted symbols as `M-S-,` etc., so the entries never matched; the
+  keymap now uses the dispatcher's token form.
+- **No light-gray flash at startup with a dark theme.** No more light-gray flash on startup with a dark theme: the
+  scene is pre-filled with the theme's background color, so the first frame paints in the theme color instead of
+  JavaFX's default background before the CSS is applied.
+- **Restoring a session at startup is much faster.** Much faster startup when restoring a session: all tab headers are
+  created first (so they appear at once), then each file's content and folds are loaded one per pulse — the active
+  file first — keeping the UI responsive. Previously a session with a heavily-folded file could freeze the window for
+  several seconds on launch.
+- **Folding no longer smears hidden line numbers onto the fold header.** Folding no longer smears the hidden lines'
+  numbers onto the fold-header row in the gutter: a collapsed paragraph's gutter cell is laid out at zero height, but
+  its line-number label did not clip to it; the gutter is now clipped to its bounds.
+- **Hidden-character markers no longer pile up on a fold header.** "Show hidden characters" no longer piles stray
+  space/tab/EOL markers onto the fold-header row when a region is collapsed: folded (hidden) paragraphs are now
+  skipped by the whitespace overlay (and the 80-column ruler's measurement).
+- **A chord that opens a dialog no longer types a stray character after it.** Running a command via a chord that opens
+  a dialog no longer types a stray character afterwards (e.g. `M-g g` then OK inserted a `g`): the dispatcher now also
+  swallows the character event paired with a key press it handled, which a modal dialog (`showAndWait`) would
+  otherwise deliver to the editor after closing.
+- **`M-` (Meta) chords no longer insert a stray character on macOS.** Option is the Meta key, and `Option+<key>` also
+  emits a special character (e.g. `M-f` → "ƒ", `M-x` → "≈") whose KEY_TYPED was inserted into the editor (or palette)
+  after the command ran. Characters typed with Alt held are now swallowed on macOS — globally by the key dispatcher
+  and in the command palette popup. (Scoped to macOS so AltGr-composed characters keep working on other platforms.)
+- **Clicking a command in the palette runs it.** Command palette entries can now be run with the mouse — clicking a
+  command runs it (previously only Enter on the keyboard-selected row worked).
+- **`C-n` and `C-p` move the caret like Emacs, keeping the column.** Next/previous line (`C-n` / `C-p`) now move the
+  caret like Emacs: they were bound to RichTextFX's scroll-based `nextLine`/`prevLine` (which move relative to the
+  viewport and no-op when the caret is off-screen). They now move by paragraph and preserve a goal column, so passing
+  through short lines keeps the original column.
+- **Syntax highlighting no longer intermittently fails to load when multiple files of the same language are open.**
+  They share one TextMate grammar instance, and tm4e's tokenizer is not thread-safe, so concurrent highlighting on
+  each buffer's background thread could throw and silently drop a file's highlighting; tokenization is now serialized
+  per grammar.
+- **The minimap no longer stretches short files across its height.** The minimap no longer stretches short files
+  across its full height (scattering sparse blocks): line height is capped, so short documents fill from the top and
+  long documents still compress to fit.
+- **Pinned tabs are remembered across sessions.** Pinned tabs are now remembered across sessions: a tab's pinned state
+  is saved on exit and restored on the next launch (alongside the open files and carets).
+- **The 80-column ruler now lands exactly on column 80.** It was positioned from a font-probe character width and
+  ignored the line-number gutter, so it drifted off the text grid; the column is now derived from the editor's live
+  layout (caret positions, glyph-independent). It is hidden when column 80 is outside the visible text width (window
+  too narrow, or scrolled past it).
+- **The 80-column ruler follows horizontal scrolling.** The 80-column ruler now tracks horizontal scroll instead of
+  staying pinned to a fixed x-offset when a horizontal scrollbar is present.
+- **Structure no longer shows No structure for regions computed early.** The Structure tool window no longer shows "No
+  structure" for documents whose regions were computed before the panel attached.
+- **The editor context menu now dismisses on left-click.**
+
 ### Added
 
 - **Open a `.patch`/`.diff` file in the structured diff viewer.** A right-click "Open in Diff Viewer"
@@ -10832,31 +11262,6 @@ instead.)
   and has no quoted multi-line fields; otherwise the grid stays read-only. Right-click **Reveal in editor**
   jumps to a cell's location either way.
 
-### Changed
-
-- **Local File History is now entirely in its tool window — no more separate window.** Opening a
-  revision's diff used to spawn a standalone "Local History" window alongside the File History tool
-  window. The tool window is now a split: the revision list on the left, and the live side-by-side diff of
-  the selected revision vs the current file on the right — with the Ignore-whitespace / Highlight-words
-  toggles, the "N differences" count, the per-hunk apply chevrons (selective restore), and the whole-file
-  Revert, all in one place. Selecting a revision shows its diff inline; nothing pops out into a second
-  window.
-
-### Fixed
-
-- **Blank editor after switching tabs.** Clicking a tab could occasionally show a blank editor until you
-  clicked it a second time to give it focus. The editor area now repaints on the layout pulse right after the
-  tab is shown, so its content appears on the first click (without moving the scroll position or stealing
-  focus from a Find-in-Files preview).
-
-- **Markdown print preview: tables no longer get pushed to their own page.** When printing (or print-
-  previewing) a Markdown file, a table could be bumped onto the next page even when it easily fit under the
-  preceding heading, leaving the first page mostly blank. The page-layout measurement was collapsing the
-  table's columns and over-estimating its height; it now measures at the real page width, so the printed
-  output matches the on-screen preview.
-
-### Added
-
 - **Find in Files popup.** A keyboard-first overlay for multi-file content search (command
   **"Find in Files (Popup)"**, palette-discoverable) — type a query, see results grouped by file, and
   press Enter to jump straight to a match (Enter on a file header opens that file); Esc closes. It has
@@ -10878,31 +11283,6 @@ instead.)
   Annotation/decorator lines (`@Override`, `#[derive(...)]`, …) between the comment and the declaration are
   skipped, and long comments are trimmed. Works for both LSP-served and heuristic outlines.
 
-### Fixed
-
-- **New File From Template no longer doubles the extension.** When a template's file-name pattern ends in
-  an extension (e.g. `${baseName}.md`) and you typed a name that already included it (`notes.md`), the new
-  file came out as `notes.md.md`. The engine now collapses a doubled trailing extension — but only when the
-  two extensions are identical, so `types.d.ts`, `foo.tar.gz`, and `app.min.js` are left alone.
-
-- **Release builds package from a clean tree, fixing a rare "dead keyboard" in the installer.** The
-  native-installer build fed jlink from an incrementally-compiled `target/`, where a synthetic
-  `$SwitchMap` class (emitted for a `switch` over an enum, e.g. the key dispatcher's) could go missing if
-  a background compiler or an interrupted build left `target/classes` inconsistent — javac won't
-  regenerate it while the source looks up-to-date. The packaged app then threw a `ClassNotFoundException`
-  on the first keypress. The release workflow now runs `clean` before `-Pdist`, guaranteeing every class
-  is regenerated. (Only the native installers could be affected, and only when built from a dirty tree;
-  `mvn javafx:run` and the fat jar were never affected.)
-
-- **Markdown "Insert Table" size picker no longer fills the editor.** The grid picker was stretched to
-  cover the whole code area; it now hugs the grid (with padding) and is centered.
-
-- **Structure tool window: methods no longer show a doubled `()`.** When a language server (e.g. jdtls)
-  already includes the parameter list in a method's name (`setX(Foo)`), the outline no longer appended a
-  redundant empty `()` — so it reads `setX(Foo)` instead of `setX(Foo)()`.
-
-### Added
-
 - **User-defined themes from the config folder.** Drop a theme CSS in your config directory and it shows up in the theme pickers, named from the file (`my-cool-theme.css` → "My Cool Theme"). Two folders: **`<configDir>/themes/*.css`** for a full AtlantaFX theme (a self-contained stylesheet defining `-color-*`) — it becomes both the app theme and its editor colors via the adaptive syntax palette (base colors parsed from the CSS); and **`<configDir>/editor-themes/*.css`** for a hand-authored editor override (`.editor-area` + `.text.<class>` rules, like the bundled ones) that appears in the Editor Theme picker only. Themes load at startup; the palette command **"Theme: Reload User Themes"** re-scans without a restart.
 
 - **Per-hunk selective restore in the Local History window.** The window's diff is now editable on the current-file side — the IntelliJ-style **apply chevrons** are back, so you can copy an individual fragment from a past revision into the file (single chevron per changed row, double at each hunk start), routed through the undoable buffer with Undo/Save. The diff re-computes after each apply so the remaining chevrons update; the whole-file **Revert** button still does a full restore.
@@ -10920,56 +11300,6 @@ instead.)
   red/green token palette would defeat their accessibility purpose, and GitHub's default duplicates the
   existing Primer Light.)
 
-### Performance
-
-- **Dirty-state tracking no longer allocates the whole document on every keystroke.** The editor's modified-flag listener was bound to RichTextFX's `textProperty()`, which forces the full document `String` to be materialized on each change — an O(n) allocation per character on a very large single buffer (e.g. minified JS/CSS or a one-line JSON/log that slips past the line-count heavy-file tier). It now runs off `plainTextChanges` with a cheap `getLength()` gate, so the full text is only built in the rare near-clean state, never while typing. Behavior is unchanged (reverting an edit still clears the marker).
-
-### Internal
-
-- **Broadened the headless-FX harness over the Run + External-Tool console panels.** New `RunPanelFxTest` and `ExternalToolPanelFxTest` exercise the console lifecycle (started → appendOutput stdout/stderr → finished/failed, Stop-button enablement) and the one-shot tool console (command header + stdout + stderr + status line, clear).
-- **Broadened the headless-FX harness over the Notes + TODO panels.** New `NotesPanelFxTest` and `TodoPanelFxTest` feed an in-memory note bucket / a `TodoService.Outcome` into the panels and assert the rendered file→note / file→match grouping, empty-input handling, the note-body filter, and the TODO summary label.
-- **Broadened the headless-FX harness over the Structure + Bookmarks panels.** New `StructurePanelFxTest` and `BookmarksPanelFxTest` feed an LSP `SymbolNode` tree / an in-memory bookmark bucket into the panels and assert the rendered hierarchy — Structure's class→methods outline (and that symbols for a non-attached buffer are ignored); Bookmarks' file→bookmark grouping, empty-file skipping, and the name filter.
-- **Broadened the headless-FX harness over the Git + Problems tool-window panels.** New `GitPanelFxTest` and `ProblemsPanelFxTest` feed pure-record data (`GitStatus` / `LspDiagnostic` maps) into the panels and assert the rendered grouping — Git's Staged/Changes/Untracked tree, branch label, and commit-button enablement (incl. clean / not-a-repo states); Problems' language→file→diagnostic tree plus empty-input handling — using no-op `Actions` stubs (no live git / LSP).
-- **Broadened the headless-FX harness over `MainController` command dispatch.** A new `MainControllerCommandsFxTest` drives service-free commands through the real `CommandRegistry` against a fully-wired window (text zoom, the read-only toggle, line-numbers/minimap/whitespace view toggles, select-all), covering the `ui` command-execution surface that the palette + keymap share.
-- **Broadened the headless-FX harness over `EditorBuffer`.** A new `EditorBufferFxTest` exercises Markdown view-mode switching (incl. the minimap-hidden-in-preview rule), read-only / view mode, programmatic typing through the macro-replay path (with auto-close), per-language run-glyph detection (compact Java / Python / gated shell), and display-name/dirty/EOL bookkeeping — raising `editor`-package coverage with no new production code beyond two helper-visibility tweaks.
-- **Test coverage: added unit tests + ratcheted the JaCoCo floors.** New tests for `config` models/stores (`Breakpoint`, `BreakpointStore`, `RecentFiles`, plus `FileIdentity` null/empty branches) raised `config` line coverage to ~88%, and new `InstallService` tests cover `findBinary`/`makeExecutable`/`Result`. The per-package `jacoco-check` floors were ratcheted to sit a few points below the measured coverage (migration·diff 0.85→0.90, config split out at 0.86, template·editorconfig 0.80→0.82, completion·http·pdf 0.68→0.70).
-
-### Changed
-- **Indent detection now defaults to spaces when a file has no indentation**, matching VSCode/IntelliJ ("spaces unless the file is detected to use tabs"). A file whose first indented line uses a tab still gets tabs, and spaces still get spaces; only the no-evidence case (empty or flat file) flipped from tab to spaces. This affects the default `detect` indent style; an explicit `space`/`tab` setting or `.editorconfig` still wins.
-- **Settings → Snippets: the language picker is now a plain dropdown** (no longer an editable/typing combo box) — it lists the curated languages plus any that already have a user snippet file, and you select from it rather than typing.
-- **The Structure and Bookmarks tool-window filter fields now have a clear (✕) button**, matching the Personal Notes and Project panels. It appears only while the filter has text and clears it on click.
-- **Settings → Keymaps → Customize shortcuts now reveals the Record/Reset buttons only for the selected row.** Every command row used to show both buttons, cluttering the long list; a row's actions now appear only when you click to select it (the selected row is highlighted), so the list reads as a clean command + chord table.
-- **Save As from the command palette (or a keybinding) now prompts for the path in-scene** instead of opening the native file chooser, keeping the keyboard flow mouse-free. The field is pre-filled with the current file's path (or the project folder + suggested name for an untitled buffer); a bare name resolves against that folder and `~` expands to home. The **toolbar Save-As button still opens the native file chooser** (it's a mouse action), and overwriting a different existing file asks for confirmation.
-
-### Fixed
-- **File templates now prompt for a variable used in the file-name pattern.** A single-file template whose file name was e.g. `${baseName:Main}.java` never asked for `baseName` at creation time, so it silently used the default and always produced `Main.java` — even though the same variable worked in the body. The file-identity built-ins (`baseName`/`fileName`/`extension`) can't be derived for a brand-new file, so when they appear in the *file-name pattern* they're now prompted in the wizard (the answer flows into both the file name and the body); used only in the body, they're still auto-derived as before.
-- **Markdown-preview code blocks stay readable when the preview theme is toggled independently.** Code-block syntax colors followed the *editor* theme, so forcing the preview to the opposite brightness (the sun/moon toggle) left dark tokens on a light code background (or vice versa). They now follow the preview's own light/dark — a fixed GitHub Primer palette matching the preview's prose — while still tracking the editor theme when the preview follows the app.
-- **The 80-column ruler no longer jumps to the left edge when word wrap is on.** The ruler derived its per-column width from the caret x at the start vs. the end of the longest visible line; with wrap on, that line spans multiple visual rows, so the two points sat on different rows and the width collapsed — planting the ruler near column 13 instead of 80. It now measures the advance on a single visual row (falling back to an adjacent-column advance when the line wraps), so the ruler stays at the correct column in both modes.
-- **Settings labels no longer truncate.** A long settings-row label (e.g. "Max size / project (MB)" under Workspace → Local History) was clipped to "…"; the label column now keeps its alignment floor but grows to fit longer labels (and translations). The Settings window also has a minimum size now, so wide rows (e.g. the large-file threshold row + its unit) can't be clipped by shrinking it.
-- **Flaky FX test fixed.** The headless-FX harness could intermittently error with `NoSuchFileException: settings.toml.tmp` — it now flushes pending async config writes before deleting the temp config dir (`FxWindowFixture`).
-- **Clearer Mermaid render error when headless Chrome is missing.** A failed `mmdc` render whose error is the Puppeteer "Could not find Chrome" stack now leads with a one-line fix (the `npx puppeteer browsers install chrome-headless-shell` command).
-- **Multi-line `$$…$$` block math now exports as an image** to PDF/DOCX/ODT. A display-math block with the `$$` delimiters on their own lines was exported as raw text (the export's `soleDisplayMath` bailed on the soft line breaks); single-line `$$…$$` and inline `$…$` were unaffected.
-- **Markdown preview: multi-line `$$…$$` block math now renders.** A display-math block with the `$$` delimiters on their own lines was shown as raw text (the paragraph scanner bailed on the soft line breaks); single-line `$$…$$` and inline `$…$` were unaffected.
-- **PDF export now works in packaged builds.** PDFBox + pdfbox-io + fontbox all log via commons-logging, which jlink was silently pruning (jdeps dropped the `requires` under `--ignore-missing-deps`), so every packaged PDF export failed with `NoClassDefFoundError: org/apache/commons/logging/LogFactory`. Fixed with hand-written module descriptors; also made the PDF/print/office export services catch `Throwable` so a failure reports instead of hanging the status.
-- **Minimap now shows in Markdown SPLIT view.** It had been hidden whenever the preview was on (gated to `EDITOR` mode only); it now hides only in full `PREVIEW` (no editor surface), and stays visible in SPLIT where the editor is on screen.
-- **Markdown → PDF export no longer fails on SVG images.** A badge/image served as SVG (e.g. shields.io) made the whole export throw (`IllegalArgumentException: Image type UNKNOWN`); SVG images are now rasterized to PNG (via the same JSVG path the on-screen preview uses) and any undecodable image degrades to alt text instead of aborting.
-- **Tool-window consoles really match the editor font now.** The `.run-output`/`.debug-console` CSS carried a `-fx-font-size` that overrode the programmatic font on every CSS pass, so the External Tools / Run / Debug consoles kept rendering at 12px regardless. Removed the font from those CSS rules so the editor-matched `setFont` sticks (guarded by a new `ConsoleFontFxTest`).
-- **Tool-window consoles now actually pick up the editor font.** The previous attempt set `-fx-font-size` via `setStyle`, which a JavaFX `TextArea` ignores; the consoles (External Tools / Run / Debug) now set the control's `font` property directly so they match the editor's family + size.
-- **Command palette: clicking a result now runs it.** A card-wide `MOUSE_CLICKED` consume filter was swallowing the result cells' click-to-run handler (only Enter worked).
-- **Command palette: removed the stray separator line above the command description.**
-
-- **Project / Current-Folder filter now finds top-level files in a large root.** The filter-box search walked the tree depth-first, so under a big root (e.g. a home directory with huge `.cache`/`.m2`/`node_modules` subtrees) it exhausted its visit budget deep inside one subtree before ever reaching a shallow file like `.profile` — which then never appeared in the results. The search is now breadth-first, visiting every shallower entry before descending, so top-level matches are never starved by a deep sibling subtree.
-
-- **Hardened several spots against NullPointerExceptions from corrupted config or non-conforming servers** (found via a full-codebase null-flow audit). `Macro` now defaults a missing `name` to `""`, so a hand-edited/corrupted `macros.json` entry without a name can't NPE macro lookups (find/save/delete). `SnippetManager` skips a snippet file whose content is the literal `null` instead of throwing. `LspManager` go-to-definition / find-references guard a `Location`/`LocationLink` range that a non-conforming language server leaves null. `DapClient.evaluate` tolerates a null adapter response like `evaluateFull` already did. (The wider audit found the `ui`/`editor`/`MainController` packages already guard nullable returns consistently.)
-
-- **Hardened the Bookmarks drag-reorder against a theoretical NPE.** `handleDrop` dereferenced a dragged mark row's `getParent()` directly; it's always non-null today (a mark is always under a file group), but a defensive guard now returns early if a detached row is ever dropped, so a future tree-shape change can't turn it into a crash.
-
-- **Markdown preview no longer renders HTML comments.** `<!-- … -->` blocks (and inline comments) were shown as visible text/code in the preview (and PDF/print export); they're now hidden, matching GitHub and every other Markdown renderer.
-- **Markdown preview hides the editor minimap.** In Split/Preview mode the minimap was wedged between the editor and the preview; it's now hidden while the preview is shown (the preview is the overview) and restored when you return to the plain editor view.
-
-- **The "install language support?" banner no longer shows when the language server is actually installed and running.** It was reading the server-availability flag before startup detection finished (and never re-checking), so it could falsely claim e.g. Java support was missing while jdtls was serving the file. The banner now only appears once a server is *confirmed* absent (not merely "not probed yet"), never when a live session is already serving the file, and re-evaluates as soon as detection settles. Also fixed the banner text dropping its apostrophe ("isnt") — the message runs through `MessageFormat`, where `'` must be doubled.
-
-### Added
 - **Drag a raw image out of a web browser into a Markdown file.** Alongside dropping image files and pasting a clipboard image, you can now drag an image straight from a web page onto a Markdown editor — Editora downloads it (off the UI thread) into the sibling `assets/` folder and inserts `![](assets/…)`. It resolves the source from the drag's URL, an `<img src>` in the dragged HTML, or a `data:` URI; a raw dropped image is encoded to PNG; if the download fails it falls back to inserting the remote URL. (Requires the Markdown file to be saved, so `assets/` has a home.)
 - **Syntax highlighting in Markdown-preview code blocks.** A fenced code block with a language (`` ```java ``, `` ```python ``, `` ```js ``, …) is now tokenized with the same TextMate engine + theme the editor uses, so the preview shows colored code instead of flat monospace. Unknown/absent languages and indented blocks stay plain; very large blocks skip highlighting.
 - **Save as Administrator (Linux & macOS).** Editing a file you lack write permission for (e.g. one under `/etc`) now offers to save it via the OS's own authentication prompt — Editora never sees the password. On Linux `pkexec`/polkit handles it; on macOS AppleScript's `do shell script … with administrator privileges` shows the native Touch ID / password prompt. The View-mode banner on a read-only-on-disk file shows **Edit as Administrator**, and `Ctrl-S` (or the `File: Save as Administrator` palette command) then writes through the elevated helper, which rewrites the file in place so its owner and permissions are preserved. Off by default (Settings → Editor → Saving; palette `Toggle Save as Administrator`); Windows isn't supported; each elevated save prompts for authentication.
@@ -11017,48 +11347,6 @@ instead.)
   - **JSON** — `.babelrc`, `.eslintrc`, `.prettierrc`, `.stylelintrc`, `.swcrc`, `.bowerrc` (the bare forms; the explicit `.json`/`.yaml`/`.js` variants were already handled by extension).
 - **The window title bar now shows the active file's name + path.** Format: `<file path> — <project> — Editora` (e.g. `~/src/app/Main.java — MyProject — Editora`), with a `•` prefix for unsaved changes; an untitled buffer shows its name, and with no file open it's just the project/app name. The path is home-collapsed (`~`) and updates on tab switch, save, Save-As, and rename.
 - **Linux `.deb`: an `editora` command on `PATH`, plus a proper menu entry + app icon.** The Debian package now (1) creates a `/usr/bin/editora` symlink to the installed launcher (jpackage otherwise installs it only at `/opt/editora/bin/Editora`, off `PATH`), so you can start Editora from a terminal with arguments — e.g. `editora some/file.java:42`; and (2) registers the bundled `.desktop` into `/usr/share/applications` (injecting `StartupWMClass` so the running window matches it), so the application menu and dock show the Editora icon instead of the generic Java icon. Both are removed on uninstall. Implemented via custom DEB maintainer scripts (`packaging/linux/postinst`/`postrm`) passed through `jpackage --resource-dir` in the installer-wrap step — these *replace* jpackage's generated scripts, so they reproduce jpackage's menu/icon registration in addition to the new symlink. The build (`scripts/aot_build.java`) also overwrites the app image's `lib/Editora.png` with our branding PNG before wrapping — jpackage's app-image phase left its default Java icon there and `jpackage --app-image` ignores `--icon` at wrap time, so the menu/dock were showing the generic icon. `.rpm` is unaffected (run `/opt/editora/bin/Editora`).
-
-### Fixed
-
-- **A "Compare with HEAD" diff no longer blanks its HEAD pane on refresh.** In a window with no project open, opening a file's vs-HEAD diff and then triggering a refresh (clicking an "apply change" chevron, or regaining window focus) could empty the left (HEAD) pane and render the whole working side as all-added. The diff's HEAD side was re-fetched against the *live* repo root, which the Git status machine drops to "none" when the active tab is a diff tab with no backing buffer (a No-Project window has no project root to fall back to) — so the re-fetch ran against a null root and returned nothing. The diff now captures the repo root when it's opened and reuses it on every refresh. Affected all Git-backed diffs (vs HEAD, vs commit, Git-panel staged/unstaged rows, a commit's file, and the Local File History revision diff). Covered by a new FX regression test.
-
-### Changed
-- **Perf:** the Markdown minimap now coalesces scroll-driven repaints to one per pulse (was a synchronous repaint per scroll event); the completion popup's prefix check reads a bounded window before the caret instead of materializing the whole document on every caret move.
-- **Installing Mermaid support now also installs the headless Chrome it needs.** `install.mermaidSupport` (Settings → Mermaid → Install…) runs `npx puppeteer browsers install chrome-headless-shell` from mmdc's own dir after `npm i -g @mermaid-js/mermaid-cli`, so diagrams render on a fresh Linux box without the *"Could not find Chrome"* Puppeteer error.
-- **Snippet choice dropdown (`${1|a,b|}`) now uses the same keys as autocomplete**: `C-n`/`C-p` to move, `Tab`/`Enter` to accept, `C-g` to cancel (Down/Up/Enter/Esc still work).
-- **Command palette ranks results by relevance.** Matches are ordered exact > whole-word > word-start > substring > scattered-subsequence (tie-broken by shorter title), so e.g. typing `undo` now lists `Edit: Undo` first instead of a scattered match like `Unsplit Editor`.
-- **Clearer unsaved marker in the window title.** A modified file now shows a prominent leading `●` in the title bar (was a small `•`), so the modified state is visible in Zen mode where the tab strip is hidden. (Native title bars are plain text, so the tab's colour/italics can't be reproduced there.)
-- **The tool-window consoles (External Tools, Run, Debug) now use the editor's code-area font** (family + effective size, tracking the zoom) instead of a fixed JetBrains Mono 12.
-- **The Personal Notes inline indicator is 25% larger** (the amber corner triangle at a note's start), making it easier to spot; its click target grew to match.
-- **Personal Notes tool window: bold file headers + a clear-filter button.** File-name rows are now bold (matching Find-in-Files), and the filter has a trailing `✕` button shown only when there's text (like the Project panel).
-- **Personal Note editor: Markdown hint + delete confirmation.** The note edit popup now shows a hint that the body supports Markdown formatting, and its **Delete** button asks for confirmation first (the body already rendered as Markdown in the hover tooltip).
-- **The External Tools tool-window stripe is off by default.** It's registered default-hidden (like Undo History and Remote Sites); reach it via the `tool.externalTools` command, the `externalTool.run` picker, or Settings → Tool Windows. The feature is unaffected.
-- **Refactor: pure text-editing operation cores moved to `com.editora.editops`.** The 10 toolkit-free editing/indent/navigation cores (`Indenter`, `AutoClose`, `BraceMatcher`, `Commenter`, `Transposer`, `LineOps`, `EmacsEdits`, `SexpNav`, `Filler`, `LineIndent`) and their tests moved out of `com.editora.editor`. Internal-only — no behavior, dependency, or `module-info` change.
-- **Refactor: pure Markdown logic moved to a `com.editora.markdown` package.** The 11 toolkit-free Markdown cores (editing, lint, outline, image-paste) and their tests moved out of `com.editora.editor` into their own package; the FX renderer and editor overlays stay. Internal-only — no behavior, dependency, or `module-info` change.
-- **The "New File From Template" picker is bigger.** Widened (and given a taller minimum) so the longer template descriptions are no longer clipped (the default width showed a horizontal scrollbar).
-- **Personal Notes show an inline marker at the note's start instead of a gutter icon.** A small amber corner-triangle now marks where a note begins (the selected character/word/range), reinforcing that notes are anchored to the selection — not the line. The gutter note slot is gone; edit the note at the caret with the new `notes.editNote` command (the inline highlight + hover tooltip + Notes tool window are unchanged).
-- **The Undo History tool-window stripe button is now off by default.** With the new Undo History popup (`undoHistory.jump`) as the primary entry point, the side-stripe icon is hidden until you enable it (Settings → Tool Windows, or the `tool.undoHistory` command). Existing sessions keep whatever visibility you had.
-
-- **Internal: moved the last Git blame UI bits into `GitCoordinator`.** The blame annotation engine already lived in `GitCoordinator`; the three remaining UI methods — the `git.toggleBlame` toggle, the caret-line `blameShowCommit`, and the gutter-annotation click (`onGutterBlameClick`) — moved there too, so the whole inline-blame feature now resides with the engine. The two surfaces those touch outside the coordinator route through new `WindowOps` callbacks: `syncBlameCheck()` (re-sync the Settings checkbox) and `openCommitFileDiff()` (open the line's commit diff — routed through the window to reach `DiffCoordinator` without a circular dependency). `MainController` shed ~34 lines (8,716 → ~8,682); its blame command + gutter-click wiring delegate to `git::toggleBlame`/`git::blameShowCommit`/`git::onGutterBlameClick`. No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: moved the Git clone flow into `GitCoordinator`.** The `git.clone` UI — the URL + destination `OverlayInput` form (with the `<home>/<repo>` auto-fill and the Browse picker), the `git clone` call, and opening a file from the fresh clone (`openClonedEntry`) — moved into `GitCoordinator` alongside the engine it already used (`GitService.clone`/`gitError`), as `cloneRepo()` (renamed off `clone` to avoid clashing with `Object.clone()`). The pure/unit-tested `repoNameFromUrl` helper moved with it (`GitCoordinator.repoNameFromUrl`). `MainController`'s three clone callbacks — the `git.clone` command, the empty-`GitPanel` button, and the `BranchPopup` No-VCS action — now delegate to `git::cloneRepo`. `MainController` shed ~131 lines (8,847 → ~8,716). Verified by `GitStateFxTest` (a new case asserts the clone form renders as an in-scene overlay through the coordinator wiring) + the moved unit tests. No behavior change — part of the ongoing `MainController` decomposition (the remaining Git-Log / blame / branch-popup wiring is a follow-up).
-- **Internal: extracted `RemoteCoordinator` from `MainController`.** The Remote file access (SFTP) feature — the SSH connect form, the saved-connection picker, mounting a remote folder as the Project tree root, single-file open from an `sftp://` URI, and disconnect — moved into its own `CoordinatorHost`-style coordinator. It owns the `RemoteFileSystems` engine (the SSH client + `Vfs` resolver), the `RemoteConnectionsPanel`, and the mount state; `MainController` keeps the `remote` `ToolWindow` (built with the coordinator's panel), queries the coordinator for the current-folder view, and wires the `remote.*`/`tool.remote` commands + the Welcome-page quick-connect callback to it. `MainController` shed ~172 lines (9,019 → ~8,847). Verified by a new FX test that drives the connect flow on a real window and asserts the SFTP form renders as an in-scene overlay (no network). No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: extracted `PluginCoordinator` from `MainController`.** The Plugin support feature — discovery/apply/install/uninstall plus the per-window `PluginContext` adapter that lets a plugin contribute commands, keybindings, tool windows, status-bar segments, and editor menu items — moved into its own `CoordinatorHost`-style coordinator. It owns the per-window `PluginRegistry`/`PluginInstaller`, the started-plugin instances, the plugin-contributed tool windows + editor menu items, the "Browse Plugins" picker, and the two inner adapters (`PluginContextImpl`/`ActiveEditorImpl`). The shared `PluginManager` (owned by `WindowManager`) is passed in; `MainController` keeps the `pluginManager` field + thin `disposePlugins()`/`pluginsEnabled()` delegates and wires `applyPlugins` / the tool-window gating / the editor-menu contributor / the `plugins.*`+`view.togglePlugins` commands to the coordinator. `MainController` shed ~574 lines (9,578 → ~9,004). Device-tested live (MCP bridge): the example plugin's Java-registered command, its tool-window toggle, and its declarative external command all loaded + ran through the moved `PluginContextImpl.start` path. No behavior change — part of the ongoing `MainController` decomposition (the largest single extraction in the campaign).
-- **Internal: extracted `HistoryCoordinator` from `MainController`.** The Local File History feature (per-file save/label/delete snapshots stored outside the file) moved into its own `CoordinatorHost`-style coordinator: it owns the `HistoryService` (off-thread snapshot/blob engine) + the `FileHistoryPanel`, and the whole flow — record (save / autosave / external / pre-delete), the per-file + folder-history views, label / recent-changes pickers, and revision diff/restore (reusing the shared `DiffCoordinator`). `MainController` keeps the File History `ToolWindow` (built with the coordinator's panel) and wires the record hooks + the `history.*`/`tool.fileHistory` commands + the project-tree "Show Local History" item to it. `MainController` shed ~300 lines (9,881 → ~9,578). Device-tested live (MCP bridge): saving a file recorded a revision into `history/index.json`, and the history commands ran clean. No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: moved the Git operations into `GitCoordinator`.** The user-facing Git mutation operations that were still in `MainController` — `gitOp`/`gitCommit`/`discardChanges`, branch checkout/create, fetch/pull/push (`gitSync`), the stash commands, the active-file stage/unstage/discard, the commit-focus action, and the `gitError` dialog — moved into `GitCoordinator` (which already owned the `GitService` + repo state), so the whole Git engine + its mutations now live in one cohesive coordinator. `MainController` keeps the panels/tool-windows/branch-popup + command registrations (delegating to `git.*`). `MainController` shed ~294 lines (10,175 → ~9,881). No behavior change. (The commit/branch/log/blame/clone UI wiring is a follow-up.)
-- **Internal: extracted `DiffCoordinator` from `MainController`.** The diff + merge-conflict viewer (the `DiffService`, the diff-tab open/refresh machinery, the "apply change" hunk flow through an undoable buffer with Undo/Save, the compare entry points — vs HEAD / vs commit / compare-with-file / Git-panel rows / a commit's file — patch export, and merge-conflict resolution) moved into its own `CoordinatorHost`-style coordinator. Git-backed diffs reach the repo via the shared `GitCoordinator`; `openDiff` + the `DiffSide` interface stay package-visible so the Local File History flow reuses them. `MainController` shed ~317 lines (10,492 → ~10,175). No behavior change — continuing the `MainController` decomposition.
-- **Internal: extracted `DebugCoordinator` from `MainController`.** The whole DAP debugging integration (the `DebugPanel`, breakpoint persistence + gutter gating, the DAP event sink + panel actions, the inline-values / hover / execution-line editor surfaces, the start/attach/step/run-to-cursor/jump flows, and the `debug.toggleAdapter`/`debug.setAdapterPath` pickers) moved into its own `CoordinatorHost`-style coordinator. The `DapManager` stays a `MainController` field (it's built on the LSP `lspManager`, and `SettingsWindow` + window-dispose reach it) and is passed to the coordinator, mirroring the LSP split; Java debugging layers on the jdtls session, so the coordinator also takes the `lspManager` + `LspCoordinator`. `MainController` shed ~565 lines (11,057 → ~10,492). This completes the `MainController` decomposition campaign (13,017 → ~10,492). No behavior change.
-- **Internal: extracted `LspCoordinator` from `MainController`.** The whole LSP integration moved into a new `CoordinatorHost`-style coordinator across three slices: the navigation/format flows (go-to-definition, find-references, hover, document formatting + the hover popup); the diagnostics routing (the per-open-file `problems` map, the `ProblemsPanel`, the `publishDiagnostics` callback); and the configure/detect/gating + per-buffer lifecycle (`applySupport`/server detection/the per-server enable+command switches/`syncBuffer` open-activate-close/the status-bar `LSP:` segment/the Structure outline/semantic tokens/the per-buffer hook wiring/the `lsp.toggleServer`+`lsp.setServerCommand` pickers). The `LspManager` stays owned by `MainController` (Debug layers on the jdtls session, the MCP bridge reads its diagnostics) and is passed to the coordinator; its callbacks route through thin method-ref delegates. `MainController` shed ~685 lines (11,742 → ~11,057). No behavior change — part of the ongoing decomposition.
-- **Internal: extracted `BookmarkCoordinator` from `MainController`.** The Bookmarks feature (the panel + jump picker, per-buffer persist/restore, the gutter-click flow, and the `bookmarks.*` commands) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: extracted `NotesCoordinator` from `MainController`.** The Personal Notes feature (the panel + cross-file pickers, per-buffer persist/restore with anchor re-keying, the note editor dialog, and the `notes.*` flow) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: documented soft code-size limits in `CLAUDE.md`.** Added review heuristics for class/method size (target ≤1000 lines/class, ≤50/method; refactor-smell beyond ~2000/~100) and codified the `CoordinatorHost` decomposition as the way to keep `MainController` (and future features) in check. Docs only — no tooling/behavior change.
-- **Internal: extracted `RunCoordinator` from `MainController`.** The run-a-file feature (the run service + console panel, the run/rerun/stop flow, and the launcher-command building) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: extracted `SearchCoordinator` from `MainController`.** The Find-in-Files feature (the multi-file search service + results panel, scope tracking, replace-in-files, and the ripgrep/walker backend selection) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: extracted `TodoCoordinator` from `MainController`.** The TODO / highlight-pattern feature (service + tool-window panel + the in-editor highlight matcher + the project/open-files scan + `todo.*` commands) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: extracted `MacroCoordinator` from `MainController`.** The keyboard-macro feature (per-window service + record/replay capture hooks + `macro.*` commands) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
-- **Internal: extracted `ExternalToolCoordinator` from `MainController`.** The External Tools feature (service + console panel + run/output logic + `externalTool.*` commands) moved into its own `CoordinatorHost`-style coordinator, trimming the `MainController` god-class. No behavior change — first step of an ongoing `MainController` decomposition.
-- **The Remote Sites tool window is off by default and opens on the right.** Its stripe button is now hidden until you enable it (Settings → Tool Windows, or the `tool.remote` command / `M-g r`), and when shown it docks on the right. The remote (SFTP) functionality is unchanged — only the tool window's default visibility and side moved. Existing layouts (if you'd already shown or moved it) are preserved.
-
-### Added
 
 - **Open the session log from Settings → Advanced.** Added a "Session log" link next to the settings-file path that opens `editora-session.log` (the captured logging + uncaught exceptions for the current session) in the editor — handy for grabbing diagnostics for a bug report.
 
@@ -11124,38 +11412,6 @@ instead.)
   files deleted in Editora or that already had edit history — not files deleted by an external tool that were
   never opened.)
 
-### Fixed
-
-- **Tool-window sizes are now remembered when you quit with them open.** Resizing a tool window (e.g. the Project panel) and quitting with it still open used to reset its divider to the default on next launch — the position was only captured when a tool window was *hidden*, never on quit. The session now captures the live divider positions on quit, so the layout comes back as you left it. (Window size/position already persisted.)
-- **Minimap no longer shows a second, stale viewport box on large files.** The minimap's content render calls `canvas.snapshot()`, which forces a synchronous layout pass that could settle the editor's viewport and re-enter the minimap's redraw mid-render — painting a duplicate viewport highlight that lingered. The minimap now guards against re-entrant paints, so exactly one viewport box is drawn.
-- **Tidier, better-fitting Settings → Templates page.** It showed "Templates" three times (page title + two section headers) and its body editor was tall enough to overflow the window. The section headers are now **"Author"** and **"Manage templates"**, and the template/snippet body editors use a more modest height (they still grow to fill a taller window).
-- **Settings page titles no longer shave the bold heading.** The big bold heading on each Settings page (e.g. "Markdown") looked like it was missing slivers of its letters — a JavaFX `Label` clips its text to the glyphs' logical (advance-based) bounds, which cuts the outer strokes of bold faces (pipeline- and font-independent). The heading is now a `Text` node with `TextBoundsType.VISUAL`, which renders the full glyph ink without clipping.
-- **EditorConfig BOM charset no longer truncates files on open.** When a project's `.editorconfig` declared `charset = utf-8-bom` (or `utf-16le`/`utf-16be`) but a file on disk had no actual byte-order mark, the first 2–3 content bytes were silently dropped on open — and saving re-added a BOM, corrupting the file. `EditorConfigCharset.decode` now strips the BOM only when the bytes really start with it.
-- **Typing a closing bracket over a selection no longer silently deletes it.** With text selected, typing `)`/`]`/`}` where the next character was that same bracket "typed over" it and discarded the selection without inserting anything. It now replaces the selection like normal typing. (`AutoClose.decide` gates skip-over on having no selection.)
-- **Regex "Replace All" now respects the whole-word toggle.** With both *Regex* and *Whole word* enabled, Replace All replaced every unbounded occurrence instead of the `\b`-bounded matches it had highlighted and counted. It now uses the same `SearchMatcher.compileRegex` as the search/highlight path.
-- **A hung `javac` can no longer freeze debugging.** The loose-Java compile-and-debug fallback now runs the compile through `ProcessRunner` with a 60-second timeout (and concurrent pipe draining), so a stuck compiler can't pin the single-threaded debug-adapter executor and block every later debug start.
-
-### Changed
-
-- **Headless FX tests now use JavaFX 26's built-in headless platform.** The `@Tag("fx")` harness boots over
-  the Headless Glass platform that ships inside `javafx.graphics` (`-Dglass.platform=Headless`) instead of the
-  self-built Monocle backend. The vendored `openjfx-monocle` jar (and the rebuild-on-every-JavaFX-bump ritual it
-  required) are gone — nothing extra to download or maintain, and the backend can no longer go stale on a JavaFX
-  bump. Test-scope only; no runtime, packaging, or `module-info` impact. The harness only uses TestFX to boot the
-  toolkit (never the robot), so the prototype platform's input/rendering limits don't apply.
-
-- **Command docs now open the version-matched page.** The command palette's "open docs" (C-h) now links to
-  `…/docs/v-<appVersion>/commands/<command-id>`, matching the website's new versioned docs layout, so each
-  build opens the docs for the version that's actually running.
-
-- **De-duplicated the plugin examples.** The full plugin catalog lives canonically in the
-  [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) repo (source +
-  signed registry index), so the editor repo no longer keeps copies under `examples/` — those had
-  already drifted from the registry. Only `examples/example-plugin/` remains as the in-tree SDK
-  reference; `docs/plugins.md`, the README, and `CLAUDE.md` now point the catalog at the registry repo.
-
-### Added
-
 - **Plugin API: `needsBuffer` opt-out for tool windows.** Plugin tool windows are gated on an open editor
   buffer by default (they act on the active editor), but a new `registerToolWindow(…, icon, needsBuffer)`
   overload lets a self-contained tool window (scratchpad, calculator, color picker, …) pass
@@ -11190,74 +11446,6 @@ instead.)
   project tree"* checkbox (and the `view.toggleProjectHidden` palette command) reveals dot-files/folders in
   the project tree and its filter search. Off by default. Persisted in `settings.toml` (schema 38→39).
 
-### Fixed
-
-- **"Add to Dictionary" now persists to `dictionary.txt`.** The added word was applied for the current
-  session but never written to disk, so it reappeared as misspelled after a restart. The buffer added the
-  word to the shared dictionary set before calling the persist callback, and `addUserWord` only writes the
-  file when the word is newly added to that (same) set — so the write was always skipped. The word is now
-  persisted on the first add.
-- **Structure tool window no longer jumps the editor back while navigating.** A language server that
-  re-announces readiness repeatedly (jdtls re-sends `language/status` "ServiceReady" on workspace events)
-  re-pushed the same document symbols, rebuilding the outline tree, resetting the selection to the first
-  row, and snapping the editor back to the top of the file as you clicked around. Re-pushing an unchanged
-  outline is now a no-op, and a genuine rebuild preserves the symbol you had selected.
-- **Java LSP (jdtls) now initializes reliably; completion works.** jdtls was launched without a `-data`
-  workspace, so every project shared one default Eclipse workspace and deadlocked on its `.lock` (contending
-  with a leaked previous run or another editor) — the server never finished `initialize`, leaving the
-  status-bar loading bar spinning forever and autocomplete dead. Each project root now gets its own jdtls
-  workspace under `<config>/jdtls-workspaces/<hash>` (its index persists across sessions, so later opens are
-  faster). A user-supplied `-data` in the configured command is respected. A language server's **stderr** is
-  also now captured into the Debug Log (it was discarded), so when a server fails to start the reason —
-  missing JDK, a locked workspace, a bad command — is finally visible.
-
-- **Opening a large source file no longer freezes the UI.** Computing fold regions on open recreated a gutter
-  graphic for *every* fold header in the file (thousands, for a big file like a 12k-line Java source) on the
-  JavaFX thread, blocking it for several seconds. The fold recompute now only refreshes the chevrons of
-  currently-visible rows — offscreen rows get the correct fold state when the gutter factory builds them on
-  scroll — cutting the per-open cost from seconds to a few milliseconds.
-
-- **Breadcrumb dropdown uses the same file icons as the Project tool window.** The folder dropdown on a
-  breadcrumb crumb now shows per-type file glyphs (and the boxed folder icon) via `FileIcons`, instead of a
-  single generic file icon — matching the Project tree.
-
-- **The Git Log tool window refreshes when opened.** Opening it — via the stripe icon (which toggles the
-  window directly) or a command — now reloads the commit history, so it no longer shows stale commits from a
-  previous open. (Opening via the stripe button previously bypassed the load entirely.)
-
-- **Tool windows that act on the active file now hide on non-buffer tabs.** The **Git Commit** and **Git Log**
-  stripe buttons — and **plugin** tool windows (e.g. GnuPG, the Regex tester) — only appear when there's an
-  open editor buffer to act on; on the Welcome tab (or any non-buffer tab) they're hidden, matching how the
-  Structure/File-Info/TODO windows already behave. Commit/Log additionally stay gated on being inside a repo.
-
-- **Find/Replace bar buttons disable when there's no search term.** Prev, Next, Replace, Replace-All, and
-  the case/regex/whole-word toggles are now disabled while the Find field is empty — nothing they do is
-  meaningful without a query (an empty *replacement* still works as "delete matches").
-
-- **Buffer-only tool windows are hidden when there's no buffer to act on.** The Structure, File Information,
-  TODO, Markdown Lint, and External Tools stripe buttons no longer show on the Welcome page (or other
-  non-buffer tabs) — they now gate their availability on an actionable active editor buffer (Markdown Lint
-  additionally needs a Markdown buffer; External Tools needs a buffer and non-Simple mode), mirroring how
-  Run / Debug / HTTP / Commit already gate their buttons.
-
-- **Settings → Editor → "Enable log viewer" checkbox now reflects the actual setting.** It was omitted from
-  the Settings window's `load()` (the value was only synced in `syncViewChecks()`, which `load()` doesn't
-  call), so the box always rendered unchecked even though the log viewer was on. The feature itself was
-  unaffected — only the checkbox display.
-
-### Changed
-
-- **More features on out of the box (new installs only).** The default `settings.toml` now enables:
-  **Breadcrumbs**, **Personal Notes**, **Git integration** (self-gating — inert until `git` is on PATH, so
-  effectively "on when Git is installed"), **HTML Live Preview**, the **HTTP Client**, **Render LaTeX math**
-  in Markdown, and **Mermaid diagrams** (self-gating — inert until the `mmdc` CLI is found). The server-log
-  viewer was already on. The built-in **TODO/FIXME highlight patterns are now case-sensitive** (the
-  uppercase/lowercase check is on), so only `TODO`/`FIXME` match, not `todo`/`fixme`. These are *defaults* for
-  a fresh config — existing `settings.toml` files keep their saved values; flip any of these in *Settings* or
-  via the palette toggles.
-
-### Added
-
 - **HTTP tool window auto-shows for `.http` files.** Opening (or switching to) a `.http` buffer now
   automatically opens the HTTP Client tool window, which **defaults to the right** side. Switching to
   another tab auto-hides it (restoring any right-side window it displaced) and returning re-opens it; a
@@ -11274,114 +11462,6 @@ instead.)
   tree; **single-click / keyboard selection opens the match** (a focus-keeping preview, like the Structure
   tool window — double-click / Enter still dives into the editor); and the window now **defaults to the
   right** side (existing sessions keep their saved position).
-
-### Changed
-
-- **Refactor: extract the `git push` argv decision into a pure, tested `GitService.pushArgs` (developer-facing).**
-  The first-push-of-an-upstream-less-branch logic (`--set-upstream origin <branch>` so the first push "just
-  works", else a plain `push`) — including the guard that a blank/detached branch never emits
-  `--set-upstream origin <empty>` — moved out of `MainController.gitPush` into a pure static helper with a
-  focused `GitPushArgsTest` (6 cases). No behavior change; the decision is now unit-covered instead of buried
-  in the UI layer.
-
-- **Refactor: centralize the "no repo" guard on the `GitCoordinator` (developer-facing).** Every repo-only
-  Git operation opened with the same four-line guard — `if (repoRoot == null) { echo "not a repo" / "git not
-  installed"; return; }` — duplicated 11×. It's now one engine method, `git.reportIfNoRepo()`, and each call
-  site is a one-liner (`if (git.reportIfNoRepo()) return;`). The status string lives in exactly one place.
-  Pure consolidation, no behavior change; full suite green.
-
-- **Refactor: move inline Git blame into the `GitCoordinator` (developer-facing).** The blame annotation
-  engine — eligibility (`isBlameEnabled`), the off-thread per-file fetch (`applyBlame`/`refreshBlame`), and
-  the blame→`BlameInfo` mapping (author/date label, full-commit tooltip, age-heatmap tint) — moves out of
-  `MainController` into `GitCoordinator`, where `applyState` now drives it directly. That **removes the
-  `WindowOps.refreshBlame` Host hop** added when the engine was extracted: the coordinator owns blame end to
-  end and needs nothing new from the window (only the shared `CoordinatorHost`). The click→commit-diff
-  actions (`blameShowCommit`/`onGutterBlameClick`) stay in `MainController` since they open a diff tab. No
-  behavior change; full suite green.
-
-- **Refactor: extract the stateful Git core into a `GitCoordinator` (developer-facing).** Under the net added
-  in the previous step, the engine of the Git integration moves out of `MainController` into
-  `ui/GitCoordinator`: the `GitService` CLI facade, the repo state (root / branch / upstream), and the
-  state machine that keeps the status bar, the Commit / Log tool windows, and the active buffer's gutter
-  change bars in sync (`isEnabled`/`isAvailable`/`ifEnabled`/`applySupport`/`refresh`/`applyState`/
-  `afterMutation`/`contextPath`). It reaches the window through the shared `CoordinatorHost` plus a small
-  git-specific `WindowOps` (status-bar/tool-window/blame/diff surfaces). The user-facing Git **operations**
-  (commit, branch, log, blame, stash, clone, diff) stay in `MainController` and reach the engine via
-  `git.service()` / `git.repoRoot()`. No behavior change; `GitStateFxTest` re-pointed at the new home with
-  the same assertions, full suite green.
-
-- **Refactor: a characterization-test net + pure helpers for the Git integration (developer-facing).** First
-  step of the Git extraction (the largest, least-tested subsystem): before moving any stateful code, this
-  adds a safety net — `GitStateFxTest` drives the `applyGitState`/`applyGitSupport` core directly with a
-  synthetic `RepoState` and pins the repo-root/branch/upstream state machine, and a new pure, unit-tested
-  `git/GitChangeBars` (the diff→CSS-class mapping + the background-buffer re-diff predicate) dedups the gutter
-  change-bar logic at its two call sites. No behavior change; sets up the subsequent `GitCoordinator`
-  extraction under the net.
-
-- **Refactor: extract the HTTP Client into an `HttpClientCoordinator` (developer-facing).** The fourth (and
-  most window-entangled) feature coordinator peeled off `MainController`: the request runner, the response
-  tool-window panel, response-tab opening, clipboard curl import/export, and `.env` scanning move to
-  `ui/HttpClientCoordinator`. It takes the shared `CoordinatorHost` **plus** a small `WindowOps` extension
-  (open a tab / open-toggle the tool window / re-gate the run affordance / persist the selected environment);
-  `MainController` keeps only the `ToolWindow` registration + availability plumbing. Thanks to the shared
-  host, this dropped ~210 lines from `MainController` (vs ~60 for the earlier ones). Behavior is identical;
-  covered by a new `HttpClientCoordinatorFxTest` against fake host + ops.
-
-- **Refactor: a shared `CoordinatorHost` for the feature coordinators (developer-facing).** The three feature
-  coordinators (log viewer / HTML preview / Mermaid) had a bespoke ~60-line anonymous `Host` adapter each in
-  `MainController`. They now share one `ui/CoordinatorHost` interface and a single `MainController.Services`
-  adapter, dropping the per-feature boilerplate — and future coordinators reuse it for free (zero adapter
-  code). Test fakes extend a no-op `CoordinatorHostStub` and override only what they exercise. No behavior
-  change; full suite green.
-
-- **Refactor: extract Mermaid into a `MermaidCoordinator` (developer-facing).** The third feature coordinator
-  peeled off `MainController`: the `mmdc`/`maid` service, the detected-tool availability, and the
-  apply/gating/export logic now live in `ui/MermaidCoordinator`, behind a narrow `Host` interface. The few
-  mermaid reads other features need are exposed as coordinator methods (`mmdcCommandOrNull()` for PDF/print,
-  `effectiveAutocomplete()` for the completion config, `exportDiagram()` for PDF export). Behavior is
-  identical; covered by a new `MermaidCoordinatorFxTest` against a fake `Host`. Continues de-godding
-  `MainController` one feature at a time.
-
-- **Refactor: extract HTML Live Preview into an `HtmlPreviewCoordinator` (developer-facing).** The second
-  feature coordinator peeled off `MainController` (after `LogViewerCoordinator`): the loopback HTTP server,
-  the detected-browser list, and the browser picker now live in `ui/HtmlPreviewCoordinator`, reaching the
-  window only through a narrow `Host` interface (an anonymous adapter in `MainController` + one-line
-  delegations at the call sites). Behavior is identical; covered by a new `HtmlPreviewCoordinatorFxTest`
-  against a fake `Host`. Continues de-godding `MainController` one feature at a time.
-
-- **Refactor: extract the log viewer into a `LogViewerCoordinator` (developer-facing).** The first
-  *feature coordinator* split out of the ~13k-line `MainController`: the server-log-viewer state (tail
-  service + per-buffer follow/offset/control maps) and all its logic now live in `ui/LogViewerCoordinator`,
-  which reaches back into the window only through a narrow `Host` interface. `MainController` supplies an
-  anonymous `Host` adapter and keeps one-line delegations at the call sites (open/save-as/rename, tab close,
-  settings apply, huge-file load, command registration), dropping ~240 lines. Behavior is identical; the
-  payoff is a smaller controller and a unit-testable seam — the new `LogViewerCoordinatorFxTest` exercises
-  the coordinator against a hand-written fake `Host`. This establishes the template for de-godding
-  `MainController` one feature at a time.
-
-- **Upgraded to JavaFX 26 + enabled the macOS Metal rendering pipeline.** On Apple silicon (e.g. M-series), the
-  deprecated es2/OpenGL backend JavaFX 25 used could render parts of the UI as blank/garbled rectangles in the
-  packaged app (the file breadcrumb and tool-window stripe icons). JavaFX 26 adds the Metal pipeline, now
-  selected first on macOS (`-Dprism.order=mtl,es2,sw`; es2/sw fallback). Windows keeps Direct3D, Linux keeps
-  es2 — the pipeline order is set per-OS. The JDK stays 25 (JavaFX 26 runs on JDK 24+).
-
-- **Performance: config writes happen off the JavaFX thread (developer-facing).** The frequent, coalesced
-  in-session save (`requestSave` — fired by settings toggles, view changes, tab/fold changes) now serializes
-  a consistent snapshot on the FX thread and writes it on a dedicated `config-writer` daemon thread, instead
-  of blocking the UI on `settings.toml` + `workspace-state.json` disk I/O. A new `config/ConfigWriter`
-  coalesces writes per file (latest wins) and keeps them ordered through one thread, with an atomic temp-file
-  + move so a crash never leaves a half-written config. Durable saves (quit, one-off actions, export) and a
-  JVM-shutdown flush block until written, and all settings/session writes funnel through the one writer
-  queue, so an async write can never land after and clobber a durable one. No behavior change; covered by a
-  new unit test (`ConfigWriterTest`).
-- **Performance: lazy-attach feature overlays (developer-facing).** Each editor buffer no longer eagerly
-  builds the five overlays that are inert for most files — find-match highlight, log-level, Mermaid-lint,
-  LSP-diagnostic, and AceJump. They're constructed (Canvas + scroll/edit subscriptions) only on first
-  activation and inserted in their original z-order, so a buffer with LSP off, no diagram, not a log, and
-  never searched/ace-jumped allocates none of them. Cuts per-buffer memory and per-pulse listener fan-out
-  when many tabs are open; no behavior change. Covered by a new headless-FX test (`LazyOverlayFxTest`).
-
-### Added
 
 - **Server log viewer.** Opening a `.log` file now gets log-aware treatment: **level highlighting** (ERROR/
   WARN/INFO/DEBUG/TRACE coloured inline and as a left-edge bar that works even on huge files where syntax
@@ -11555,157 +11635,6 @@ instead.)
   Negligible cost on the typing hot path — the icon/label/ordering work is cheap and per-render, and the
   documentation is resolved off the FX thread and debounced per selection.
 
-### Performance
-
-- **Smoother scrolling in files with many lines.** The line-number gutter set each row's number via a
-  per-row reactive binding that subscribed/unsubscribed as cells recycled during a scroll — measurable churn
-  on the hot path. The number is now set directly from the live line count, and re-pads only when the count
-  crosses a power of 10 (rare). A layout-forced scroll sweep over a ~375-line Markdown file was ~12–21%
-  faster in the gutter (measured A/B in one process). Line numbers, folding, and all gutter markers are
-  unchanged.
-
-- **Cheaper spell-check overlay redraw while scrolling prose.** The red-squiggle overlay re-runs each scroll
-  pulse over the visible words. It now checks the (cached) spelling verdict *before* the per-word syntax-style
-  lookup, so that lookup runs only for the few misspelled words instead of every visible word, and it hoists
-  the per-word offset query out of the loop. Redrawing a ~375-line Markdown file was ~16–22% faster (measured
-  A/B in one process); squiggle placement is unchanged.
-
-### Changed
-
-- **Git blame is now an IntelliJ-style "Annotate" gutter column instead of a single inline annotation.**
-  Turning on blame (`M-g a`, or Settings → Git) now shows a per-line column on the left of the editor —
-  author and commit date on **every** line, with an age-heatmap background (recent commits tinted warmer,
-  older ones faded), a hover tooltip with the full commit (author / date / relative time / message / hash),
-  and click to open that line's commit. This replaces the previous GitLens-style annotation that only
-  appeared after the current caret line. Same toggle and setting; only the active file is annotated, and the
-  blame still runs once per file off the UI thread (no per-keystroke cost).
-
-- **Tool windows and status segments now follow the active file's capabilities.** The **Problems** stripe
-  button shows only when the active file is served by a language server; the **Debug** stripe button only for
-  a debuggable file (Java/Python/JS) or while a debug session is live; and the **Git Log** stripe button plus
-  the status-bar **branch** segment only when the active file is inside a git repo. Each is hidden (not greyed)
-  when it doesn't apply — so a Welcome/Markdown/plain-text tab no longer shows Problems, Debug, the branch
-  segment, or a git context inherited from the working directory. The `LSP:` status segment already cleared
-  on non-LSP files.
-
-- **Find and Find in Files pre-fill from the selected text.** Select a word or phrase on a single line, then
-  open the in-editor Find/Replace bar (the toolbar icon, `C-s`/`C-r`, or Replace) or Find in Files (its
-  toolbar icon or `C-S-f`) and the selection becomes the search term — the field is also selected so you can
-  type over it. A multi-line selection is left alone (it isn't a sensible find term) and whatever query was
-  already there is kept. Matches the VS Code / browser convention.
-
-- **Markdown split view now keeps the editor and preview scrolled together.** In SPLIT mode (editor +
-  rendered preview side by side), scrolling one pane scrolls the other by the same fraction of its content,
-  so the two stay roughly aligned even though their heights differ. The pane the mouse is over drives the
-  other, which keeps the sync one-directional at any moment so it can't oscillate; entering SPLIT aligns the
-  preview to the editor's current position. Negligible cost — it rides existing scroll-position listeners with
-  no new per-keystroke or per-pulse work.
-
-- **The Project tool window shows the current file's folder when no project is open.** In the global
-  ("No Project") window it no longer just shows an empty "No project open" placeholder — it roots the tree at
-  the active file's parent directory and titles the tool window **"Current Folder"**, so it doubles as a file
-  explorer that follows you as you switch tabs. With a project open it's unchanged (the tree stays the project
-  root, titled "Project"); a mounted remote folder is also left as-is. An unsaved/Welcome tab (no folder)
-  falls back to the placeholder.
-
-- **File-type icons now line up in the Project tree (and other file lists).** Each glyph's node bounds equal
-  its ink, which varies per file type, so the icon column had a ragged width and file names jumped left/right
-  (and the taller document glyphs sat high). Every file/folder glyph is now centered in a fixed-size box, so
-  names start at the same x and icons are vertically centered. Applies wherever file icons appear — the tree,
-  tabs, the Open-Files / Recent pickers, and the Switcher.
-
-- **Distinct icons for the tab right-click close menu.** The six close commands (Close, Close Other Tabs,
-  Close All Tabs, Close Unmodified Tabs, Close Tabs to the Left/Right) all shared the plain ✕. They now each
-  carry a variant of the ✕ so they're distinguishable at a glance: one small square (other), three squares
-  (all), a check (unmodified/saved), and a left/right triangle (direction). "Close" keeps the plain ✕.
-
-- **The Find in Files toolbar icon now toggles the panel** — one click opens it (focusing the query field),
-  another click closes it (matching `C-s`'s in-file find and the `M-6` tool-window toggle). `C-S-f` toggles
-  too, since it shares the command.
-
-### Fixed
-
-- **Zen mode is now per-window and restores chrome reliably.** Zen mode used to hide the toolbar, status
-  bar, tab bar, breadcrumb, and editor view options by flipping the *shared, app-wide* view preferences and
-  snapshotting/restoring them — so entering Zen in one window changed every window (and the saved settings),
-  and the restore could desync. Zen is now a **per-window effective overlay** (like Simple UI mode): it lives
-  in the window's own session state and is layered on top of the saved prefs without mutating them, so one
-  window can be in Zen while another isn't, leaving Zen always restores exactly what was showing, and your
-  saved view preferences are never touched.
-
-- **Git menu items are hidden/disabled when there's no VCS.** The tab right-click menu no longer shows
-  **Compare with HEAD** and **Git: Show File History** when the file isn't under Git (feature off, or not
-  inside a repo) — only "Compare With…" (which isn't a Git action) remains. The Project tool window's **Git**
-  submenu is greyed out in the same case. Both now key off "Git available" (enabled *and* inside a repo)
-  rather than just the feature toggle.
-
-- **HTTP Client: you can now right-click the response body to copy it.** The response body is a read-only
-  RichTextFX editor, which (unlike the headers' text area) has no built-in context menu, so right-clicking the
-  JSON/XML/etc. output did nothing. It now has a **Copy** / **Select All** menu — Copy puts the selection, or
-  the whole body when nothing is selected, on the clipboard.
-
-- **Loading a large file (5–50 MB) with a language server enabled no longer freezes the editor.** Large-file
-  mode already turns off syntax highlighting and the minimap, but LSP stayed on — so opening, say, a big
-  `.json`/`.xml`/`.log` with its server enabled sent the whole document to the server and then mapped and
-  rendered the flood of diagnostics it returned (the Problems tree, minimap, and scrollbar stripes) on the UI
-  thread, locking up the editor. LSP is now disabled in large-file mode too (like highlighting, the minimap,
-  Git change bars, and inline blame), so the file just opens as fast, plain text. Autocomplete is likewise
-  disabled in large-file mode — it allocated the whole document on every keystroke to find the word prefix
-  (the same per-cursor-move cost brace matching already avoids), which made typing in a large file stutter.
-
-- **Diff viewer: next/previous-change no longer makes the scroll jump erratically.** The two side-by-side
-  panes were kept in sync by copying the absolute pixel scroll position from one to the other, in both
-  directions. That value is a RichTextFX *estimate* refined as lines are measured, so each pane settled to a
-  slightly different value and pushed the other back — a feedback loop, worst when navigation jumped into an
-  unmeasured region. Now only the *focused* (actively scrolled) pane drives the other, so interactive sync is
-  strictly one-directional and cannot oscillate. Next/previous-change navigation bypasses the sync entirely:
-  it pins *both* panes to the same top row explicitly (the rows are 1:1 aligned, so this can't desync) and
-  puts the selection caret at the block's top so caret-follow agrees with the scroll.
-
-- **Spell check no longer flags commands, URLs, paths, and identifiers.** Tokens like `./mvnw`,
-  `javafx:run`, `https://github.com/…`, `path/to/file.txt`, `snake_case`, and `a@b.com` were getting red
-  squiggles — in Markdown prose, in fenced ` ``` ` code blocks, and in comments/strings of Java/Python/Shell
-  and other code files. The checker now recognizes a flagged word that's part of a URL, path, e-mail, or
-  dotted/underscored/colon-joined token and leaves it alone (ordinary words, including hyphenated ones like
-  `well-known`, are still checked). In Markdown it additionally skips whole fenced code blocks and link
-  targets. The check runs only for the few already-flagged words, so it doesn't affect scroll performance.
-
-- **Language servers and debug adapters no longer pile up as orphaned processes.** Previously the external
-  servers Editora spawns (e.g. `jdtls`) were only killed when a window was closed through the app — so
-  force-quitting, a crash, an OS quit, or a `kill` left them running, where they accumulate and hold their
-  workspace locks. Now a central `ProcessRegistry` reaps them three ways: a **JVM shutdown hook** force-kills
-  every spawned server tree on exit (covers normal quit and SIGTERM/`kill`); the per-server **teardown
-  escalates** (SIGTERM the whole tree, then force-kill anything that ignores it after a grace period); and a
-  small on-disk **ledger** lets a fresh launch **reap any server leaked by a previous run that died hard**
-  (SIGKILL / power loss), matched by PID + start time + executable so it can never kill an unrelated process.
-
-- **Silenced a spurious LSP "Internal error" log.** Language servers that support pull diagnostics
-  (the HTML/CSS/JSON servers) send a `workspace/diagnostic/refresh` request; the client didn't implement it,
-  so lsp4j logged a SEVERE `UnsupportedOperationException` each time (visible in the debug log / dev console).
-  The client now acknowledges the request. Diagnostics were never actually affected — they already refresh on
-  each edit, on save, and when a server reports ready.
-
-- **Find/Replace highlights now stay in sync when you edit the buffer.** With the find bar open, editing the
-  text left the match highlights painted at their old offsets (no longer aligned with the searched text).
-  The bar now re-runs the search on each (debounced) edit and re-highlights at the new positions — without
-  moving the caret or selection, so it doesn't interfere with typing.
-
-- **Right-click Cut/Copy/Paste now act on a column (box) selection.** The editor context menu's
-  Cut/Copy/Paste called the native single-caret operations, so on an Alt+drag column/box selection they only
-  touched the primary row — even though the `edit.cut`/`copy`/`paste` *commands* already worked (they route
-  through the multi-caret-aware path). The menu items now use that same path (falling back to the native op
-  when there's a single caret), Cut/Copy are enabled on a box selection even when the primary selection is
-  empty, and the mutating Cut/Paste are gated to editable buffers.
-
-- **Every window that was open at quit now reopens.** With multiple project windows open, a Cmd-Q / OS quit
-  fired each window's close handler in turn, and the eager "mark closed" drained the saved open-window set
-  down to just the last window — so only one reopened on the next launch. Closing a window is now reconciled
-  on a short debounce that can't elapse during a quit's close-handler burst: a genuine single close persists
-  the reduced set (that window is forgotten), but a quit exits the JVM before the timer fires, leaving the
-  full pre-quit set on disk so every window reopens. (`app.quit` already worked — it fires no close handlers.)
-
-### Added
-
 - **Open a command's online docs from the palette (C-h).** In the command palette, press **C-h** to open the
   highlighted command's documentation page (`https://editora-project.dev/docs/commands/<id>`) in your system
   default browser. The palette footer now lists `C-h docs` alongside the other shortcuts.
@@ -11796,19 +11725,6 @@ instead.)
   indentation and an adaptive fill prefix — line comments (`//`, `#`, `;`, …), Markdown blockquotes (`>`),
   and Javadoc (`*`) — so code comments and quoted text wrap correctly; a word longer than the column is
   never broken. (Auto Fill mode and justification are deferred.)
-
-### Fixed
-
-- **LSP completion now triggers on each server's own trigger characters** (e.g. `<` for HTML, `:` / space
-  for CSS), not just on `.` or a 2-character word prefix. This makes HTML/CSS/JSON/YAML autocomplete behave
-  like VS Code — typing `<` in an HTML file now pops up tag completions. The trigger set is read from the
-  server's advertised capabilities, so every language server gets its correct triggers.
-- **LSP pull diagnostics** (`textDocument/diagnostic`, LSP 3.17) are now supported. Servers that deliver
-  diagnostics on request rather than by pushing `publishDiagnostics` — vscode-html/css/json and others — now
-  surface their warnings/errors as squiggles and in the Problems panel. Push-only servers (jdtls, Pyright,
-  tsserver) are unaffected.
-
-### Added
 
 - **HTML Live Preview.** A floating browser-globe button now appears at the top-right of any `.html`/`.htm`/
   `.xhtml` editor (mirroring the Markdown preview toggle). Click it to open the current file in a **detected
@@ -12056,42 +11972,6 @@ instead.)
   clipboard URL when present; Ctrl/Cmd-click or `markdown.openLink` opens the link under the caret),
   and **GFM table reflow** (`markdown.reflowTable` pads/aligns a table's pipes honoring `:--`/`:-:`/`--:`).
 
-### Changed
-
-- **Keyboard popups are now in-scene overlays** — the command palette, the "Jump to…" pickers (recent
-  files, structure, open files, tool windows, bookmarks, notes, snippets, projects, LSP references,
-  spell/app/editor-theme), the file/folder finder, the IntelliJ-style Switcher, the Git **branch
-  dropdown**, and the status **message-log** popup no longer use separate `Popup` windows. They render as
-  a card inside the main window over a dim, click-to-dismiss backdrop (a shared `OverlayHost`). This
-  fixes a Windows bug where a `Popup` didn't reliably take OS keyboard focus — opening the palette (or a
-  picker) could leave the keyboard dead until restart. Anchored popups (branch dropdown, message log)
-  still "drop" from their status-bar segment; clicking the segment again closes them cleanly.
-- **Input dialogs are now in-scene too** — the text-input dialogs (Personal Note editor, file/bookmark
-  **rename**, bookmark **note**, Git **clone**, **new branch**, **go to line**) are no longer separate
-  native windows; they show as a form card in the main window over the same backdrop (a new shared
-  `OverlayInput` helper). `Esc`/`C-g` cancel; `Enter` accepts (`Ctrl/Cmd+Enter` for the multi-line note
-  editor). This continues the Windows keyboard-focus fix to every text prompt. (Simple yes/no
-  confirmations and choice pickers — overwrite, delete, set language/tab-size/line-endings — stay native.)
-- **Status bar polish** — the Git segment now **toggles** its branch dropdown (click to open, click
-  again to close). The status **message-log popup** is 20% wider and gains a **Copy** button (copies the
-  selected messages, or all of them when none are selected); its per-row right-click menu was removed in
-  favor of the more discoverable button (⌘/Ctrl+C still works too).
-- **Command palette polish** — removed the separator line above the footer legend, and the legend now
-  lists **`C-g`** alongside **esc** as a way to close the palette.
-
-- **`C-a` (beginning of line) is now "smart home"** — the first press moves to the beginning of the
-  line's *text* (the first non-whitespace character); a second press toggles to the true line start
-  (column 0). Shift-extends selection as before. Applies in the editor for every file type.
-
-### Fixed
-
-- **LSP (and DAP) failed to initialize in the packaged native build** — in the modular `jlink` runtime,
-  `lsp4j` is a real module that didn't open its packages to `gson`, so its JSON-RPC `initialize` threw
-  `InaccessibleObjectException` the moment a language server (or debugger) started. The `lsp4j` modules
-  are now built as open modules. Only affected the installers / app image (not `mvn javafx:run`).
-
-### Added
-
 - **LSP support for C/C++, C#, HTML, CSS, Kotlin, Lua, Dockerfile, SQL, Terraform, and TOML** — ten more
   language servers (twenty-one total): **clangd** (one server for both C and C++), **csharp-ls** (C#),
   **vscode-html-language-server**, **vscode-css-language-server**, **kotlin-language-server**,
@@ -12149,97 +12029,6 @@ instead.)
   inserts the `import` line via `completionItem/resolve`. Configure the server command in Settings → LSP
   (auto-detected on PATH; `npm i -g typescript-language-server typescript`). Off by default with the rest
   of LSP.
-
-### Fixed
-
-- **Settings → Mermaid:** the `mmdc`/`maid` detection status is now colored green (found) / red
-  (missing), matching the LSP and Git status labels, instead of plain text.
-
-- **Windows: keyboard froze and the command palette wouldn't open.** Two distinct bugs (found via
-  on-device key-event logging):
-  - **Keyboard freeze on Alt.** A bare `Alt` or an *unbound* `Alt+<key>` was interpreted by Windows as
-    menu/mnemonic activation, putting the window into "menu mode" — which froze all keyboard input
-    app-wide (mouse still worked, restart required) and broke the many `M-` chords. Editora now consumes
-    the bare Alt and any unbound plain-Alt key on Windows/Linux so menu mode never engages. Bound `M-`
-    chords work as before; **AltGr** (Ctrl+Alt) is left alone so international layouts keep composing
-    characters; macOS is unchanged.
-  - **Command palette (`M-x`) never appeared.** It was a `javafx.stage.Popup`, which on Windows doesn't
-    reliably take OS keyboard focus — focus got orphaned and the keyboard went dead. It's now an in-scene
-    overlay (centered card + dim backdrop) that takes focus correctly on every platform.
-
-  (Note: if a *specific* chord like `Alt+X` still does nothing on Windows, check for a global hotkey
-  manager — e.g. XKeymaps — grabbing it before Editora; that's external to the editor.)
-
-- **Diagnostic hover tooltip flickered while the mouse moved over a mark** — the tooltip was re-shown
-  (and re-positioned to the cursor) on every mouse-move event, so hovering a squiggle or a scrollbar
-  diagnostic mark looked janky. It's now shown once and left in place until you move to a different
-  mark/message. Applies to the editor squiggle hover, the Mermaid-lint hover, and the scrollbar
-  diagnostic stripe.
-
-- **LSP error squiggles / Problems never appeared when the file path involved a symlink** — a language
-  server reports diagnostics under the file's *real* (canonical) path (e.g. `/private/tmp/…` for a
-  `/tmp/…` symlink on macOS, or any symlinked project directory), but the open tab was matched by a
-  non-symlink-resolved path, so **every diagnostic was silently dropped**. The match now uses the
-  canonical (symlink-resolved) path on both sides.
-- **jdtls (and other wrapper-script servers) leaked orphaned processes and could hang on restart** — the
-  Homebrew `jdtls` launcher is a wrapper (`jdtls` → python → java); Editora only killed the wrapper on
-  shutdown, orphaning the real server JVM, which kept running and held its Eclipse workspace lock so the
-  next session for that folder couldn't start (stuck on "Starting…", no completion/diagnostics). Editora
-  now tears down the **whole process tree**. *(Orphans left by an earlier version may need a one-time
-  manual kill, e.g. `pkill -f org.eclipse.jdt.ls`.)*
-- **A chatty language server could deadlock during startup** — its stderr stream was never drained, so
-  once the ~64 KB OS pipe buffer filled the server blocked. The server's stderr is now discarded.
-
-- **Language servers installed via a Node version manager (nvm/fnm/asdf) showed "not found" in the
-  packaged app** — a Finder-launched `.app` inherits a stripped `PATH` that omits the version manager's
-  bin dir (e.g. nvm's `~/.nvm/versions/node/<ver>/bin`), so npm-global servers like
-  `typescript-language-server`, `pyright-langserver`, `vscode-json-language-server`,
-  `bash-language-server`, and `yaml-language-server` couldn't be located even though they were installed.
-  `ProcessRunner` now resolves the user's **login-shell `PATH`** once (running `$SHELL -l -i -c` with a
-  timeout) and folds it into the PATH it gives every subprocess, recovering all version-manager and
-  profile-set dirs at a stroke. This also helps Git (a Homebrew `git`) and Mermaid (`mmdc`/`maid`).
-- **LSP loading bar in the status bar never stopped spinning** — it was only cleared by incoming
-  diagnostics or jdtls's vendor-specific status message, so a file with no diagnostics (or any non-jdtls
-  server) left it running indefinitely. It now clears as soon as the universal LSP `initialize`
-  handshake completes.
-
-- **Intermittent black screen / render glitches in the packaged macOS app after opening many files** —
-  JavaFX's GPU texture pool defaults to a 512 MB ceiling; with enough open files (each holding editor +
-  overlay + minimap textures, plus cached preview/diagram images) it filled up and the render thread
-  threw `NullPointerException`s (null `RTTexture` / mask texture), showing as a black window. Reduced
-  retained GPU memory so it no longer scales with the number of open files — background tabs now drop
-  their minimap snapshot (regenerated when shown), and the Markdown image + Mermaid diagram caches are
-  LRU-bounded — and raised the Prism texture caps (`prism.maxvram`, `prism.maxTextureSize`) in the
-  packaged app and dev run as a safety net. (Only reproduced in the jlink/jpackage build, not under
-  `mvn javafx:run`.)
-- **Editor froze (render thread crashed) when opening a Markdown file straight into Preview/Split
-  mode** — the editor's `Canvas` overlays (minimap, whitespace, spell-check, note-highlight, Mermaid
-  lint) were sized directly from the editor pane, which is momentarily zero-width while a Markdown
-  buffer opens into Preview/Split. A buffered draw on a zero/NaN-sized canvas made JavaFX allocate a
-  null GPU texture and the render thread NPE'd in `NGCanvas` — stalling the whole pipeline so the UI
-  looked hung. Canvas dimensions are now clamped to a finite, in-range size (new unit-tested
-  `CanvasGuards`) and overlays skip painting into a collapsed surface.
-- **External tools not found in the installed app** — a GUI-launched app (a macOS `.app` from Finder,
-  a Linux `.desktop`) inherits a stripped `PATH` that omits Homebrew / npm / Node locations, so `mmdc`,
-  `npx`/`maid` (and a Homebrew-installed `git`) showed up as "not found" even when installed. Editora now
-  augments the subprocess `PATH` with the usual install dirs (e.g. `/opt/homebrew/bin`, `/usr/local/bin`)
-  and resolves a bare command name to its absolute path before launching. Setting an absolute path in
-  Settings still works as an override.
-- **App freeze with several Markdown previews open (macOS)** — rendering SVG badges in the Markdown
-  preview pulled in AWT/Java2D, whose native macOS pipeline contended with JavaFX for the AppKit run
-  loop, an intermittent deadlock that grew more likely the more previews were open. AWT/Java2D now runs
-  headless (software rasterization only), eliminating the conflict; SVG badges still render.
-- The **Markdown preview table** columns no longer collapse to one character wide (short headers like
-  "Phase"/"Depends on" stacking letter-by-letter); columns now size proportionally to their content.
-- **Thread leak on tab close** — each open file's two background worker threads (Markdown preview +
-  syntax highlighter) are now shut down when its tab closes, instead of lingering for the rest of the
-  session.
-- The **message log** opened from the status bar now toggles: clicking the status message again closes
-  the popup.
-- The **Welcome page** now shows a scrollbar (vertical or horizontal) when its content doesn't fit the
-  window, and its tab can be dragged to reorder like any other tab.
-
-### Added
 
 - **LSP support (Phase 1: Java)** — language intelligence via the Language Server Protocol, backed by
   **Eclipse JDT LS**. Live **diagnostics** (severity-colored squiggles + hover tooltips + a **Problems**
@@ -12318,21 +12107,6 @@ instead.)
   Toggle it with the floating sun/moon button next to the preview's −/+ zoom controls, or the
   **Markdown: Toggle Preview Light/Dark** command. The choice is remembered; until you first toggle it,
   the preview follows the app theme as before.
-
-### Changed
-
-- **Unsaved-file marker everywhere** — the dot + amber-italic style the tabs use for a file with
-  unsaved changes now also appears in the **Switcher**, the **Open Files** picker, and the **Project**
-  tool window tree, so every list of open files reads consistently. The Project tool window also
-  refreshes when files/folders change outside Editora (on window focus), keeping its expanded folders
-  and selection.
-
-- **Markdown preview readability** — the rendered preview now lays its content out as a centered,
-  width-capped column (GitHub-style) with more generous margins and vertical spacing (line height,
-  space between blocks and list items, heading separation), instead of stretching edge-to-edge across
-  a wide window.
-
-### Added
 
 - **SVG images in the Markdown preview** — the preview now renders SVG images, which JavaFX can't
   decode on its own. This makes **shields.io / GitHub status badges** (served as SVG) show up in the
@@ -12414,31 +12188,6 @@ instead.)
   buttons), context menus, and popups (branch dropdown, command palette, file finder, switcher). The
   chosen language also drives `Locale.setDefault`, so JavaFX's own OK/Cancel buttons match.
 
-### Changed
-
-- **Settings window redesigned** — a scalable left **category sidebar** (Appearance, Editor, Tool
-  Windows, Spell Check, Application, Advanced, plus "coming soon" placeholders for Keymaps/Plugins/Git/AI)
-  replaces the single stacked list, with a **search** box that filters settings + jumps to matches, a
-  **live preview** on Appearance (sample code that recolors/re-fonts as you change theme/font), and a
-  **Reset to Defaults** on the Advanced page. Changes still apply live. Tool-window placement moved to
-  its own page; the new **Tab size** control lives on the Editor page. **About** moved out of Settings
-  (it's on the toolbar + the "About Editora" command); the settings-file link now lives on the Advanced
-  page.
-
-- **Markdown preview now renders closer to GitHub** — task lists (`- [x]`/`- [ ]`) show real checkboxes
-  instead of bullets, inline `code` gets a rounded gray pill (instead of blue text), `#`/`##` headings
-  get an underline rule, and links are no longer permanently underlined. Standalone images now render as
-  block images (with the alt text / title as a tooltip), in addition to inline images; relative image
-  paths resolve against the file's folder, and `http(s)`/`file`/`data:` URLs are supported.
-
-### Fixed
-
-- **In-app file rename now carries bookmarks and personal notes to the new path** — renaming an open
-  file from the tab/right-click menu already moved its folds and recent-files entry; it now also re-keys
-  that file's bookmarks and notes, so they no longer get stranded under the old path.
-
-### Added
-
 - **Emacs transpose commands** — transpose characters (`C-t`), words (`M-t`), and lines (`C-x C-t`),
   also in the command palette ("Edit: Transpose …"). At end of line, `C-t` swaps the two preceding
   characters (typo fix); `C-x C-t` swaps the current line with the one above.
@@ -12492,27 +12241,6 @@ instead.)
   the whole indent in one press instead of one space at a time. On a blank, auto-indented line a single
   Backspace jumps back to the end of the previous line (undoing the Enter); on an indented line that has
   content, it clears the indent. Outside leading whitespace, Backspace behaves normally.
-
-### Changed
-
-- **Bookmarks now live in their own `bookmarks.json`** (in the config directory) instead of inside each
-  session's `workspace-state.json`, so they're all in one easy-to-find file. They remain **scoped per
-  project** — switching projects shows only that project's bookmarks (the global session has its own),
-  and deleting a project deletes its bookmarks. Existing bookmarks are migrated automatically on first
-  run (moved into the right per-project bucket; the old session files are cleaned up). This also fixes
-  the cross-file "Jump to Bookmark" picker (`M-g b`) showing an empty list when a project was active.
-- **Reorder bookmarks in the Bookmarks tool window** — move a bookmark within its file, or a whole file
-  group, with **Alt+Up/Down**, the right-click **Move Up/Down** menu, or **drag-and-drop** (with the
-  same drag visuals as the editor tab strip: a translucent ghost, the dragged row dimmed, and an accent
-  insertion line on the drop target). The order you set is exactly the order the `M-g b` jump picker
-  uses, and it persists (and survives edits to the file).
-
-### Fixed
-
-- The About dialog now shows the **live** config/settings path, so `--dev` (`~/.editora-dev/`) and
-  `--config-dir` are reflected (it previously always showed the default `~/.editora/settings.toml`).
-
-### Added
 
 - **Zen-mode exit button** — a small floating "Z" button appears at the top-right of the window while
   in Zen mode (same look as the Markdown preview controls); click it (tooltip: "Exit Zen mode") to leave
@@ -12601,291 +12329,519 @@ instead.)
   right-click edits the note or deletes. `C-c ]` / `C-c [` cycle through the current file's bookmarks,
   and `M-g b` ("Bookmarks: Jump…") is a fuzzy cross-file picker. Bookmarks persist with the session
   (per project) and track their line as you edit above them.
-- The Project tool window's file tree now colors its icons to match the active theme: folders use the
-  theme accent and files a muted tone. The colors are driven by two looked-up CSS variables
-  (`-project-folder-color`/`-project-file-color`) that default to the GUI theme (AtlantaFX) and are
-  overridden per editor theme, so the tree tracks the chosen code theme. Files open with unsaved
-  changes are marked in the tree like dirty tabs — a "• " prefix and amber italic — updating live as
-  you edit and save.
-- Reorder the tool-window stripe icons: drag an icon up/down within its side, or use the new ▲/▼
-  buttons next to each row in Settings → "Tool window placement". The order persists in the session
-  state (`workspace-state.json`).
+- **The Project tree's icons follow the theme, and unsaved files are marked.** The Project tool window's file tree now
+  colors its icons to match the active theme: folders use the theme accent and files a muted tone. The colors are
+  driven by two looked-up CSS variables (`-project-folder-color`/`-project-file-color`) that default to the GUI theme
+  (AtlantaFX) and are overridden per editor theme, so the tree tracks the chosen code theme. Files open with unsaved
+  changes are marked in the tree like dirty tabs — a "• " prefix and amber italic — updating live as you edit and
+  save.
+- **Tool-window stripe icons can be reordered.** Reorder the tool-window stripe icons: drag an icon up/down within its
+  side, or use the new ▲/▼ buttons next to each row in Settings → "Tool window placement". The order persists in the
+  session state (`workspace-state.json`).
 
-- Projects (VSCode single-folder-workspace style), **off by default** — enable via Settings →
-  "Enable projects" (when off, the Project tool window, the toolbar open-folder icon + project
-  switcher, and the project commands are all hidden). Each project is a root folder plus its own
-  saved session (open files with carets/pins, active file, folds, tool-window layout). Open one via
-  the toolbar's open-folder icon (native dialog) or "Project: Open Folder…" (`C-x C-p`, a keyboard
-  folder picker like `C-x C-f`); "Project: Switch…" (`C-x p`) saves the current session and restores
-  another's; "Project: Close" returns to the global session (with confirmation); "Project: Delete…"
-  (also a trash button in the Project tool window) removes a project from your list — its folder and
-  files on disk are kept, only the project entry and its saved session are removed. The active project
-  is shown in the window title and a project switcher combobox in both the toolbar and the Project
-  tool window (each with a "No Project" entry that returns to the global session without closing any
-  project). The Project tool window shows the project's files as a lazy tree with Emacs-style
-  keyboard navigation (C-n/C-p, C-f/C-b, Enter to open), a filter box that runs a bounded
-  project-wide filename search (like the Structure filter), and a right-click menu to rename or
-  delete files (syncing open tabs). Opening a recent file that belongs to another project switches to
-  that project first (restoring its session/tree) before opening the file. Settings stay global.
-- Keyboard file finder (Emacs `find-file` style) on `C-x C-f`: a path popup with a live directory
-  listing that prefix-autocompletes as you type. `Tab` completes the common prefix, Enter descends
-  into a folder or opens a file (a non-existent path opens a new buffer, written on save),
-  `C-n`/`C-p` move, `Esc` cancels — no mouse needed. Also the `file.find` palette command. The
-  toolbar Open icon (and `file.open`) still uses the native OS dialog.
-- Fold/unfold the single region at the caret: `view.fold` (`C-c C-f`) collapses the innermost
-  region around the caret, `view.unfold` (`C-c C-u`) expands it, and `view.toggleFold` (`C-c C-t`)
-  toggles it — complementing the existing Fold All (`C-c f`) / Unfold All (`C-c u`).
-- Keyboard "Jump to…" pickers — command-palette-style fuzzy popups: recent files (`C-x C-r`),
-  the active file's structure/symbols (`M-g i`), open files/tabs (`C-x b`), and tool windows
-  (`M-g t`). Type to filter, `C-n`/`C-p` or ↑/↓ to navigate, Enter to act (open the file / jump to
-  the symbol / switch tabs / open the tool window), `Esc` to cancel. All are also in the command
+- **Projects: a root folder with its own saved session, off by default.** Projects (VSCode single-folder-workspace
+  style), **off by default** — enable via Settings → "Enable projects" (when off, the Project tool window, the toolbar
+  open-folder icon + project switcher, and the project commands are all hidden). Each project is a root folder plus
+  its own saved session (open files with carets/pins, active file, folds, tool-window layout). Open one via the
+  toolbar's open-folder icon (native dialog) or "Project: Open Folder…" (`C-x C-p`, a keyboard folder picker like
+  `C-x C-f`); "Project: Switch…" (`C-x p`) saves the current session and restores another's; "Project: Close" returns
+  to the global session (with confirmation); "Project: Delete…" (also a trash button in the Project tool window)
+  removes a project from your list — its folder and files on disk are kept, only the project entry and its saved
+  session are removed. The active project is shown in the window title and a project switcher combobox in both the
+  toolbar and the Project tool window (each with a "No Project" entry that returns to the global session without
+  closing any project). The Project tool window shows the project's files as a lazy tree with Emacs-style keyboard
+  navigation (C-n/C-p, C-f/C-b, Enter to open), a filter box that runs a bounded project-wide filename search (like
+  the Structure filter), and a right-click menu to rename or delete files (syncing open tabs). Opening a recent file
+  that belongs to another project switches to that project first (restoring its session/tree) before opening the file.
+  Settings stay global.
+- **A keyboard file finder on `C-x C-f`, like Emacs `find-file`.** Keyboard file finder (Emacs `find-file` style) on
+  `C-x C-f`: a path popup with a live directory listing that prefix-autocompletes as you type. `Tab` completes the
+  common prefix, Enter descends into a folder or opens a file (a non-existent path opens a new buffer, written on
+  save), `C-n`/`C-p` move, `Esc` cancels — no mouse needed. Also the `file.find` palette command. The toolbar Open
+  icon (and `file.open`) still uses the native OS dialog.
+- **Fold, unfold or toggle the single region at the caret.** Fold/unfold the single region at the caret: `view.fold`
+  (`C-c C-f`) collapses the innermost region around the caret, `view.unfold` (`C-c C-u`) expands it, and
+  `view.toggleFold` (`C-c C-t`) toggles it — complementing the existing Fold All (`C-c f`) / Unfold All (`C-c u`).
+- **Keyboard Jump to… pickers for recent files, symbols, tabs and tool windows.** Keyboard "Jump to…" pickers —
+  command-palette-style fuzzy popups: recent files (`C-x C-r`), the active file's structure/symbols (`M-g i`), open
+  files/tabs (`C-x b`), and tool windows (`M-g t`). Type to filter, `C-n`/`C-p` or ↑/↓ to navigate, Enter to act (open
+  the file / jump to the symbol / switch tabs / open the tool window), `Esc` to cancel. All are also in the command
   palette ("Recent Files: Jump", "Structure: Jump", "Open Files: Jump", "Tool Windows: Jump").
-- More Emacs movement keys: `M-m` (back to indentation), `C-l` (recenter the caret line in the
-  viewport), `M-{` / `M-}` (backward/forward paragraph), and `M-a` / `M-e` (backward/forward
-  sentence) — all registered commands, so they also appear in the palette. Note: on macOS the
-  Option dead keys (`Option`+`e`/`i`/`u`/`n`/`` ` ``) are intercepted by the OS for accent
-  composition and never reach the app, so `M-e` (forward sentence) can't be triggered by keyboard
-  there — use the palette command "Go: Forward Sentence" instead.
-- Auto save (VS Code-style), off by default. Choose a mode in Settings: "After delay" saves a file
-  once it's been idle for a configurable number of seconds (default 1), or "On focus change" saves when
-  you switch editor tabs or the window loses focus. Only dirty, file-backed, writable buffers are
-  saved (untitled/read-only ones are skipped); writes happen off the UI thread. Cycle the mode with
-  the `file.toggleAutoSave` palette command or `C-c a`.
-- File breadcrumb bar (IntelliJ-style) along the bottom, above the status bar: shows the active
-  file's path as clickable segments. Click a segment to drop down that folder's contents
-  (sub-folders first, then files); pick a folder to drill in (it becomes the trailing crumb and the
-  dropdown reopens) or a file to open it. Long paths scroll, anchored to the file. Off by default;
-  toggle via the Settings checkbox, the `view.toggleBreadcrumb` palette command, or `C-c p`.
-- Runnable fat jar: `mvn -Pfatjar package` builds `target/Editora-<version>.jar`, launchable
-  with `java -jar` (bundles JavaFX classes + natives for the build host's platform via a
-  non-`Application` `Launcher` main class). The release pipeline builds one per platform and
-  attaches them to the GitHub release alongside the native installers.
-- Zen mode (distraction-free): one toggle hides the editor view options (80-column ruler,
-  current-line highlight, line numbers, minimap, hidden characters), the toolbar, status bar,
-  and tab bar, and all open tool windows — leaving just the editor. While in Zen you can still
-  switch individual items back on (e.g. line numbers or the status bar); toggling Zen off
-  restores your previous configuration exactly. The mode persists across restarts. Via the
-  Settings checkbox, the `view.toggleZen` palette command, or `C-c z`.
-- Toggle the toolbar, the status bar, and the tab bar — via Settings checkboxes
-  ("Show toolbar", "Show status bar", "Show tab bar"), the `view.toggleToolbar`
-  (`C-c t`) / `view.toggleStatusBar` (`C-c s`) / `view.toggleTabBar` (`C-c b`)
-  palette commands, and persisted in settings.
-- Application icon: the Editora logo now appears as the window/dock/taskbar icon, in
-  the About dialog, and as the native installer icon (macOS `.icns`, Windows `.ico`,
+- **More Emacs movement keys: indentation, recenter, paragraph and sentence.** More Emacs movement keys: `M-m` (back
+  to indentation), `C-l` (recenter the caret line in the viewport), `M-{` / `M-}` (backward/forward paragraph), and
+  `M-a` / `M-e` (backward/forward sentence) — all registered commands, so they also appear in the palette. Note: on
+  macOS the Option dead keys (`Option`+`e`/`i`/`u`/`n`/`` ` ``) are intercepted by the OS for accent composition and
+  never reach the app, so `M-e` (forward sentence) can't be triggered by keyboard there — use the palette command "Go:
+  Forward Sentence" instead.
+- **Auto save (VS Code-style), off by default.** Choose a mode in Settings: "After delay" saves a file once it's been
+  idle for a configurable number of seconds (default 1), or "On focus change" saves when you switch editor tabs or the
+  window loses focus. Only dirty, file-backed, writable buffers are saved (untitled/read-only ones are skipped);
+  writes happen off the UI thread. Cycle the mode with the `file.toggleAutoSave` palette command or `C-c a`.
+- **A file breadcrumb bar above the status bar, off by default.** File breadcrumb bar (IntelliJ-style) along the
+  bottom, above the status bar: shows the active file's path as clickable segments. Click a segment to drop down that
+  folder's contents (sub-folders first, then files); pick a folder to drill in (it becomes the trailing crumb and the
+  dropdown reopens) or a file to open it. Long paths scroll, anchored to the file. Off by default; toggle via the
+  Settings checkbox, the `view.toggleBreadcrumb` palette command, or `C-c p`.
+- **A runnable fat jar, built per platform and attached to releases.** Runnable fat jar: `mvn -Pfatjar package` builds
+  `target/Editora-<version>.jar`, launchable with `java -jar` (bundles JavaFX classes + natives for the build host's
+  platform via a non-`Application` `Launcher` main class). The release pipeline builds one per platform and attaches
+  them to the GitHub release alongside the native installers.
+- **Zen mode hides everything but the editor and restores it after.** Zen mode (distraction-free): one toggle hides
+  the editor view options (80-column ruler, current-line highlight, line numbers, minimap, hidden characters), the
+  toolbar, status bar, and tab bar, and all open tool windows — leaving just the editor. While in Zen you can still
+  switch individual items back on (e.g. line numbers or the status bar); toggling Zen off restores your previous
+  configuration exactly. The mode persists across restarts. Via the Settings checkbox, the `view.toggleZen` palette
+  command, or `C-c z`.
+- **The toolbar, status bar and tab bar can each be hidden.** Toggle the toolbar, the status bar, and the tab bar —
+  via Settings checkboxes ("Show toolbar", "Show status bar", "Show tab bar"), the `view.toggleToolbar` (`C-c t`) /
+  `view.toggleStatusBar` (`C-c s`) / `view.toggleTabBar` (`C-c b`) palette commands, and persisted in settings.
+- **The Editora logo is the application icon everywhere.** Application icon: the Editora logo now appears as the
+  window/dock/taskbar icon, in the About dialog, and as the native installer icon (macOS `.icns`, Windows `.ico`,
   Linux `.png`), all generated from `branding/editora-icon.svg`.
-- Emacs-style text selection: `C-SPC` sets the mark, then any caret-movement chord
-  (`C-f`/`C-b`/`C-n`/`C-p`/`M-f`/`M-b`/`C-a`/`C-e`/`M-<`/`M->`/`C-v`/`M-v`) extends
-  the selection from it. `C-x C-x` exchanges point and mark; `C-g` (and a mouse
-  click, cut/copy/paste) clears the mark. The region works with `C-w`/`M-w`/`C-y`.
-- Bundled monospace fonts (no install needed): JetBrains Mono (the new default),
-  Cascadia Code, Fira Code, IBM Plex Mono, and Source Code Pro. They're loaded at
-  startup and listed first in the Settings font picker. (Existing configs keep their
-  saved font; the new default applies to fresh installs.)
-- Editor color themes (syntax tokens + editor surface) chosen in Settings under
-  "Editor theme": Primer Light/Dark, Nord Light/Dark, Cupertino Light/Dark, Dracula
-  (these match the AtlantaFX themes), plus JetBrains-style Islands Light and Islands
-  Dark. Selecting an AtlantaFX app theme switches to the matching editor theme
-  automatically, until you pick an editor theme yourself.
-- Editor tabs can be reordered by dragging them with the mouse. Pinned tabs stay
-  grouped at the front (a drag is clamped to the dragged tab's group).
-- Very large files (50 MB or larger) now open read-only with a capped load — at most
-  the first 50 MB is read (so a multi-GB log can't exhaust memory) and editing/undo are
-  disabled; the status bar notes the truncation.
-- Undo history is now bounded (300 entries per view) instead of unlimited, and is
-  disabled entirely in large/huge-file mode, capping undo memory.
-- Large-file mode: opening a file 5 MB or larger skips syntax highlighting and the
-  minimap (regardless of view settings) to stay responsive, and the status bar
+- **Emacs-style selection with the mark (`C-SPC`).** Emacs-style text selection: `C-SPC` sets the mark, then any
+  caret-movement chord (`C-f`/`C-b`/`C-n`/`C-p`/`M-f`/`M-b`/`C-a`/`C-e`/`M-<`/`M->`/`C-v`/`M-v`) extends the selection
+  from it. `C-x C-x` exchanges point and mark; `C-g` (and a mouse click, cut/copy/paste) clears the mark. The region
+  works with `C-w`/`M-w`/`C-y`.
+- **Five bundled monospace fonts, with JetBrains Mono the new default.** Bundled monospace fonts (no install needed):
+  JetBrains Mono (the new default), Cascadia Code, Fira Code, IBM Plex Mono, and Source Code Pro. They're loaded at
+  startup and listed first in the Settings font picker. (Existing configs keep their saved font; the new default
+  applies to fresh installs.)
+- **Editor color themes, matched to the app theme until you pick one.** Editor color themes (syntax tokens + editor
+  surface) chosen in Settings under "Editor theme": Primer Light/Dark, Nord Light/Dark, Cupertino Light/Dark, Dracula
+  (these match the AtlantaFX themes), plus JetBrains-style Islands Light and Islands Dark. Selecting an AtlantaFX app
+  theme switches to the matching editor theme automatically, until you pick an editor theme yourself.
+- **Editor tabs can be reordered by dragging them with the mouse.** Pinned tabs stay grouped at the front (a drag is
+  clamped to the dragged tab's group).
+- **Files of 50 MB or more open read-only, with at most 50 MB loaded.** Very large files (50 MB or larger) now open
+  read-only with a capped load — at most the first 50 MB is read (so a multi-GB log can't exhaust memory) and
+  editing/undo are disabled; the status bar notes the truncation.
+- **Undo history is bounded to 300 entries per view.** Undo history is now bounded (300 entries per view) instead of
+  unlimited, and is disabled entirely in large/huge-file mode, capping undo memory.
+- **Files of 5 MB or more open without highlighting or the minimap.** Large-file mode: opening a file 5 MB or larger
+  skips syntax highlighting and the minimap (regardless of view settings) to stay responsive, and the status bar
   announces this when it happens.
-- The main window now remembers its size, position, and maximized state across
-  launches (stored in `workspace-state.json`). A saved position that no longer
+- **The main window remembers its size, position and maximized state.** The main window now remembers its size,
+  position, and maximized state across launches (stored in `workspace-state.json`). A saved position that no longer
   lands on a connected screen falls back to the default centered window.
-- Release pipeline: pushing a `vX.Y.Z` tag builds native installers for Linux
-  (x64/arm64), macOS (x64/arm64), and Windows (x64) on per-platform GitHub runners
-  and publishes a GitHub Release via JReleaser (`jreleaser.yml` + `release.yml`).
-  Installers are currently unsigned.
-- Session restore: on launch, reopens the files that were open at last exit (in tab
-  order), reselects the active tab, and restores each file's caret position (scrolled
-  into view). Missing files are skipped; an empty session opens a fresh buffer.
-- Editor split view: toolbar icons (and `view.splitVertical` / `view.splitHorizontal`
-  / `view.unsplit` commands, `C-x 3` / `C-x 2` / `C-x 1`) toggle a second synced view
-  of the current file — side by side or stacked. Edits/highlighting stay in sync;
-  scroll, caret, and minimap are per-pane. The icons reflect the active split state.
-- "Show hidden characters" view option: renders markers for spaces (·), tabs (→),
-  and line ends (¶) on a transparent overlay without altering the document.
-  Toggle via `view.toggleWhitespace` (`C-c w`) or Settings; off by default.
-- The About dialog now shows the build date/time (baked in at build time).
-- Editor tab right-click context menu: Close, Close Other Tabs, Close All Tabs,
-  Close Unmodified Tabs, Close Tabs to the Left/Right, Copy Path, Pin/Unpin Tab,
-  and Rename File…. Pinned tabs are marked with a pin icon, kept grouped at the front, and
-  skipped by the bulk-close actions. Each action is also a palette command
-  (`buffer.closeOthers`, `buffer.closeAll`, `buffer.copyPath`, `buffer.togglePin`,
-  `buffer.rename`, …). Tabs now show a full-path tooltip on hover.
-- Status bar segments: live cursor position/selection, language, indentation
-  (tab size), line endings, file size, and encoding, shown right of the message area.
-  Segments are clickable and dispatch commands — `nav.goToLine` (`M-g g`),
-  `buffer.setLanguage` (override the syntax grammar), `buffer.setTabSize`, and
-  `buffer.convertLineEndings` (LF/CRLF). Tab size now affects the minimap.
-- Syntax highlighting via bundled TextMate grammars (using tm4e) for 21
-  languages: Java, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
-  Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, and SQL.
-  Stateful tokenization carries grammar state across lines so multi-line
-  constructs (block comments, heredocs, fenced code) highlight correctly.
-- Code folding now covers more languages (C, C++, Rust, Go, Kotlin, Groovy, C#,
+- **Release pipeline: a version tag builds and publishes installers for every platform.** Release pipeline: pushing a
+  `vX.Y.Z` tag builds native installers for Linux (x64/arm64), macOS (x64/arm64), and Windows (x64) on per-platform
+  GitHub runners and publishes a GitHub Release via JReleaser (`jreleaser.yml` + `release.yml`). Installers are
+  currently unsigned.
+- **Session restore reopens last session's files, active tab and carets.** Session restore: on launch, reopens the
+  files that were open at last exit (in tab order), reselects the active tab, and restores each file's caret position
+  (scrolled into view). Missing files are skipped; an empty session opens a fresh buffer.
+- **Split view: a second synced view of the file, side by side or stacked.** Editor split view: toolbar icons (and
+  `view.splitVertical` / `view.splitHorizontal` / `view.unsplit` commands, `C-x 3` / `C-x 2` / `C-x 1`) toggle a
+  second synced view of the current file — side by side or stacked. Edits/highlighting stay in sync; scroll, caret,
+  and minimap are per-pane. The icons reflect the active split state.
+- **Show hidden characters marks spaces, tabs and line ends.** "Show hidden characters" view option: renders markers
+  for spaces (·), tabs (→), and line ends (¶) on a transparent overlay without altering the document. Toggle via
+  `view.toggleWhitespace` (`C-c w`) or Settings; off by default.
+- **The About dialog now shows the build date/time (baked in at build time).**
+- **A right-click menu on editor tabs, with pinned tabs.** Editor tab right-click context menu: Close, Close Other
+  Tabs, Close All Tabs, Close Unmodified Tabs, Close Tabs to the Left/Right, Copy Path, Pin/Unpin Tab, and Rename
+  File…. Pinned tabs are marked with a pin icon, kept grouped at the front, and skipped by the bulk-close actions.
+  Each action is also a palette command (`buffer.closeOthers`, `buffer.closeAll`, `buffer.copyPath`,
+  `buffer.togglePin`, `buffer.rename`, …). Tabs now show a full-path tooltip on hover.
+- **Clickable status bar segments for position, language, indentation and more.** Status bar segments: live cursor
+  position/selection, language, indentation (tab size), line endings, file size, and encoding, shown right of the
+  message area. Segments are clickable and dispatch commands — `nav.goToLine` (`M-g g`), `buffer.setLanguage`
+  (override the syntax grammar), `buffer.setTabSize`, and `buffer.convertLineEndings` (LF/CRLF). Tab size now affects
+  the minimap.
+- **Syntax highlighting for 21 languages through bundled TextMate grammars.** Syntax highlighting via bundled TextMate
+  grammars (using tm4e) for 21 languages: Java, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin, Ruby, C,
+  C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, and SQL. Stateful tokenization carries grammar state across
+  lines so multi-line constructs (block comments, heredocs, fenced code) highlight correctly.
+- **Code folding in more languages.** Code folding now covers more languages (C, C++, Rust, Go, Kotlin, Groovy, C#,
   CSS) in addition to Java, JSON, XML/HTML, and Markdown.
-- `NOTICE` file attributing the bundled TextMate grammars and third-party
-  libraries.
-- Structure tool window: a collapsible tree of the active file's foldable
-  regions with a search filter and Emacs-style keyboard navigation. Selecting
-  an entry navigates the editor and anchors the target line at the top of the
-  viewport. Bound to `M-7`.
-- `C-x o` (Window: Other) to cycle keyboard focus between the editor and open
-  tool windows.
-- Code/text folding with `view.foldAll` (`C-c f`) and `view.unfoldAll`
-  (`C-c u`); fold state persists across sessions.
-- Editor view options for line numbers and a minimap.
-- Theme switching and a recent-files list.
-- IntelliJ-style left/right/bottom tool windows, a buffer Switcher, and a File
-  Information panel.
-- Toolbar icons, a settings window, and an expanded Emacs keymap.
-- Command palette (`M-x`) with fuzzy matching, driven by the command registry.
-- GitHub Actions CI workflow with a status badge, plus a Maven wrapper.
-- README, MIT license, and `CLAUDE.md` project guide.
+- **`NOTICE` file attributing the bundled TextMate grammars and third-party libraries.**
+- **Structure tool window: a filterable tree of the file's regions.** Structure tool window: a collapsible tree of the
+  active file's foldable regions with a search filter and Emacs-style keyboard navigation. Selecting an entry
+  navigates the editor and anchors the target line at the top of the viewport. Bound to `M-7`.
+- **`C-x o` (Window: Other) to cycle keyboard focus between the editor and open tool windows.**
+- **Code/text folding with `view.foldAll` (`C-c f`) and `view.unfoldAll` (`C-c u`); fold state persists across
+  sessions.**
+- **Editor view options for line numbers and a minimap.**
+- **Theme switching and a recent-files list.**
+- **IntelliJ-style left/right/bottom tool windows, a buffer Switcher, and a File Information panel.**
+- **Toolbar icons, a settings window, and an expanded Emacs keymap.**
+- **Command palette (`M-x`) with fuzzy matching, driven by the command registry.**
+- **GitHub Actions CI workflow with a status badge, plus a Maven wrapper.**
+- **README, MIT license, and `CLAUDE.md` project guide.**
 
 ### Changed
 
-- Opening a tool window now moves keyboard focus into it and selects its first item (the first
-  folder/file in Project, the first bookmark, the first symbol in Structure), so you can navigate it
-  with the keyboard immediately. Restoring tool windows on startup/session-switch does not steal focus.
-  While a tool window is focused, global commands still work — `M-x`, the tool-window toggles
-  (`M-1`/`M-2`/…), the `M-g …` jumps, and `C-x …` prefixes; the panel only intercepts the editor
-  navigation chords it reuses (`C-n`/`C-p`, `C-f`/`C-b`, …).
-- The **Switcher** (`C-x C-b`) now lists only the open files — the Tool Windows column was removed. It's
-  a single column in **tab order**, with a **bold header** and a **fixed width** (sized to the longest
-  file path on open) so it no longer resizes while you navigate. Tool windows are still reachable via
-  their stripe icons and the "Tool Windows: Jump" picker (`M-g t`).
-- Silenced the benign tm4e/Oniguruma grammar warnings that flooded the console
-  (`'…]' without escape`, `No grammar source for scope …`) by raising the `org.eclipse.tm4e`
-  log level to `SEVERE` at startup. They were harmless bundled-grammar quirks; real errors still
-  surface.
-- The Switcher (`C-x C-b`) now lists all open files (labeled "Open Files", most-recently-used
-  first) instead of only previously-activated ones. It is also larger with bigger column
-  headers; the selection bar now tracks the active column (vivid in the focused column, dimmed
-  in the other), and the highlighted file's full path is shown at the bottom of the popup, above
-  a legend of the navigation keys. A "Switcher: C-x C-b" hint on the toolbar makes the keybinding
-  discoverable.
-- Syntax highlighting is now incremental: an edit re-tokenizes only from the changed
-  line to the end of the document (reusing stored per-line grammar states for the
-  unchanged prefix) instead of the whole file, lowering highlight latency on larger
-  files. Still runs off the UI thread with stale-result discarding.
-- App chrome (toolbar/tool-window icons, status bar, tool windows, command palette,
-  switcher, find bar, File Information) now uses AtlantaFX theme variables instead of
-  hardcoded light colors, so it adapts to dark themes (icons and text stay legible).
-- Clearing the recent-files list now asks for confirmation; each entry in the
-  recent-files menu has an inline ✕ icon to remove just that file (no confirmation).
-- Go to Line (`M-g g`) now accepts an optional column as `line:column` (e.g.
-  `342:35`); a bare number still goes to the line's start. The dialog notes the
-  column is optional and the column is clamped to the target line's length. If the
-  target line is inside a collapsed fold, the region is unfolded so the line is shown.
-- File Information tool window: values are now selectable/copyable (read-only text
-  fields), with tighter padding and without the boxed section borders. Long values
-  (e.g. the full path) no longer overflow the panel, which previously truncated the
-  key labels to "..." and showed scrollbars.
-- The Settings font-family picker now lists only monospaced fonts, with a note
-  explaining the filter (a previously saved non-monospaced font stays selectable).
-- Quitting now asks for confirmation first (the Quit button, `C-x C-c`, and the
-  window close button), in addition to the existing per-buffer unsaved-changes prompts.
-- User preferences are now stored as TOML in `~/.editora-v2/settings.toml` (was
-  `settings.json`). Session state (fold regions, tool-window layout) moved to a
-  separate `workspace-state.json`; recent files stay in `recent-files.json`. No
-  migration — a pre-existing `settings.json` is ignored.
-- Closing a pinned tab now asks for confirmation first (the X, the Close menu
+- **Local File History is now entirely in its tool window — no more separate window.** Opening a
+  revision's diff used to spawn a standalone "Local History" window alongside the File History tool
+  window. The tool window is now a split: the revision list on the left, and the live side-by-side diff of
+  the selected revision vs the current file on the right — with the Ignore-whitespace / Highlight-words
+  toggles, the "N differences" count, the per-hunk apply chevrons (selective restore), and the whole-file
+  Revert, all in one place. Selecting a revision shows its diff inline; nothing pops out into a second
+  window.
+
+- **Dirty-state tracking no longer allocates the whole document on every keystroke.** The editor's modified-flag listener was bound to RichTextFX's `textProperty()`, which forces the full document `String` to be materialized on each change — an O(n) allocation per character on a very large single buffer (e.g. minified JS/CSS or a one-line JSON/log that slips past the line-count heavy-file tier). It now runs off `plainTextChanges` with a cheap `getLength()` gate, so the full text is only built in the rare near-clean state, never while typing. Behavior is unchanged (reverting an edit still clears the marker).
+
+- **Internal: Broadened the headless-FX harness over the Run + External-Tool console panels.** New `RunPanelFxTest` and `ExternalToolPanelFxTest` exercise the console lifecycle (started → appendOutput stdout/stderr → finished/failed, Stop-button enablement) and the one-shot tool console (command header + stdout + stderr + status line, clear).
+- **Internal: Broadened the headless-FX harness over the Notes + TODO panels.** New `NotesPanelFxTest` and `TodoPanelFxTest` feed an in-memory note bucket / a `TodoService.Outcome` into the panels and assert the rendered file→note / file→match grouping, empty-input handling, the note-body filter, and the TODO summary label.
+- **Internal: Broadened the headless-FX harness over the Structure + Bookmarks panels.** New `StructurePanelFxTest` and `BookmarksPanelFxTest` feed an LSP `SymbolNode` tree / an in-memory bookmark bucket into the panels and assert the rendered hierarchy — Structure's class→methods outline (and that symbols for a non-attached buffer are ignored); Bookmarks' file→bookmark grouping, empty-file skipping, and the name filter.
+- **Internal: Broadened the headless-FX harness over the Git + Problems tool-window panels.** New `GitPanelFxTest` and `ProblemsPanelFxTest` feed pure-record data (`GitStatus` / `LspDiagnostic` maps) into the panels and assert the rendered grouping — Git's Staged/Changes/Untracked tree, branch label, and commit-button enablement (incl. clean / not-a-repo states); Problems' language→file→diagnostic tree plus empty-input handling — using no-op `Actions` stubs (no live git / LSP).
+- **Internal: Broadened the headless-FX harness over `MainController` command dispatch.** A new `MainControllerCommandsFxTest` drives service-free commands through the real `CommandRegistry` against a fully-wired window (text zoom, the read-only toggle, line-numbers/minimap/whitespace view toggles, select-all), covering the `ui` command-execution surface that the palette + keymap share.
+- **Internal: Broadened the headless-FX harness over `EditorBuffer`.** A new `EditorBufferFxTest` exercises Markdown view-mode switching (incl. the minimap-hidden-in-preview rule), read-only / view mode, programmatic typing through the macro-replay path (with auto-close), per-language run-glyph detection (compact Java / Python / gated shell), and display-name/dirty/EOL bookkeeping — raising `editor`-package coverage with no new production code beyond two helper-visibility tweaks.
+- **Internal: Test coverage: added unit tests + ratcheted the JaCoCo floors.** New tests for `config` models/stores (`Breakpoint`, `BreakpointStore`, `RecentFiles`, plus `FileIdentity` null/empty branches) raised `config` line coverage to ~88%, and new `InstallService` tests cover `findBinary`/`makeExecutable`/`Result`. The per-package `jacoco-check` floors were ratcheted to sit a few points below the measured coverage (migration·diff 0.85→0.90, config split out at 0.86, template·editorconfig 0.80→0.82, completion·http·pdf 0.68→0.70).
+
+- **Indent detection now defaults to spaces when a file has no indentation**, matching VSCode/IntelliJ ("spaces unless the file is detected to use tabs"). A file whose first indented line uses a tab still gets tabs, and spaces still get spaces; only the no-evidence case (empty or flat file) flipped from tab to spaces. This affects the default `detect` indent style; an explicit `space`/`tab` setting or `.editorconfig` still wins.
+- **Settings → Snippets: the language picker is now a plain dropdown** (no longer an editable/typing combo box) — it lists the curated languages plus any that already have a user snippet file, and you select from it rather than typing.
+- **The Structure and Bookmarks tool-window filter fields now have a clear (✕) button**, matching the Personal Notes and Project panels. It appears only while the filter has text and clears it on click.
+- **Settings → Keymaps → Customize shortcuts now reveals the Record/Reset buttons only for the selected row.** Every command row used to show both buttons, cluttering the long list; a row's actions now appear only when you click to select it (the selected row is highlighted), so the list reads as a clean command + chord table.
+- **Save As from the command palette (or a keybinding) now prompts for the path in-scene** instead of opening the native file chooser, keeping the keyboard flow mouse-free. The field is pre-filled with the current file's path (or the project folder + suggested name for an untitled buffer); a bare name resolves against that folder and `~` expands to home. The **toolbar Save-As button still opens the native file chooser** (it's a mouse action), and overwriting a different existing file asks for confirmation.
+
+- **Perf:** the Markdown minimap now coalesces scroll-driven repaints to one per pulse (was a synchronous repaint per scroll event); the completion popup's prefix check reads a bounded window before the caret instead of materializing the whole document on every caret move.
+- **Installing Mermaid support now also installs the headless Chrome it needs.** `install.mermaidSupport` (Settings → Mermaid → Install…) runs `npx puppeteer browsers install chrome-headless-shell` from mmdc's own dir after `npm i -g @mermaid-js/mermaid-cli`, so diagrams render on a fresh Linux box without the *"Could not find Chrome"* Puppeteer error.
+- **Snippet choice dropdown (`${1|a,b|}`) now uses the same keys as autocomplete**: `C-n`/`C-p` to move, `Tab`/`Enter` to accept, `C-g` to cancel (Down/Up/Enter/Esc still work).
+- **Command palette ranks results by relevance.** Matches are ordered exact > whole-word > word-start > substring > scattered-subsequence (tie-broken by shorter title), so e.g. typing `undo` now lists `Edit: Undo` first instead of a scattered match like `Unsplit Editor`.
+- **Clearer unsaved marker in the window title.** A modified file now shows a prominent leading `●` in the title bar (was a small `•`), so the modified state is visible in Zen mode where the tab strip is hidden. (Native title bars are plain text, so the tab's colour/italics can't be reproduced there.)
+- **The tool-window consoles (External Tools, Run, Debug) now use the editor's code-area font** (family + effective size, tracking the zoom) instead of a fixed JetBrains Mono 12.
+- **The Personal Notes inline indicator is 25% larger** (the amber corner triangle at a note's start), making it easier to spot; its click target grew to match.
+- **Personal Notes tool window: bold file headers + a clear-filter button.** File-name rows are now bold (matching Find-in-Files), and the filter has a trailing `✕` button shown only when there's text (like the Project panel).
+- **Personal Note editor: Markdown hint + delete confirmation.** The note edit popup now shows a hint that the body supports Markdown formatting, and its **Delete** button asks for confirmation first (the body already rendered as Markdown in the hover tooltip).
+- **The External Tools tool-window stripe is off by default.** It's registered default-hidden (like Undo History and Remote Sites); reach it via the `tool.externalTools` command, the `externalTool.run` picker, or Settings → Tool Windows. The feature is unaffected.
+- **Refactor: pure text-editing operation cores moved to `com.editora.editops`.** The 10 toolkit-free editing/indent/navigation cores (`Indenter`, `AutoClose`, `BraceMatcher`, `Commenter`, `Transposer`, `LineOps`, `EmacsEdits`, `SexpNav`, `Filler`, `LineIndent`) and their tests moved out of `com.editora.editor`. Internal-only — no behavior, dependency, or `module-info` change.
+- **Refactor: pure Markdown logic moved to a `com.editora.markdown` package.** The 11 toolkit-free Markdown cores (editing, lint, outline, image-paste) and their tests moved out of `com.editora.editor` into their own package; the FX renderer and editor overlays stay. Internal-only — no behavior, dependency, or `module-info` change.
+- **The "New File From Template" picker is bigger.** Widened (and given a taller minimum) so the longer template descriptions are no longer clipped (the default width showed a horizontal scrollbar).
+- **Personal Notes show an inline marker at the note's start instead of a gutter icon.** A small amber corner-triangle now marks where a note begins (the selected character/word/range), reinforcing that notes are anchored to the selection — not the line. The gutter note slot is gone; edit the note at the caret with the new `notes.editNote` command (the inline highlight + hover tooltip + Notes tool window are unchanged).
+- **The Undo History tool-window stripe button is now off by default.** With the new Undo History popup (`undoHistory.jump`) as the primary entry point, the side-stripe icon is hidden until you enable it (Settings → Tool Windows, or the `tool.undoHistory` command). Existing sessions keep whatever visibility you had.
+
+- **Internal: moved the last Git blame UI bits into `GitCoordinator`.** The blame annotation engine already lived in `GitCoordinator`; the three remaining UI methods — the `git.toggleBlame` toggle, the caret-line `blameShowCommit`, and the gutter-annotation click (`onGutterBlameClick`) — moved there too, so the whole inline-blame feature now resides with the engine. The two surfaces those touch outside the coordinator route through new `WindowOps` callbacks: `syncBlameCheck()` (re-sync the Settings checkbox) and `openCommitFileDiff()` (open the line's commit diff — routed through the window to reach `DiffCoordinator` without a circular dependency). `MainController` shed ~34 lines (8,716 → ~8,682); its blame command + gutter-click wiring delegate to `git::toggleBlame`/`git::blameShowCommit`/`git::onGutterBlameClick`. No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: moved the Git clone flow into `GitCoordinator`.** The `git.clone` UI — the URL + destination `OverlayInput` form (with the `<home>/<repo>` auto-fill and the Browse picker), the `git clone` call, and opening a file from the fresh clone (`openClonedEntry`) — moved into `GitCoordinator` alongside the engine it already used (`GitService.clone`/`gitError`), as `cloneRepo()` (renamed off `clone` to avoid clashing with `Object.clone()`). The pure/unit-tested `repoNameFromUrl` helper moved with it (`GitCoordinator.repoNameFromUrl`). `MainController`'s three clone callbacks — the `git.clone` command, the empty-`GitPanel` button, and the `BranchPopup` No-VCS action — now delegate to `git::cloneRepo`. `MainController` shed ~131 lines (8,847 → ~8,716). Verified by `GitStateFxTest` (a new case asserts the clone form renders as an in-scene overlay through the coordinator wiring) + the moved unit tests. No behavior change — part of the ongoing `MainController` decomposition (the remaining Git-Log / blame / branch-popup wiring is a follow-up).
+- **Internal: extracted `RemoteCoordinator` from `MainController`.** The Remote file access (SFTP) feature — the SSH connect form, the saved-connection picker, mounting a remote folder as the Project tree root, single-file open from an `sftp://` URI, and disconnect — moved into its own `CoordinatorHost`-style coordinator. It owns the `RemoteFileSystems` engine (the SSH client + `Vfs` resolver), the `RemoteConnectionsPanel`, and the mount state; `MainController` keeps the `remote` `ToolWindow` (built with the coordinator's panel), queries the coordinator for the current-folder view, and wires the `remote.*`/`tool.remote` commands + the Welcome-page quick-connect callback to it. `MainController` shed ~172 lines (9,019 → ~8,847). Verified by a new FX test that drives the connect flow on a real window and asserts the SFTP form renders as an in-scene overlay (no network). No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: extracted `PluginCoordinator` from `MainController`.** The Plugin support feature — discovery/apply/install/uninstall plus the per-window `PluginContext` adapter that lets a plugin contribute commands, keybindings, tool windows, status-bar segments, and editor menu items — moved into its own `CoordinatorHost`-style coordinator. It owns the per-window `PluginRegistry`/`PluginInstaller`, the started-plugin instances, the plugin-contributed tool windows + editor menu items, the "Browse Plugins" picker, and the two inner adapters (`PluginContextImpl`/`ActiveEditorImpl`). The shared `PluginManager` (owned by `WindowManager`) is passed in; `MainController` keeps the `pluginManager` field + thin `disposePlugins()`/`pluginsEnabled()` delegates and wires `applyPlugins` / the tool-window gating / the editor-menu contributor / the `plugins.*`+`view.togglePlugins` commands to the coordinator. `MainController` shed ~574 lines (9,578 → ~9,004). Device-tested live (MCP bridge): the example plugin's Java-registered command, its tool-window toggle, and its declarative external command all loaded + ran through the moved `PluginContextImpl.start` path. No behavior change — part of the ongoing `MainController` decomposition (the largest single extraction in the campaign).
+- **Internal: extracted `HistoryCoordinator` from `MainController`.** The Local File History feature (per-file save/label/delete snapshots stored outside the file) moved into its own `CoordinatorHost`-style coordinator: it owns the `HistoryService` (off-thread snapshot/blob engine) + the `FileHistoryPanel`, and the whole flow — record (save / autosave / external / pre-delete), the per-file + folder-history views, label / recent-changes pickers, and revision diff/restore (reusing the shared `DiffCoordinator`). `MainController` keeps the File History `ToolWindow` (built with the coordinator's panel) and wires the record hooks + the `history.*`/`tool.fileHistory` commands + the project-tree "Show Local History" item to it. `MainController` shed ~300 lines (9,881 → ~9,578). Device-tested live (MCP bridge): saving a file recorded a revision into `history/index.json`, and the history commands ran clean. No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: moved the Git operations into `GitCoordinator`.** The user-facing Git mutation operations that were still in `MainController` — `gitOp`/`gitCommit`/`discardChanges`, branch checkout/create, fetch/pull/push (`gitSync`), the stash commands, the active-file stage/unstage/discard, the commit-focus action, and the `gitError` dialog — moved into `GitCoordinator` (which already owned the `GitService` + repo state), so the whole Git engine + its mutations now live in one cohesive coordinator. `MainController` keeps the panels/tool-windows/branch-popup + command registrations (delegating to `git.*`). `MainController` shed ~294 lines (10,175 → ~9,881). No behavior change. (The commit/branch/log/blame/clone UI wiring is a follow-up.)
+- **Internal: extracted `DiffCoordinator` from `MainController`.** The diff + merge-conflict viewer (the `DiffService`, the diff-tab open/refresh machinery, the "apply change" hunk flow through an undoable buffer with Undo/Save, the compare entry points — vs HEAD / vs commit / compare-with-file / Git-panel rows / a commit's file — patch export, and merge-conflict resolution) moved into its own `CoordinatorHost`-style coordinator. Git-backed diffs reach the repo via the shared `GitCoordinator`; `openDiff` + the `DiffSide` interface stay package-visible so the Local File History flow reuses them. `MainController` shed ~317 lines (10,492 → ~10,175). No behavior change — continuing the `MainController` decomposition.
+- **Internal: extracted `DebugCoordinator` from `MainController`.** The whole DAP debugging integration (the `DebugPanel`, breakpoint persistence + gutter gating, the DAP event sink + panel actions, the inline-values / hover / execution-line editor surfaces, the start/attach/step/run-to-cursor/jump flows, and the `debug.toggleAdapter`/`debug.setAdapterPath` pickers) moved into its own `CoordinatorHost`-style coordinator. The `DapManager` stays a `MainController` field (it's built on the LSP `lspManager`, and `SettingsWindow` + window-dispose reach it) and is passed to the coordinator, mirroring the LSP split; Java debugging layers on the jdtls session, so the coordinator also takes the `lspManager` + `LspCoordinator`. `MainController` shed ~565 lines (11,057 → ~10,492). This completes the `MainController` decomposition campaign (13,017 → ~10,492). No behavior change.
+- **Internal: extracted `LspCoordinator` from `MainController`.** The whole LSP integration moved into a new `CoordinatorHost`-style coordinator across three slices: the navigation/format flows (go-to-definition, find-references, hover, document formatting + the hover popup); the diagnostics routing (the per-open-file `problems` map, the `ProblemsPanel`, the `publishDiagnostics` callback); and the configure/detect/gating + per-buffer lifecycle (`applySupport`/server detection/the per-server enable+command switches/`syncBuffer` open-activate-close/the status-bar `LSP:` segment/the Structure outline/semantic tokens/the per-buffer hook wiring/the `lsp.toggleServer`+`lsp.setServerCommand` pickers). The `LspManager` stays owned by `MainController` (Debug layers on the jdtls session, the MCP bridge reads its diagnostics) and is passed to the coordinator; its callbacks route through thin method-ref delegates. `MainController` shed ~685 lines (11,742 → ~11,057). No behavior change — part of the ongoing decomposition.
+- **Internal: extracted `BookmarkCoordinator` from `MainController`.** The Bookmarks feature (the panel + jump picker, per-buffer persist/restore, the gutter-click flow, and the `bookmarks.*` commands) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: extracted `NotesCoordinator` from `MainController`.** The Personal Notes feature (the panel + cross-file pickers, per-buffer persist/restore with anchor re-keying, the note editor dialog, and the `notes.*` flow) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: documented soft code-size limits in `CLAUDE.md`.** Added review heuristics for class/method size (target ≤1000 lines/class, ≤50/method; refactor-smell beyond ~2000/~100) and codified the `CoordinatorHost` decomposition as the way to keep `MainController` (and future features) in check. Docs only — no tooling/behavior change.
+- **Internal: extracted `RunCoordinator` from `MainController`.** The run-a-file feature (the run service + console panel, the run/rerun/stop flow, and the launcher-command building) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: extracted `SearchCoordinator` from `MainController`.** The Find-in-Files feature (the multi-file search service + results panel, scope tracking, replace-in-files, and the ripgrep/walker backend selection) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: extracted `TodoCoordinator` from `MainController`.** The TODO / highlight-pattern feature (service + tool-window panel + the in-editor highlight matcher + the project/open-files scan + `todo.*` commands) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: extracted `MacroCoordinator` from `MainController`.** The keyboard-macro feature (per-window service + record/replay capture hooks + `macro.*` commands) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
+- **Internal: extracted `ExternalToolCoordinator` from `MainController`.** The External Tools feature (service + console panel + run/output logic + `externalTool.*` commands) moved into its own `CoordinatorHost`-style coordinator, trimming the `MainController` god-class. No behavior change — first step of an ongoing `MainController` decomposition.
+- **The Remote Sites tool window is off by default and opens on the right.** Its stripe button is now hidden until you enable it (Settings → Tool Windows, or the `tool.remote` command / `M-g r`), and when shown it docks on the right. The remote (SFTP) functionality is unchanged — only the tool window's default visibility and side moved. Existing layouts (if you'd already shown or moved it) are preserved.
+
+- **Headless FX tests now use JavaFX 26's built-in headless platform.** The `@Tag("fx")` harness boots over
+  the Headless Glass platform that ships inside `javafx.graphics` (`-Dglass.platform=Headless`) instead of the
+  self-built Monocle backend. The vendored `openjfx-monocle` jar (and the rebuild-on-every-JavaFX-bump ritual it
+  required) are gone — nothing extra to download or maintain, and the backend can no longer go stale on a JavaFX
+  bump. Test-scope only; no runtime, packaging, or `module-info` impact. The harness only uses TestFX to boot the
+  toolkit (never the robot), so the prototype platform's input/rendering limits don't apply.
+
+- **Command docs now open the version-matched page.** The command palette's "open docs" (C-h) now links to
+  `…/docs/v-<appVersion>/commands/<command-id>`, matching the website's new versioned docs layout, so each
+  build opens the docs for the version that's actually running.
+
+- **De-duplicated the plugin examples.** The full plugin catalog lives canonically in the
+  [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) repo (source +
+  signed registry index), so the editor repo no longer keeps copies under `examples/` — those had
+  already drifted from the registry. Only `examples/example-plugin/` remains as the in-tree SDK
+  reference; `docs/plugins.md`, the README, and `CLAUDE.md` now point the catalog at the registry repo.
+
+- **More features on out of the box (new installs only).** The default `settings.toml` now enables:
+  **Breadcrumbs**, **Personal Notes**, **Git integration** (self-gating — inert until `git` is on PATH, so
+  effectively "on when Git is installed"), **HTML Live Preview**, the **HTTP Client**, **Render LaTeX math**
+  in Markdown, and **Mermaid diagrams** (self-gating — inert until the `mmdc` CLI is found). The server-log
+  viewer was already on. The built-in **TODO/FIXME highlight patterns are now case-sensitive** (the
+  uppercase/lowercase check is on), so only `TODO`/`FIXME` match, not `todo`/`fixme`. These are *defaults* for
+  a fresh config — existing `settings.toml` files keep their saved values; flip any of these in *Settings* or
+  via the palette toggles.
+
+- **Refactor: extract the `git push` argv decision into a pure, tested `GitService.pushArgs` (developer-facing).**
+  The first-push-of-an-upstream-less-branch logic (`--set-upstream origin <branch>` so the first push "just
+  works", else a plain `push`) — including the guard that a blank/detached branch never emits
+  `--set-upstream origin <empty>` — moved out of `MainController.gitPush` into a pure static helper with a
+  focused `GitPushArgsTest` (6 cases). No behavior change; the decision is now unit-covered instead of buried
+  in the UI layer.
+
+- **Refactor: centralize the "no repo" guard on the `GitCoordinator` (developer-facing).** Every repo-only
+  Git operation opened with the same four-line guard — `if (repoRoot == null) { echo "not a repo" / "git not
+  installed"; return; }` — duplicated 11×. It's now one engine method, `git.reportIfNoRepo()`, and each call
+  site is a one-liner (`if (git.reportIfNoRepo()) return;`). The status string lives in exactly one place.
+  Pure consolidation, no behavior change; full suite green.
+
+- **Refactor: move inline Git blame into the `GitCoordinator` (developer-facing).** The blame annotation
+  engine — eligibility (`isBlameEnabled`), the off-thread per-file fetch (`applyBlame`/`refreshBlame`), and
+  the blame→`BlameInfo` mapping (author/date label, full-commit tooltip, age-heatmap tint) — moves out of
+  `MainController` into `GitCoordinator`, where `applyState` now drives it directly. That **removes the
+  `WindowOps.refreshBlame` Host hop** added when the engine was extracted: the coordinator owns blame end to
+  end and needs nothing new from the window (only the shared `CoordinatorHost`). The click→commit-diff
+  actions (`blameShowCommit`/`onGutterBlameClick`) stay in `MainController` since they open a diff tab. No
+  behavior change; full suite green.
+
+- **Refactor: extract the stateful Git core into a `GitCoordinator` (developer-facing).** Under the net added
+  in the previous step, the engine of the Git integration moves out of `MainController` into
+  `ui/GitCoordinator`: the `GitService` CLI facade, the repo state (root / branch / upstream), and the
+  state machine that keeps the status bar, the Commit / Log tool windows, and the active buffer's gutter
+  change bars in sync (`isEnabled`/`isAvailable`/`ifEnabled`/`applySupport`/`refresh`/`applyState`/
+  `afterMutation`/`contextPath`). It reaches the window through the shared `CoordinatorHost` plus a small
+  git-specific `WindowOps` (status-bar/tool-window/blame/diff surfaces). The user-facing Git **operations**
+  (commit, branch, log, blame, stash, clone, diff) stay in `MainController` and reach the engine via
+  `git.service()` / `git.repoRoot()`. No behavior change; `GitStateFxTest` re-pointed at the new home with
+  the same assertions, full suite green.
+
+- **Refactor: a characterization-test net + pure helpers for the Git integration (developer-facing).** First
+  step of the Git extraction (the largest, least-tested subsystem): before moving any stateful code, this
+  adds a safety net — `GitStateFxTest` drives the `applyGitState`/`applyGitSupport` core directly with a
+  synthetic `RepoState` and pins the repo-root/branch/upstream state machine, and a new pure, unit-tested
+  `git/GitChangeBars` (the diff→CSS-class mapping + the background-buffer re-diff predicate) dedups the gutter
+  change-bar logic at its two call sites. No behavior change; sets up the subsequent `GitCoordinator`
+  extraction under the net.
+
+- **Refactor: extract the HTTP Client into an `HttpClientCoordinator` (developer-facing).** The fourth (and
+  most window-entangled) feature coordinator peeled off `MainController`: the request runner, the response
+  tool-window panel, response-tab opening, clipboard curl import/export, and `.env` scanning move to
+  `ui/HttpClientCoordinator`. It takes the shared `CoordinatorHost` **plus** a small `WindowOps` extension
+  (open a tab / open-toggle the tool window / re-gate the run affordance / persist the selected environment);
+  `MainController` keeps only the `ToolWindow` registration + availability plumbing. Thanks to the shared
+  host, this dropped ~210 lines from `MainController` (vs ~60 for the earlier ones). Behavior is identical;
+  covered by a new `HttpClientCoordinatorFxTest` against fake host + ops.
+
+- **Refactor: a shared `CoordinatorHost` for the feature coordinators (developer-facing).** The three feature
+  coordinators (log viewer / HTML preview / Mermaid) had a bespoke ~60-line anonymous `Host` adapter each in
+  `MainController`. They now share one `ui/CoordinatorHost` interface and a single `MainController.Services`
+  adapter, dropping the per-feature boilerplate — and future coordinators reuse it for free (zero adapter
+  code). Test fakes extend a no-op `CoordinatorHostStub` and override only what they exercise. No behavior
+  change; full suite green.
+
+- **Refactor: extract Mermaid into a `MermaidCoordinator` (developer-facing).** The third feature coordinator
+  peeled off `MainController`: the `mmdc`/`maid` service, the detected-tool availability, and the
+  apply/gating/export logic now live in `ui/MermaidCoordinator`, behind a narrow `Host` interface. The few
+  mermaid reads other features need are exposed as coordinator methods (`mmdcCommandOrNull()` for PDF/print,
+  `effectiveAutocomplete()` for the completion config, `exportDiagram()` for PDF export). Behavior is
+  identical; covered by a new `MermaidCoordinatorFxTest` against a fake `Host`. Continues de-godding
+  `MainController` one feature at a time.
+
+- **Refactor: extract HTML Live Preview into an `HtmlPreviewCoordinator` (developer-facing).** The second
+  feature coordinator peeled off `MainController` (after `LogViewerCoordinator`): the loopback HTTP server,
+  the detected-browser list, and the browser picker now live in `ui/HtmlPreviewCoordinator`, reaching the
+  window only through a narrow `Host` interface (an anonymous adapter in `MainController` + one-line
+  delegations at the call sites). Behavior is identical; covered by a new `HtmlPreviewCoordinatorFxTest`
+  against a fake `Host`. Continues de-godding `MainController` one feature at a time.
+
+- **Refactor: extract the log viewer into a `LogViewerCoordinator` (developer-facing).** The first
+  *feature coordinator* split out of the ~13k-line `MainController`: the server-log-viewer state (tail
+  service + per-buffer follow/offset/control maps) and all its logic now live in `ui/LogViewerCoordinator`,
+  which reaches back into the window only through a narrow `Host` interface. `MainController` supplies an
+  anonymous `Host` adapter and keeps one-line delegations at the call sites (open/save-as/rename, tab close,
+  settings apply, huge-file load, command registration), dropping ~240 lines. Behavior is identical; the
+  payoff is a smaller controller and a unit-testable seam — the new `LogViewerCoordinatorFxTest` exercises
+  the coordinator against a hand-written fake `Host`. This establishes the template for de-godding
+  `MainController` one feature at a time.
+
+- **Upgraded to JavaFX 26 + enabled the macOS Metal rendering pipeline.** On Apple silicon (e.g. M-series), the
+  deprecated es2/OpenGL backend JavaFX 25 used could render parts of the UI as blank/garbled rectangles in the
+  packaged app (the file breadcrumb and tool-window stripe icons). JavaFX 26 adds the Metal pipeline, now
+  selected first on macOS (`-Dprism.order=mtl,es2,sw`; es2/sw fallback). Windows keeps Direct3D, Linux keeps
+  es2 — the pipeline order is set per-OS. The JDK stays 25 (JavaFX 26 runs on JDK 24+).
+
+- **Performance: config writes happen off the JavaFX thread (developer-facing).** The frequent, coalesced
+  in-session save (`requestSave` — fired by settings toggles, view changes, tab/fold changes) now serializes
+  a consistent snapshot on the FX thread and writes it on a dedicated `config-writer` daemon thread, instead
+  of blocking the UI on `settings.toml` + `workspace-state.json` disk I/O. A new `config/ConfigWriter`
+  coalesces writes per file (latest wins) and keeps them ordered through one thread, with an atomic temp-file
+  + move so a crash never leaves a half-written config. Durable saves (quit, one-off actions, export) and a
+  JVM-shutdown flush block until written, and all settings/session writes funnel through the one writer
+  queue, so an async write can never land after and clobber a durable one. No behavior change; covered by a
+  new unit test (`ConfigWriterTest`).
+- **Performance: lazy-attach feature overlays (developer-facing).** Each editor buffer no longer eagerly
+  builds the five overlays that are inert for most files — find-match highlight, log-level, Mermaid-lint,
+  LSP-diagnostic, and AceJump. They're constructed (Canvas + scroll/edit subscriptions) only on first
+  activation and inserted in their original z-order, so a buffer with LSP off, no diagram, not a log, and
+  never searched/ace-jumped allocates none of them. Cuts per-buffer memory and per-pulse listener fan-out
+  when many tabs are open; no behavior change. Covered by a new headless-FX test (`LazyOverlayFxTest`).
+
+- **Smoother scrolling in files with many lines.** The line-number gutter set each row's number via a
+  per-row reactive binding that subscribed/unsubscribed as cells recycled during a scroll — measurable churn
+  on the hot path. The number is now set directly from the live line count, and re-pads only when the count
+  crosses a power of 10 (rare). A layout-forced scroll sweep over a ~375-line Markdown file was ~12–21%
+  faster in the gutter (measured A/B in one process). Line numbers, folding, and all gutter markers are
+  unchanged.
+
+- **Cheaper spell-check overlay redraw while scrolling prose.** The red-squiggle overlay re-runs each scroll
+  pulse over the visible words. It now checks the (cached) spelling verdict *before* the per-word syntax-style
+  lookup, so that lookup runs only for the few misspelled words instead of every visible word, and it hoists
+  the per-word offset query out of the loop. Redrawing a ~375-line Markdown file was ~16–22% faster (measured
+  A/B in one process); squiggle placement is unchanged.
+
+- **Git blame is now an IntelliJ-style "Annotate" gutter column instead of a single inline annotation.**
+  Turning on blame (`M-g a`, or Settings → Git) now shows a per-line column on the left of the editor —
+  author and commit date on **every** line, with an age-heatmap background (recent commits tinted warmer,
+  older ones faded), a hover tooltip with the full commit (author / date / relative time / message / hash),
+  and click to open that line's commit. This replaces the previous GitLens-style annotation that only
+  appeared after the current caret line. Same toggle and setting; only the active file is annotated, and the
+  blame still runs once per file off the UI thread (no per-keystroke cost).
+
+- **Tool windows and status segments now follow the active file's capabilities.** The **Problems** stripe
+  button shows only when the active file is served by a language server; the **Debug** stripe button only for
+  a debuggable file (Java/Python/JS) or while a debug session is live; and the **Git Log** stripe button plus
+  the status-bar **branch** segment only when the active file is inside a git repo. Each is hidden (not greyed)
+  when it doesn't apply — so a Welcome/Markdown/plain-text tab no longer shows Problems, Debug, the branch
+  segment, or a git context inherited from the working directory. The `LSP:` status segment already cleared
+  on non-LSP files.
+
+- **Find and Find in Files pre-fill from the selected text.** Select a word or phrase on a single line, then
+  open the in-editor Find/Replace bar (the toolbar icon, `C-s`/`C-r`, or Replace) or Find in Files (its
+  toolbar icon or `C-S-f`) and the selection becomes the search term — the field is also selected so you can
+  type over it. A multi-line selection is left alone (it isn't a sensible find term) and whatever query was
+  already there is kept. Matches the VS Code / browser convention.
+
+- **Markdown split view now keeps the editor and preview scrolled together.** In SPLIT mode (editor +
+  rendered preview side by side), scrolling one pane scrolls the other by the same fraction of its content,
+  so the two stay roughly aligned even though their heights differ. The pane the mouse is over drives the
+  other, which keeps the sync one-directional at any moment so it can't oscillate; entering SPLIT aligns the
+  preview to the editor's current position. Negligible cost — it rides existing scroll-position listeners with
+  no new per-keystroke or per-pulse work.
+
+- **The Project tool window shows the current file's folder when no project is open.** In the global
+  ("No Project") window it no longer just shows an empty "No project open" placeholder — it roots the tree at
+  the active file's parent directory and titles the tool window **"Current Folder"**, so it doubles as a file
+  explorer that follows you as you switch tabs. With a project open it's unchanged (the tree stays the project
+  root, titled "Project"); a mounted remote folder is also left as-is. An unsaved/Welcome tab (no folder)
+  falls back to the placeholder.
+
+- **File-type icons now line up in the Project tree (and other file lists).** Each glyph's node bounds equal
+  its ink, which varies per file type, so the icon column had a ragged width and file names jumped left/right
+  (and the taller document glyphs sat high). Every file/folder glyph is now centered in a fixed-size box, so
+  names start at the same x and icons are vertically centered. Applies wherever file icons appear — the tree,
+  tabs, the Open-Files / Recent pickers, and the Switcher.
+
+- **Distinct icons for the tab right-click close menu.** The six close commands (Close, Close Other Tabs,
+  Close All Tabs, Close Unmodified Tabs, Close Tabs to the Left/Right) all shared the plain ✕. They now each
+  carry a variant of the ✕ so they're distinguishable at a glance: one small square (other), three squares
+  (all), a check (unmodified/saved), and a left/right triangle (direction). "Close" keeps the plain ✕.
+
+- **The Find in Files toolbar icon now toggles the panel** — one click opens it (focusing the query field),
+  another click closes it (matching `C-s`'s in-file find and the `M-6` tool-window toggle). `C-S-f` toggles
+  too, since it shares the command.
+
+- **Keyboard popups are now in-scene overlays** — the command palette, the "Jump to…" pickers (recent
+  files, structure, open files, tool windows, bookmarks, notes, snippets, projects, LSP references,
+  spell/app/editor-theme), the file/folder finder, the IntelliJ-style Switcher, the Git **branch
+  dropdown**, and the status **message-log** popup no longer use separate `Popup` windows. They render as
+  a card inside the main window over a dim, click-to-dismiss backdrop (a shared `OverlayHost`). This
+  fixes a Windows bug where a `Popup` didn't reliably take OS keyboard focus — opening the palette (or a
+  picker) could leave the keyboard dead until restart. Anchored popups (branch dropdown, message log)
+  still "drop" from their status-bar segment; clicking the segment again closes them cleanly.
+- **Input dialogs are now in-scene too** — the text-input dialogs (Personal Note editor, file/bookmark
+  **rename**, bookmark **note**, Git **clone**, **new branch**, **go to line**) are no longer separate
+  native windows; they show as a form card in the main window over the same backdrop (a new shared
+  `OverlayInput` helper). `Esc`/`C-g` cancel; `Enter` accepts (`Ctrl/Cmd+Enter` for the multi-line note
+  editor). This continues the Windows keyboard-focus fix to every text prompt. (Simple yes/no
+  confirmations and choice pickers — overwrite, delete, set language/tab-size/line-endings — stay native.)
+- **Status bar polish** — the Git segment now **toggles** its branch dropdown (click to open, click
+  again to close). The status **message-log popup** is 20% wider and gains a **Copy** button (copies the
+  selected messages, or all of them when none are selected); its per-row right-click menu was removed in
+  favor of the more discoverable button (⌘/Ctrl+C still works too).
+- **Command palette polish** — removed the separator line above the footer legend, and the legend now
+  lists **`C-g`** alongside **esc** as a way to close the palette.
+
+- **`C-a` (beginning of line) is now "smart home"** — the first press moves to the beginning of the
+  line's *text* (the first non-whitespace character); a second press toggles to the true line start
+  (column 0). Shift-extends selection as before. Applies in the editor for every file type.
+
+- **Unsaved-file marker everywhere** — the dot + amber-italic style the tabs use for a file with
+  unsaved changes now also appears in the **Switcher**, the **Open Files** picker, and the **Project**
+  tool window tree, so every list of open files reads consistently. The Project tool window also
+  refreshes when files/folders change outside Editora (on window focus), keeping its expanded folders
+  and selection.
+
+- **Markdown preview readability** — the rendered preview now lays its content out as a centered,
+  width-capped column (GitHub-style) with more generous margins and vertical spacing (line height,
+  space between blocks and list items, heading separation), instead of stretching edge-to-edge across
+  a wide window.
+
+- **Settings window redesigned** — a scalable left **category sidebar** (Appearance, Editor, Tool
+  Windows, Spell Check, Application, Advanced, plus "coming soon" placeholders for Keymaps/Plugins/Git/AI)
+  replaces the single stacked list, with a **search** box that filters settings + jumps to matches, a
+  **live preview** on Appearance (sample code that recolors/re-fonts as you change theme/font), and a
+  **Reset to Defaults** on the Advanced page. Changes still apply live. Tool-window placement moved to
+  its own page; the new **Tab size** control lives on the Editor page. **About** moved out of Settings
+  (it's on the toolbar + the "About Editora" command); the settings-file link now lives on the Advanced
+  page.
+
+- **Markdown preview now renders closer to GitHub** — task lists (`- [x]`/`- [ ]`) show real checkboxes
+  instead of bullets, inline `code` gets a rounded gray pill (instead of blue text), `#`/`##` headings
+  get an underline rule, and links are no longer permanently underlined. Standalone images now render as
+  block images (with the alt text / title as a tooltip), in addition to inline images; relative image
+  paths resolve against the file's folder, and `http(s)`/`file`/`data:` URLs are supported.
+
+- **Bookmarks now live in their own `bookmarks.json`** (in the config directory) instead of inside each
+  session's `workspace-state.json`, so they're all in one easy-to-find file. They remain **scoped per
+  project** — switching projects shows only that project's bookmarks (the global session has its own),
+  and deleting a project deletes its bookmarks. Existing bookmarks are migrated automatically on first
+  run (moved into the right per-project bucket; the old session files are cleaned up). This also fixes
+  the cross-file "Jump to Bookmark" picker (`M-g b`) showing an empty list when a project was active.
+- **Reorder bookmarks in the Bookmarks tool window** — move a bookmark within its file, or a whole file
+  group, with **Alt+Up/Down**, the right-click **Move Up/Down** menu, or **drag-and-drop** (with the
+  same drag visuals as the editor tab strip: a translucent ghost, the dragged row dimmed, and an accent
+  insertion line on the drop target). The order you set is exactly the order the `M-g b` jump picker
+  uses, and it persists (and survives edits to the file).
+
+- **Opening a tool window moves the keyboard focus into it.** Opening a tool window now moves keyboard focus into it
+  and selects its first item (the first folder/file in Project, the first bookmark, the first symbol in Structure), so
+  you can navigate it with the keyboard immediately. Restoring tool windows on startup/session-switch does not steal
+  focus. While a tool window is focused, global commands still work — `M-x`, the tool-window toggles (`M-1`/`M-2`/…),
+  the `M-g …` jumps, and `C-x …` prefixes; the panel only intercepts the editor navigation chords it reuses
+  (`C-n`/`C-p`, `C-f`/`C-b`, …).
+- **The Switcher lists only open files, in tab order, at a fixed width.** The **Switcher** (`C-x C-b`) now lists only
+  the open files — the Tool Windows column was removed. It's a single column in **tab order**, with a **bold header**
+  and a **fixed width** (sized to the longest file path on open) so it no longer resizes while you navigate. Tool
+  windows are still reachable via their stripe icons and the "Tool Windows: Jump" picker (`M-g t`).
+- **Harmless grammar warnings no longer flood the console.** Silenced the benign tm4e/Oniguruma grammar warnings that
+  flooded the console (`'…]' without escape`, `No grammar source for scope …`) by raising the `org.eclipse.tm4e` log
+  level to `SEVERE` at startup. They were harmless bundled-grammar quirks; real errors still surface.
+- **The Switcher lists every open file, most recently used first.** The Switcher (`C-x C-b`) now lists all open files
+  (labeled "Open Files", most-recently-used first) instead of only previously-activated ones. It is also larger with
+  bigger column headers; the selection bar now tracks the active column (vivid in the focused column, dimmed in the
+  other), and the highlighted file's full path is shown at the bottom of the popup, above a legend of the navigation
+  keys. A "Switcher: C-x C-b" hint on the toolbar makes the keybinding discoverable.
+- **Syntax highlighting re-tokenizes only from the changed line on.** Syntax highlighting is now incremental: an edit
+  re-tokenizes only from the changed line to the end of the document (reusing stored per-line grammar states for the
+  unchanged prefix) instead of the whole file, lowering highlight latency on larger files. Still runs off the UI
+  thread with stale-result discarding.
+- **The app's chrome follows the theme, so dark themes stay legible.** App chrome (toolbar/tool-window icons, status
+  bar, tool windows, command palette, switcher, find bar, File Information) now uses AtlantaFX theme variables instead
+  of hardcoded light colors, so it adapts to dark themes (icons and text stay legible).
+- **Recent files: clearing the list asks first, and each entry can be removed.** Clearing the recent-files list now
+  asks for confirmation; each entry in the recent-files menu has an inline ✕ icon to remove just that file (no
+  confirmation).
+- **Go to Line accepts an optional column.** Go to Line (`M-g g`) now accepts an optional column as `line:column`
+  (e.g. `342:35`); a bare number still goes to the line's start. The dialog notes the column is optional and the
+  column is clamped to the target line's length. If the target line is inside a collapsed fold, the region is unfolded
+  so the line is shown.
+- **File Information values can be selected and copied, and no longer overflow.** File Information tool window: values
+  are now selectable/copyable (read-only text fields), with tighter padding and without the boxed section borders.
+  Long values (e.g. the full path) no longer overflow the panel, which previously truncated the key labels to "..."
+  and showed scrollbars.
+- **The Settings font picker lists only monospaced fonts.** The Settings font-family picker now lists only monospaced
+  fonts, with a note explaining the filter (a previously saved non-monospaced font stays selectable).
+- **Quitting asks for confirmation first.** Quitting now asks for confirmation first (the Quit button, `C-x C-c`, and
+  the window close button), in addition to the existing per-buffer unsaved-changes prompts.
+- **User preferences are now stored as TOML in `~/.editora-v2/settings.toml` (was `settings.json`).** Session state
+  (fold regions, tool-window layout) moved to a separate `workspace-state.json`; recent files stay in
+  `recent-files.json`. No migration — a pre-existing `settings.json` is ignored.
+- **Closing a pinned tab asks first.** Closing a pinned tab now asks for confirmation first (the X, the Close menu
   item, and the close command); bulk-close actions still skip pinned tabs.
-- The Structure tool window now labels entries with the symbol name and kind
-  (functions, types/classes, namespaces, Markdown headings, XML tags) derived
-  from the TextMate grammar, and hides trivial blocks (if/for/while/…), instead
-  of showing the raw brace line. Works across all bundled languages; clicking a
-  node jumps to the symbol's line.
-- Folded regions now shade their header line (in addition to the gutter chevron)
-  so collapsed code is easier to spot.
-- Opening a file that is already open now switches to its existing tab instead
-  of opening a duplicate.
-- The recent-files picker is now a toolbar menu button (with a per-entry remove
-  action) instead of a combo box.
-- The key dispatcher now yields only single-key chords to windows that own
-  their keys (e.g. the Structure tool window); multi-key Emacs chords such as
-  `C-x o` stay global so window switching and `C-x`/`C-c` commands work from
-  anywhere.
-
-### Fixed
-
-- **Bookmarks no longer drift to the wrong line when a file is edited outside the editor.** Bookmarks
-  followed their content only for edits made inside Editora, so changing a file in another program
-  left its markers on stale lines. Each bookmark now re-anchors to its saved line text when the file
-  is opened (re-found at the nearest matching line), and the corrected position is saved back so the
-  session self-heals.
-- **Adding a bookmark no longer shifts that line's text indentation.** The gutter now reserves a
-  fixed-width bookmark column on every line, so the marker glyph no longer widens only the bookmarked
-  row (which had pushed its text rightward).
-- **A bookmark's gutter marker now follows its line when an edit moves it.** Inserting or deleting
-  lines above a bookmark already moved the bookmark (and its Bookmarks-panel entry), but the gutter
-  glyph wasn't repainted onto the new line; it is now.
-- Switching projects (or "No Project"), or closing/deleting a project, while in Zen mode no longer
-  leaves the UI permanently mangled. Zen stores its "everything off" view state in the global
-  settings while keeping the restore snapshot in the per-session state; swapping sessions orphaned
-  that snapshot. The editor now exits Zen (restoring the real view settings) before a session switch
-  and lands the incoming session in normal view.
-- The `M-<` / `M->` (document start/end) and `M-%` (find & replace) keybindings now work. They were
-  stored in Emacs notation (`M-<`) but the dispatcher emits shifted symbols as `M-S-,` etc., so the
-  entries never matched; the keymap now uses the dispatcher's token form.
-- No more light-gray flash on startup with a dark theme: the scene is pre-filled with
-  the theme's background color, so the first frame paints in the theme color instead of
-  JavaFX's default background before the CSS is applied.
-- Much faster startup when restoring a session: all tab headers are created first
-  (so they appear at once), then each file's content and folds are loaded one per
-  pulse — the active file first — keeping the UI responsive. Previously a session
-  with a heavily-folded file could freeze the window for several seconds on launch.
-- Folding no longer smears the hidden lines' numbers onto the fold-header row in
-  the gutter: a collapsed paragraph's gutter cell is laid out at zero height, but
-  its line-number label did not clip to it; the gutter is now clipped to its bounds.
-- "Show hidden characters" no longer piles stray space/tab/EOL markers onto the
-  fold-header row when a region is collapsed: folded (hidden) paragraphs are now
-  skipped by the whitespace overlay (and the 80-column ruler's measurement).
-- Running a command via a chord that opens a dialog no longer types a stray
-  character afterwards (e.g. `M-g g` then OK inserted a `g`): the dispatcher now
-  also swallows the character event paired with a key press it handled, which a
-  modal dialog (`showAndWait`) would otherwise deliver to the editor after closing.
-- `M-` (Meta) chords no longer insert a stray character on macOS. Option is the
-  Meta key, and `Option+<key>` also emits a special character (e.g. `M-f` → "ƒ",
-  `M-x` → "≈") whose KEY_TYPED was inserted into the editor (or palette) after the
-  command ran. Characters typed with Alt held are now swallowed on macOS — globally
-  by the key dispatcher and in the command palette popup. (Scoped to macOS so
-  AltGr-composed characters keep working on other platforms.)
-- Command palette entries can now be run with the mouse — clicking a command
-  runs it (previously only Enter on the keyboard-selected row worked).
-- Next/previous line (`C-n` / `C-p`) now move the caret like Emacs: they were
-  bound to RichTextFX's scroll-based `nextLine`/`prevLine` (which move relative to
-  the viewport and no-op when the caret is off-screen). They now move by paragraph
-  and preserve a goal column, so passing through short lines keeps the original
-  column.
-- Syntax highlighting no longer intermittently fails to load when multiple files
-  of the same language are open. They share one TextMate grammar instance, and
-  tm4e's tokenizer is not thread-safe, so concurrent highlighting on each buffer's
-  background thread could throw and silently drop a file's highlighting;
-  tokenization is now serialized per grammar.
-- The minimap no longer stretches short files across its full height (scattering
-  sparse blocks): line height is capped, so short documents fill from the top and
-  long documents still compress to fit.
-- Pinned tabs are now remembered across sessions: a tab's pinned state is saved
-  on exit and restored on the next launch (alongside the open files and carets).
-- The 80-column ruler now lands exactly on column 80. It was positioned from a
-  font-probe character width and ignored the line-number gutter, so it drifted off
-  the text grid; the column is now derived from the editor's live layout (caret
-  positions, glyph-independent). It is hidden when column 80 is outside the visible
-  text width (window too narrow, or scrolled past it).
-- The 80-column ruler now tracks horizontal scroll instead of staying pinned to
-  a fixed x-offset when a horizontal scrollbar is present.
-- The Structure tool window no longer shows "No structure" for documents whose
-  regions were computed before the panel attached.
-- The editor context menu now dismisses on left-click.
+- **Structure labels entries with the symbol's name and kind.** The Structure tool window now labels entries with the
+  symbol name and kind (functions, types/classes, namespaces, Markdown headings, XML tags) derived from the TextMate
+  grammar, and hides trivial blocks (if/for/while/…), instead of showing the raw brace line. Works across all bundled
+  languages; clicking a node jumps to the symbol's line.
+- **Folded regions now shade their header line (in addition to the gutter chevron) so collapsed code is easier to
+  spot.**
+- **Opening a file that is already open now switches to its existing tab instead of opening a duplicate.**
+- **The recent-files picker is now a toolbar menu button (with a per-entry remove action) instead of a combo box.**
+- **Multi-key Emacs chords such as `C-x o` work from any window.** The key dispatcher now yields only single-key
+  chords to windows that own their keys (e.g. the Structure tool window); multi-key Emacs chords such as `C-x o` stay
+  global so window switching and `C-x`/`C-c` commands work from anywhere.
 
 [Unreleased]: https://github.com/adriandeleon/Editora/commits/master

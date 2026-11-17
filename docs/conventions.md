@@ -396,8 +396,13 @@ open the pull request and move on without waiting for CI
 ## Docs in the same PR
 
 A feature PR updates `CHANGELOG.md` and `TODO.md` in the same change, not as a follow-up.
-User-facing documentation lives in the separate website repo; **this `docs/` folder is for
-developers**. `README.md` is a short landing page that points at the website: it does not carry a
+A changelog entry goes under `## [Unreleased]`, in `### Added`, `### Changed`, `### Fixed` or
+`### Removed` (`### Deprecated` and `### Security` too, and no headings of our own), and opens with a bold
+one-line summary written for users (`- **…**`); `ChangelogFormatTest` checks the shape (REPO-02, Pauta
+6.0.1). User-facing documentation lives in the separate website repo; **this `docs/` folder is for
+developers**: no page here tells a user how to install or use something, even in one section (DOCS-02).
+A guide explains what is true now; a dated review, measurement or plan goes under
+[`reference/`](reference/README.md) or with its evidence in `artifacts/` (DOCS-14). `README.md` is a short landing page that points at the website: it does not carry a
 feature catalog, so change it only when its highlights, install, build, command-line or
 configuration facts change. Keep `AGENTS.md` concise and operational. Put durable explanations in the
 focused guides and preserve established implementation detail in the

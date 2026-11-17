@@ -33,22 +33,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1555"
     },
     {
-      "rule": "REPO-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/repository/#repo-02",
-      "kind": "pending",
-      "reason": "Some older changelog entries do not open with a one-line summary, and a few sections use headings of their own.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1556"
-    },
-    {
-      "rule": "DOCS-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-02",
-      "kind": "pending",
-      "reason": "The plugin authors' guide in the repository also explains installing and troubleshooting plugins, which belongs in the user guide on the website.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
-    },
-    {
       "rule": "DOCS-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-04",
@@ -62,14 +46,6 @@
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-05",
       "kind": "pending",
       "reason": "The notes on a GitHub release are a list of commits rather than notes written for users.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
-    },
-    {
-      "rule": "DOCS-14",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-14",
-      "kind": "pending",
-      "reason": "One developer guide in the repository is a dated review report rather than a lasting explanation.",
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
